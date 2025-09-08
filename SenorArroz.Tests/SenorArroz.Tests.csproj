@@ -27,4 +27,8 @@
     <ProjectReference Include="..\SenorArroz.Infrastructure\SenorArroz.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Integration\Controllers\" />
+  </ItemGroup>
+
 </Project>
