@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
+using System.Data;
 
 namespace SenorArroz.Infrastructure.Repositories;
 
@@ -96,4 +97,18 @@ public class UserRepository : IUserRepository
 
         return await query.AnyAsync(cancellationToken);
     }
+    public async Task<bool> ExistsActiveUserWithRoleInBranch(string role, int branchId, CancellationToken cancellationToken)
+{
+    return await _context.Users.AnyAsync(u =>
+         u.Active && string.Equals(u.Role.ToString(),role, StringComparison.OrdinalIgnoreCase) && u.BranchId == branchId,
+    cancellationToken);
+    }
+
+public async Task<bool> ExistsActiveSuperAdmin(CancellationToken cancellationToken)
+{
+        return await _context.Users.AnyAsync(u =>
+            u.Active && string.Equals(u.Role.ToString(), "superadmin", StringComparison.OrdinalIgnoreCase));
+        
+}
+
 }

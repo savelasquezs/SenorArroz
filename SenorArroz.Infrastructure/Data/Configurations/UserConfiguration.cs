@@ -9,13 +9,14 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
 {
     public void Configure(EntityTypeBuilder<User> builder)
     {
-        builder.ToTable("\"user\""); // Comillas porque user es palabra reservada
+        builder.ToTable("user"); // Comillas porque user es palabra reservada
 
         builder.HasKey(u => u.Id);
         builder.Property(u => u.Id).HasColumnName("id");
 
         builder.Property(u => u.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(u => u.Role)
+            .HasColumnName("role")
     .HasConversion(
          v => v.ToString().ToLower(),           // Escribe en minúsculas
          v => Enum.Parse<UserRole>(v, true)

@@ -28,6 +28,7 @@ public class AuthController : ControllerBase
     /// <param name="loginDto">Credenciales de login</param>
     /// <returns>Token de acceso y refresh token</returns>
     [HttpPost("login")]
+    [Produces("application/json")]
     public async Task<ActionResult<AuthResponseDto>> Login([FromBody] LoginDto loginDto)
     {
         var command = _mapper.Map<LoginCommand>(loginDto);
