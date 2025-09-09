@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Users/Queries/GetUserByIdHandler.cs
+﻿
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Users.DTOs;

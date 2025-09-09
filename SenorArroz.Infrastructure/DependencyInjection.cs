@@ -28,8 +28,10 @@ public static class DependencyInjection
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
         // Services
+        services.AddHttpContextAccessor();
         services.AddScoped<IPasswordService, PasswordService>();
         services.AddScoped<IJwtService, JwtService>();
+        services.AddScoped<ICurrentUser, CurrentUserService>();
 
         // Background Services
         services.AddHostedService<TokenCleanupService>();
