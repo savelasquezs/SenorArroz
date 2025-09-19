@@ -111,4 +111,27 @@ public async Task<bool> ExistsActiveSuperAdmin(CancellationToken cancellationTok
         
 }
 
+    public async Task<bool> UpdateUserPasswordAsync(User user, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var existing = await _context.Users
+                .FirstOrDefaultAsync(u => u.Id == user.Id, cancellationToken);
+
+            if (existing == null)
+                return false;
+
+            existing.PasswordHash = user.PasswordHash;
+            existing.UpdatedAt = user.UpdatedAt;
+
+            await _context.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (Exception)
+        {
+            // opcional: loguear el error
+            return false;
+        }
+    }
+
 }

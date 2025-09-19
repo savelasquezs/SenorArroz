@@ -52,6 +52,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<User> Users { get; set; }
 
         public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
+        public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

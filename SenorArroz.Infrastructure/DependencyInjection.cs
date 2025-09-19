@@ -26,15 +26,18 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IAuthRepository, AuthRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+        services.AddScoped<IPasswordResetRepository, PasswordResetRepository>();
 
         // Services
         services.AddHttpContextAccessor();
         services.AddScoped<IPasswordService, PasswordService>();
         services.AddScoped<IJwtService, JwtService>();
         services.AddScoped<ICurrentUser, CurrentUserService>();
+        services.AddScoped<IEmailService, EmailService>();
 
         // Background Services
         services.AddHostedService<TokenCleanupService>();
+        services.AddHostedService<PasswordResetCleanupService>();
 
         return services;
     }

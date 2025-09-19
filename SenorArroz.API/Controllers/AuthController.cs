@@ -1,8 +1,10 @@
 ﻿using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Features.Auth.Commands;
+using SenorArroz.Application.Features.Auth.Queries;
 using SenorArroz.Application.Features.Auth.DTOs;
 
 using System.Security.Claims;
@@ -173,6 +175,99 @@ public class AuthController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
         return userIdClaim != null && int.TryParse(userIdClaim.Value, out var userId) ? userId : null;
     }
+
+    /// <summary>
+    /// Solicitar recuperación de contraseña
+    /// </summary>
+    /// <param name="forgotPasswordDto">Email del usuario</param>
+    /// <returns>Confirmación de envío</returns>
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<ActionResult> ForgotPassword([FromBody] ForgotPasswordDto forgotPasswordDto, IConfiguration _configuration)
+    { 
+
+        if (string.IsNullOrEmpty(_configuration["FrontendSettings:ResetPasswordUrl"]))
+        {
+            return BadRequest("No se ha configurado la ruta para recuperar la contraseña");
+        }
+        
+        var resetUrl = _configuration["FrontendSettings:ResetPasswordUrl"]??string.Empty; 
+
+        var command = new ForgotPasswordCommand
+        {
+            Email = forgotPasswordDto.Email,
+            ResetUrl = resetUrl
+        };
+
+        var result = await _mediator.Send(command);
+
+        // Always return success to prevent email enumeration
+        return Ok(new
+        {
+            message = "Si el email existe en nuestro sistema, se ha enviado un enlace de recuperación."
+        });
+    }
+
+    /// <summary>
+    /// Validar token de recuperación
+    /// </summary>
+    /// <param name="validateTokenDto">Token y email</param>
+    /// <returns>Estado del token</returns>
+    [HttpPost("validate-reset-token")]
+    [AllowAnonymous]
+    public async Task<ActionResult> ValidateResetToken([FromBody] ValidateResetTokenDto validateTokenDto)
+    {
+        var query = new ValidateResetTokenQuery
+        {
+            Token = validateTokenDto.Token,
+            Email = validateTokenDto.Email
+        };
+
+        var result = await _mediator.Send(query);
+
+        if (!result.IsValid)
+        {
+            return BadRequest(new { message = result.Message });
+        }
+
+        return Ok(new
+        {
+            message = result.Message,
+            userName = result.UserName,
+            expiresAt = result.ExpiresAt
+        });
+    }
+
+    /// <summary>
+    /// Restablecer contraseña
+    /// </summary>
+    /// <param name="resetPasswordDto">Datos para restablecer contraseña</param>
+    /// <returns>Confirmación del restablecimiento</returns>
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<ActionResult> ResetPassword([FromBody] ResetPasswordDto resetPasswordDto)
+    {
+        var command = new ResetPasswordCommand
+        {
+            Token = resetPasswordDto.Token,
+            Email = resetPasswordDto.Email,
+            NewPassword = resetPasswordDto.NewPassword,
+            IpAddress = GetIpAddress()
+        };
+
+        var result = await _mediator.Send(command);
+
+        if (result)
+        {
+            return Ok(new
+            {
+                message = "Contraseña restablecida exitosamente. Se ha enviado un email de confirmación."
+            });
+        }
+
+        return BadRequest("Error al restablecer la contraseña");
+    }
+
 
     #endregion
 }

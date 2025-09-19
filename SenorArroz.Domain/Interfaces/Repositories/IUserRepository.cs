@@ -16,6 +16,7 @@ namespace SenorArroz.Domain.Interfaces.Repositories
 
         Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
 
+        Task<bool> UpdateUserPasswordAsync(User user, CancellationToken cancellationToken = default);
         Task<bool> EmailExistsAsync(string email, int? excludeUserId = null, CancellationToken cancellationToken = default);
     }
 }

@@ -8,4 +8,5 @@ public interface IAuthRepository
     Task<User?> GetUserByIdWithBranchAsync(int userId);
     Task<bool> ValidatePasswordAsync(User user, string password);
     Task<bool> ChangePasswordAsync(int userId, string currentPassword, string newPassword);
+    Task<bool> UpdateUserPasswordAsync(User user, string newPasswordHash);
 }

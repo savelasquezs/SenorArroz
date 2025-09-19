@@ -51,4 +51,23 @@ public class AuthRepository : IAuthRepository
         await _context.SaveChangesAsync();
         return true;
     }
+    public async Task<bool> UpdateUserPasswordAsync(User user, string newPasswordHash)
+    {
+        try
+        {
+            var existingUser = await _context.Users.FindAsync(user.Id);
+            if (existingUser == null || !existingUser.Active)
+                return false;
+
+            existingUser.PasswordHash = newPasswordHash;
+            existingUser.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }
