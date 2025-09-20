@@ -3,33 +3,34 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Reflection;
 
-namespace SenorArroz.Application;
-
-public static class DependencyInjection
+namespace SenorArroz.Application
 {
-    public static IServiceCollection AddApplication(this IServiceCollection services)
+    public static class DependencyInjection
     {
-        // Obtener el ILoggerFactory desde el contenedor de servicios
-        var loggerFactory = services.BuildServiceProvider().GetRequiredService<ILoggerFactory>();
-
-        // Configurar AutoMapper con el loggerFactory
-        var mapperConfig = new MapperConfiguration(cfg =>
+        public static IServiceCollection AddApplication(this IServiceCollection services)
         {
-            cfg.AddMaps(Assembly.GetExecutingAssembly()); // Detecta todos los Profiles
-        }, loggerFactory);
+            // Obtener el ILoggerFactory desde el contenedor de servicios
+            var loggerFactory = services.BuildServiceProvider().GetRequiredService<ILoggerFactory>();
 
-        IMapper mapper = new Mapper(mapperConfig);
-        services.AddSingleton(mapper);
+            // Configurar AutoMapper con el loggerFactory
+            var mapperConfig = new MapperConfiguration(cfg =>
+            {
+                cfg.AddMaps(Assembly.GetExecutingAssembly()); // Detecta todos los Profiles
+            }, loggerFactory);
 
-        // MediatR - Registra automáticamente todos los handlers del ensamblado
-        services.AddMediatR(cfg =>
-        {
-            cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
-        });
+            IMapper mapper = new Mapper(mapperConfig);
+            services.AddSingleton(mapper);
 
-        // FluentValidation - Para validaciones de DTOs
-        // services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+            // MediatR - Registra automáticamente todos los handlers del ensamblado
+            services.AddMediatR(cfg =>
+            {
+                cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
+            });
 
-        return services;
+            // FluentValidation - Para validaciones de DTOs
+            // services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+
+            return services;
+        }
     }
 }

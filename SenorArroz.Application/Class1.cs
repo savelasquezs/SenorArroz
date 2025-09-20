@@ -1,6 +1,7 @@
-﻿namespace SenorArroz.Application;
-
-public class Class1
+﻿namespace SenorArroz.Application
 {
+    public class Class1
+    {
 
+    }
 }

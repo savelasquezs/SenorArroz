@@ -1,26 +1,27 @@
 ﻿using MediatR;
 using SenorArroz.Domain.Interfaces.Repositories;
 
-namespace SenorArroz.Application.Features.Auth.Commands;
-
-public class LogoutHandler : IRequestHandler<LogoutCommand, bool>
+namespace SenorArroz.Application.Features.Auth.Commands
 {
-    private readonly IRefreshTokenRepository _refreshTokenRepository;
-
-    public LogoutHandler(IRefreshTokenRepository refreshTokenRepository)
+    public class LogoutHandler : IRequestHandler<LogoutCommand, bool>
     {
-        _refreshTokenRepository = refreshTokenRepository;
-    }
+        private readonly IRefreshTokenRepository _refreshTokenRepository;
 
-    public async Task<bool> Handle(LogoutCommand request, CancellationToken cancellationToken)
-    {
-        var refreshToken = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken);
-        if (refreshToken == null || !refreshToken.IsActive)
-            return false;
+        public LogoutHandler(IRefreshTokenRepository refreshTokenRepository)
+        {
+            _refreshTokenRepository = refreshTokenRepository;
+        }
 
-        refreshToken.Revoke(request.IpAddress);
-        await _refreshTokenRepository.UpdateAsync(refreshToken);
+        public async Task<bool> Handle(LogoutCommand request, CancellationToken cancellationToken)
+        {
+            var refreshToken = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken);
+            if (refreshToken == null || !refreshToken.IsActive)
+                return false;
 
-        return true;
+            refreshToken.Revoke(request.IpAddress);
+            await _refreshTokenRepository.UpdateAsync(refreshToken);
+
+            return true;
+        }
     }
 }

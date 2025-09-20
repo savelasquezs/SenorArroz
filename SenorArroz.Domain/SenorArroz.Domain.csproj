@@ -13,4 +13,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.9" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\SenorArroz.Shared\SenorArroz.Shared.csproj" />
+  </ItemGroup>
+
 </Project>

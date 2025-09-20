@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 using System.Data;
 
@@ -132,6 +133,17 @@ public async Task<bool> ExistsActiveSuperAdmin(CancellationToken cancellationTok
             // opcional: loguear el error
             return false;
         }
+    }
+    public async Task<bool> RoleExistsAsync(UserRole role, CancellationToken cancellationToken)
+    {
+        return await _context.Users
+            .AnyAsync(u => u.Role == role, cancellationToken);
+    }
+
+    public async Task<bool> AdminExistsInBranchAsync(int branchId, CancellationToken cancellationToken)
+    {
+        return await _context.Users
+            .AnyAsync(u => u.Role == UserRole.Admin && u.BranchId == branchId, cancellationToken);
     }
 
 }

@@ -27,6 +27,10 @@ public static class DependencyInjection
         services.AddScoped<IAuthRepository, AuthRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IPasswordResetRepository, PasswordResetRepository>();
+        // Customer Repositories
+        services.AddScoped<ICustomerRepository, CustomerRepository>();
+        services.AddScoped<IAddressRepository, AddressRepository>();
+        services.AddScoped<INeighborhoodRepository, NeighborhoodRepository>();
 
         // Services
         services.AddHttpContextAccessor();

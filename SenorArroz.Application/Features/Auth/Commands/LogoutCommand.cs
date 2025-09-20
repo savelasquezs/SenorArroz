@@ -1,9 +1,10 @@
 ﻿using MediatR;
 
-namespace SenorArroz.Application.Features.Auth.Commands;
-
-public class LogoutCommand : IRequest<bool>
+namespace SenorArroz.Application.Features.Auth.Commands
 {
-    public string RefreshToken { get; set; } = string.Empty;
-    public string IpAddress { get; set; } = string.Empty;
+    public class LogoutCommand : IRequest<bool>
+    {
+        public string RefreshToken { get; set; } = string.Empty;
+        public string IpAddress { get; set; } = string.Empty;
+    }
 }

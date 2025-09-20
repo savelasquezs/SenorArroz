@@ -1,4 +1,5 @@
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Interfaces.Repositories
 {
@@ -18,5 +19,8 @@ namespace SenorArroz.Domain.Interfaces.Repositories
 
         Task<bool> UpdateUserPasswordAsync(User user, CancellationToken cancellationToken = default);
         Task<bool> EmailExistsAsync(string email, int? excludeUserId = null, CancellationToken cancellationToken = default);
+        Task<bool> RoleExistsAsync(UserRole role, CancellationToken cancellationToken);
+        Task<bool> AdminExistsInBranchAsync(int branchId, CancellationToken cancellationToken);
+
     }
 }

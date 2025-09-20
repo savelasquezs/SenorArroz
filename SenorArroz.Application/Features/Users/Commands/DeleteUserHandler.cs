@@ -3,30 +3,31 @@ using MediatR;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 
-namespace SenorArroz.Application.Features.Users.Commands;
-
-public class DeleteUserHandler : IRequestHandler<DeleteUserCommand, Unit>
+namespace SenorArroz.Application.Features.Users.Commands
 {
-    private readonly IUserRepository _userRepository;
-
-    public DeleteUserHandler(IUserRepository userRepository)
+    public class DeleteUserHandler : IRequestHandler<DeleteUserCommand, Unit>
     {
-        _userRepository = userRepository;
-    }
+        private readonly IUserRepository _userRepository;
 
-    public async Task<Unit> Handle(DeleteUserCommand request, CancellationToken cancellationToken)
-    {
-        // Verificar que el usuario existe y eliminarlo (soft delete)
-        var deleted = await _userRepository.DeleteAsync(request.UserId, cancellationToken);
-
-        if (!deleted)
+        public DeleteUserHandler(IUserRepository userRepository)
         {
-            throw new NotFoundException($"Usuario con ID {request.UserId} no encontrado");
+            _userRepository = userRepository;
         }
 
-        return Unit.Value; // Unit.Value indica operación void exitosa
-    }
-}
+        public async Task<Unit> Handle(DeleteUserCommand request, CancellationToken cancellationToken)
+        {
+            // Verificar que el usuario existe y eliminarlo (soft delete)
+            var deleted = await _userRepository.DeleteAsync(request.UserId, cancellationToken);
 
-// Comando para eliminar usuario
-public record DeleteUserCommand(int UserId) : IRequest<Unit>;
+            if (!deleted)
+            {
+                throw new NotFoundException($"Usuario con ID {request.UserId} no encontrado");
+            }
+
+            return Unit.Value; // Unit.Value indica operación void exitosa
+        }
+    }
+
+    // Comando para eliminar usuario
+    public record DeleteUserCommand(int UserId) : IRequest<Unit>;
+}
