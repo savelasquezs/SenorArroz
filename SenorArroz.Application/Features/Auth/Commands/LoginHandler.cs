@@ -40,8 +40,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             {
                 UserId = user.Id,
                 Token = refreshToken,
-                ExpiresAt = DateTime.UtcNow.AddDays(7), // 7 días de validez
-                CreatedAt = DateTime.UtcNow
+                ExpiresAt = DateTime.UtcNow.AddDays(7) // 7 días de validez
             };
 
             await _refreshTokenRepository.AddAsync(refreshTokenEntity);

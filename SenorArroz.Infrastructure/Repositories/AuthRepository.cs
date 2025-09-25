@@ -46,7 +46,6 @@ public class AuthRepository : IAuthRepository
             return false;
 
         user.PasswordHash = _passwordService.HashPassword(newPassword);
-        user.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
         return true;
@@ -60,7 +59,7 @@ public class AuthRepository : IAuthRepository
                 return false;
 
             existingUser.PasswordHash = newPasswordHash;
-            existingUser.UpdatedAt = DateTime.UtcNow;
+          
 
             await _context.SaveChangesAsync();
             return true;

@@ -46,9 +46,6 @@ public class AddressRepository : IAddressRepository
 
     public async Task<Address> CreateAsync(Address address)
     {
-        address.CreatedAt = DateTime.UtcNow;
-        address.UpdatedAt = DateTime.UtcNow;
-
         // Get delivery fee from neighborhood if not set
         if (address.DeliveryFee == 0)
         {
@@ -67,8 +64,6 @@ public class AddressRepository : IAddressRepository
 
     public async Task<Address> UpdateAsync(Address address)
     {
-        address.UpdatedAt = DateTime.UtcNow;
-
         // Update delivery fee if neighborhood changed
         var neighborhood = await _context.Neighborhoods.FindAsync(address.NeighborhoodId);
         if (neighborhood != null)

@@ -32,9 +32,6 @@ public class NeighborhoodRepository : INeighborhoodRepository
 
     public async Task<Neighborhood> CreateAsync(Neighborhood neighborhood)
     {
-        neighborhood.CreatedAt = DateTime.UtcNow;
-        neighborhood.UpdatedAt = DateTime.UtcNow;
-
         _context.Neighborhoods.Add(neighborhood);
         await _context.SaveChangesAsync();
 
@@ -43,8 +40,6 @@ public class NeighborhoodRepository : INeighborhoodRepository
 
     public async Task<Neighborhood> UpdateAsync(Neighborhood neighborhood)
     {
-        neighborhood.UpdatedAt = DateTime.UtcNow;
-
         _context.Neighborhoods.Update(neighborhood);
         await _context.SaveChangesAsync();
 
@@ -83,5 +78,17 @@ public class NeighborhoodRepository : INeighborhoodRepository
         }
 
         return await query.AnyAsync();
+    }
+    public async Task<int> GetTotalCustomersAsync(int neighborhoodId)
+    {
+        return await _context.Customers
+            .CountAsync(c => _context.Addresses
+                .Any(a => a.CustomerId == c.Id && a.NeighborhoodId == neighborhoodId));
+    }
+
+    public async Task<int> GetTotalAddressesAsync(int neighborhoodId)
+    {
+        return await _context.Addresses
+            .CountAsync(a => a.NeighborhoodId == neighborhoodId);
     }
 }

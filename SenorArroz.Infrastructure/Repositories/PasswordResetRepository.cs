@@ -41,9 +41,6 @@ public class PasswordResetRepository : IPasswordResetRepository
 
     public async Task<PasswordResetToken> CreateAsync(PasswordResetToken passwordResetToken)
     {
-        passwordResetToken.CreatedAt = DateTime.UtcNow;
-        passwordResetToken.UpdatedAt = DateTime.UtcNow;
-
         _context.PasswordResetTokens.Add(passwordResetToken);
         await _context.SaveChangesAsync();
 
@@ -52,8 +49,6 @@ public class PasswordResetRepository : IPasswordResetRepository
 
     public async Task UpdateAsync(PasswordResetToken passwordResetToken)
     {
-        passwordResetToken.UpdatedAt = DateTime.UtcNow;
-
         _context.PasswordResetTokens.Update(passwordResetToken);
         await _context.SaveChangesAsync();
     }

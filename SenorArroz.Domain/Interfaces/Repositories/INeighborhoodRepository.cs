@@ -1,9 +1,5 @@
 ﻿using SenorArroz.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+
 
 namespace SenorArroz.Domain.Interfaces.Repositories
 {
@@ -16,5 +12,7 @@ namespace SenorArroz.Domain.Interfaces.Repositories
         Task<bool> DeleteAsync(int id);
         Task<bool> ExistsAsync(int id);
         Task<bool> NameExistsAsync(string name, int branchId, int? excludeId = null);
+        Task<int> GetTotalCustomersAsync(int id);
+        Task<int> GetTotalAddressesAsync(int id);
     }
 }

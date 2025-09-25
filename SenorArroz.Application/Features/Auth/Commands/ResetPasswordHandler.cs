@@ -61,7 +61,6 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
                 // Update password
                 user.PasswordHash = _passwordService.HashPassword(request.NewPassword);
-                user.UpdatedAt = DateTime.UtcNow;
 
                 // This would need to be added to AuthRepository or create a UserRepository method
                 // For now, we'll assume we have this method in AuthRepository

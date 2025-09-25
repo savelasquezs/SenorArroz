@@ -33,8 +33,7 @@ public class PasswordResetToken : BaseEntity
             UserId = userId,
             Email = email,
             Token = GenerateSecureToken(),
-            ExpiresAt = DateTime.UtcNow.AddMinutes(expirationMinutes),
-            CreatedAt = DateTime.UtcNow
+            ExpiresAt = DateTime.UtcNow.AddMinutes(expirationMinutes)
         };
     }
 

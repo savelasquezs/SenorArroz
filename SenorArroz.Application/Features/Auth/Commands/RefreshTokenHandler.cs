@@ -53,8 +53,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             {
                 UserId = user.Id,
                 Token = newRefreshToken,
-                ExpiresAt = DateTime.UtcNow.AddDays(7),
-                CreatedAt = DateTime.UtcNow
+                ExpiresAt = DateTime.UtcNow.AddDays(7)
             };
 
             await _refreshTokenRepository.AddAsync(newRefreshTokenEntity);

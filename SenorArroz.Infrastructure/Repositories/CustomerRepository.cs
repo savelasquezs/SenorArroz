@@ -110,9 +110,6 @@ public class CustomerRepository : ICustomerRepository
 
     public async Task<Customer> CreateAsync(Customer customer)
     {
-        customer.CreatedAt = DateTime.UtcNow;
-        customer.UpdatedAt = DateTime.UtcNow;
-
         _context.Customers.Add(customer);
         await _context.SaveChangesAsync();
 
@@ -121,8 +118,6 @@ public class CustomerRepository : ICustomerRepository
 
     public async Task<Customer> UpdateAsync(Customer customer)
     {
-        customer.UpdatedAt = DateTime.UtcNow;
-
         _context.Customers.Update(customer);
         await _context.SaveChangesAsync();
 
@@ -137,7 +132,6 @@ public class CustomerRepository : ICustomerRepository
 
         // Soft delete
         customer.Active = false;
-        customer.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
         return true;

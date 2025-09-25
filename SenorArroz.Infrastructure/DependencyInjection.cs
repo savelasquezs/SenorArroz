@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
 
         // Repositories
+        services.AddScoped<IBranchRepository, BranchRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IAuthRepository, AuthRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
