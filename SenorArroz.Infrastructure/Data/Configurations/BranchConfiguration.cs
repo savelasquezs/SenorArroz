@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
 
@@ -18,7 +19,11 @@ public class BranchConfiguration : IEntityTypeConfiguration<Branch>
         builder.Property(b => b.Phone1).HasColumnName("phone1").HasMaxLength(10).IsRequired();
         builder.Property(b => b.Phone2).HasColumnName("phone2").HasMaxLength(10);
 
-        builder.Property(b => b.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
-        builder.Property(b => b.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+        builder.Property(b => b.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
+            .ValueGeneratedOnAdd()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+        ;
+        builder.Property(b => b.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAddOrUpdate()
+    .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore); ;
     }
 }

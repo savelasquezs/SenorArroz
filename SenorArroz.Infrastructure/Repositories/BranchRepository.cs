@@ -88,7 +88,7 @@ public class BranchRepository : IBranchRepository
     public async Task<Branch?> GetByIdWithDetailsAsync(int id)
     {
         return await _context.Branches
-            .Include(b => b.Users.Where(u => u.Active))
+            .Include(b => b.Users)
             .Include(b => b.Neighborhoods)
             .Include(b => b.Customers.Where(c => c.Active))
             .FirstOrDefaultAsync(b => b.Id == id);
@@ -110,6 +110,9 @@ public class BranchRepository : IBranchRepository
 
     public async Task<Branch> UpdateAsync(Branch branch)
     {
+        var utcNow = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Utc);
+     
+        branch.UpdatedAt = utcNow;
         _context.Branches.Update(branch);
         await _context.SaveChangesAsync();
 

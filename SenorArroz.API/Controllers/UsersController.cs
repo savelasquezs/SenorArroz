@@ -65,6 +65,17 @@ public class UsersController : ControllerBase
         var user = await _mediator.Send(command);
         return Ok(user);
     }
+    /// <summary>
+    /// Cambiar el estado activo/inactivo de un usuario
+    /// </summary>
+    [HttpPut("{id:int}/toggle-status")]
+    [Authorize(Roles = "Superadmin,Admin")]
+    public async Task<ActionResult<UserDto>> ToggleStatus(int id)
+    {
+        var command = new ToggleStatusCommand(id);
+        var user = await _mediator.Send(command);
+        return Ok(user);
+    }
 
     /// <summary>
     /// Elimina un usuario (soft delete)
