@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
 
@@ -17,8 +18,10 @@ public class NeighborhoodConfiguration : IEntityTypeConfiguration<Neighborhood>
         builder.Property(n => n.Name).HasColumnName("name").HasMaxLength(150).IsRequired();
         builder.Property(n => n.DeliveryFee).HasColumnName("delivery_fee").IsRequired();
 
-        builder.Property(n => n.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
-        builder.Property(n => n.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+        builder.Property(n => n.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore); 
+        builder.Property(n => n.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAddOrUpdate()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore); 
 
         builder.HasOne(n => n.Branch)
             .WithMany(b => b.Neighborhoods)

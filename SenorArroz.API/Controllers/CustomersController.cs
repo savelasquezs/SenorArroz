@@ -96,12 +96,15 @@ public class CustomersController : ControllerBase
     public async Task<ActionResult<ApiResponse<CustomerDto>>> CreateCustomer([FromBody] CreateCustomerDto createDto)
     {
         var branchId = GetCurrentUserBranchId();
+        string? currentUserRole = GetCurrentUserRole();
+        
         if (branchId == null)
             return Unauthorized();
 
         var command = _mapper.Map<CreateCustomerCommand>(createDto);
-        command.BranchId = branchId.Value;
-
+        if(currentUserRole!="superadmin")
+            command.BranchId = branchId.Value;
+        
         var result = await _mediator.Send(command);
         return CreatedAtAction(
             nameof(GetCustomer),
