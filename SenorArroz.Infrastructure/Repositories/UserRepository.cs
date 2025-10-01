@@ -146,4 +146,10 @@ public async Task<bool> ExistsActiveSuperAdmin(CancellationToken cancellationTok
             .AnyAsync(u => u.Role == UserRole.Admin && u.BranchId == branchId, cancellationToken);
     }
 
+    public async Task<bool> KitchenExistsInBranchAsync(int branchId, CancellationToken cancellationToken)
+    {
+        return await _context.Users
+            .AnyAsync(u => u.Role == UserRole.Kitchen && u.BranchId == branchId, cancellationToken);
+    }
+
 }

@@ -60,6 +60,14 @@ namespace SenorArroz.Application.Features.Users.Commands
                 {
                     throw new BusinessException("Un administrador no puede crear usuarios con rol Admin o Superadmin.");
                 }
+                if (request.UserData.Role == UserRole.Kitchen)
+                {
+                    bool kitchenExists = await _userRepository.KitchenExistsInBranchAsync(request.UserData.BranchId, cancellationToken);
+                    if (kitchenExists)
+                    {
+                        throw new BusinessException("Solo puede existir un usuario con rol Cocina por sucursal.");
+                    }
+                }
             }
             else if (creatorRole == "superadmin")
             {
@@ -79,6 +87,15 @@ namespace SenorArroz.Application.Features.Users.Commands
                     if (adminExists)
                     {
                         throw new BusinessException("Ya existe un Admin en esta sucursal.");
+                    }
+                }
+
+                if (request.UserData.Role == UserRole.Kitchen)
+                {
+                    bool  kitchenExists = await _userRepository.KitchenExistsInBranchAsync(request.UserData.BranchId, cancellationToken);
+                    if (kitchenExists)
+                    {
+                        throw new BusinessException("Solo puede existir un usuario con rol Cocina en la aplicación.");
                     }
                 }
             }

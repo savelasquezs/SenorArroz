@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Features.Branches.Commands;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Application.Features.Branches.Queries;
+using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
@@ -56,7 +57,7 @@ public class BranchesController : ControllerBase
     /// <param name="id">ID de la sucursal</param>
     /// <returns>Datos de la sucursal</returns>
     [HttpGet("{id}")]
-    [Authorize(Roles = "Superadmin")]
+    [Authorize(Roles = "Superadmin, Admin")]
     public async Task<ActionResult<ApiResponse<BranchDto>>> GetBranch(int id)
     {
         var query = new GetBranchByIdQuery { Id = id };
@@ -155,7 +156,7 @@ public class BranchesController : ControllerBase
     /// <returns>Barrio creado</returns>
     [HttpPost("{branchId}/neighborhoods")]
     [Authorize(Roles = "Superadmin,Admin")]
-    public async Task<ActionResult<ApiResponse<BranchNeighborhoodDto>>> CreateNeighborhood(
+    public async Task<ActionResult<ApiResponse<NeighborhoodDto>>> CreateNeighborhood(
         int branchId,
         [FromBody] CreateNeighborhoodDto createNeighborhoodDto)
     {

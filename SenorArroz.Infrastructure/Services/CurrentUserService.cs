@@ -13,7 +13,10 @@ namespace SenorArroz.Infrastructure.Services
             _httpContextAccessor = httpContextAccessor;
         }
 
-        public string Id => _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value??string.Empty;
+        public int Id => int.Parse(
+    _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        ?? "0"
+);
 
         public string Role => _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.Role)?.Value?.ToLower() ?? string.Empty;
 

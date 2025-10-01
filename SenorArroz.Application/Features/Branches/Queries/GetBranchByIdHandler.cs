@@ -1,31 +1,35 @@
 ﻿using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Branches.DTOs;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
+
 
 namespace SenorArroz.Application.Features.Branches.Queries;
 
-public class GetBranchByIdHandler : IRequestHandler<GetBranchByIdQuery, BranchDto?>
+public class GetBranchByIdHandler(
+    IBranchRepository branchRepository,
+    INeighborhoodRepository neighborhoodRepository,
+    IMapper mapper, ICurrentUser currentUser) : IRequestHandler<GetBranchByIdQuery, BranchDto?>
 {
-    private readonly IBranchRepository _branchRepository;
-    private readonly INeighborhoodRepository _neighborhoodRepository;
-    private readonly IMapper _mapper;
-
-    public GetBranchByIdHandler(
-        IBranchRepository branchRepository,
-        INeighborhoodRepository neighborhoodRepository,
-        IMapper mapper)
-    {
-        _branchRepository = branchRepository;
-        _neighborhoodRepository = neighborhoodRepository;
-        _mapper = mapper;
-    }
+    private readonly IBranchRepository _branchRepository = branchRepository;
+    private readonly INeighborhoodRepository _neighborhoodRepository = neighborhoodRepository;
+    private readonly IMapper _mapper = mapper;
+    private readonly ICurrentUser _currentUser=currentUser;
 
     public async Task<BranchDto?> Handle(GetBranchByIdQuery request, CancellationToken cancellationToken)
     {
         var branch = await _branchRepository.GetByIdWithDetailsAsync(request.Id);
         if (branch == null)
             return null;
+
+        if (_currentUser.Role == "admin")
+        {
+            branch.Users = [..branch.Users.Where(u => u.Role !=UserRole.Superadmin )];
+        }
+            branch.Users=[..branch.Users.Where(u => u.Id != _currentUser.Id)];
+
 
         var branchDto = _mapper.Map<BranchDto>(branch);
         

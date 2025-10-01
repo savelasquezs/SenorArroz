@@ -9,7 +9,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
 {
     public void Configure(EntityTypeBuilder<Order> builder)
     {
-        builder.ToTable("\"order\""); // Comillas porque order es palabra reservada
+        builder.ToTable("order"); // Comillas porque order es palabra reservada
 
         builder.HasKey(o => o.Id);
         builder.Property(o => o.Id).HasColumnName("id");

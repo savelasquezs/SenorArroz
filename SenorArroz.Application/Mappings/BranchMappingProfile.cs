@@ -10,7 +10,7 @@ public class BranchMappingProfile : Profile
 {
     public BranchMappingProfile()
     {
-        // Branch -> BranchDto
+        // Branch -> BranchDtodotn
         CreateMap<Branch, BranchDto>()
             .ForMember(dest => dest.TotalUsers, opt => opt.MapFrom(src => src.Users.Count))
             .ForMember(dest => dest.ActiveUsers, opt => opt.MapFrom(src => src.Users.Count(u => u.Active)))
@@ -22,6 +22,8 @@ public class BranchMappingProfile : Profile
 
         // Neighborhood -> BranchNeighborhoodDto
         CreateMap<Neighborhood, BranchNeighborhoodDto>();
+        CreateMap<CreateNeighborhoodDto, CreateNeighborhoodCommand>();
+        CreateMap<UpdateNeighborhoodDto, UpdateNeighborhoodCommand>();
 
         // User -> BranchUserDto
         CreateMap<User, BranchUserDto>()

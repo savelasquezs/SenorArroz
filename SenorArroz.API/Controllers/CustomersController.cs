@@ -1,5 +1,4 @@
-﻿using System.Security.Claims;
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -7,6 +6,7 @@ using SenorArroz.Application.Features.Customers.Commands;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Application.Features.Customers.Queries;
 using SenorArroz.Shared.Models;
+using System.Security.Claims;
 
 namespace SenorArroz.API.Controllers;
 
@@ -225,7 +225,7 @@ public class CustomersController : ControllerBase
     /// </summary>
     /// <returns>Lista de barrios</returns>
     [HttpGet("neighborhoods")]
-    public async Task<ActionResult<ApiResponse<IEnumerable<Domain.Entities.Neighborhood>>>> GetNeighborhoods()
+    public async Task<ActionResult<ApiResponse<IEnumerable<NeighborhoodDto>>>> GetNeighborhoods()
     {
         var branchId = GetCurrentUserBranchId();
         if (branchId == null)
@@ -234,7 +234,15 @@ public class CustomersController : ControllerBase
         var query = new GetNeighborhoodsQuery { BranchId = branchId.Value };
         var result = await _mediator.Send(query);
 
-        return Ok(ApiResponse<IEnumerable<Domain.Entities.Neighborhood>>.SuccessResponse(result, "Barrios obtenidos exitosamente"));
+        var neighborhoods = result.Select(n => new NeighborhoodDto
+        {
+            Id = n.Id,
+            Name = n.Name,
+            DeliveryFee = n.DeliveryFee
+        });
+
+        return Ok(ApiResponse<IEnumerable<NeighborhoodDto>>
+                  .SuccessResponse(neighborhoods, "Barrios obtenidos exitosamente"));
     }
 
     #region Private Methods
