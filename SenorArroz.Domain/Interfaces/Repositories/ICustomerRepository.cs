@@ -7,7 +7,7 @@ namespace SenorArroz.Domain.Interfaces.Repositories
     public interface ICustomerRepository
     {
         Task<PagedResult<Customer>> GetPagedAsync(
-            int branchId,
+            int? branchId,
             string? name = null,
             string? phone = null,
             bool? active = null,

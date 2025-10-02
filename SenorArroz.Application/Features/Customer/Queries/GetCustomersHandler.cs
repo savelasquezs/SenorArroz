@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Shared.Models;
@@ -15,17 +16,32 @@ namespace SenorArroz.Application.Features.Customers.Queries
     {
         private readonly ICustomerRepository _customerRepository;
         private readonly IMapper _mapper;
+        private readonly ICurrentUser _currentUser;
 
-        public GetCustomersHandler(ICustomerRepository customerRepository, IMapper mapper)
+        public GetCustomersHandler(ICustomerRepository customerRepository, IMapper mapper, ICurrentUser currentUser)
         {
             _customerRepository = customerRepository;
             _mapper = mapper;
+            _currentUser = currentUser;
         }
 
         public async Task<PagedResult<CustomerDto>> Handle(GetCustomersQuery request, CancellationToken cancellationToken)
         {
+            // Determine branch filter based on user role
+            int? branchFilter = null;
+            if (_currentUser.Role != "superadmin")
+            {
+                branchFilter = _currentUser.BranchId;
+            }
+            else if (request.BranchId > 0)
+            {
+                // Superadmin can optionally filter by specific branch
+                branchFilter = request.BranchId;
+            }
+            // If branchFilter is null, superadmin gets all customers from all branches
+
             var pagedCustomers = await _customerRepository.GetPagedAsync(
-                request.BranchId,
+                branchFilter,
                 request.Name,
                 request.Phone,
                 request.Active,

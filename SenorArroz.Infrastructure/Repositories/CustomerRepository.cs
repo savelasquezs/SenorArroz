@@ -16,7 +16,7 @@ public class CustomerRepository : ICustomerRepository
     }
 
     public async Task<PagedResult<Customer>> GetPagedAsync(
-        int branchId,
+        int? branchId,
         string? name = null,
         string? phone = null,
         bool? active = null,
@@ -29,7 +29,13 @@ public class CustomerRepository : ICustomerRepository
             .Include(c => c.Branch)
             .Include(c => c.Addresses)
             .ThenInclude(a => a.Neighborhood)
-            .Where(c => c.BranchId == branchId);
+            .AsQueryable();
+
+        // Apply branch filter only if specified
+        if (branchId.HasValue)
+        {
+            query = query.Where(c => c.BranchId == branchId.Value);
+        }
 
         // Filters
         if (!string.IsNullOrWhiteSpace(name))
