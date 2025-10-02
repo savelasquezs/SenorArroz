@@ -1,0 +1,117 @@
+📑 Especificación Funcional del
+Sistema - Señor Arroz
+1. Funcionalidades Generales de la Aplicación
+• Gestión de usuarios y roles: creación, edición, desactivación, asignación de permisos,
+autenticación con JWT.
+• Gestión de sucursales: creación y configuración inicial, incluyendo impresoras y reglas
+de fidelización.
+• Gestión de productos e inventario: categorías por sucursal, productos con stock, costo,
+precio, activación/desactivación.
+• Gestión de clientes y domicilios: registro de clientes, direcciones.
+• Pedidos: unificados con reservas, con estados, historial de cambios, detalles de
+productos y fidelización aplicada.
+• Módulo de domiciliarios: asignación de pedidos, entrega y liquidación de recaudos.
+• Módulo de cocina: visualización y gestión de pedidos en preparación.
+• Pagos y finanzas: múltiples métodos de pago(bancos y apps(app_payment  y bank payment , solo se puede una app por pedidos), el valor que no corresponda a bancos y apps sera efectivo), confirmación de transferencias(pagos por banco),
+liquidación de apps(cuando una app payment se marca como isSettled, se crea un bank_payment con ese valor(se debe poder marcar multiples app_payments al tiempo creando un solo bank_payment) ), movimientos internos(movimientos de dinero entre bancos y entre caja-bancos utilizando bank_payment(income) y Expense_bank_payment(outcome)).
+• los app payment podran filtrarse por fecha y estado para liquidarse mas facil.
+• Se debe tener un resumen solo para el admin y el superadmin del dinero que debe tener cada banco y cada app basado en app_payment,bank_payment y Expense_bank_payment
+• Gastos: registro de proveedores, categorías de gastos y facturas.
+• Caja y cuadre: apertura, cierre, evidencias y conciliaciones diarias.
+• Reportes y dashboard: métricas de ventas, gastos, fidelización y desempeño por
+sucursal.
+El único rol que tiene acceso a todas las sucursales es el superadmin, los damas solo tendrán
+acceso a datos y modificaciones de su sucursal.
+ya se cuenta con los siguientes enums para manejo de la app
+public enum ExpenseUnit
+{
+Unit, Kilo, Package, Pound, Gallon
+}
+public enum OrderStatus
+{
+Taken, // taken
+InPreparation, // in_preparation
+Ready, // ready
+OnTheWay, // on_the_way
+Delivered, // delivered
+Cancelled // cancelled
+}
+
+public enum OrderType
+{
+Onsite, // onsite
+Delivery, // delivery
+Reservation // reservation
+}
+public enum UserRole
+{
+Superadmin, // superadmin
+Admin, // admin
+Cashier, // cashier
+Kitchen, // kitchen
+Deliveryman // deliveryman
+}
+2. Funciones y Permisos por Rol
+Superadmin
+• Acceso total al sistema.
+• Crear usuarios de todos los roles.
+• Ver dashboard global y reportes de todas las sucursales.
+Admin
+• Todo lo del cajero.
+• Crear/modificar productos, categorías, usuarios de tipo cajero, cocina y domiciliario.
+• Cancelar pedidos y facturas (con motivo) .
+• Crear/editar bancos, apps, proveedores y gastos.
+• Liquidar apps y confirmar transferencias.
+• Ver dashboard de su sucursal.
+Cajero
+• Crear/editar clientes y direcciones.
+• Crear/modificar pedidos (mientras no estén entregados/cancelados).
+• Asignar/desasignar domiciliarios a los pedidos siempre y cuando sean pedidos del
+mismo dia.
+• Crear abonos parciales y liquidaciones de domiciliarios.
+• Hacer cuadre de caja.
+Cocina
+• Ver pedidos en preparación y reservas próximas.
+
+• Cambiar pedidos a ‘Ready.
+• Pedidos desaparecen de su vista al pasarlos.
+Domiciliario
+• Ver pedidos en ‘Ready’y los suyos propios.
+• Cambiar estado a ‘OnTheWay’o revertir entrega (3h máx).
+• Ver historial de pedidos y abonos.
+3. Requerimientos y Reglas de Negocio
+• Debe existir solo 1 superadmin en el sistema y 1 admin/cocina por sucursal.
+• Pedidos delivery requieren cliente y dirección obligatoria.
+• Pedidos onsite pueden no tener cliente, pero se puede asignar para fidelización.
+• Pedidos de tipo reserva requieren fecha/hora de entrega obligatoria.
+• Cancelación requiere motivo y no suma puntos de fidelización.
+• Fidelización se aplica según loyalty_rule al momento de crear el pedido.
+• Pagos con app deben registrarse obligatoriamente.
+• Si no hay expense_bank_payment, el gasto es 100% en efectivo.
+4. Interfaces Gráficas por Rol
+Superadmin
+• Dashboard global
+• Gestión de usuarios
+• Reportes globales.
+Admin
+• Panel de control sucursal
+• Gestión de pedidos, clientes, productos y usuarios
+• Gestión de bancos, apps y gastos
+• Dashboard sucursal
+Cajero
+• Pantalla de pedidos
+• Pantalla de clientes
+• Pantalla de domiciliarios
+• Cuadre de caja
+• Reporte básico de ventas
+Cocina
+• Vista simplificada de pedidos en preparación
+• Cambio rápido de estado
+
+Domiciliario
+• Lista de pedidos disponibles para ser entregados, en estado ‘ready’
+• Botón de entregar/revertir solo para pedidos que aplique
+• Historial de pedidos entregados
+• Resumen de abonos y liquidaciones
+• Dashboard con datos relevantes
+• Pedidos asignados en curso de entrega

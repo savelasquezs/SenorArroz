@@ -22,6 +22,7 @@ public interface IProductRepository
     Task<IEnumerable<Product>> GetByBranchIdAsync(int branchId);
     Task<Product?> GetByIdAsync(int id);
     Task<Product?> GetByIdWithCategoryAsync(int id);
+    Task<Product?> GetByIdWithStatisticsAsync(int id);
     Task<Product> CreateAsync(Product product);
     Task<Product> UpdateAsync(Product product);
     Task<bool> DeleteAsync(int id);
@@ -42,5 +43,5 @@ public interface IProductRepository
     Task<int> GetTotalOrdersAsync(int productId);
 
     Task<int> GetTotalCustomersAsync(int productId);
-    Task<DateTime?> GetLastSoldAtAsync(int productId)
+    Task<DateTime?> GetLastSoldAtAsync(int productId);
 }

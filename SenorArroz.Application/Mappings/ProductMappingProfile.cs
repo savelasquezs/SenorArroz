@@ -23,11 +23,21 @@ public class ProductMappingProfile : Profile
 
         CreateMap<ProductCategorySearchDto, GetProductCategoriesQuery>();
 
-        // Product mappings (coming next)
+        // Product mappings
         CreateMap<Product, ProductDto>()
             .ForMember(dest => dest.CategoryName, opt => opt.MapFrom(src => src.Category.Name))
             .ForMember(dest => dest.BranchId, opt => opt.MapFrom(src => src.Category.BranchId))
             .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Category.Branch.Name));
+
+        CreateMap<Product, ProductDetailDto>()
+            .ForMember(dest => dest.CategoryName, opt => opt.MapFrom(src => src.Category.Name))
+            .ForMember(dest => dest.BranchId, opt => opt.MapFrom(src => src.Category.BranchId))
+            .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Category.Branch.Name))
+            .ForMember(dest => dest.TotalSales, opt => opt.Ignore())
+            .ForMember(dest => dest.TotalRevenue, opt => opt.Ignore())
+            .ForMember(dest => dest.TotalOrders, opt => opt.Ignore())
+            .ForMember(dest => dest.TotalCustomers, opt => opt.Ignore())
+            .ForMember(dest => dest.LastSoldAt, opt => opt.Ignore());
 
         CreateMap<CreateProductDto, CreateProductCommand>();
         CreateMap<UpdateProductDto, UpdateProductCommand>()

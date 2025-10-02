@@ -131,6 +131,11 @@ public class ProductRepository : IProductRepository
         return await GetByIdAsync(id); // Same implementation since we always include category
     }
 
+    public async Task<Product?> GetByIdWithStatisticsAsync(int id)
+    {
+        return await GetByIdAsync(id); // Same implementation since we always include category
+    }
+
     public async Task<Product> CreateAsync(Product product)
     {
         _context.Products.Add(product);
