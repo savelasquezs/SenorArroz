@@ -1,0 +1,722 @@
+# 📋 ESPECIFICACIONES PARA FRONTEND - Módulos Banks, Apps, BankPayments y AppPayments
+
+## 🎯 CONTEXTO DE IMPLEMENTACIÓN
+
+### Vista de Detalle de Sucursal
+- La gestión completa de **Banks** y **Apps** se realizará desde la vista de detalle de sucursal
+- Los **AppPayments** solo se pueden crear/modificar desde la toma de pedidos y/o detalle de pedido
+- Los **BankPayments** se crean automáticamente cuando se liquidan AppPayments y tambien se  crear/modificar desde la toma de pedidos y/o detalle de pedido
+
+### Funcionalidades de AppPayments
+- ✅ **Crear/Actualizar**: Solo desde toma de pedidos o modificación de pedidos
+- ✅ **Ver**: Listado con filtros avanzados
+- ✅ **Filtrar**: Por app, banco, sucursal, estado, fechas
+- ✅ **Setear (Liquidar)**: Individual o múltiple (dinámico según cantidad)
+- ✅ **Confirmar transferencias**: Verificar BankPayments
+
+---
+
+## 🏦 BANKS - Gestión de Bancos
+
+### 📍 Base URL: `/api/banks`
+
+### 1. **GET** `/api/banks` - Lista paginada de bancos
+**Descripción**: Obtiene una lista paginada de bancos con filtros
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada** (Query):
+```
+branchId?: number          // Solo superadmin puede especificar
+name?: string              // Filtro por nombre
+active?: boolean           // Filtro por estado activo
+page: number = 1           // Página actual
+pageSize: number = 10      // Elementos por página
+sortBy: string = "name"    // Campo de ordenamiento
+sortOrder: string = "asc"  // Orden (asc/desc)
+```
+
+**Respuesta exitosa** (200):
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "branchId": 1,
+      "branchName": "Sucursal Centro",
+      "name": "Bancolombia",
+      "imageUrl": "https://example.com/logo.png",
+      "active": true,
+      "createdAt": "2024-01-01T10:00:00Z",
+      "updatedAt": "2024-01-01T10:00:00Z",
+      "totalApps": 5,
+      "activeApps": 4,
+      "currentBalance": 1500000.00
+    }
+  ],
+  "totalCount": 10,
+  "page": 1,
+  "pageSize": 10,
+  "totalPages": 1
+}
+```
+
+### 2. **GET** `/api/banks/{id}` - Obtener banco por ID
+**Descripción**: Obtiene un banco específico con estadísticas básicas
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID del banco
+```
+
+**Respuesta exitosa** (200):
+```json
+{
+  "id": 1,
+  "branchId": 1,
+  "branchName": "Sucursal Centro",
+  "name": "Bancolombia",
+  "imageUrl": "https://example.com/logo.png",
+  "active": true,
+  "createdAt": "2024-01-01T10:00:00Z",
+  "updatedAt": "2024-01-01T10:00:00Z",
+  "totalApps": 5,
+  "activeApps": 4,
+  "currentBalance": 1500000.00
+}
+```
+
+### 3. **GET** `/api/banks/{id}/detail` - Vista detallada del banco
+**Descripción**: Obtiene información detallada del banco con estadísticas completas
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID del banco
+```
+
+**Respuesta exitosa** (200):
+```json
+{
+  "id": 1,
+  "branchId": 1,
+  "branchName": "Sucursal Centro",
+  "name": "Bancolombia",
+  "imageUrl": "https://example.com/logo.png",
+  "active": true,
+  "createdAt": "2024-01-01T10:00:00Z",
+  "updatedAt": "2024-01-01T10:00:00Z",
+  "totalApps": 5,
+  "activeApps": 4,
+  "totalBankPayments": 2500000.00,
+  "totalExpenseBankPayments": 500000.00,
+  "currentBalance": 1500000.00
+}
+```
+
+### 4. **POST** `/api/banks` - Crear nuevo banco
+**Descripción**: Crea un nuevo banco
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Body):
+```json
+{
+  "branchId": 1,                    // Solo superadmin especifica
+  "name": "Bancolombia",            // Requerido, máximo 150 caracteres
+  "imageUrl": "https://example.com/logo.png", // Opcional, máximo 200 caracteres
+  "active": true                    // Default: true
+}
+```
+
+**Respuesta exitosa** (201):
+```json
+{
+  "id": 1,
+  "branchId": 1,
+  "branchName": "Sucursal Centro",
+  "name": "Bancolombia",
+  "imageUrl": "https://example.com/logo.png",
+  "active": true,
+  "createdAt": "2024-01-01T10:00:00Z",
+  "updatedAt": "2024-01-01T10:00:00Z",
+  "totalApps": 0,
+  "activeApps": 0,
+  "currentBalance": 0.00
+}
+```
+
+### 5. **PUT** `/api/banks/{id}` - Actualizar banco
+**Descripción**: Actualiza un banco existente
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Route + Body):
+```
+id: number                 // ID del banco
+```
+```json
+{
+  "name": "Bancolombia Actualizado",
+  "imageUrl": "https://example.com/new-logo.png",
+  "active": true
+}
+```
+
+**Respuesta exitosa** (200): Mismo formato que GET por ID
+
+### 6. **DELETE** `/api/banks/{id}` - Eliminar banco
+**Descripción**: Elimina un banco (soft delete)
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID del banco
+```
+
+**Respuesta exitosa** (204): Sin contenido
+
+---
+
+## 📱 APPS - Gestión de Aplicaciones
+
+### 📍 Base URL: `/api/apps`
+
+### 1. **GET** `/api/apps` - Lista paginada de apps
+**Descripción**: Obtiene una lista paginada de apps con filtros
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada** (Query):
+```
+bankId?: number            // Filtro por banco
+name?: string              // Filtro por nombre
+branchId?: number          // Solo superadmin puede especificar
+active?: boolean           // Filtro por estado activo
+page: number = 1           // Página actual
+pageSize: number = 10      // Elementos por página
+sortBy: string = "name"    // Campo de ordenamiento
+sortOrder: string = "asc"  // Orden (asc/desc)
+```
+
+**Respuesta exitosa** (200):
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "bankId": 1,
+      "bankName": "Bancolombia",
+      "branchId": 1,
+      "branchName": "Sucursal Centro",
+      "name": "Nequi",
+      "imageUrl": "https://example.com/nequi-logo.png",
+      "active": true,
+      "createdAt": "2024-01-01T10:00:00Z",
+      "updatedAt": "2024-01-01T10:00:00Z",
+      "totalPayments": 500000.00,
+      "unsettledPayments": 100000.00,
+      "totalPaymentsCount": 25,
+      "unsettledPaymentsCount": 5
+    }
+  ],
+  "totalCount": 10,
+  "page": 1,
+  "pageSize": 10,
+  "totalPages": 1
+}
+```
+
+### 2. **GET** `/api/apps/{id}` - Obtener app por ID
+**Descripción**: Obtiene una app específica con estadísticas
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID de la app
+```
+
+**Respuesta exitosa** (200): Mismo formato que item del listado
+
+### 3. **GET** `/api/apps/by-bank/{bankId}` - Apps por banco
+**Descripción**: Obtiene todas las apps de un banco específico
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada** (Route):
+```
+bankId: number             // ID del banco
+```
+
+**Respuesta exitosa** (200):
+```json
+[
+  {
+    "id": 1,
+    "bankId": 1,
+    "bankName": "Bancolombia",
+    "branchId": 1,
+    "branchName": "Sucursal Centro",
+    "name": "Nequi",
+    "imageUrl": "https://example.com/nequi-logo.png",
+    "active": true,
+    "createdAt": "2024-01-01T10:00:00Z",
+    "updatedAt": "2024-01-01T10:00:00Z",
+    "totalPayments": 500000.00,
+    "unsettledPayments": 100000.00,
+    "totalPaymentsCount": 25,
+    "unsettledPaymentsCount": 5
+  }
+]
+```
+
+### 4. **POST** `/api/apps` - Crear nueva app
+**Descripción**: Crea una nueva app
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Body):
+```json
+{
+  "bankId": 1,                        // Requerido
+  "name": "Nequi",                    // Requerido, máximo 150 caracteres
+  "imageUrl": "https://example.com/nequi-logo.png", // Opcional, máximo 200 caracteres
+  "active": true                      // Default: true
+}
+```
+
+**Respuesta exitosa** (201): Mismo formato que GET por ID
+
+### 5. **PUT** `/api/apps/{id}` - Actualizar app
+**Descripción**: Actualiza una app existente
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Route + Body):
+```
+id: number                 // ID de la app
+```
+```json
+{
+  "bankId": 1,
+  "name": "Nequi Actualizado",
+  "imageUrl": "https://example.com/new-nequi-logo.png",
+  "active": true
+}
+```
+
+**Respuesta exitosa** (200): Mismo formato que GET por ID
+
+### 6. **DELETE** `/api/apps/{id}` - Eliminar app
+**Descripción**: Elimina una app (soft delete)
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID de la app
+```
+
+**Respuesta exitosa** (204): Sin contenido
+
+---
+
+## 💰 BANK PAYMENTS - Gestión de Pagos Bancarios
+
+### 📍 Base URL: `/api/bankpayments`
+
+### 1. **GET** `/api/bankpayments` - Lista paginada de pagos bancarios
+**Descripción**: Obtiene una lista paginada de pagos bancarios con filtros
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada** (Query):
+```
+orderId?: number           // Filtro por orden
+bankId?: number            // Filtro por banco
+branchId?: number          // Solo superadmin puede especificar
+verified?: boolean         // Filtro por estado de verificación
+fromDate?: string          // Filtro desde fecha (ISO 8601)
+toDate?: string            // Filtro hasta fecha (ISO 8601)
+page: number = 1           // Página actual
+pageSize: number = 10      // Elementos por página
+sortBy: string = "createdAt" // Campo de ordenamiento
+sortOrder: string = "desc"   // Orden (asc/desc)
+```
+
+**Respuesta exitosa** (200):
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "orderId": 123,
+      "bankId": 1,
+      "bankName": "Bancolombia",
+      "branchId": 1,
+      "branchName": "Sucursal Centro",
+      "amount": 50000.00,
+      "verifiedAt": "2024-01-01T15:30:00Z",
+      "isVerified": true,
+      "createdAt": "2024-01-01T10:00:00Z",
+      "updatedAt": "2024-01-01T15:30:00Z"
+    }
+  ],
+  "totalCount": 10,
+  "page": 1,
+  "pageSize": 10,
+  "totalPages": 1
+}
+```
+
+### 2. **GET** `/api/bankpayments/{id}` - Obtener pago bancario por ID
+**Descripción**: Obtiene un pago bancario específico
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID del pago bancario
+```
+
+**Respuesta exitosa** (200): Mismo formato que item del listado
+
+### 3. **GET** `/api/bankpayments/unverified` - Pagos no verificados
+**Descripción**: Obtiene todos los pagos bancarios no verificados
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada**: Ninguno
+
+**Respuesta exitosa** (200): Array de pagos bancarios (mismo formato que items del listado)
+
+### 4. **POST** `/api/bankpayments` - Crear pago bancario
+**Descripción**: Crea un nuevo pago bancario (generalmente automático)
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Body):
+```json
+{
+  "orderId": 123,                    // Requerido
+  "bankId": 1,                       // Requerido
+  "amount": 50000.00                 // Requerido, mayor a 0
+}
+```
+
+**Respuesta exitosa** (201): Mismo formato que GET por ID
+
+### 5. **POST** `/api/bankpayments/{id}/verify` - Verificar pago bancario
+**Descripción**: Marca un pago bancario como verificado
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Route + Body):
+```
+id: number                 // ID del pago bancario
+```
+```json
+{
+  "verifiedAt": "2024-01-01T15:30:00Z" // Opcional, default: fecha actual
+}
+```
+
+**Respuesta exitosa** (200):
+```json
+{
+  "message": "Pago bancario verificado exitosamente"
+}
+```
+
+### 6. **POST** `/api/bankpayments/{id}/unverify` - Desverificar pago bancario
+**Descripción**: Marca un pago bancario como no verificado
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID del pago bancario
+```
+
+**Respuesta exitosa** (200):
+```json
+{
+  "message": "Pago bancario desverificado exitosamente"
+}
+```
+
+### 7. **DELETE** `/api/bankpayments/{id}` - Eliminar pago bancario
+**Descripción**: Elimina un pago bancario
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID del pago bancario
+```
+
+**Respuesta exitosa** (204): Sin contenido
+
+---
+
+## 💳 APP PAYMENTS - Gestión de Pagos de Apps
+
+### 📍 Base URL: `/api/apppayments`
+
+### ⚠️ IMPORTANTE: CREACIÓN Y MODIFICACIÓN
+- **Crear/Actualizar**: Solo desde toma de pedidos o modificación de pedidos
+- **Ver/Filtrar/Setear**: Disponible desde vista de gestión
+
+### 1. **GET** `/api/apppayments` - Lista paginada de pagos de apps
+**Descripción**: Obtiene una lista paginada de pagos de apps con filtros
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada** (Query):
+```
+orderId?: number           // Filtro por orden
+appId?: number             // Filtro por app
+bankId?: number            // Filtro por banco
+branchId?: number          // Solo superadmin puede especificar
+settled?: boolean          // Filtro por estado de liquidación
+fromDate?: string          // Filtro desde fecha (ISO 8601)
+toDate?: string            // Filtro hasta fecha (ISO 8601)
+page: number = 1           // Página actual
+pageSize: number = 10      // Elementos por página
+sortBy: string = "createdAt" // Campo de ordenamiento
+sortOrder: string = "desc"   // Orden (asc/desc)
+```
+
+**Respuesta exitosa** (200):
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "orderId": 123,
+      "appId": 1,
+      "appName": "Nequi",
+      "bankId": 1,
+      "bankName": "Bancolombia",
+      "branchId": 1,
+      "branchName": "Sucursal Centro",
+      "amount": 50000.00,
+      "isSetted": false,
+      "createdAt": "2024-01-01T10:00:00Z",
+      "updatedAt": "2024-01-01T10:00:00Z"
+    }
+  ],
+  "totalCount": 10,
+  "page": 1,
+  "pageSize": 10,
+  "totalPages": 1
+}
+```
+
+### 2. **GET** `/api/apppayments/{id}` - Obtener pago de app por ID
+**Descripción**: Obtiene un pago de app específico
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID del pago de app
+```
+
+**Respuesta exitosa** (200): Mismo formato que item del listado
+
+### 3. **GET** `/api/apppayments/unsettled` - Pagos no liquidados
+**Descripción**: Obtiene todos los pagos de apps no liquidados
+**Autorización**: Todos los usuarios autenticados
+**Parámetros de entrada** (Query):
+```
+appId?: number             // Filtro por app
+fromDate?: string          // Filtro desde fecha (ISO 8601)
+toDate?: string            // Filtro hasta fecha (ISO 8601)
+page: number = 1           // Página actual
+pageSize: number = 10      // Elementos por página
+```
+
+**Respuesta exitosa** (200): Array de pagos de apps (mismo formato que items del listado)
+
+### 4. **POST** `/api/apppayments` - Crear pago de app
+**Descripción**: Crea un nuevo pago de app (SOLO desde toma de pedidos)
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Body):
+```json
+{
+  "orderId": 123,                    // Requerido
+  "appId": 1,                        // Requerido
+  "amount": 50000.00                 // Requerido, mayor a 0
+}
+```
+
+**Respuesta exitosa** (201): Mismo formato que GET por ID
+
+### 5. **POST** `/api/apppayments/{id}/settle` - Liquidar pago individual
+**Descripción**: Liquida un pago de app individual (marca como settled y crea bank payment)
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID del pago de app
+```
+
+**Respuesta exitosa** (200):
+```json
+{
+  "message": "Pago de app liquidado exitosamente. Se creó el bank payment correspondiente."
+}
+```
+
+### 6. **POST** `/api/apppayments/settle-multiple` - Liquidar múltiples pagos
+**Descripción**: Liquida múltiples pagos de apps (marca como settled y crea UN SOLO bank payment)
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Body):
+```json
+{
+  "paymentIds": [1, 2, 3, 4, 5]     // Array de IDs de pagos a liquidar
+}
+```
+
+**Respuesta exitosa** (200):
+```json
+{
+  "message": "Pagos de apps liquidados exitosamente. Se creó un bank payment con el total."
+}
+```
+
+### 7. **POST** `/api/apppayments/{id}/unsettle` - Desliquidar pago
+**Descripción**: Desliquida un pago de app (marca como unsettled y elimina bank payment)
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID del pago de app
+```
+
+**Respuesta exitosa** (200):
+```json
+{
+  "message": "Pago de app desliquidado exitosamente. Se eliminó el bank payment correspondiente."
+}
+```
+
+### 8. **DELETE** `/api/apppayments/{id}` - Eliminar pago de app
+**Descripción**: Elimina un pago de app
+**Autorización**: admin, superadmin
+**Parámetros de entrada** (Route):
+```
+id: number                 // ID del pago de app
+```
+
+**Respuesta exitosa** (204): Sin contenido
+
+---
+
+## 🎯 ESPECIFICACIONES DE IMPLEMENTACIÓN FRONTEND
+
+### 📍 Vista de Detalle de Sucursal
+La gestión completa de **Banks** y **Apps** se debe integrar en la vista de detalle de sucursal:
+
+#### Sección de Bancos:
+- Lista de bancos de la sucursal
+- Botones: Crear, Editar, Eliminar, Ver Detalle
+- Filtros: Nombre, Estado activo
+- Estadísticas: Total apps, apps activas, balance actual
+
+#### Sección de Apps:
+- Lista de apps por banco
+- Botones: Crear, Editar, Eliminar
+- Filtros: Banco, Nombre, Estado activo
+- Estadísticas: Total pagos, pagos no liquidados
+
+### 📍 Gestión de AppPayments
+
+#### Restricciones de Creación/Modificación:
+- **NO** incluir botones de "Crear" o "Editar" en la interfaz de gestión
+- **SÍ** incluir vista de solo lectura con filtros avanzados
+- **SÍ** incluir funcionalidad de liquidación (setear)
+
+#### Funcionalidad de Liquidación Dinámica:
+```javascript
+// Lógica para determinar endpoint según cantidad de registros seleccionados
+const selectedPayments = getSelectedAppPayments(); // Array de IDs
+
+if (selectedPayments.length === 1) {
+    // Usar endpoint individual
+    await fetch(`/api/apppayments/${selectedPayments[0]}/settle`, {
+        method: 'POST'
+    });
+} else if (selectedPayments.length > 1) {
+    // Usar endpoint múltiple
+    await fetch('/api/apppayments/settle-multiple', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentIds: selectedPayments })
+    });
+}
+```
+
+#### Interfaz de Liquidación:
+- Checkbox para selección múltiple
+- Botón "Liquidar Seleccionados" (dinámico según cantidad)
+- Botón "Desliquidar" para pagos ya liquidados
+- Confirmación antes de liquidar con resumen de montos
+
+### 📍 Gestión de BankPayments
+
+#### Funcionalidad de Verificación:
+- Lista de pagos bancarios con estado de verificación
+- Botones "Verificar" y "Desverificar"
+- Filtro especial para "Pagos No Verificados"
+- Indicador visual del estado de verificación
+
+#### Flujo de Trabajo:
+1. AppPayment se liquida → BankPayment se crea automáticamente
+2. BankPayment aparece en lista de "No Verificados"
+3. Usuario verifica el BankPayment
+4. Se actualiza el estado y timestamp de verificación
+
+---
+
+## 🔐 AUTORIZACIÓN Y PERMISOS
+
+### Roles y Acceso:
+- **superadmin**: Acceso completo a todas las sucursales
+- **admin**: Solo acceso a su sucursal
+- **cashier**: Solo lectura de datos de su sucursal
+- **kitchen**: Sin acceso a estos módulos
+- **deliveryman**: Sin acceso a estos módulos
+
+### Endpoints por Rol:
+- **Crear/Editar/Eliminar**: admin, superadmin
+- **Ver/Listar/Filtrar**: Todos los usuarios autenticados
+- **Liquidar/Verificar**: admin, superadmin
+
+---
+
+## 📊 CÓDIGOS DE RESPUESTA HTTP
+
+### Éxito:
+- **200**: OK - Operación exitosa
+- **201**: Created - Recurso creado exitosamente
+- **204**: No Content - Eliminación exitosa
+
+### Error:
+- **400**: Bad Request - Datos inválidos
+- **401**: Unauthorized - No autenticado
+- **403**: Forbidden - Sin permisos
+- **404**: Not Found - Recurso no encontrado
+- **500**: Internal Server Error - Error del servidor
+
+---
+
+## 🔄 FLUJO DE LIQUIDACIÓN COMPLETO
+
+### 1. Liquidación Individual:
+```
+AppPayment (isSetted: false) 
+    ↓ POST /api/apppayments/{id}/settle
+AppPayment (isSetted: true) + BankPayment (creado automáticamente)
+```
+
+### 2. Liquidación Múltiple:
+```
+AppPayment1 (isSetted: false) 
+AppPayment2 (isSetted: false) 
+AppPayment3 (isSetted: false)
+    ↓ POST /api/apppayments/settle-multiple
+AppPayment1 (isSetted: true)
+AppPayment2 (isSetted: true) 
+AppPayment3 (isSetted: true)
++ BankPayment (con suma total)
+```
+
+### 3. Verificación:
+```
+BankPayment (verifiedAt: null)
+    ↓ POST /api/bankpayments/{id}/verify
+BankPayment (verifiedAt: timestamp)
+```
+
+### 4. Reversión:
+```
+AppPayment (isSetted: true) + BankPayment
+    ↓ POST /api/apppayments/{id}/unsettle
+AppPayment (isSetted: false) + BankPayment (eliminado)
+```
+
+---
+
+## 📝 NOTAS IMPORTANTES
+
+1. **Consistencia de Tipos**: Todos los montos son `decimal` para precisión
+2. **Soft Delete**: Las eliminaciones son lógicas, no físicas
+3. **Auditoría**: Todos los cambios quedan registrados con timestamps
+4. **Integridad**: No se pueden eliminar entidades con relaciones activas
+5. **Filtrado Automático**: Los usuarios solo ven datos de su sucursal (excepto superadmin)
+6. **Estadísticas en Tiempo Real**: Se calculan dinámicamente en cada consulta
+
+Este archivo proporciona toda la información necesaria para implementar la interfaz frontend completa de los módulos de gestión financiera del sistema.

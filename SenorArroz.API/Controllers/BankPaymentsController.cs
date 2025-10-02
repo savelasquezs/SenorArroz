@@ -85,7 +85,7 @@ public class BankPaymentsController : ControllerBase
     /// Crea un nuevo pago bancario
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult<BankPaymentDto>> CreateBankPayment([FromBody] CreateBankPaymentDto createBankPaymentDto)
     {
         var command = new CreateBankPaymentCommand
@@ -103,7 +103,7 @@ public class BankPaymentsController : ControllerBase
     /// Verifica un pago bancario
     /// </summary>
     [HttpPost("{id}/verify")]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult> VerifyBankPayment(int id, [FromBody] VerifyBankPaymentDto verifyDto)
     {
         var command = new VerifyBankPaymentCommand
@@ -124,7 +124,7 @@ public class BankPaymentsController : ControllerBase
     /// Desverifica un pago bancario
     /// </summary>
     [HttpPost("{id}/unverify")]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult> UnverifyBankPayment(int id)
     {
         var command = new UnverifyBankPaymentCommand { Id = id };
@@ -140,7 +140,7 @@ public class BankPaymentsController : ControllerBase
     /// Elimina un pago bancario
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult> DeleteBankPayment(int id)
     {
         var command = new DeleteBankPaymentCommand { Id = id };

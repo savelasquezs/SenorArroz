@@ -81,7 +81,7 @@ public class AppsController : ControllerBase
     /// Crea una nueva app
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult<AppDto>> CreateApp([FromBody] CreateAppDto createAppDto)
     {
         var command = new CreateAppCommand
@@ -100,7 +100,7 @@ public class AppsController : ControllerBase
     /// Actualiza una app existente
     /// </summary>
     [HttpPut("{id}")]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult<AppDto>> UpdateApp(int id, [FromBody] UpdateAppDto updateAppDto)
     {
         var command = new UpdateAppCommand
@@ -120,7 +120,7 @@ public class AppsController : ControllerBase
     /// Elimina una app (soft delete)
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult> DeleteApp(int id)
     {
         var command = new DeleteAppCommand { Id = id };

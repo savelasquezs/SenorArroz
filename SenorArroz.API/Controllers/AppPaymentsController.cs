@@ -100,7 +100,7 @@ public class AppPaymentsController : ControllerBase
     /// Crea un nuevo pago de app
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult<AppPaymentDto>> CreateAppPayment([FromBody] CreateAppPaymentDto createAppPaymentDto)
     {
         var command = new CreateAppPaymentCommand
@@ -118,7 +118,7 @@ public class AppPaymentsController : ControllerBase
     /// Liquida un pago de app (marca como settled y crea bank payment)
     /// </summary>
     [HttpPost("{id}/settle")]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult> SettleAppPayment(int id)
     {
         var command = new SettleAppPaymentCommand { Id = id };
@@ -134,7 +134,7 @@ public class AppPaymentsController : ControllerBase
     /// Liquida múltiples pagos de apps (marca como settled y crea un solo bank payment)
     /// </summary>
     [HttpPost("settle-multiple")]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult> SettleMultipleAppPayments([FromBody] SettleAppPaymentsDto settleDto)
     {
         var command = new SettleMultipleAppPaymentsCommand
@@ -154,7 +154,7 @@ public class AppPaymentsController : ControllerBase
     /// Desliquida un pago de app (marca como unsettled y elimina bank payment)
     /// </summary>
     [HttpPost("{id}/unsettle")]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult> UnsettleAppPayment(int id)
     {
         var command = new UnsettleAppPaymentCommand { Id = id };
@@ -170,7 +170,7 @@ public class AppPaymentsController : ControllerBase
     /// Elimina un pago de app
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult> DeleteAppPayment(int id)
     {
         var command = new DeleteAppPaymentCommand { Id = id };

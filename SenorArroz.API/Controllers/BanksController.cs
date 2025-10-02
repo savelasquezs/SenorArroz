@@ -83,7 +83,7 @@ public class BanksController : ControllerBase
     /// Crea un nuevo banco
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult<BankDto>> CreateBank([FromBody] CreateBankDto createBankDto)
     {
         var command = new CreateBankCommand
@@ -102,7 +102,7 @@ public class BanksController : ControllerBase
     /// Actualiza un banco existente
     /// </summary>
     [HttpPut("{id}")]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult<BankDto>> UpdateBank(int id, [FromBody] UpdateBankDto updateBankDto)
     {
         var command = new UpdateBankCommand
@@ -121,7 +121,7 @@ public class BanksController : ControllerBase
     /// Elimina un banco (soft delete)
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize(Roles = "admin,superadmin")]
+    [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult> DeleteBank(int id)
     {
         var command = new DeleteBankCommand { Id = id };
