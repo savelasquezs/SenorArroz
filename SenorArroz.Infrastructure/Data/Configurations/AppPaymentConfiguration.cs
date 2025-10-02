@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
 
@@ -18,8 +19,10 @@ public class AppPaymentConfiguration : IEntityTypeConfiguration<AppPayment>
         builder.Property(ap => ap.Amount).HasColumnName("amount").IsRequired();
         builder.Property(ap => ap.IsSetted).HasColumnName("is_setted").HasDefaultValue(false);
 
-        builder.Property(ap => ap.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
-        builder.Property(ap => ap.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+        builder.Property(ap => ap.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+        builder.Property(ap => ap.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAddOrUpdate()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
 
         // Relaciones
         builder.HasOne(ap => ap.Order)

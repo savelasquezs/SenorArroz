@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
 
@@ -18,8 +19,10 @@ public class BankConfiguration : IEntityTypeConfiguration<Bank>
         builder.Property(b => b.ImageUrl).HasColumnName("image_url").HasMaxLength(200);
         builder.Property(b => b.Active).HasColumnName("active").HasDefaultValue(true);
 
-        builder.Property(b => b.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
-        builder.Property(b => b.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+        builder.Property(b => b.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+        builder.Property(b => b.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAddOrUpdate()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
 
         builder.HasOne(b => b.Branch)
             .WithMany(br => br.Banks)
