@@ -92,7 +92,7 @@ public class CustomersController : ControllerBase
     /// <param name="createDto">Datos del cliente a crear</param>
     /// <returns>Cliente creado</returns>
     [HttpPost]
-    [Authorize(Roles ="Superadmin, Admin, CSashier")]
+    [Authorize(Roles ="Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<CustomerDto>>> CreateCustomer([FromBody] CreateCustomerDto createDto)
     {
         var branchId = GetCurrentUserBranchId();

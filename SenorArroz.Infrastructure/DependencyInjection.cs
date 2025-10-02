@@ -33,6 +33,10 @@ public static class DependencyInjection
         services.AddScoped<IAddressRepository, AddressRepository>();
         services.AddScoped<INeighborhoodRepository, NeighborhoodRepository>();
 
+        //product Repositories
+        services.AddScoped<IProductCategoryRepository, ProductCategoryRepository>();
+        services.AddScoped<IProductRepository, ProductRepository>();
+
         // Services
         services.AddHttpContextAccessor();
         services.AddScoped<IPasswordService, PasswordService>();
