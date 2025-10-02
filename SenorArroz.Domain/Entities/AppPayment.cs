@@ -6,7 +6,7 @@ public class AppPayment : BaseEntity
 {
     public int OrderId { get; set; }
     public int AppId { get; set; }
-    public int Amount { get; set; }
+    public decimal Amount { get; set; }
     public bool IsSetted { get; set; } = false;
 
     // Navigation Properties

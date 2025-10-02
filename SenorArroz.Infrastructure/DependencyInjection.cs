@@ -37,6 +37,12 @@ public static class DependencyInjection
         services.AddScoped<IProductCategoryRepository, ProductCategoryRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
 
+        // Bank and Payment Repositories
+        services.AddScoped<IBankRepository, BankRepository>();
+        services.AddScoped<IAppRepository, AppRepository>();
+        services.AddScoped<IBankPaymentRepository, BankPaymentRepository>();
+        services.AddScoped<IAppPaymentRepository, AppPaymentRepository>();
+
         // Services
         services.AddHttpContextAccessor();
         services.AddScoped<IPasswordService, PasswordService>();
