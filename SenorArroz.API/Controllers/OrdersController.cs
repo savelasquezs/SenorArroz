@@ -206,7 +206,7 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// Cancela un pedido
+    /// Cancela un pedido (solo pedidos del mismo día, requiere razón de cancelación, cancela todos los pagos asociados)
     /// </summary>
     [HttpPut("{id}/cancel")]
     [Authorize(Roles = "Admin,Superadmin")]
@@ -349,6 +349,41 @@ public class OrdersController : ControllerBase
         };
 
         var result = await _mediator.Send(query);
+        return Ok(result);
+    }
+
+    // Endpoints específicos para domiciliarios - Autoasignación
+    /// <summary>
+    /// Obtiene pedidos disponibles para autoasignación (solo para domiciliarios)
+    /// </summary>
+    [HttpGet("delivery/available")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult<List<OrderDto>>> GetAvailableOrdersForDelivery(
+        [FromQuery] int? branchId = null)
+    {
+        var query = new GetAvailableOrdersForDeliveryQuery
+        {
+            BranchId = branchId
+        };
+
+        var result = await _mediator.Send(query);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Autoasigna pedidos a sí mismo (solo para domiciliarios)
+    /// </summary>
+    [HttpPost("delivery/self-assign")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult<List<OrderDto>>> SelfAssignOrders([FromBody] SelfAssignOrdersDto request)
+    {
+        var command = new SelfAssignOrdersCommand
+        {
+            OrderIds = request.OrderIds,
+            Password = request.Password
+        };
+
+        var result = await _mediator.Send(command);
         return Ok(result);
     }
 }

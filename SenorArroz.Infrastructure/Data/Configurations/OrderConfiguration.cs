@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -23,8 +24,8 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
 
         // Enum conversions
         builder.Property(o => o.Type).HasColumnName("type").HasConversion(
-             v => v.ToString().ToLower(),           // Escribe en minúsculas
-                v => Enum.Parse<OrderType>(v, true)
+             v => v.HasValue ? v.Value.ToString().ToLower() : null,           // Escribe en minúsculas
+                v => string.IsNullOrEmpty(v) ? null : Enum.Parse<OrderType>(v, true)
             ).IsRequired().HasDefaultValue(OrderType.Delivery);
         builder.Property(o => o.Status).HasColumnName("status").HasConversion(
              v => v.ToString().ToLower(),           // Escribe en minúsculas

@@ -450,6 +450,14 @@ public class OrderRepository : IOrderRepository
         return await query.CountAsync();
     }
 
+    public async Task<int> GetActiveOrdersCountForDeliveryManAsync(int deliveryManId)
+    {
+        return await _context.Orders
+            .Where(o => o.DeliveryManId == deliveryManId && 
+                      (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready))
+            .CountAsync();
+    }
+
     public async Task<decimal> GetTotalSalesAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null)
     {
         var query = _context.Orders.Where(o => o.Status != OrderStatus.Cancelled);

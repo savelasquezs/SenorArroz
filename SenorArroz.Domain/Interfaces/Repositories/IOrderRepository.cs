@@ -37,6 +37,7 @@ public interface IOrderRepository
     Task<int> GetTotalOrdersCountAsync(int? branchId = null);
     Task<int> GetOrdersCountByStatusAsync(OrderStatus status, int? branchId = null);
     Task<int> GetOrdersCountByTypeAsync(OrderType type, int? branchId = null);
+    Task<int> GetActiveOrdersCountForDeliveryManAsync(int deliveryManId);
     Task<decimal> GetTotalSalesAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null);
     Task<decimal> GetAverageOrderValueAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null);
     Task<List<Order>> GetTopSellingProductsAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, int limit = 10);

@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Shared.Models;
@@ -10,18 +11,32 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
 {
     private readonly IOrderRepository _orderRepository;
     private readonly IMapper _mapper;
+    private readonly ICurrentUser _currentUser;
 
-    public SearchOrdersHandler(IOrderRepository orderRepository, IMapper mapper)
+    public SearchOrdersHandler(IOrderRepository orderRepository, IMapper mapper, ICurrentUser currentUser)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
+        _currentUser = currentUser;
     }
 
     public async Task<PagedResult<OrderDto>> Handle(SearchOrdersQuery request, CancellationToken cancellationToken)
     {
+        // Determine branch filter based on user role
+        int? branchFilter = null;
+        if (_currentUser.Role != "superadmin")
+        {
+            branchFilter = _currentUser.BranchId;
+        }
+        else if (request.BranchId > 0)
+        {
+            // Superadmin can optionally filter by specific branch
+            branchFilter = request.BranchId;
+        }
+
         var result = await _orderRepository.SearchOrdersAsync(
             request.SearchTerm,
-            request.BranchId,
+            branchFilter,
             request.CustomerId,
             request.DeliveryManId,
             request.Status,

@@ -1,5 +1,7 @@
 using AutoMapper;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Application.Features.BankPayments.DTOs;
+using SenorArroz.Application.Features.AppPayments.DTOs;
 using SenorArroz.Domain.Entities;
 
 namespace SenorArroz.Application.Mappings;
@@ -11,12 +13,12 @@ public class OrderMappingProfile : Profile
         // Order -> OrderDto
         CreateMap<Order, OrderDto>()
             .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Branch.Name))
-            .ForMember(dest => dest.TakenByName, opt => opt.MapFrom(src => $"{src.TakenBy.FirstName} {src.TakenBy.LastName}"))
+            .ForMember(dest => dest.TakenByName, opt => opt.MapFrom(src => src.TakenBy.Name))
             .ForMember(dest => dest.CustomerName, opt => opt.MapFrom(src => src.Customer != null ? src.Customer.Name : null))
             .ForMember(dest => dest.CustomerPhone, opt => opt.MapFrom(src => src.Customer != null ? src.Customer.Phone1 : null))
-            .ForMember(dest => dest.AddressDescription, opt => opt.MapFrom(src => src.Address != null ? src.Address.Description : null))
-            .ForMember(dest => dest.LoyaltyRuleName, opt => opt.MapFrom(src => src.LoyaltyRule != null ? src.LoyaltyRule.Name : null))
-            .ForMember(dest => dest.DeliveryManName, opt => opt.MapFrom(src => src.DeliveryMan != null ? $"{src.DeliveryMan.FirstName} {src.DeliveryMan.LastName}" : null))
+            .ForMember(dest => dest.AddressDescription, opt => opt.MapFrom(src => src.Address != null ? src.Address.AddressText : null))
+            .ForMember(dest => dest.LoyaltyRuleName, opt => opt.MapFrom(src => src.LoyaltyRule != null ? src.LoyaltyRule.Description : null))
+            .ForMember(dest => dest.DeliveryManName, opt => opt.MapFrom(src => src.DeliveryMan != null ? src.DeliveryMan.Name : null))
             .ForMember(dest => dest.TypeDisplayName, opt => opt.MapFrom(src => GetTypeDisplayName(src.Type)))
             .ForMember(dest => dest.StatusDisplayName, opt => opt.MapFrom(src => GetStatusDisplayName(src.Status)))
             .ForMember(dest => dest.StatusTimes, opt => opt.MapFrom(src => src.GetStatusTimes()));
@@ -31,7 +33,7 @@ public class OrderMappingProfile : Profile
         // OrderDetail -> OrderDetailDto
         CreateMap<OrderDetail, OrderDetailDto>()
             .ForMember(dest => dest.ProductName, opt => opt.MapFrom(src => src.Product.Name))
-            .ForMember(dest => dest.ProductDescription, opt => opt.MapFrom(src => src.Product.Description));
+            .ForMember(dest => dest.ProductDescription, opt => opt.MapFrom(src => src.Product.Name)); // Using Name as description since Product doesn't have Description
 
         // CreateOrderDto -> Order
         CreateMap<CreateOrderDto, Order>()
