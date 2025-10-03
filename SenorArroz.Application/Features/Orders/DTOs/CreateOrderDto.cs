@@ -17,6 +17,8 @@ public class CreateOrderDto
     public int DiscountTotal { get; set; }
     public string? Notes { get; set; }
     public List<CreateOrderDetailDto> OrderDetails { get; set; } = new();
+    public List<CreateOrderBankPaymentDto> BankPayments { get; set; } = new();
+    public List<CreateOrderAppPaymentDto> AppPayments { get; set; } = new();
 }
 
 public class CreateOrderDetailDto
