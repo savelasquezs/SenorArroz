@@ -1,0 +1,27 @@
+using SenorArroz.Domain.Enums;
+
+namespace SenorArroz.Application.Features.Orders.DTOs;
+
+public class UpdateOrderDto
+{
+    public int? CustomerId { get; set; }
+    public int? AddressId { get; set; }
+    public int? LoyaltyRuleId { get; set; }
+    public int? DeliveryFee { get; set; }
+    public DateTime? ReservedFor { get; set; }
+    public int? Subtotal { get; set; }
+    public int? Total { get; set; }
+    public int? DiscountTotal { get; set; }
+    public string? Notes { get; set; }
+    public List<UpdateOrderDetailDto>? OrderDetails { get; set; }
+}
+
+public class UpdateOrderDetailDto
+{
+    public int Id { get; set; }
+    public int ProductId { get; set; }
+    public int Quantity { get; set; }
+    public int UnitPrice { get; set; }
+    public int Discount { get; set; }
+    public string? Notes { get; set; }
+}

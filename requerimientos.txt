@@ -115,3 +115,87 @@ Domiciliario
 • Resumen de abonos y liquidaciones
 • Dashboard con datos relevantes
 • Pedidos asignados en curso de entrega
+
+pedidos:
+Pantalla principal
+
+Se muestran categorías y productos.
+
+Al seleccionar una categoría se filtran automáticamente los productos.
+
+Al hacer clic en un producto se agrega/incrementa la cantidad en el pedido activo.
+
+Sidebar de pedidos
+
+Se podrán manejar múltiples pedidos en paralelo, cada uno en una pestaña (tab).
+
+Cada tab mantiene su estado en un store de pedidos en curso.
+
+Al cambiar de tab no se pierde información.
+
+Los pedidos pueden cerrarse, guardarse o descartarse.
+
+Estructura de pedido
+
+Campos comunes:
+
+Tipo (onsite, delivery, reservation).
+
+Cliente (según reglas de cada tipo).
+
+Dirección (solo para delivery).
+
+Productos con: cantidad, precio unitario, descuento por producto, subtotal.
+
+Subtotal, descuento global, valor de domicilio, total.
+
+Métodos de pago:
+
+App Payment: máximo 1 por pedido.
+
+Bank Payment: múltiples por pedido.
+
+Comentarios/notas.
+
+Reglas por tipo de pedido
+
+Onsite:
+
+Cliente opcional.
+
+Puede guardarse solo con un nombre de referencia (“persona que recoge/mesa”).
+
+Delivery:
+
+Cliente obligatorio.
+
+Se busca por número de teléfono; si no existe se puede crear.
+
+Una vez seleccionado, se deben mostrar sus direcciones guardadas.
+
+Si alguna está marcada como principal, se selecciona por defecto.
+
+Se permite crear nueva dirección desde el mismo selector.
+
+El valor de domicilio se toma por defecto de la dirección elegida, pero puede modificarse.
+
+Reservation:
+
+Igual que un pedido normal.
+
+Se debe registrar fecha y hora obligatorias de entrega.
+
+La venta se contabiliza en la fecha de entrega (reserved_for), no en la de creación.
+
+Comportamiento de pagos
+
+Validar que solo exista un App Payment por pedido.
+
+Permitir múltiples Bank Payments.
+
+El total debe corresponder a la suma de subtotales, descuentos y valor de domicilio.
+los cambios de estado se deben guardar con hora y fecha
+se tendran funciones para calcular los tiempos entre cambios de estado posteriormente
+sobre los pedidos deberemos tener la mayor cantidad de estadisticas posible
+
+al crear un pedido, si hay un rol kitchen con sesión iniciada, debera emitir un sonido que lea el pedido, por ejemplo "nuevo pedido, 5 pastas carbonara y una cocacola mega"

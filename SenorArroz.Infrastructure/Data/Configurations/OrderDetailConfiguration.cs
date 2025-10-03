@@ -21,8 +21,10 @@ public class OrderDetailConfiguration : IEntityTypeConfiguration<OrderDetail>
         builder.Property(od => od.Subtotal).HasColumnName("subtotal");
         builder.Property(od => od.Notes).HasColumnName("notes");
 
-        builder.Property(od => od.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
-        builder.Property(od => od.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+        builder.Property(od => od.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+        builder.Property(od => od.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAddOrUpdate()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
 
         // Relaciones
         builder.HasOne(od => od.Order)
