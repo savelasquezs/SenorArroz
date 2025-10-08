@@ -11,6 +11,7 @@ public class Address : BaseEntity
     public int DeliveryFee { get; set; }
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
+    public bool IsPrimary { get; set; } = false;
 
     // Navigation Properties
     public virtual Customer Customer { get; set; } = null!;

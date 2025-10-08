@@ -1,22 +1,236 @@
-# 📋 ESPECIFICACIONES PARA FRONTEND - Módulos Banks, Apps, BankPayments y AppPayments
+# 📋 ESPECIFICACIONES PARA FRONTEND - Sistema Señor Arroz
 
-## 🎯 CONTEXTO DE IMPLEMENTACIÓN
+## 🎯 CONTEXTO GENERAL DEL SISTEMA
 
-### Vista de Detalle de Sucursal
-- La gestión completa de **Banks** y **Apps** se realizará desde la vista de detalle de sucursal
-- Los **AppPayments** solo se pueden crear/modificar desde la toma de pedidos y/o detalle de pedido
-- Los **BankPayments** se crean automáticamente cuando se liquidan AppPayments y tambien se  crear/modificar desde la toma de pedidos y/o detalle de pedido
+### Roles y Permisos
+- **Superadmin**: Acceso total al sistema, todas las sucursales
+- **Admin**: Gestión completa de su sucursal (productos, usuarios, pedidos, bancos, apps)
+- **Cashier**: Crear/modificar pedidos, clientes, asignar domiciliarios, cuadre de caja
+- **Kitchen**: Ver pedidos en preparación, cambiar a estado 'Ready'
+- **Deliveryman**: Ver pedidos 'Ready', autoasignarse, entregar pedidos
 
-### Funcionalidades de AppPayments
-- ✅ **Crear/Actualizar**: Solo desde toma de pedidos o modificación de pedidos
-- ✅ **Ver**: Listado con filtros avanzados
-- ✅ **Filtrar**: Por app, banco, sucursal, estado, fechas
-- ✅ **Setear (Liquidar)**: Individual o múltiple (dinámico según cantidad)
-- ✅ **Confirmar transferencias**: Verificar BankPayments
+### Reglas de Negocio Importantes
+- Solo 1 superadmin en el sistema, 1 admin/cocina por sucursal
+- Pedidos delivery requieren cliente y dirección obligatoria
+- Pedidos onsite pueden no tener cliente (solo nombre de referencia)
+- Pedidos reserva requieren fecha/hora de entrega obligatoria
+- Cancelación requiere motivo y no suma puntos de fidelización
+- Solo 1 App Payment por pedido, múltiples Bank Payments permitidos
+- Los subtotales y totales se calculan automáticamente en la BD
 
 ---
 
-## 🏦 BANKS - Gestión de Bancos
+## 🛒 MÓDULO DE PEDIDOS - IMPLEMENTACIÓN PRIORITARIA
+
+### 📍 Base URL: `/api/orders`
+
+### 🎯 FUNCIONALIDAD PRINCIPAL: CREACIÓN DE PEDIDOS
+
+#### **POST** `/api/orders` - Crear nuevo pedido
+**Descripción**: Crea un pedido completo con productos y métodos de pago
+**Autorización**: admin, superadmin, cashier
+**Parámetros de entrada** (Body):
+
+```json
+{
+  "branchId": 1,                           // Solo superadmin especifica
+  "takenById": 2,                          // ID del usuario que toma el pedido
+  "customerId": 3,                         // Opcional para onsite, obligatorio para delivery
+  "addressId": 4,                          // Obligatorio para delivery
+  "loyaltyRuleId": 5,                      // Opcional - regla de fidelización
+  "type": "delivery",                      // "onsite", "delivery", "reservation"
+  "deliveryFee": 5000,                     // Opcional - se toma de la dirección por defecto
+  "reservedFor": "2024-01-15T19:00:00Z",   // Obligatorio para reservation
+  "subtotal": 50000,                       // Se calcula automáticamente en BD
+  "total": 55000,                          // Se calcula automáticamente en BD
+  "discountTotal": 0,                      // Se calcula automáticamente en BD
+  "notes": "Sin cebolla",                  // Opcional
+  "orderDetails": [                        // Array de productos
+    {
+      "productId": 1,
+      "quantity": 2,
+      "unitPrice": 25000,
+      "discount": 0,
+      "notes": "Sin picante"               // Opcional
+    },
+    {
+      "productId": 5,
+      "quantity": 1,
+      "unitPrice": 15000,
+      "discount": 1000,
+      "notes": "Extra queso"
+    }
+  ],
+  "bankPayments": [                        // Array de pagos bancarios (múltiples permitidos)
+    {
+      "bankId": 1,
+      "amount": 30000
+    },
+    {
+      "bankId": 2,
+      "amount": 15000
+    }
+  ],
+  "appPayments": [                         // Array de pagos de apps (máximo 1 por pedido)
+    {
+      "appId": 1,
+      "amount": 10000
+    }
+  ]
+}
+```
+
+**Respuesta exitosa** (201):
+```json
+{
+  "id": 123,
+  "branchId": 1,
+  "branchName": "Sucursal Centro",
+  "takenById": 2,
+  "takenByName": "Juan Pérez",
+  "customerId": 3,
+  "customerName": "María García",
+  "customerPhone": "3001234567",
+  "addressId": 4,
+  "addressDescription": "Calle 123 #45-67",
+  "loyaltyRuleId": 5,
+  "loyaltyRuleName": "Cliente frecuente",
+  "deliveryManId": null,
+  "deliveryManName": null,
+  "type": "delivery",
+  "typeDisplayName": "Domicilio",
+  "deliveryFee": 5000,
+  "reservedFor": null,
+  "status": "taken",
+  "statusDisplayName": "Tomado",
+  "subtotal": 50000,
+  "total": 55000,
+  "discountTotal": 1000,
+  "notes": "Sin cebolla",
+  "cancelledReason": null,
+  "statusTimes": {
+    "taken": "2024-01-01T10:00:00Z"
+  },
+  "createdAt": "2024-01-01T10:00:00Z",
+  "updatedAt": "2024-01-01T10:00:00Z"
+}
+```
+
+### 🎨 ESPECIFICACIONES DE INTERFAZ - CREACIÓN DE PEDIDOS
+
+#### **Estructura de la Interfaz**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 🛒 CREAR NUEVO PEDIDO                    [Guardar] [Cancelar]│
+├─────────────────────────────────────────────────────────────┤
+│ Tipo: [Onsite ▼] Cliente: [Buscar por teléfono...]         │
+├─────────────────────────────────────────────────────────────┤
+│ Dirección: [Seleccionar dirección...]                      │
+├─────────────────────────────────────────────────────────────┤
+│ 🍕 CATEGORÍAS    │ 🍝 PRODUCTOS                             │
+│ □ Pastas         │ ┌─────────────────────────────────────┐   │
+│ ■ Pizzas         │ │ 🍕 Pizza Margherita    $25,000     │   │
+│ □ Bebidas        │ │ [Agregar] [1] [-][+]                │   │
+│ □ Postres        │ └─────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│ 💰 RESUMEN DEL PEDIDO                                       │
+│ Subtotal: $50,000  Descuento: $1,000  Domicilio: $5,000    │
+│ TOTAL: $54,000                                              │
+├─────────────────────────────────────────────────────────────┤
+│ 💳 MÉTODOS DE PAGO                                          │
+│ 🏦 Bancos: [Bancolombia ▼] $30,000 [+ Agregar Banco]       │
+│ 📱 Apps: [Nequi ▼] $10,000                                 │
+│ 💵 Efectivo: $14,000 (calculado automáticamente)           │
+├─────────────────────────────────────────────────────────────┤
+│ 📝 Notas: [Sin cebolla...]                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 🎯 FUNCIONALIDADES POR TIPO DE PEDIDO
+
+#### **ONSITE (En el Local)**
+- ✅ Cliente opcional
+- ✅ Campo "Nombre de referencia" (ej: "Mesa 5", "Persona que recoge")
+- ✅ Sin dirección
+- ✅ Sin domicilio
+- ✅ Productos y pagos normales
+
+#### **DELIVERY (Domicilio)**
+- ✅ Cliente obligatorio
+- ✅ Búsqueda por teléfono (crear si no existe)
+- ✅ Selección de dirección (crear nueva desde selector)
+- ✅ Domicilio automático desde dirección (modificable)
+- ✅ Productos y pagos normales
+
+#### **RESERVATION (Reserva)**
+- ✅ Igual que pedido normal
+- ✅ Campo fecha/hora obligatorio
+- ✅ Se contabiliza en fecha de entrega, no de creación
+
+### 💳 GESTIÓN DE PAGOS
+
+#### **Validaciones de Pago:**
+- ✅ Máximo 1 App Payment por pedido
+- ✅ Múltiples Bank Payments permitidos
+- ✅ El total debe coincidir con suma de todos los pagos
+- ✅ El exceso se considera efectivo automáticamente
+
+### 🌐 ENDPOINTS ADICIONALES PARA CREACIÓN DE PEDIDOS
+
+#### **GET** `/api/products` - Lista de productos
+**Parámetros** (Query):
+```
+categoryId?: number, branchId?: number, active?: boolean, 
+page: number = 1, pageSize: number = 10
+```
+
+#### **GET** `/api/productcategories` - Categorías de productos
+**Parámetros** (Query):
+```
+branchId?: number, active?: boolean, page: number = 1, pageSize: number = 10
+```
+
+#### **GET** `/api/customers` - Buscar clientes
+**Parámetros** (Query):
+```
+phone?: string, name?: string, page: number = 1, pageSize: number = 10
+```
+
+#### **GET** `/api/customers/{id}/addresses` - Direcciones del cliente
+**Parámetros** (Route):
+```
+id: number  // ID del cliente
+```
+
+#### **POST** `/api/customers` - Crear nuevo cliente
+```json
+{
+  "name": "María García",
+  "phone1": "3001234567",
+  "phone2": "3007654321",
+  "addresses": [
+    {
+      "addressText": "Calle 123 #45-67",
+      "isPrimary": true,
+      "deliveryFee": 5000
+    }
+  ]
+}
+```
+
+#### **POST** `/api/addresses` - Crear nueva dirección
+```json
+{
+  "customerId": 3,
+  "addressText": "Calle 123 #45-67",
+  "isPrimary": false,
+  "deliveryFee": 5000
+}
+```
+
+---
+
+## 🏦 MÓDULOS ADICIONALES - BANKS Y APPS
 
 ### 📍 Base URL: `/api/banks`
 

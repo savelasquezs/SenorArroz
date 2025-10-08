@@ -37,12 +37,19 @@ public class UpdateAddressHandler : IRequestHandler<UpdateAddressCommand, Custom
             throw new NotFoundException($"Barrio con ID {request.NeighborhoodId} no encontrado");
         }
 
+        // If this address should be primary, first unset all other primary addresses
+        if (request.IsPrimary && !address.IsPrimary)
+        {
+            await _addressRepository.UnsetPrimaryAddressesAsync(address.CustomerId);
+        }
+
         // Update address
         address.NeighborhoodId = request.NeighborhoodId;
         address.AddressText = request.Address.Trim();
         address.AdditionalInfo = request.AdditionalInfo?.Trim();
         address.Latitude = request.Latitude;
         address.Longitude = request.Longitude;
+        address.IsPrimary = request.IsPrimary;
 
         address = await _addressRepository.UpdateAsync(address);
 

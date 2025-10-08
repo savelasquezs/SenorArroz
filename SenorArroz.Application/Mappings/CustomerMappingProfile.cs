@@ -25,7 +25,7 @@ public class CustomerMappingProfile : Profile
         CreateMap<Address, CustomerAddressDto>()
             .ForMember(dest => dest.NeighborhoodName, opt => opt.MapFrom(src => src.Neighborhood.Name))
             .ForMember(dest => dest.Address, opt => opt.MapFrom(src => src.AddressText))
-            .ForMember(dest => dest.IsPrimary, opt => opt.Ignore()); // Placeholder for future implementation
+            .ForMember(dest => dest.IsPrimary, opt => opt.MapFrom(src => src.IsPrimary));
 
         CreateMap<CreateCustomerAddressDto, CreateAddressCommand>()
             .ForMember(dest => dest.CustomerId, opt => opt.Ignore()); // Will be set from route

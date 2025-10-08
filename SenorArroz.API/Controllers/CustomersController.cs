@@ -224,6 +224,26 @@ public class CustomersController : ControllerBase
     }
 
     /// <summary>
+    /// Establecer dirección como primaria
+    /// </summary>
+    /// <param name="customerId">ID del cliente</param>
+    /// <param name="addressId">ID de la dirección</param>
+    /// <returns>Dirección actualizada como primaria</returns>
+    [HttpPut("{customerId}/addresses/{addressId}/set-primary")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<CustomerAddressDto>>> SetPrimaryAddress(int customerId, int addressId)
+    {
+        var command = new SetPrimaryAddressCommand 
+        { 
+            CustomerId = customerId, 
+            AddressId = addressId 
+        };
+
+        var result = await _mediator.Send(command);
+        return Ok(ApiResponse<CustomerAddressDto>.SuccessResponse(result, "Dirección establecida como primaria exitosamente"));
+    }
+
+    /// <summary>
     /// Obtener barrios disponibles para una sucursal
     /// </summary>
     /// <returns>Lista de barrios</returns>

@@ -34,13 +34,10 @@ public class AddressRepository : IAddressRepository
 
     public async Task<Address?> GetPrimaryByCustomerIdAsync(int customerId)
     {
-        // For now, we'll consider the first created address as primary
-        // You can add a IsPrimary field to Address entity if needed
         return await _context.Addresses
             .Include(a => a.Neighborhood)
             .Include(a => a.Customer)
-            .Where(a => a.CustomerId == customerId)
-            .OrderBy(a => a.CreatedAt)
+            .Where(a => a.CustomerId == customerId && a.IsPrimary)
             .FirstOrDefaultAsync();
     }
 
@@ -103,15 +100,37 @@ public class AddressRepository : IAddressRepository
 
     public async Task<bool> SetPrimaryAddressAsync(int customerId, int addressId)
     {
-        // Implementation depends on if you add IsPrimary field to Address
-        // For now, this is a placeholder
-        return await Task.FromResult(true);
+        // First unset all primary addresses for the customer
+        await UnsetPrimaryAddressesAsync(customerId);
+        
+        // Then set the specified address as primary
+        var address = await _context.Addresses
+            .FirstOrDefaultAsync(a => a.Id == addressId && a.CustomerId == customerId);
+        
+        if (address == null)
+            return false;
+        
+        address.IsPrimary = true;
+        await _context.SaveChangesAsync();
+        
+        return true;
     }
 
     public async Task<bool> UnsetPrimaryAddressesAsync(int customerId)
     {
-        // Implementation depends on if you add IsPrimary field to Address
-        // For now, this is a placeholder
-        return await Task.FromResult(true);
+        var addresses = await _context.Addresses
+            .Where(a => a.CustomerId == customerId && a.IsPrimary)
+            .ToListAsync();
+        
+        if (!addresses.Any())
+            return true;
+        
+        foreach (var address in addresses)
+        {
+            address.IsPrimary = false;
+        }
+        
+        await _context.SaveChangesAsync();
+        return true;
     }
 }

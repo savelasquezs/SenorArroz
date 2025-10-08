@@ -1,0 +1,363 @@
+# 🎯 PROMPT PARA AGENTE DE FRONTEND - Sistema Señor Arroz
+
+## 📋 CONTEXTO DEL PROYECTO
+
+Eres un desarrollador frontend especializado en React/Next.js y necesitas implementar el módulo de creación de pedidos para el sistema de gestión de restaurante "Señor Arroz".
+
+### 🏗️ ARQUITECTURA DEL SISTEMA
+- **Backend**: .NET Core API con CQRS pattern
+- **Base de datos**: PostgreSQL con Entity Framework Core
+- **Autenticación**: JWT con roles (Superadmin, Admin, Cashier, Kitchen, Deliveryman)
+- **Patrón**: Repository + MediatR + AutoMapper
+
+### 🎯 OBJETIVO PRINCIPAL
+Implementar una interfaz completa para la **creación de pedidos** que permita a los usuarios (cajeros, administradores) crear pedidos de manera eficiente y rápida.
+
+---
+
+## 🛒 FUNCIONALIDADES A IMPLEMENTAR
+
+### 1. **CREACIÓN DE PEDIDOS**
+- ✅ Soporte para 3 tipos: Onsite, Delivery, Reservation
+- ✅ Gestión de múltiples pedidos en paralelo (tabs)
+- ✅ Selector de productos por categorías
+- ✅ Carrito de productos con cantidades y precios
+- ✅ Múltiples métodos de pago (Bancos, Apps, Efectivo)
+- ✅ Gestión de clientes y direcciones
+- ✅ Cálculo automático de totales
+
+### 2. **TIPOS DE PEDIDO**
+
+#### **ONSITE (En el Local)**
+- Cliente opcional
+- Campo "Nombre de referencia" (ej: "Mesa 5")
+- Sin dirección ni domicilio
+
+#### **DELIVERY (Domicilio)**
+- Cliente obligatorio (búsqueda por teléfono)
+- Dirección obligatoria (seleccionar o crear nueva)
+- Domicilio automático desde dirección
+
+#### **RESERVATION (Reserva)**
+- Igual que pedido normal
+- Fecha/hora de entrega obligatoria
+
+### 3. **GESTIÓN DE PAGOS**
+- Máximo 1 App Payment por pedido
+- Múltiples Bank Payments permitidos
+- El exceso se considera efectivo automáticamente
+- Validación de totales en tiempo real
+
+---
+
+## 🌐 ENDPOINTS DE LA API
+
+### 📍 Base URL: `/api/orders`
+
+### **POST** `/api/orders` - Crear pedido
+```json
+{
+  "branchId": 1,
+  "takenById": 2,
+  "customerId": 3,                    // Opcional para onsite
+  "addressId": 4,                     // Obligatorio para delivery
+  "loyaltyRuleId": 5,                 // Opcional
+  "type": "delivery",                 // "onsite", "delivery", "reservation"
+  "deliveryFee": 5000,                // Opcional
+  "reservedFor": "2024-01-15T19:00:00Z", // Obligatorio para reservation
+  "subtotal": 50000,                  // Calculado automáticamente
+  "total": 55000,                     // Calculado automáticamente
+  "discountTotal": 0,                 // Calculado automáticamente
+  "notes": "Sin cebolla",
+  "orderDetails": [
+    {
+      "productId": 1,
+      "quantity": 2,
+      "unitPrice": 25000,
+      "discount": 0,
+      "notes": "Sin picante"
+    }
+  ],
+  "bankPayments": [
+    {
+      "bankId": 1,
+      "amount": 30000
+    }
+  ],
+  "appPayments": [
+    {
+      "appId": 1,
+      "amount": 10000
+    }
+  ]
+}
+```
+
+### **GET** `/api/products` - Lista de productos
+```
+Parámetros: categoryId?, branchId?, active?, page, pageSize
+```
+
+### **GET** `/api/productcategories` - Categorías de productos
+```
+Parámetros: branchId?, active?, page, pageSize
+```
+
+### **GET** `/api/customers` - Buscar clientes
+```
+Parámetros: phone?, name?, page, pageSize
+```
+
+### **GET** `/api/banks` - Bancos disponibles
+```
+Parámetros: branchId?, active?, page, pageSize
+```
+
+### **GET** `/api/apps` - Apps disponibles
+```
+Parámetros: bankId?, branchId?, active?, page, pageSize
+```
+
+---
+
+## 🎨 ESPECIFICACIONES DE DISEÑO
+
+### 📱 Estructura de la Interfaz
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 🛒 CREAR NUEVO PEDIDO                    [Guardar] [Cancelar]│
+├─────────────────────────────────────────────────────────────┤
+│ Tipo: [Onsite ▼] Cliente: [Buscar por teléfono...]         │
+├─────────────────────────────────────────────────────────────┤
+│ Dirección: [Seleccionar dirección...]                      │
+├─────────────────────────────────────────────────────────────┤
+│ 🍕 CATEGORÍAS    │ 🍝 PRODUCTOS                             │
+│ □ Pastas         │ ┌─────────────────────────────────────┐   │
+│ ■ Pizzas         │ │ 🍕 Pizza Margherita    $25,000     │   │
+│ □ Bebidas        │ │ [Agregar] [1] [-][+]                │   │
+│ □ Postres        │ └─────────────────────────────────────┘   │
+├─────────────────────────────────────────────────────────────┤
+│ 💰 RESUMEN DEL PEDIDO                                       │
+│ Subtotal: $50,000  Descuento: $1,000  Domicilio: $5,000    │
+│ TOTAL: $54,000                                              │
+├─────────────────────────────────────────────────────────────┤
+│ 💳 MÉTODOS DE PAGO                                          │
+│ 🏦 Bancos: [Bancolombia ▼] $30,000 [+ Agregar Banco]       │
+│ 📱 Apps: [Nequi ▼] $10,000                                 │
+│ 💵 Efectivo: $14,000 (calculado automáticamente)           │
+├─────────────────────────────────────────────────────────────┤
+│ 📝 Notas: [Sin cebolla...]                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 🎨 Paleta de Colores
+```css
+:root {
+  --primary: #2E7D32;        /* Verde principal */
+  --secondary: #FF6F00;      /* Naranja secundario */
+  --accent: #1976D2;         /* Azul para acciones */
+  --success: #4CAF50;        /* Verde éxito */
+  --warning: #FF9800;        /* Naranja advertencia */
+  --error: #F44336;          /* Rojo error */
+  --background: #FAFAFA;     /* Fondo claro */
+  --surface: #FFFFFF;        /* Superficie */
+}
+```
+
+### 📱 Componentes Necesarios
+
+#### 1. **OrderForm** - Formulario principal
+#### 2. **ProductSelector** - Selector de productos por categorías
+#### 3. **CartItems** - Lista de productos en el carrito
+#### 4. **PaymentSelector** - Selector de métodos de pago
+#### 5. **CustomerSelector** - Búsqueda y selección de clientes
+#### 6. **AddressSelector** - Selección de direcciones
+#### 7. **OrderSummary** - Resumen de totales
+#### 8. **MultiOrderTabs** - Tabs para múltiples pedidos
+
+---
+
+## 🔧 IMPLEMENTACIÓN TÉCNICA
+
+### 🛠️ Stack Tecnológico Sugerido
+- **Framework**: React 18 + TypeScript
+- **Estado**: Zustand o Redux Toolkit
+- **UI**: Material-UI o Chakra UI
+- **Formularios**: React Hook Form + Zod
+- **HTTP**: Axios o TanStack Query
+- **Routing**: React Router v6
+
+### 📦 Estructura de Archivos
+```
+src/
+├── components/
+│   ├── orders/
+│   │   ├── OrderForm.tsx
+│   │   ├── ProductSelector.tsx
+│   │   ├── CartItems.tsx
+│   │   ├── PaymentSelector.tsx
+│   │   ├── CustomerSelector.tsx
+│   │   ├── AddressSelector.tsx
+│   │   ├── OrderSummary.tsx
+│   │   └── MultiOrderTabs.tsx
+│   └── ui/
+│       ├── Button.tsx
+│       ├── Input.tsx
+│       ├── Select.tsx
+│       └── Modal.tsx
+├── hooks/
+│   ├── useOrders.ts
+│   ├── useProducts.ts
+│   ├── useCustomers.ts
+│   └── usePayments.ts
+├── services/
+│   ├── api.ts
+│   ├── orders.ts
+│   ├── products.ts
+│   └── customers.ts
+├── stores/
+│   ├── orderStore.ts
+│   └── uiStore.ts
+├── types/
+│   ├── order.ts
+│   ├── product.ts
+│   └── customer.ts
+└── utils/
+    ├── validation.ts
+    └── calculations.ts
+```
+
+### 🎯 Estado de la Aplicación (Zustand)
+```typescript
+interface OrderStore {
+  // Estado
+  activeOrders: Order[];
+  currentOrderId: string | null;
+  categories: ProductCategory[];
+  products: Product[];
+  customers: Customer[];
+  banks: Bank[];
+  apps: App[];
+  
+  // Acciones
+  createOrder: (orderData: CreateOrderDto) => Promise<void>;
+  updateOrder: (orderId: string, updates: Partial<Order>) => void;
+  addProduct: (orderId: string, product: Product, quantity: number) => void;
+  removeProduct: (orderId: string, productId: number) => void;
+  updatePayment: (orderId: string, payments: PaymentData) => void;
+  saveOrder: (orderId: string) => Promise<void>;
+  cancelOrder: (orderId: string) => void;
+  setCurrentOrder: (orderId: string) => void;
+}
+```
+
+---
+
+## ✅ VALIDACIONES Y REGLAS DE NEGOCIO
+
+### 🚨 Validaciones Obligatorias
+1. **Delivery**: Cliente y dirección obligatorios
+2. **Reservation**: Fecha/hora de entrega obligatoria
+3. **Pagos**: Máximo 1 App Payment por pedido
+4. **Totales**: Suma de pagos debe coincidir con total del pedido
+5. **Productos**: Al menos 1 producto en el pedido
+
+### 📊 Cálculos Automáticos
+- Los subtotales y totales se calculan en el backend
+- El frontend debe enviar los datos y recibir los totales calculados
+- Mostrar loading mientras se calculan los totales
+
+### 🔄 Flujo de Trabajo
+1. Usuario selecciona tipo de pedido
+2. Si delivery: buscar/crear cliente
+3. Si delivery: seleccionar/crear dirección
+4. Agregar productos al carrito
+5. Configurar métodos de pago
+6. Validar totales
+7. Guardar pedido
+8. Confirmar creación exitosa
+
+---
+
+## 🎯 PRIORIDADES DE IMPLEMENTACIÓN
+
+### **Fase 1: MVP Básico** ⭐
+1. ✅ Formulario básico de creación de pedidos
+2. ✅ Selector de productos por categorías
+3. ✅ Carrito de productos
+4. ✅ Un método de pago (efectivo)
+5. ✅ Guardado básico del pedido
+
+### **Fase 2: Funcionalidades Completas** ⭐⭐
+1. ✅ Gestión de clientes y direcciones
+2. ✅ Múltiples métodos de pago
+3. ✅ Validaciones en tiempo real
+4. ✅ Manejo de errores
+5. ✅ UX optimizada
+
+### **Fase 3: Características Avanzadas** ⭐⭐⭐
+1. ✅ Múltiples pedidos en paralelo (tabs)
+2. ✅ Autoguardado
+3. ✅ Búsqueda rápida de productos
+4. ✅ Atajos de teclado
+5. ✅ Estadísticas en tiempo real
+
+---
+
+## 🚀 COMENZAR IMPLEMENTACIÓN
+
+### 📋 Pasos Iniciales
+1. **Configurar proyecto** con React + TypeScript
+2. **Instalar dependencias** (UI library, state management, etc.)
+3. **Configurar API client** para comunicación con backend
+4. **Crear tipos TypeScript** basados en los DTOs del backend
+5. **Implementar store** para gestión de estado
+6. **Crear componentes básicos** de UI
+7. **Implementar formulario** de creación de pedidos
+8. **Conectar con API** y probar funcionalidad
+
+### 🎯 Objetivo Inmediato
+**Crear un formulario funcional que permita:**
+- Seleccionar tipo de pedido
+- Agregar productos al carrito
+- Configurar un método de pago básico
+- Guardar el pedido en el backend
+- Mostrar confirmación de éxito
+
+### 💡 Consejos de Implementación
+1. **Prioriza la funcionalidad** sobre el diseño inicial
+2. **Usa TypeScript** para evitar errores en tiempo de compilación
+3. **Implementa validaciones** tanto en frontend como confía en backend
+4. **Maneja estados de loading** para mejor UX
+5. **Usa componentes reutilizables** para mantener código limpio
+6. **Implementa manejo de errores** robusto
+7. **Optimiza para dispositivos táctiles** (tablets)
+
+---
+
+## 📞 SOPORTE Y RECURSOS
+
+### 📚 Documentación Adicional
+- Backend API: Swagger disponible en `/swagger`
+- Tipos TypeScript: Definidos en los DTOs del backend
+- Autenticación: JWT con roles específicos
+
+### 🔍 Debugging
+- Usar DevTools del navegador
+- Revisar Network tab para requests a la API
+- Verificar respuestas de error del backend
+- Validar que los tipos TypeScript coincidan con los DTOs
+
+### 🎯 Criterios de Éxito
+- ✅ Usuario puede crear un pedido completo en menos de 2 minutos
+- ✅ Interfaz intuitiva y rápida de usar
+- ✅ Validaciones claras y útiles
+- ✅ Manejo robusto de errores
+- ✅ Funciona correctamente en tablets
+- ✅ Código limpio y mantenible
+
+**¡Comienza implementando el formulario básico de creación de pedidos y luego expande las funcionalidades paso a paso!** 🚀
+
+
+

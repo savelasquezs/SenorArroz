@@ -41,6 +41,12 @@ public class CreateAddressHandler : IRequestHandler<CreateAddressCommand, Custom
             throw new NotFoundException($"Barrio con ID {request.NeighborhoodId} no encontrado");
         }
 
+        // If this address should be primary, first unset all other primary addresses
+        if (request.IsPrimary)
+        {
+            await _addressRepository.UnsetPrimaryAddressesAsync(request.CustomerId);
+        }
+
         var address = new Address
         {
             CustomerId = request.CustomerId,
@@ -49,7 +55,8 @@ public class CreateAddressHandler : IRequestHandler<CreateAddressCommand, Custom
             AdditionalInfo = request.AdditionalInfo?.Trim(),
             Latitude = request.Latitude,
             Longitude = request.Longitude,
-            DeliveryFee = neighborhood.DeliveryFee
+            DeliveryFee = neighborhood.DeliveryFee,
+            IsPrimary = request.IsPrimary
         };
 
         address = await _addressRepository.CreateAsync(address);

@@ -21,6 +21,7 @@ public class AddressConfiguration : IEntityTypeConfiguration<Address>
         builder.Property(a => a.DeliveryFee).HasColumnName("delivery_fee").IsRequired();
         builder.Property(a => a.Latitude).HasColumnName("latitude").HasColumnType("numeric(10,6)");
         builder.Property(a => a.Longitude).HasColumnName("longitude").HasColumnType("numeric(10,6)");
+        builder.Property(a => a.IsPrimary).HasColumnName("is_primary").HasDefaultValue(false);
 
         builder.Property(a => a.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore); ; ;
