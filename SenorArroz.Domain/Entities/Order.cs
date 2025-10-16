@@ -12,6 +12,7 @@ public class Order : BaseEntity
     public int? AddressId { get; set; }
     public int? LoyaltyRuleId { get; set; }
     public int? DeliveryManId { get; set; }
+    public string? GuestName { get; set; }
 
     public OrderType? Type { get; set; }
     public int? DeliveryFee { get; set; }

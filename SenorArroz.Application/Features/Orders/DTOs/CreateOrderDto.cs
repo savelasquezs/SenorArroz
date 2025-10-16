@@ -9,12 +9,13 @@ public class CreateOrderDto
     public int? CustomerId { get; set; }
     public int? AddressId { get; set; }
     public int? LoyaltyRuleId { get; set; }
+    public string? GuestName { get; set; }
     public OrderType Type { get; set; }
     public int? DeliveryFee { get; set; }
     public DateTime? ReservedFor { get; set; }
-    public int Subtotal { get; set; }
-    public int Total { get; set; }
-    public int DiscountTotal { get; set; }
+    public int? Subtotal { get; set; }
+    public int? Total { get; set; }
+    public int? DiscountTotal { get; set; }
     public string? Notes { get; set; }
     public List<CreateOrderDetailDto> OrderDetails { get; set; } = new();
     public List<CreateOrderBankPaymentDto> BankPayments { get; set; } = new();

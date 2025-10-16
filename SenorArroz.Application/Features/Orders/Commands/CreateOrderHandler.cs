@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
@@ -15,19 +16,22 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     private readonly IAppPaymentRepository _appPaymentRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly ILogger<CreateOrderHandler> _logger;
 
     public CreateOrderHandler(
         IOrderRepository orderRepository, 
         IBankPaymentRepository bankPaymentRepository,
         IAppPaymentRepository appPaymentRepository,
         IMapper mapper, 
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        ILogger<CreateOrderHandler> logger)
     {
         _orderRepository = orderRepository;
         _bankPaymentRepository = bankPaymentRepository;
         _appPaymentRepository = appPaymentRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _logger = logger;
     }
 
     public async Task<OrderDto> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
@@ -62,20 +66,37 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             
             if (!request.Order.AddressId.HasValue)
                 throw new BusinessException("Los pedidos de domicilio requieren una dirección");
+            
+            if (string.IsNullOrWhiteSpace(request.Order.GuestName))
+                throw new BusinessException("Los pedidos de domicilio requieren el nombre del invitado");
         }
 
         if (request.Order.Type == Domain.Enums.OrderType.Reservation)
         {
             if (!request.Order.ReservedFor.HasValue)
                 throw new BusinessException("Los pedidos de reserva requieren fecha y hora de entrega");
+            
+            if (string.IsNullOrWhiteSpace(request.Order.GuestName))
+                throw new BusinessException("Los pedidos de reserva requieren el nombre del invitado");
         }
 
         var order = _mapper.Map<Order>(request.Order);
-        order.BranchId = branchId;
         
-        // Configurar estado inicial y timestamps
+        // Configurar valores obligatorios inmediatamente después del mapeo
+        order.BranchId = branchId;
         order.Status = Domain.Enums.OrderStatus.Taken;
         order.AddStatusTime(Domain.Enums.OrderStatus.Taken, DateTime.UtcNow);
+
+        _logger.LogInformation("=== DEBUG: Orden antes de agregar detalles ===");
+        _logger.LogInformation("BranchId: {BranchId}", order.BranchId);
+        _logger.LogInformation("TakenById: {TakenById}", order.TakenById);
+        _logger.LogInformation("CustomerId: {CustomerId}", order.CustomerId);
+        _logger.LogInformation("GuestName: {GuestName}", order.GuestName ?? "NULL");
+        _logger.LogInformation("Type: {Type}", order.Type);
+        _logger.LogInformation("Status: {Status} (Valor: {StatusValue})", order.Status, (int)order.Status);
+        _logger.LogInformation("Subtotal: {Subtotal}", order.Subtotal);
+        _logger.LogInformation("Total: {Total}", order.Total);
+        _logger.LogInformation("DiscountTotal: {DiscountTotal}", order.DiscountTotal);
 
         // Mapear y agregar OrderDetails
         if (request.Order.OrderDetails != null && request.Order.OrderDetails.Any())
@@ -87,6 +108,10 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
                 order.OrderDetails.Add(detail);
             }
         }
+
+        _logger.LogInformation("=== DEBUG: Orden justo antes de guardar en BD ===");
+        _logger.LogInformation("Status final: {Status} (Valor: {StatusValue})", order.Status, (int)order.Status);
+        _logger.LogInformation("OrderDetails count: {Count}", order.OrderDetails.Count);
 
         var createdOrder = await _orderRepository.CreateAsync(order);
 

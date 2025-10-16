@@ -21,6 +21,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.AddressId).HasColumnName("address_id");
         builder.Property(o => o.LoyaltyRuleId).HasColumnName("loyalty_rule_id");
         builder.Property(o => o.DeliveryManId).HasColumnName("delivery_man_id");
+        builder.Property(o => o.GuestName).HasColumnName("guestname").HasMaxLength(100);
 
         // Enum conversions
         builder.Property(o => o.Type).HasColumnName("type").HasConversion(
@@ -30,7 +31,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.Status).HasColumnName("status").HasConversion(
              v => v.ToString().ToLower(),           // Escribe en minúsculas
                 v => Enum.Parse<OrderStatus>(v, true)
-            ).IsRequired().HasDefaultValue(OrderStatus.Taken);
+            ).IsRequired();
 
         builder.Property(o => o.DeliveryFee).HasColumnName("delivery_fee");
         builder.Property(o => o.ReservedFor).HasColumnName("reserved_for");
