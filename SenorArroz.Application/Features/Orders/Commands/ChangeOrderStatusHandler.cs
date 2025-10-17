@@ -42,7 +42,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             throw new BusinessException("Los domiciliarios deben usar los endpoints específicos de auto-asignación");
 
         // Validar transición de estado
-        if (!_businessRules.IsStatusTransitionValid(existingOrder.Status, request.StatusChange.Status, _currentUser.Role))
+        if (!_businessRules.IsStatusTransitionValid(existingOrder, request.StatusChange.Status, _currentUser.Role))
             throw new BusinessException($"No puedes cambiar el estado de {existingOrder.Status} a {request.StatusChange.Status}");
 
         var order = await _orderRepository.ChangeStatusAsync(

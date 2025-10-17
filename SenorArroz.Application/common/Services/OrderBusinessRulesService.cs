@@ -73,15 +73,15 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
 
     public bool CanChangeStatus(Order order, OrderStatus newStatus, string userRole)
     {
-        return IsStatusTransitionValid(order.Status, newStatus, userRole);
+        return IsStatusTransitionValid(order, newStatus, userRole);
     }
 
-    public bool IsStatusTransitionValid(OrderStatus currentStatus, OrderStatus newStatus, string userRole)
+    public bool IsStatusTransitionValid(Order order, OrderStatus newStatus, string userRole)
     {
         var role = userRole.ToLower();
 
         // Mismo estado, no hay cambio
-        if (currentStatus == newStatus)
+        if (order.Status == newStatus)
             return true;
 
         // Admin y Superadmin tienen control total
@@ -89,7 +89,7 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
             return true;
 
         // Desde Cancelled: solo superadmin puede sacar de cancelado
-        if (currentStatus == OrderStatus.Cancelled)
+        if (order.Status == OrderStatus.Cancelled)
             return false;
 
         // A Cancelled: solo admin y superadmin
@@ -100,10 +100,10 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
         switch (role)
         {
             case "cashier":
-                return IsValidCashierTransition(currentStatus, newStatus);
+                return IsValidCashierTransition(order, newStatus);
 
             case "kitchen":
-                return IsValidKitchenTransition(currentStatus, newStatus);
+                return IsValidKitchenTransition(order.Status, newStatus);
 
             case "deliveryman":
                 // Los domiciliarios NO deben usar este endpoint
@@ -124,14 +124,17 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
     /// <summary>
     /// Valida transiciones permitidas para cajeros (solo hacia adelante)
     /// </summary>
-    private bool IsValidCashierTransition(OrderStatus current, OrderStatus next)
+    private bool IsValidCashierTransition(Order order, OrderStatus next)
     {
+        var current = order.Status;
+        
         // Cajero solo puede mover hacia adelante en el flujo
         return (current, next) switch
         {
             (OrderStatus.Taken, OrderStatus.InPreparation) => true,
             (OrderStatus.InPreparation, OrderStatus.Ready) => true,
             (OrderStatus.Ready, OrderStatus.OnTheWay) => true,
+            (OrderStatus.Ready, OrderStatus.Delivered) => order.Type == OrderType.Onsite, // Solo OnSite puede ir directo a Delivered
             (OrderStatus.OnTheWay, OrderStatus.Delivered) => true,
             _ => false // No puede retroceder ni saltar estados
         };

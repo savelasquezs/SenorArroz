@@ -28,7 +28,7 @@ public interface IOrderBusinessRulesService
     /// <summary>
     /// Verifica si una transición de estado es válida para un rol específico
     /// </summary>
-    bool IsStatusTransitionValid(OrderStatus currentStatus, OrderStatus newStatus, string userRole);
+    bool IsStatusTransitionValid(Order order, OrderStatus newStatus, string userRole);
 
     /// <summary>
     /// Verifica si el pedido fue creado el mismo día

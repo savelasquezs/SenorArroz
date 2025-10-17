@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
@@ -542,7 +543,10 @@ public class OrderRepository : IOrderRepository
     public async Task<bool> CanAssignDeliveryManAsync(int orderId, int deliveryManId)
     {
         var order = await _context.Orders.FindAsync(orderId);
-        if (order == null || order.Status != OrderStatus.Ready)
+        if (order == null || 
+            (order.Status != OrderStatus.Ready && 
+             order.Status != OrderStatus.OnTheWay && 
+             order.Status != OrderStatus.Delivered))
             return false;
 
         // Verificar si el domiciliario ya tiene pedidos en curso
@@ -572,7 +576,9 @@ public class OrderRepository : IOrderRepository
         {
             OrderStatus.Taken => newStatus == OrderStatus.InPreparation || newStatus == OrderStatus.Cancelled,
             OrderStatus.InPreparation => newStatus == OrderStatus.Ready || newStatus == OrderStatus.Cancelled,
-            OrderStatus.Ready => newStatus == OrderStatus.OnTheWay || newStatus == OrderStatus.Cancelled,
+            OrderStatus.Ready => newStatus == OrderStatus.OnTheWay || 
+                               newStatus == OrderStatus.Cancelled ||
+                               (newStatus == OrderStatus.Delivered && order.Type == OrderType.Onsite), // Permitir Ready→Delivered para OnSite
             OrderStatus.OnTheWay => newStatus == OrderStatus.Delivered || newStatus == OrderStatus.Ready,
             OrderStatus.Delivered => false, // No se puede cambiar desde entregado
             OrderStatus.Cancelled => false, // No se puede cambiar desde cancelado
@@ -618,11 +624,13 @@ public class OrderRepository : IOrderRepository
     {
         var order = await _context.Orders.FindAsync(orderId);
         if (order == null)
-            throw new ArgumentException("Pedido no encontrado");
+            throw new NotFoundException("Pedido no encontrado");
 
-        // Validar que el pedido esté en estado Ready
-        if (order.Status != OrderStatus.Ready)
-            throw new InvalidOperationException($"El pedido debe estar en estado 'Ready' para asignar domiciliario. Estado actual: {order.Status}");
+        // Validar que el pedido esté en estado Ready, OnTheWay o Delivered
+        if (order.Status != OrderStatus.Ready && 
+            order.Status != OrderStatus.OnTheWay && 
+            order.Status != OrderStatus.Delivered)
+            throw new BusinessException($"El pedido debe estar en estado 'Ready', 'OnTheWay' o 'Delivered' para asignar/cambiar domiciliario. Estado actual: {order.Status}");
 
         // Verificar si el domiciliario ya tiene pedidos en curso
         var activeOrders = await _context.Orders
@@ -632,7 +640,7 @@ public class OrderRepository : IOrderRepository
 
         // Máximo 3 pedidos activos por domiciliario
         if (activeOrders >= 3)
-            throw new InvalidOperationException($"El domiciliario ya tiene {activeOrders} pedidos activos. No se pueden asignar más pedidos (máximo 3).");
+            throw new BusinessException($"El domiciliario ya tiene {activeOrders} pedidos activos. No se pueden asignar más pedidos (máximo 3).");
 
         order.DeliveryManId = deliveryManId;
         await _context.SaveChangesAsync();
