@@ -64,6 +64,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
+            .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .AsQueryable();
 
@@ -116,6 +118,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
+            .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.BranchId == branchId)
             .AsQueryable();
@@ -144,6 +148,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
+            .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.CustomerId == customerId)
             .AsQueryable();
@@ -172,6 +178,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
+            .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.Status == status)
             .AsQueryable();
@@ -203,6 +211,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
+            .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.Type == type)
             .AsQueryable();
@@ -234,6 +244,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
+            .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.DeliveryManId == deliveryManId)
             .AsQueryable();
@@ -262,6 +274,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
+            .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.CreatedAt.Date >= fromDate.Date && o.CreatedAt.Date <= toDate.Date)
             .AsQueryable();
@@ -298,6 +312,9 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
+            .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
+            .Include(o => o.DeliveryMan)
             .Include(o => o.OrderDetails)
                 .ThenInclude(od => od.Product)
             .Where(o => o.Status == OrderStatus.InPreparation)
@@ -318,6 +335,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
             .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.Status == OrderStatus.Ready)
             .AsQueryable();
@@ -337,6 +355,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
             .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.Status == OrderStatus.OnTheWay)
             .AsQueryable();
@@ -356,6 +375,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
             .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
+            .Include(o => o.DeliveryMan)
             .Where(o => o.DeliveryManId == deliveryManId && 
                       (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready))
             .OrderBy(o => o.CreatedAt)
@@ -369,6 +390,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
             .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
+            .Include(o => o.DeliveryMan)
             .Where(o => o.Status == OrderStatus.Ready && o.DeliveryManId == null)
             .AsQueryable();
 
@@ -641,6 +664,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
+            .Include(o => o.Address)
+            .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .AsQueryable();
 
