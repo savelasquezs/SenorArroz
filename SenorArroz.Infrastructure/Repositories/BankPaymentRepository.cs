@@ -176,7 +176,7 @@ public class BankPaymentRepository : IBankPaymentRepository
         if (bankPayment == null)
             return false;
 
-        bankPayment.VerifiedAt = verifiedAt;
+        bankPayment.IsVerified = true;  // El trigger en PostgreSQL establecerá verified_at automáticamente
         await _context.SaveChangesAsync();
         return true;
     }
@@ -187,7 +187,7 @@ public class BankPaymentRepository : IBankPaymentRepository
         if (bankPayment == null)
             return false;
 
-        bankPayment.VerifiedAt = null;
+        bankPayment.IsVerified = false;  // El trigger en PostgreSQL establecerá verified_at = NULL automáticamente
         await _context.SaveChangesAsync();
         return true;
     }

@@ -17,7 +17,8 @@ public class BankPaymentConfiguration : IEntityTypeConfiguration<BankPayment>
         builder.Property(bp => bp.OrderId).HasColumnName("order_id").IsRequired();
         builder.Property(bp => bp.BankId).HasColumnName("bank_id").IsRequired();
         builder.Property(bp => bp.Amount).HasColumnName("amount").HasColumnType("numeric(12,2)").IsRequired();
-        builder.Property(bp => bp.VerifiedAt).HasColumnName("is_verified");
+        builder.Property(bp => bp.IsVerified).HasColumnName("is_verified").HasDefaultValue(false);
+        builder.Property(bp => bp.VerifiedAt).HasColumnName("verified_at");
 
         builder.Property(bp => bp.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

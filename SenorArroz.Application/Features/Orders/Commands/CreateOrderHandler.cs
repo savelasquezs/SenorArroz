@@ -124,7 +124,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
                 {
                     OrderId = createdOrder.Id,
                     BankId = bankPaymentDto.BankId,
-                    Amount = bankPaymentDto.Amount
+                    Amount = bankPaymentDto.Amount,
+                    IsVerified = false  // Los pagos bancarios empiezan como no verificados
                 };
                 await _bankPaymentRepository.CreateAsync(bankPayment);
             }

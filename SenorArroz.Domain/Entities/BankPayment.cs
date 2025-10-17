@@ -7,7 +7,8 @@ public class BankPayment : BaseEntity
     public int OrderId { get; set; }
     public int BankId { get; set; }
     public decimal Amount { get; set; }
-    public DateTime? VerifiedAt { get; set; } // Mapea a is_verified boolean en SQL
+    public bool IsVerified { get; set; } = false;
+    public DateTime? VerifiedAt { get; set; }
 
     // Navigation Properties
     public virtual Order Order { get; set; } = null!;

@@ -12,8 +12,7 @@ public class BankPaymentMappingProfile : Profile
         CreateMap<BankPayment, BankPaymentDto>()
             .ForMember(dest => dest.BankName, opt => opt.MapFrom(src => src.Bank.Name))
             .ForMember(dest => dest.BranchId, opt => opt.MapFrom(src => src.Bank.BranchId))
-            .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Bank.Branch.Name))
-            .ForMember(dest => dest.IsVerified, opt => opt.MapFrom(src => src.VerifiedAt.HasValue));
+            .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Bank.Branch.Name));
 
         CreateMap<CreateBankPaymentDto, BankPayment>();
         CreateMap<VerifyBankPaymentDto, BankPayment>()

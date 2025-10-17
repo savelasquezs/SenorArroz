@@ -73,8 +73,7 @@ public class OrderMappingProfile : Profile
 
         // BankPayment -> BankPaymentDto
         CreateMap<BankPayment, BankPaymentDto>()
-            .ForMember(dest => dest.BankName, opt => opt.MapFrom(src => src.Bank.Name))
-            .ForMember(dest => dest.IsVerified, opt => opt.MapFrom(src => src.VerifiedAt.HasValue));
+            .ForMember(dest => dest.BankName, opt => opt.MapFrom(src => src.Bank.Name));
 
         // AppPayment -> AppPaymentDto
         CreateMap<AppPayment, AppPaymentDto>()
