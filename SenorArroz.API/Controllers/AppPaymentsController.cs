@@ -115,6 +115,23 @@ public class AppPaymentsController : ControllerBase
     }
 
     /// <summary>
+    /// Actualiza el monto de un pago por aplicación
+    /// </summary>
+    [HttpPut("{id}")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
+    public async Task<ActionResult<AppPaymentDto>> UpdateAppPayment(int id, [FromBody] UpdateAppPaymentDto updateDto)
+    {
+        var command = new UpdateAppPaymentCommand
+        {
+            Id = id,
+            Amount = updateDto.Amount
+        };
+
+        var result = await _mediator.Send(command);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Liquida un pago de app (marca como settled y crea bank payment)
     /// </summary>
     [HttpPost("{id}/settle")]

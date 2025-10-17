@@ -100,6 +100,23 @@ public class BankPaymentsController : ControllerBase
     }
 
     /// <summary>
+    /// Actualiza el monto de un pago bancario
+    /// </summary>
+    [HttpPut("{id}")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
+    public async Task<ActionResult<BankPaymentDto>> UpdateBankPayment(int id, [FromBody] UpdateBankPaymentDto updateDto)
+    {
+        var command = new UpdateBankPaymentCommand
+        {
+            Id = id,
+            Amount = updateDto.Amount
+        };
+
+        var result = await _mediator.Send(command);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Verifica un pago bancario
     /// </summary>
     [HttpPost("{id}/verify")]

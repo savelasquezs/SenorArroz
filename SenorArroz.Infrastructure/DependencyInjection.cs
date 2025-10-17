@@ -10,6 +10,7 @@ using SenorArroz.Infrastructure.Services;
 using Microsoft.Extensions.Hosting;
 
 
+
 namespace SenorArroz.Infrastructure;
 
 public static class DependencyInjection

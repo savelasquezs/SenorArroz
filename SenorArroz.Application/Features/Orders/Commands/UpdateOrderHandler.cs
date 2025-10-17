@@ -12,12 +12,18 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
     private readonly IOrderRepository _orderRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IOrderBusinessRulesService _businessRules;
 
-    public UpdateOrderHandler(IOrderRepository orderRepository, IMapper mapper, ICurrentUser currentUser)
+    public UpdateOrderHandler(
+        IOrderRepository orderRepository, 
+        IMapper mapper, 
+        ICurrentUser currentUser,
+        IOrderBusinessRulesService businessRules)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _businessRules = businessRules;
     }
 
     public async Task<OrderDto> Handle(UpdateOrderCommand request, CancellationToken cancellationToken)
@@ -30,14 +36,13 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         if (_currentUser.Role != "superadmin" && existingOrder.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
-        // Validate role permissions
-        if (!new[] { "superadmin", "admin", "cashier" }.Contains(_currentUser.Role.ToLower()))
-            throw new BusinessException("No tienes permisos para actualizar pedidos");
+        // Validar si puede actualizar el pedido
+        if (!_businessRules.CanUpdateOrder(existingOrder, _currentUser.Role))
+            throw new BusinessException("No tienes permisos para modificar este pedido en su estado actual");
 
-        // Solo permitir actualizaciones si el pedido no está entregado o cancelado
-        if (existingOrder.Status == Domain.Enums.OrderStatus.Delivered || 
-            existingOrder.Status == Domain.Enums.OrderStatus.Cancelled)
-            throw new BusinessException("No se pueden actualizar pedidos entregados o cancelados");
+        // Validar si puede modificar productos
+        if (request.Order.OrderDetails != null && !_businessRules.CanUpdateOrderProducts(existingOrder, _currentUser.Role))
+            throw new BusinessException("No tienes permisos para modificar los productos de este pedido");
 
         _mapper.Map(request.Order, existingOrder);
         

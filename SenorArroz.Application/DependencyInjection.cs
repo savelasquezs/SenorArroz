@@ -1,6 +1,8 @@
 ﻿using AutoMapper;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using System.Reflection;
 
 namespace SenorArroz.Application
@@ -29,6 +31,9 @@ namespace SenorArroz.Application
 
             // FluentValidation - Para validaciones de DTOs
             // services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+
+            // Business Rules Service
+            services.AddScoped<IOrderBusinessRulesService, OrderBusinessRulesService>();
 
             return services;
         }

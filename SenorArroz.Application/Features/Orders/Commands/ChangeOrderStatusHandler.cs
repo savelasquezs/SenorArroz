@@ -12,12 +12,18 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     private readonly IOrderRepository _orderRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IOrderBusinessRulesService _businessRules;
 
-    public ChangeOrderStatusHandler(IOrderRepository orderRepository, IMapper mapper, ICurrentUser currentUser)
+    public ChangeOrderStatusHandler(
+        IOrderRepository orderRepository, 
+        IMapper mapper, 
+        ICurrentUser currentUser,
+        IOrderBusinessRulesService businessRules)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _businessRules = businessRules;
     }
 
     public async Task<OrderDto> Handle(ChangeOrderStatusCommand request, CancellationToken cancellationToken)
@@ -31,24 +37,13 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         if (_currentUser.Role != "superadmin" && existingOrder.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
-        // Validate role permissions for status change
-        var hasPermission = request.StatusChange.Status switch
-        {
-            Domain.Enums.OrderStatus.InPreparation => 
-                new[] { "superadmin", "admin", "cashier", "kitchen" }.Contains(_currentUser.Role.ToLower()),
-            Domain.Enums.OrderStatus.Ready => 
-                new[] { "superadmin", "admin", "kitchen" }.Contains(_currentUser.Role.ToLower()),
-            Domain.Enums.OrderStatus.OnTheWay => 
-                new[] { "superadmin", "admin", "cashier", "deliveryman" }.Contains(_currentUser.Role.ToLower()),
-            Domain.Enums.OrderStatus.Delivered => 
-                new[] { "superadmin", "admin", "deliveryman" }.Contains(_currentUser.Role.ToLower()),
-            Domain.Enums.OrderStatus.Cancelled => 
-                new[] { "superadmin", "admin" }.Contains(_currentUser.Role.ToLower()),
-            _ => new[] { "superadmin", "admin" }.Contains(_currentUser.Role.ToLower())
-        };
+        // Prevenir que domiciliarios usen este endpoint
+        if (_currentUser.Role.ToLower() == "deliveryman")
+            throw new BusinessException("Los domiciliarios deben usar los endpoints específicos de auto-asignación");
 
-        if (!hasPermission)
-            throw new BusinessException("No tienes permisos para cambiar el estado a " + request.StatusChange.Status);
+        // Validar transición de estado
+        if (!_businessRules.IsStatusTransitionValid(existingOrder.Status, request.StatusChange.Status, _currentUser.Role))
+            throw new BusinessException($"No puedes cambiar el estado de {existingOrder.Status} a {request.StatusChange.Status}");
 
         var order = await _orderRepository.ChangeStatusAsync(
             request.Id, 
