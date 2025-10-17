@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using SenorArroz.API.Extensions;
 using SenorArroz.API.Middleware;
 using SenorArroz.Application;
 using SenorArroz.Infrastructure;
@@ -16,7 +17,7 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 {
     options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
     options.JsonSerializerOptions.Converters.Add(
-        new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)
+        new JsonStringEnumConverter(new SnakeCaseNamingPolicy())
     );
 }); ;
 
