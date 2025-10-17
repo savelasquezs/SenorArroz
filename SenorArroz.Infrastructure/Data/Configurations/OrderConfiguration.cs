@@ -25,12 +25,12 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
 
         // Enum conversions
         builder.Property(o => o.Type).HasColumnName("type").HasConversion(
-             v => v.HasValue ? v.Value.ToString().ToLower() : null,           // Escribe en minúsculas
-                v => string.IsNullOrEmpty(v) ? null : Enum.Parse<OrderType>(v, true)
+             v => v.HasValue ? ToSnakeCase(v.Value.ToString()) : null,
+                v => string.IsNullOrEmpty(v) ? null : Enum.Parse<OrderType>(ToPascalCase(v), true)
             ).IsRequired().HasDefaultValue(OrderType.Delivery);
         builder.Property(o => o.Status).HasColumnName("status").HasConversion(
-             v => v.ToString().ToLower(),           // Escribe en minúsculas
-                v => Enum.Parse<OrderStatus>(v, true)
+             v => ToSnakeCase(v.ToString()),
+                v => Enum.Parse<OrderStatus>(ToPascalCase(v), true)
             ).IsRequired();
 
         builder.Property(o => o.DeliveryFee).HasColumnName("delivery_fee");
@@ -86,5 +86,65 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.HasIndex(o => o.Type).HasDatabaseName("idx_order_type");
         builder.HasIndex(o => o.CreatedAt).HasDatabaseName("idx_order_date");
         builder.HasIndex(o => o.DeliveryManId).HasDatabaseName("idx_order_delivery_man");
+    }
+
+    /// <summary>
+    /// Convierte PascalCase/camelCase a snake_case
+    /// Ejemplo: InPreparation -> in_preparation, OnTheWay -> on_the_way
+    /// </summary>
+    private static string ToSnakeCase(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return input;
+
+        var result = new System.Text.StringBuilder();
+        result.Append(char.ToLower(input[0]));
+
+        for (int i = 1; i < input.Length; i++)
+        {
+            if (char.IsUpper(input[i]))
+            {
+                result.Append('_');
+                result.Append(char.ToLower(input[i]));
+            }
+            else
+            {
+                result.Append(input[i]);
+            }
+        }
+
+        return result.ToString();
+    }
+
+    /// <summary>
+    /// Convierte snake_case a PascalCase
+    /// Ejemplo: in_preparation -> InPreparation, on_the_way -> OnTheWay
+    /// </summary>
+    private static string ToPascalCase(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return input;
+
+        var result = new System.Text.StringBuilder();
+        bool capitalizeNext = true;
+
+        foreach (char c in input)
+        {
+            if (c == '_')
+            {
+                capitalizeNext = true;
+            }
+            else if (capitalizeNext)
+            {
+                result.Append(char.ToUpper(c));
+                capitalizeNext = false;
+            }
+            else
+            {
+                result.Append(c);
+            }
+        }
+
+        return result.ToString();
     }
 }
