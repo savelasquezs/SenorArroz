@@ -11,4 +11,6 @@ public class GetOrdersQuery : IRequest<PagedResult<OrderDto>>
     public string? SortBy { get; set; }
     public string SortOrder { get; set; } = "asc";
     public int? BranchId { get; set; }
+    public DateTime? FromDate { get; set; }
+    public DateTime? ToDate { get; set; }
 }

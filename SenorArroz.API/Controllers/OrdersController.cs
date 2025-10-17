@@ -22,15 +22,25 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// Obtiene una lista paginada de pedidos
+    /// Obtiene una lista paginada de pedidos.
+    /// Por defecto filtra las órdenes del día actual.
     /// </summary>
+    /// <param name="page">Número de página (default: 1)</param>
+    /// <param name="pageSize">Tamaño de página (default: 10)</param>
+    /// <param name="sortBy">Campo por el cual ordenar</param>
+    /// <param name="sortOrder">Orden ascendente (asc) o descendente (desc)</param>
+    /// <param name="branchId">ID de sucursal para filtrar (solo superadmin)</param>
+    /// <param name="fromDate">Fecha inicial del filtro (default: inicio del día actual)</param>
+    /// <param name="toDate">Fecha final del filtro (default: fin del día actual)</param>
     [HttpGet]
     public async Task<ActionResult<PagedResult<OrderDto>>> GetOrders(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10,
         [FromQuery] string? sortBy = null,
         [FromQuery] string sortOrder = "asc",
-        [FromQuery] int? branchId = null)
+        [FromQuery] int? branchId = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
     {
         var query = new GetOrdersQuery
         {
@@ -38,7 +48,9 @@ public class OrdersController : ControllerBase
             PageSize = pageSize,
             SortBy = sortBy,
             SortOrder = sortOrder,
-            BranchId = branchId
+            BranchId = branchId,
+            FromDate = fromDate,
+            ToDate = toDate
         };
 
         var result = await _mediator.Send(query);

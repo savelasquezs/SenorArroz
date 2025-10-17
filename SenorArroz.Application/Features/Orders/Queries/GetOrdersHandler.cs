@@ -34,28 +34,38 @@ public class GetOrdersHandler : IRequestHandler<GetOrdersQuery, PagedResult<Orde
             branchFilter = request.BranchId;
         }
 
+        // Establecer filtros de fecha por defecto (día actual) si no se especifican
+        var fromDate = request.FromDate ?? DateTime.UtcNow.Date; // Inicio del día actual (00:00:00)
+        var toDate = request.ToDate ?? DateTime.UtcNow.Date.AddDays(1).AddTicks(-1); // Fin del día actual (23:59:59.999)
+
         var result = await _orderRepository.GetAllAsync(
             request.Page,
             request.PageSize,
             request.SortBy,
             request.SortOrder);
 
-        // Filter by branch if needed
-        var filteredItems = result.Items;
+        // Aplicar filtros
+        var filteredItems = result.Items.AsQueryable();
+        
+        // Filtrar por branch si es necesario
         if (branchFilter.HasValue)
         {
-            filteredItems = result.Items.Where(o => o.BranchId == branchFilter.Value).ToList();
+            filteredItems = filteredItems.Where(o => o.BranchId == branchFilter.Value);
         }
+
+        // Filtrar por rango de fechas
+        filteredItems = filteredItems.Where(o => o.CreatedAt >= fromDate && o.CreatedAt <= toDate);
+
+        var filteredList = filteredItems.ToList();
+        var totalFiltered = filteredList.Count;
 
         return new PagedResult<OrderDto>
         {
-            Items = _mapper.Map<List<OrderDto>>(filteredItems),
-            TotalCount = branchFilter.HasValue ? filteredItems.Count() : result.TotalCount,
+            Items = _mapper.Map<List<OrderDto>>(filteredList),
+            TotalCount = totalFiltered,
             Page = result.Page,
             PageSize = result.PageSize,
-            TotalPages = branchFilter.HasValue ? 
-                (int)Math.Ceiling((double)filteredItems.Count() / result.PageSize) : 
-                result.TotalPages
+            TotalPages = (int)Math.Ceiling((double)totalFiltered / result.PageSize)
         };
     }
 }
