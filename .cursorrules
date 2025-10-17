@@ -1,0 +1,389 @@
+# SenorArroz API - Cursor Rules
+
+## Arquitectura del Proyecto
+
+Este proyecto sigue **Clean Architecture** con 4 capas:
+
+1. **SenorArroz.API** - Presentation Layer (Controllers, Middleware)
+2. **SenorArroz.Application** - Application Layer (CQRS, DTOs, Mappings, Business Services)
+3. **SenorArroz.Domain** - Domain Layer (Entities, Enums, Interfaces, Exceptions)
+4. **SenorArroz.Infrastructure** - Infrastructure Layer (Repositories, DbContext, External Services)
+
+**Flujo de dependencias**: API → Application → Domain ← Infrastructure
+
+## Patrones Implementados
+
+### CQRS con MediatR
+- **Commands**: Operaciones que modifican datos (Create, Update, Delete)
+- **Queries**: Operaciones de solo lectura (Get, Search, List)
+- Todos los handlers están en `Application/Features/{Feature}/Commands` o `Queries`
+
+### Repository Pattern
+- Todas las interfaces en `Domain/Interfaces/Repositories`
+- Todas las implementaciones en `Infrastructure/Repositories`
+
+### DTO Pattern
+- Siempre usar DTOs para comunicación API-Cliente
+- NUNCA exponer entidades del dominio directamente
+- AutoMapper para conversiones Entity ↔ DTO
+
+## Convenciones de Código
+
+### Nombres de Archivos y Clases
+
+#### Commands
+```
+CreateOrderCommand.cs
+CreateOrderHandler.cs
+UpdateOrderCommand.cs
+UpdateOrderHandler.cs
+```
+
+#### Queries
+```
+GetOrdersQuery.cs
+GetOrdersHandler.cs
+GetOrderByIdQuery.cs
+GetOrderByIdHandler.cs
+```
+
+#### DTOs
+```
+CreateOrderDto.cs
+UpdateOrderDto.cs
+OrderDto.cs
+OrderWithDetailsDto.cs
+```
+
+### Estructura de Features
+```
+Application/Features/{Feature}/
+  ├── Commands/
+  │   ├── {Action}Command.cs
+  │   └── {Action}Handler.cs
+  ├── DTOs/
+  │   ├── Create{Feature}Dto.cs
+  │   ├── Update{Feature}Dto.cs
+  │   └── {Feature}Dto.cs
+  └── Queries/
+      ├── Get{Feature}Query.cs
+      └── Get{Feature}Handler.cs
+```
+
+## Manejo de Excepciones
+
+### Excepciones Personalizadas (SIEMPRE usar estas)
+
+```csharp
+// Para errores de lógica de negocio (400 Bad Request)
+throw new BusinessException("Mensaje descriptivo");
+
+// Para recursos no encontrados (404 Not Found)
+throw new NotFoundException("Recurso no encontrado");
+
+// Para errores de validación (400 Bad Request con detalles)
+throw new ValidationException(errors);
+
+// Para errores de autorización (401 Unauthorized)
+throw new UnauthorizedAccessException("No autorizado");
+```
+
+**NUNCA usar**:
+- `InvalidOperationException` (se convierte en 500)
+- `ArgumentException` (se convierte en 500)
+- Excepciones genéricas
+
+### Formato de Respuesta de Error
+```json
+{
+  "success": false,
+  "message": "Mensaje descriptivo del error",
+  "errors": { ... },  // Solo en ValidationException
+  "timestamp": "2024-10-17T15:30:00Z"
+}
+```
+
+## Base de Datos (PostgreSQL)
+
+### Convenciones de Nombres
+
+#### En Base de Datos (snake_case)
+```sql
+order_id
+branch_id
+delivery_man_id
+in_preparation
+on_the_way
+```
+
+#### En C# (PascalCase/camelCase)
+```csharp
+OrderId
+BranchId
+DeliveryManId
+InPreparation
+OnTheWay
+```
+
+### Conversión de Enums
+
+**CRÍTICO**: Los enums se almacenan en snake_case en PostgreSQL:
+
+```csharp
+// Entity Framework Configuration
+builder.Property(o => o.Status).HasConversion(
+    v => ToSnakeCase(v.ToString()),      // C# → DB: InPreparation → in_preparation
+    v => Enum.Parse<OrderStatus>(ToPascalCase(v), true) // DB → C#: in_preparation → InPreparation
+);
+```
+
+**JSON API usa camelCase** (configurado en Program.cs):
+```csharp
+new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)
+// Frontend recibe: "inPreparation", "onTheWay"
+```
+
+### Valores de DateTime
+- **SIEMPRE en UTC** (ApplicationDbContext convierte automáticamente antes de guardar)
+- Campos `CreatedAt` y `UpdatedAt` manejados por triggers de base de datos
+
+## Autenticación y Autorización
+
+### CurrentUser Service
+Siempre disponible en Handlers mediante `ICurrentUser`:
+
+```csharp
+public class SomeHandler
+{
+    private readonly ICurrentUser _currentUser;
+    
+    public async Task<Result> Handle(...)
+    {
+        var userId = _currentUser.Id;           // ID del usuario logueado
+        var role = _currentUser.Role;           // "admin", "cashier", "superadmin"
+        var branchId = _currentUser.BranchId;   // Sucursal del usuario
+        var isAuth = _currentUser.IsAuthenticated;
+    }
+}
+```
+
+### Filtros Automáticos por Sucursal
+
+**REGLA CRÍTICA**: Los usuarios (excepto superadmin) solo deben ver/modificar datos de su sucursal
+
+```csharp
+// Patrón estándar en Handlers
+int? branchFilter = null;
+if (_currentUser.Role != "superadmin")
+{
+    branchFilter = _currentUser.BranchId;  // Filtro automático
+}
+else if (request.BranchId.HasValue)
+{
+    branchFilter = request.BranchId;  // Superadmin puede filtrar por sucursal
+}
+```
+
+### Roles del Sistema
+
+```csharp
+public enum UserRole
+{
+    Superadmin,    // Control total del sistema
+    Admin,         // Control de sucursal
+    Cashier,       // Caja y pedidos
+    Kitchen,       // Cocina
+    Deliveryman    // Domiciliario
+}
+```
+
+## Paginación
+
+**SIEMPRE usar** `PagedResult<T>` para endpoints de listado:
+
+```csharp
+public record GetItemsQuery(
+    int Page = 1,
+    int PageSize = 10,
+    string? SortBy = null,
+    string SortOrder = "asc"
+) : IRequest<PagedResult<ItemDto>>;
+```
+
+Respuesta:
+```json
+{
+  "items": [...],
+  "totalCount": 100,
+  "page": 1,
+  "pageSize": 10,
+  "totalPages": 10
+}
+```
+
+## Validaciones de Negocio
+
+### OrderBusinessRulesService
+
+Para validaciones complejas de pedidos, usar el servicio de reglas de negocio:
+
+```csharp
+private readonly IOrderBusinessRulesService _businessRules;
+
+// Validar según estado y rol
+if (!_businessRules.CanUpdateOrder(order, _currentUser.Role))
+    throw new BusinessException("No tienes permisos...");
+
+if (!_businessRules.CanModifyPayments(order, _currentUser.Role))
+    throw new BusinessException("No puedes modificar pagos...");
+```
+
+## Creación de Nuevas Features
+
+### 1. Crear estructura de carpetas
+```
+Application/Features/{NewFeature}/
+  ├── Commands/
+  ├── Queries/
+  └── DTOs/
+```
+
+### 2. Crear Command
+```csharp
+// Command
+public class CreateItemCommand : IRequest<ItemDto>
+{
+    public CreateItemDto Item { get; set; } = null!;
+}
+
+// Handler
+public class CreateItemHandler : IRequestHandler<CreateItemCommand, ItemDto>
+{
+    private readonly IItemRepository _repository;
+    private readonly IMapper _mapper;
+    private readonly ICurrentUser _currentUser;
+
+    public async Task<ItemDto> Handle(CreateItemCommand request, CancellationToken ct)
+    {
+        // 1. Validaciones de negocio
+        // 2. Mapear DTO a Entity
+        var item = _mapper.Map<Item>(request.Item);
+        
+        // 3. Guardar en repositorio
+        var created = await _repository.CreateAsync(item);
+        
+        // 4. Retornar DTO
+        return _mapper.Map<ItemDto>(created);
+    }
+}
+```
+
+### 3. Crear Mapping Profile
+```csharp
+public class ItemMappingProfile : Profile
+{
+    public ItemMappingProfile()
+    {
+        CreateMap<Item, ItemDto>();
+        CreateMap<CreateItemDto, Item>()
+            .ForMember(dest => dest.Id, opt => opt.Ignore())
+            .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+            .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
+    }
+}
+```
+
+### 4. Crear Controller
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+public class ItemsController : ControllerBase
+{
+    private readonly IMediator _mediator;
+
+    [HttpPost]
+    [Authorize(Roles = "Admin,Superadmin")]
+    public async Task<ActionResult<ItemDto>> Create([FromBody] CreateItemDto dto)
+    {
+        var command = new CreateItemCommand { Item = dto };
+        var result = await _mediator.Send(command);
+        return CreatedAtAction(nameof(GetItem), new { id = result.Id }, result);
+    }
+}
+```
+
+## Reglas Importantes
+
+### 1. Inyección de Dependencias
+- **Application**: Registrar en `Application/DependencyInjection.cs`
+- **Infrastructure**: Registrar en `Infrastructure/DependencyInjection.cs`
+- MediatR auto-registra todos los handlers
+
+### 2. Entity Framework
+- **Todas** las entidades en `Domain/Entities`
+- **Todas** las configuraciones en `Infrastructure/Data/Configurations`
+- Usar Fluent API, NO Data Annotations
+
+### 3. Repository Pattern
+- Interface en `Domain/Interfaces/Repositories`
+- Implementación en `Infrastructure/Repositories`
+- Siempre incluir navegaciones necesarias (`.Include()`)
+
+### 4. Validaciones
+- Validaciones simples: En el Handler
+- Validaciones complejas/reutilizables: En Business Services
+- Validaciones de permisos: SIEMPRE verificar rol y sucursal
+
+### 5. Logging
+- Usar `ILogger<T>` inyectado
+- LogInformation para flujo normal
+- LogError para excepciones
+
+## Casos Especiales
+
+### Conversión de Enums con Guiones Bajos
+PostgreSQL usa snake_case con check constraints. Usar métodos helper:
+
+```csharp
+private static string ToSnakeCase(string input) { ... }
+private static string ToPascalCase(string input) { ... }
+```
+
+### Validaciones Temporales
+Para operaciones que dependen del "mismo día":
+
+```csharp
+private bool IsSameDay(DateTime orderCreatedAt)
+{
+    return orderCreatedAt.Date == DateTime.UtcNow.Date;
+}
+```
+
+### Filtros por Rol
+Diferentes roles tienen diferentes permisos. SIEMPRE validar:
+
+```csharp
+// Ejemplo: Cashier no puede modificar productos de pedidos entregados
+if (order.Status == OrderStatus.Delivered && 
+    _currentUser.Role == "cashier" && 
+    request.OrderDetails != null)
+{
+    throw new BusinessException("No tienes permisos...");
+}
+```
+
+## Testing
+
+- Unit tests en `SenorArroz.Tests/Unit/`
+- Integration tests en `SenorArroz.Tests/Integration/`
+- Usar fixtures para datos de prueba
+
+## Notas Finales
+
+- **NUNCA** exponer contraseñas o datos sensibles en logs
+- **SIEMPRE** validar permisos antes de operaciones
+- **SIEMPRE** usar excepciones personalizadas
+- **SIEMPRE** retornar PagedResult para listados
+- **SIEMPRE** verificar BranchId para usuarios no-superadmin
+
