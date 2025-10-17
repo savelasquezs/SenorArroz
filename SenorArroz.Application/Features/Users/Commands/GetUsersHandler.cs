@@ -5,9 +5,9 @@ using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Application.Features.Users.Queries;
 
-namespace SenorArroz.Application.Features.Users.Commands
+namespace SenorArroz.Application.Features.Users.Queries
 {
-    public class GetUsersHandler : IRequestHandler<GetUsersQuery, IEnumerable<UserDto>>
+    public class GetUsersHandler : IRequestHandler<GetUsersQuery, List<UserDto>>
     {
         private readonly IUserRepository _userRepository;
         private readonly IMapper _mapper;
@@ -18,13 +18,13 @@ namespace SenorArroz.Application.Features.Users.Commands
             _mapper = mapper;
         }
 
-        public async Task<IEnumerable<UserDto>> Handle(GetUsersQuery request, CancellationToken cancellationToken)
+        public async Task<List<UserDto>> Handle(GetUsersQuery request, CancellationToken cancellationToken)
         {
             // Obtener usuarios, opcionalmente filtrados por sucursal
             var users = await _userRepository.GetAllAsync(request.BranchId, cancellationToken);
 
             // Mapear a DTOs
-            return _mapper.Map<IEnumerable<UserDto>>(users);
+            return _mapper.Map<List<UserDto>>(users);
         }
     }
 
