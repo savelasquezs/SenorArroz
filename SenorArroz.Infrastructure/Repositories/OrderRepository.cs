@@ -618,10 +618,21 @@ public class OrderRepository : IOrderRepository
     {
         var order = await _context.Orders.FindAsync(orderId);
         if (order == null)
-            throw new ArgumentException("Order not found");
+            throw new ArgumentException("Pedido no encontrado");
 
-        if (!await CanAssignDeliveryManAsync(orderId, deliveryManId))
-            throw new InvalidOperationException("Cannot assign delivery man to this order");
+        // Validar que el pedido esté en estado Ready
+        if (order.Status != OrderStatus.Ready)
+            throw new InvalidOperationException($"El pedido debe estar en estado 'Ready' para asignar domiciliario. Estado actual: {order.Status}");
+
+        // Verificar si el domiciliario ya tiene pedidos en curso
+        var activeOrders = await _context.Orders
+            .Where(o => o.DeliveryManId == deliveryManId && 
+                      (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready))
+            .CountAsync();
+
+        // Máximo 3 pedidos activos por domiciliario
+        if (activeOrders >= 3)
+            throw new InvalidOperationException($"El domiciliario ya tiene {activeOrders} pedidos activos. No se pueden asignar más pedidos (máximo 3).");
 
         order.DeliveryManId = deliveryManId;
         await _context.SaveChangesAsync();

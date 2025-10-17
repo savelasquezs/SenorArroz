@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Features.Users.Commands;
 using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Application.Features.Users.Queries;
+using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
 
@@ -21,12 +22,26 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Obtiene todos los usuarios, opcionalmente filtrados por sucursal
+    /// Obtiene todos los usuarios, filtrados automáticamente por sucursal del usuario actual
     /// </summary>
+    /// <param name="branchId">ID de sucursal (solo para superadmin)</param>
+    /// <param name="role">Filtrar por rol (ej: Deliveryman, Cashier, etc.)</param>
+    /// <param name="active">Filtrar por usuarios activos/inactivos</param>
+    /// <param name="page">Número de página (default: 1)</param>
+    /// <param name="pageSize">Tamaño de página (default: 10)</param>
+    /// <param name="sortBy">Campo por el cual ordenar</param>
+    /// <param name="sortOrder">Orden ascendente (asc) o descendente (desc)</param>
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<UserDto>>> GetUsers([FromQuery] int? branchId = null)
+    public async Task<ActionResult<PagedResult<UserDto>>> GetUsers(
+        [FromQuery] int? branchId = null,
+        [FromQuery] string? role = null,
+        [FromQuery] bool? active = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string sortOrder = "asc")
     {
-        var query = new GetUsersQuery(branchId);
+        var query = new GetUsersQuery(branchId, role, active, page, pageSize, sortBy, sortOrder);
         var users = await _mediator.Send(query);
         return Ok(users);
     }
