@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -34,38 +35,56 @@ public class GetOrdersHandler : IRequestHandler<GetOrdersQuery, PagedResult<Orde
             branchFilter = request.BranchId;
         }
 
-        // Establecer filtros de fecha por defecto (día actual) si no se especifican
-        var fromDate = request.FromDate ?? DateTime.UtcNow.Date; // Inicio del día actual (00:00:00)
-        var toDate = request.ToDate ?? DateTime.UtcNow.Date.AddDays(1).AddTicks(-1); // Fin del día actual (23:59:59.999)
+        // Si el frontend envía fechas, las interpretamos como hora de Colombia y convertimos a UTC
+        // Si no envía, usamos el día actual en Colombia
+        DateTime fromDateUtc;
+        DateTime toDateUtc;
 
+        if (request.FromDate.HasValue)
+        {
+            // Frontend envió fecha, asumimos que es hora de Colombia
+            fromDateUtc = ColombiaTimeHelper.ConvertColombiaToUtc(request.FromDate.Value);
+        }
+        else
+        {
+            // Frontend no envió fecha, usamos inicio del día actual en Colombia
+            fromDateUtc = ColombiaTimeHelper.GetTodayStartInUtc();
+        }
+
+        if (request.ToDate.HasValue)
+        {
+            // Frontend envió fecha, asumimos que es hora de Colombia
+            toDateUtc = ColombiaTimeHelper.ConvertColombiaToUtc(request.ToDate.Value);
+        }
+        else if (request.FromDate.HasValue)
+        {
+            // Frontend envió FromDate pero no ToDate: usar el fin del mismo día de FromDate
+            var endOfFromDate = request.FromDate.Value.Date.AddDays(1).AddTicks(-1);
+            toDateUtc = ColombiaTimeHelper.ConvertColombiaToUtc(endOfFromDate);
+        }
+        else
+        {
+            // Frontend no envió ninguna fecha, usamos fin del día actual en Colombia
+            toDateUtc = ColombiaTimeHelper.GetTodayEndInUtc();
+        }
+
+        // Aplicar filtros directamente en la consulta SQL
         var result = await _orderRepository.GetAllAsync(
             request.Page,
             request.PageSize,
             request.SortBy,
-            request.SortOrder);
-
-        // Aplicar filtros
-        var filteredItems = result.Items.AsQueryable();
-        
-        // Filtrar por branch si es necesario
-        if (branchFilter.HasValue)
-        {
-            filteredItems = filteredItems.Where(o => o.BranchId == branchFilter.Value);
-        }
-
-        // Filtrar por rango de fechas
-        filteredItems = filteredItems.Where(o => o.CreatedAt >= fromDate && o.CreatedAt <= toDate);
-
-        var filteredList = filteredItems.ToList();
-        var totalFiltered = filteredList.Count;
+            request.SortOrder,
+            fromDateUtc,    // Filtro de fecha inicio en UTC
+            toDateUtc,      // Filtro de fecha fin en UTC
+            branchFilter);  // Filtro de sucursal
 
         return new PagedResult<OrderDto>
         {
-            Items = _mapper.Map<List<OrderDto>>(filteredList),
-            TotalCount = totalFiltered,
+            Items = _mapper.Map<List<OrderDto>>(result.Items),
+            TotalCount = result.TotalCount,
             Page = result.Page,
             PageSize = result.PageSize,
-            TotalPages = (int)Math.Ceiling((double)totalFiltered / result.PageSize)
+            TotalPages = result.TotalPages
         };
     }
 }

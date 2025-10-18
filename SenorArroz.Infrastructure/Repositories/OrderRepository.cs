@@ -59,7 +59,7 @@ public class OrderRepository : IOrderRepository
             .FirstOrDefaultAsync(o => o.Id == id);
     }
 
-    public async Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc")
+    public async Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null)
     {
         var query = _context.Orders
             .Include(o => o.Branch)
@@ -69,6 +69,22 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .AsQueryable();
+
+        // Filtrar por sucursal si se especifica
+        if (branchId.HasValue)
+        {
+            query = query.Where(o => o.BranchId == branchId.Value);
+        }
+
+        // Filtrar por rango de fechas si se especifica
+        if (fromDate.HasValue)
+        {
+            query = query.Where(o => o.CreatedAt >= fromDate.Value);
+        }
+        if (toDate.HasValue)
+        {
+            query = query.Where(o => o.CreatedAt <= toDate.Value);
+        }
 
         // Aplicar ordenamiento
         query = ApplySorting(query, sortBy, sortOrder);

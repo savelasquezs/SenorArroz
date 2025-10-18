@@ -10,7 +10,7 @@ public interface IOrderRepository
     Task<Order?> GetByIdAsync(int id);
     Task<Order?> GetByIdWithDetailsAsync(int id);
     Task<Order?> GetByIdWithFullDetailsAsync(int id);
-    Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc");
+    Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null);
     Task<Order> CreateAsync(Order order);
     Task<Order> UpdateAsync(Order order);
     Task DeleteAsync(int id);
