@@ -100,7 +100,9 @@ public class OrderRepository : IOrderRepository
     {
         _context.Orders.Update(order);
         await _context.SaveChangesAsync();
-        return order;
+        
+        // Recargar la orden con todas las navegaciones para devolver datos completos
+        return await GetByIdAsync(order.Id) ?? order;
     }
 
     public async Task DeleteAsync(int id)
