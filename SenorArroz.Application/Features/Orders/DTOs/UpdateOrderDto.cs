@@ -5,6 +5,7 @@ namespace SenorArroz.Application.Features.Orders.DTOs;
 public class UpdateOrderDto
 {
     public int? CustomerId { get; set; }
+    public OrderType? Type { get; set; }
     public int? AddressId { get; set; }
     public int? LoyaltyRuleId { get; set; }
     public string? GuestName { get; set; }

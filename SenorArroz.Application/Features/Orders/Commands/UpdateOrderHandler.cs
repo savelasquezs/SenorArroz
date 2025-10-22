@@ -44,7 +44,20 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         if (request.Order.OrderDetails != null && !_businessRules.CanUpdateOrderProducts(existingOrder, _currentUser.Role))
             throw new BusinessException("No tienes permisos para modificar los productos de este pedido");
 
+        // Apply the mapping
         _mapper.Map(request.Order, existingOrder);
+
+        // Handle order type changes - clear delivery fields when changing to Onsite
+        if (request.Order.Type.HasValue)
+        {
+            if (request.Order.Type == Domain.Enums.OrderType.Onsite)
+            {
+                // Clear all delivery-related fields for onsite orders
+                existingOrder.AddressId = null;
+                existingOrder.DeliveryFee = null;
+                existingOrder.DeliveryManId = null;
+            }
+        }
         
         var updatedOrder = await _orderRepository.UpdateAsync(existingOrder);
         return _mapper.Map<OrderDto>(updatedOrder);
