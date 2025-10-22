@@ -37,9 +37,23 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.ReservedFor).HasColumnName("reserved_for");
         builder.Property(o => o.StatusTimes).HasColumnName("status_times").HasColumnType("jsonb");
 
-        builder.Property(o => o.Subtotal).HasColumnName("subtotal").HasDefaultValue(0);
-        builder.Property(o => o.Total).HasColumnName("total").HasDefaultValue(0);
-        builder.Property(o => o.DiscountTotal).HasColumnName("discount_total").HasDefaultValue(0);
+        builder.Property(o => o.Subtotal)
+            .HasColumnName("subtotal")
+            .HasDefaultValue(0)
+            .ValueGeneratedOnAddOrUpdate()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+
+        builder.Property(o => o.Total)
+            .HasColumnName("total")
+            .HasDefaultValue(0)
+            .ValueGeneratedOnAddOrUpdate()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+
+        builder.Property(o => o.DiscountTotal)
+            .HasColumnName("discount_total")
+            .HasDefaultValue(0)
+            .ValueGeneratedOnAddOrUpdate()
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
         builder.Property(o => o.Notes).HasColumnName("notes").HasMaxLength(200);
         builder.Property(o => o.CancelledReason).HasColumnName("cancelled_reason").HasMaxLength(200);
 

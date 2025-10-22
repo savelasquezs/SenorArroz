@@ -10,17 +10,20 @@ namespace SenorArroz.Application.Features.Orders.Commands;
 public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 {
     private readonly IOrderRepository _orderRepository;
+    private readonly IAddressRepository _addressRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly IOrderBusinessRulesService _businessRules;
 
     public UpdateOrderHandler(
         IOrderRepository orderRepository, 
+        IAddressRepository addressRepository,
         IMapper mapper, 
         ICurrentUser currentUser,
         IOrderBusinessRulesService businessRules)
     {
         _orderRepository = orderRepository;
+        _addressRepository = addressRepository;
         _mapper = mapper;
         _currentUser = currentUser;
         _businessRules = businessRules;
@@ -56,6 +59,16 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
                 existingOrder.AddressId = null;
                 existingOrder.DeliveryFee = null;
                 existingOrder.DeliveryManId = null;
+            }
+        }
+
+        // Handle address changes - update delivery fee from address if not provided
+        if (request.Order.AddressId.HasValue && !request.Order.DeliveryFee.HasValue)
+        {
+            var address = await _addressRepository.GetByIdAsync(request.Order.AddressId.Value);
+            if (address != null)
+            {
+                existingOrder.DeliveryFee = address.DeliveryFee;
             }
         }
         
