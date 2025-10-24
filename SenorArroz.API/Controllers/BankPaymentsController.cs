@@ -117,16 +117,15 @@ public class BankPaymentsController : ControllerBase
     }
 
     /// <summary>
-    /// Verifica un pago bancario
+    /// Verifica un pago bancario (usa fecha automática del trigger de base de datos)
     /// </summary>
     [HttpPost("{id}/verify")]
     [Authorize(Roles = "Admin,Superadmin")]
-    public async Task<ActionResult> VerifyBankPayment(int id, [FromBody] VerifyBankPaymentDto verifyDto)
+    public async Task<ActionResult> VerifyBankPayment(int id)
     {
         var command = new VerifyBankPaymentCommand
         {
-            Id = id,
-            VerifiedAt = verifyDto.VerifiedAt
+            Id = id
         };
 
         var result = await _mediator.Send(command);

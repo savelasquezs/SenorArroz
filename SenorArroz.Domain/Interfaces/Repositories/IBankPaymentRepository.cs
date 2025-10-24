@@ -27,7 +27,7 @@ public interface IBankPaymentRepository
     Task<bool> ExistsAsync(int id);
 
     // Verification methods
-    Task<bool> VerifyPaymentAsync(int id, DateTime verifiedAt);
+    Task<bool> VerifyPaymentAsync(int id);
     Task<bool> UnverifyPaymentAsync(int id);
 
     // Statistics

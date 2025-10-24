@@ -28,6 +28,6 @@ public class VerifyBankPaymentHandler : IRequestHandler<VerifyBankPaymentCommand
         if (_currentUser.Role != "superadmin" && bankPayment.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para verificar este pago");
 
-        return await _bankPaymentRepository.VerifyPaymentAsync(request.Id, request.VerifiedAt);
+        return await _bankPaymentRepository.VerifyPaymentAsync(request.Id);
     }
 }

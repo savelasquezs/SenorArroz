@@ -170,7 +170,7 @@ public class BankPaymentRepository : IBankPaymentRepository
     }
 
     // Verification methods
-    public async Task<bool> VerifyPaymentAsync(int id, DateTime verifiedAt)
+    public async Task<bool> VerifyPaymentAsync(int id)
     {
         var bankPayment = await _context.BankPayments.FindAsync(id);
         if (bankPayment == null)
