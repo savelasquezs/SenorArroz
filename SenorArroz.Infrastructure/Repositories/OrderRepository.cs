@@ -73,6 +73,13 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Address)
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
+            .Include(o => o.BankPayments)
+                .ThenInclude(bp => bp.Bank)
+                    .ThenInclude(b => b.Branch)
+            .Include(o => o.AppPayments)
+                .ThenInclude(ap => ap.App)
+                    .ThenInclude(a => a.Bank)
+                        .ThenInclude(b => b.Branch)
             .AsQueryable();
 
         // Filtrar por sucursal si se especifica

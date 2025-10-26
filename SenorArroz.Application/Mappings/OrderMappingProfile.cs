@@ -21,7 +21,9 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.DeliveryManName, opt => opt.MapFrom(src => src.DeliveryMan != null ? src.DeliveryMan.Name : null))
             .ForMember(dest => dest.TypeDisplayName, opt => opt.MapFrom(src => GetTypeDisplayName(src.Type)))
             .ForMember(dest => dest.StatusDisplayName, opt => opt.MapFrom(src => GetStatusDisplayName(src.Status)))
-            .ForMember(dest => dest.StatusTimes, opt => opt.MapFrom(src => src.GetStatusTimes()));
+            .ForMember(dest => dest.StatusTimes, opt => opt.MapFrom(src => src.GetStatusTimes()))
+            .ForMember(dest => dest.BankPayments, opt => opt.MapFrom(src => src.BankPayments))
+            .ForMember(dest => dest.AppPayments, opt => opt.MapFrom(src => src.AppPayments));
 
         // Order -> OrderWithDetailsDto
         CreateMap<Order, OrderWithDetailsDto>()
