@@ -2,6 +2,7 @@ using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -13,17 +14,20 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly IOrderBusinessRulesService _businessRules;
+    private readonly IOrderNotificationService _notificationService;
 
     public ChangeOrderStatusHandler(
         IOrderRepository orderRepository, 
         IMapper mapper, 
         ICurrentUser currentUser,
-        IOrderBusinessRulesService businessRules)
+        IOrderBusinessRulesService businessRules,
+        IOrderNotificationService notificationService)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
         _businessRules = businessRules;
+        _notificationService = notificationService;
     }
 
     public async Task<OrderDto> Handle(ChangeOrderStatusCommand request, CancellationToken cancellationToken)
@@ -50,6 +54,14 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             request.StatusChange.Status, 
             request.StatusChange.Reason);
 
-        return _mapper.Map<OrderDto>(order);
+        var orderDto = _mapper.Map<OrderDto>(order);
+
+        // Notificar a domiciliarios si el estado cambia a Ready
+        if (request.StatusChange.Status == OrderStatus.Ready)
+        {
+            await _notificationService.NotifyOrderReadyToDelivery(orderDto);
+        }
+
+        return orderDto;
     }
 }

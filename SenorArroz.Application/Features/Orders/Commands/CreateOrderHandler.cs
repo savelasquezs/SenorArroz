@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -17,6 +18,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<CreateOrderHandler> _logger;
+    private readonly IOrderNotificationService _notificationService;
 
     public CreateOrderHandler(
         IOrderRepository orderRepository, 
@@ -24,7 +26,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         IAppPaymentRepository appPaymentRepository,
         IMapper mapper, 
         ICurrentUser currentUser,
-        ILogger<CreateOrderHandler> logger)
+        ILogger<CreateOrderHandler> logger,
+        IOrderNotificationService notificationService)
     {
         _orderRepository = orderRepository;
         _bankPaymentRepository = bankPaymentRepository;
@@ -32,6 +35,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         _mapper = mapper;
         _currentUser = currentUser;
         _logger = logger;
+        _notificationService = notificationService;
     }
 
     public async Task<OrderDto> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
@@ -147,6 +151,15 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             }
         }
 
-        return _mapper.Map<OrderDto>(createdOrder);
+        var result = _mapper.Map<OrderDto>(createdOrder);
+
+        // Notificar a cocina si es pedido nuevo (no reserva futura)
+        if (result.Type != OrderType.Reservation || 
+            (result.ReservedFor.HasValue && result.ReservedFor.Value <= DateTime.UtcNow.AddHours(2)))
+        {
+            await _notificationService.NotifyNewOrderToKitchen(result);
+        }
+
+        return result;
     }
 }

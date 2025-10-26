@@ -793,4 +793,31 @@ public class OrderRepository : IOrderRepository
             _ => isDescending ? query.OrderByDescending(o => o.CreatedAt) : query.OrderBy(o => o.CreatedAt)
         };
     }
+
+    public async Task<IEnumerable<Order>> GetReservationsDueForPreparation(
+        DateTime fromTime, 
+        DateTime toTime, 
+        OrderStatus status)
+    {
+        return await _context.Orders
+            .Include(o => o.Branch)
+            .Include(o => o.TakenBy)
+            .Include(o => o.Customer)
+            .Include(o => o.Address)
+            .Include(o => o.OrderDetails)
+                .ThenInclude(od => od.Product)
+            .Include(o => o.BankPayments)
+                .ThenInclude(bp => bp.Bank)
+                    .ThenInclude(b => b.Branch)
+            .Include(o => o.AppPayments)
+                .ThenInclude(ap => ap.App)
+                    .ThenInclude(a => a.Bank)
+                        .ThenInclude(b => b.Branch)
+            .Where(o => o.Type == OrderType.Reservation
+                     && o.Status == status
+                     && o.ReservedFor.HasValue
+                     && o.ReservedFor.Value >= fromTime
+                     && o.ReservedFor.Value <= toTime)
+            .ToListAsync();
+    }
 }

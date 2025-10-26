@@ -72,4 +72,10 @@ public interface IOrderRepository
         string? sortBy = null,
         string? sortOrder = "asc"
     );
+    
+    // Reservas
+    Task<IEnumerable<Order>> GetReservationsDueForPreparation(
+        DateTime fromTime, 
+        DateTime toTime, 
+        OrderStatus status);
 }
