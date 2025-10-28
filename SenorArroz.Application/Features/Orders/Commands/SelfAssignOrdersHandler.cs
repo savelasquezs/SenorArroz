@@ -79,6 +79,10 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
 
             // Assign order to current user
             var assignedOrder = await _orderRepository.AssignDeliveryManAsync(orderId, userId);
+            
+            // Cambiar estado a OnTheWay automáticamente después de asignar
+            assignedOrder = await _orderRepository.ChangeStatusAsync(orderId, Domain.Enums.OrderStatus.OnTheWay, null);
+            
             assignedOrders.Add(_mapper.Map<OrderDto>(assignedOrder));
         }
 

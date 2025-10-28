@@ -2,6 +2,7 @@ using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -38,6 +39,15 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
         var order = await _orderRepository.AssignDeliveryManAsync(
             request.Id, 
             request.Assignment.DeliveryManId);
+
+        // Cambiar estado a OnTheWay si estaba en Ready
+        if (order.Status == Domain.Enums.OrderStatus.Ready)
+        {
+            order = await _orderRepository.ChangeStatusAsync(
+                request.Id, 
+                Domain.Enums.OrderStatus.OnTheWay, 
+                null);
+        }
 
         return _mapper.Map<OrderDto>(order);
     }

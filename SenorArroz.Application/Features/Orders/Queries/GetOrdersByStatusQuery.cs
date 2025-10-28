@@ -8,6 +8,7 @@ namespace SenorArroz.Application.Features.Orders.Queries;
 public class GetOrdersByStatusQuery : IRequest<PagedResult<OrderDto>>
 {
     public OrderStatus Status { get; set; }
+    public OrderType? TypeFilter { get; set; }
     public int? BranchId { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 10;

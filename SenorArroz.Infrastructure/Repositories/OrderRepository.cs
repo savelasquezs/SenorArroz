@@ -203,7 +203,7 @@ public class OrderRepository : IOrderRepository
         };
     }
 
-    public async Task<PagedResult<Order>> GetByStatusAsync(OrderStatus status, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc")
+    public async Task<PagedResult<Order>> GetByStatusAsync(OrderStatus status, OrderType? typeFilter = null, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc")
     {
         var query = _context.Orders
             .Include(o => o.Branch)
@@ -214,6 +214,9 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.DeliveryMan)
             .Where(o => o.Status == status)
             .AsQueryable();
+
+        if (typeFilter.HasValue)
+            query = query.Where(o => o.Type == typeFilter.Value);
 
         if (branchId.HasValue)
             query = query.Where(o => o.BranchId == branchId);
@@ -409,7 +412,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.DeliveryManId == deliveryManId && 
-                      (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready))
+                      (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready) &&
+                      o.Type == OrderType.Delivery)
             .OrderBy(o => o.CreatedAt)
             .ToListAsync();
     }
@@ -423,7 +427,9 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Address)
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
-            .Where(o => o.Status == OrderStatus.Ready && o.DeliveryManId == null)
+            .Where(o => o.Status == OrderStatus.Ready && 
+                       o.DeliveryManId == null && 
+                       o.Type == OrderType.Delivery)
             .AsQueryable();
 
         if (branchId.HasValue)
@@ -647,7 +653,9 @@ public class OrderRepository : IOrderRepository
             order.CancelledReason = reason;
 
         await _context.SaveChangesAsync();
-        return order;
+        
+        // Recargar la orden con todas las relaciones para devolver datos completos
+        return await GetByIdAsync(orderId) ?? order;
     }
 
     public async Task<Order> AssignDeliveryManAsync(int orderId, int deliveryManId)

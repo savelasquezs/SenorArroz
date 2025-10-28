@@ -36,6 +36,7 @@ public class GetOrdersByStatusHandler : IRequestHandler<GetOrdersByStatusQuery, 
 
         var result = await _orderRepository.GetByStatusAsync(
             request.Status,
+            request.TypeFilter,
             branchFilter,
             request.Page,
             request.PageSize,

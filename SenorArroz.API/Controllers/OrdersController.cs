@@ -283,6 +283,7 @@ public class OrdersController : ControllerBase
         var query = new GetOrdersByStatusQuery
         {
             Status = OrderStatus.Ready,
+            TypeFilter = OrderType.Delivery, // Solo mostrar pedidos de tipo Delivery
             BranchId = branchId,
             Page = page,
             PageSize = pageSize
