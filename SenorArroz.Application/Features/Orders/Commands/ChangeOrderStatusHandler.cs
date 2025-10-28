@@ -41,13 +41,30 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         if (_currentUser.Role != "superadmin" && existingOrder.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
-        // Prevenir que domiciliarios usen este endpoint
+        // Validación especial para domiciliarios
         if (_currentUser.Role.ToLower() == "deliveryman")
-            throw new BusinessException("Los domiciliarios deben usar los endpoints específicos de auto-asignación");
+        {
+            // Verificar que el pedido esté asignado a este domiciliario
+            if (!existingOrder.DeliveryManId.HasValue || existingOrder.DeliveryManId.Value != _currentUser.Id)
+                throw new BusinessException("Solo puedes cambiar el estado de pedidos asignados a ti");
 
-        // Validar transición de estado
-        if (!_businessRules.IsStatusTransitionValid(existingOrder, request.StatusChange.Status, _currentUser.Role))
-            throw new BusinessException($"No puedes cambiar el estado de {existingOrder.Status} a {request.StatusChange.Status}");
+            // Solo permitir transiciones OnTheWay ↔ Delivered
+            var allowedTransitions = new[] 
+            { 
+                (OrderStatus.OnTheWay, OrderStatus.Delivered),
+                (OrderStatus.Delivered, OrderStatus.OnTheWay) 
+            };
+            
+            var transition = (existingOrder.Status, request.StatusChange.Status);
+            if (!allowedTransitions.Contains(transition))
+                throw new BusinessException("Los domiciliarios solo pueden cambiar entre estados OnTheWay y Delivered");
+        }
+        else
+        {
+            // Validar transición de estado para otros roles
+            if (!_businessRules.IsStatusTransitionValid(existingOrder, request.StatusChange.Status, _currentUser.Role))
+                throw new BusinessException($"No puedes cambiar el estado de {existingOrder.Status} a {request.StatusChange.Status}");
+        }
 
         var order = await _orderRepository.ChangeStatusAsync(
             request.Id, 

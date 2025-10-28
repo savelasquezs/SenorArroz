@@ -106,8 +106,8 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
                 return IsValidKitchenTransition(order.Status, newStatus);
 
             case "deliveryman":
-                // Los domiciliarios NO deben usar este endpoint
-                return false;
+                // Los domiciliarios solo pueden cambiar entre OnTheWay ↔ Delivered
+                return IsValidDeliverymanTransition(order.Status, newStatus);
 
             default:
                 return false;
@@ -150,6 +150,20 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
         {
             (OrderStatus.Taken, OrderStatus.InPreparation) => true,
             (OrderStatus.InPreparation, OrderStatus.Ready) => true,
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Valida transiciones permitidas para domiciliarios
+    /// </summary>
+    private bool IsValidDeliverymanTransition(OrderStatus current, OrderStatus next)
+    {
+        // Domiciliarios solo pueden cambiar entre OnTheWay ↔ Delivered
+        return (current, next) switch
+        {
+            (OrderStatus.OnTheWay, OrderStatus.Delivered) => true,
+            (OrderStatus.Delivered, OrderStatus.OnTheWay) => true,
             _ => false
         };
     }
