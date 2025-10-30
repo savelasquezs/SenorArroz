@@ -210,6 +210,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
             .Include(o => o.Address)
+                .ThenInclude(a => a.Neighborhood)
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.Status == status)
@@ -409,6 +410,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
             .Include(o => o.Address)
+                .ThenInclude(a => a.Neighborhood)
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.DeliveryManId == deliveryManId && 
@@ -425,6 +427,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
             .Include(o => o.Address)
+                .ThenInclude(a => a.Neighborhood)
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
             .Where(o => o.Status == OrderStatus.Ready && 

@@ -16,6 +16,8 @@ public class OrderDto
     public string? CustomerPhone { get; set; }
     public int? AddressId { get; set; }
     public string? AddressDescription { get; set; }
+    public int? NeighborhoodId { get; set; }
+    public string? NeighborhoodName { get; set; }
     public int? LoyaltyRuleId { get; set; }
     public string? LoyaltyRuleName { get; set; }
     public int? DeliveryManId { get; set; }
