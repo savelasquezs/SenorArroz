@@ -588,14 +588,8 @@ public class OrderRepository : IOrderRepository
              order.Status != OrderStatus.Delivered))
             return false;
 
-        // Verificar si el domiciliario ya tiene pedidos en curso
-        var activeOrders = await _context.Orders
-            .Where(o => o.DeliveryManId == deliveryManId && 
-                      (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready))
-            .CountAsync();
-
-        // Máximo 3 pedidos activos por domiciliario
-        return activeOrders < 3;
+        // No hay límite de pedidos activos por domiciliario
+        return true;
     }
 
     public async Task<bool> CanCancelOrderAsync(int orderId)
@@ -672,16 +666,6 @@ public class OrderRepository : IOrderRepository
             order.Status != OrderStatus.OnTheWay && 
             order.Status != OrderStatus.Delivered)
             throw new BusinessException($"El pedido debe estar en estado 'Ready', 'OnTheWay' o 'Delivered' para asignar/cambiar domiciliario. Estado actual: {order.Status}");
-
-        // Verificar si el domiciliario ya tiene pedidos en curso
-        var activeOrders = await _context.Orders
-            .Where(o => o.DeliveryManId == deliveryManId && 
-                      (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready))
-            .CountAsync();
-
-        // Máximo 3 pedidos activos por domiciliario
-        if (activeOrders >= 3)
-            throw new BusinessException($"El domiciliario ya tiene {activeOrders} pedidos activos. No se pueden asignar más pedidos (máximo 3).");
 
         order.DeliveryManId = deliveryManId;
         await _context.SaveChangesAsync();

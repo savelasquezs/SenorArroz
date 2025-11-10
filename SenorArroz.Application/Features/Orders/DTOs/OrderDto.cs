@@ -18,6 +18,8 @@ public class OrderDto
     public string? AddressDescription { get; set; }
     public int? NeighborhoodId { get; set; }
     public string? NeighborhoodName { get; set; }
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
     public int? LoyaltyRuleId { get; set; }
     public string? LoyaltyRuleName { get; set; }
     public int? DeliveryManId { get; set; }

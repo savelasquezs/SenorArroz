@@ -71,11 +71,7 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             if (order.DeliveryManId.HasValue)
                 throw new BusinessException($"El pedido {orderId} ya está asignado a otro domiciliario");
 
-            // Check if deliveryman can handle more orders (max 3 active orders)
-            var activeOrdersCount = await _orderRepository.GetActiveOrdersCountForDeliveryManAsync(userId);
-
-            if (activeOrdersCount >= 10)
-                throw new BusinessException("Ya tienes el máximo de pedidos activos (10). Completa algunas entregas antes de tomar más pedidos");
+            // Ya no existe límite de pedidos activos por domiciliario
 
             // Assign order to current user
             var assignedOrder = await _orderRepository.AssignDeliveryManAsync(orderId, userId);
