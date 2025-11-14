@@ -1,0 +1,12 @@
+# Este archivo es un ejemplo para desarrollo local
+# Copia este archivo como docker-compose.override.yml para personalizar tu entorno
+
+version: '3.8'
+
+services:
+  api:
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      # Sobrescribe variables de entorno aquí si es necesario
+      # - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=senor_arroz_dev;Username=postgres;Password=1234
+

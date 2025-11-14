@@ -171,15 +171,13 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment())
+// Swagger habilitado en Development y Production para facilitar testing
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "SenorArroz API v1");
-        c.RoutePrefix = string.Empty; // Serve Swagger UI at the app's root
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "SenorArroz API v1");
+    c.RoutePrefix = string.Empty; // Serve Swagger UI at the app's root
+});
 
 // Global exception handling middleware
 app.UseMiddleware<GlobalExceptionMiddleware>();

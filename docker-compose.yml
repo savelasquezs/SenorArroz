@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: senorarroz-postgres
+    environment:
+      POSTGRES_DB: senor_arroz
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./Scripts:/docker-entrypoint-initdb.d
+    networks:
+      - senorarroz-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # API Application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: senorarroz-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=senor_arroz;Username=postgres;Password=1234
+      - JwtSettings__SecretKey=IsmaelHermoso2023andPaolaHermosaEsposa2024andSantiagoPapasitoTodoeltiempo
+      - JwtSettings__ExpiryInHours=24
+      - JwtSettings__AccessTokenExpirationMinutes=480
+      - JwtSettings__Issuer=SenorArroz.API
+      - JwtSettings__Audience=SenorArroz.Client
+      - JwtSettings__RefreshTokenExpirationDays=7
+      - EmailSettings__SmtpHost=smtp.gmail.com
+      - EmailSettings__SmtpPort=587
+      - EmailSettings__SmtpUsername=arrozcastilla@gmail.com
+      - EmailSettings__SmtpPassword=nifg ksbt cdbn mpcc
+      - EmailSettings__FromEmail=arrozcastilla@gmail.com
+      - EmailSettings__FromName=SenorArroz
+      - EmailSettings__EnableSsl=true
+      - FrontendSettings__ResetPasswordUrl=http://localhost:5173/reset-password
+    ports:
+      - "5000:8080"
+      - "5001:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - senorarroz-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ../senorArrozFront  # Ruta relativa al frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:5000/api
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
+        VITE_GOOGLE_MAPS_MAP_ID: ${VITE_GOOGLE_MAPS_MAP_ID:-}
+    container_name: senorarroz-frontend
+    ports:
+      - "5173:80"
+    networks:
+      - senorarroz-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  senorarroz-network:
+    driver: bridge
+
