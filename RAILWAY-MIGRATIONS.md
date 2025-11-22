@@ -1,94 +1,79 @@
-# Migraciones de Base de Datos en Railway
+# Migración de Base de Datos en Railway
 
 ## Información del Proyecto
 
 - **Proyecto**: señor arroz c# vue js
 - **Project ID**: 5cb08ee8-0129-4d5b-aba8-60b34cfeee58
 - **Base de Datos**: railway
+- **Script SQL**: `railway-initial-utf8.sql`
 
 ## Prerrequisitos
 
-1. Tener `dotnet-ef` instalado globalmente:
-   ```bash
-   dotnet tool install --global dotnet-ef
-   ```
+1. Tener Railway CLI instalado y configurado
+2. Tener el proyecto vinculado a Railway
+3. Tener acceso al servicio PostgreSQL en Railway
 
-2. Tener acceso al connection string de Railway PostgreSQL
+## Connection String
 
-3. Estar en el directorio del proyecto:
-   ```bash
-   cd senorArrozAPI
-   ```
-
-## Connection String para Migraciones
-
-### Para conexiones desde tu máquina local
-
-Necesitas el **host público** de Railway PostgreSQL. El connection string interno (`postgres.railway.internal`) no funciona desde fuera de Railway.
-
-**Formato:**
+### Formato Railway (DATABASE_URL)
 ```
-Host=HOST_PUBLICO;Port=5432;Database=railway;Username=postgres;Password=ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg
+postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@postgres.railway.internal:5432/railway
 ```
 
-**Ejemplo (reemplaza HOST_PUBLICO con el host real):**
+### Formato .NET (para variables de entorno)
 ```
-Host=containers-us-west-xxx.railway.app;Port=5432;Database=railway;Username=postgres;Password=ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg
+Host=postgres.railway.internal;Port=5432;Database=railway;Username=postgres;Password=ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg
 ```
 
-### Cómo obtener el host público
+## Pasos para Ejecutar la Migración
 
-1. Ve a Railway Dashboard → Tu proyecto → Servicio PostgreSQL
-2. Pestaña "Variables"
-3. Busca `PGHOST` o busca en las variables públicas
-4. O usa Railway CLI: `railway variables`
+### Paso 1: Conectarse a Railway PostgreSQL
 
-## Comando para Ejecutar Migraciones
-
-### Comando Completo
+Desde tu máquina local, en el directorio del proyecto:
 
 ```bash
-dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API --connection "Host=HOST_PUBLICO;Port=5432;Database=railway;Username=postgres;Password=ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg"
-```
+# Asegúrate de estar en el directorio correcto
+cd senorArrozAPI
 
-### Ejemplo con Host Público
-
-```bash
-dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API --connection "Host=containers-us-west-xxx.railway.app;Port=5432;Database=railway;Username=postgres;Password=ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg"
-```
-
-## Orden de Migraciones
-
-Las migraciones se ejecutarán en el siguiente orden:
-
-1. **InitialSchema** (20251122122758_InitialSchema)
-   - Crea toda la estructura de la base de datos (tablas, índices, foreign keys)
-
-2. **CreateDatabaseFunctionsAndTriggers** (20251122123044_CreateDatabaseFunctionsAndTriggers)
-   - Crea funciones y triggers de PostgreSQL
-
-3. **SeedInitialData** (20251122123208_SeedInitialData)
-   - Inserta datos iniciales (sucursal, usuarios, barrios, banco, app, clientes, productos)
-
-## Verificar Migraciones Aplicadas
-
-### Desde Railway CLI
-
-```bash
+# Conectarse a PostgreSQL usando Railway CLI
 railway connect postgres
 ```
 
-Luego en psql:
+Esto abrirá una sesión interactiva de `psql` conectada a la base de datos Railway.
+
+### Paso 2: Ejecutar el Script SQL
+
+Una vez dentro de `psql`, ejecuta el script:
+
 ```sql
+-- Desde dentro de psql
+\i railway-initial-utf8.sql
+```
+
+**Alternativa: Ejecutar desde la línea de comandos**
+
+Si prefieres ejecutar el script directamente sin entrar en `psql`:
+
+```bash
+# Desde el directorio senorArrozAPI
+railway run --service MainDatabase psql -U postgres -d railway -f railway-initial-utf8.sql
+```
+
+O usando el connection string directamente:
+
+```bash
+railway run --service MainDatabase psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@postgres.railway.internal:5432/railway" -f railway-initial-utf8.sql
+```
+
+### Paso 3: Verificar la Ejecución
+
+Después de ejecutar el script, verifica que se haya ejecutado correctamente:
+
+```sql
+-- Verificar que las migraciones se registraron
 SELECT "MigrationId", "ProductVersion" 
 FROM "__EFMigrationsHistory" 
 ORDER BY "MigrationId";
-```
-
-### Desde tu máquina local
-
-```bash
-psql -h HOST_PUBLICO -p 5432 -U postgres -d railway -c "SELECT \"MigrationId\" FROM \"__EFMigrationsHistory\" ORDER BY \"MigrationId\";"
 ```
 
 Deberías ver:
@@ -96,9 +81,9 @@ Deberías ver:
 - `20251122123044_CreateDatabaseFunctionsAndTriggers`
 - `20251122123208_SeedInitialData`
 
-## Verificar Datos Iniciales
+### Paso 4: Verificar Datos Iniciales
 
-### Verificar usuarios creados
+#### Verificar usuarios creados
 
 ```sql
 SELECT name, email, role FROM "user" ORDER BY role, name;
@@ -111,7 +96,7 @@ Deberías ver:
 - Maikol Martinez Serna (deliveryman)
 - juan (kitchen)
 
-### Verificar barrios
+#### Verificar barrios
 
 ```sql
 SELECT name, delivery_fee FROM neighborhood ORDER BY name;
@@ -119,7 +104,7 @@ SELECT name, delivery_fee FROM neighborhood ORDER BY name;
 
 Deberías ver: Castilla, Florencia, Pedregal, Picacho, Santander
 
-### Verificar productos
+#### Verificar productos
 
 ```sql
 SELECT COUNT(*) as total_productos FROM product;
@@ -127,36 +112,101 @@ SELECT COUNT(*) as total_productos FROM product;
 
 Deberías ver: 28 productos
 
+#### Verificar banco y app
+
+```sql
+SELECT b.name as banco, a.name as app 
+FROM bank b 
+LEFT JOIN app a ON a.bank_id = b.id;
+```
+
+Deberías ver: Bancolombia y Didi
+
+#### Verificar clientes
+
+```sql
+SELECT COUNT(*) as total_clientes FROM customer;
+```
+
+Deberías ver: 8 clientes
+
+## Características del Script
+
+El script `railway-initial-utf8.sql` es **idempotente**, lo que significa que:
+
+- Puede ejecutarse múltiples veces sin causar errores
+- Usa `IF NOT EXISTS` y `ON CONFLICT DO NOTHING` para evitar duplicados
+- Verifica el historial de migraciones antes de ejecutar cada sección
+- Está codificado en UTF-8 sin caracteres especiales problemáticos
+
 ## Troubleshooting
 
 ### Error: "could not translate host name"
-- Verifica que estés usando el **host público**, no `postgres.railway.internal`
-- El host interno solo funciona dentro de Railway
+
+- Verifica que estés usando Railway CLI correctamente
+- Asegúrate de que el proyecto esté vinculado: `railway link`
 
 ### Error: "password authentication failed"
-- Verifica que la contraseña sea correcta
-- Si cambiaste `PGPASSWORD` en Railway, usa el nuevo valor
+
+- Verifica que la contraseña en el connection string sea correcta
+- Si cambiaste `PGPASSWORD` en Railway, actualiza el connection string
 
 ### Error: "database does not exist"
-- Verifica que el nombre de la base de datos sea `railway` (o el que configuraste)
-- Railway usa `railway` por defecto, no `MainDatabase`
+
+- Verifica que el nombre de la base de datos sea `railway`
+- Railway usa `railway` por defecto
 
 ### Error: "relation already exists"
-- Las tablas ya existen en la base de datos
-- Verifica el historial de migraciones: `SELECT * FROM "__EFMigrationsHistory";`
-- Si faltan migraciones, ejecuta el comando de nuevo
 
-### Error: "dotnet-ef not found"
-- Instala dotnet-ef: `dotnet tool install --global dotnet-ef`
-- Verifica instalación: `dotnet ef --version`
+- El script es idempotente, pero si hay conflictos, puedes verificar qué tablas existen:
+  ```sql
+  SELECT table_name FROM information_schema.tables 
+  WHERE table_schema = 'public' 
+  ORDER BY table_name;
+  ```
+
+### Error: "character with byte sequence ... in encoding"
+
+- El archivo `railway-initial-utf8.sql` ya está limpio de caracteres problemáticos
+- Si aún tienes problemas, verifica que el archivo esté en UTF-8 sin BOM
+
+### Error: "file not found" al usar \i
+
+- Asegúrate de estar en el directorio correcto antes de ejecutar `\i`
+- O usa la ruta completa: `\i /ruta/completa/railway-initial-utf8.sql`
+
+### El script se ejecuta pero no veo datos
+
+- Verifica que el script se ejecutó completamente (debe terminar con `COMMIT;`)
+- Revisa los mensajes de `psql` para ver si hubo errores
+- Verifica que las migraciones se registraron en `__EFMigrationsHistory`
 
 ## Notas Importantes
 
-1. **Migraciones Idempotentes**: Las migraciones están diseñadas para ser idempotentes, puedes ejecutarlas múltiples veces sin problemas.
+1. **No Automático**: La migración NO se ejecuta automáticamente. Debe ejecutarse manualmente.
 
-2. **No Automáticas**: Las migraciones NO se ejecutan automáticamente al iniciar la aplicación. Deben ejecutarse manualmente.
+2. **Host Interno**: Usamos `postgres.railway.internal` que solo funciona dentro de Railway, evitando cargos adicionales por host público.
 
-3. **Host Público Requerido**: Para ejecutar migraciones desde tu máquina local, necesitas el host público de Railway, no el interno.
+3. **Seguridad**: No commitees connection strings con contraseñas en el repositorio. Usa variables de entorno o Railway Secrets.
 
-4. **Seguridad**: No commitees connection strings con contraseñas en el repositorio. Usa variables de entorno o Railway Secrets.
+4. **Idempotencia**: El script puede ejecutarse múltiples veces sin problemas gracias a las verificaciones de existencia.
 
+5. **Encoding**: El archivo está en UTF-8 sin BOM y sin caracteres especiales problemáticos (ñ, acentos) para evitar errores de encoding.
+
+## Estructura del Script
+
+El script `railway-initial-utf8.sql` contiene:
+
+1. **Creación de tablas**: Todas las tablas del esquema de la base de datos
+2. **Índices y Foreign Keys**: Todas las relaciones y índices
+3. **Funciones PostgreSQL**: Funciones personalizadas para cálculos y triggers
+4. **Triggers**: Triggers para actualización automática de campos y cálculos
+5. **Datos iniciales**:
+   - 1 sucursal (Santander)
+   - 5 usuarios (Santiago, Daniel, Abelardo, Maikol, Juan)
+   - 5 barrios del norte de Medellín
+   - 1 banco (Bancolombia)
+   - 1 app (Didi)
+   - 5 categorías de productos
+   - 28 productos
+   - 8 clientes con direcciones y coordenadas

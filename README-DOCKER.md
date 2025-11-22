@@ -96,38 +96,41 @@ docker compose logs -f api
 docker compose logs -f postgres
 ```
 
-### Paso 8: Aplicar Migraciones de Base de Datos
+### Paso 8: Aplicar Script SQL de Base de Datos
 
-El proyecto utiliza **Entity Framework Core Migrations** para gestionar la estructura de la base de datos y los datos iniciales. Las migraciones se ejecutan **manualmente** mediante comando.
+El proyecto utiliza un **script SQL** (`railway-initial-utf8.sql`) para gestionar la estructura de la base de datos y los datos iniciales. El script se ejecuta **manualmente** mediante `psql`.
 
-**Migraciones disponibles:**
+**Contenido del script:**
 
-1. **InitialSchema**: Crea toda la estructura de la base de datos (tablas, índices, foreign keys)
-2. **CreateDatabaseFunctionsAndTriggers**: Crea funciones y triggers de PostgreSQL
-3. **SeedInitialData**: Inserta datos iniciales (sucursal, usuarios, barrios, banco, app, clientes, productos)
+1. **Estructura de la base de datos**: Crea todas las tablas, índices y foreign keys
+2. **Funciones y triggers**: Crea funciones y triggers de PostgreSQL
+3. **Datos iniciales**: Inserta sucursal, usuarios, barrios, banco, app, clientes y productos
 
-**Ejecutar migraciones desde el contenedor:**
+**Ejecutar el script desde el contenedor de PostgreSQL:**
 
 ```bash
-# Asegúrate de que el contenedor de la API esté corriendo
-docker exec senorarroz-api dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+# Copiar el script al contenedor
+docker cp railway-initial-utf8.sql senorarroz-postgres:/tmp/
+
+# Ejecutar el script dentro del contenedor
+docker exec -i senorarroz-postgres psql -U postgres -d senor_arroz < railway-initial-utf8.sql
 ```
 
-**Ejecutar migraciones desde tu máquina local:**
+**Ejecutar el script desde tu máquina local:**
 
-Si tienes `dotnet ef` instalado localmente y la base de datos está accesible:
+Si tienes `psql` instalado localmente:
 
 ```bash
 # Navegar al directorio del proyecto
 cd senorArrozAPI
 
-# Ejecutar migraciones apuntando a la base de datos en Docker
-dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API --connection "Host=localhost;Port=5433;Database=senor_arroz;Username=postgres;Password=1234"
+# Ejecutar el script apuntando a la base de datos en Docker
+psql -h localhost -p 5433 -U postgres -d senor_arroz -f railway-initial-utf8.sql
 ```
 
 **Datos iniciales incluidos:**
 
-La migración `SeedInitialData` incluye:
+El script incluye:
 - Sucursal "Santander" con dirección "calle 108a # 77d-30"
 - Usuarios: Santiago (superadmin), Daniel Alvarez (admin), Abelardo y Maikol (deliverymen), Juan (kitchen)
 - Barrios del norte de Medellín: Castilla, Santander, Pedregal, Florencia, Picacho
@@ -206,34 +209,43 @@ docker compose logs -f postgres
 
 ## 🗄️ Gestión de Base de Datos
 
-### Aplicar Migraciones
+### Aplicar Script SQL
 
-El proyecto utiliza Entity Framework Core Migrations para gestionar la base de datos. Las migraciones se ejecutan manualmente:
+El proyecto utiliza un script SQL (`railway-initial-utf8.sql`) para gestionar la base de datos. El script se ejecuta manualmente:
 
 ```bash
-# Desde el contenedor
-docker exec senorarroz-api dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+# Desde tu máquina local (recomendado)
+psql -h localhost -p 5433 -U postgres -d senor_arroz -f railway-initial-utf8.sql
 
-# Desde tu máquina local
-dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API --connection "Host=localhost;Port=5433;Database=senor_arroz;Username=postgres;Password=1234"
+# O desde el contenedor
+docker exec -i senorarroz-postgres psql -U postgres -d senor_arroz < railway-initial-utf8.sql
 ```
 
-### Crear Nueva Migración
+### Verificar Estado de la Base de Datos
 
-Si necesitas crear una nueva migración después de modificar las entidades:
+Para verificar qué migraciones están aplicadas:
 
-```bash
-# Desde tu máquina local
-dotnet ef migrations add NombreMigracion --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+```sql
+-- Conectarse a PostgreSQL
+docker exec -it senorarroz-postgres psql -U postgres -d senor_arroz
+
+-- Ver migraciones aplicadas
+SELECT "MigrationId", "ProductVersion" 
+FROM "__EFMigrationsHistory" 
+ORDER BY "MigrationId";
 ```
 
-### Ver Estado de Migraciones
+### Verificar Datos Iniciales
 
-Para ver qué migraciones están aplicadas:
+```sql
+-- Ver usuarios
+SELECT name, email, role FROM "user" ORDER BY role, name;
 
-```bash
-# Desde el contenedor
-docker exec senorarroz-api dotnet ef migrations list --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+-- Ver barrios
+SELECT name, delivery_fee FROM neighborhood ORDER BY name;
+
+-- Ver productos
+SELECT COUNT(*) as total_productos FROM product;
 ```
 
 ### Backup de la Base de Datos

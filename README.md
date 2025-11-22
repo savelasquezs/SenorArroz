@@ -271,31 +271,31 @@ dotnet clean
 
 ### Base de Datos
 
-El proyecto utiliza **Entity Framework Core Migrations** para gestionar la estructura de la base de datos. Las migraciones se ejecutan **manualmente** (no automáticamente al iniciar la aplicación).
+El proyecto utiliza un **script SQL** (`railway-initial-utf8.sql`) para gestionar la estructura de la base de datos y los datos iniciales. El script se ejecuta **manualmente** (no automáticamente al iniciar la aplicación).
 
-**Migraciones disponibles:**
+**Contenido del script:**
 
-1. **InitialSchema**: Crea toda la estructura de la base de datos (tablas, índices, foreign keys)
-2. **CreateDatabaseFunctionsAndTriggers**: Crea funciones y triggers de PostgreSQL
-3. **SeedInitialData**: Inserta datos iniciales (sucursal, usuarios, barrios, banco, app, clientes, productos)
+1. **Estructura de la base de datos**: Crea todas las tablas, índices y foreign keys
+2. **Funciones y triggers**: Crea funciones y triggers de PostgreSQL
+3. **Datos iniciales**: Inserta sucursal, usuarios, barrios, banco, app, clientes y productos
 
 **Comandos:**
 
 ```bash
-# Crear nueva migración
-dotnet ef migrations add NombreMigracion --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+# Aplicar script SQL (desde tu máquina local)
+psql -h localhost -p 5433 -U postgres -d senor_arroz -f railway-initial-utf8.sql
 
-# Aplicar migraciones (desde tu máquina local)
-dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+# Aplicar script SQL en Docker
+docker exec -i senorarroz-postgres psql -U postgres -d senor_arroz < railway-initial-utf8.sql
 
-# Aplicar migraciones en Docker
-docker exec senorarroz-api dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API
-
-# Ver migraciones aplicadas
-dotnet ef migrations list --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+# Ver migraciones aplicadas (desde psql)
+SELECT "MigrationId" FROM "__EFMigrationsHistory" ORDER BY "MigrationId";
 ```
 
-**Nota**: Las migraciones son idempotentes y solo se ejecutan si no se han aplicado previamente.
+**Nota**: El script es idempotente y puede ejecutarse múltiples veces sin causar errores. Usa `IF NOT EXISTS` y `ON CONFLICT DO NOTHING` para evitar duplicados.
+
+**Para Railway:**
+- Ver `RAILWAY-MIGRATIONS.md` para instrucciones detalladas sobre cómo ejecutar el script en Railway.
 
 ---
 

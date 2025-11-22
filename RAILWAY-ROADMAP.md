@@ -93,45 +93,68 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
 - Configurar build args para variables de entorno de Vite
 - Health check ya está configurado en el Dockerfile
 
-### 4. Migraciones de Base de Datos
+### 4. Migración de Base de Datos
 
-**IMPORTANTE:** Las migraciones NO se ejecutan automáticamente. Se ejecutarán manualmente desde dentro del servicio Backend en Railway usando Railway CLI.
+**IMPORTANTE:** La migración NO se ejecuta automáticamente. Se ejecuta manualmente usando el script SQL `railway-initial-utf8.sql` directamente en Railway PostgreSQL.
 
-**Proceso de Ejecución de Migraciones:**
+**Proceso de Ejecución de la Migración:**
 
-1. **Una vez que el Backend esté desplegado en Railway:**
-
-   ```bash
-   # Opción 1: Ejecutar comando directamente en el servicio
-   railway run --service tu-servicio-backend dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API
-   ```
+1. **Conectarse a Railway PostgreSQL:**
 
    ```bash
-   # Opción 2: Conectar al shell del servicio y ejecutar desde ahí
-   railway shell --service tu-servicio-backend
-   # Dentro del shell:
-   dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+   # Desde el directorio senorArrozAPI
+   cd senorArrozAPI
+   railway connect postgres
    ```
 
-2. **Verificar que las migraciones se aplicaron:**
-   - Las 3 migraciones deben ejecutarse en orden:
-     - InitialSchema
-     - CreateDatabaseFunctionsAndTriggers
-     - SeedInitialData
+   Esto abrirá una sesión interactiva de `psql`.
 
-3. **Verificar datos iniciales:**
+2. **Ejecutar el script SQL:**
+
+   ```sql
+   -- Desde dentro de psql
+   \i railway-initial-utf8.sql
+   ```
+
+   **Alternativa: Ejecutar desde la línea de comandos:**
+
+   ```bash
+   railway run --service MainDatabase psql -U postgres -d railway -f railway-initial-utf8.sql
+   ```
+
+3. **Verificar que la migración se aplicó:**
+
+   ```sql
+   SELECT "MigrationId", "ProductVersion" 
+   FROM "__EFMigrationsHistory" 
+   ORDER BY "MigrationId";
+   ```
+
+   Deberías ver:
+   - `20251122122758_InitialSchema`
+   - `20251122123044_CreateDatabaseFunctionsAndTriggers`
+   - `20251122123208_SeedInitialData`
+
+4. **Verificar datos iniciales:**
    - Usuarios creados (Santiago, Daniel, Abelardo, Maikol, Juan)
    - Barrios creados (Castilla, Santander, Pedregal, Florencia, Picacho)
    - Productos creados (28 productos)
    - Banco y App creados (Bancolombia, Didi)
+   - 8 clientes con direcciones y coordenadas
 
-**Ventajas de ejecutar desde Railway:**
+**Características del Script:**
+- **Idempotente**: Puede ejecutarse múltiples veces sin causar errores
+- **Completo**: Incluye estructura de tablas, funciones, triggers y datos iniciales
+- **UTF-8 limpio**: Sin caracteres problemáticos que causen errores de encoding
+
+**Ventajas de usar script SQL directo:**
 - No requiere host público (evita cargos adicionales)
 - Usa el host interno (`postgres.railway.internal`)
-- No necesita configurar conexiones externas
+- No necesita `dotnet-ef` ni herramientas adicionales
+- Ejecución simple y directa con `psql`
 
 **Documentación:**
-- Ver `RAILWAY-MIGRATIONS.md` para detalles completos
+- Ver `RAILWAY-MIGRATIONS.md` para detalles completos y troubleshooting
 
 ### 5. Verificación de Conexiones
 
@@ -144,9 +167,9 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
 
 2. **Verificar migraciones aplicadas:**
    ```bash
-   railway shell --service tu-servicio-backend
-   # Dentro del shell:
-   dotnet ef migrations list --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+   railway connect postgres
+   # Dentro de psql:
+   SELECT "MigrationId" FROM "__EFMigrationsHistory" ORDER BY "MigrationId";
    ```
 
 3. **Probar endpoints de la API:**
@@ -184,7 +207,7 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
 
 ## Consideraciones Importantes
 
-1. **Migraciones**: Se ejecutarán manualmente desde dentro del servicio Backend en Railway usando Railway CLI. NO se ejecutan automáticamente al iniciar la aplicación.
+1. **Migración de Base de Datos**: Se ejecuta manualmente usando el script SQL `railway-initial-utf8.sql` directamente en Railway PostgreSQL usando Railway CLI. NO se ejecuta automáticamente al iniciar la aplicación.
 
 2. **Variables de Entorno**: Todas las configuraciones sensibles deben estar en variables de entorno de Railway, no en archivos de configuración.
 
@@ -206,7 +229,7 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
 4. 🔄 **Crear servicio Backend en Railway** (EN PROGRESO)
 5. 🔄 **Configurar variables de entorno del backend**
 6. 🔄 **Desplegar backend y verificar que esté corriendo**
-7. 🔄 **Ejecutar migraciones desde Railway CLI dentro del servicio backend**
+7. 🔄 **Ejecutar script SQL `railway-initial-utf8.sql` usando Railway CLI para conectar a PostgreSQL**
 8. 🔄 **Verificar conexiones y datos iniciales**
 9. Crear servicio Frontend en Railway
 10. Configurar variables de entorno del frontend (build args)
