@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # API Application - Desarrollo con hot reload
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: senorarroz-api
+    ports:
+      - "5000:8080"  # Mapear puerto interno 8080 al externo 5000
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=senor_arroz;Username=postgres;Password=1234
+      - JwtSettings__SecretKey=IsmaelHermoso2023andPaolaHermosaEsposa2024andSantiagoPapasitoTodoeltiempo
+      - JwtSettings__ExpiryInHours=24
+      - JwtSettings__AccessTokenExpirationMinutes=480
+      - JwtSettings__Issuer=SenorArroz.API
+      - JwtSettings__Audience=SenorArroz.Client
+      - JwtSettings__RefreshTokenExpirationDays=7
+      - EmailSettings__SmtpHost=smtp.gmail.com
+      - EmailSettings__SmtpPort=587
+      - EmailSettings__SmtpUsername=arrozcastilla@gmail.com
+      - EmailSettings__SmtpPassword=nifg ksbt cdbn mpcc
+      - EmailSettings__FromEmail=arrozcastilla@gmail.com
+      - EmailSettings__FromName=SenorArroz
+      - EmailSettings__EnableSsl=true
+      - FrontendSettings__ResetPasswordUrl=http://localhost:5174/reset-password
+    volumes:
+      # Montar código fuente para hot reload
+      - ./SenorArroz.API:/src/SenorArroz.API
+      - ./SenorArroz.Application:/src/SenorArroz.Application
+      - ./SenorArroz.Domain:/src/SenorArroz.Domain
+      - ./SenorArroz.Infrastructure:/src/SenorArroz.Infrastructure
+      - ./SenorArroz.Shared:/src/SenorArroz.Shared
+      - ./SenorArroz.sln:/src/SenorArroz.sln
+      # Montar bin/obj para evitar problemas de compilación
+      - api_bin:/src/SenorArroz.API/bin
+      - api_obj:/src/SenorArroz.API/obj
+      - app_bin:/src/SenorArroz.Application/bin
+      - app_obj:/src/SenorArroz.Application/obj
+      - domain_bin:/src/SenorArroz.Domain/bin
+      - domain_obj:/src/SenorArroz.Domain/obj
+      - infra_bin:/src/SenorArroz.Infrastructure/bin
+      - infra_obj:/src/SenorArroz.Infrastructure/obj
+      - shared_bin:/src/SenorArroz.Shared/bin
+      - shared_obj:/src/SenorArroz.Shared/obj
+    networks:
+      - senorarroz-network
+    restart: unless-stopped
+
+  # Frontend - Desarrollo con hot reload
+  # IMPORTANTE: Este servicio sobrescribe completamente el frontend de docker-compose.yml
+  frontend:
+    build:
+      context: ../senorArrozFront
+      dockerfile: Dockerfile.dev
+      args:
+        VITE_API_URL: http://localhost:5000/api
+        VITE_SIGNALR_HUB_URL: http://localhost:5000/hubs/orders
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
+        VITE_GOOGLE_MAPS_MAP_ID: ${VITE_GOOGLE_MAPS_MAP_ID:-}
+    container_name: senorarroz-frontend
+    ports:
+      - "5174:5173"  # Puerto de Vite dev server (puerto externo 5174, interno 5173)
+    volumes:
+      # Montar código fuente para hot reload
+      - ../senorArrozFront:/app
+      # Named volume para node_modules (evita conflictos con el host)
+      - frontend_node_modules:/app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:5000/api
+      - VITE_SIGNALR_HUB_URL=http://localhost:5000/hubs/orders
+      - VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY}
+      - VITE_GOOGLE_MAPS_MAP_ID=${VITE_GOOGLE_MAPS_MAP_ID:-}
+    networks:
+      - senorarroz-network
+    restart: unless-stopped
+
+volumes:
+  # Volúmenes para bin/obj del backend
+  api_bin:
+  api_obj:
+  app_bin:
+  app_obj:
+  domain_bin:
+  domain_obj:
+  infra_bin:
+  infra_obj:
+  shared_bin:
+  shared_obj:
+  # Volumen para node_modules del frontend
+  frontend_node_modules:
+
+networks:
+  senorarroz-network:
+    driver: bridge
+

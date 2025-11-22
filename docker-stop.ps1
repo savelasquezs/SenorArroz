@@ -1,8 +1,8 @@
-# Script para detener los contenedores Docker
+# Script para detener los contenedores Docker (Modo Desarrollo)
 # Ejecuta este script en PowerShell
 
 Write-Host "🛑 Deteniendo contenedores Docker..." -ForegroundColor Yellow
-docker compose down
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "✅ Contenedores detenidos exitosamente" -ForegroundColor Green
@@ -12,5 +12,5 @@ if ($LASTEXITCODE -eq 0) {
 
 Write-Host ""
 Write-Host "💡 Para eliminar también los volúmenes (y borrar la base de datos), ejecuta:" -ForegroundColor Cyan
-Write-Host "   docker compose down -v" -ForegroundColor White
+Write-Host "   docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v" -ForegroundColor White
 
