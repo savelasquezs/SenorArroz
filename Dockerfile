@@ -23,14 +23,20 @@ RUN dotnet build "SenorArroz.API.csproj" -c Release -o /app/build
 FROM build AS publish
 RUN dotnet publish "SenorArroz.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-# Stage 3: Runtime
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+# Stage 3: Runtime (using SDK image to have dotnet-ef available)
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS final
 WORKDIR /app
 
 # Install wget for health checks
 RUN apt-get update && \
     apt-get install -y --no-install-recommends wget && \
     rm -rf /var/lib/apt/lists/*
+
+# Install dotnet-ef globally
+RUN dotnet tool install --global dotnet-ef --version 9.0.0
+
+# Add dotnet tools to PATH
+ENV PATH="${PATH}:/root/.dotnet/tools"
 
 # Create a non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser

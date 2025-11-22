@@ -96,85 +96,45 @@ docker compose logs -f api
 docker compose logs -f postgres
 ```
 
-### Paso 8: Restaurar Base de Datos desde salida.sql
+### Paso 8: Aplicar Migraciones de Base de Datos
 
-Si tienes un archivo `salida.sql` con la estructura completa de la base de datos (incluye tablas, triggers, funciones y datos), puedes restaurarlo usando el script automatizado:
+El proyecto utiliza **Entity Framework Core Migrations** para gestionar la estructura de la base de datos y los datos iniciales. Las migraciones se ejecutan **manualmente** mediante comando.
 
-**Opción A: Usar el script automatizado (Recomendado)**
+**Migraciones disponibles:**
 
-```powershell
-# Ejecutar el script de restauración
-.\Scripts\database-restore.ps1
-```
+1. **InitialSchema**: Crea toda la estructura de la base de datos (tablas, índices, foreign keys)
+2. **CreateDatabaseFunctionsAndTriggers**: Crea funciones y triggers de PostgreSQL
+3. **SeedInitialData**: Inserta datos iniciales (sucursal, usuarios, barrios, banco, app, clientes, productos)
 
-Este script:
-1. Restaura `salida.sql` completo (estructura, triggers, funciones, datos)
-2. Aplica `Scripts/sync-schema-to-ef.sql` para sincronizar con Entity Framework
-3. Aplica `Scripts/seed-data.sql` para datos iniciales (opcional)
-
-**Omitir datos iniciales:**
-```powershell
-.\Scripts\database-restore.ps1 -SkipSeed
-```
-
-**Opción B: Restaurar manualmente**
+**Ejecutar migraciones desde el contenedor:**
 
 ```bash
-# 1. Restaurar salida.sql
-docker exec -i senorarroz-postgres psql -U postgres -d senor_arroz < salida.sql
-
-# 2. Aplicar sincronización de esquema
-docker exec -i senorarroz-postgres psql -U postgres -d senor_arroz < Scripts/sync-schema-to-ef.sql
-
-# 3. Aplicar datos iniciales (opcional)
-docker exec -i senorarroz-postgres psql -U postgres -d senor_arroz < Scripts/seed-data.sql
+# Asegúrate de que el contenedor de la API esté corriendo
+docker exec senorarroz-api dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API
 ```
 
-**Nota sobre datos iniciales:**
+**Ejecutar migraciones desde tu máquina local:**
 
-El archivo `Scripts/seed-data.sql` incluye:
-- Branch "Santander" con dirección "calle 108a # 77d-30"
-- Usuario superadmin: Santiago (santyvano@outlook.com)
-- Usuario admin: Luis (lsvillorina@gmail.com) - **Requiere generar hash BCrypt**
-
-Para generar el hash BCrypt de Luis1234:
-```powershell
-# Después de compilar el proyecto
-.\Scripts\generate-luis-hash.ps1
-```
-
-O usa un generador online: https://bcrypt-generator.com/ (rounds: 12, password: Luis1234)
-
-Luego reemplaza el placeholder en `Scripts/seed-data.sql`:
-```sql
--- Buscar y reemplazar:
-'$2a$12$PLACEHOLDER_FOR_LUIS1234_HASH_REPLACE_THIS'
--- Con el hash generado
-```
-
-### Paso 9: Aplicar Migraciones de Base de Datos (Alternativa)
-
-Si prefieres usar migraciones de Entity Framework Core en lugar de restaurar desde SQL:
-
-**Opción A: Desde dentro del contenedor**
+Si tienes `dotnet ef` instalado localmente y la base de datos está accesible:
 
 ```bash
-# Entrar al contenedor de la API
-docker exec -it senorarroz-api bash
+# Navegar al directorio del proyecto
+cd senorArrozAPI
 
-# Dentro del contenedor, ejecutar migraciones (si tienes un comando dotnet ef)
-# Nota: Necesitarás tener dotnet-ef instalado en la imagen
-```
-
-**Opción B: Desde tu máquina local (recomendado)**
-
-Si tienes `dotnet ef` instalado localmente:
-
-```bash
-# Asegúrate de que la base de datos esté corriendo
-# Luego ejecuta las migraciones apuntando a la base de datos en Docker
+# Ejecutar migraciones apuntando a la base de datos en Docker
 dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API --connection "Host=localhost;Port=5433;Database=senor_arroz;Username=postgres;Password=1234"
 ```
+
+**Datos iniciales incluidos:**
+
+La migración `SeedInitialData` incluye:
+- Sucursal "Santander" con dirección "calle 108a # 77d-30"
+- Usuarios: Santiago (superadmin), Daniel Alvarez (admin), Abelardo y Maikol (deliverymen), Juan (kitchen)
+- Barrios del norte de Medellín: Castilla, Santander, Pedregal, Florencia, Picacho
+- Banco: Bancolombia
+- App: Didi (atada a Bancolombia)
+- 8 clientes con direcciones y coordenadas
+- Categorías y productos completos
 
 ### Paso 10: Probar la API
 
@@ -246,29 +206,35 @@ docker compose logs -f postgres
 
 ## 🗄️ Gestión de Base de Datos
 
-### Restaurar desde salida.sql
+### Aplicar Migraciones
 
-Si tienes un archivo `salida.sql` completo con la estructura de la base de datos:
+El proyecto utiliza Entity Framework Core Migrations para gestionar la base de datos. Las migraciones se ejecutan manualmente:
 
-```powershell
-# Usar script automatizado (recomendado)
-.\Scripts\database-restore.ps1
+```bash
+# Desde el contenedor
+docker exec senorarroz-api dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API
 
-# O restaurar manualmente
-docker exec -i senorarroz-postgres psql -U postgres -d senor_arroz < salida.sql
-docker exec -i senorarroz-postgres psql -U postgres -d senor_arroz < Scripts/sync-schema-to-ef.sql
+# Desde tu máquina local
+dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API --connection "Host=localhost;Port=5433;Database=senor_arroz;Username=postgres;Password=1234"
 ```
 
-### Sincronización de Esquema
+### Crear Nueva Migración
 
-El script `Scripts/sync-schema-to-ef.sql` agrega las siguientes diferencias encontradas entre `salida.sql` y Entity Framework:
+Si necesitas crear una nueva migración después de modificar las entidades:
 
-- ✅ Columna `is_primary` en tabla `address`
-- ✅ Columna `guestname` en tabla `order`
-- ✅ Columna `verified_at` en tabla `bank_payment` (con trigger automático)
-- ✅ Tabla completa `password_reset_token` con todos sus índices
+```bash
+# Desde tu máquina local
+dotnet ef migrations add NombreMigracion --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+```
 
-Ver `SCHEMA-COMPARISON.md` para más detalles.
+### Ver Estado de Migraciones
+
+Para ver qué migraciones están aplicadas:
+
+```bash
+# Desde el contenedor
+docker exec senorarroz-api dotnet ef migrations list --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+```
 
 ### Backup de la Base de Datos
 

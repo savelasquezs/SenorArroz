@@ -271,13 +271,31 @@ dotnet clean
 
 ### Base de Datos
 
+El proyecto utiliza **Entity Framework Core Migrations** para gestionar la estructura de la base de datos. Las migraciones se ejecutan **manualmente** (no automáticamente al iniciar la aplicación).
+
+**Migraciones disponibles:**
+
+1. **InitialSchema**: Crea toda la estructura de la base de datos (tablas, índices, foreign keys)
+2. **CreateDatabaseFunctionsAndTriggers**: Crea funciones y triggers de PostgreSQL
+3. **SeedInitialData**: Inserta datos iniciales (sucursal, usuarios, barrios, banco, app, clientes, productos)
+
+**Comandos:**
+
 ```bash
-# Crear migración (si se usan)
+# Crear nueva migración
 dotnet ef migrations add NombreMigracion --project SenorArroz.Infrastructure --startup-project SenorArroz.API
 
-# Aplicar migraciones
+# Aplicar migraciones (desde tu máquina local)
 dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+
+# Aplicar migraciones en Docker
+docker exec senorarroz-api dotnet ef database update --project SenorArroz.Infrastructure --startup-project SenorArroz.API
+
+# Ver migraciones aplicadas
+dotnet ef migrations list --project SenorArroz.Infrastructure --startup-project SenorArroz.API
 ```
+
+**Nota**: Las migraciones son idempotentes y solo se ejecutan si no se han aplicado previamente.
 
 ---
 
