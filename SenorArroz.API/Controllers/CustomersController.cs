@@ -162,6 +162,23 @@ public class CustomersController : ControllerBase
     }
 
     /// <summary>
+    /// Obtener una dirección específica por su ID
+    /// </summary>
+    /// <param name="addressId">ID de la dirección</param>
+    /// <returns>Datos de la dirección</returns>
+    [HttpGet("addresses/{addressId}")]
+    public async Task<ActionResult<ApiResponse<CustomerAddressDto>>> GetCustomerAddressById(int addressId)
+    {
+        var query = new GetCustomerAddressByIdQuery { AddressId = addressId };
+        var result = await _mediator.Send(query);
+
+        if (result == null)
+            return NotFound(ApiResponse<CustomerAddressDto>.ErrorResponse("Dirección no encontrada"));
+
+        return Ok(ApiResponse<CustomerAddressDto>.SuccessResponse(result, "Dirección obtenida exitosamente"));
+    }
+
+    /// <summary>
     /// Crear nueva dirección para un cliente
     /// </summary>
     /// <param name="customerId">ID del cliente</param>
