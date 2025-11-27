@@ -34,6 +34,9 @@ public static class DependencyInjection
         services.AddScoped<IAddressRepository, AddressRepository>();
         services.AddScoped<INeighborhoodRepository, NeighborhoodRepository>();
 
+        // Deliveryman Repositories
+        services.AddScoped<IDeliverymanAdvanceRepository, DeliverymanAdvanceRepository>();
+
         //product Repositories
         services.AddScoped<IProductCategoryRepository, ProductCategoryRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();

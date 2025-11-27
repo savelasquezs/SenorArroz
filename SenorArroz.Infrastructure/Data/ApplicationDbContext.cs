@@ -26,6 +26,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<Customer> Customers { get; set; }
 
+        public virtual DbSet<DeliverymanAdvance> DeliverymanAdvances { get; set; }
+
         public virtual DbSet<Expense> Expenses { get; set; }
 
         public virtual DbSet<ExpenseBankPayment> ExpenseBankPayments { get; set; }
@@ -71,6 +73,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new AppConfiguration());
             modelBuilder.ApplyConfiguration(new AppPaymentConfiguration());
             modelBuilder.ApplyConfiguration(new BankPaymentConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliverymanAdvanceConfiguration());
             modelBuilder.ApplyConfiguration(new SupplierConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseCategoryConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseConfiguration());
