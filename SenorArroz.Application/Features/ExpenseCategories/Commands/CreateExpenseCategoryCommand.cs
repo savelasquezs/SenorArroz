@@ -9,3 +9,4 @@ public class CreateExpenseCategoryCommand : IRequest<ExpenseCategoryDto>
     public string Name { get; set; } = string.Empty;
 }
 
+

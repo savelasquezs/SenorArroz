@@ -9,3 +9,4 @@ public class GetExpenseCategoryByIdQuery : IRequest<ExpenseCategoryDto?>
     public int Id { get; set; }
 }
 
+

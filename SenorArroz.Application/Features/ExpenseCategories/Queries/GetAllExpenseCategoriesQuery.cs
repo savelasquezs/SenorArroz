@@ -8,3 +8,4 @@ public class GetAllExpenseCategoriesQuery : IRequest<IEnumerable<ExpenseCategory
 {
 }
 
+

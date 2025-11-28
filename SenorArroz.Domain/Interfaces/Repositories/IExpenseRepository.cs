@@ -25,3 +25,4 @@ public interface IExpenseRepository
     Task<bool> NameExistsInCategoryAsync(string name, int categoryId, int? excludeId = null);
 }
 
+

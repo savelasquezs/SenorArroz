@@ -10,3 +10,4 @@ public class UpdateExpenseCategoryCommand : IRequest<ExpenseCategoryDto>
     public string Name { get; set; } = string.Empty;
 }
 
+

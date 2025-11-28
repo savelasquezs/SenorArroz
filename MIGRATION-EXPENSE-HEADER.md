@@ -247,3 +247,4 @@ Después de aplicar esta migración:
    - Superadmin ve todos los gastos
 3. Verifica que los endpoints de la API funcionen correctamente
 
+

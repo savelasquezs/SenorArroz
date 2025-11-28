@@ -43,3 +43,4 @@ public class GetExpensesHandler : IRequestHandler<GetExpensesQuery, PagedResult<
     }
 }
 
+

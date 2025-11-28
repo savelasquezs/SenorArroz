@@ -10,3 +10,4 @@ public class UpdateExpenseCategoryDto
     public string Name { get; set; } = string.Empty;
 }
 
+

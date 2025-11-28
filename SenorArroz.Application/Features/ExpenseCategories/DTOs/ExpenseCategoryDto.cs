@@ -12,3 +12,4 @@ public class ExpenseCategoryDto
     public int TotalExpenses { get; set; }
 }
 
+

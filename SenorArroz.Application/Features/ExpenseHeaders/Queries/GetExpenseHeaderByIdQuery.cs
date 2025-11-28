@@ -8,3 +8,4 @@ public class GetExpenseHeaderByIdQuery : IRequest<ExpenseHeaderDto?>
     public int Id { get; set; }
 }
 
+

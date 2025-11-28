@@ -10,3 +10,4 @@ public class CreateExpenseCategoryDto
     public string Name { get; set; } = string.Empty;
 }
 
+

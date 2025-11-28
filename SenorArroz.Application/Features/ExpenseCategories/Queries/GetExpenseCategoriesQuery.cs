@@ -14,3 +14,4 @@ public class GetExpenseCategoriesQuery : IRequest<PagedResult<ExpenseCategoryDto
     public string SortOrder { get; set; } = "asc";
 }
 
+

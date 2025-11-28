@@ -15,3 +15,4 @@ public class GetExpensesQuery : IRequest<PagedResult<ExpenseDto>>
     public string SortOrder { get; set; } = "asc";
 }
 
+

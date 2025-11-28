@@ -207,6 +207,45 @@ FROM expense_header;
 - Idempotente: puede ejecutarse múltiples veces sin errores
 - Verifica existencia antes de crear columnas, índices y foreign keys
 
+## Ejecutar Migración: AddBranchIdToSupplier
+
+Para convertir los proveedores en entidades por sucursal ejecuta el nuevo script `Scripts/add-branch-id-to-supplier.sql`.
+
+**Railway (psql contra la base en la nube):**
+
+```bash
+# Desde el directorio senorArrozAPI
+psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway" -f Scripts/add-branch-id-to-supplier.sql
+```
+
+**Docker / Postgres local (mismo script, connection string local):**
+
+```bash
+# Desde el directorio senorArrozAPI
+psql "Host=localhost;Port=5433;Database=senor_arroz;Username=postgres;Password=1234" -f Scripts/add-branch-id-to-supplier.sql
+```
+
+**Verificar que se aplicó correctamente:**
+
+```sql
+-- Confirmar columna y constraint
+\d supplier
+
+-- Validar que no queden proveedores sin branch
+SELECT COUNT(*) FILTER (WHERE branch_id IS NULL) AS proveedores_sin_branch FROM supplier;
+
+-- Revisar índice
+SELECT indexname FROM pg_indexes WHERE tablename = 'supplier' AND indexname = 'idx_supplier_branch_name';
+```
+
+**Características del Script add-branch-id-to-supplier.sql:**
+
+- Usa `BEGIN/COMMIT` para atomicidad.
+- Agrega `branch_id` si aún no existe.
+- Pobla los valores usando `expense_header` y, si es necesario, la primera sucursal disponible.
+- Marca la columna como `NOT NULL`, crea el índice `idx_supplier_branch_name` y la FK `FK_supplier_branch_branch_id` solo si no existen.
+- Idempotente: puede ejecutarse múltiples veces sin errores.
+
 ## Scripts Disponibles
 
 ### `railway-initial-utf8.sql`
@@ -232,6 +271,13 @@ Script para agregar la columna `created_by_id` a la tabla `expense_header`. Incl
 - Índice `idx_expense_header_created_by` para optimización
 - Foreign Key `FK_expense_header_user_created_by_id` hacia la tabla `user`
 - Registro en `__EFMigrationsHistory`
+
+### `Scripts/add-branch-id-to-supplier.sql`
+Script para agregar `branch_id` a `supplier` y enlazarlos con sucursales:
+- Columna `branch_id` (con valores poblados e índice `idx_supplier_branch_name`)
+- Foreign Key `FK_supplier_branch_branch_id`
+- Actualización de datos existente tomando `branch_id` desde `expense_header`
+- Idempotente e independiente del entorno (Railway o Docker)
 
 **Características de los Scripts:**
 

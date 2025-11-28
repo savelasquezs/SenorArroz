@@ -34,3 +34,4 @@ public class GetExpenseCategoryByIdHandler : IRequestHandler<GetExpenseCategoryB
     }
 }
 
+

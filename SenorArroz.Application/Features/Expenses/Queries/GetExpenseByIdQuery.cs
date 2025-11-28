@@ -9,3 +9,4 @@ public class GetExpenseByIdQuery : IRequest<ExpenseDto?>
     public int Id { get; set; }
 }
 
+

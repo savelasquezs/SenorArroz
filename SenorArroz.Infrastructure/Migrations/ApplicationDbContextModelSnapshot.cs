@@ -1223,6 +1223,10 @@ namespace SenorArroz.Infrastructure.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("address");
 
+                    b.Property<int>("BranchId")
+                        .HasColumnType("integer")
+                        .HasColumnName("branch_id");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -1253,6 +1257,9 @@ namespace SenorArroz.Infrastructure.Migrations
                         .HasDefaultValueSql("NOW()");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BranchId", "Name")
+                        .HasDatabaseName("idx_supplier_branch_name");
 
                     b.ToTable("supplier", (string)null);
                 });

@@ -8,3 +8,4 @@ public class DeleteExpenseCommand : IRequest<bool>
     public int Id { get; set; }
 }
 
+

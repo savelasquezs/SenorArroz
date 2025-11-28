@@ -41,6 +41,12 @@ public static class DependencyInjection
         services.AddScoped<IProductCategoryRepository, ProductCategoryRepository>();
         services.AddScoped<IProductRepository, ProductRepository>();
 
+        // Expense Repositories
+        services.AddScoped<IExpenseCategoryRepository, ExpenseCategoryRepository>();
+        services.AddScoped<IExpenseRepository, ExpenseRepository>();
+        services.AddScoped<IExpenseHeaderRepository, ExpenseHeaderRepository>();
+        services.AddScoped<ISupplierRepository, SupplierRepository>();
+
         // Bank and Payment Repositories
         services.AddScoped<IBankRepository, BankRepository>();
         services.AddScoped<IAppRepository, AppRepository>();
@@ -49,11 +55,6 @@ public static class DependencyInjection
 
         // Order Repositories
         services.AddScoped<IOrderRepository, OrderRepository>();
-
-        // Expense Repositories
-        services.AddScoped<IExpenseHeaderRepository, ExpenseHeaderRepository>();
-        services.AddScoped<IExpenseCategoryRepository, ExpenseCategoryRepository>();
-        services.AddScoped<IExpenseRepository, ExpenseRepository>();
 
         // Services
         services.AddHttpContextAccessor();

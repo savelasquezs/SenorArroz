@@ -20,3 +20,4 @@ public class CreateExpenseBankPaymentDto
     public decimal Amount { get; set; }
 }
 
+

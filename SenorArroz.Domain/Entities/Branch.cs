@@ -18,4 +18,5 @@ public class Branch : BaseEntity
     public virtual ICollection<Bank> Banks { get; set; } = new List<Bank>();
     public virtual ICollection<LoyaltyRule> LoyaltyRules { get; set; } = new List<LoyaltyRule>();
     public virtual ICollection<ExpenseHeader> ExpenseHeaders { get; set; } = new List<ExpenseHeader>();
+    public virtual ICollection<Supplier> Suppliers { get; set; } = new List<Supplier>();
 }

@@ -12,3 +12,4 @@ public class UpdateExpenseCommand : IRequest<ExpenseDto>
     public Domain.Enums.ExpenseUnit Unit { get; set; }
 }
 
+

@@ -21,3 +21,4 @@ public class ExpenseHeaderDto
     public List<string> ExpenseNames { get; set; } = new(); // Nombres de gastos en detalles
 }
 
+

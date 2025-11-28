@@ -15,3 +15,4 @@ public class GetExpenseHeadersQuery : IRequest<PagedResult<ExpenseHeaderDto>>
     public DateTime? ToDate { get; set; }
 }
 
+

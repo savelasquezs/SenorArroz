@@ -26,3 +26,4 @@ public interface IExpenseCategoryRepository
     Task<int> GetTotalExpensesAsync(int categoryId);
 }
 
+

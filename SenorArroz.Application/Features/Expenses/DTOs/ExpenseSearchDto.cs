@@ -11,3 +11,4 @@ public class ExpenseSearchDto
     public string SortOrder { get; set; } = "asc";
 }
 
+

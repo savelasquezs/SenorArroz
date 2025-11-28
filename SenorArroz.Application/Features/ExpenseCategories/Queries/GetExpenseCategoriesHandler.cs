@@ -52,3 +52,4 @@ public class GetExpenseCategoriesHandler : IRequestHandler<GetExpenseCategoriesQ
     }
 }
 
+

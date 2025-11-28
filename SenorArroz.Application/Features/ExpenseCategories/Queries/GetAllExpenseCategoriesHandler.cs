@@ -26,3 +26,4 @@ public class GetAllExpenseCategoriesHandler : IRequestHandler<GetAllExpenseCateg
     }
 }
 
+

@@ -15,3 +15,4 @@ public class UpdateExpenseDetailDto
     public int Amount { get; set; }
 }
 
+
