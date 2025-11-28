@@ -52,6 +52,8 @@ public static class DependencyInjection
 
         // Expense Repositories
         services.AddScoped<IExpenseHeaderRepository, ExpenseHeaderRepository>();
+        services.AddScoped<IExpenseCategoryRepository, ExpenseCategoryRepository>();
+        services.AddScoped<IExpenseRepository, ExpenseRepository>();
 
         // Services
         services.AddHttpContextAccessor();
