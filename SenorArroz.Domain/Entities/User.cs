@@ -17,4 +17,5 @@ public class User : BaseEntity
     public virtual Branch Branch { get; set; } = null!;
     public virtual ICollection<Order> TakenOrders { get; set; } = new List<Order>();
     public virtual ICollection<Order> DeliveryOrders { get; set; } = new List<Order>();
+    public virtual ICollection<ExpenseHeader> CreatedExpenseHeaders { get; set; } = new List<ExpenseHeader>();
 }

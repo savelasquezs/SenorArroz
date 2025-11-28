@@ -170,6 +170,43 @@ SELECT "MigrationId" FROM "__EFMigrationsHistory" WHERE "MigrationId" = '2025112
 - Función `update_deliveryman_advance_updated_at()` creada dentro del bloque condicional
 - Idempotente: puede ejecutarse múltiples veces sin errores
 
+## Ejecutar Migración: AddCreatedByIdToExpenseHeader
+
+Para agregar la columna `created_by_id` a la tabla `expense_header`:
+
+```bash
+# Desde el directorio senorArrozAPI
+# Nota: Reemplaza el connection string con el actual de Railway
+psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway" -f Scripts/add-created-by-id-to-expense-header.sql
+```
+
+**Obtener el connection string actualizado:**
+1. Ve a Railway Dashboard → Tu proyecto → Servicio PostgreSQL
+2. Pestaña "Variables" → Busca `DATABASE_URL` o `PUBLIC_URL`
+3. Copia el connection string completo
+
+**Verificar que se aplicó correctamente:**
+
+```sql
+-- Verificar que la columna existe
+\d expense_header
+
+-- Verificar la migración
+SELECT "MigrationId" FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20251128025240_AddCreatedByIdToExpenseHeader';
+
+-- Verificar que los registros existentes tienen created_by_id
+SELECT COUNT(*) as total, COUNT(created_by_id) as con_created_by 
+FROM expense_header;
+```
+
+**Características del Script add-created-by-id-to-expense-header.sql:**
+
+- Usa transacción explícita (`BEGIN;` / `COMMIT;`) para garantizar atomicidad
+- Delimitador `$migration$` para evitar conflictos
+- Actualiza registros existentes asignando el primer admin/usuario de cada sucursal
+- Idempotente: puede ejecutarse múltiples veces sin errores
+- Verifica existencia antes de crear columnas, índices y foreign keys
+
 ## Scripts Disponibles
 
 ### `railway-initial-utf8.sql`
@@ -186,6 +223,14 @@ Script para crear la tabla `deliveryman_advance` (gestión de abonos a domicilia
 - Trigger asociado
 - Índices para optimización
 - Comentarios descriptivos
+- Registro en `__EFMigrationsHistory`
+
+### `Scripts/add-created-by-id-to-expense-header.sql`
+Script para agregar la columna `created_by_id` a la tabla `expense_header`. Incluye:
+- Columna `created_by_id` en `expense_header`
+- Actualización de registros existentes (asigna primer admin/usuario de cada sucursal)
+- Índice `idx_expense_header_created_by` para optimización
+- Foreign Key `FK_expense_header_user_created_by_id` hacia la tabla `user`
 - Registro en `__EFMigrationsHistory`
 
 **Características de los Scripts:**

@@ -211,14 +211,24 @@ docker compose logs -f postgres
 
 ### Aplicar Script SQL
 
-El proyecto utiliza un script SQL (`railway-initial-utf8.sql`) para gestionar la base de datos. El script se ejecuta manualmente:
+El proyecto utiliza scripts SQL para gestionar la base de datos. Los scripts se ejecutan manualmente:
 
+#### Migración Inicial
 ```bash
 # Desde tu máquina local (recomendado)
 psql -h localhost -p 5433 -U postgres -d senor_arroz -f railway-initial-utf8.sql
 
 # O desde el contenedor
 docker exec -i senorarroz-postgres psql -U postgres -d senor_arroz < railway-initial-utf8.sql
+```
+
+#### Migración: AddCreatedByIdToExpenseHeader
+```bash
+# Desde tu máquina local (recomendado)
+psql -h localhost -p 5433 -U postgres -d senor_arroz -f Scripts/add-created-by-id-to-expense-header.sql
+
+# O desde el contenedor
+docker exec -i senorarroz-postgres psql -U postgres -d senor_arroz < Scripts/add-created-by-id-to-expense-header.sql
 ```
 
 ### Verificar Estado de la Base de Datos

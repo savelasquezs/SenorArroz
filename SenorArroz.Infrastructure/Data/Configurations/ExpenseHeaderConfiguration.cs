@@ -15,6 +15,7 @@ public class ExpenseHeaderConfiguration : IEntityTypeConfiguration<ExpenseHeader
 
         builder.Property(eh => eh.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(eh => eh.SupplierId).HasColumnName("supplier_id").IsRequired();
+        builder.Property(eh => eh.CreatedById).HasColumnName("created_by_id").IsRequired();
         builder.Property(eh => eh.Total).HasColumnName("total");
 
         builder.Property(eh => eh.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
@@ -31,8 +32,14 @@ public class ExpenseHeaderConfiguration : IEntityTypeConfiguration<ExpenseHeader
             .HasForeignKey(eh => eh.SupplierId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(eh => eh.CreatedBy)
+            .WithMany(u => u.CreatedExpenseHeaders)
+            .HasForeignKey(eh => eh.CreatedById)
+            .OnDelete(DeleteBehavior.Restrict);
+
         // Índices
         builder.HasIndex(eh => eh.BranchId).HasDatabaseName("idx_expense_header_branch");
         builder.HasIndex(eh => eh.SupplierId).HasDatabaseName("idx_expense_header_supplier");
+        builder.HasIndex(eh => eh.CreatedById).HasDatabaseName("idx_expense_header_created_by");
     }
 }

@@ -50,6 +50,9 @@ public static class DependencyInjection
         // Order Repositories
         services.AddScoped<IOrderRepository, OrderRepository>();
 
+        // Expense Repositories
+        services.AddScoped<IExpenseHeaderRepository, ExpenseHeaderRepository>();
+
         // Services
         services.AddHttpContextAccessor();
         services.AddScoped<IPasswordService, PasswordService>();
