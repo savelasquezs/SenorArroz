@@ -124,30 +124,40 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             }
         }
 
-        // Manejar pagos: solo agregar nuevos (no se pueden editar/eliminar pagos existentes)
-        if (request.ExpenseHeader.ExpenseBankPayments != null && request.ExpenseHeader.ExpenseBankPayments.Any())
+        // Manejar pagos: reemplazar la lista completa con lo enviado
+        if (request.ExpenseHeader.ExpenseBankPayments != null)
         {
-            var branchId = _currentUser.BranchId;
-            var bankIds = request.ExpenseHeader.ExpenseBankPayments.Select(ebp => ebp.BankId).Distinct().ToList();
-            var banks = await _context.Banks
-                .Where(b => bankIds.Contains(b.Id) && b.BranchId == branchId)
-                .ToListAsync(cancellationToken);
-
-            if (banks.Count != bankIds.Count)
+            // Primero eliminar los pagos actuales
+            var existingPayments = expenseHeader.ExpenseBankPayments.ToList();
+            if (existingPayments.Any())
             {
-                var foundBankIds = banks.Select(b => b.Id).ToList();
-                var missingBankIds = bankIds.Except(foundBankIds).ToList();
-                throw new NotFoundException($"Bancos con IDs {string.Join(", ", missingBankIds)} no encontrados o no pertenecen a la sucursal");
+                _context.ExpenseBankPayments.RemoveRange(existingPayments);
+                expenseHeader.ExpenseBankPayments.Clear();
             }
 
-            // Agregar nuevos pagos
-            foreach (var paymentDto in request.ExpenseHeader.ExpenseBankPayments)
+            if (request.ExpenseHeader.ExpenseBankPayments.Any())
             {
-                expenseHeader.ExpenseBankPayments.Add(new ExpenseBankPayment
+                var branchId = _currentUser.BranchId;
+                var bankIds = request.ExpenseHeader.ExpenseBankPayments.Select(ebp => ebp.BankId).Distinct().ToList();
+                var banks = await _context.Banks
+                    .Where(b => bankIds.Contains(b.Id) && b.BranchId == branchId)
+                    .ToListAsync(cancellationToken);
+
+                if (banks.Count != bankIds.Count)
                 {
-                    BankId = paymentDto.BankId,
-                    Amount = paymentDto.Amount
-                });
+                    var foundBankIds = banks.Select(b => b.Id).ToList();
+                    var missingBankIds = bankIds.Except(foundBankIds).ToList();
+                    throw new NotFoundException($"Bancos con IDs {string.Join(", ", missingBankIds)} no encontrados o no pertenecen a la sucursal");
+                }
+
+                foreach (var paymentDto in request.ExpenseHeader.ExpenseBankPayments)
+                {
+                    expenseHeader.ExpenseBankPayments.Add(new ExpenseBankPayment
+                    {
+                        BankId = paymentDto.BankId,
+                        Amount = paymentDto.Amount
+                    });
+                }
             }
         }
 
