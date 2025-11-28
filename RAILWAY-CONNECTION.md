@@ -9,10 +9,17 @@
 
 ## Connection String
 
-### Formato Railway (DATABASE_URL)
+### Formato Railway (DATABASE_URL - Host Interno)
 ```
 postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@postgres.railway.internal:5432/railway
 ```
+**Nota:** Este host solo funciona dentro de Railway (entre servicios).
+
+### Formato Railway (Host Público - Para conexiones externas)
+```
+postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway
+```
+**Nota:** El host público puede cambiar. Obtén el actual desde Railway Dashboard → Variables → `DATABASE_URL` o `PUBLIC_URL`.
 
 ### Formato .NET (para variables de entorno)
 ```
@@ -99,12 +106,27 @@ railway link
 railway connect postgres
 ```
 
-### Usando psql (desde terminal local)
+### Usando psql (desde terminal local) - Método Recomendado
 
-Necesitas el **host público** de Railway:
+Usa el connection string completo con el **host público** de Railway:
 
 ```bash
-psql -h HOST_PUBLICO -p 5432 -U postgres -d railway
+# Método recomendado: Connection string completo
+psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway" -f Scripts/deliveryman.sql
+
+# O para sesión interactiva
+psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway"
+```
+
+**Nota:** El host público (`centerbeam.proxy.rlwy.net:52635`) puede cambiar. Para obtener el actual:
+1. Railway Dashboard → Tu proyecto → Servicio PostgreSQL
+2. Pestaña "Variables" → Busca `DATABASE_URL` o `PUBLIC_URL`
+3. Copia el connection string completo
+
+**Alternativa con parámetros separados:**
+
+```bash
+psql -h centerbeam.proxy.rlwy.net -p 52635 -U postgres -d railway
 ```
 
 ### Usando pgAdmin o DBeaver
@@ -125,8 +147,12 @@ psql -h HOST_PUBLICO -p 5432 -U postgres -d railway
 
 ## Troubleshooting
 
-### Error: "could not connect to server"
-- Verifica que estés usando el host correcto (interno vs público)
+### Error: "could not connect to server" o "could not translate host name"
+
+- **Solución:** Usa el connection string con el host público (ver sección "Usando psql" arriba)
+- El host interno (`postgres.railway.internal`) solo funciona dentro de Railway
+- Para conexiones desde tu máquina local, necesitas el host público
+- Obtén el connection string actualizado desde Railway Dashboard → Variables → `DATABASE_URL` o `PUBLIC_URL`
 - Verifica que el servicio PostgreSQL esté activo en Railway
 - Verifica las credenciales
 

@@ -13,20 +13,17 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
 {
     private readonly IDeliverymanAdvanceRepository _advanceRepository;
     private readonly IUserRepository _userRepository;
-    private readonly IOrderRepository _orderRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
 
     public CreateAdvanceHandler(
         IDeliverymanAdvanceRepository advanceRepository,
         IUserRepository userRepository,
-        IOrderRepository orderRepository,
         IMapper mapper,
         ICurrentUser currentUser)
     {
         _advanceRepository = advanceRepository;
         _userRepository = userRepository;
-        _orderRepository = orderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
     }

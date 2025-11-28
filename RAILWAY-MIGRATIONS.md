@@ -5,7 +5,9 @@
 - **Proyecto**: señor arroz c# vue js
 - **Project ID**: 5cb08ee8-0129-4d5b-aba8-60b34cfeee58
 - **Base de Datos**: railway
-- **Script SQL**: `railway-initial-utf8.sql`
+- **Scripts SQL**: 
+  - `railway-initial-utf8.sql` - Migración inicial completa
+  - `Scripts/deliveryman.sql` - Tabla `deliveryman_advance` para gestión de abonos
 
 ## Prerrequisitos
 
@@ -15,10 +17,17 @@
 
 ## Connection String
 
-### Formato Railway (DATABASE_URL)
+### Formato Railway (DATABASE_URL - Host Interno)
 ```
 postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@postgres.railway.internal:5432/railway
 ```
+**Nota:** Este host solo funciona dentro de Railway (entre servicios).
+
+### Formato Railway (Host Público - Para migraciones desde local)
+```
+postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway
+```
+**Nota:** El host público puede cambiar. Obtén el actual desde Railway Dashboard → Variables → `DATABASE_URL` o `PUBLIC_URL`.
 
 ### Formato .NET (para variables de entorno)
 ```
@@ -27,9 +36,22 @@ Host=postgres.railway.internal;Port=5432;Database=railway;Username=postgres;Pass
 
 ## Pasos para Ejecutar la Migración
 
-### Paso 1: Conectarse a Railway PostgreSQL
+### Método Recomendado: Usando psql con Connection String Público
 
-Desde tu máquina local, en el directorio del proyecto:
+Este es el método más confiable para ejecutar scripts SQL desde tu máquina local:
+
+```bash
+# Desde el directorio senorArrozAPI
+psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway" -f Scripts/deliveryman.sql
+```
+
+**Nota:** El host público (`centerbeam.proxy.rlwy.net:52635`) puede cambiar. Para obtener el connection string actualizado:
+
+1. Ve a Railway Dashboard → Tu proyecto → Servicio PostgreSQL
+2. Pestaña "Variables" → Busca `DATABASE_URL` o `PUBLIC_URL`
+3. Copia el connection string completo
+
+### Método Alternativo 1: Sesión Interactiva con Railway CLI
 
 ```bash
 # Asegúrate de estar en el directorio correcto
@@ -41,29 +63,21 @@ railway connect postgres
 
 Esto abrirá una sesión interactiva de `psql` conectada a la base de datos Railway.
 
-### Paso 2: Ejecutar el Script SQL
-
 Una vez dentro de `psql`, ejecuta el script:
 
 ```sql
 -- Desde dentro de psql
-\i railway-initial-utf8.sql
+\i Scripts/deliveryman.sql
 ```
 
-**Alternativa: Ejecutar desde la línea de comandos**
-
-Si prefieres ejecutar el script directamente sin entrar en `psql`:
+### Método Alternativo 2: Usando Railway run (puede tener problemas de conexión)
 
 ```bash
 # Desde el directorio senorArrozAPI
-railway run --service MainDatabase psql -U postgres -d railway -f railway-initial-utf8.sql
+railway run --service MainDatabase psql -U postgres -d railway -f Scripts/deliveryman.sql
 ```
 
-O usando el connection string directamente:
-
-```bash
-railway run --service MainDatabase psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@postgres.railway.internal:5432/railway" -f railway-initial-utf8.sql
-```
+**Nota:** Este método puede fallar con errores de resolución de hostname. Si ocurre, usa el método recomendado.
 
 ### Paso 3: Verificar la Ejecución
 
@@ -130,20 +144,67 @@ SELECT COUNT(*) as total_clientes FROM customer;
 
 Deberías ver: 8 clientes
 
-## Características del Script
+## Ejecutar Migración de Tabla deliveryman_advance
 
-El script `railway-initial-utf8.sql` es **idempotente**, lo que significa que:
+Para agregar la tabla `deliveryman_advance` (gestión de abonos a domiciliarios):
 
-- Puede ejecutarse múltiples veces sin causar errores
-- Usa `IF NOT EXISTS` y `ON CONFLICT DO NOTHING` para evitar duplicados
-- Verifica el historial de migraciones antes de ejecutar cada sección
-- Está codificado en UTF-8 sin caracteres especiales problemáticos
+```bash
+# Desde el directorio senorArrozAPI
+psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway" -f Scripts/deliveryman.sql
+```
+
+**Verificar que se creó correctamente:**
+
+```sql
+-- Verificar la tabla
+\d deliveryman_advance
+
+-- Verificar la migración
+SELECT "MigrationId" FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20251128005639_AddDeliverymanAdvanceTable';
+```
+
+**Características del Script deliveryman.sql:**
+
+- Usa transacción explícita (`BEGIN;` / `COMMIT;`) para garantizar atomicidad
+- Delimitador `$migration$` para evitar conflictos con funciones que usan `$$`
+- Función `update_deliveryman_advance_updated_at()` creada dentro del bloque condicional
+- Idempotente: puede ejecutarse múltiples veces sin errores
+
+## Scripts Disponibles
+
+### `railway-initial-utf8.sql`
+Migración inicial completa del sistema. Incluye:
+- Estructura de todas las tablas
+- Índices y Foreign Keys
+- Funciones y Triggers
+- Datos iniciales (usuarios, barrios, productos, clientes, etc.)
+
+### `Scripts/deliveryman.sql`
+Script para crear la tabla `deliveryman_advance` (gestión de abonos a domiciliarios). Incluye:
+- Tabla `deliveryman_advance` con todas sus columnas y constraints
+- Función `update_deliveryman_advance_updated_at()` para actualizar `updated_at` automáticamente
+- Trigger asociado
+- Índices para optimización
+- Comentarios descriptivos
+- Registro en `__EFMigrationsHistory`
+
+**Características de los Scripts:**
+
+Todos los scripts SQL son **idempotentes**, lo que significa que:
+
+- Pueden ejecutarse múltiples veces sin causar errores
+- Usan `IF NOT EXISTS` y `ON CONFLICT DO NOTHING` para evitar duplicados
+- Verifican el historial de migraciones antes de ejecutar cada sección
+- Están codificados en UTF-8 sin caracteres especiales problemáticos
+- Usan transacciones explícitas (`BEGIN;` / `COMMIT;`) para garantizar atomicidad
 
 ## Troubleshooting
 
 ### Error: "could not translate host name"
 
-- Verifica que estés usando Railway CLI correctamente
+- **Solución recomendada:** Usa el método con connection string público (ver Método Recomendado arriba)
+- Si usas `railway run`, puede fallar. Usa `psql` directamente con el connection string público
+- Para obtener el host público: Railway Dashboard → Variables → `DATABASE_URL` o `PUBLIC_URL`
 - Asegúrate de que el proyecto esté vinculado: `railway link`
 
 ### Error: "password authentication failed"
@@ -185,17 +246,23 @@ El script `railway-initial-utf8.sql` es **idempotente**, lo que significa que:
 
 1. **No Automático**: La migración NO se ejecuta automáticamente. Debe ejecutarse manualmente.
 
-2. **Host Interno**: Usamos `postgres.railway.internal` que solo funciona dentro de Railway, evitando cargos adicionales por host público.
+2. **Host Interno vs Público**: 
+   - **Host interno** (`postgres.railway.internal`): Solo funciona dentro de Railway (entre servicios). Usado por el backend.
+   - **Host público** (`centerbeam.proxy.rlwy.net:52635`): Necesario para ejecutar migraciones desde tu máquina local. Obtén el actual desde Railway Dashboard → Variables → `DATABASE_URL` o `PUBLIC_URL`.
 
 3. **Seguridad**: No commitees connection strings con contraseñas en el repositorio. Usa variables de entorno o Railway Secrets.
 
-4. **Idempotencia**: El script puede ejecutarse múltiples veces sin problemas gracias a las verificaciones de existencia.
+4. **Idempotencia**: Los scripts pueden ejecutarse múltiples veces sin problemas gracias a las verificaciones de existencia.
 
-5. **Encoding**: El archivo está en UTF-8 sin BOM y sin caracteres especiales problemáticos (ñ, acentos) para evitar errores de encoding.
+5. **Encoding**: Los archivos están en UTF-8 sin BOM y sin caracteres especiales problemáticos (ñ, acentos) para evitar errores de encoding.
 
-## Estructura del Script
+6. **Transacciones**: El script `deliveryman.sql` usa transacciones explícitas (`BEGIN;` / `COMMIT;`) para garantizar atomicidad.
 
-El script `railway-initial-utf8.sql` contiene:
+## Estructura de los Scripts
+
+### `railway-initial-utf8.sql`
+
+Contiene:
 
 1. **Creación de tablas**: Todas las tablas del esquema de la base de datos
 2. **Índices y Foreign Keys**: Todas las relaciones y índices
@@ -210,3 +277,16 @@ El script `railway-initial-utf8.sql` contiene:
    - 5 categorías de productos
    - 28 productos
    - 8 clientes con direcciones y coordenadas
+
+### `Scripts/deliveryman.sql`
+
+Contiene:
+
+1. **Transacción explícita**: `BEGIN;` al inicio y `COMMIT;` al final
+2. **Verificación de existencia**: Bloque `DO $migration$` con `IF NOT EXISTS`
+3. **Creación de tabla**: `deliveryman_advance` con todas sus columnas y constraints
+4. **Índices**: 4 índices para optimización de consultas
+5. **Función**: `update_deliveryman_advance_updated_at()` para actualizar `updated_at`
+6. **Trigger**: `trigger_deliveryman_advance_updated_at` asociado a la función
+7. **Comentarios**: Descripción de tabla y columnas
+8. **Registro de migración**: Inserción en `__EFMigrationsHistory`
