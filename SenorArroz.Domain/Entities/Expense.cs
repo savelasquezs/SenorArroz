@@ -12,4 +12,5 @@ public class Expense : BaseEntity
     // Navigation Properties
     public virtual ExpenseCategory Category { get; set; } = null!;
     public virtual ICollection<ExpenseDetail> ExpenseDetails { get; set; } = new List<ExpenseDetail>();
+    public virtual ICollection<SupplierExpense> SupplierExpenses { get; set; } = new List<SupplierExpense>();
 }

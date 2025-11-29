@@ -43,6 +43,8 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<Supplier> Suppliers { get; set; }
 
+        DbSet<SupplierExpense> SupplierExpenses { get; set; }
+
         DbSet<User> Users { get; set; }
 
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

@@ -13,4 +13,5 @@ public class Supplier : BaseEntity
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;
     public virtual ICollection<ExpenseHeader> ExpenseHeaders { get; set; } = new List<ExpenseHeader>();
+    public virtual ICollection<SupplierExpense> SupplierExpenses { get; set; } = new List<SupplierExpense>();
 }

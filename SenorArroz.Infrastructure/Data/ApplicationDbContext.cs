@@ -52,6 +52,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<Supplier> Suppliers { get; set; }
 
+        public virtual DbSet<SupplierExpense> SupplierExpenses { get; set; }
+
         public virtual DbSet<User> Users { get; set; }
 
         public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
@@ -80,6 +82,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new ExpenseHeaderConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseDetailConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseBankPaymentConfiguration());
+            modelBuilder.ApplyConfiguration(new SupplierExpenseConfiguration());
             modelBuilder.ApplyConfiguration(new RefreshTokenConfiguration());
             modelBuilder.ApplyConfiguration(new PasswordResetTokenConfiguration());
 

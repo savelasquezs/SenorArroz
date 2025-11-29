@@ -65,6 +65,8 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             expenseHeader.SupplierId = request.ExpenseHeader.SupplierId.Value;
         }
 
+        var newDetailInfos = new List<(int ExpenseId, decimal UnitAmount, int Quantity)>();
+
         // Manejar detalles: actualizar existentes, crear nuevos, eliminar los que no están en la lista
         if (request.ExpenseHeader.ExpenseDetails != null)
         {
@@ -114,12 +116,14 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                 else
                 {
                     // Crear nuevo
-                    expenseHeader.ExpenseDetails.Add(new ExpenseDetail
+                    var newDetail = new ExpenseDetail
                     {
                         ExpenseId = detailDto.ExpenseId,
                         Quantity = detailDto.Quantity,
                         Amount = detailDto.Amount
-                    });
+                    };
+                    expenseHeader.ExpenseDetails.Add(newDetail);
+                    newDetailInfos.Add((newDetail.ExpenseId, (decimal)newDetail.Amount, newDetail.Quantity));
                 }
             }
         }
@@ -162,6 +166,12 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         }
 
         var updated = await _expenseHeaderRepository.UpdateAsync(expenseHeader);
+
+        if (newDetailInfos.Any())
+        {
+            await UpsertSupplierExpensesAsync(expenseHeader.SupplierId, newDetailInfos, cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
         var updatedWithDetails = await _expenseHeaderRepository.GetByIdWithDetailsAsync(updated.Id);
 
         if (updatedWithDetails == null)
@@ -188,6 +198,49 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             .ToList();
 
         return dto;
+    }
+
+    private async Task UpsertSupplierExpensesAsync(
+        int supplierId,
+        IEnumerable<(int ExpenseId, decimal UnitAmount, int Quantity)> detailInfos,
+        CancellationToken cancellationToken)
+    {
+        var items = detailInfos.ToList();
+        if (!items.Any())
+        {
+            return;
+        }
+
+        var expenseIds = items.Select(i => i.ExpenseId).Distinct().ToList();
+        var existing = await _context.SupplierExpenses
+            .Where(se => se.SupplierId == supplierId && expenseIds.Contains(se.ExpenseId))
+            .ToListAsync(cancellationToken);
+
+        var now = DateTime.UtcNow;
+
+        foreach (var item in items)
+        {
+            var supplierExpense = existing.FirstOrDefault(se => se.ExpenseId == item.ExpenseId);
+            if (supplierExpense == null)
+            {
+                supplierExpense = new SupplierExpense
+                {
+                    SupplierId = supplierId,
+                    ExpenseId = item.ExpenseId,
+                    UsageCount = item.Quantity,
+                    LastUsedAt = now,
+                    LastUnitPrice = item.UnitAmount
+                };
+                _context.SupplierExpenses.Add(supplierExpense);
+                existing.Add(supplierExpense);
+            }
+            else
+            {
+                supplierExpense.UsageCount += item.Quantity;
+                supplierExpense.LastUsedAt = now;
+                supplierExpense.LastUnitPrice = item.UnitAmount;
+            }
+        }
     }
 }
 

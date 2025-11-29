@@ -63,6 +63,14 @@ public class SuppliersController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("{id}/expenses")]
+    public async Task<ActionResult<List<SupplierExpenseDto>>> GetSupplierExpenses(int id)
+    {
+        var query = new GetSupplierExpensesQuery { SupplierId = id };
+        var result = await _mediator.Send(query);
+        return Ok(result);
+    }
+
     [HttpPost]
     [Authorize(Roles = "Superadmin,Admin,Cashier")]
     public async Task<ActionResult<SupplierDto>> CreateSupplier([FromBody] CreateSupplierDto dto, [FromQuery] int? branchId = null)
