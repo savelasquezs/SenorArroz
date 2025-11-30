@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Resend;
 using SenorArroz.Domain.Interfaces.Services;
 
 namespace SenorArroz.Infrastructure.Services;
@@ -19,6 +20,8 @@ public class EmailService : IEmailService
     private readonly string _fromEmail;
     private readonly string _fromName;
     private readonly bool _enableSsl;
+    private readonly IResend? _resendClient;
+    private readonly bool _useResend;
 
     public EmailService(IConfiguration configuration, ILogger<EmailService> logger)
     {
@@ -32,6 +35,13 @@ public class EmailService : IEmailService
         _fromEmail = _configuration["EmailSettings:FromEmail"] ?? "";
         _fromName = _configuration["EmailSettings:FromName"] ?? "SenorArroz";
         _enableSsl = bool.Parse(_configuration["EmailSettings:EnableSsl"] ?? "true");
+
+        var resendApiKey = _configuration["EmailSettings:ResendApiKey"];
+        if (!string.IsNullOrWhiteSpace(resendApiKey))
+        {
+            _resendClient = ResendClient.Create(resendApiKey);
+            _useResend = true;
+        }
     }
 
     public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string userName, string resetToken, string resetUrl)
@@ -157,6 +167,57 @@ public class EmailService : IEmailService
     }
 
     private async Task<bool> SendEmailAsync(string toEmail, string subject, string body, bool isHtml = false)
+    {
+        if (_useResend && _resendClient != null)
+        {
+            var resendResult = await SendEmailViaResendAsync(toEmail, subject, body, isHtml);
+            if (resendResult)
+            {
+                return true;
+            }
+
+            _logger.LogWarning("Falling back to SMTP for email to {Email}", toEmail);
+        }
+
+        return await SendEmailViaSmtpAsync(toEmail, subject, body, isHtml);
+    }
+
+    private async Task<bool> SendEmailViaResendAsync(string toEmail, string subject, string body, bool isHtml)
+    {
+        try
+        {
+            var fromValue = string.IsNullOrWhiteSpace(_fromName)
+                ? _fromEmail
+                : $"{_fromName} <{_fromEmail}>";
+
+            var message = new EmailMessage
+            {
+                From = fromValue,
+                To = new[] { toEmail },
+                Subject = subject,
+            };
+
+            if (isHtml)
+            {
+                message.HtmlBody = body;
+            }
+            else
+            {
+                message.TextBody = body;
+            }
+
+            await _resendClient!.EmailSendAsync(message);
+            _logger.LogInformation("Email sent successfully via Resend to {Email}", toEmail);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send email via Resend to {Email}", toEmail);
+            return false;
+        }
+    }
+
+    private async Task<bool> SendEmailViaSmtpAsync(string toEmail, string subject, string body, bool isHtml = false)
     {
         try
         {
