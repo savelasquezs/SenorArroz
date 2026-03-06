@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Exceptions;
@@ -50,6 +50,7 @@ public class UpdateAddressHandler : IRequestHandler<UpdateAddressCommand, Custom
         address.Latitude = request.Latitude;
         address.Longitude = request.Longitude;
         address.IsPrimary = request.IsPrimary;
+        address.DeliveryFee = request.DeliveryFee;
 
         address = await _addressRepository.UpdateAsync(address);
 

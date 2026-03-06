@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -26,6 +26,9 @@ namespace SenorArroz.Application.Features.Customers.DTOs
         public decimal? Longitude { get; set; }
 
         public bool IsPrimary { get; set; } = false;
+
+        [Range(0, int.MaxValue, ErrorMessage = "La tarifa de domicilio debe ser mayor o igual a 0")]
+        public int DeliveryFee { get; set; }
     }
 
 }

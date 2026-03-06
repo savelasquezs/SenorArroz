@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
@@ -61,13 +61,7 @@ public class AddressRepository : IAddressRepository
 
     public async Task<Address> UpdateAsync(Address address)
     {
-        // Update delivery fee if neighborhood changed
-        var neighborhood = await _context.Neighborhoods.FindAsync(address.NeighborhoodId);
-        if (neighborhood != null)
-        {
-            address.DeliveryFee = neighborhood.DeliveryFee;
-        }
-
+        // El DeliveryFee ya viene actualizado desde el handler; no sobrescribir con el valor del barrio.
         _context.Addresses.Update(address);
         await _context.SaveChangesAsync();
 

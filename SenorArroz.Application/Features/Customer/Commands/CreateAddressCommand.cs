@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 using SenorArroz.Application.Features.Customers.DTOs;
 
 namespace SenorArroz.Application.Features.Customers.Commands;
@@ -12,4 +12,5 @@ public class CreateAddressCommand : IRequest<CustomerAddressDto>
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
     public bool IsPrimary { get; set; } = false;
+    public int DeliveryFee { get; set; }
 }

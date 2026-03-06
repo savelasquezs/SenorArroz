@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Entities;
@@ -55,7 +55,7 @@ public class CreateAddressHandler : IRequestHandler<CreateAddressCommand, Custom
             AdditionalInfo = request.AdditionalInfo?.Trim(),
             Latitude = request.Latitude,
             Longitude = request.Longitude,
-            DeliveryFee = neighborhood.DeliveryFee,
+            DeliveryFee = request.DeliveryFee,
             IsPrimary = request.IsPrimary
         };
 
