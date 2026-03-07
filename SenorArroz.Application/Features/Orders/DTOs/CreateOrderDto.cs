@@ -13,6 +13,7 @@ public class CreateOrderDto
     public OrderType Type { get; set; }
     public int? DeliveryFee { get; set; }
     public DateTime? ReservedFor { get; set; }
+    public DateTime? PrepareAt { get; set; }
     public int? Subtotal { get; set; }
     public int? Total { get; set; }
     public int? DiscountTotal { get; set; }

@@ -46,6 +46,7 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.Id, opt => opt.Ignore())
             .ForMember(dest => dest.Status, opt => opt.Ignore())
             .ForMember(dest => dest.StatusTimes, opt => opt.Ignore())
+            .ForMember(dest => dest.PreparedNotifiedAt, opt => opt.Ignore())
             .ForMember(dest => dest.CancelledReason, opt => opt.Ignore())
             .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
             .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())

@@ -54,20 +54,24 @@ public class ReservationNotificationService : BackgroundService
         var now = DateTime.UtcNow;
         var twoHoursFromNow = now.AddHours(2);
 
-        // Buscar reservas que estén a 2 horas o menos y aún no estén en preparación
+        // Buscar pedidos donde prepare_at <= now (o fallback reserved_for-1h) y aún no notificados
         var reservations = await orderRepository.GetReservationsDueForPreparation(
-            now, 
-            twoHoursFromNow, 
+            now,
+            twoHoursFromNow,
             OrderStatus.Taken);
 
         foreach (var reservation in reservations)
         {
             var orderDto = mapper.Map<OrderDto>(reservation);
             await notificationService.NotifyReservationToKitchen(orderDto);
-            
+
+            // Marcar como notificado para evitar duplicados
+            reservation.PreparedNotifiedAt = DateTime.UtcNow;
+            await orderRepository.UpdateAsync(reservation);
+
             _logger.LogInformation(
-                "Notified kitchen about reservation {OrderId} for branch {BranchId}", 
-                reservation.Id, 
+                "Notified kitchen about reservation {OrderId} for branch {BranchId}",
+                reservation.Id,
                 reservation.BranchId);
         }
     }

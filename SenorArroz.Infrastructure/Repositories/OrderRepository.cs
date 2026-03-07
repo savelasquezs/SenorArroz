@@ -794,6 +794,9 @@ public class OrderRepository : IOrderRepository
         DateTime toTime, 
         OrderStatus status)
     {
+        // Usa prepare_at (fallback: reserved_for - 1h). Notificar cuando prepare_at <= now.
+        // Excluir ya notificados (prepared_notified_at).
+        var now = DateTime.UtcNow;
         return await _context.Orders
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
@@ -808,11 +811,13 @@ public class OrderRepository : IOrderRepository
                 .ThenInclude(ap => ap.App)
                     .ThenInclude(a => a.Bank)
                         .ThenInclude(b => b.Branch)
-            .Where(o => o.Type == OrderType.Reservation
-                     && o.Status == status
-                     && o.ReservedFor.HasValue
-                     && o.ReservedFor.Value >= fromTime
-                     && o.ReservedFor.Value <= toTime)
+            .Where(o => o.Status == status
+                     && o.PreparedNotifiedAt == null
+                     && (o.ReservedFor.HasValue || o.PrepareAt.HasValue)
+                     && (
+                         (o.PrepareAt.HasValue && o.PrepareAt.Value <= now)
+                         || (!o.PrepareAt.HasValue && o.ReservedFor.HasValue && o.ReservedFor.Value.AddHours(-1) <= now)
+                     ))
             .ToListAsync();
     }
 }

@@ -266,6 +266,8 @@ CREATE TABLE IF NOT EXISTS "order" (
     type text NOT NULL DEFAULT 'delivery',
     delivery_fee integer,
     reserved_for timestamp with time zone,
+    prepare_at timestamp with time zone,
+    prepared_notified_at timestamp with time zone,
     status text NOT NULL,
     status_times jsonb NOT NULL,
     subtotal integer NOT NULL DEFAULT 0,

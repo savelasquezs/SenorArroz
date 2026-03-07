@@ -1,4 +1,4 @@
-﻿using SenorArroz.Domain.Entities.Common;
+using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Domain.Enums;
 using System.Text.Json;
 
@@ -17,6 +17,15 @@ public class Order : BaseEntity
     public OrderType? Type { get; set; }
     public int? DeliveryFee { get; set; }
     public DateTime? ReservedFor { get; set; }
+    /// <summary>
+    /// Hora en que el pedido debe aparecer en cocina (para reservas).
+    /// Por defecto reserved_for - 1h, modificable.
+    /// </summary>
+    public DateTime? PrepareAt { get; set; }
+    /// <summary>
+    /// Momento en que se emitió ReservationReady a cocina. Evita notificaciones duplicadas.
+    /// </summary>
+    public DateTime? PreparedNotifiedAt { get; set; }
     public OrderStatus Status { get; set; }
 
     // JSONB field para timestamps - mapea directamente a "status_times"

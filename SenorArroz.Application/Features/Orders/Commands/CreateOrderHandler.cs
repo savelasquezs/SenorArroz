@@ -84,7 +84,20 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
                 throw new BusinessException("Los pedidos de reserva requieren el nombre del invitado");
         }
 
+        // Validar prepare_at <= reserved_for cuando ambos tienen valor
+        if (request.Order.PrepareAt.HasValue && request.Order.ReservedFor.HasValue
+            && request.Order.PrepareAt.Value > request.Order.ReservedFor.Value)
+        {
+            throw new BusinessException("La hora de preparación no puede ser posterior a la hora de entrega");
+        }
+
         var order = _mapper.Map<Order>(request.Order);
+
+        // prepare_at por defecto: reserved_for - 1h si null y hay reserved_for
+        if (order.ReservedFor.HasValue && !order.PrepareAt.HasValue)
+        {
+            order.PrepareAt = order.ReservedFor.Value.AddHours(-1);
+        }
         
         // Configurar valores obligatorios inmediatamente después del mapeo
         order.BranchId = branchId;
@@ -153,9 +166,11 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
 
         var result = _mapper.Map<OrderDto>(createdOrder);
 
-        // Notificar a cocina si es pedido nuevo (no reserva futura)
-        if (result.Type != OrderType.Reservation || 
-            (result.ReservedFor.HasValue && result.ReservedFor.Value <= DateTime.UtcNow.AddHours(2)))
+        // Notificar a cocina: pedido inmediato (sin reserved_for) o prepare_at ya pasó
+        var now = DateTime.UtcNow;
+        var shouldNotifyNow = !createdOrder.ReservedFor.HasValue
+            || (createdOrder.PrepareAt.HasValue && createdOrder.PrepareAt.Value <= now);
+        if (shouldNotifyNow)
         {
             await _notificationService.NotifyNewOrderToKitchen(result);
         }

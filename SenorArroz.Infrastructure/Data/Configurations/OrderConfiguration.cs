@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
@@ -35,6 +35,8 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
 
         builder.Property(o => o.DeliveryFee).HasColumnName("delivery_fee");
         builder.Property(o => o.ReservedFor).HasColumnName("reserved_for");
+        builder.Property(o => o.PrepareAt).HasColumnName("prepare_at");
+        builder.Property(o => o.PreparedNotifiedAt).HasColumnName("prepared_notified_at");
         builder.Property(o => o.StatusTimes).HasColumnName("status_times").HasColumnType("jsonb");
 
         builder.Property(o => o.Subtotal)
