@@ -624,35 +624,164 @@ BEGIN
 END $$;
 
 DO $$
-DECLARE branch_id_var INTEGER;
-BEGIN
-    SELECT id INTO branch_id_var FROM branch WHERE name = 'Santander' LIMIT 1;
-    INSERT INTO product_category (branch_id, name)
-    VALUES
-        (branch_id_var, 'Bebidas'),
-        (branch_id_var, 'Entradas'),
-        (branch_id_var, 'Platos Principales'),
-        (branch_id_var, 'Postres'),
-        (branch_id_var, 'Acompanamientos');
-END $$;
-
-DO $$
 DECLARE
     branch_id_var INTEGER;
-    bebidas_cat_id INTEGER; entradas_cat_id INTEGER; platos_cat_id INTEGER; postres_cat_id INTEGER; acompanamientos_cat_id INTEGER;
+    paisa_cat_id INTEGER;
+    ranchero_cat_id INTEGER;
+    carbonara_cat_id INTEGER;
+    ropa_vieja_cat_id INTEGER;
+    ropa_vieja_chich_cat_id INTEGER;
+    paisa_chich_cat_id INTEGER;
+    combos_cat_id INTEGER;
+    adiciones_cat_id INTEGER;
+    gaseosas_cat_id INTEGER;
+    vegetariano_cat_id INTEGER;
 BEGIN
     SELECT id INTO branch_id_var FROM branch WHERE name = 'Santander' LIMIT 1;
-    SELECT id INTO bebidas_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Bebidas' LIMIT 1;
-    SELECT id INTO entradas_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Entradas' LIMIT 1;
-    SELECT id INTO platos_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Platos Principales' LIMIT 1;
-    SELECT id INTO postres_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Postres' LIMIT 1;
-    SELECT id INTO acompanamientos_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Acompanamientos' LIMIT 1;
+    IF branch_id_var IS NULL THEN
+        RETURN;
+    END IF;
 
-    INSERT INTO product (category_id, name, price, stock, active) SELECT bebidas_cat_id, n, p, s, a FROM (VALUES ('Coca Cola',3000,100,true),('Agua',2000,100,true),('Jugo Natural',4000,50,true),('Limonada',3500,50,true),('Gaseosa Personal',2500,100,true)) AS v(n,p,s,a);
-    INSERT INTO product (category_id, name, price, stock, active) SELECT entradas_cat_id, n, p, s, a FROM (VALUES ('Patacones con Hogao',8000,30,true),('Arepas con Queso',6000,40,true),('Empanadas (3 unidades)',7000,50,true),('Chicharron',10000,25,true),('Ensalada de la Casa',9000,20,true)) AS v(n,p,s,a);
-    INSERT INTO product (category_id, name, price, stock, active) SELECT platos_cat_id, n, p, s, a FROM (VALUES ('Arroz con Pollo',15000,20,true),('Bandeja Paisa',18000,15,true),('Sancocho',12000,25,true),('Ajiaco',14000,20,true),('Pechuga a la Plancha',16000,18,true),('Pescado Frito',17000,12,true),('Carne Asada',19000,15,true),('Chuleta de Cerdo',17500,10,true)) AS v(n,p,s,a);
-    INSERT INTO product (category_id, name, price, stock, active) SELECT postres_cat_id, n, p, s, a FROM (VALUES ('Flan de Caramelo',6000,15,true),('Tres Leches',7000,12,true),('Helado',5000,20,true),('Brownie con Helado',8000,10,true),('Mazamorra',4000,25,true)) AS v(n,p,s,a);
-    INSERT INTO product (category_id, name, price, stock, active) SELECT acompanamientos_cat_id, n, p, s, a FROM (VALUES ('Arroz',2000,100,true),('Frijoles',3000,80,true),('Papas Fritas',4000,60,true),('Ensalada',3000,50,true),('Platano Maduro',2500,70,true)) AS v(n,p,s,a);
+    INSERT INTO product_category (branch_id, name)
+    VALUES
+        (branch_id_var, 'Paisa'),
+        (branch_id_var, 'Ranchero'),
+        (branch_id_var, 'Carbonara'),
+        (branch_id_var, 'Ropa Vieja'),
+        (branch_id_var, 'Ropa Vieja Chich'),
+        (branch_id_var, 'Paisa Chich'),
+        (branch_id_var, 'Combos'),
+        (branch_id_var, 'Adiciones'),
+        (branch_id_var, 'Gaseosas'),
+        (branch_id_var, 'Vegetariano')
+    ON CONFLICT DO NOTHING;
+
+    SELECT id INTO paisa_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Paisa' LIMIT 1;
+    SELECT id INTO ranchero_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Ranchero' LIMIT 1;
+    SELECT id INTO carbonara_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Carbonara' LIMIT 1;
+    SELECT id INTO ropa_vieja_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Ropa Vieja' LIMIT 1;
+    SELECT id INTO ropa_vieja_chich_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Ropa Vieja Chich' LIMIT 1;
+    SELECT id INTO paisa_chich_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Paisa Chich' LIMIT 1;
+    SELECT id INTO combos_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Combos' LIMIT 1;
+    SELECT id INTO adiciones_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Adiciones' LIMIT 1;
+    SELECT id INTO gaseosas_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Gaseosas' LIMIT 1;
+    SELECT id INTO vegetariano_cat_id FROM product_category WHERE branch_id = branch_id_var AND name = 'Vegetariano' LIMIT 1;
+
+    -- Arroz Ropa Vieja con Chicharrón
+    INSERT INTO product (category_id, name, price, stock, active)
+    SELECT ropa_vieja_chich_cat_id, n, p, 100, true
+    FROM (VALUES
+        ('Arroz ropa vieja con chicharrón Personal', 21000),
+        ('Arroz ropa vieja con chicharrón Dúo',      37000),
+        ('Arroz ropa vieja con chicharrón Trío',     50000),
+        ('Arroz ropa vieja con chicharrón Familiar', 66000),
+        ('Arroz ropa vieja con chicharrón Súper',    84000)
+    ) AS v(n, p);
+
+    -- Arroz Paisa con Chicharrón
+    INSERT INTO product (category_id, name, price, stock, active)
+    SELECT paisa_chich_cat_id, n, p, 100, true
+    FROM (VALUES
+        ('Arroz paisa con chicharrón Personal', 20000),
+        ('Arroz paisa con chicharrón Dúo',      35000),
+        ('Arroz paisa con chicharrón Trío',     45000),
+        ('Arroz paisa con chicharrón Familiar', 61000),
+        ('Arroz paisa con chicharrón Súper',    77000)
+    ) AS v(n, p);
+
+    -- Arroz Carbonara
+    INSERT INTO product (category_id, name, price, stock, active)
+    SELECT carbonara_cat_id, n, p, 100, true
+    FROM (VALUES
+        ('Arroz carbonara Personal', 19000),
+        ('Arroz carbonara Dúo',      33000),
+        ('Arroz carbonara Trío',     44000),
+        ('Arroz carbonara Familiar', 58000),
+        ('Arroz carbonara Súper',    73000)
+    ) AS v(n, p);
+
+    -- Arroz Ropa Vieja
+    INSERT INTO product (category_id, name, price, stock, active)
+    SELECT ropa_vieja_cat_id, n, p, 100, true
+    FROM (VALUES
+        ('Arroz ropa vieja Personal', 19000),
+        ('Arroz ropa vieja Dúo',      33000),
+        ('Arroz ropa vieja Trío',     44000),
+        ('Arroz ropa vieja Familiar', 58000),
+        ('Arroz ropa vieja Súper',    73000)
+    ) AS v(n, p);
+
+    -- Arroz Ranchero
+    INSERT INTO product (category_id, name, price, stock, active)
+    SELECT ranchero_cat_id, n, p, 100, true
+    FROM (VALUES
+        ('Arroz ranchero Personal', 18000),
+        ('Arroz ranchero Dúo',      31000),
+        ('Arroz ranchero Trío',     40000),
+        ('Arroz ranchero Familiar', 53000),
+        ('Arroz ranchero Súper',    66000)
+    ) AS v(n, p);
+
+    -- Arroz Paisa
+    INSERT INTO product (category_id, name, price, stock, active)
+    SELECT paisa_cat_id, n, p, 100, true
+    FROM (VALUES
+        ('Arroz paisa Personal', 18000),
+        ('Arroz paisa Dúo',      31000),
+        ('Arroz paisa Trío',     40000),
+        ('Arroz paisa Familiar', 53000),
+        ('Arroz paisa Súper',    66000)
+    ) AS v(n, p);
+
+    -- Arroz Vegetariano
+    INSERT INTO product (category_id, name, price, stock, active)
+    SELECT vegetariano_cat_id, n, p, 100, true
+    FROM (VALUES
+        ('Arroz vegetariano Personal', 15000),
+        ('Arroz vegetariano Dúo',      22000),
+        ('Arroz vegetariano Trío',     28000),
+        ('Arroz vegetariano Familiar', 33000),
+        ('Arroz vegetariano Súper',    39000)
+    ) AS v(n, p);
+
+    -- Combos
+    INSERT INTO product (category_id, name, price, stock, active)
+    VALUES
+        (combos_cat_id, 'Combochicharrón', 25000, 100, true),
+        (combos_cat_id, 'Costicombo',      25000, 100, true);
+
+    -- Adiciones
+    INSERT INTO product (category_id, name, price, stock, active)
+    VALUES
+        (adiciones_cat_id, 'Trocitos de chicharrón',         12000, 100, true),
+        (adiciones_cat_id, 'Chicharrón 250 gr',              12000, 100, true),
+        (adiciones_cat_id, 'Costilla BBQ 500 gr',            15000, 100, true),
+        (adiciones_cat_id, 'Yuca x5 unidades',                5000, 100, true),
+        (adiciones_cat_id, 'Yuca x10 unidades',              10000, 100, true),
+        (adiciones_cat_id, 'Papas a la francesa 250 gr',      5000, 100, true),
+        (adiciones_cat_id, 'Papas a la francesa 500 gr',     10000, 100, true);
+
+    -- Gaseosas 1.5L (todas a 7000)
+    INSERT INTO product (category_id, name, price, stock, active)
+    VALUES
+        (gaseosas_cat_id, 'CocaCola 1.5L', 7000, 100, true),
+        (gaseosas_cat_id, 'Premio 1.5L',   7000, 100, true),
+        (gaseosas_cat_id, 'Quatro 1.5L',   7000, 100, true),
+        (gaseosas_cat_id, 'Sprite 1.5L',   7000, 100, true);
+
+    -- Gaseosas 3L
+    INSERT INTO product (category_id, name, price, stock, active)
+    VALUES
+        (gaseosas_cat_id, 'CocaCola 3L', 12000, 100, true),
+        (gaseosas_cat_id, 'Quatro 3L',   11000, 100, true);
+
+    -- Gaseosas PET 400 ml (todas a 3500)
+    INSERT INTO product (category_id, name, price, stock, active)
+    VALUES
+        (gaseosas_cat_id, 'CocaCola PET 400', 3500, 100, true),
+        (gaseosas_cat_id, 'Premio PET 400',   3500, 100, true),
+        (gaseosas_cat_id, 'Quatro PET 400',   3500, 100, true),
+        (gaseosas_cat_id, 'Sprite PET 400',   3500, 100, true);
 END $$;
 
 DO $$
