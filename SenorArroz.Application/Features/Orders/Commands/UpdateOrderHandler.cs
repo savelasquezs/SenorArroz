@@ -58,6 +58,16 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             throw new BusinessException("La hora de preparación no puede ser posterior a la hora de entrega");
         }
 
+        // Validar distancia mínima de 40 min entre preparación y entrega
+        if (request.Order.PrepareAt.HasValue && request.Order.ReservedFor.HasValue)
+        {
+            var diff = request.Order.ReservedFor.Value - request.Order.PrepareAt.Value;
+            if (diff.TotalMinutes < 40)
+            {
+                throw new BusinessException("Debe haber al menos 40 minutos entre la hora de preparación y la hora de entrega");
+            }
+        }
+
         // Cambio automático a Reservation: si se pone reserved_for con valor futuro
         if (request.Order.ReservedFor.HasValue && request.Order.ReservedFor.Value > DateTime.UtcNow)
         {
