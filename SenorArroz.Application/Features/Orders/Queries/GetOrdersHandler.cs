@@ -74,9 +74,10 @@ public class GetOrdersHandler : IRequestHandler<GetOrdersQuery, PagedResult<Orde
             request.PageSize,
             request.SortBy,
             request.SortOrder,
-            fromDateUtc,    // Filtro de fecha inicio en UTC
-            toDateUtc,      // Filtro de fecha fin en UTC
-            branchFilter);  // Filtro de sucursal
+            fromDateUtc,       // Filtro de fecha inicio en UTC
+            toDateUtc,         // Filtro de fecha fin en UTC
+            branchFilter,      // Filtro de sucursal
+            request.ForKitchen);
 
         return new PagedResult<OrderDto>
         {

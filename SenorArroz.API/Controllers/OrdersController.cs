@@ -32,6 +32,7 @@ public class OrdersController : ControllerBase
     /// <param name="branchId">ID de sucursal para filtrar (solo superadmin)</param>
     /// <param name="fromDate">Fecha inicial del filtro (default: inicio del día actual)</param>
     /// <param name="toDate">Fecha final del filtro (default: fin del día actual)</param>
+    /// <param name="forKitchen">Si es true, filtra reservas por prepareAt y estados cocina</param>
     [HttpGet]
     public async Task<ActionResult<PagedResult<OrderDto>>> GetOrders(
         [FromQuery] int page = 1,
@@ -40,7 +41,8 @@ public class OrdersController : ControllerBase
         [FromQuery] string sortOrder = "asc",
         [FromQuery] int? branchId = null,
         [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null)
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] bool forKitchen = false)
     {
         var query = new GetOrdersQuery
         {
@@ -50,7 +52,8 @@ public class OrdersController : ControllerBase
             SortOrder = sortOrder,
             BranchId = branchId,
             FromDate = fromDate,
-            ToDate = toDate
+            ToDate = toDate,
+            ForKitchen = forKitchen
         };
 
         var result = await _mediator.Send(query);

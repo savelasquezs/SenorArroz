@@ -64,7 +64,7 @@ public class OrderRepository : IOrderRepository
             .FirstOrDefaultAsync(o => o.Id == id);
     }
 
-    public async Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null)
+    public async Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null, bool forKitchen = false)
     {
         var query = _context.Orders
             .Include(o => o.Branch)
@@ -96,6 +96,17 @@ public class OrderRepository : IOrderRepository
         if (toDate.HasValue)
         {
             query = query.Where(o => o.CreatedAt <= toDate.Value);
+        }
+
+        if (forKitchen)
+        {
+            var now = DateTime.UtcNow;
+            query = query.Where(o => o.Status == OrderStatus.Taken
+                || o.Status == OrderStatus.InPreparation
+                || o.Status == OrderStatus.Ready);
+            query = query.Where(o =>
+                o.Type != OrderType.Reservation
+                || (o.PrepareAt.HasValue && o.PrepareAt.Value <= now));
         }
 
         // Aplicar ordenamiento
