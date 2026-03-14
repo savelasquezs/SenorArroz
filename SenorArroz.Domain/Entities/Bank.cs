@@ -1,4 +1,5 @@
-﻿using SenorArroz.Domain.Entities.Common;
+using SenorArroz.Domain.Entities.Common;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
@@ -8,6 +9,7 @@ public class Bank : BaseEntity
     public string Name { get; set; } = string.Empty;
     public string? ImageUrl { get; set; }
     public bool Active { get; set; } = true;
+    public BankType Type { get; set; } = BankType.Normal;
 
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;

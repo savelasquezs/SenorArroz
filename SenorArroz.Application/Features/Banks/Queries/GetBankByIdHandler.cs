@@ -3,6 +3,7 @@ using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Banks.DTOs;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Application.Features.Banks.Queries;
@@ -29,6 +30,10 @@ public class GetBankByIdHandler : IRequestHandler<GetBankByIdQuery, BankDto?>
 
         // Check if user has access to this bank's branch
         if (_currentUser.Role != "superadmin" && bank.BranchId != _currentUser.BranchId)
+            return null;
+
+        // Cashier cannot access hidden banks (CashVault, RealVault)
+        if (_currentUser.Role == "cashier" && (bank.Type == BankType.CashVault || bank.Type == BankType.RealVault))
             return null;
 
         var bankDto = _mapper.Map<BankDto>(bank);

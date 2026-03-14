@@ -3,6 +3,7 @@ using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Banks.DTOs;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -43,6 +44,8 @@ public class UpdateBankHandler : IRequestHandler<UpdateBankCommand, BankDto>
         existingBank.Name = request.Name;
         existingBank.ImageUrl = request.ImageUrl;
         existingBank.Active = request.Active;
+        if (request.Type.HasValue)
+            existingBank.Type = request.Type.Value;
 
         var updatedBank = await _bankRepository.UpdateAsync(existingBank);
         var bankDto = _mapper.Map<BankDto>(updatedBank);

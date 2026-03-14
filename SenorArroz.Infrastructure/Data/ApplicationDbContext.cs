@@ -22,6 +22,12 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<BankPayment> BankPayments { get; set; }
 
+        public virtual DbSet<BankTransfer> BankTransfers { get; set; }
+
+        public virtual DbSet<CashRegisterClosure> CashRegisterClosures { get; set; }
+        public virtual DbSet<CashClosureBankReconciliation> CashClosureBankReconciliations { get; set; }
+        public virtual DbSet<CashClosureInformalLoan> CashClosureInformalLoans { get; set; }
+
         public virtual DbSet<Branch> Branches { get; set; }
 
         public virtual DbSet<Customer> Customers { get; set; }
@@ -75,6 +81,10 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new AppConfiguration());
             modelBuilder.ApplyConfiguration(new AppPaymentConfiguration());
             modelBuilder.ApplyConfiguration(new BankPaymentConfiguration());
+            modelBuilder.ApplyConfiguration(new BankTransferConfiguration());
+            modelBuilder.ApplyConfiguration(new CashRegisterClosureConfiguration());
+            modelBuilder.ApplyConfiguration(new CashClosureBankReconciliationConfiguration());
+            modelBuilder.ApplyConfiguration(new CashClosureInformalLoanConfiguration());
             modelBuilder.ApplyConfiguration(new DeliverymanAdvanceConfiguration());
             modelBuilder.ApplyConfiguration(new SupplierConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseCategoryConfiguration());

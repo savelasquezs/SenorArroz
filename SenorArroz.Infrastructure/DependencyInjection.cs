@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SenorArroz.Application.Common.Interfaces;
@@ -52,9 +52,13 @@ public static class DependencyInjection
         services.AddScoped<IAppRepository, AppRepository>();
         services.AddScoped<IBankPaymentRepository, BankPaymentRepository>();
         services.AddScoped<IAppPaymentRepository, AppPaymentRepository>();
+        services.AddScoped<IBankTransferRepository, BankTransferRepository>();
 
         // Order Repositories
         services.AddScoped<IOrderRepository, OrderRepository>();
+
+        // Cash Register Repositories
+        services.AddScoped<ICashRegisterClosureRepository, CashRegisterClosureRepository>();
 
         // Services
         services.AddHttpContextAccessor();

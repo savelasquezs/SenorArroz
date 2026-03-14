@@ -1,4 +1,6 @@
 // SenorArroz.Application/Features/Banks/DTOs/BankDetailDto.cs
+using SenorArroz.Domain.Enums;
+
 namespace SenorArroz.Application.Features.Banks.DTOs;
 
 public class BankDetailDto
@@ -9,6 +11,8 @@ public class BankDetailDto
     public string Name { get; set; } = string.Empty;
     public string? ImageUrl { get; set; }
     public bool Active { get; set; }
+    public BankType Type { get; set; }
+    public bool IsHidden => Type == BankType.CashVault || Type == BankType.RealVault;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

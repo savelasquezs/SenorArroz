@@ -1,6 +1,7 @@
 // SenorArroz.Application/Features/Banks/Commands/UpdateBankCommand.cs
 using MediatR;
 using SenorArroz.Application.Features.Banks.DTOs;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Application.Features.Banks.Commands;
 
@@ -10,4 +11,5 @@ public class UpdateBankCommand : IRequest<BankDto>
     public string Name { get; set; } = string.Empty;
     public string? ImageUrl { get; set; }
     public bool Active { get; set; } = true;
+    public BankType? Type { get; set; }
 }

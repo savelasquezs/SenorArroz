@@ -36,10 +36,14 @@ public class GetBanksHandler : IRequestHandler<GetBanksQuery, PagedResult<BankDt
         }
         // If branchFilter is null, superadmin gets all banks from all branches
 
+        // Cashier cannot see hidden banks (CashVault, RealVault)
+        var excludeHidden = _currentUser.Role != "superadmin" && _currentUser.Role != "admin";
+
         var pagedBanks = await _bankRepository.GetPagedAsync(
             branchFilter,
             request.Name,
             request.Active,
+            excludeHiddenBanks: excludeHidden,
             request.Page,
             request.PageSize,
             request.SortBy,

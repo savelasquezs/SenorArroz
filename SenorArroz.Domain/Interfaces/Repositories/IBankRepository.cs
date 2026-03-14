@@ -10,12 +10,13 @@ public interface IBankRepository
         int? branchId = null,
         string? name = null,
         bool? active = null,
+        bool excludeHiddenBanks = false,
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
         string sortOrder = "asc");
 
-    Task<IEnumerable<Bank>> GetByBranchIdAsync(int branchId);
+    Task<IEnumerable<Bank>> GetByBranchIdAsync(int branchId, bool excludeHiddenBanks = false);
     Task<Bank?> GetByIdAsync(int id);
     Task<Bank?> GetByIdWithAppsAsync(int id);
     Task<Bank> CreateAsync(Bank bank);
@@ -29,5 +30,8 @@ public interface IBankRepository
     Task<int> GetActiveAppsAsync(int bankId);
     Task<decimal> GetTotalBankPaymentsAsync(int bankId);
     Task<decimal> GetTotalExpenseBankPaymentsAsync(int bankId);
+    Task<decimal> GetTotalOutgoingTransfersAsync(int bankId, DateTime? asOf = null);
+    Task<decimal> GetTotalIncomingTransfersAsync(int bankId, DateTime? asOf = null);
     Task<decimal> GetCurrentBalanceAsync(int bankId);
+    Task<decimal> GetBalanceAsOfAsync(int bankId, DateTime asOf);
 }

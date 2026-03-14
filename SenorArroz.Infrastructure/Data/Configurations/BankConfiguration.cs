@@ -1,7 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Infrastructure.Data.Configurations;
 
@@ -18,6 +19,7 @@ public class BankConfiguration : IEntityTypeConfiguration<Bank>
         builder.Property(b => b.Name).HasColumnName("name").HasMaxLength(150).IsRequired();
         builder.Property(b => b.ImageUrl).HasColumnName("image_url").HasMaxLength(200);
         builder.Property(b => b.Active).HasColumnName("active").HasDefaultValue(true);
+        builder.Property(b => b.Type).HasColumnName("type").HasDefaultValue(BankType.Normal);
 
         builder.Property(b => b.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

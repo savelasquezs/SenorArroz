@@ -20,6 +20,7 @@ public class BankRepository : IBankRepository
         int? branchId = null,
         string? name = null,
         bool? active = null,
+        bool excludeHiddenBanks = false,
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
@@ -33,6 +34,12 @@ public class BankRepository : IBankRepository
         if (branchId.HasValue)
         {
             query = query.Where(b => b.BranchId == branchId.Value);
+        }
+
+        // Exclude hidden banks (CashVault, RealVault) for non-Admin/Superadmin
+        if (excludeHiddenBanks)
+        {
+            query = query.Where(b => b.Type != Domain.Enums.BankType.CashVault && b.Type != Domain.Enums.BankType.RealVault);
         }
 
         // Name filter
@@ -75,13 +82,18 @@ public class BankRepository : IBankRepository
         };
     }
 
-    public async Task<IEnumerable<Bank>> GetByBranchIdAsync(int branchId)
+    public async Task<IEnumerable<Bank>> GetByBranchIdAsync(int branchId, bool excludeHiddenBanks = false)
     {
-        return await _context.Banks
+        var query = _context.Banks
             .Include(b => b.Branch)
-            .Where(b => b.BranchId == branchId)
-            .OrderBy(b => b.Name)
-            .ToListAsync();
+            .Where(b => b.BranchId == branchId);
+
+        if (excludeHiddenBanks)
+        {
+            query = query.Where(b => b.Type != Domain.Enums.BankType.CashVault && b.Type != Domain.Enums.BankType.RealVault);
+        }
+
+        return await query.OrderBy(b => b.Name).ToListAsync();
     }
 
     public async Task<Bank?> GetByIdAsync(int id)
@@ -178,10 +190,48 @@ public class BankRepository : IBankRepository
             .SumAsync(ebp => ebp.Amount);
     }
 
+    public async Task<decimal> GetTotalOutgoingTransfersAsync(int bankId, DateTime? asOf = null)
+    {
+        var query = _context.BankTransfers.Where(bt => bt.FromBankId == bankId);
+        if (asOf.HasValue)
+        {
+            var utc = DateTime.SpecifyKind(asOf.Value, DateTimeKind.Utc);
+            query = query.Where(bt => bt.CreatedAt <= utc);
+        }
+        return await query.SumAsync(bt => bt.Amount);
+    }
+
+    public async Task<decimal> GetTotalIncomingTransfersAsync(int bankId, DateTime? asOf = null)
+    {
+        var query = _context.BankTransfers.Where(bt => bt.ToBankId == bankId);
+        if (asOf.HasValue)
+        {
+            var utc = DateTime.SpecifyKind(asOf.Value, DateTimeKind.Utc);
+            query = query.Where(bt => bt.CreatedAt <= utc);
+        }
+        return await query.SumAsync(bt => bt.Amount);
+    }
+
     public async Task<decimal> GetCurrentBalanceAsync(int bankId)
     {
         var totalIncome = await GetTotalBankPaymentsAsync(bankId);
         var totalExpenses = await GetTotalExpenseBankPaymentsAsync(bankId);
-        return totalIncome - totalExpenses;
+        var outgoing = await GetTotalOutgoingTransfersAsync(bankId);
+        var incoming = await GetTotalIncomingTransfersAsync(bankId);
+        return totalIncome - totalExpenses - outgoing + incoming;
+    }
+
+    public async Task<decimal> GetBalanceAsOfAsync(int bankId, DateTime asOf)
+    {
+        var utc = DateTime.SpecifyKind(asOf, DateTimeKind.Utc);
+        var totalIncome = await _context.BankPayments
+            .Where(bp => bp.BankId == bankId && bp.CreatedAt <= utc)
+            .SumAsync(bp => bp.Amount);
+        var totalExpenses = await _context.ExpenseBankPayments
+            .Where(ebp => ebp.BankId == bankId && ebp.CreatedAt <= utc)
+            .SumAsync(ebp => ebp.Amount);
+        var outgoing = await GetTotalOutgoingTransfersAsync(bankId, utc);
+        var incoming = await GetTotalIncomingTransfersAsync(bankId, utc);
+        return totalIncome - totalExpenses - outgoing + incoming;
     }
 }

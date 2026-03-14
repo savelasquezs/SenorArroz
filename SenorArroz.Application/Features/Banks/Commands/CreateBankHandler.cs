@@ -69,7 +69,8 @@ public class CreateBankHandler : IRequestHandler<CreateBankCommand, BankDto>
             BranchId = branchId,
             Name = request.Name,
             ImageUrl = request.ImageUrl,
-            Active = request.Active
+            Active = request.Active,
+            Type = request.Type
         };
 
         var createdBank = await _bankRepository.CreateAsync(bank);

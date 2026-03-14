@@ -1,5 +1,6 @@
 // SenorArroz.Application/Features/Banks/DTOs/UpdateBankDto.cs
 using System.ComponentModel.DataAnnotations;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Application.Features.Banks.DTOs;
 
@@ -13,4 +14,6 @@ public class UpdateBankDto
     public string? ImageUrl { get; set; }
 
     public bool Active { get; set; } = true;
+
+    public BankType? Type { get; set; }
 }

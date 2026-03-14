@@ -1,4 +1,4 @@
-﻿using SenorArroz.Domain.Entities.Common;
+using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
@@ -19,4 +19,5 @@ public class Branch : BaseEntity
     public virtual ICollection<LoyaltyRule> LoyaltyRules { get; set; } = new List<LoyaltyRule>();
     public virtual ICollection<ExpenseHeader> ExpenseHeaders { get; set; } = new List<ExpenseHeader>();
     public virtual ICollection<Supplier> Suppliers { get; set; } = new List<Supplier>();
+    public virtual ICollection<CashRegisterClosure> CashRegisterClosures { get; set; } = new List<CashRegisterClosure>();
 }

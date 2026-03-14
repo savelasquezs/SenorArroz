@@ -1,5 +1,6 @@
 // SenorArroz.Application/Features/Banks/DTOs/CreateBankDto.cs
 using System.ComponentModel.DataAnnotations;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Application.Features.Banks.DTOs;
 
@@ -16,4 +17,6 @@ public class CreateBankDto
     public string? ImageUrl { get; set; }
 
     public bool Active { get; set; } = true;
+
+    public BankType Type { get; set; } = BankType.Normal;
 }

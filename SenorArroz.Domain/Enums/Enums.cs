@@ -1,4 +1,4 @@
-﻿namespace SenorArroz.Domain.Enums
+namespace SenorArroz.Domain.Enums
 {
     public enum ExpenseUnit
     {
@@ -33,5 +33,12 @@
         Cashier,       // cashier
         Kitchen,       // kitchen
         Deliveryman    // deliveryman
+    }
+
+    public enum BankType
+    {
+        Normal,      // Bancos y apps operativos (Nequi, Bancolombia, Rappi, etc.)
+        CashVault,   // Caja mayor efectivo (hidden)
+        RealVault    // Caja mayor banco real (hidden)
     }
 }

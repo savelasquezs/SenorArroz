@@ -10,4 +10,5 @@ public class CreateBankCommand : IRequest<BankDto>
     public string Name { get; set; } = string.Empty;
     public string? ImageUrl { get; set; }
     public bool Active { get; set; } = true;
+    public SenorArroz.Domain.Enums.BankType Type { get; set; } = SenorArroz.Domain.Enums.BankType.Normal;
 }
