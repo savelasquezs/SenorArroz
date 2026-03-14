@@ -715,6 +715,12 @@ public class OrderRepository : IOrderRepository
         string? sortBy = null,
         string? sortOrder = "asc")
     {
+        // PostgreSQL timestamp with time zone requiere UTC
+        if (fromDate.HasValue && fromDate.Value.Kind != DateTimeKind.Utc)
+            fromDate = DateTime.SpecifyKind(fromDate.Value, DateTimeKind.Utc);
+        if (toDate.HasValue && toDate.Value.Kind != DateTimeKind.Utc)
+            toDate = DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
+
         var query = _context.Orders
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
@@ -722,6 +728,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Address)
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
+            .Include(o => o.BankPayments)
+            .Include(o => o.AppPayments)
             .AsQueryable();
 
         // Aplicar filtros
@@ -748,11 +756,18 @@ public class OrderRepository : IOrderRepository
         if (type.HasValue)
             query = query.Where(o => o.Type == type.Value);
 
+        // PostgreSQL timestamp with time zone requiere UTC
         if (fromDate.HasValue)
-            query = query.Where(o => o.CreatedAt >= fromDate.Value);
+        {
+            var fromUtc = fromDate.Value.Kind == DateTimeKind.Utc ? fromDate.Value : DateTime.SpecifyKind(fromDate.Value, DateTimeKind.Utc);
+            query = query.Where(o => o.CreatedAt >= fromUtc);
+        }
 
         if (toDate.HasValue)
-            query = query.Where(o => o.CreatedAt <= toDate.Value);
+        {
+            var toUtc = toDate.Value.Kind == DateTimeKind.Utc ? toDate.Value : DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
+            query = query.Where(o => o.CreatedAt <= toUtc);
+        }
 
         if (minAmount.HasValue)
             query = query.Where(o => o.Total >= minAmount.Value);
