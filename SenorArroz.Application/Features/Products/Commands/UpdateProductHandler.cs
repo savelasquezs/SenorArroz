@@ -51,11 +51,12 @@ public class UpdateProductHandler : IRequestHandler<UpdateProductCommand, Produc
         if (await _productRepository.NameExistsInCategoryAsync(request.Name, request.CategoryId, request.Id))
             throw new BusinessException("Ya existe un producto con este nombre en la categoría especificada");
 
-        // Update product properties
+        // Update product properties (Stock solo si viene en el request; si no se envía, no pisar el valor actual)
         existingProduct.CategoryId = request.CategoryId;
         existingProduct.Name = request.Name;
         existingProduct.Price = request.Price;
-        existingProduct.Stock = request.Stock;
+        if (request.Stock.HasValue)
+            existingProduct.Stock = request.Stock;
         existingProduct.Active = request.Active;
 
         var updatedProduct = await _productRepository.UpdateAsync(existingProduct);
