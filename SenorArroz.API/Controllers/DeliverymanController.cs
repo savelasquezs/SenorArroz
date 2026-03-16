@@ -120,6 +120,39 @@ public class DeliverymanController : ControllerBase
     }
 
     /// <summary>
+    /// Lista de domiciliarios con pedidos de delivery en el día actual (o rango dado).
+    /// Usado, por ejemplo, para registrar abonos desde otros módulos.
+    /// </summary>
+    [HttpGet("with-orders-today")]
+    [Authorize(Roles = "Superadmin,Admin,Cashier")]
+    public async Task<ActionResult<IEnumerable<object>>> GetDeliverymenWithOrdersToday(
+        [FromQuery] DateTime? date = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] int? branchId = null)
+    {
+        var overview = await _mediator.Send(new GetDailyOverviewQuery
+        {
+            Date = date,
+            FromDate = fromDate,
+            ToDate = toDate,
+            BranchId = branchId
+        });
+
+        var deliverymenWithOrders = overview.Deliverymen
+            .Where(d => d.OrdersCount > 0)
+            .Select(d => new
+            {
+                id = d.DeliverymanId,
+                name = d.DeliverymanName,
+                ordersCount = d.OrdersCount,
+                currentBalance = d.CurrentBalance
+            });
+
+        return Ok(deliverymenWithOrders);
+    }
+
+    /// <summary>
     /// Crear abono para un domiciliario.
     /// </summary>
     [HttpPost("{id}/advances")]
