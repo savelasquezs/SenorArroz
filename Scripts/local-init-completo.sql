@@ -1,3 +1,6 @@
+\encoding UTF8
+SET client_encoding = 'UTF8';
+
 -- =============================================================================
 -- Señor Arroz - Script de inicialización completa para base de datos local
 -- =============================================================================
@@ -681,6 +684,10 @@ BEGIN
 
     IF NOT EXISTS (SELECT 1 FROM bank WHERE branch_id = branch_id_var AND type = 0 LIMIT 1) THEN
         INSERT INTO bank (branch_id, name, image_url, active, type) VALUES (branch_id_var, 'Bancolombia', NULL, true, 0);
+    END IF;
+    -- Segundo banco principal: Nequi
+    IF NOT EXISTS (SELECT 1 FROM bank WHERE branch_id = branch_id_var AND name = 'Nequi' LIMIT 1) THEN
+        INSERT INTO bank (branch_id, name, image_url, active, type) VALUES (branch_id_var, 'Nequi', NULL, true, 0);
     END IF;
     -- Bancos vault (ocultos, solo visibles para admin/superadmin)
     IF NOT EXISTS (SELECT 1 FROM bank WHERE branch_id = branch_id_var AND type = 1 LIMIT 1) THEN
