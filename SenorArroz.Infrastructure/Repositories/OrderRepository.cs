@@ -713,7 +713,9 @@ public class OrderRepository : IOrderRepository
         int page = 1,
         int pageSize = 10,
         string? sortBy = null,
-        string? sortOrder = "asc")
+        string? sortOrder = "asc",
+        DateTime? reservedFromDate = null,
+        DateTime? reservedToDate = null)
     {
         // PostgreSQL timestamp with time zone requiere UTC
         if (fromDate.HasValue && fromDate.Value.Kind != DateTimeKind.Utc)
@@ -767,6 +769,18 @@ public class OrderRepository : IOrderRepository
         {
             var toUtc = toDate.Value.Kind == DateTimeKind.Utc ? toDate.Value : DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
             query = query.Where(o => o.CreatedAt <= toUtc);
+        }
+
+        if (reservedFromDate.HasValue)
+        {
+            var rfUtc = reservedFromDate.Value.Kind == DateTimeKind.Utc ? reservedFromDate.Value : DateTime.SpecifyKind(reservedFromDate.Value, DateTimeKind.Utc);
+            query = query.Where(o => o.ReservedFor >= rfUtc);
+        }
+
+        if (reservedToDate.HasValue)
+        {
+            var rtUtc = reservedToDate.Value.Kind == DateTimeKind.Utc ? reservedToDate.Value : DateTime.SpecifyKind(reservedToDate.Value, DateTimeKind.Utc);
+            query = query.Where(o => o.ReservedFor <= rtUtc);
         }
 
         if (minAmount.HasValue)

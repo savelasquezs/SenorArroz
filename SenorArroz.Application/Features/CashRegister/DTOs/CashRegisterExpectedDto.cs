@@ -5,6 +5,7 @@ public class CashRegisterExpectedDto
     public decimal OpeningCash { get; set; }
     public decimal ExpectedCash { get; set; }
     public decimal CashFromOrders { get; set; }
+    public decimal CashDeposits { get; set; }
     public decimal CashExpenses { get; set; }
     public decimal Advances { get; set; }
     public DateTime AsOf { get; set; }

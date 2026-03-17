@@ -70,7 +70,9 @@ public interface IOrderRepository
         int page = 1,
         int pageSize = 10,
         string? sortBy = null,
-        string? sortOrder = "asc"
+        string? sortOrder = "asc",
+        DateTime? reservedFromDate = null,
+        DateTime? reservedToDate = null
     );
     
     // Reservas

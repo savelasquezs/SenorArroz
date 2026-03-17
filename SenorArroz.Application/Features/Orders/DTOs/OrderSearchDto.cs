@@ -12,6 +12,8 @@ public class OrderSearchDto
     public OrderType? Type { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
+    public DateTime? ReservedFromDate { get; set; }
+    public DateTime? ReservedToDate { get; set; }
     public decimal? MinAmount { get; set; }
     public decimal? MaxAmount { get; set; }
     public int Page { get; set; } = 1;

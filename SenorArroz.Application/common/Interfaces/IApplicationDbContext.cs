@@ -43,6 +43,8 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<Order> Orders { get; set; }
 
+        DbSet<ReservationDeposit> ReservationDeposits { get; set; }
+
         DbSet<OrderDetail> OrderDetails { get; set; }
 
         DbSet<Product> Products { get; set; }

@@ -60,7 +60,24 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             .Where(a => a.BranchId == branchId && a.CreatedAt > since && a.CreatedAt <= now)
             .SumAsync(a => a.Amount, cancellationToken);
 
-        var expectedCash = openingCash + cashFromOrders - cashExpenses - advances;
+        // Abonos en efectivo de reservas recibidos en este período
+        var cashDeposits = await _context.ReservationDeposits
+            .Where(d => d.BranchId == branchId
+                && d.IsEffective
+                && d.ReceivedAt > since && d.ReceivedAt <= now)
+            .SumAsync(d => d.Amount, cancellationToken);
+
+        // Al entregar una reserva, su total ya se cuenta en cashFromOrders,
+        // pero sus abonos anteriores ya entraron en cuadres previos → restarlos para no duplicar
+        var depositsAlreadyCounted = await _context.ReservationDeposits
+            .Where(d => d.BranchId == branchId
+                && d.IsEffective
+                && d.ReceivedAt <= since   // abonados ANTES del período actual
+                && d.Order.Status == OrderStatus.Delivered
+                && d.Order.UpdatedAt > since && d.Order.UpdatedAt <= now)
+            .SumAsync(d => d.Amount, cancellationToken);
+
+        var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses - advances;
 
         // --- BANCOS ---
         bool isAdmin = _currentUser.Role == "superadmin" || _currentUser.Role == "admin";
@@ -100,7 +117,21 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 .Where(bt => bt.FromBankId == bank.Id && bt.CreatedAt > since && bt.CreatedAt <= now)
                 .SumAsync(bt => bt.Amount, cancellationToken);
 
-            var expectedBalance = openingBalance + bankPaymentsIn - expensePaymentsOut + incomingTransfers - outgoingTransfers;
+            // Abonos de reservas recibidos en este banco en el período
+            var bankDepositPaymentsIn = await _context.ReservationDeposits
+                .Where(d => d.BankId == bank.Id
+                    && d.ReceivedAt > since && d.ReceivedAt <= now)
+                .SumAsync(d => d.Amount, cancellationToken);
+
+            // Abonos bancarios de reservas ya contabilizados en cuadres anteriores (descontar al entregar)
+            var bankDepositsAlreadyCounted = await _context.ReservationDeposits
+                .Where(d => d.BankId == bank.Id
+                    && d.ReceivedAt <= since
+                    && d.Order.Status == OrderStatus.Delivered
+                    && d.Order.UpdatedAt > since && d.Order.UpdatedAt <= now)
+                .SumAsync(d => d.Amount, cancellationToken);
+
+            var expectedBalance = openingBalance + bankPaymentsIn + bankDepositPaymentsIn - bankDepositsAlreadyCounted - expensePaymentsOut + incomingTransfers - outgoingTransfers;
 
             bankExpected.Add(new BankExpectedBalanceDto
             {
@@ -116,6 +147,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             OpeningCash = openingCash,
             ExpectedCash = expectedCash,
             CashFromOrders = cashFromOrders,
+            CashDeposits = cashDeposits,
             CashExpenses = cashExpenses,
             Advances = advances,
             AsOf = now,

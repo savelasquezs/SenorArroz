@@ -56,6 +56,7 @@ public static class DependencyInjection
 
         // Order Repositories
         services.AddScoped<IOrderRepository, OrderRepository>();
+        services.AddScoped<IReservationDepositRepository, ReservationDepositRepository>();
 
         // Cash Register Repositories
         services.AddScoped<ICashRegisterClosureRepository, CashRegisterClosureRepository>();

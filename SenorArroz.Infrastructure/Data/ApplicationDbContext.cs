@@ -52,6 +52,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<OrderDetail> OrderDetails { get; set; }
 
+        public virtual DbSet<ReservationDeposit> ReservationDeposits { get; set; }
+
         public virtual DbSet<Product> Products { get; set; }
 
         public virtual DbSet<ProductCategory> ProductCategories { get; set; }
@@ -93,6 +95,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new ExpenseDetailConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseBankPaymentConfiguration());
             modelBuilder.ApplyConfiguration(new SupplierExpenseConfiguration());
+            modelBuilder.ApplyConfiguration(new ReservationDepositConfiguration());
             modelBuilder.ApplyConfiguration(new RefreshTokenConfiguration());
             modelBuilder.ApplyConfiguration(new PasswordResetTokenConfiguration());
 

@@ -132,6 +132,8 @@ public class OrdersController : ControllerBase
             Type = searchDto.Type,
             FromDate = searchDto.FromDate,
             ToDate = searchDto.ToDate,
+            ReservedFromDate = searchDto.ReservedFromDate,
+            ReservedToDate = searchDto.ReservedToDate,
             MinAmount = searchDto.MinAmount,
             MaxAmount = searchDto.MaxAmount,
             Page = searchDto.Page,

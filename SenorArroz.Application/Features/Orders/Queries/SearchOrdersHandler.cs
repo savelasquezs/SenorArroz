@@ -48,7 +48,9 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             request.Page,
             request.PageSize,
             request.SortBy,
-            request.SortOrder);
+            request.SortOrder,
+            request.ReservedFromDate,
+            request.ReservedToDate);
 
         return new PagedResult<OrderDto>
         {
