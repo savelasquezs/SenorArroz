@@ -42,4 +42,5 @@ public class OrderDto
     public DateTime UpdatedAt { get; set; }
     public List<BankPaymentDto> BankPayments { get; set; } = new();
     public List<AppPaymentDto> AppPayments { get; set; } = new();
+    public decimal TotalDeposited { get; set; }
 }
