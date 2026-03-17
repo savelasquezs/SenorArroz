@@ -715,7 +715,8 @@ public class OrderRepository : IOrderRepository
         string? sortBy = null,
         string? sortOrder = "asc",
         DateTime? reservedFromDate = null,
-        DateTime? reservedToDate = null)
+        DateTime? reservedToDate = null,
+        bool excludeFutureReservations = false)
     {
         // PostgreSQL timestamp with time zone requiere UTC
         if (fromDate.HasValue && fromDate.Value.Kind != DateTimeKind.Utc)
@@ -781,6 +782,16 @@ public class OrderRepository : IOrderRepository
         {
             var rtUtc = reservedToDate.Value.Kind == DateTimeKind.Utc ? reservedToDate.Value : DateTime.SpecifyKind(reservedToDate.Value, DateTimeKind.Utc);
             query = query.Where(o => o.ReservedFor <= rtUtc);
+        }
+
+        if (excludeFutureReservations)
+        {
+            // Fin del día en Colombia (UTC-5) = inicio del día siguiente en UTC
+            var startOfTomorrowUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(1), DateTimeKind.Utc);
+            query = query.Where(o =>
+                o.Type != OrderType.Reservation ||
+                o.ReservedFor == null ||
+                o.ReservedFor < startOfTomorrowUtc);
         }
 
         if (minAmount.HasValue)

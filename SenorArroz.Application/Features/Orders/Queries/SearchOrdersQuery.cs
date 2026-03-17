@@ -24,4 +24,6 @@ public class SearchOrdersQuery : IRequest<PagedResult<OrderDto>>
     public int PageSize { get; set; } = 10;
     public string? SortBy { get; set; }
     public string SortOrder { get; set; } = "asc";
+    /// <summary>Si true, excluye reservas cuyo reservedFor es posterior a hoy (fin del día)</summary>
+    public bool ExcludeFutureReservations { get; set; } = false;
 }

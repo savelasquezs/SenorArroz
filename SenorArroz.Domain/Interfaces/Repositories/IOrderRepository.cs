@@ -72,7 +72,8 @@ public interface IOrderRepository
         string? sortBy = null,
         string? sortOrder = "asc",
         DateTime? reservedFromDate = null,
-        DateTime? reservedToDate = null
+        DateTime? reservedToDate = null,
+        bool excludeFutureReservations = false
     );
     
     // Reservas

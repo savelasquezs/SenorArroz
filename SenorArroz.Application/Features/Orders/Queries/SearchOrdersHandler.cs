@@ -57,7 +57,8 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             request.SortBy,
             request.SortOrder,
             request.ReservedFromDate,
-            request.ReservedToDate);
+            request.ReservedToDate,
+            request.ExcludeFutureReservations);
 
         var dtos = _mapper.Map<List<OrderDto>>(result.Items);
 

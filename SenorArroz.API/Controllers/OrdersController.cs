@@ -139,7 +139,8 @@ public class OrdersController : ControllerBase
             Page = searchDto.Page,
             PageSize = searchDto.PageSize,
             SortBy = searchDto.SortBy,
-            SortOrder = searchDto.SortOrder
+            SortOrder = searchDto.SortOrder,
+            ExcludeFutureReservations = searchDto.ExcludeFutureReservations
         };
 
         var result = await _mediator.Send(query);

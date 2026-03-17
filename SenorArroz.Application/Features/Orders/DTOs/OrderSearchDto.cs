@@ -20,4 +20,6 @@ public class OrderSearchDto
     public int PageSize { get; set; } = 10;
     public string SortBy { get; set; } = "CreatedAt";
     public string SortOrder { get; set; } = "desc";
+    /// <summary>Si true, excluye reservas cuyo reservedFor es posterior a hoy (fin del día)</summary>
+    public bool ExcludeFutureReservations { get; set; } = false;
 }
