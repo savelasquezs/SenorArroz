@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
 using SenorArroz.Domain.Enums;
@@ -29,10 +30,24 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
     public async Task<CashRegisterExpectedDto> Handle(GetCashRegisterExpectedQuery request, CancellationToken cancellationToken)
     {
         int branchId = request.BranchId ?? _currentUser.BranchId;
-        var now = DateTime.UtcNow;
 
         var lastClosure = await _closureRepository.GetLastByBranchAsync(branchId);
-        var since = lastClosure?.ClosedAt ?? DateTime.MinValue;
+
+        DateTime since;
+        DateTime now;
+
+        if (lastClosure is null)
+        {
+            // Primer cuadre: tomar solo el día actual en hora Colombia
+            since = ColombiaTimeHelper.GetTodayStartInUtc();
+            now = ColombiaTimeHelper.GetTodayEndInUtc();
+        }
+        else
+        {
+            // Cuadres posteriores: desde el último cierre hasta ahora
+            since = lastClosure.ClosedAt;
+            now = DateTime.UtcNow;
+        }
 
         // --- EFECTIVO ---
         decimal openingCash = lastClosure?.ClosingCash ?? 0;
