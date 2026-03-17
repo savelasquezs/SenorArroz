@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Deliverymen.DTOs;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -111,24 +112,23 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
 
     private static (DateTime from, DateTime to) ResolveDateRange(GetDeliverymanDaySummaryQuery request)
     {
-        DateTime from;
-        DateTime to;
+        DateTime fromUtc;
+        DateTime toUtc;
         if (request.FromDate.HasValue && request.ToDate.HasValue)
         {
-            from = request.FromDate.Value;
-            to = request.ToDate.Value;
-            if (to.TimeOfDay == TimeSpan.Zero)
-                to = to.Date.AddDays(1).AddTicks(-1);
+            fromUtc = ColombiaTimeHelper.ConvertColombiaToUtc(request.FromDate.Value);
+            var toDate = request.ToDate.Value;
+            if (toDate.TimeOfDay == TimeSpan.Zero)
+                toDate = toDate.Date.AddDays(1).AddTicks(-1);
+            toUtc = ColombiaTimeHelper.ConvertColombiaToUtc(toDate);
         }
         else
         {
-            var date = request.Date?.Date ?? DateTime.UtcNow.Date;
-            from = date;
-            to = date.AddDays(1).AddTicks(-1);
+            var date = request.Date?.Date ?? ColombiaTimeHelper.GetNowInColombia().Date;
+            fromUtc = ColombiaTimeHelper.ConvertColombiaToUtc(date);
+            toUtc = ColombiaTimeHelper.ConvertColombiaToUtc(date.AddDays(1).AddTicks(-1));
         }
-        from = DateTime.SpecifyKind(from, DateTimeKind.Utc);
-        to = DateTime.SpecifyKind(to, DateTimeKind.Utc);
-        return (from, to);
+        return (fromUtc, toUtc);
     }
 
     private static decimal CalculateTotalCash(List<Order> orders)
