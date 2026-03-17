@@ -66,6 +66,16 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
                 throw new BusinessException($"No puedes cambiar el estado de {existingOrder.Status} a {request.StatusChange.Status}");
         }
 
+        // Reserva pasando a preparación: resolver tipo definitivo según si tiene dirección
+        if (existingOrder.Type == OrderType.Reservation
+            && request.StatusChange.Status == OrderStatus.InPreparation)
+        {
+            existingOrder.Type = existingOrder.AddressId.HasValue
+                ? OrderType.Delivery
+                : OrderType.Onsite;
+            await _orderRepository.UpdateAsync(existingOrder);
+        }
+
         var order = await _orderRepository.ChangeStatusAsync(
             request.Id, 
             request.StatusChange.Status, 
