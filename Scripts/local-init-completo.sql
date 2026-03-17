@@ -531,7 +531,7 @@ END; $$;
 CREATE OR REPLACE FUNCTION public.update_order_total_on_delivery_fee_change() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF OLD.delivery_fee IS DISTINCT FROM NEW.delivery_fee THEN
-        NEW.total = NEW.subtotal + COALESCE(NEW.delivery_fee, 0) - NEW.discount_total;
+        NEW.total = NEW.subtotal + COALESCE(NEW.delivery_fee, 0);
     END IF;
     RETURN NEW;
 END; $$;
@@ -556,7 +556,7 @@ BEGIN
     UPDATE "order" SET
         subtotal = order_subtotal,
         discount_total = order_discount_total,
-        total = order_subtotal + order_delivery_fee - order_discount_total,
+        total = order_subtotal + order_delivery_fee,
         updated_at = NOW()
     WHERE id = target_order_id;
 
