@@ -15,19 +15,22 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly IPasswordService _passwordService;
+    private readonly IOrderNotificationService _notificationService;
 
     public SelfAssignOrdersHandler(
         IOrderRepository orderRepository, 
         IUserRepository userRepository,
         IMapper mapper, 
         ICurrentUser currentUser,
-        IPasswordService passwordService)
+        IPasswordService passwordService,
+        IOrderNotificationService notificationService)
     {
         _orderRepository = orderRepository;
         _userRepository = userRepository;
         _mapper = mapper;
         _currentUser = currentUser;
         _passwordService = passwordService;
+        _notificationService = notificationService;
     }
 
     public async Task<List<OrderDto>> Handle(SelfAssignOrdersCommand request, CancellationToken cancellationToken)
@@ -78,8 +81,12 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             
             // Cambiar estado a OnTheWay automáticamente después de asignar
             assignedOrder = await _orderRepository.ChangeStatusAsync(orderId, Domain.Enums.OrderStatus.OnTheWay, null);
-            
-            assignedOrders.Add(_mapper.Map<OrderDto>(assignedOrder));
+
+            var orderDto = _mapper.Map<OrderDto>(assignedOrder);
+            assignedOrders.Add(orderDto);
+
+            // Notificar a todos los domiciliarios conectados para que actualicen su lista
+            await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
         }
 
         return assignedOrders;

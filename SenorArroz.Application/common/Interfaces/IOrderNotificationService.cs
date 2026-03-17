@@ -7,5 +7,6 @@ public interface IOrderNotificationService
     Task NotifyNewOrderToKitchen(OrderDto order);
     Task NotifyOrderReadyToDelivery(OrderDto order);
     Task NotifyReservationToKitchen(OrderDto order);
+    Task NotifyOrderAssignedToDelivery(OrderDto order);
 }
 

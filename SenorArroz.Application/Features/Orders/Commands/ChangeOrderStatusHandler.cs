@@ -79,6 +79,13 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             await _notificationService.NotifyOrderReadyToDelivery(orderDto);
         }
 
+        // Notificar a todos los domiciliarios cuando un pedido es asignado (OnTheWay)
+        // para que desaparezca de la lista de disponibles en sus pantallas
+        if (request.StatusChange.Status == OrderStatus.OnTheWay)
+        {
+            await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
+        }
+
         return orderDto;
     }
 }

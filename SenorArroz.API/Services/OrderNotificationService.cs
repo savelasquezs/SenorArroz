@@ -34,5 +34,12 @@ public class OrderNotificationService : IOrderNotificationService
             .Group($"Branch_{order.BranchId}_Kitchen")
             .SendAsync("ReservationReady", order);
     }
+
+    public async Task NotifyOrderAssignedToDelivery(OrderDto order)
+    {
+        await _hubContext.Clients
+            .Group($"Branch_{order.BranchId}_Delivery")
+            .SendAsync("OrderAssigned", order);
+    }
 }
 
