@@ -62,6 +62,10 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             throw new BusinessException("No tienes permisos para crear pedidos");
         }
 
+        // Validar que el pedido tenga al menos un producto
+        if (request.Order.OrderDetails == null || !request.Order.OrderDetails.Any())
+            throw new BusinessException("El pedido debe tener al menos un producto");
+
         // Validate order type specific requirements
         if (request.Order.Type == Domain.Enums.OrderType.Delivery)
         {
