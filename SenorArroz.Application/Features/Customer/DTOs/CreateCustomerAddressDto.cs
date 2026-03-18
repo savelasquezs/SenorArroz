@@ -9,10 +9,8 @@ namespace SenorArroz.Application.Features.Customers.DTOs
 {
     public class CreateCustomerAddressDto
     {
-        [Required(ErrorMessage = "El barrio es requerido")]
         public int NeighborhoodId { get; set; }
 
-        [Required(ErrorMessage = "La dirección es requerida")]
         [StringLength(200, ErrorMessage = "La dirección no puede exceder 200 caracteres")]
         public string Address { get; set; } = string.Empty;
 

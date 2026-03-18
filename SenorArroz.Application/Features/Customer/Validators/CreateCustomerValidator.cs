@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using SenorArroz.Application.Features.Customers.Commands;
 
 namespace SenorArroz.Application.Features.Customers.Validators;
@@ -9,6 +9,7 @@ public class CreateCustomerValidator : AbstractValidator<CreateCustomerCommand>
     {
         RuleFor(x => x.Name)
             .NotEmpty().WithMessage("El nombre es requerido")
+            .MinimumLength(3).WithMessage("El nombre debe tener al menos 3 caracteres")
             .MaximumLength(150).WithMessage("El nombre no puede exceder 150 caracteres")
             .Matches(@"^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]+$").WithMessage("El nombre solo puede contener letras y espacios");
 
