@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS "user" (
     phone character varying(10) NOT NULL,
     password_hash character varying(255) NOT NULL,
     active boolean NOT NULL DEFAULT TRUE,
+    profile_image_url character varying(300),
     created_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     updated_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     CONSTRAINT "PK_user" PRIMARY KEY (id),

@@ -1,11 +1,13 @@
-﻿// SenorArroz.API/Controllers/UsersController.cs
+// SenorArroz.API/Controllers/UsersController.cs
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Features.Users.Commands;
 using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Application.Features.Users.Queries;
+using SenorArroz.Domain.Exceptions;
 using SenorArroz.Shared.Models;
+using System.Security.Claims;
 
 namespace SenorArroz.API.Controllers;
 
@@ -15,11 +17,16 @@ namespace SenorArroz.API.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly IWebHostEnvironment _env;
 
-    public UsersController(IMediator mediator)
+    public UsersController(IMediator mediator, IWebHostEnvironment env)
     {
         _mediator = mediator;
+        _env = env;
     }
+
+    private int GetCurrentUserId() =>
+        int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "0");
 
     /// <summary>
     /// Obtiene todos los usuarios, filtrados automáticamente por sucursal del usuario actual
@@ -96,11 +103,59 @@ public class UsersController : ControllerBase
     /// Elimina un usuario (soft delete)
     /// </summary>
     [HttpDelete("{id:int}")]
-    [Authorize(Roles = "Superadmin")]  // Solo superadmin puede eliminar
+    [Authorize(Roles = "Superadmin")]
     public async Task<ActionResult> DeleteUser(int id)
     {
         var command = new DeleteUserCommand(id);
         await _mediator.Send(command);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Actualiza email y teléfono del propio perfil
+    /// </summary>
+    [HttpPut("{id:int}/profile")]
+    public async Task<ActionResult<UserDto>> UpdateProfile(int id, [FromBody] UpdateProfileDto dto)
+    {
+        if (GetCurrentUserId() != id)
+            return Forbid();
+
+        var command = new UpdateProfileCommand(id, dto);
+        var result = await _mediator.Send(command);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Sube o reemplaza la foto de perfil del usuario
+    /// </summary>
+    [HttpPost("{id:int}/profile-image")]
+    public async Task<ActionResult<UserDto>> UploadProfileImage(int id, IFormFile file)
+    {
+        if (GetCurrentUserId() != id)
+            return Forbid();
+
+        var allowed = new[] { ".jpg", ".jpeg", ".png", ".webp" };
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (!allowed.Contains(ext))
+            throw new BusinessException("Formato no permitido. Use jpg, png o webp.");
+
+        if (file.Length > 3 * 1024 * 1024)
+            throw new BusinessException("La imagen no puede superar 3 MB.");
+
+        var uploadsDir = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "profile");
+        Directory.CreateDirectory(uploadsDir);
+
+            foreach (var old in System.IO.Directory.GetFiles(uploadsDir, $"{id}.*"))
+                System.IO.File.Delete(old);
+
+        var fileName = $"{id}{ext}";
+        var filePath = Path.Combine(uploadsDir, fileName);
+        await using (var stream = new FileStream(filePath, FileMode.Create))
+            await file.CopyToAsync(stream);
+
+        var profileImageUrl = $"/uploads/profile/{fileName}";
+        var command = new UploadProfileImageCommand(id, profileImageUrl);
+        var result = await _mediator.Send(command);
+        return Ok(result);
     }
 }

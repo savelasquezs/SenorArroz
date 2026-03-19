@@ -1,4 +1,4 @@
-﻿// SenorArroz.API/Program.cs - Updated with Authentication
+// SenorArroz.API/Program.cs - Updated with Authentication
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -188,6 +188,8 @@ app.UseSwaggerUI(c =>
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
 app.UseHttpsRedirection();
+
+app.UseStaticFiles();
 
 app.UseCors("AllowAll");
 

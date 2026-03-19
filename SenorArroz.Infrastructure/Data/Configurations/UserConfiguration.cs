@@ -28,6 +28,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.Phone).HasColumnName("phone").HasMaxLength(10).IsRequired();
         builder.Property(u => u.PasswordHash).HasColumnName("password_hash").HasMaxLength(255).IsRequired();
         builder.Property(u => u.Active).HasColumnName("active").HasDefaultValue(true);
+        builder.Property(u => u.ProfileImageUrl).HasColumnName("profile_image_url").HasMaxLength(300);
 
         builder.Property(u => u.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore); ;

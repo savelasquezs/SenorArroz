@@ -13,6 +13,7 @@ namespace SenorArroz.Application.Features.Users.DTOs
         public string Email { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
         public bool Active { get; set; }
+        public string? ProfileImageUrl { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
     }
