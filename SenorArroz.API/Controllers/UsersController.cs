@@ -7,6 +7,7 @@ using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Application.Features.Users.Queries;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Shared.Models;
+using System;
 using System.Security.Claims;
 
 namespace SenorArroz.API.Controllers;
@@ -145,10 +146,12 @@ public class UsersController : ControllerBase
         var uploadsDir = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "profile");
         Directory.CreateDirectory(uploadsDir);
 
-            foreach (var old in System.IO.Directory.GetFiles(uploadsDir, $"{id}.*"))
-                System.IO.File.Delete(old);
+        // Borrar cualquier foto previa del usuario, independientemente de la extensión/nombre
+        foreach (var old in System.IO.Directory.GetFiles(uploadsDir, $"{id}*.*"))
+            System.IO.File.Delete(old);
 
-        var fileName = $"{id}{ext}";
+        // Nombre único para evitar caché en el navegador
+        var fileName = $"{id}_{Guid.NewGuid():N}{ext}";
         var filePath = Path.Combine(uploadsDir, fileName);
         await using (var stream = new FileStream(filePath, FileMode.Create))
             await file.CopyToAsync(stream);
