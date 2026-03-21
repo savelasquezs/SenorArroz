@@ -717,7 +717,8 @@ public class OrderRepository : IOrderRepository
         string? sortOrder = "asc",
         DateTime? reservedFromDate = null,
         DateTime? reservedToDate = null,
-        bool excludeFutureReservations = false)
+        bool excludeFutureReservations = false,
+        int? bankId = null)
     {
         // PostgreSQL timestamp with time zone requiere UTC
         if (fromDate.HasValue && fromDate.Value.Kind != DateTimeKind.Utc)
@@ -800,6 +801,9 @@ public class OrderRepository : IOrderRepository
 
         if (maxAmount.HasValue)
             query = query.Where(o => o.Total <= maxAmount.Value);
+
+        if (bankId.HasValue)
+            query = query.Where(o => o.BankPayments.Any(bp => bp.BankId == bankId.Value));
 
         // Aplicar ordenamiento
         query = ApplySorting(query, sortBy, sortOrder);

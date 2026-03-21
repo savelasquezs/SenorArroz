@@ -128,6 +128,7 @@ public class OrdersController : ControllerBase
             BranchId = searchDto.BranchId,
             CustomerId = searchDto.CustomerId,
             DeliveryManId = searchDto.DeliveryManId,
+            BankId = searchDto.BankId,
             Status = searchDto.Status,
             Type = searchDto.Type,
             FromDate = searchDto.FromDate,

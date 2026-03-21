@@ -11,6 +11,7 @@ public class SearchOrdersQuery : IRequest<PagedResult<OrderDto>>
     public int? BranchId { get; set; }
     public int? CustomerId { get; set; }
     public int? DeliveryManId { get; set; }
+    public int? BankId { get; set; }
     public OrderStatus? Status { get; set; }
     public OrderType? Type { get; set; }
     public DateTime? FromDate { get; set; }
