@@ -1140,4 +1140,36 @@ public class OrderRepository : IOrderRepository
             })
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<List<SalesCategoryAggregateRow>> GetSalesCategoryAggregatesForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var q = _context.OrderDetails
+            .AsNoTracking()
+            .Where(od =>
+                od.Order.Status != OrderStatus.Cancelled
+                && od.Order.CreatedAt >= fromUtc
+                && od.Order.CreatedAt <= toUtc);
+
+        if (branchId.HasValue)
+            q = q.Where(od => od.Order.BranchId == branchId.Value);
+
+        return await q
+            .GroupBy(od => new
+            {
+                od.Product.CategoryId,
+                Name = od.Product.Category.Name ?? string.Empty,
+            })
+            .Select(g => new SalesCategoryAggregateRow
+            {
+                CategoryId = g.Key.CategoryId,
+                CategoryName = g.Key.Name,
+                QuantitySold = g.Sum(od => od.Quantity),
+                RevenueCop = g.Sum(od => (long)(od.Subtotal ?? (od.Quantity * od.UnitPrice - od.Discount))),
+            })
+            .ToListAsync(cancellationToken);
+    }
 }

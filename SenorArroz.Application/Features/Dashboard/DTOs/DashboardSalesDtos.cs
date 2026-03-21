@@ -61,15 +61,16 @@ public class OrdersTimelineBlockDto
 
 public class DashboardSalesProductsResponseDto
 {
-    public List<SalesProductRankDto> TopByQuantity { get; set; } = new();
+    public List<SalesRankItemDto> TopByQuantity { get; set; } = new();
     public List<RevenueParticipationSliceDto> ParticipationByRevenue { get; set; } = new();
     public long TotalRevenueCop { get; set; }
     public int TotalQuantity { get; set; }
 }
 
-public class SalesProductRankDto
+/// <summary>Ítem de ranking (producto o categoría según <see cref="SalesProductsGroupBy"/>).</summary>
+public class SalesRankItemDto
 {
-    public int ProductId { get; set; }
+    public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public int QuantitySold { get; set; }
     public long RevenueCop { get; set; }

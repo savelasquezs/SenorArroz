@@ -2,7 +2,6 @@ using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
-using SenorArroz.Domain.Models;
 
 namespace SenorArroz.Application.Features.Dashboard.Queries;
 
@@ -36,23 +35,49 @@ public class GetDashboardSalesProductsHandler
         var top = Math.Clamp(request.Top <= 0 ? 10 : request.Top, 5, 20);
         var branchFilter = ResolveBranchFilter(request.BranchId);
 
-        var rows = await _orderRepository.GetSalesProductAggregatesForDashboardAsync(
-            branchFilter,
-            from,
-            to,
-            cancellationToken);
+        List<RankRow> rows;
+        if (request.GroupBy == SalesProductsGroupBy.Category)
+        {
+            var agg = await _orderRepository.GetSalesCategoryAggregatesForDashboardAsync(
+                branchFilter,
+                from,
+                to,
+                cancellationToken);
+            rows = agg
+                .Select(r => new RankRow(
+                    r.CategoryId,
+                    string.IsNullOrWhiteSpace(r.CategoryName) ? $"#{r.CategoryId}" : r.CategoryName,
+                    r.QuantitySold,
+                    r.RevenueCop))
+                .ToList();
+        }
+        else
+        {
+            var agg = await _orderRepository.GetSalesProductAggregatesForDashboardAsync(
+                branchFilter,
+                from,
+                to,
+                cancellationToken);
+            rows = agg
+                .Select(r => new RankRow(
+                    r.ProductId,
+                    string.IsNullOrWhiteSpace(r.ProductName) ? $"#{r.ProductId}" : r.ProductName,
+                    r.QuantitySold,
+                    r.RevenueCop))
+                .ToList();
+        }
 
         var totalRevenue = rows.Sum(r => r.RevenueCop);
         var totalQty = rows.Sum(r => r.QuantitySold);
 
         var topByQuantity = rows
             .OrderByDescending(r => r.QuantitySold)
-            .ThenBy(r => r.ProductName)
+            .ThenBy(r => r.Name)
             .Take(top)
-            .Select(r => new SalesProductRankDto
+            .Select(r => new SalesRankItemDto
             {
-                ProductId = r.ProductId,
-                Name = string.IsNullOrWhiteSpace(r.ProductName) ? $"#{r.ProductId}" : r.ProductName,
+                Id = r.Id,
+                Name = r.Name,
                 QuantitySold = r.QuantitySold,
                 RevenueCop = r.RevenueCop,
             })
@@ -70,7 +95,7 @@ public class GetDashboardSalesProductsHandler
     }
 
     private static List<RevenueParticipationSliceDto> BuildParticipationSlices(
-        IReadOnlyList<SalesProductAggregateRow> rows,
+        IReadOnlyList<RankRow> rows,
         long totalRevenue)
     {
         var list = new List<RevenueParticipationSliceDto>();
@@ -79,7 +104,7 @@ public class GetDashboardSalesProductsHandler
 
         var topByRev = rows
             .OrderByDescending(r => r.RevenueCop)
-            .ThenBy(r => r.ProductName)
+            .ThenBy(r => r.Name)
             .Take(ParticipationTop)
             .ToList();
 
@@ -88,10 +113,9 @@ public class GetDashboardSalesProductsHandler
 
         foreach (var r in topByRev)
         {
-            var label = string.IsNullOrWhiteSpace(r.ProductName) ? $"#{r.ProductId}" : r.ProductName;
             list.Add(new RevenueParticipationSliceDto
             {
-                Label = label,
+                Label = r.Name,
                 RevenueCop = r.RevenueCop,
                 Percent = Math.Round(100.0 * r.RevenueCop / totalRevenue, 1),
             });
@@ -116,4 +140,6 @@ public class GetDashboardSalesProductsHandler
             return requestedBranchId;
         return _currentUser.BranchId > 0 ? _currentUser.BranchId : null;
     }
+
+    private sealed record RankRow(int Id, string Name, int QuantitySold, long RevenueCop);
 }

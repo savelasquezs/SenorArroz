@@ -121,8 +121,13 @@ public class DashboardController : ControllerBase
         [FromQuery(Name = "to")] DateTime toUtc,
         [FromQuery] int? branchId = null,
         [FromQuery] int top = 10,
+        [FromQuery(Name = "groupBy")] string? groupBy = null,
         CancellationToken cancellationToken = default)
     {
+        var gb = string.Equals(groupBy, "category", StringComparison.OrdinalIgnoreCase)
+            ? SalesProductsGroupBy.Category
+            : SalesProductsGroupBy.Product;
+
         var result = await _mediator.Send(
             new GetDashboardSalesProductsQuery
             {
@@ -130,6 +135,7 @@ public class DashboardController : ControllerBase
                 ToUtc = toUtc,
                 BranchId = branchId,
                 Top = top,
+                GroupBy = gb,
             },
             cancellationToken);
 

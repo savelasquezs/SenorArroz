@@ -36,3 +36,12 @@ public class SalesProductAggregateRow
     public int QuantitySold { get; set; }
     public long RevenueCop { get; set; }
 }
+
+/// <summary>Agregado por categoría de producto (mismas líneas de pedido).</summary>
+public class SalesCategoryAggregateRow
+{
+    public int CategoryId { get; set; }
+    public string CategoryName { get; set; } = string.Empty;
+    public int QuantitySold { get; set; }
+    public long RevenueCop { get; set; }
+}

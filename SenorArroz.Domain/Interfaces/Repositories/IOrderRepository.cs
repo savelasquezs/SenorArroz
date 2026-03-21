@@ -168,4 +168,10 @@ public interface IOrderRepository
         DateTime fromUtc,
         DateTime toUtc,
         CancellationToken cancellationToken = default);
+
+    Task<List<SalesCategoryAggregateRow>> GetSalesCategoryAggregatesForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
 }

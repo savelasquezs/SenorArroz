@@ -9,4 +9,5 @@ public class GetDashboardSalesProductsQuery : IRequest<DashboardSalesProductsRes
     public DateTime ToUtc { get; set; }
     public int? BranchId { get; set; }
     public int Top { get; set; } = 10;
+    public SalesProductsGroupBy GroupBy { get; set; } = SalesProductsGroupBy.Product;
 }

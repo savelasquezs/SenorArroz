@@ -32,7 +32,7 @@ Los datos del dashboard **no** se exponen en un único endpoint. Cada vista del 
 
 | `GET /api/dashboard/sales/comparison` | **Ventas** — comparativa sucursales | **`from` y `to` obligatorios**, `branchId?` |
 | `GET /api/dashboard/sales/evolution` | **Ventas** — líneas tiempo | **`from` y `to` obligatorios**, `branchId?` |
-| `GET /api/dashboard/sales/products` | **Ventas** — ranking + donut | **`from` y `to` obligatorios**, `branchId?`, `top` (5–20, default 10) |
+| `GET /api/dashboard/sales/products` | **Ventas** — ranking + donut | **`from` y `to` obligatorios**, `branchId?`, `top` (5–20, default 10), `groupBy` (`product` \| `category`, default `product`) |
 
 
 
@@ -131,6 +131,8 @@ Mismas reglas de rango y alcance. Devuelve los **ocho bloques** que consume el f
 ## `GET /api/dashboard/sales/products`
 
 Líneas de detalle de pedido en el rango (mismo criterio de pedidos). **Top** por cantidad vendida (`top` 5–20). **Participación:** top 5 por recaudo + slice **Otros** con % sobre el total del rango.
+
+**Query `groupBy`:** `product` (default) agrupa por producto; `category` agrupa por categoría del producto. La forma de la respuesta es la misma: `topByQuantity[].id` es `productId` o `categoryId` según el modo.
 
 **Respuesta:** `DashboardSalesProductsResponseDto`.
 
