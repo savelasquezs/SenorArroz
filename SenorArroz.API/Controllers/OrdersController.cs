@@ -308,13 +308,16 @@ public class OrdersController : ControllerBase
     public async Task<ActionResult<PagedResult<OrderDto>>> GetAssignedOrders(
         int deliveryManId,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10)
+        [FromQuery] int pageSize = 100)
     {
         var query = new SearchOrdersQuery
         {
             DeliveryManId = deliveryManId,
             Page = page,
-            PageSize = pageSize
+            PageSize = pageSize,
+            // Los más recientes primero (la página 1 es la operativa del día)
+            SortBy = "CreatedAt",
+            SortOrder = "desc"
         };
 
         var result = await _mediator.Send(query);
