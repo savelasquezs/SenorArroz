@@ -107,4 +107,65 @@ public interface IOrderRepository
         DateTime fromUtc,
         DateTime toUtc,
         CancellationToken cancellationToken = default);
+
+    // Dashboard ventas
+    Task<List<BranchSalesComparisonAggregate>> GetDashboardSalesComparisonAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<List<SalesDayPoint>> GetDashboardSalesByDayAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<List<OrdersDayPoint>> GetDashboardOrdersByDayAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<List<SalesMonthPoint>> GetDashboardSalesByMonthAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<List<OrdersMonthPoint>> GetDashboardOrdersByMonthAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<List<SalesYearPoint>> GetDashboardSalesByYearAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<List<OrdersYearPoint>> GetDashboardOrdersByYearAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<List<SalesHourPoint>> GetDashboardSalesByHourAsync(
+        int? branchId,
+        DateTime dayStartUtc,
+        DateTime dayEndUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<List<OrdersHourPoint>> GetDashboardOrdersByHourAsync(
+        int? branchId,
+        DateTime dayStartUtc,
+        DateTime dayEndUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<List<SalesProductAggregateRow>> GetSalesProductAggregatesForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
 }

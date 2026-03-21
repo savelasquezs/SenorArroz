@@ -974,4 +974,170 @@ public class OrderRepository : IOrderRepository
 
         return await q.ToListAsync(cancellationToken);
     }
+
+    private IQueryable<Order> DashboardNonCancelledOrdersInRange(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc)
+    {
+        var q = _context.Orders.AsNoTracking()
+            .Where(o =>
+                o.Status != OrderStatus.Cancelled
+                && o.CreatedAt >= fromUtc
+                && o.CreatedAt <= toUtc);
+
+        if (branchId.HasValue)
+            q = q.Where(o => o.BranchId == branchId.Value);
+
+        return q;
+    }
+
+    public async Task<List<BranchSalesComparisonAggregate>> GetDashboardSalesComparisonAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .GroupBy(o => o.BranchId)
+            .Select(g => new BranchSalesComparisonAggregate
+            {
+                BranchId = g.Key,
+                SalesTotal = g.Sum(o => o.Total),
+                OrdersTotal = g.Count(),
+                SalesDelivery = g.Sum(o => o.Type == OrderType.Delivery ? o.Total : 0),
+                SalesOnsite = g.Sum(o => o.Type != OrderType.Delivery ? o.Total : 0),
+                OrdersDelivery = g.Count(o => o.Type == OrderType.Delivery),
+                OrdersOnsite = g.Count(o => o.Type != OrderType.Delivery),
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<SalesDayPoint>> GetDashboardSalesByDayAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .GroupBy(o => new { o.BranchId, Day = o.CreatedAt.Date })
+            .Select(g => new SalesDayPoint(g.Key.BranchId, g.Key.Day, g.Sum(o => o.Total)))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<OrdersDayPoint>> GetDashboardOrdersByDayAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .GroupBy(o => o.CreatedAt.Date)
+            .Select(g => new OrdersDayPoint(g.Key, g.Count()))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<SalesMonthPoint>> GetDashboardSalesByMonthAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .GroupBy(o => new { o.BranchId, o.CreatedAt.Year, o.CreatedAt.Month })
+            .Select(g => new SalesMonthPoint(
+                g.Key.BranchId,
+                g.Key.Year,
+                g.Key.Month,
+                g.Sum(o => o.Total)))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<OrdersMonthPoint>> GetDashboardOrdersByMonthAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .GroupBy(o => new { o.CreatedAt.Year, o.CreatedAt.Month })
+            .Select(g => new OrdersMonthPoint(g.Key.Year, g.Key.Month, g.Count()))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<SalesYearPoint>> GetDashboardSalesByYearAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .GroupBy(o => new { o.BranchId, o.CreatedAt.Year })
+            .Select(g => new SalesYearPoint(g.Key.BranchId, g.Key.Year, g.Sum(o => o.Total)))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<OrdersYearPoint>> GetDashboardOrdersByYearAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .GroupBy(o => o.CreatedAt.Year)
+            .Select(g => new OrdersYearPoint(g.Key, g.Count()))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<SalesHourPoint>> GetDashboardSalesByHourAsync(
+        int? branchId,
+        DateTime dayStartUtc,
+        DateTime dayEndUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
+            .GroupBy(o => new { o.BranchId, o.CreatedAt.Hour })
+            .Select(g => new SalesHourPoint(g.Key.BranchId, g.Key.Hour, g.Sum(o => o.Total)))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<OrdersHourPoint>> GetDashboardOrdersByHourAsync(
+        int? branchId,
+        DateTime dayStartUtc,
+        DateTime dayEndUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
+            .GroupBy(o => o.CreatedAt.Hour)
+            .Select(g => new OrdersHourPoint(g.Key, g.Count()))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<SalesProductAggregateRow>> GetSalesProductAggregatesForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var q = _context.OrderDetails
+            .AsNoTracking()
+            .Where(od =>
+                od.Order.Status != OrderStatus.Cancelled
+                && od.Order.CreatedAt >= fromUtc
+                && od.Order.CreatedAt <= toUtc);
+
+        if (branchId.HasValue)
+            q = q.Where(od => od.Order.BranchId == branchId.Value);
+
+        return await q
+            .GroupBy(od => new { od.ProductId, Name = od.Product.Name ?? string.Empty })
+            .Select(g => new SalesProductAggregateRow
+            {
+                ProductId = g.Key.ProductId,
+                ProductName = g.Key.Name,
+                QuantitySold = g.Sum(od => od.Quantity),
+                RevenueCop = g.Sum(od => (long)(od.Subtotal ?? (od.Quantity * od.UnitPrice - od.Discount))),
+            })
+            .ToListAsync(cancellationToken);
+    }
 }

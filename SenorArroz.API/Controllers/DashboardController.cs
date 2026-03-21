@@ -70,4 +70,69 @@ public class DashboardController : ControllerBase
 
         return Ok(result);
     }
+
+    /// <summary>Ventas — comparación entre sucursales en el rango (pedidos no cancelados por <c>CreatedAt</c>).</summary>
+    [HttpGet("sales/comparison")]
+    [ProducesResponseType(typeof(DashboardSalesComparisonResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DashboardSalesComparisonResponseDto>> GetSalesComparison(
+        [FromQuery(Name = "from")] DateTime fromUtc,
+        [FromQuery(Name = "to")] DateTime toUtc,
+        [FromQuery] int? branchId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetDashboardSalesComparisonQuery
+            {
+                FromUtc = fromUtc,
+                ToUtc = toUtc,
+                BranchId = branchId,
+            },
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    /// <summary>Ventas — series temporales ventas/pedidos (día, hora del último día del <c>to</c>, mes, año).</summary>
+    [HttpGet("sales/evolution")]
+    [ProducesResponseType(typeof(DashboardSalesEvolutionResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DashboardSalesEvolutionResponseDto>> GetSalesEvolution(
+        [FromQuery(Name = "from")] DateTime fromUtc,
+        [FromQuery(Name = "to")] DateTime toUtc,
+        [FromQuery] int? branchId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetDashboardSalesEvolutionQuery
+            {
+                FromUtc = fromUtc,
+                ToUtc = toUtc,
+                BranchId = branchId,
+            },
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    /// <summary>Ventas — top productos por unidades y participación por recaudo (donut).</summary>
+    [HttpGet("sales/products")]
+    [ProducesResponseType(typeof(DashboardSalesProductsResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DashboardSalesProductsResponseDto>> GetSalesProducts(
+        [FromQuery(Name = "from")] DateTime fromUtc,
+        [FromQuery(Name = "to")] DateTime toUtc,
+        [FromQuery] int? branchId = null,
+        [FromQuery] int top = 10,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetDashboardSalesProductsQuery
+            {
+                FromUtc = fromUtc,
+                ToUtc = toUtc,
+                BranchId = branchId,
+                Top = top,
+            },
+            cancellationToken);
+
+        return Ok(result);
+    }
 }

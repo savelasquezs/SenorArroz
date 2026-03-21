@@ -30,7 +30,9 @@ Los datos del dashboard **no** se exponen en un único endpoint. Cada vista del 
 
 | `GET /api/dashboard/delivery` | **Domicilios** | **`from` y `to` obligatorios** (UTC, ISO 8601), `branchId?` |
 
-| `GET /api/dashboard/sales` | **Ventas** (futuro) | `branchId?`, `fromDate?`, `toDate?`, … |
+| `GET /api/dashboard/sales/comparison` | **Ventas** — comparativa sucursales | **`from` y `to` obligatorios**, `branchId?` |
+| `GET /api/dashboard/sales/evolution` | **Ventas** — líneas tiempo | **`from` y `to` obligatorios**, `branchId?` |
+| `GET /api/dashboard/sales/products` | **Ventas** — ranking + donut | **`from` y `to` obligatorios**, `branchId?`, `top` (5–20, default 10) |
 
 
 
@@ -110,13 +112,37 @@ El front suele enviar el día completo (inicio 00:00 y fin 23:59:59.999 en zona 
 
 
 
+## `GET /api/dashboard/sales/comparison`
+
+Pedidos **no cancelados** con `CreatedAt` en `[from, to]` (máx. ~400 días). Una fila por sucursal (todas o la de `branchId` en superadmin). Totales y desglose delivery vs resto (`Onsite` + `Reservation`). `deliveryTimeMinutes` reservado (hoy `0`).
+
+**Respuesta:** `DashboardSalesComparisonResponseDto` (`rows[]`).
+
+
+
+## `GET /api/dashboard/sales/evolution`
+
+Mismas reglas de rango y alcance. Devuelve los **ocho bloques** que consume el front (`TimeEvolutionPanel`): ventas multi-sucursal y pedidos agregados por día, **hora del día UTC del `to`**, mes y año. Día: máx. 62 buckets; hora: 24 franjas `00:00`–`23:00`.
+
+**Respuesta:** `DashboardSalesEvolutionResponseDto`.
+
+
+
+## `GET /api/dashboard/sales/products`
+
+Líneas de detalle de pedido en el rango (mismo criterio de pedidos). **Top** por cantidad vendida (`top` 5–20). **Participación:** top 5 por recaudo + slice **Otros** con % sobre el total del rango.
+
+**Respuesta:** `DashboardSalesProductsResponseDto`.
+
+
+
 ## Arquitectura (CQRS)
 
 
 
 - **Controller:** `DashboardController` → MediatR.
 
-- **Handlers:** `GetDashboardMainHandler`, `GetDashboardDeliveryHandler` → `IOrderRepository` y agregadores en Application/Infrastructure.
+- **Handlers:** `GetDashboardMainHandler`, `GetDashboardDeliveryHandler`, `GetDashboardSalesComparisonHandler`, `GetDashboardSalesEvolutionHandler`, `GetDashboardSalesProductsHandler` → `IOrderRepository`, `IBranchRepository`, `SalesDashboardChartBuilder`.
 
 
 
