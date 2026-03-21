@@ -50,7 +50,8 @@ Controllers/
 ├── UsersController.cs       → Gestión de usuarios
 ├── CustomersController.cs   → Gestión de clientes
 ├── BankPaymentsController.cs
-└── AppPaymentsController.cs
+├── AppPaymentsController.cs
+└── DashboardController.cs   → GET /api/dashboard/main (y futuras rutas por vista)
 ```
 
 #### Middleware

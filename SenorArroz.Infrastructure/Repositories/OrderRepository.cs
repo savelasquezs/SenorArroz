@@ -3,6 +3,7 @@ using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Domain.Models;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -870,5 +871,107 @@ public class OrderRepository : IOrderRepository
                          || (!o.PrepareAt.HasValue && o.ReservedFor.HasValue && o.ReservedFor.Value.AddHours(-1) <= now)
                      ))
             .ToListAsync();
+    }
+
+    public async Task<PrincipalKpiSnapshot> GetPrincipalKpiSnapshotAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var q = _context.Orders.Where(o => o.CreatedAt >= fromUtc && o.CreatedAt <= toUtc);
+        if (branchId.HasValue)
+            q = q.Where(o => o.BranchId == branchId.Value);
+
+        var totalAll = await q.CountAsync(cancellationToken);
+        var cancelledCount = await q.CountAsync(o => o.Status == OrderStatus.Cancelled, cancellationToken);
+        var nonCancelled = q.Where(o => o.Status != OrderStatus.Cancelled);
+
+        var completedCount = await nonCancelled.CountAsync(cancellationToken);
+        var totalSales = completedCount > 0
+            ? await nonCancelled.SumAsync(o => (long)o.Total, cancellationToken)
+            : 0L;
+
+        var avgTicket = completedCount > 0
+            ? (int)Math.Round((double)totalSales / completedCount)
+            : 0;
+
+        var cancelRate = totalAll > 0
+            ? Math.Round(cancelledCount * 100.0 / totalAll, 4)
+            : 0d;
+
+        return new PrincipalKpiSnapshot((decimal)totalSales, completedCount, avgTicket, cancelRate);
+    }
+
+    public async Task<PrincipalPipelineCounts> GetPrincipalPipelineCountsAsync(
+        int? branchId,
+        CancellationToken cancellationToken = default)
+    {
+        var statuses = new[]
+        {
+            OrderStatus.Taken,
+            OrderStatus.InPreparation,
+            OrderStatus.Ready,
+            OrderStatus.OnTheWay,
+        };
+
+        var q = _context.Orders.Where(o => statuses.Contains(o.Status));
+        if (branchId.HasValue)
+            q = q.Where(o => o.BranchId == branchId.Value);
+
+        var groups = await q
+            .GroupBy(o => o.Status)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var dict = groups.ToDictionary(x => x.Key, x => x.Count);
+
+        int Get(OrderStatus s) => dict.TryGetValue(s, out var c) ? c : 0;
+
+        return new PrincipalPipelineCounts(
+            Get(OrderStatus.Taken),
+            Get(OrderStatus.InPreparation),
+            Get(OrderStatus.Ready),
+            Get(OrderStatus.OnTheWay));
+    }
+
+    public async Task<List<Order>> GetRecentOrdersForDashboardAsync(
+        int? branchId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var q = _context.Orders
+            .Include(o => o.Branch)
+            .Include(o => o.Customer)
+            .AsQueryable();
+
+        if (branchId.HasValue)
+            q = q.Where(o => o.BranchId == branchId.Value);
+
+        return await q
+            .OrderByDescending(o => o.UpdatedAt)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<Order>> GetDeliveredDeliveryOrdersForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var q = _context.Orders
+            .AsNoTracking()
+            .Include(o => o.DeliveryMan)
+            .Where(o =>
+                o.Type == OrderType.Delivery
+                && o.Status == OrderStatus.Delivered
+                && o.UpdatedAt >= fromUtc
+                && o.UpdatedAt <= toUtc);
+
+        if (branchId.HasValue)
+            q = q.Where(o => o.BranchId == branchId.Value);
+
+        return await q.ToListAsync(cancellationToken);
     }
 }

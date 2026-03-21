@@ -1,5 +1,6 @@
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Models;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.Domain.Interfaces.Repositories;
@@ -81,4 +82,29 @@ public interface IOrderRepository
         DateTime fromTime, 
         DateTime toTime, 
         OrderStatus status);
+
+    // Dashboard principal
+    Task<PrincipalKpiSnapshot> GetPrincipalKpiSnapshotAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<PrincipalPipelineCounts> GetPrincipalPipelineCountsAsync(
+        int? branchId,
+        CancellationToken cancellationToken = default);
+
+    Task<List<Order>> GetRecentOrdersForDashboardAsync(
+        int? branchId,
+        int take,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Domicilios entregados en el rango (filtra por <see cref="Order.UpdatedAt"/>).
+    /// </summary>
+    Task<List<Order>> GetDeliveredDeliveryOrdersForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
 }
