@@ -101,18 +101,29 @@ public class RevenueParticipationSliceDto
 #region Peso por categoría (torta + evolución)
 
 /// <summary>
-/// Distribución de peso vendido (g) por categoría en el rango y, si <c>categoryId</c> se envió en la query, serie temporal para esa categoría.
+/// Distribución de peso vendido (g) por categoría en el rango.
+/// Si <c>categoryId</c> en la query: <see cref="Evolution"/> para esa categoría.
+/// Si no: <see cref="EvolutionsByCategory"/> con una serie por categoría.
 /// </summary>
 public class DashboardCategoryWeightsResponseDto
 {
     public List<SalesCategoryWeightItemDto> ByCategory { get; set; } = new();
     public List<CategoryWeightEvolutionPointDto> Evolution { get; set; } = new();
+    /// <summary>Una serie por categoría cuando no se envía <c>categoryId</c>.</summary>
+    public List<CategoryWeightEvolutionSeriesDto> EvolutionsByCategory { get; set; } = new();
 }
 
 public class CategoryWeightEvolutionPointDto
 {
     public DateTime BucketStartUtc { get; set; }
     public long TotalWeightGrams { get; set; }
+}
+
+public class CategoryWeightEvolutionSeriesDto
+{
+    public int CategoryId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public List<CategoryWeightEvolutionPointDto> Points { get; set; } = new();
 }
 
 #endregion
