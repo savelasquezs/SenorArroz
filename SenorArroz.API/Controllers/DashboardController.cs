@@ -142,6 +142,33 @@ public class DashboardController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Ventas — peso vendido (g) por categoría en el rango (torta) y evolución por día/mes/año si se envía <paramref name="categoryId"/>.
+    /// </summary>
+    [HttpGet("sales/category-weights")]
+    [ProducesResponseType(typeof(DashboardCategoryWeightsResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DashboardCategoryWeightsResponseDto>> GetSalesCategoryWeights(
+        [FromQuery(Name = "from")] DateTime fromUtc,
+        [FromQuery(Name = "to")] DateTime toUtc,
+        [FromQuery] int? branchId = null,
+        [FromQuery] string granularity = "day",
+        [FromQuery] int? categoryId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetDashboardCategoryWeightsQuery
+            {
+                FromUtc = fromUtc,
+                ToUtc = toUtc,
+                BranchId = branchId,
+                Granularity = granularity,
+                CategoryId = categoryId,
+            },
+            cancellationToken);
+
+        return Ok(result);
+    }
+
     /// <summary>Gastos — KPIs del rango (total, ticket medio, variación vs periodo anterior).</summary>
     [HttpGet("expenses/summary")]
     [ProducesResponseType(typeof(DashboardExpenseSummaryResponseDto), StatusCodes.Status200OK)]

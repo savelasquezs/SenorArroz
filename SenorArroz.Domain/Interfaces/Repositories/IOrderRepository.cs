@@ -184,4 +184,15 @@ public interface IOrderRepository
         DateTime fromUtc,
         DateTime toUtc,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Evolución de gramos vendidos para una categoría (solo líneas con peso en producto), agrupada por día, mes o año.
+    /// </summary>
+    Task<List<SalesCategoryWeightEvolutionPoint>> GetSalesCategoryWeightEvolutionAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int categoryId,
+        CategoryWeightEvolutionGranularity granularity,
+        CancellationToken cancellationToken = default);
 }

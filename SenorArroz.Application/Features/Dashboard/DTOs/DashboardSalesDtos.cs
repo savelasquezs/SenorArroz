@@ -97,3 +97,22 @@ public class RevenueParticipationSliceDto
 }
 
 #endregion
+
+#region Peso por categoría (torta + evolución)
+
+/// <summary>
+/// Distribución de peso vendido (g) por categoría en el rango y, si <c>categoryId</c> se envió en la query, serie temporal para esa categoría.
+/// </summary>
+public class DashboardCategoryWeightsResponseDto
+{
+    public List<SalesCategoryWeightItemDto> ByCategory { get; set; } = new();
+    public List<CategoryWeightEvolutionPointDto> Evolution { get; set; } = new();
+}
+
+public class CategoryWeightEvolutionPointDto
+{
+    public DateTime BucketStartUtc { get; set; }
+    public long TotalWeightGrams { get; set; }
+}
+
+#endregion

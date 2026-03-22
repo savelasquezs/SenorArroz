@@ -1214,4 +1214,51 @@ public class OrderRepository : IOrderRepository
             .ThenBy(r => r.CategoryName)
             .ToList();
     }
+
+    public async Task<List<SalesCategoryWeightEvolutionPoint>> GetSalesCategoryWeightEvolutionAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int categoryId,
+        CategoryWeightEvolutionGranularity granularity,
+        CancellationToken cancellationToken = default)
+    {
+        var q = _context.OrderDetails
+            .AsNoTracking()
+            .Where(od =>
+                od.Order.Status != OrderStatus.Cancelled
+                && od.Order.CreatedAt >= fromUtc
+                && od.Order.CreatedAt <= toUtc
+                && od.Product.WeightGrams != null
+                && od.Product.CategoryId == categoryId);
+
+        if (branchId.HasValue)
+            q = q.Where(od => od.Order.BranchId == branchId.Value);
+
+        return granularity switch
+        {
+            CategoryWeightEvolutionGranularity.Day => await q
+                .GroupBy(od => od.Order.CreatedAt.Date)
+                .Select(g => new SalesCategoryWeightEvolutionPoint(
+                    g.Key,
+                    g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value)))
+                .OrderBy(x => x.BucketStartUtc)
+                .ToListAsync(cancellationToken),
+            CategoryWeightEvolutionGranularity.Month => await q
+                .GroupBy(od => new { od.Order.CreatedAt.Year, od.Order.CreatedAt.Month })
+                .Select(g => new SalesCategoryWeightEvolutionPoint(
+                    new DateTime(g.Key.Year, g.Key.Month, 1, 0, 0, 0, DateTimeKind.Utc),
+                    g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value)))
+                .OrderBy(x => x.BucketStartUtc)
+                .ToListAsync(cancellationToken),
+            CategoryWeightEvolutionGranularity.Year => await q
+                .GroupBy(od => od.Order.CreatedAt.Year)
+                .Select(g => new SalesCategoryWeightEvolutionPoint(
+                    new DateTime(g.Key, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                    g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value)))
+                .OrderBy(x => x.BucketStartUtc)
+                .ToListAsync(cancellationToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(granularity), granularity, null),
+        };
+    }
 }

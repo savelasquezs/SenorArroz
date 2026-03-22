@@ -35,6 +35,14 @@ namespace SenorArroz.Domain.Enums
         Deliveryman    // deliveryman
     }
 
+    /// <summary>Bucket para la serie de peso vendido por categoría (dashboard ventas).</summary>
+    public enum CategoryWeightEvolutionGranularity
+    {
+        Day,
+        Month,
+        Year,
+    }
+
     public enum BankType
     {
         Normal,      // Bancos y apps operativos (Nequi, Bancolombia, Rappi, etc.)

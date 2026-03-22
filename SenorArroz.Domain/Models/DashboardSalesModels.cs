@@ -55,3 +55,6 @@ public class SalesCategoryWeightRow
     public string CategoryName { get; set; } = string.Empty;
     public long TotalWeightGrams { get; set; }
 }
+
+/// <summary>Punto de la serie temporal de peso (g) para una categoría en un bucket día/mes/año.</summary>
+public sealed record SalesCategoryWeightEvolutionPoint(DateTime BucketStartUtc, long TotalWeightGrams);
