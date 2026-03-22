@@ -58,3 +58,9 @@ public class SalesCategoryWeightRow
 
 /// <summary>Punto de la serie temporal de peso (g) para una categoría en un bucket día/mes/año.</summary>
 public sealed record SalesCategoryWeightEvolutionPoint(DateTime BucketStartUtc, long TotalWeightGrams);
+
+/// <summary>Serie temporal de peso para una categoría (varias series cuando no se filtra por categoría).</summary>
+public sealed record SalesCategoryWeightEvolutionSeries(
+    int CategoryId,
+    string CategoryName,
+    IReadOnlyList<SalesCategoryWeightEvolutionPoint> Points);

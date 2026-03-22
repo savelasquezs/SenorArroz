@@ -195,4 +195,14 @@ public interface IOrderRepository
         int categoryId,
         CategoryWeightEvolutionGranularity granularity,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Evolución de gramos por categoría (una serie por categoría con ventas con peso), mismo bucketing día/mes/año.
+    /// </summary>
+    Task<List<SalesCategoryWeightEvolutionSeries>> GetSalesCategoryWeightEvolutionAllCategoriesAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CategoryWeightEvolutionGranularity granularity,
+        CancellationToken cancellationToken = default);
 }

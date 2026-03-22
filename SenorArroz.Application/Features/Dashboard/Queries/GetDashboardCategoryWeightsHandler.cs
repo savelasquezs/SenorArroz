@@ -50,6 +50,7 @@ public class GetDashboardCategoryWeightsHandler
             .ToList();
 
         List<CategoryWeightEvolutionPointDto> evolution = new();
+        List<CategoryWeightEvolutionSeriesDto> evolutionsByCategory = new();
         if (request.CategoryId is { } cid)
         {
             await ValidateCategoryAsync(cid, branchFilter);
@@ -68,11 +69,35 @@ public class GetDashboardCategoryWeightsHandler
                 })
                 .ToList();
         }
+        else
+        {
+            var seriesList = await _orderRepository.GetSalesCategoryWeightEvolutionAllCategoriesAsync(
+                branchFilter,
+                from,
+                to,
+                granularity,
+                cancellationToken);
+            evolutionsByCategory = seriesList
+                .Select(s => new CategoryWeightEvolutionSeriesDto
+                {
+                    CategoryId = s.CategoryId,
+                    Name = s.CategoryName,
+                    Points = s.Points
+                        .Select(p => new CategoryWeightEvolutionPointDto
+                        {
+                            BucketStartUtc = p.BucketStartUtc,
+                            TotalWeightGrams = p.TotalWeightGrams,
+                        })
+                        .ToList(),
+                })
+                .ToList();
+        }
 
         return new DashboardCategoryWeightsResponseDto
         {
             ByCategory = byCategory,
             Evolution = evolution,
+            EvolutionsByCategory = evolutionsByCategory,
         };
     }
 

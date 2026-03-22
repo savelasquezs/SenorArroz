@@ -143,7 +143,8 @@ public class DashboardController : ControllerBase
     }
 
     /// <summary>
-    /// Ventas — peso vendido (g) por categoría en el rango (torta) y evolución por día/mes/año si se envía <paramref name="categoryId"/>.
+    /// Ventas — peso vendido (g) por categoría en el rango (torta) y evolución por día/mes/año:
+    /// una serie si se envía <paramref name="categoryId"/>, o todas las categorías si no.
     /// </summary>
     [HttpGet("sales/category-weights")]
     [ProducesResponseType(typeof(DashboardCategoryWeightsResponseDto), StatusCodes.Status200OK)]
