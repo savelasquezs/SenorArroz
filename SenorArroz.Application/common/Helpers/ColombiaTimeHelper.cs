@@ -44,5 +44,25 @@ public static class ColombiaTimeHelper
         var utcEnd = ConvertColombiaToUtc(colombiaTodayEnd);
         return DateTime.SpecifyKind(utcEnd, DateTimeKind.Utc);
     }
+
+    /// <summary>
+    /// Rango UTC para filtrar instantes guardados en UTC (p. ej. <c>CreatedAt</c>) por días calendario en Colombia.
+    /// <paramref name="fromDate"/> y <paramref name="toDate"/> son fechas de calendario (se usa solo la parte fecha);
+    /// se interpretan como medianoche inicio en Bogotá hasta el último tick del último día en Bogotá.
+    /// </summary>
+    public static (DateTime FromUtc, DateTime ToUtc) GetColombiaCalendarDateRangeUtc(DateTime fromDate, DateTime toDate)
+    {
+        var from = fromDate.Date;
+        var to = toDate.Date;
+        if (to < from)
+            (from, to) = (to, from);
+
+        var startColombia = DateTime.SpecifyKind(from, DateTimeKind.Unspecified);
+        var endColombia = DateTime.SpecifyKind(to.AddDays(1).AddTicks(-1), DateTimeKind.Unspecified);
+
+        var fromUtc = DateTime.SpecifyKind(ConvertColombiaToUtc(startColombia), DateTimeKind.Utc);
+        var toUtc = DateTime.SpecifyKind(ConvertColombiaToUtc(endColombia), DateTimeKind.Utc);
+        return (fromUtc, toUtc);
+    }
 }
 

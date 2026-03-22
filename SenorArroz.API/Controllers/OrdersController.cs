@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Features.Orders.Commands;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Features.Orders.Queries;
@@ -329,11 +330,7 @@ public class OrdersController : ControllerBase
         {
             var from = (fromDate ?? toDate)!.Value.Date;
             var to = (toDate ?? fromDate)!.Value.Date;
-            if (to < from)
-                (from, to) = (to, from);
-
-            fromUtc = DateTime.SpecifyKind(from, DateTimeKind.Utc);
-            toUtc = DateTime.SpecifyKind(to.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+            (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(from, to);
         }
 
         var query = new SearchOrdersQuery
