@@ -9,6 +9,7 @@
   - `railway-initial-utf8.sql` - Migración inicial completa
   - `Scripts/deliveryman.sql` - Tabla `deliveryman_advance` para gestión de abonos
   - `Scripts/update-product-table.sql` - Columna `product.weight_grams` (incremental; ver proceso abajo)
+  - `Scripts/update-product-weights-by-size.sql` - Rellena `weight_grams` por tamaño (Personal/Dúo/Trío/Familiar/Súper) para productos `Arroz%` con/sin chicharrón
 
 ## Aplicar `update-product-table.sql` con Railway CLI (`railway connect` + `\i`)
 
