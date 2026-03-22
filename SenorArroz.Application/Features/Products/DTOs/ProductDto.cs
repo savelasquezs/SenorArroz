@@ -1,4 +1,4 @@
-﻿namespace SenorArroz.Application.Features.Products.DTOs;
+namespace SenorArroz.Application.Features.Products.DTOs;
 
 public class ProductDto
 {

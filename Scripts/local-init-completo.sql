@@ -15,7 +15,8 @@ SET client_encoding = 'UTF8';
 -- Incluye: tablas, índices, funciones, triggers, datos semilla y todas las
 -- modificaciones: supplier.branch_id, expense_header.created_by_id,
 -- supplier_expense, deliveryman_advance, verified_at, guestname, is_primary,
--- prepare_at, bank.type, bank_transfer, cash_register_closure y tablas hijas.
+-- prepare_at, bank.type, bank_transfer, cash_register_closure, product.weight_grams
+-- y tablas hijas.
 --
 -- =============================================================================
 
@@ -200,6 +201,7 @@ CREATE TABLE IF NOT EXISTS product (
     name character varying(150) NOT NULL,
     price integer NOT NULL,
     stock integer,
+    weight_grams integer,
     active boolean NOT NULL DEFAULT TRUE,
     created_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     updated_at timestamp with time zone NOT NULL DEFAULT (NOW()),

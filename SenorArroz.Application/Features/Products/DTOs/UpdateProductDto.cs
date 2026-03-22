@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Products/DTOs/UpdateProductDto.cs
+// SenorArroz.Application/Features/Products/DTOs/UpdateProductDto.cs
 using System.ComponentModel.DataAnnotations;
 
 namespace SenorArroz.Application.Features.Products.DTOs;

@@ -8,6 +8,42 @@
 - **Scripts SQL**: 
   - `railway-initial-utf8.sql` - Migración inicial completa
   - `Scripts/deliveryman.sql` - Tabla `deliveryman_advance` para gestión de abonos
+  - `Scripts/update-product-table.sql` - Columna `product.weight_grams` (incremental; ver proceso abajo)
+
+## Aplicar `update-product-table.sql` con Railway CLI (`railway connect` + `\i`)
+
+Proceso usado para **añadir `weight_grams`** a la tabla `product` en Railway sin pegar la URL a mano:
+
+1. **Instalar** [Railway CLI](https://docs.railway.com/guides/cli) (si no lo tenés).
+2. **Iniciar sesión** y **enlazar el proyecto** (una vez por carpeta):
+   ```bash
+   cd senorArrozAPI
+   railway login
+   railway link
+   ```
+   Elegí el workspace, el proyecto (p. ej. *señor arroz c# vue js*), el entorno **production** y el servicio **PostgreSQL** (p. ej. *MainDatabase*).
+3. **Abrir `psql` conectado a la base de Railway** (desde la carpeta del API para que `\i` relativo funcione):
+   ```bash
+   cd senorArrozAPI
+   railway connect postgres
+   ```
+   Se abre una sesión interactiva de `psql` ya autenticada (sin exponer `DATABASE_URL` en la terminal).
+4. **Ejecutar el script** (ajustá la ruta si tu usuario o carpeta distintos):
+   - **Git Bash / Linux / macOS** (con el `cd` del paso 3):
+     ```sql
+     \i Scripts/update-product-table.sql
+     ```
+     `\i` resuelve rutas respecto al directorio de trabajo actual del proceso `psql` (por eso el `cd senorArrozAPI` antes de conectar).
+   - **Windows:** si `\i` no encuentra el archivo, usá ruta con barras y comillas:
+     ```sql
+     \i 'C:/Users/TU_USUARIO/source/repos/SenorArroz/senorArrozAPI/Scripts/update-product-table.sql'
+     ```
+5. Deberías ver `BEGIN` / `ALTER TABLE` / `COMMENT` / `COMMIT` sin errores. Salir con `\q`.
+
+**Alternativa:** copiar **`DATABASE_URL` pública** del panel (PostgreSQL → Variables) y ejecutar desde tu PC:
+`psql "$DATABASE_URL" -f Scripts/update-product-table.sql` (no uses el host `postgres.railway.internal` desde fuera de Railway).
+
+---
 
 ## Prerrequisitos
 

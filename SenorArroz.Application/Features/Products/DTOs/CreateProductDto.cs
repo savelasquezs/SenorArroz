@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Products/DTOs/CreateProductDto.cs
+// SenorArroz.Application/Features/Products/DTOs/CreateProductDto.cs
 using System.ComponentModel.DataAnnotations;
 
 namespace SenorArroz.Application.Features.Products.DTOs;

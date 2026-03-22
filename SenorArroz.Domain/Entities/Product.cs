@@ -1,4 +1,4 @@
-﻿using SenorArroz.Domain.Entities.Common;
+using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
