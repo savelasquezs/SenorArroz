@@ -1,6 +1,7 @@
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Enums;
@@ -41,6 +42,16 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             branchFilter = request.BranchId;
         }
 
+        // Filtro por CreatedAt: días calendario en Colombia → rango UTC (mismo criterio que historial domiciliario)
+        DateTime? fromDateUtc = null;
+        DateTime? toDateUtc = null;
+        if (request.FromDate.HasValue || request.ToDate.HasValue)
+        {
+            var fromCal = (request.FromDate ?? request.ToDate)!.Value.Date;
+            var toCal = (request.ToDate ?? request.FromDate)!.Value.Date;
+            (fromDateUtc, toDateUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(fromCal, toCal);
+        }
+
         var result = await _orderRepository.SearchOrdersAsync(
             request.SearchTerm,
             branchFilter,
@@ -48,8 +59,8 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             request.DeliveryManId,
             request.Status,
             request.Type,
-            request.FromDate,
-            request.ToDate,
+            fromDateUtc,
+            toDateUtc,
             request.MinAmount,
             request.MaxAmount,
             request.Page,
