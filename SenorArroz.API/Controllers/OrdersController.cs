@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MediatR;
@@ -301,21 +302,47 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// Obtiene pedidos asignados a un domiciliario
+    /// Obtiene pedidos asignados a un domiciliario.
+    /// Si se envía <paramref name="fromDate"/> y/o <paramref name="toDate"/>, filtra por <c>CreatedAt</c> en ese rango (inclusive por día calendario, interpretado en UTC).
+    /// Si no se envían fechas, no se aplica filtro de fechas (útil para pedidos en ruta).
     /// </summary>
     [HttpGet("delivery/assigned/{deliveryManId}")]
     [Authorize(Roles = "Admin,Superadmin,Deliveryman")]
     public async Task<ActionResult<PagedResult<OrderDto>>> GetAssignedOrders(
         int deliveryManId,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 100)
+        [FromQuery] int pageSize = 100,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
     {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value;
+        if (string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase))
+        {
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(userIdClaim, out var userId) || userId != deliveryManId)
+                return Forbid();
+        }
+
+        DateTime? fromUtc = null;
+        DateTime? toUtc = null;
+        if (fromDate.HasValue || toDate.HasValue)
+        {
+            var from = (fromDate ?? toDate)!.Value.Date;
+            var to = (toDate ?? fromDate)!.Value.Date;
+            if (to < from)
+                (from, to) = (to, from);
+
+            fromUtc = DateTime.SpecifyKind(from, DateTimeKind.Utc);
+            toUtc = DateTime.SpecifyKind(to.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+        }
+
         var query = new SearchOrdersQuery
         {
             DeliveryManId = deliveryManId,
             Page = page,
             PageSize = pageSize,
-            // Los más recientes primero (la página 1 es la operativa del día)
+            FromDate = fromUtc,
+            ToDate = toUtc,
             SortBy = "CreatedAt",
             SortOrder = "desc"
         };
