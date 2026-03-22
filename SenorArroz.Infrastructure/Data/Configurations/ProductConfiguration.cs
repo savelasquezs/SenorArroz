@@ -18,6 +18,7 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.Name).HasColumnName("name").HasMaxLength(150).IsRequired();
         builder.Property(p => p.Price).HasColumnName("price").IsRequired();
         builder.Property(p => p.Stock).HasColumnName("stock");
+        builder.Property(p => p.WeightGrams).HasColumnName("weight_grams");
         builder.Property(p => p.Active).HasColumnName("active").HasDefaultValue(true);
 
         builder.Property(p => p.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()

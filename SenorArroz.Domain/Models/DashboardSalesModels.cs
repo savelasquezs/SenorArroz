@@ -45,3 +45,13 @@ public class SalesCategoryAggregateRow
     public int QuantitySold { get; set; }
     public long RevenueCop { get; set; }
 }
+
+/// <summary>
+/// Gramos vendidos por categoría: suma de (cantidad × peso unitario) solo si el producto tiene <c>weight_grams</c>.
+/// </summary>
+public class SalesCategoryWeightRow
+{
+    public int CategoryId { get; set; }
+    public string CategoryName { get; set; } = string.Empty;
+    public long TotalWeightGrams { get; set; }
+}

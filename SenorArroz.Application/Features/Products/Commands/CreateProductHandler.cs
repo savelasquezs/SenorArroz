@@ -49,6 +49,7 @@ public class CreateProductHandler : IRequestHandler<CreateProductCommand, Produc
             Name = request.Name,
             Price = request.Price,
             Stock = request.Stock,
+            WeightGrams = request.WeightGrams,
             Active = request.Active
         };
 

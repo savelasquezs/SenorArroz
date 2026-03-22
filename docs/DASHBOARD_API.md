@@ -137,6 +137,8 @@ Líneas de detalle de pedido en el rango (mismo criterio de pedidos). **Top** po
 
 **Query `groupBy`:** `product` (default) agrupa por producto; `category` agrupa por categoría del producto. La forma de la respuesta es la misma: `topByQuantity[].id` es `productId` o `categoryId` según el modo.
 
+**`weightByCategory`:** siempre por **categoría de producto** (independiente de `groupBy`). Lista de `{ categoryId, name, totalWeightGrams }` donde `totalWeightGrams` es la suma de `cantidad × weight_grams` del producto en cada línea de pedido, **solo** si el producto tiene `weight_grams` definido. Categorías con total 0 no se incluyen. *Futuro posible: cruzar con gastos por categoría para costo; aún no implementado.*
+
 **Respuesta:** `DashboardSalesProductsResponseDto`.
 
 

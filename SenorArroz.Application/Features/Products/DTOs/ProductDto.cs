@@ -10,6 +10,8 @@ public class ProductDto
     public string Name { get; set; } = string.Empty;
     public int Price { get; set; }
     public int? Stock { get; set; }
+    /// <summary>Peso unitario en gramos (opcional).</summary>
+    public int? WeightGrams { get; set; }
     public bool Active { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

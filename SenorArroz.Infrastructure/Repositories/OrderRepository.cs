@@ -1176,4 +1176,42 @@ public class OrderRepository : IOrderRepository
             })
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<List<SalesCategoryWeightRow>> GetSalesCategoryWeightAggregatesForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var q = _context.OrderDetails
+            .AsNoTracking()
+            .Where(od =>
+                od.Order.Status != OrderStatus.Cancelled
+                && od.Order.CreatedAt >= fromUtc
+                && od.Order.CreatedAt <= toUtc
+                && od.Product.WeightGrams != null);
+
+        if (branchId.HasValue)
+            q = q.Where(od => od.Order.BranchId == branchId.Value);
+
+        var rows = await q
+            .GroupBy(od => new
+            {
+                od.Product.CategoryId,
+                Name = od.Product.Category.Name ?? string.Empty,
+            })
+            .Select(g => new SalesCategoryWeightRow
+            {
+                CategoryId = g.Key.CategoryId,
+                CategoryName = g.Key.Name,
+                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Where(r => r.TotalWeightGrams > 0)
+            .OrderByDescending(r => r.TotalWeightGrams)
+            .ThenBy(r => r.CategoryName)
+            .ToList();
+    }
 }

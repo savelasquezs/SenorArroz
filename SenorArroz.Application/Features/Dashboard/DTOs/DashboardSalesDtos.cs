@@ -65,6 +65,19 @@ public class DashboardSalesProductsResponseDto
     public List<RevenueParticipationSliceDto> ParticipationByRevenue { get; set; } = new();
     public long TotalRevenueCop { get; set; }
     public int TotalQuantity { get; set; }
+    /// <summary>
+    /// Peso total vendido por categoría (gramos). Solo productos con <c>weight_grams</c> definido.
+    /// Futuro: podría cruzarse con gastos por categoría para estimar costo (no implementado).
+    /// </summary>
+    public List<SalesCategoryWeightItemDto> WeightByCategory { get; set; } = new();
+}
+
+/// <summary>Gramos vendidos agregados por categoría de producto.</summary>
+public class SalesCategoryWeightItemDto
+{
+    public int CategoryId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public long TotalWeightGrams { get; set; }
 }
 
 /// <summary>Ítem de ranking (producto o categoría según <see cref="SalesProductsGroupBy"/>).</summary>

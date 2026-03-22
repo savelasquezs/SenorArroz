@@ -175,4 +175,13 @@ public interface IOrderRepository
         DateTime fromUtc,
         DateTime toUtc,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Peso total vendido (gramos) por categoría de producto en el rango; solo líneas con producto que tenga peso definido.
+    /// </summary>
+    Task<List<SalesCategoryWeightRow>> GetSalesCategoryWeightAggregatesForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
 }

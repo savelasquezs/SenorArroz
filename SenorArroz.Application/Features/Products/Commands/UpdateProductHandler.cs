@@ -57,6 +57,7 @@ public class UpdateProductHandler : IRequestHandler<UpdateProductCommand, Produc
         existingProduct.Price = request.Price;
         if (request.Stock.HasValue)
             existingProduct.Stock = request.Stock;
+        existingProduct.WeightGrams = request.WeightGrams;
         existingProduct.Active = request.Active;
 
         var updatedProduct = await _productRepository.UpdateAsync(existingProduct);

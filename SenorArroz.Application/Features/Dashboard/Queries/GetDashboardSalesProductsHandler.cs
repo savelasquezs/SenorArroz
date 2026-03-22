@@ -70,6 +70,13 @@ public class GetDashboardSalesProductsHandler
         var totalRevenue = rows.Sum(r => r.RevenueCop);
         var totalQty = rows.Sum(r => r.QuantitySold);
 
+        // Peso por categoría (productos con weight_grams). Futuro: cruzar con gastos/insumos por categoría — no implementado.
+        var weightRows = await _orderRepository.GetSalesCategoryWeightAggregatesForDashboardAsync(
+            branchFilter,
+            from,
+            to,
+            cancellationToken);
+
         var topByQuantity = rows
             .OrderByDescending(r => r.QuantitySold)
             .ThenBy(r => r.Name)
@@ -91,6 +98,14 @@ public class GetDashboardSalesProductsHandler
             ParticipationByRevenue = participation,
             TotalRevenueCop = totalRevenue,
             TotalQuantity = totalQty,
+            WeightByCategory = weightRows
+                .Select(w => new SalesCategoryWeightItemDto
+                {
+                    CategoryId = w.CategoryId,
+                    Name = w.CategoryName,
+                    TotalWeightGrams = w.TotalWeightGrams,
+                })
+                .ToList(),
         };
     }
 

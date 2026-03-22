@@ -19,5 +19,8 @@ public class UpdateProductDto
     [Range(0, int.MaxValue, ErrorMessage = "El stock debe ser mayor o igual a 0")]
     public int? Stock { get; set; }
 
+    [Range(0, int.MaxValue, ErrorMessage = "El peso en gramos debe ser mayor o igual a 0")]
+    public int? WeightGrams { get; set; }
+
     public bool Active { get; set; } = true;
 }
