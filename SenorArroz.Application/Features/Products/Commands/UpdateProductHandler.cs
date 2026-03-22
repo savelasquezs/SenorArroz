@@ -1,7 +1,6 @@
 // SenorArroz.Application/Features/Products/Commands/UpdateProductHandler.cs
 using AutoMapper;
 using MediatR;
-using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Products.DTOs;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -13,18 +12,15 @@ public class UpdateProductHandler : IRequestHandler<UpdateProductCommand, Produc
     private readonly IProductRepository _productRepository;
     private readonly IProductCategoryRepository _categoryRepository;
     private readonly IMapper _mapper;
-    private readonly ICurrentUser _currentUser;
 
     public UpdateProductHandler(
         IProductRepository productRepository,
         IProductCategoryRepository categoryRepository,
-        IMapper mapper,
-        ICurrentUser currentUser)
+        IMapper mapper)
     {
         _productRepository = productRepository;
         _categoryRepository = categoryRepository;
         _mapper = mapper;
-        _currentUser = currentUser;
     }
 
     public async Task<ProductDto> Handle(UpdateProductCommand request, CancellationToken cancellationToken)
@@ -34,18 +30,9 @@ public class UpdateProductHandler : IRequestHandler<UpdateProductCommand, Produc
         if (existingProduct == null)
             throw new BusinessException("El producto especificado no existe");
 
-        // Check if user has access to this product's branch
-        if (_currentUser.Role != "superadmin" && existingProduct.Category.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para modificar este producto");
-
         // Validate category exists
-        var category = await _categoryRepository.GetByIdAsync(request.CategoryId);
-        if (category == null)
+        if (await _categoryRepository.GetByIdAsync(request.CategoryId) == null)
             throw new BusinessException("La categoría especificada no existe");
-
-        // Check if user has access to the new category's branch
-        if (_currentUser.Role != "superadmin" && category.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para asignar productos a esta categoría");
 
         // Check if product name already exists in this category (excluding current product)
         if (await _productRepository.NameExistsInCategoryAsync(request.Name, request.CategoryId, request.Id))

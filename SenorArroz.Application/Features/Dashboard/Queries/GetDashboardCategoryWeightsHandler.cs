@@ -53,7 +53,7 @@ public class GetDashboardCategoryWeightsHandler
         List<CategoryWeightEvolutionSeriesDto> evolutionsByCategory = new();
         if (request.CategoryId is { } cid)
         {
-            await ValidateCategoryAsync(cid, branchFilter);
+            await ValidateCategoryAsync(cid);
             var points = await _orderRepository.GetSalesCategoryWeightEvolutionAsync(
                 branchFilter,
                 from,
@@ -130,16 +130,10 @@ public class GetDashboardCategoryWeightsHandler
         return CategoryWeightEvolutionGranularity.Day;
     }
 
-    private async Task ValidateCategoryAsync(int categoryId, int? branchFilter)
+    private async Task ValidateCategoryAsync(int categoryId)
     {
         var category = await _categoryRepository.GetByIdAsync(categoryId);
         if (category == null)
             throw new BusinessException("La categoría especificada no existe");
-
-        if (_currentUser.Role != "superadmin" && category.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para consultar esta categoría");
-
-        if (branchFilter.HasValue && category.BranchId != branchFilter.Value)
-            throw new BusinessException("La categoría no corresponde a la sucursal seleccionada");
     }
 }

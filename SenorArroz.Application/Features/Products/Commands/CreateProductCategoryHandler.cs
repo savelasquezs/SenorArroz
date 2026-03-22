@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Products/Commands/CreateProductCategoryHandler.cs
+// SenorArroz.Application/Features/Products/Commands/CreateProductCategoryHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -44,8 +44,11 @@ public class CreateProductCategoryHandler : IRequestHandler<CreateProductCategor
         }
         else if (_currentUser.Role == "admin")
         {
-            // Admin uses their branch
-            branchId = _currentUser.BranchId;
+            // Admin puede elegir sucursal al crear; si no envía, usa la suya
+            if (request.BranchId.HasValue && request.BranchId.Value > 0)
+                branchId = request.BranchId.Value;
+            else
+                branchId = _currentUser.BranchId;
         }
         else
         {

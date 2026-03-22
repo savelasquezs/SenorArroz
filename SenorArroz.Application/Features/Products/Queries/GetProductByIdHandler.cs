@@ -1,7 +1,6 @@
 // SenorArroz.Application/Features/Products/Queries/GetProductByIdHandler.cs
 using AutoMapper;
 using MediatR;
-using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Products.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -11,13 +10,11 @@ public class GetProductByIdHandler : IRequestHandler<GetProductByIdQuery, Produc
 {
     private readonly IProductRepository _productRepository;
     private readonly IMapper _mapper;
-    private readonly ICurrentUser _currentUser;
 
-    public GetProductByIdHandler(IProductRepository productRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetProductByIdHandler(IProductRepository productRepository, IMapper mapper)
     {
         _productRepository = productRepository;
         _mapper = mapper;
-        _currentUser = currentUser;
     }
 
     public async Task<ProductDto?> Handle(GetProductByIdQuery request, CancellationToken cancellationToken)
@@ -25,10 +22,6 @@ public class GetProductByIdHandler : IRequestHandler<GetProductByIdQuery, Produc
         var product = await _productRepository.GetByIdAsync(request.Id);
         
         if (product == null)
-            return null;
-
-        // Check if user has access to this product's branch
-        if (_currentUser.Role != "superadmin" && product.Category.BranchId != _currentUser.BranchId)
             return null;
 
         return _mapper.Map<ProductDto>(product);

@@ -1,7 +1,6 @@
 // SenorArroz.Application/Features/Products/Queries/GetProductsHandler.cs
 using AutoMapper;
 using MediatR;
-using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Products.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Shared.Models;
@@ -12,29 +11,20 @@ public class GetProductsHandler : IRequestHandler<GetProductsQuery, PagedResult<
 {
     private readonly IProductRepository _productRepository;
     private readonly IMapper _mapper;
-    private readonly ICurrentUser _currentUser;
 
-    public GetProductsHandler(IProductRepository productRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetProductsHandler(IProductRepository productRepository, IMapper mapper)
     {
         _productRepository = productRepository;
         _mapper = mapper;
-        _currentUser = currentUser;
     }
 
     public async Task<PagedResult<ProductDto>> Handle(GetProductsQuery request, CancellationToken cancellationToken)
     {
-        // Determine branch filter based on user role
-        int? branchFilter = null;
-        if (_currentUser.Role != "superadmin")
-        {
-            branchFilter = _currentUser.BranchId;
-        }
-        else if (request.BranchId > 0)
-        {
-            // Superadmin can optionally filter by specific branch
-            branchFilter = request.BranchId;
-        }
-        // If branchFilter is null, superadmin gets all products from all branches
+        // Catálogo compartido: todas las sucursales ven todos los productos.
+        // Filtro por sucursal solo si viene explícito en la query (?branchId=).
+        int? branchFilter = request.BranchId.HasValue && request.BranchId.Value > 0
+            ? request.BranchId.Value
+            : null;
 
         var pagedProducts = await _productRepository.GetPagedAsync(
             branchFilter,

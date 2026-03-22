@@ -1,7 +1,6 @@
-﻿// SenorArroz.Application/Features/Products/Commands/UpdateProductCategoryHandler.cs
+// SenorArroz.Application/Features/Products/Commands/UpdateProductCategoryHandler.cs
 using AutoMapper;
 using MediatR;
-using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Products.DTOs;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -11,16 +10,13 @@ namespace SenorArroz.Application.Features.Products.Commands;
 public class UpdateProductCategoryHandler : IRequestHandler<UpdateProductCategoryCommand, ProductCategoryDto>
 {
     private readonly IProductCategoryRepository _categoryRepository;
-    private readonly ICurrentUser _currentUser;
     private readonly IMapper _mapper;
 
     public UpdateProductCategoryHandler(
         IProductCategoryRepository categoryRepository,
-        ICurrentUser currentUser,
         IMapper mapper)
     {
         _categoryRepository = categoryRepository;
-        _currentUser = currentUser;
         _mapper = mapper;
     }
 
@@ -30,12 +26,6 @@ public class UpdateProductCategoryHandler : IRequestHandler<UpdateProductCategor
         if (category == null)
         {
             throw new NotFoundException($"Categoría con ID {request.Id} no encontrada");
-        }
-
-        // Validate access: admin can only modify categories from their branch
-        if (_currentUser.Role != "superadmin" && category.BranchId != _currentUser.BranchId)
-        {
-            throw new BusinessException("No tienes permisos para modificar esta categoría");
         }
 
         // Validate name doesn't exist for other categories in the same branch
