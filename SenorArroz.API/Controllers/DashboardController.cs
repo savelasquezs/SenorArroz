@@ -141,4 +141,73 @@ public class DashboardController : ControllerBase
 
         return Ok(result);
     }
+
+    /// <summary>Gastos — KPIs del rango (total, ticket medio, variación vs periodo anterior).</summary>
+    [HttpGet("expenses/summary")]
+    [ProducesResponseType(typeof(DashboardExpenseSummaryResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DashboardExpenseSummaryResponseDto>> GetExpenseSummary(
+        [FromQuery(Name = "from")] DateTime fromUtc,
+        [FromQuery(Name = "to")] DateTime toUtc,
+        [FromQuery] int? branchId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetDashboardExpenseSummaryQuery
+            {
+                FromUtc = fromUtc,
+                ToUtc = toUtc,
+                BranchId = branchId,
+            },
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    /// <summary>Gastos — participación por categoría (torta).</summary>
+    [HttpGet("expenses/by-category")]
+    [ProducesResponseType(typeof(DashboardExpenseByCategoryResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DashboardExpenseByCategoryResponseDto>> GetExpenseByCategory(
+        [FromQuery(Name = "from")] DateTime fromUtc,
+        [FromQuery(Name = "to")] DateTime toUtc,
+        [FromQuery] int? branchId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetDashboardExpenseByCategoryQuery
+            {
+                FromUtc = fromUtc,
+                ToUtc = toUtc,
+                BranchId = branchId,
+            },
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    /// <summary>Gastos — serie temporal (total, por categoría o por ítem de catálogo <c>Expense</c>).</summary>
+    [HttpGet("expenses/timeseries")]
+    [ProducesResponseType(typeof(DashboardExpenseTimeSeriesResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DashboardExpenseTimeSeriesResponseDto>> GetExpenseTimeSeries(
+        [FromQuery(Name = "from")] DateTime fromUtc,
+        [FromQuery(Name = "to")] DateTime toUtc,
+        [FromQuery] int? branchId = null,
+        [FromQuery(Name = "categoryId")] int? categoryId = null,
+        [FromQuery(Name = "expenseId")] int? expenseId = null,
+        [FromQuery] string? granularity = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetDashboardExpenseTimeSeriesQuery
+            {
+                FromUtc = fromUtc,
+                ToUtc = toUtc,
+                BranchId = branchId,
+                CategoryId = categoryId,
+                ExpenseId = expenseId,
+                Granularity = granularity,
+            },
+            cancellationToken);
+
+        return Ok(result);
+    }
 }

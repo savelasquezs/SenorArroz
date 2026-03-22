@@ -1,0 +1,30 @@
+using SenorArroz.Domain.Models;
+
+namespace SenorArroz.Domain.Interfaces.Repositories;
+
+public interface IExpenseDashboardRepository
+{
+    Task<ExpenseDashboardPeriodTotals> GetPeriodTotalsAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<List<ExpenseCategoryAggregateRow>> GetTotalsByCategoryAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Serie temporal. Sin <paramref name="categoryId"/> ni <paramref name="expenseId"/> = total.
+    /// </summary>
+    Task<List<ExpenseTimeBucketRow>> GetTimeSeriesAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int? categoryId,
+        int? expenseId,
+        bool monthlyBuckets,
+        CancellationToken cancellationToken = default);
+}

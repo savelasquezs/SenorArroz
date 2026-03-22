@@ -33,6 +33,9 @@ Los datos del dashboard **no** se exponen en un único endpoint. Cada vista del 
 | `GET /api/dashboard/sales/comparison` | **Ventas** — comparativa sucursales | **`from` y `to` obligatorios**, `branchId?` |
 | `GET /api/dashboard/sales/evolution` | **Ventas** — líneas tiempo | **`from` y `to` obligatorios**, `branchId?` |
 | `GET /api/dashboard/sales/products` | **Ventas** — ranking + donut | **`from` y `to` obligatorios**, `branchId?`, `top` (5–20, default 10), `groupBy` (`product` \| `category`, default `product`) |
+| `GET /api/dashboard/expenses/summary` | **Gastos** — KPIs | **`from` y `to` obligatorios**, `branchId?` |
+| `GET /api/dashboard/expenses/by-category` | **Gastos** — torta por categoría | **`from` y `to` obligatorios**, `branchId?` |
+| `GET /api/dashboard/expenses/timeseries` | **Gastos** — evolución | **`from` y `to` obligatorios**, `branchId?`, `categoryId?`, `expenseId?`, `granularity` (`day` \| `month`, vacío = auto) |
 
 
 
@@ -138,13 +141,33 @@ Líneas de detalle de pedido en el rango (mismo criterio de pedidos). **Top** po
 
 
 
+## `GET /api/dashboard/expenses/summary`
+
+Comprobantes de gasto (`ExpenseHeader`) con `CreatedAt` en `[from, to]` (máx. ~400 días). Importes desde líneas `ExpenseDetail` (`total` o `cantidad × amount`).
+
+**Respuesta:** `DashboardExpenseSummaryResponseDto` — `totalCop`, `headerCount`, `lineCount`, `avgDailyCop`, `avgTicketCop`, `previousPeriodTotalCop`, `totalChangeFromPreviousPercent`, etc.
+
+
+
+## `GET /api/dashboard/expenses/by-category`
+
+Mismo rango y alcance. Suma por categoría del catálogo `Expense` para gráfico de torta.
+
+
+
+## `GET /api/dashboard/expenses/timeseries`
+
+Serie alineada al rango: sin `categoryId` ni `expenseId` = **total**; solo `categoryId` = total de esa categoría; `expenseId` = ese ítem (se ignora categoría inconsistente). `granularity` vacío: **día** si el rango ≤ 62 días, si no **mes**.
+
+
+
 ## Arquitectura (CQRS)
 
 
 
 - **Controller:** `DashboardController` → MediatR.
 
-- **Handlers:** `GetDashboardMainHandler`, `GetDashboardDeliveryHandler`, `GetDashboardSalesComparisonHandler`, `GetDashboardSalesEvolutionHandler`, `GetDashboardSalesProductsHandler` → `IOrderRepository`, `IBranchRepository`, `SalesDashboardChartBuilder`.
+- **Handlers:** además de ventas/principal/delivery, `GetDashboardExpenseSummaryHandler`, `GetDashboardExpenseByCategoryHandler`, `GetDashboardExpenseTimeSeriesHandler` → `IExpenseDashboardRepository`, `IExpenseRepository`, `IExpenseCategoryRepository`.
 
 
 
