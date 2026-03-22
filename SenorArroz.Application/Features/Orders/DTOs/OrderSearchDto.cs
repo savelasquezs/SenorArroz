@@ -8,6 +8,8 @@ public class OrderSearchDto
     public int? BranchId { get; set; }
     public int? CustomerId { get; set; }
     public int? DeliveryManId { get; set; }
+    /// <summary>Solo pedidos que tengan al menos un pago bancario asociado a este banco.</summary>
+    public int? BankId { get; set; }
     public OrderStatus? Status { get; set; }
     public OrderType? Type { get; set; }
     public DateTime? FromDate { get; set; }

@@ -16,6 +16,8 @@ public class OrderDto
     public string? CustomerPhone { get; set; }
     public int? AddressId { get; set; }
     public string? AddressDescription { get; set; }
+    /// <summary>Apartamento, torre, referencia, etc. (Address.AdditionalInfo)</summary>
+    public string? AddressAdditionalInfo { get; set; }
     public int? NeighborhoodId { get; set; }
     public string? NeighborhoodName { get; set; }
     public decimal? Latitude { get; set; }

@@ -6,9 +6,11 @@ SET client_encoding = 'UTF8';
 -- =============================================================================
 --
 -- USO (base de datos vacía):
---   1. Eliminar la base actual (opcional):  DROP DATABASE IF EXISTS senorarroz;
---   2. Crear la base (si la borraste):      CREATE DATABASE senorarroz;
---   3. Ejecutar este script:                psql -U postgres -d senorarroz -f Scripts/local-init-completo.sql
+--   Recomendado: desde SenorArroz/ ejecutar Scripts/reset-local-db.sh o reset-local-db.ps1
+--   Manual (puerto 5433, BD "senorArroz"):
+--     psql -h localhost -p 5433 -U postgres -d postgres -c 'DROP DATABASE IF EXISTS "senorArroz";'
+--     psql -h localhost -p 5433 -U postgres -d postgres -c 'CREATE DATABASE "senorArroz";'
+--     psql -h localhost -p 5433 -U postgres -d senorArroz -f Scripts/local-init-completo.sql
 --
 -- Incluye: tablas, índices, funciones, triggers, datos semilla y todas las
 -- modificaciones: supplier.branch_id, expense_header.created_by_id,
