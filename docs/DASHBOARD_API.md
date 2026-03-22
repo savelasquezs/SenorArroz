@@ -33,6 +33,7 @@ Los datos del dashboard **no** se exponen en un único endpoint. Cada vista del 
 | `GET /api/dashboard/sales/comparison` | **Ventas** — comparativa sucursales | **`from` y `to` obligatorios**, `branchId?` |
 | `GET /api/dashboard/sales/evolution` | **Ventas** — líneas tiempo | **`from` y `to` obligatorios**, `branchId?` |
 | `GET /api/dashboard/sales/products` | **Ventas** — ranking + donut | **`from` y `to` obligatorios**, `branchId?`, `top` (5–20, default 10), `groupBy` (`product` \| `category`, default `product`) |
+| `GET /api/dashboard/sales/category-weights` | **Ventas** — peso (g) por categoría | **`from` y `to` obligatorios**, `branchId?`, `granularity` (`day` \| `month` \| `year`, default `day`), `categoryId?` (si se envía, incluye evolución temporal para esa categoría) |
 | `GET /api/dashboard/expenses/summary` | **Gastos** — KPIs | **`from` y `to` obligatorios**, `branchId?` |
 | `GET /api/dashboard/expenses/by-category` | **Gastos** — torta por categoría | **`from` y `to` obligatorios**, `branchId?` |
 | `GET /api/dashboard/expenses/timeseries` | **Gastos** — evolución | **`from` y `to` obligatorios**, `branchId?`, `categoryId?`, `expenseId?`, `granularity` (`day` \| `month`, vacío = auto) |
@@ -140,6 +141,17 @@ Líneas de detalle de pedido en el rango (mismo criterio de pedidos). **Top** po
 **`weightByCategory`:** siempre por **categoría de producto** (independiente de `groupBy`). Lista de `{ categoryId, name, totalWeightGrams }` donde `totalWeightGrams` es la suma de `cantidad × weight_grams` del producto en cada línea de pedido, **solo** si el producto tiene `weight_grams` definido. Categorías con total 0 no se incluyen. *Futuro posible: cruzar con gastos por categoría para costo; aún no implementado.*
 
 **Respuesta:** `DashboardSalesProductsResponseDto`.
+
+
+
+## `GET /api/dashboard/sales/category-weights`
+
+Mismo rango y alcance que otras rutas de ventas (pedidos no cancelados, `CreatedAt` en `[from, to]`, máx. ~400 días).
+
+- **`byCategory`:** distribución de gramos vendidos por categoría de producto en el rango (solo líneas con `weight_grams` en el producto). Sirve para torta / %.
+- **`evolution`:** si se envía **`categoryId`**, serie de `{ bucketStartUtc, totalWeightGrams }` agrupada según **`granularity`**: `day` (un punto por día calendario), `month` (primer día del mes UTC), `year` (1-ene del año UTC). Si no se envía `categoryId`, `evolution` va vacío.
+
+**Respuesta:** `DashboardCategoryWeightsResponseDto`.
 
 
 

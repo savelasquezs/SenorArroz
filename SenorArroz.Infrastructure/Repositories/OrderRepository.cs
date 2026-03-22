@@ -1235,30 +1235,76 @@ public class OrderRepository : IOrderRepository
         if (branchId.HasValue)
             q = q.Where(od => od.Order.BranchId == branchId.Value);
 
+        // Proyectar solo tipos anónimos traducibles; el record en Select hace que EF genere SQL inválido.
         return granularity switch
         {
-            CategoryWeightEvolutionGranularity.Day => await q
-                .GroupBy(od => od.Order.CreatedAt.Date)
-                .Select(g => new SalesCategoryWeightEvolutionPoint(
-                    g.Key,
-                    g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value)))
-                .OrderBy(x => x.BucketStartUtc)
-                .ToListAsync(cancellationToken),
-            CategoryWeightEvolutionGranularity.Month => await q
-                .GroupBy(od => new { od.Order.CreatedAt.Year, od.Order.CreatedAt.Month })
-                .Select(g => new SalesCategoryWeightEvolutionPoint(
-                    new DateTime(g.Key.Year, g.Key.Month, 1, 0, 0, 0, DateTimeKind.Utc),
-                    g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value)))
-                .OrderBy(x => x.BucketStartUtc)
-                .ToListAsync(cancellationToken),
-            CategoryWeightEvolutionGranularity.Year => await q
-                .GroupBy(od => od.Order.CreatedAt.Year)
-                .Select(g => new SalesCategoryWeightEvolutionPoint(
-                    new DateTime(g.Key, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-                    g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value)))
-                .OrderBy(x => x.BucketStartUtc)
-                .ToListAsync(cancellationToken),
+            CategoryWeightEvolutionGranularity.Day => await EvolutionByDayAsync(q, cancellationToken),
+            CategoryWeightEvolutionGranularity.Month => await EvolutionByMonthAsync(q, cancellationToken),
+            CategoryWeightEvolutionGranularity.Year => await EvolutionByYearAsync(q, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(granularity), granularity, null),
         };
+    }
+
+    private static async Task<List<SalesCategoryWeightEvolutionPoint>> EvolutionByDayAsync(
+        IQueryable<OrderDetail> q,
+        CancellationToken cancellationToken)
+    {
+        var rows = await q
+            .GroupBy(od => od.Order.CreatedAt.Date)
+            .Select(g => new
+            {
+                Bucket = g.Key,
+                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
+            })
+            .OrderBy(x => x.Bucket)
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(x => new SalesCategoryWeightEvolutionPoint(x.Bucket, x.TotalWeightGrams))
+            .ToList();
+    }
+
+    private static async Task<List<SalesCategoryWeightEvolutionPoint>> EvolutionByMonthAsync(
+        IQueryable<OrderDetail> q,
+        CancellationToken cancellationToken)
+    {
+        var rows = await q
+            .GroupBy(od => new { od.Order.CreatedAt.Year, od.Order.CreatedAt.Month })
+            .Select(g => new
+            {
+                g.Key.Year,
+                g.Key.Month,
+                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
+            })
+            .OrderBy(x => x.Year)
+            .ThenBy(x => x.Month)
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(x => new SalesCategoryWeightEvolutionPoint(
+                new DateTime(x.Year, x.Month, 1, 0, 0, 0, DateTimeKind.Utc),
+                x.TotalWeightGrams))
+            .ToList();
+    }
+
+    private static async Task<List<SalesCategoryWeightEvolutionPoint>> EvolutionByYearAsync(
+        IQueryable<OrderDetail> q,
+        CancellationToken cancellationToken)
+    {
+        var rows = await q
+            .GroupBy(od => od.Order.CreatedAt.Year)
+            .Select(g => new
+            {
+                Year = g.Key,
+                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
+            })
+            .OrderBy(x => x.Year)
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(x => new SalesCategoryWeightEvolutionPoint(
+                new DateTime(x.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                x.TotalWeightGrams))
+            .ToList();
     }
 }

@@ -9,7 +9,7 @@ public class GetDashboardCategoryWeightsQuery : IRequest<DashboardCategoryWeight
     public DateTime ToUtc { get; set; }
     public int? BranchId { get; set; }
 
-    /// <summary>day, month o year — buckets de la serie <see cref="CategoryId"/>.</summary>
+    /// <summary>day, month o year — buckets de la serie temporal cuando se envía categoría.</summary>
     public string Granularity { get; set; } = "day";
 
     /// <summary>Si tiene valor, se rellena la lista de evolución en la respuesta.</summary>
