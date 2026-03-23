@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -107,7 +107,7 @@ public class BranchesController : ControllerBase
     /// <param name="updateDto">Datos a actualizar</param>
     /// <returns>Sucursal actualizada</returns>
     [HttpPut("{id}")]
-    [Authorize(Roles = "Superadmin")]
+    [Authorize(Roles = "Superadmin, Admin")]
     public async Task<ActionResult<ApiResponse<BranchDto>>> UpdateBranch(int id, [FromBody] UpdateBranchDto updateDto)
     {
         var command = _mapper.Map<UpdateBranchCommand>(updateDto);

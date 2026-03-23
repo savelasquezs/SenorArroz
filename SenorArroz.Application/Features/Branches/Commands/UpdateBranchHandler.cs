@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -10,11 +11,13 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
 {
     private readonly IBranchRepository _branchRepository;
     private readonly IMapper _mapper;
+    private readonly ICurrentUser _currentUser;
 
-    public UpdateBranchHandler(IBranchRepository branchRepository, IMapper mapper)
+    public UpdateBranchHandler(IBranchRepository branchRepository, IMapper mapper, ICurrentUser currentUser)
     {
         _branchRepository = branchRepository;
         _mapper = mapper;
+        _currentUser = currentUser;
     }
 
     public async Task<BranchDto> Handle(UpdateBranchCommand request, CancellationToken cancellationToken)
@@ -23,6 +26,19 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
         if (branch == null)
         {
             throw new NotFoundException($"Sucursal con ID {request.Id} no encontrada");
+        }
+
+        var role = _currentUser.Role ?? string.Empty;
+        var isSuperadmin = string.Equals(role, "superadmin", StringComparison.OrdinalIgnoreCase);
+        var isAdmin = string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase);
+
+        if (!isSuperadmin && isAdmin)
+        {
+            if (request.Id != _currentUser.BranchId)
+                throw new BusinessException("No puedes editar una sucursal que no sea la tuya.");
+
+            if (!string.Equals(request.Name.Trim(), branch.Name, StringComparison.Ordinal))
+                throw new BusinessException("Solo un superadmin puede cambiar el nombre de la sucursal.");
         }
 
         // Validate name doesn't exist for other branches
