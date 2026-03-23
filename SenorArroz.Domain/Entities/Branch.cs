@@ -9,6 +9,9 @@ public class Branch : BaseEntity
     public string Phone1 { get; set; } = string.Empty;
     public string? Phone2 { get; set; }
 
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
+
     // Navigation Properties
     public virtual ICollection<User> Users { get; set; } = new List<User>();
     public virtual ICollection<Customer> Customers { get; set; } = new List<Customer>();

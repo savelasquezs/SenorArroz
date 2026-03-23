@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Domain.Entities;
@@ -37,12 +37,16 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
             throw new BusinessException($"Ya existe una sucursal con el teléfono {request.Phone2}");
         }
 
+        BranchCoordinatesValidator.EnsureValid(request.Latitude, request.Longitude);
+
         var branch = new Branch
         {
             Name = request.Name.Trim(),
             Address = request.Address.Trim(),
             Phone1 = request.Phone1,
-            Phone2 = request.Phone2
+            Phone2 = request.Phone2,
+            Latitude = request.Latitude,
+            Longitude = request.Longitude
         };
 
         branch = await _branchRepository.CreateAsync(branch);

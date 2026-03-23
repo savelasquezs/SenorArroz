@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Domain.Exceptions;
@@ -42,11 +42,15 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
             throw new BusinessException($"Ya existe otra sucursal con el teléfono {request.Phone2}");
         }
 
+        BranchCoordinatesValidator.EnsureValid(request.Latitude, request.Longitude);
+
         // Update branch
         branch.Name = request.Name.Trim();
         branch.Address = request.Address.Trim();
         branch.Phone1 = request.Phone1;
         branch.Phone2 = request.Phone2;
+        branch.Latitude = request.Latitude;
+        branch.Longitude = request.Longitude;
 
         branch = await _branchRepository.UpdateAsync(branch);
 
