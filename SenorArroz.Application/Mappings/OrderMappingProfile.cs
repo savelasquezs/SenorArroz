@@ -73,6 +73,7 @@ public class OrderMappingProfile : Profile
 
         // UpdateOrderDto -> Order (para actualizaciones)
         CreateMap<UpdateOrderDto, Order>()
+            .ForMember(dest => dest.OrderDetails, opt => opt.Ignore())
             .ForAllMembers(opt => opt.Condition((src, dest, srcMember) => srcMember != null));
 
         // UpdateOrderDetailDto -> OrderDetail (para actualizaciones)

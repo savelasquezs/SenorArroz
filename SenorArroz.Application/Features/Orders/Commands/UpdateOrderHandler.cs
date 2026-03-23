@@ -35,7 +35,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
     public async Task<OrderDto> Handle(UpdateOrderCommand request, CancellationToken cancellationToken)
     {
-        var existingOrder = await _orderRepository.GetByIdAsync(request.Id);
+        var existingOrder = await _orderRepository.GetByIdWithDetailsAsync(request.Id);
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
@@ -74,8 +74,66 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             existingOrder.Type = OrderType.Reservation;
         }
 
-        // Apply the mapping
+        // Apply scalar field mapping first (details are handled explicitly below)
         _mapper.Map(request.Order, existingOrder);
+
+        if (request.Order.OrderDetails != null)
+        {
+            if (!request.Order.OrderDetails.Any())
+            {
+                throw new BusinessException("El pedido debe tener al menos un producto. Si es el último, cancela el pedido.");
+            }
+
+            var incomingById = request.Order.OrderDetails
+                .Where(d => d.Id > 0)
+                .ToDictionary(d => d.Id);
+
+            var detailsToRemove = existingOrder.OrderDetails
+                .Where(d => d.Id > 0 && !incomingById.ContainsKey(d.Id))
+                .ToList();
+
+            foreach (var detailToRemove in detailsToRemove)
+            {
+                existingOrder.OrderDetails.Remove(detailToRemove);
+            }
+
+            foreach (var incoming in request.Order.OrderDetails)
+            {
+                var lineSubtotal = incoming.Quantity * incoming.UnitPrice - incoming.Discount;
+                if (incoming.Id > 0)
+                {
+                    var existingDetail = existingOrder.OrderDetails.FirstOrDefault(d => d.Id == incoming.Id);
+                    if (existingDetail == null)
+                    {
+                        continue;
+                    }
+
+                    existingDetail.ProductId = incoming.ProductId;
+                    existingDetail.Quantity = incoming.Quantity;
+                    existingDetail.UnitPrice = incoming.UnitPrice;
+                    existingDetail.Discount = incoming.Discount;
+                    existingDetail.Notes = incoming.Notes;
+                    existingDetail.Subtotal = lineSubtotal;
+                }
+                else
+                {
+                    existingOrder.OrderDetails.Add(new Domain.Entities.OrderDetail
+                    {
+                        ProductId = incoming.ProductId,
+                        Quantity = incoming.Quantity,
+                        UnitPrice = incoming.UnitPrice,
+                        Discount = incoming.Discount,
+                        Notes = incoming.Notes,
+                        Subtotal = lineSubtotal
+                    });
+                }
+            }
+
+            existingOrder.Subtotal = existingOrder.OrderDetails.Sum(d => d.Quantity * d.UnitPrice);
+            existingOrder.DiscountTotal = existingOrder.OrderDetails.Sum(d => d.Discount);
+            existingOrder.Total = existingOrder.OrderDetails.Sum(d => (d.Subtotal ?? (d.Quantity * d.UnitPrice - d.Discount)))
+                + (existingOrder.DeliveryFee ?? 0);
+        }
 
         // Recalcular prepare_at si reserved_for cambió y prepare_at no se envió explícitamente
         if (existingOrder.ReservedFor.HasValue && !request.Order.PrepareAt.HasValue)
