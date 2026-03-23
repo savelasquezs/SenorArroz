@@ -71,7 +71,8 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
 
             // Validar que la suma de pagos bancarios no exceda el total (se calculará después)
             var totalBankPayments = request.ExpenseHeader.ExpenseBankPayments.Sum(ebp => (decimal)ebp.Amount);
-            var totalExpenseDetails = request.ExpenseHeader.ExpenseDetails.Sum(ed => (decimal)(ed.Quantity * ed.Amount));
+            var totalExpenseDetails = request.ExpenseHeader.ExpenseDetails.Sum(ed =>
+                ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero));
             
             if (totalBankPayments > totalExpenseDetails)
             {
@@ -89,7 +90,8 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             {
                 ExpenseId = ed.ExpenseId,
                 Quantity = ed.Quantity,
-                Amount = ed.Amount
+                Amount = ed.Amount,
+                Total = ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero)
             }).ToList(),
             ExpenseBankPayments = request.ExpenseHeader.ExpenseBankPayments?.Select(ebp => new ExpenseBankPayment
             {
@@ -98,10 +100,13 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             }).ToList() ?? new List<ExpenseBankPayment>()
         };
 
+        expenseHeader.Total = expenseHeader.ExpenseDetails.Sum(ed =>
+            ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero));
+
         var created = await _expenseHeaderRepository.CreateAsync(expenseHeader);
 
         var supplierExpenseDetails = expenseHeader.ExpenseDetails
-            .Select(ed => (ed.ExpenseId, UnitAmount: (decimal)ed.Amount, ed.Quantity))
+            .Select(ed => (ed.ExpenseId, UnitAmount: (decimal)ed.Amount, Quantity: (int)Math.Ceiling(ed.Quantity)))
             .ToList();
         await UpsertSupplierExpensesAsync(expenseHeader.SupplierId, supplierExpenseDetails, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);

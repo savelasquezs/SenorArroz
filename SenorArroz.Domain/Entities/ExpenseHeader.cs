@@ -1,4 +1,4 @@
-﻿using SenorArroz.Domain.Entities.Common;
+using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
@@ -7,7 +7,7 @@ public class ExpenseHeader : BaseEntity
     public int BranchId { get; set; }
     public int SupplierId { get; set; }
     public int CreatedById { get; set; }
-    public int? Total { get; set; } // Nullable porque puede ser calculado por triggers
+    public decimal? Total { get; set; } // Suma de los totales por detalle
 
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;

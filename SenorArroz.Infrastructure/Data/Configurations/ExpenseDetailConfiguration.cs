@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
 
@@ -15,9 +15,9 @@ public class ExpenseDetailConfiguration : IEntityTypeConfiguration<ExpenseDetail
 
         builder.Property(ed => ed.HeaderId).HasColumnName("header_id").IsRequired();
         builder.Property(ed => ed.ExpenseId).HasColumnName("expense_id").IsRequired();
-        builder.Property(ed => ed.Quantity).HasColumnName("quantity").HasDefaultValue(1);
+        builder.Property(ed => ed.Quantity).HasColumnName("quantity").HasColumnType("numeric(12,2)").HasDefaultValue(1m);
         builder.Property(ed => ed.Amount).HasColumnName("amount").IsRequired();
-        builder.Property(ed => ed.Total).HasColumnName("total");
+        builder.Property(ed => ed.Total).HasColumnName("total").HasColumnType("numeric(12,2)");
 
         builder.Property(ed => ed.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
         builder.Property(ed => ed.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");

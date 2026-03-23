@@ -1,4 +1,4 @@
-﻿using SenorArroz.Domain.Entities.Common;
+using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
@@ -6,9 +6,9 @@ public class ExpenseDetail : BaseEntity
 {
     public int HeaderId { get; set; }
     public int ExpenseId { get; set; }
-    public int Quantity { get; set; } = 1;
+    public decimal Quantity { get; set; } = 1m;
     public int Amount { get; set; }
-    public int? Total { get; set; } // Nullable porque puede ser calculado por trigger
+    public decimal? Total { get; set; } // Total por línea (cantidad × valor unitario)
 
     // Navigation Properties
     public virtual ExpenseHeader Header { get; set; } = null!;

@@ -8,7 +8,7 @@ public class ExpenseHeaderDto
     public int SupplierId { get; set; }
     public string SupplierName { get; set; } = string.Empty;
     public string? SupplierPhone { get; set; }
-    public int? Total { get; set; }
+    public decimal? Total { get; set; }
     public int CreatedById { get; set; }
     public string CreatedByName { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }

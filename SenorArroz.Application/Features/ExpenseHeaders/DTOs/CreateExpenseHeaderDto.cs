@@ -10,8 +10,9 @@ public class CreateExpenseHeaderDto
 public class CreateExpenseDetailDto
 {
     public int ExpenseId { get; set; }
-    public int Quantity { get; set; }
+    public decimal Quantity { get; set; }
     public int Amount { get; set; }
+    public decimal? Total { get; set; }
 }
 
 public class CreateExpenseBankPaymentDto

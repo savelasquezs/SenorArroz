@@ -11,8 +11,9 @@ public class UpdateExpenseDetailDto
 {
     public int? Id { get; set; } // null si es nuevo
     public int ExpenseId { get; set; }
-    public int Quantity { get; set; }
+    public decimal Quantity { get; set; }
     public int Amount { get; set; }
+    public decimal? Total { get; set; }
 }
 
 

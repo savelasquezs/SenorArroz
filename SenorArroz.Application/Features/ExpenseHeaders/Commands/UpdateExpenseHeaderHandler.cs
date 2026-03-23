@@ -111,6 +111,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                         existingDetail.ExpenseId = detailDto.ExpenseId;
                         existingDetail.Quantity = detailDto.Quantity;
                         existingDetail.Amount = detailDto.Amount;
+                        existingDetail.Total = detailDto.Total ?? Math.Round(detailDto.Quantity * detailDto.Amount, 2, MidpointRounding.AwayFromZero);
                     }
                 }
                 else
@@ -120,13 +121,17 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                     {
                         ExpenseId = detailDto.ExpenseId,
                         Quantity = detailDto.Quantity,
-                        Amount = detailDto.Amount
+                        Amount = detailDto.Amount,
+                        Total = detailDto.Total ?? Math.Round(detailDto.Quantity * detailDto.Amount, 2, MidpointRounding.AwayFromZero)
                     };
                     expenseHeader.ExpenseDetails.Add(newDetail);
-                    newDetailInfos.Add((newDetail.ExpenseId, (decimal)newDetail.Amount, newDetail.Quantity));
+                    newDetailInfos.Add((newDetail.ExpenseId, (decimal)newDetail.Amount, (int)Math.Ceiling(newDetail.Quantity)));
                 }
             }
         }
+
+        expenseHeader.Total = expenseHeader.ExpenseDetails.Sum(ed =>
+            ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero));
 
         // Manejar pagos: reemplazar la lista completa con lo enviado
         if (request.ExpenseHeader.ExpenseBankPayments != null)
@@ -164,6 +169,12 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                 }
             }
         }
+
+        var totalBankPayments = expenseHeader.ExpenseBankPayments.Sum(p => p.Amount);
+        var totalDetails = expenseHeader.ExpenseDetails.Sum(ed =>
+            ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero));
+        if (totalBankPayments > totalDetails)
+            throw new BusinessException("La suma de pagos bancarios no puede exceder el total de los gastos");
 
         var updated = await _expenseHeaderRepository.UpdateAsync(expenseHeader);
 
