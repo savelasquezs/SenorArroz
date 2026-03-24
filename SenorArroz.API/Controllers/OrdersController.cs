@@ -303,9 +303,39 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
+    /// Resumen de pedidos asignados al domiciliario agrupados por sucursal (mismo criterio de fechas que el historial).
+    /// </summary>
+    [HttpGet("delivery/assigned/{deliveryManId:int}/branch-summary")]
+    [Authorize(Roles = "Admin,Superadmin,Deliveryman")]
+    public async Task<ActionResult<List<DeliverymanAssignedBranchSummaryDto>>> GetAssignedOrdersBranchSummary(
+        int deliveryManId,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value;
+        if (string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase))
+        {
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(userIdClaim, out var userId) || userId != deliveryManId)
+                return Forbid();
+        }
+
+        var query = new GetDeliverymanAssignedBranchSummaryQuery
+        {
+            DeliveryManId = deliveryManId,
+            FromDate = fromDate,
+            ToDate = toDate
+        };
+
+        var result = await _mediator.Send(query);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Obtiene pedidos asignados a un domiciliario.
     /// Si se envía <paramref name="fromDate"/> y/o <paramref name="toDate"/>, filtra por <c>CreatedAt</c> en ese rango (inclusive por día calendario, interpretado en UTC).
     /// Si no se envían fechas, no se aplica filtro de fechas (útil para pedidos en ruta).
+    /// <paramref name="branchId"/> (opcional): para el domiciliario, acota el historial a una sucursal (pestañas).
     /// </summary>
     [HttpGet("delivery/assigned/{deliveryManId}")]
     [Authorize(Roles = "Admin,Superadmin,Deliveryman")]
@@ -314,7 +344,8 @@ public class OrdersController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 100,
         [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null)
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] int? branchId = null)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value;
         if (string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase))
@@ -336,6 +367,7 @@ public class OrdersController : ControllerBase
         var query = new SearchOrdersQuery
         {
             DeliveryManId = deliveryManId,
+            BranchId = branchId is > 0 ? branchId : null,
             Page = page,
             PageSize = pageSize,
             FromDate = fromUtc,

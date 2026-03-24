@@ -31,15 +31,24 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
 
     public async Task<PagedResult<OrderDto>> Handle(SearchOrdersQuery request, CancellationToken cancellationToken)
     {
-        // Determine branch filter based on user role
-        int? branchFilter = null;
-        if (_currentUser.Role != "superadmin")
+        // Filtro de sucursal según rol
+        int? branchFilter;
+        var isOwnDeliveryHistory =
+            string.Equals(_currentUser.Role, "deliveryman", StringComparison.OrdinalIgnoreCase)
+            && request.DeliveryManId == _currentUser.Id;
+
+        if (string.Equals(_currentUser.Role, "superadmin", StringComparison.OrdinalIgnoreCase))
+        {
+            branchFilter = request.BranchId is > 0 ? request.BranchId : null;
+        }
+        else if (isOwnDeliveryHistory)
+        {
+            // Domiciliario viendo su historial: todas las sucursales salvo que elija una pestaña (BranchId explícito)
+            branchFilter = request.BranchId is > 0 ? request.BranchId : null;
+        }
+        else
         {
             branchFilter = _currentUser.BranchId;
-        }
-        else if (request.BranchId > 0)
-        {
-            branchFilter = request.BranchId;
         }
 
         // Filtro por CreatedAt: días calendario en Colombia → rango UTC (mismo criterio que historial domiciliario)
