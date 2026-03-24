@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
+using SenorArroz.Application.Features.ExpenseHeaders.Helpers;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
@@ -145,6 +146,8 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             .Select(ed => ed.ExpenseName)
             .Distinct()
             .ToList();
+
+        await ExpenseHeaderLinkedAdvancePopulator.PopulateAsync(_context, new[] { dto }, cancellationToken);
 
         return dto;
     }

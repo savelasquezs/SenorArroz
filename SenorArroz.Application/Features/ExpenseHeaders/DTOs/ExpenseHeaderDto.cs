@@ -13,6 +13,11 @@ public class ExpenseHeaderDto
     public string CreatedByName { get; set; } = string.Empty;
     public int? DeliverymanId { get; set; }
     public string? DeliverymanName { get; set; }
+
+    /// <summary>Abono con <c>ExpenseHeaderId</c> apuntando a este gasto (descuento por gasto).</summary>
+    public int? LinkedDeliverymanAdvanceId { get; set; }
+    public decimal? LinkedDeliverymanAdvanceAmount { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public List<ExpenseDetailDto> ExpenseDetails { get; set; } = new();

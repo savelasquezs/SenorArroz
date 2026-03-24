@@ -2,6 +2,7 @@ using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
+using SenorArroz.Application.Features.ExpenseHeaders.Helpers;
 using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Application.Features.ExpenseHeaders.Queries;
@@ -9,12 +10,18 @@ namespace SenorArroz.Application.Features.ExpenseHeaders.Queries;
 public class GetExpenseHeaderByIdHandler : IRequestHandler<GetExpenseHeaderByIdQuery, ExpenseHeaderDto?>
 {
     private readonly IExpenseHeaderRepository _expenseHeaderRepository;
+    private readonly IApplicationDbContext _context;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
 
-    public GetExpenseHeaderByIdHandler(IExpenseHeaderRepository expenseHeaderRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetExpenseHeaderByIdHandler(
+        IExpenseHeaderRepository expenseHeaderRepository,
+        IApplicationDbContext context,
+        IMapper mapper,
+        ICurrentUser currentUser)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
+        _context = context;
         _mapper = mapper;
         _currentUser = currentUser;
     }
@@ -61,6 +68,8 @@ public class GetExpenseHeaderByIdHandler : IRequestHandler<GetExpenseHeaderByIdQ
             .Select(ed => ed.ExpenseName)
             .Distinct()
             .ToList();
+
+        await ExpenseHeaderLinkedAdvancePopulator.PopulateAsync(_context, new[] { dto }, cancellationToken);
 
         return dto;
     }

@@ -3,6 +3,7 @@ using MediatR;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
+using SenorArroz.Application.Features.ExpenseHeaders.Helpers;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Shared.Models;
 
@@ -11,12 +12,18 @@ namespace SenorArroz.Application.Features.ExpenseHeaders.Queries;
 public class GetExpenseHeadersHandler : IRequestHandler<GetExpenseHeadersQuery, PagedResult<ExpenseHeaderDto>>
 {
     private readonly IExpenseHeaderRepository _expenseHeaderRepository;
+    private readonly IApplicationDbContext _context;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
 
-    public GetExpenseHeadersHandler(IExpenseHeaderRepository expenseHeaderRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetExpenseHeadersHandler(
+        IExpenseHeaderRepository expenseHeaderRepository,
+        IApplicationDbContext context,
+        IMapper mapper,
+        ICurrentUser currentUser)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
+        _context = context;
         _mapper = mapper;
         _currentUser = currentUser;
     }
@@ -107,6 +114,8 @@ public class GetExpenseHeadersHandler : IRequestHandler<GetExpenseHeadersQuery, 
                 .Distinct()
                 .ToList();
         }
+
+        await ExpenseHeaderLinkedAdvancePopulator.PopulateAsync(_context, expenseHeaderDtos, cancellationToken);
 
         return new PagedResult<ExpenseHeaderDto>
         {

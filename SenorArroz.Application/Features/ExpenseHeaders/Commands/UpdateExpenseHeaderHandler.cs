@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
+using SenorArroz.Application.Features.ExpenseHeaders.Helpers;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -178,6 +179,8 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
 
         var updated = await _expenseHeaderRepository.UpdateAsync(expenseHeader);
 
+        await SyncLinkedDeliverymanAdvanceAmountAsync(updated.Id, expenseHeader.Total ?? 0, cancellationToken);
+
         if (newDetailInfos.Any())
         {
             await UpsertSupplierExpensesAsync(expenseHeader.SupplierId, newDetailInfos, cancellationToken);
@@ -208,7 +211,30 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             .Distinct()
             .ToList();
 
+        await ExpenseHeaderLinkedAdvancePopulator.PopulateAsync(_context, new[] { dto }, cancellationToken);
+
         return dto;
+    }
+
+    private async Task SyncLinkedDeliverymanAdvanceAmountAsync(
+        int expenseHeaderId,
+        decimal newTotal,
+        CancellationToken cancellationToken)
+    {
+        var linkedAdvance = await _context.DeliverymanAdvances
+            .FirstOrDefaultAsync(a => a.ExpenseHeaderId == expenseHeaderId, cancellationToken);
+        if (linkedAdvance == null || linkedAdvance.Amount == newTotal)
+            return;
+
+        if (linkedAdvance.CreatedAt.Date != DateTime.UtcNow.Date)
+        {
+            throw new BusinessException(
+                "El abono vinculado a este gasto solo puede ajustarse automáticamente el mismo día de su registro. " +
+                "Para otro día, actualiza el abono en el módulo de domiciliarios.");
+        }
+
+        linkedAdvance.Amount = newTotal;
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
     private async Task UpsertSupplierExpensesAsync(

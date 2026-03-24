@@ -19,7 +19,9 @@ public class ExpenseHeaderMappingProfile : Profile
             .ForMember(dest => dest.ExpenseBankPayments, opt => opt.MapFrom(src => src.ExpenseBankPayments))
             .ForMember(dest => dest.CategoryNames, opt => opt.Ignore()) // Se calcula en el handler
             .ForMember(dest => dest.BankNames, opt => opt.Ignore()) // Se calcula en el handler
-            .ForMember(dest => dest.ExpenseNames, opt => opt.Ignore()); // Se calcula en el handler
+            .ForMember(dest => dest.ExpenseNames, opt => opt.Ignore()) // Se calcula en el handler
+            .ForMember(dest => dest.LinkedDeliverymanAdvanceId, opt => opt.Ignore())
+            .ForMember(dest => dest.LinkedDeliverymanAdvanceAmount, opt => opt.Ignore());
 
         // ExpenseDetail -> ExpenseDetailDto
         CreateMap<ExpenseDetail, ExpenseDetailDto>()

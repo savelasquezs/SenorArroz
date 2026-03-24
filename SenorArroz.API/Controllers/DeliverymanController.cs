@@ -195,7 +195,10 @@ public class DeliverymanController : ControllerBase
             {
                 DeliverymanId = id,
                 Amount = dto.Amount,
-                Notes = dto.Notes
+                Notes = dto.Notes,
+                PaymentMethod = dto.PaymentMethod,
+                BankId = dto.BankId,
+                ExpenseHeaderId = dto.ExpenseHeaderId
             }
         };
         var result = await _mediator.Send(command);
