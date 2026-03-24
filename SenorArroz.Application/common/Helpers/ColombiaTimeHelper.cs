@@ -64,5 +64,30 @@ public static class ColombiaTimeHelper
         var toUtc = DateTime.SpecifyKind(ConvertColombiaToUtc(endColombia), DateTimeKind.Utc);
         return (fromUtc, toUtc);
     }
+
+    /// <summary>
+    /// Convierte filtros FromDate/ToDate de la API (query string, Kind suele ser Unspecified) en límites UTC
+    /// por calendario Colombia, para usar en EF/Npgsql con columnas <c>timestamptz</c>.
+    /// </summary>
+    public static (DateTime? FromUtc, DateTime? ToUtc) NormalizeApiDateFiltersToUtc(DateTime? fromDate, DateTime? toDate)
+    {
+        if (!fromDate.HasValue && !toDate.HasValue)
+            return (null, null);
+
+        if (fromDate.HasValue && toDate.HasValue)
+        {
+            var (f, t) = GetColombiaCalendarDateRangeUtc(fromDate.Value, toDate.Value);
+            return (f, t);
+        }
+
+        if (fromDate.HasValue)
+        {
+            var (f, _) = GetColombiaCalendarDateRangeUtc(fromDate.Value, fromDate.Value);
+            return (f, null);
+        }
+
+        var (_, tOnly) = GetColombiaCalendarDateRangeUtc(toDate!.Value, toDate.Value);
+        return (null, tOnly);
+    }
 }
 

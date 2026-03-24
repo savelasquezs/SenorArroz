@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS public.deliveryman_day_state (
     blocked boolean NOT NULL DEFAULT false,
     unlocked_at timestamp with time zone NULL,
     unlocked_by_id integer NULL REFERENCES public."user" (id),
+    last_liquidation_at_utc timestamp with time zone NULL,
     created_at timestamp with time zone NOT NULL DEFAULT NOW(),
     updated_at timestamp with time zone NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_deliveryman_day_state_branch_dm_date UNIQUE (branch_id, deliveryman_id, date)

@@ -1,6 +1,7 @@
 // SenorArroz.Infrastructure/Repositories/BankRepository.cs
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
@@ -218,7 +219,8 @@ public class BankRepository : IBankRepository
         var totalExpenses = await GetTotalExpenseBankPaymentsAsync(bankId);
         var outgoing = await GetTotalOutgoingTransfersAsync(bankId);
         var incoming = await GetTotalIncomingTransfersAsync(bankId);
-        return totalIncome - totalExpenses - outgoing + incoming;
+        var deliverymanTransferIn = await GetTotalDeliverymanBankTransferInAsync(bankId, asOf: null);
+        return totalIncome - totalExpenses - outgoing + incoming + deliverymanTransferIn;
     }
 
     public async Task<decimal> GetBalanceAsOfAsync(int bankId, DateTime asOf)
@@ -232,6 +234,68 @@ public class BankRepository : IBankRepository
             .SumAsync(ebp => ebp.Amount);
         var outgoing = await GetTotalOutgoingTransfersAsync(bankId, utc);
         var incoming = await GetTotalIncomingTransfersAsync(bankId, utc);
-        return totalIncome - totalExpenses - outgoing + incoming;
+        var deliverymanTransferIn = await GetTotalDeliverymanBankTransferInAsync(bankId, utc);
+        return totalIncome - totalExpenses - outgoing + incoming + deliverymanTransferIn;
+    }
+
+    /// <inheritdoc />
+    public async Task<decimal> GetTotalDeliverymanBankTransferInAsync(int bankId, DateTime? asOf = null)
+    {
+        var query = _context.DeliverymanAdvances.Where(a =>
+            a.BankId == bankId && a.PaymentMethod == DeliverymanAdvancePaymentMethod.BankTransfer);
+        if (asOf.HasValue)
+        {
+            var utc = DateTime.SpecifyKind(asOf.Value, DateTimeKind.Utc);
+            query = query.Where(a => a.CreatedAt <= utc);
+        }
+
+        return await query.SumAsync(a => (decimal?)a.Amount) ?? 0m;
+    }
+
+    public async Task<decimal> GetTotalBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc)
+    {
+        var from = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        var to = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+        return await _context.BankPayments
+            .Where(bp => bp.BankId == bankId && bp.CreatedAt >= from && bp.CreatedAt <= to)
+            .SumAsync(bp => bp.Amount);
+    }
+
+    public async Task<decimal> GetTotalExpenseBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc)
+    {
+        var from = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        var to = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+        return await _context.ExpenseBankPayments
+            .Where(ebp => ebp.BankId == bankId && ebp.CreatedAt >= from && ebp.CreatedAt <= to)
+            .SumAsync(ebp => ebp.Amount);
+    }
+
+    public async Task<decimal> GetTotalOutgoingTransfersInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc)
+    {
+        var from = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        var to = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+        return await _context.BankTransfers
+            .Where(bt => bt.FromBankId == bankId && bt.CreatedAt >= from && bt.CreatedAt <= to)
+            .SumAsync(bt => bt.Amount);
+    }
+
+    public async Task<decimal> GetTotalIncomingTransfersInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc)
+    {
+        var from = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        var to = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+        return await _context.BankTransfers
+            .Where(bt => bt.ToBankId == bankId && bt.CreatedAt >= from && bt.CreatedAt <= to)
+            .SumAsync(bt => bt.Amount);
+    }
+
+    public async Task<decimal> GetTotalDeliverymanBankTransferInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc)
+    {
+        var from = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        var to = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+        return await _context.DeliverymanAdvances
+            .Where(a => a.BankId == bankId
+                && a.PaymentMethod == DeliverymanAdvancePaymentMethod.BankTransfer
+                && a.CreatedAt >= from && a.CreatedAt <= to)
+            .SumAsync(a => (decimal?)a.Amount) ?? 0m;
     }
 }

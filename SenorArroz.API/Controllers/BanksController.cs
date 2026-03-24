@@ -80,6 +80,84 @@ public class BanksController : ControllerBase
     }
 
     /// <summary>
+    /// Desglose de movimiento neto del banco en un rango de fechas (calendario Colombia).
+    /// </summary>
+    [HttpGet("{id}/movements/period-summary")]
+    public async Task<ActionResult<BankBalanceBreakdownDto>> GetBankLedgerPeriod(
+        int id,
+        [FromQuery] DateTime fromDate,
+        [FromQuery] DateTime toDate)
+    {
+        var result = await _mediator.Send(new GetBankLedgerPeriodQuery
+        {
+            BankId = id,
+            FromDate = fromDate,
+            ToDate = toDate
+        });
+
+        if (result == null)
+            return NotFound();
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Pagos de gastos imputados al banco en el período (paginado).
+    /// </summary>
+    [HttpGet("{id}/movements/expense-payments")]
+    public async Task<ActionResult<PagedResult<ExpenseBankPaymentLineDto>>> GetBankExpenseBankPaymentsPaged(
+        int id,
+        [FromQuery] DateTime fromDate,
+        [FromQuery] DateTime toDate,
+        [FromQuery] int? branchId = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var result = await _mediator.Send(new GetBankExpenseBankPaymentsPagedQuery
+        {
+            BankId = id,
+            FromDate = fromDate,
+            ToDate = toDate,
+            BranchId = branchId,
+            Page = page,
+            PageSize = pageSize
+        });
+
+        if (result == null)
+            return NotFound();
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Abonos a domiciliarios por transferencia al banco en el período (paginado).
+    /// </summary>
+    [HttpGet("{id}/movements/deliveryman-transfers")]
+    public async Task<ActionResult<PagedResult<DeliverymanBankAdvanceLineDto>>> GetBankDeliverymanTransferAdvancesPaged(
+        int id,
+        [FromQuery] DateTime fromDate,
+        [FromQuery] DateTime toDate,
+        [FromQuery] int? branchId = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var result = await _mediator.Send(new GetBankDeliverymanTransferAdvancesPagedQuery
+        {
+            BankId = id,
+            FromDate = fromDate,
+            ToDate = toDate,
+            BranchId = branchId,
+            Page = page,
+            PageSize = pageSize
+        });
+
+        if (result == null)
+            return NotFound();
+
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Crea un nuevo banco
     /// </summary>
     [HttpPost]

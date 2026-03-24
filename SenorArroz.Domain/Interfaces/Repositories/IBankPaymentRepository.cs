@@ -15,7 +15,8 @@ public interface IBankPaymentRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "createdAt",
-        string sortOrder = "desc");
+        string sortOrder = "desc",
+        int? restrictToBankBranchId = null);
 
     Task<IEnumerable<BankPayment>> GetByOrderIdAsync(int orderId);
     Task<IEnumerable<BankPayment>> GetByBankIdAsync(int bankId);

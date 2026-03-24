@@ -187,6 +187,26 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
         return total ?? 0;
     }
 
+    public async Task<decimal> GetTotalAdvancesForSettlementCycleAsync(
+        int deliverymanId,
+        DateTime dayFromUtc,
+        DateTime dayToUtc,
+        DateTime? lastLiquidationAtUtc,
+        bool useSettlementCycle)
+    {
+        var query = _context.DeliverymanAdvances
+            .Where(da =>
+                da.DeliverymanId == deliverymanId
+                && da.CreatedAt >= dayFromUtc
+                && da.CreatedAt <= dayToUtc);
+
+        if (useSettlementCycle && lastLiquidationAtUtc.HasValue)
+            query = query.Where(da => da.CreatedAt > lastLiquidationAtUtc.Value);
+
+        var total = await query.SumAsync(da => (decimal?)da.Amount);
+        return total ?? 0;
+    }
+
     public async Task<int> GetCountByDeliverymanAsync(
         int deliverymanId,
         DateTime? fromDate = null,

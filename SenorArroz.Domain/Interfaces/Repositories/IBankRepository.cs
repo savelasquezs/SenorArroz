@@ -32,6 +32,20 @@ public interface IBankRepository
     Task<decimal> GetTotalExpenseBankPaymentsAsync(int bankId);
     Task<decimal> GetTotalOutgoingTransfersAsync(int bankId, DateTime? asOf = null);
     Task<decimal> GetTotalIncomingTransfersAsync(int bankId, DateTime? asOf = null);
+
+    /// <summary>
+    /// Ingresos al banco por abonos/liquidaciones de domiciliario vía transferencia (paridad con cuadre de caja).
+    /// </summary>
+    Task<decimal> GetTotalDeliverymanBankTransferInAsync(int bankId, DateTime? asOf = null);
+
     Task<decimal> GetCurrentBalanceAsync(int bankId);
     Task<decimal> GetBalanceAsOfAsync(int bankId, DateTime asOf);
+
+    /// <summary>Totales en rango UTC [fromUtc, toUtc] inclusive por CreatedAt.</summary>
+    Task<decimal> GetTotalBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
+
+    Task<decimal> GetTotalExpenseBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
+    Task<decimal> GetTotalOutgoingTransfersInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
+    Task<decimal> GetTotalIncomingTransfersInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
+    Task<decimal> GetTotalDeliverymanBankTransferInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
 }

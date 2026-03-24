@@ -22,4 +22,7 @@ public class BankDetailDto
     public decimal TotalBankPayments { get; set; }
     public decimal TotalExpenseBankPayments { get; set; }
     public decimal CurrentBalance { get; set; }
+
+    /// <summary>Desglose del saldo acumulado (coherente con <see cref="CurrentBalance"/>).</summary>
+    public BankBalanceBreakdownDto BalanceBreakdown { get; set; } = new();
 }

@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BankTransfers.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -35,12 +36,14 @@ public class GetBankTransfersHandler : IRequestHandler<GetBankTransfersQuery, Pa
             branchFilter = request.BranchId;
         }
 
+        var (fromUtc, toUtc) = ColombiaTimeHelper.NormalizeApiDateFiltersToUtc(request.FromDate, request.ToDate);
+
         var result = await _bankTransferRepository.GetPagedAsync(
             branchFilter,
             request.FromBankId,
             request.ToBankId,
-            request.FromDate,
-            request.ToDate,
+            fromUtc,
+            toUtc,
             request.Page,
             request.PageSize,
             request.SortBy,

@@ -58,12 +58,21 @@ public class BankTransferRepository : IBankTransferRepository
             query = query.Where(bt => bt.ToBankId == toBankId.Value);
         if (fromDate.HasValue)
         {
-            var fromUtc = DateTime.SpecifyKind(fromDate.Value, DateTimeKind.Utc);
+            var fromUtc = fromDate.Value.Kind == DateTimeKind.Utc
+                ? fromDate.Value
+                : fromDate.Value.Kind == DateTimeKind.Local
+                    ? fromDate.Value.ToUniversalTime()
+                    : DateTime.SpecifyKind(fromDate.Value, DateTimeKind.Utc);
             query = query.Where(bt => bt.CreatedAt >= fromUtc);
         }
+
         if (toDate.HasValue)
         {
-            var toUtc = DateTime.SpecifyKind(toDate.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+            var toUtc = toDate.Value.Kind == DateTimeKind.Utc
+                ? toDate.Value
+                : toDate.Value.Kind == DateTimeKind.Local
+                    ? toDate.Value.ToUniversalTime()
+                    : DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
             query = query.Where(bt => bt.CreatedAt <= toUtc);
         }
 

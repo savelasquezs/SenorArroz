@@ -6,7 +6,6 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.DeliverymanAdvances.DTOs;
 using SenorArroz.Application.Features.Deliverymen.DTOs;
 using SenorArroz.Domain.Entities;
-using OrderEntity = SenorArroz.Domain.Entities.Order;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -74,6 +73,25 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         if (_currentUser.Role != "superadmin" && deliveryman.BranchId != branchId)
             throw new BusinessException("No tienes permisos para liquidar este domiciliario");
 
+        var onTheWayPending = await _orderRepository.SearchOrdersAsync(
+            searchTerm: null,
+            branchId: branchId,
+            customerId: null,
+            deliveryManId: request.DeliverymanId,
+            status: OrderStatus.OnTheWay,
+            type: OrderType.Delivery,
+            fromDate: null,
+            toDate: null,
+            minAmount: null,
+            maxAmount: null,
+            page: 1,
+            pageSize: 1,
+            sortBy: "CreatedAt",
+            sortOrder: "desc");
+        if (onTheWayPending.TotalCount > 0)
+            throw new BusinessException(
+                "No puedes liquidar mientras el domiciliario tenga pedidos en camino sin entregar.");
+
         var startColombia = settlementDate.ToDateTime(TimeOnly.MinValue);
         var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(startColombia, startColombia);
 
@@ -94,11 +112,27 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
             sortOrder: "desc");
 
         var orders = ordersResult.Items.ToList();
-        var totalCash = CalculateTotalCash(orders);
-        var totalAdvancesBefore = await _advanceRepository.GetTotalAdvancesByDeliverymanAsync(
-            request.DeliverymanId, fromUtc, toUtc);
+
+        var priorState = await _context.DeliverymanDayStates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.BranchId == branchId
+                     && x.DeliverymanId == request.DeliverymanId
+                     && x.Date == settlementDate,
+                cancellationToken);
+        var lastLiquidationAtUtc = priorState?.LastLiquidationAtUtc;
+
+        var cycleOrders = DeliverymanSettlementCycleHelper.FilterOrdersForCycle(
+            orders, fromUtc, toUtc, lastLiquidationAtUtc, useSettlementCycle: true);
+        var totalCash = DeliverymanSettlementCycleHelper.SumCashFromOrders(cycleOrders);
+        var totalAdvancesBefore = await _advanceRepository.GetTotalAdvancesForSettlementCycleAsync(
+            request.DeliverymanId, fromUtc, toUtc, lastLiquidationAtUtc, useSettlementCycle: true);
 
         var baseAmount = s.BaseAmount > 0 ? s.BaseAmount : DefaultBaseAmount;
+        if (s.Mode == DeliverymanDayLiquidationMode.LiquidateAndReturnBase && s.CashAmount < baseAmount)
+            throw new BusinessException(
+                "Para liquidar y devolver base, el efectivo contado debe ser al menos la base inicial.");
+
         var surplus = totalCash + baseAmount - totalAdvancesBefore;
         if (surplus <= 0)
             throw new BusinessException("No hay excedente para liquidar con los datos actuales");
@@ -141,16 +175,22 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
 
         var newAdvances = new List<DeliverymanAdvance>();
 
-        if (s.CashAmount > 0)
+        decimal cashAdvanceAmount = s.Mode == DeliverymanDayLiquidationMode.FullLiquidation
+            ? s.CashAmount
+            : (s.CashAmount > baseAmount ? s.CashAmount - baseAmount : 0m);
+
+        if (cashAdvanceAmount > 0)
         {
             newAdvances.Add(new DeliverymanAdvance
             {
                 DeliverymanId = request.DeliverymanId,
-                Amount = s.CashAmount,
+                Amount = cashAdvanceAmount,
                 PaymentMethod = DeliverymanAdvancePaymentMethod.Cash,
                 BankId = null,
                 ExpenseHeaderId = null,
-                Notes = "Liquidación — efectivo",
+                Notes = s.Mode == DeliverymanDayLiquidationMode.LiquidateAndReturnBase
+                    ? "Liquidación — efectivo (excedente sobre base)"
+                    : "Liquidación — efectivo",
                 CreatedBy = _currentUser.Id,
                 BranchId = branchId
             });
@@ -220,6 +260,13 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
             }
         }
 
+        var liquidationMarkerUtc = newAdvances.Count > 0
+            ? await _context.DeliverymanAdvances
+                .Where(a => createdIds.Contains(a.Id))
+                .MaxAsync(a => a.CreatedAt, cancellationToken)
+            : DateTime.UtcNow;
+        state.LastLiquidationAtUtc = DateTime.SpecifyKind(liquidationMarkerUtc, DateTimeKind.Utc).AddTicks(10);
+
         await _context.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
 
@@ -236,17 +283,5 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
             Advances = dtos,
             SurplusApplied = surplus
         };
-    }
-
-    private static decimal CalculateTotalCash(List<OrderEntity> orders)
-    {
-        decimal total = 0;
-        foreach (var order in orders)
-        {
-            var bankTotal = order.BankPayments?.Sum(bp => bp.Amount) ?? 0;
-            var appTotal = order.AppPayments?.Sum(ap => ap.Amount) ?? 0;
-            total += order.Total - bankTotal - appTotal;
-        }
-        return total;
     }
 }

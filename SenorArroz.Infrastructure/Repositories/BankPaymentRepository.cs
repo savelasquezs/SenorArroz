@@ -16,6 +16,16 @@ public class BankPaymentRepository : IBankPaymentRepository
         _context = context;
     }
 
+    /// <summary>Npgsql exige Kind=Utc en parámetros para <c>timestamptz</c>.</summary>
+    private static DateTime AsUtcQueryParameter(DateTime value) =>
+        value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+        };
+
     public async Task<PagedResult<BankPayment>> GetPagedAsync(
         int? orderId = null,
         int? bankId = null,
@@ -25,13 +35,19 @@ public class BankPaymentRepository : IBankPaymentRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "createdAt",
-        string sortOrder = "desc")
+        string sortOrder = "desc",
+        int? restrictToBankBranchId = null)
     {
         var query = _context.BankPayments
             .Include(bp => bp.Order)
             .Include(bp => bp.Bank)
             .ThenInclude(b => b.Branch)
             .AsQueryable();
+
+        if (restrictToBankBranchId.HasValue)
+        {
+            query = query.Where(bp => bp.Bank.BranchId == restrictToBankBranchId.Value);
+        }
 
         // Order filter
         if (orderId.HasValue)
@@ -58,15 +74,17 @@ public class BankPaymentRepository : IBankPaymentRepository
             }
         }
 
-        // Date range filter
+        // Date range filter (instantes UTC; el handler suele normalizar con ColombiaTimeHelper)
         if (fromDate.HasValue)
         {
-            query = query.Where(bp => bp.CreatedAt >= fromDate.Value);
+            var fromUtc = AsUtcQueryParameter(fromDate.Value);
+            query = query.Where(bp => bp.CreatedAt >= fromUtc);
         }
 
         if (toDate.HasValue)
         {
-            query = query.Where(bp => bp.CreatedAt <= toDate.Value);
+            var toUtc = AsUtcQueryParameter(toDate.Value);
+            query = query.Where(bp => bp.CreatedAt <= toUtc);
         }
 
         // Total count
@@ -198,10 +216,10 @@ public class BankPaymentRepository : IBankPaymentRepository
         var query = _context.BankPayments.Where(bp => bp.BankId == bankId);
 
         if (fromDate.HasValue)
-            query = query.Where(bp => bp.CreatedAt >= fromDate.Value);
+            query = query.Where(bp => bp.CreatedAt >= AsUtcQueryParameter(fromDate.Value));
 
         if (toDate.HasValue)
-            query = query.Where(bp => bp.CreatedAt <= toDate.Value);
+            query = query.Where(bp => bp.CreatedAt <= AsUtcQueryParameter(toDate.Value));
 
         return await query.SumAsync(bp => bp.Amount);
     }
@@ -218,10 +236,10 @@ public class BankPaymentRepository : IBankPaymentRepository
         var query = _context.BankPayments.Where(bp => bp.BankId == bankId);
 
         if (fromDate.HasValue)
-            query = query.Where(bp => bp.CreatedAt >= fromDate.Value);
+            query = query.Where(bp => bp.CreatedAt >= AsUtcQueryParameter(fromDate.Value));
 
         if (toDate.HasValue)
-            query = query.Where(bp => bp.CreatedAt <= toDate.Value);
+            query = query.Where(bp => bp.CreatedAt <= AsUtcQueryParameter(toDate.Value));
 
         return await query.CountAsync();
     }
