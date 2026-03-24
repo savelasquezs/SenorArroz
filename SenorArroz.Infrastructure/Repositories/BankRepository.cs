@@ -1,6 +1,7 @@
 // SenorArroz.Infrastructure/Repositories/BankRepository.cs
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
@@ -218,7 +219,8 @@ public class BankRepository : IBankRepository
         var totalExpenses = await GetTotalExpenseBankPaymentsAsync(bankId);
         var outgoing = await GetTotalOutgoingTransfersAsync(bankId);
         var incoming = await GetTotalIncomingTransfersAsync(bankId);
-        return totalIncome - totalExpenses - outgoing + incoming;
+        var deliverymanTransferIn = await GetTotalDeliverymanBankTransferInAsync(bankId, asOf: null);
+        return totalIncome - totalExpenses - outgoing + incoming + deliverymanTransferIn;
     }
 
     public async Task<decimal> GetBalanceAsOfAsync(int bankId, DateTime asOf)
@@ -232,6 +234,23 @@ public class BankRepository : IBankRepository
             .SumAsync(ebp => ebp.Amount);
         var outgoing = await GetTotalOutgoingTransfersAsync(bankId, utc);
         var incoming = await GetTotalIncomingTransfersAsync(bankId, utc);
-        return totalIncome - totalExpenses - outgoing + incoming;
+        var deliverymanTransferIn = await GetTotalDeliverymanBankTransferInAsync(bankId, utc);
+        return totalIncome - totalExpenses - outgoing + incoming + deliverymanTransferIn;
+    }
+
+    /// <summary>
+    /// Ingresos al banco por abonos/liquidaciones de domiciliario vía transferencia (paridad con cuadre de caja).
+    /// </summary>
+    private async Task<decimal> GetTotalDeliverymanBankTransferInAsync(int bankId, DateTime? asOf)
+    {
+        var query = _context.DeliverymanAdvances.Where(a =>
+            a.BankId == bankId && a.PaymentMethod == DeliverymanAdvancePaymentMethod.BankTransfer);
+        if (asOf.HasValue)
+        {
+            var utc = DateTime.SpecifyKind(asOf.Value, DateTimeKind.Utc);
+            query = query.Where(a => a.CreatedAt <= utc);
+        }
+
+        return await query.SumAsync(a => (decimal?)a.Amount) ?? 0m;
     }
 }
