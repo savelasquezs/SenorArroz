@@ -65,6 +65,16 @@ public interface IDeliverymanAdvanceRepository
         DateTime? toDate = null);
 
     /// <summary>
+    /// Total de abonos del domiciliario en el rango del día, excluyendo ciclos anteriores si <paramref name="lastLiquidationAtUtc"/> está definido.
+    /// </summary>
+    Task<decimal> GetTotalAdvancesForSettlementCycleAsync(
+        int deliverymanId,
+        DateTime dayFromUtc,
+        DateTime dayToUtc,
+        DateTime? lastLiquidationAtUtc,
+        bool useSettlementCycle);
+
+    /// <summary>
     /// Obtiene la cantidad de abonos de un domiciliario en un rango de fechas
     /// </summary>
     Task<int> GetCountByDeliverymanAsync(

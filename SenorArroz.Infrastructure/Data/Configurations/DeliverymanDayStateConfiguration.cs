@@ -25,6 +25,7 @@ public class DeliverymanDayStateConfiguration : IEntityTypeConfiguration<Deliver
         builder.Property(e => e.Blocked).HasColumnName("blocked").HasDefaultValue(false).IsRequired();
         builder.Property(e => e.UnlockedAt).HasColumnName("unlocked_at");
         builder.Property(e => e.UnlockedById).HasColumnName("unlocked_by_id");
+        builder.Property(e => e.LastLiquidationAtUtc).HasColumnName("last_liquidation_at_utc");
 
         builder.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

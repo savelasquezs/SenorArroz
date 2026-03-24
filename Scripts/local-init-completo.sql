@@ -15,14 +15,17 @@ SET client_encoding = 'UTF8';
 -- Incluye: tablas, índices, funciones, triggers, datos semilla y todas las
 -- modificaciones: supplier.branch_id, expense_header.created_by_id,
 -- supplier_expense, deliveryman_advance (payment_method, bank_id, expense_header_id),
--- deliveryman_day_state (liquidación / bloqueo día), expense_header.deliveryman_id,
+-- deliveryman_day_state (liquidación / bloqueo día, last_liquidation_at_utc para ciclos mismo día),
+--   bases existentes: Scripts/add-deliveryman-day-state-last-liquidation-at.sql
+-- expense_header.deliveryman_id,
 -- branch.latitude/longitude (modelo EF / joins), verified_at, guestname, is_primary,
 -- prepare_at, bank.type, bank_transfer, cash_register_closure, product.weight_grams,
 -- expense_detail.quantity decimal y totales (paridad con update-expense-quantity-decimal.sql)
 -- y tablas hijas.
 --
 -- Paridad con scripts sueltos (misma semántica, idempotente):
---   Scripts/deliveryman-liquidation-schema.sql (+ branch lat/long)
+--   Scripts/deliveryman-liquidation-schema.sql (+ branch lat/long + last_liquidation_at_utc)
+--   Scripts/add-deliveryman-day-state-last-liquidation-at.sql (ALTER si la tabla ya existía sin la columna)
 --   Scripts/add-branch-latitude-longitude.sql (incluido en el bloque anterior)
 --   Scripts/update-product-table.sql (weight_grams en product)
 --   Scripts/update-expense-quantity-decimal.sql (tipos expense_detail / expense_header.total)
@@ -399,6 +402,7 @@ CREATE TABLE IF NOT EXISTS deliveryman_day_state (
     blocked boolean NOT NULL DEFAULT false,
     unlocked_at timestamp with time zone,
     unlocked_by_id integer,
+    last_liquidation_at_utc timestamp with time zone,
     created_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     updated_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     CONSTRAINT "PK_deliveryman_day_state" PRIMARY KEY (id),

@@ -44,6 +44,20 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
     {
         var (fromDate, toDate) = ResolveDateRange(request);
         var branchId = ResolveBranchId(request);
+        var isSingleCalendarDay = !(request.FromDate.HasValue && request.ToDate.HasValue);
+
+        List<DeliverymanDayState> dayStatesForBranchDate = [];
+        if (isSingleCalendarDay && branchId.HasValue)
+        {
+            var colDate = request.Date?.Date ?? ColombiaTimeHelper.GetNowInColombia().Date;
+            var colDateOnly = DateOnly.FromDateTime(colDate);
+            dayStatesForBranchDate = await _db.DeliverymanDayStates
+                .AsNoTracking()
+                .Where(s => s.BranchId == branchId.Value && s.Date == colDateOnly)
+                .ToListAsync(cancellationToken);
+        }
+
+        var stateByBranchAndDm = dayStatesForBranchDate.ToDictionary(s => (s.BranchId, s.DeliverymanId));
 
         // 1. Obtener domiciliarios activos de la sucursal
         var allUsers = await _userRepository.GetAllAsync(branchId, cancellationToken);
@@ -74,6 +88,26 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             .GroupBy(o => o.DeliveryManId!.Value)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        var onTheWayResult = await _orderRepository.SearchOrdersAsync(
+            searchTerm: null,
+            branchId: branchId,
+            customerId: null,
+            deliveryManId: null,
+            status: OrderStatus.OnTheWay,
+            type: OrderType.Delivery,
+            fromDate: null,
+            toDate: null,
+            minAmount: null,
+            maxAmount: null,
+            page: 1,
+            pageSize: 2000,
+            sortBy: "CreatedAt",
+            sortOrder: "desc");
+        var onTheWayCountByDeliveryman = onTheWayResult.Items
+            .Where(o => o.DeliveryManId.HasValue)
+            .GroupBy(o => o.DeliveryManId!.Value)
+            .ToDictionary(g => g.Key, g => g.Count());
+
         // 3. Obtener abonos del período
         var advancesResult = await _advanceRepository.GetPagedAsync(
             deliverymanId: null,
@@ -81,13 +115,9 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             fromDate: fromDate,
             toDate: toDate,
             page: 1,
-            pageSize: 500,
+            pageSize: 3000,
             sortBy: "createdAt",
             sortOrder: "desc");
-
-        var advancesByDeliveryman = advancesResult.Items
-            .GroupBy(a => a.DeliverymanId)
-            .ToDictionary(g => g.Key, g => g.Sum(a => a.Amount));
 
         // 4. Mapear advances a DTOs para la tabla
         var advanceDtos = advancesResult.Items
@@ -98,11 +128,24 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
         var deliverymenStats = new List<DeliverymanDayStatsDto>();
         foreach (var dm in deliverymen)
         {
-            var orders = ordersByDeliveryman.GetValueOrDefault(dm.Id, new List<Order>());
-            var totalAdvances = advancesByDeliveryman.GetValueOrDefault(dm.Id, 0m);
+            DateTime? lastLiq = null;
+            if (isSingleCalendarDay
+                && stateByBranchAndDm.TryGetValue((dm.BranchId, dm.Id), out var dmState))
+                lastLiq = dmState.LastLiquidationAtUtc;
+
+            var rawOrders = ordersByDeliveryman.GetValueOrDefault(dm.Id, new List<Order>());
+            var orders = DeliverymanSettlementCycleHelper.FilterOrdersForCycle(
+                rawOrders, fromDate, toDate, lastLiq, isSingleCalendarDay);
+
+            var totalAdvances = advancesResult.Items
+                .Where(a => a.DeliverymanId == dm.Id)
+                .Where(a => DeliverymanSettlementCycleHelper.IsAdvanceInSettlementCycle(
+                    a.CreatedAt, fromDate, toDate, lastLiq, isSingleCalendarDay))
+                .Sum(a => a.Amount);
+
             var baseAmount = DefaultBaseAmount;
 
-            var totalCash = CalculateTotalCash(orders);
+            var totalCash = DeliverymanSettlementCycleHelper.SumCashFromOrders(orders);
             var totalDeliveryFee = orders.Sum(o => o.DeliveryFee ?? 0);
             var avgTime = CalculateAverageDeliveryTimeMinutes(orders);
             var cashToDeliver = totalCash + baseAmount - totalAdvances;
@@ -121,26 +164,19 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
                 CurrentBalance = currentBalance,
                 AverageDeliveryTimeMinutes = avgTime,
                 DayBlocked = false,
-                LiquidationMode = DeliverymanDayLiquidationMode.None
+                LiquidationMode = DeliverymanDayLiquidationMode.None,
+                OrdersOnTheWayCount = onTheWayCountByDeliveryman.GetValueOrDefault(dm.Id, 0)
             });
         }
 
-        var isSingleCalendarDay = !(request.FromDate.HasValue && request.ToDate.HasValue);
         if (isSingleCalendarDay)
         {
-            var colDate = request.Date?.Date ?? ColombiaTimeHelper.GetNowInColombia().Date;
-            var colDateOnly = DateOnly.FromDateTime(colDate);
-            var states = await _db.DeliverymanDayStates
-                .AsNoTracking()
-                .Where(s => s.Date == colDateOnly)
-                .ToListAsync(cancellationToken);
-            var stateByKey = states.ToDictionary(s => (s.BranchId, s.DeliverymanId));
             var dmById = deliverymen.ToDictionary(d => d.Id);
             foreach (var st in deliverymenStats)
             {
                 if (!dmById.TryGetValue(st.DeliverymanId, out var dmUser))
                     continue;
-                if (stateByKey.TryGetValue((dmUser.BranchId, st.DeliverymanId), out var ds))
+                if (stateByBranchAndDm.TryGetValue((dmUser.BranchId, st.DeliverymanId), out var ds))
                 {
                     st.DayBlocked = ds.Blocked;
                     st.LiquidationMode = ds.LiquidationMode;
@@ -182,18 +218,6 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
         if (_currentUser.Role != "superadmin")
             return _currentUser.BranchId;
         return request.BranchId;
-    }
-
-    private static decimal CalculateTotalCash(List<Order> orders)
-    {
-        decimal total = 0;
-        foreach (var order in orders)
-        {
-            var bankTotal = order.BankPayments?.Sum(bp => bp.Amount) ?? 0;
-            var appTotal = order.AppPayments?.Sum(ap => ap.Amount) ?? 0;
-            total += order.Total - bankTotal - appTotal;
-        }
-        return total;
     }
 
     private static int CalculateAverageDeliveryTimeMinutes(List<Order> orders)

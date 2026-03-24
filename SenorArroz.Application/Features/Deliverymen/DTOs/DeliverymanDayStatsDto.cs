@@ -23,4 +23,8 @@ public class DeliverymanDayStatsDto
 
     [JsonPropertyName("liquidationMode")]
     public DeliverymanDayLiquidationMode LiquidationMode { get; set; }
+
+    /// <summary>Pedidos delivery asignados en estado OnTheWay (no entregados).</summary>
+    [JsonPropertyName("ordersOnTheWayCount")]
+    public int OrdersOnTheWayCount { get; set; }
 }

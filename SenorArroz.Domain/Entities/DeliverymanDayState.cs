@@ -22,6 +22,9 @@ public class DeliverymanDayState : BaseEntity
     public DateTime? UnlockedAt { get; set; }
     public int? UnlockedById { get; set; }
 
+    /// <summary>Fin de la última liquidación exitosa del día (UTC). Abonos y entregas posteriores abren un nuevo ciclo.</summary>
+    public DateTime? LastLiquidationAtUtc { get; set; }
+
     public virtual Branch Branch { get; set; } = null!;
     public virtual User Deliveryman { get; set; } = null!;
     public virtual User? UnlockedBy { get; set; }

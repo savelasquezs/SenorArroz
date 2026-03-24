@@ -58,6 +58,27 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
         if (_currentUser.Role != "superadmin" && deliveryman.BranchId != branchId)
             throw new BusinessException("No tienes permisos para ver los datos de este domiciliario");
 
+        var multiDay = IsMultiDaySummaryRequest(request);
+        var useSettlementCycle = !multiDay;
+        var colDateOnly = DateOnly.FromDateTime(
+            request.Date?.Date
+            ?? request.FromDate?.Date
+            ?? ColombiaTimeHelper.GetNowInColombia().Date);
+
+        DeliverymanDayState? dayState = null;
+        if (!multiDay)
+        {
+            dayState = await _db.DeliverymanDayStates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    s => s.BranchId == branchId
+                         && s.DeliverymanId == request.DeliverymanId
+                         && s.Date == colDateOnly,
+                    cancellationToken);
+        }
+
+        var lastLiquidationAtUtc = useSettlementCycle ? dayState?.LastLiquidationAtUtc : null;
+
         // 2. Obtener pedidos del domiciliario en el rango
         var ordersResult = await _orderRepository.SearchOrdersAsync(
             searchTerm: null,
@@ -76,37 +97,47 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
             sortOrder: "desc");
 
         var orders = ordersResult.Items.ToList();
+        var cycleOrders = DeliverymanSettlementCycleHelper.FilterOrdersForCycle(
+            orders, fromDate, toDate, lastLiquidationAtUtc, useSettlementCycle);
 
-        // 3. Obtener total de abonos del período
-        var totalAdvances = await _advanceRepository.GetTotalAdvancesByDeliverymanAsync(
+        var onTheWayResult = await _orderRepository.SearchOrdersAsync(
+            searchTerm: null,
+            branchId: branchId,
+            customerId: null,
+            deliveryManId: request.DeliverymanId,
+            status: OrderStatus.OnTheWay,
+            type: OrderType.Delivery,
+            fromDate: null,
+            toDate: null,
+            minAmount: null,
+            maxAmount: null,
+            page: 1,
+            pageSize: 1,
+            sortBy: "CreatedAt",
+            sortOrder: "desc");
+
+        // 3. Total de abonos del ciclo (o del rango si es multi-día)
+        var totalAdvances = await _advanceRepository.GetTotalAdvancesForSettlementCycleAsync(
             request.DeliverymanId,
             fromDate,
-            toDate);
+            toDate,
+            lastLiquidationAtUtc,
+            useSettlementCycle);
 
         var baseAmount = request.BaseAmount is > 0 ? request.BaseAmount.Value : DefaultBaseAmount;
 
         // 4. Calcular stats
-        var totalCash = CalculateTotalCash(orders);
-        var totalDeliveryFee = orders.Sum(o => o.DeliveryFee ?? 0);
-        var avgTime = CalculateAverageDeliveryTimeMinutes(orders);
+        var totalCash = DeliverymanSettlementCycleHelper.SumCashFromOrders(cycleOrders);
+        var totalDeliveryFee = cycleOrders.Sum(o => o.DeliveryFee ?? 0);
+        var avgTime = CalculateAverageDeliveryTimeMinutes(cycleOrders);
         var cashToDeliver = totalCash + baseAmount - totalAdvances;
         var currentBalance = cashToDeliver;
-
-        var colDateOnly = DateOnly.FromDateTime(
-            request.Date?.Date ?? ColombiaTimeHelper.GetNowInColombia().Date);
-        var dayState = await _db.DeliverymanDayStates
-            .AsNoTracking()
-            .FirstOrDefaultAsync(
-                s => s.BranchId == branchId
-                     && s.DeliverymanId == request.DeliverymanId
-                     && s.Date == colDateOnly,
-                cancellationToken);
 
         var stats = new DeliverymanDayStatsDto
         {
             DeliverymanId = deliveryman.Id,
             DeliverymanName = deliveryman.Name,
-            OrdersCount = orders.Count,
+            OrdersCount = cycleOrders.Count,
             TotalCollected = totalCash,
             TotalAdvances = totalAdvances,
             TotalDeliveryFee = totalDeliveryFee,
@@ -115,16 +146,52 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
             CurrentBalance = currentBalance,
             AverageDeliveryTimeMinutes = avgTime,
             DayBlocked = dayState?.Blocked ?? false,
-            LiquidationMode = dayState?.LiquidationMode ?? DeliverymanDayLiquidationMode.None
+            LiquidationMode = dayState?.LiquidationMode ?? DeliverymanDayLiquidationMode.None,
+            OrdersOnTheWayCount = onTheWayResult.TotalCount
         };
 
-        // 5. Mapear pedidos a DTOs
-        var orderDtos = orders.Select(o => _mapper.Map<OrderDto>(o)).ToList();
+        // 5. Mapear pedidos a DTOs (solo ciclo)
+        var orderDtos = cycleOrders.Select(o => _mapper.Map<OrderDto>(o)).ToList();
+
+        // 6. Resumen del día completo (sin filtro de ciclo) — referencia, no sustituye el cuadre del ciclo
+        var fullDayOrdersList = DeliverymanSettlementCycleHelper.FilterOrdersForCycle(
+            orders, fromDate, toDate, null, useSettlementCycle: false);
+        var fullDayAdvances = await _advanceRepository.GetTotalAdvancesForSettlementCycleAsync(
+            request.DeliverymanId,
+            fromDate,
+            toDate,
+            lastLiquidationAtUtc: null,
+            useSettlementCycle: false);
+
+        var fullDayCash = DeliverymanSettlementCycleHelper.SumCashFromOrders(fullDayOrdersList);
+        var fullDayDeliveryFee = fullDayOrdersList.Sum(o => o.DeliveryFee ?? 0);
+        var fullDayAvgTime = CalculateAverageDeliveryTimeMinutes(fullDayOrdersList);
+        var fullDayCashToDeliver = fullDayCash + baseAmount - fullDayAdvances;
+        var fullDayStats = new DeliverymanDayStatsDto
+        {
+            DeliverymanId = deliveryman.Id,
+            DeliverymanName = deliveryman.Name,
+            OrdersCount = fullDayOrdersList.Count,
+            TotalCollected = fullDayCash,
+            TotalAdvances = fullDayAdvances,
+            TotalDeliveryFee = fullDayDeliveryFee,
+            CashToDeliver = fullDayCashToDeliver,
+            BaseAmount = baseAmount,
+            CurrentBalance = fullDayCashToDeliver,
+            AverageDeliveryTimeMinutes = fullDayAvgTime,
+            DayBlocked = dayState?.Blocked ?? false,
+            LiquidationMode = dayState?.LiquidationMode ?? DeliverymanDayLiquidationMode.None,
+            OrdersOnTheWayCount = onTheWayResult.TotalCount
+        };
+
+        var fullDayOrderDtos = fullDayOrdersList.Select(o => _mapper.Map<OrderDto>(o)).ToList();
 
         return new DeliverymanDaySummaryDto
         {
             Stats = stats,
-            Orders = orderDtos
+            Orders = orderDtos,
+            FullDayStats = fullDayStats,
+            FullDayOrders = fullDayOrderDtos
         };
     }
 
@@ -149,16 +216,11 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
         return (fromUtc, toUtc);
     }
 
-    private static decimal CalculateTotalCash(List<Order> orders)
+    private static bool IsMultiDaySummaryRequest(GetDeliverymanDaySummaryQuery request)
     {
-        decimal total = 0;
-        foreach (var order in orders)
-        {
-            var bankTotal = order.BankPayments?.Sum(bp => bp.Amount) ?? 0;
-            var appTotal = order.AppPayments?.Sum(ap => ap.Amount) ?? 0;
-            total += order.Total - bankTotal - appTotal;
-        }
-        return total;
+        if (request.FromDate.HasValue && request.ToDate.HasValue)
+            return request.FromDate.Value.Date != request.ToDate.Value.Date;
+        return false;
     }
 
     private static int CalculateAverageDeliveryTimeMinutes(List<Order> orders)
