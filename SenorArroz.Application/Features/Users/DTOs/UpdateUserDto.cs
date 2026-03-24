@@ -1,4 +1,4 @@
-﻿using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Application.Features.Users.DTOs
 {
@@ -9,5 +9,8 @@ namespace SenorArroz.Application.Features.Users.DTOs
         public string Phone { get; set; } = string.Empty;
         public UserRole Role { get; set; }
         public bool Active { get; set; }
+
+        /// <summary>Nueva sucursal (solo aplica si el actor es superadmin).</summary>
+        public int? BranchId { get; set; }
     }
 }

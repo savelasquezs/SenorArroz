@@ -1,6 +1,8 @@
-﻿// SenorArroz.Application/Features/Users/Commands/UpdateUserHandler.cs
+// SenorArroz.Application/Features/Users/Commands/UpdateUserHandler.cs
 using AutoMapper;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -11,11 +13,19 @@ namespace SenorArroz.Application.Features.Users.Commands
     {
         private readonly IUserRepository _userRepository;
         private readonly IMapper _mapper;
+        private readonly ICurrentUser _currentUser;
+        private readonly IApplicationDbContext _context;
 
-        public UpdateUserHandler(IUserRepository userRepository, IMapper mapper)
+        public UpdateUserHandler(
+            IUserRepository userRepository,
+            IMapper mapper,
+            ICurrentUser currentUser,
+            IApplicationDbContext context)
         {
             _userRepository = userRepository;
             _mapper = mapper;
+            _currentUser = currentUser;
+            _context = context;
         }
 
         public async Task<UserDto> Handle(UpdateUserCommand request, CancellationToken cancellationToken)
@@ -33,13 +43,30 @@ namespace SenorArroz.Application.Features.Users.Commands
                 throw new BusinessException($"Ya existe otro usuario con el email '{request.UserData.Email}'");
             }
 
-            // 3. Mapear los cambios al usuario existente
+            // 3. Mapear los cambios al usuario existente (BranchId se ignora en el perfil de AutoMapper)
             _mapper.Map(request.UserData, existingUser);
 
-            // 4. Actualizar en la base de datos
+            // 4. Cambio de sucursal: solo superadmin
+            if (request.UserData.BranchId.HasValue)
+            {
+                if (!string.Equals(_currentUser.Role, "superadmin", StringComparison.OrdinalIgnoreCase))
+                    throw new BusinessException("Solo el superadministrador puede cambiar la sucursal de un usuario");
+
+                var newBranchId = request.UserData.BranchId.Value;
+                if (newBranchId <= 0)
+                    throw new BusinessException("Sucursal inválida");
+
+                var branchExists = await _context.Branches.AnyAsync(b => b.Id == newBranchId, cancellationToken);
+                if (!branchExists)
+                    throw new NotFoundException($"Sucursal con ID {newBranchId} no encontrada");
+
+                existingUser.BranchId = newBranchId;
+            }
+
+            // 5. Actualizar en la base de datos
             var updatedUser = await _userRepository.UpdateAsync(existingUser, cancellationToken);
 
-            // 5. Retornar DTO
+            // 6. Retornar DTO
             return _mapper.Map<UserDto>(updatedUser);
         }
     }
