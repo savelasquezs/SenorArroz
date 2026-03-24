@@ -13,49 +13,87 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
 {
     private readonly IDeliverymanAdvanceRepository _advanceRepository;
     private readonly IUserRepository _userRepository;
+    private readonly IBankRepository _bankRepository;
+    private readonly IExpenseHeaderRepository _expenseHeaderRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
 
     public CreateAdvanceHandler(
         IDeliverymanAdvanceRepository advanceRepository,
         IUserRepository userRepository,
+        IBankRepository bankRepository,
+        IExpenseHeaderRepository expenseHeaderRepository,
         IMapper mapper,
         ICurrentUser currentUser)
     {
         _advanceRepository = advanceRepository;
         _userRepository = userRepository;
+        _bankRepository = bankRepository;
+        _expenseHeaderRepository = expenseHeaderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
     }
 
     public async Task<DeliverymanAdvanceDto> Handle(CreateAdvanceCommand request, CancellationToken cancellationToken)
     {
-        // 1. Validar que el deliveryman existe
-        var deliveryman = await _userRepository.GetByIdAsync(request.Advance.DeliverymanId);
+        var deliveryman = await _userRepository.GetByIdAsync(request.Advance.DeliverymanId, cancellationToken);
         if (deliveryman == null)
             throw new BusinessException("El domiciliario no existe");
 
-        // 2. Validar que es rol Deliveryman
         if (deliveryman.Role != UserRole.Deliveryman)
             throw new BusinessException("El usuario especificado no es un domiciliario");
 
-        // 3. Validar que está activo
         if (!deliveryman.Active)
             throw new BusinessException("El domiciliario no está activo");
 
-        // 4. Validar acceso a sucursal
         if (_currentUser.Role != "superadmin" && deliveryman.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para crear abonos en esta sucursal");
 
-        // 5. Validar monto > 0
         if (request.Advance.Amount <= 0)
             throw new BusinessException("El monto debe ser mayor a cero");
 
-        // Crear el abono
+        var method = request.Advance.PaymentMethod;
+
+        if (method == DeliverymanAdvancePaymentMethod.Cash)
+        {
+            if (request.Advance.BankId.HasValue || request.Advance.ExpenseHeaderId.HasValue)
+                throw new BusinessException("Abono en efectivo no debe incluir banco ni gasto");
+        }
+        else if (method == DeliverymanAdvancePaymentMethod.BankTransfer)
+        {
+            if (!request.Advance.BankId.HasValue)
+                throw new BusinessException("La transferencia requiere banco");
+            if (request.Advance.ExpenseHeaderId.HasValue)
+                throw new BusinessException("La transferencia no debe incluir gasto vinculado");
+
+            var bank = await _bankRepository.GetByIdAsync(request.Advance.BankId.Value);
+            if (bank == null || bank.BranchId != deliveryman.BranchId)
+                throw new BusinessException("Banco inválido para esta sucursal");
+        }
+        else if (method == DeliverymanAdvancePaymentMethod.ExpenseOffset)
+        {
+            if (!request.Advance.ExpenseHeaderId.HasValue)
+                throw new BusinessException("El abono por gasto requiere expenseHeaderId");
+            if (request.Advance.BankId.HasValue)
+                throw new BusinessException("El abono por gasto no debe incluir banco");
+
+            var expense = await _expenseHeaderRepository.GetByIdWithDetailsAsync(request.Advance.ExpenseHeaderId.Value);
+            if (expense == null || expense.BranchId != deliveryman.BranchId)
+                throw new BusinessException("Gasto no encontrado en esta sucursal");
+            if (expense.DeliverymanId != deliveryman.Id)
+                throw new BusinessException("El gasto no está asociado a este domiciliario");
+            var expenseTotal = expense.Total ?? 0;
+            if (Math.Abs(expenseTotal - request.Advance.Amount) > 0.02m)
+                throw new BusinessException("El monto del abono debe coincidir con el total del gasto");
+        }
+
         var advance = new DeliverymanAdvance
         {
             DeliverymanId = request.Advance.DeliverymanId,
             Amount = request.Advance.Amount,
+            PaymentMethod = method,
+            BankId = method == DeliverymanAdvancePaymentMethod.BankTransfer ? request.Advance.BankId : null,
+            ExpenseHeaderId = method == DeliverymanAdvancePaymentMethod.ExpenseOffset ? request.Advance.ExpenseHeaderId : null,
             Notes = request.Advance.Notes,
             CreatedBy = _currentUser.Id,
             BranchId = deliveryman.BranchId
@@ -65,4 +103,3 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
         return _mapper.Map<DeliverymanAdvanceDto>(created);
     }
 }
-

@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using SenorArroz.Domain.Entities;
 
 namespace SenorArroz.Application.Common.Interfaces
 {
     public interface IApplicationDbContext
     {
+        DatabaseFacade Database { get; }
         DbSet<Address> Addresses { get; set; }
 
         DbSet<App> Apps { get; set; }
@@ -26,6 +28,8 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<Customer> Customers { get; set; }
 
         DbSet<DeliverymanAdvance> DeliverymanAdvances { get; set; }
+
+        DbSet<DeliverymanDayState> DeliverymanDayStates { get; set; }
 
         DbSet<Expense> Expenses { get; set; }
 

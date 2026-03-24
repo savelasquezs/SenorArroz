@@ -70,9 +70,11 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 (decimal)(eh.Total ?? 0) - eh.ExpenseBankPayments.Sum(ebp => ebp.Amount),
                 cancellationToken);
 
-        // Adelantos a domiciliarios
-        var advances = await _context.DeliverymanAdvances
-            .Where(a => a.BranchId == branchId && a.CreatedAt > since && a.CreatedAt <= now)
+        // Abonos de domiciliarios en efectivo (ingreso a caja)
+        var advancesCash = await _context.DeliverymanAdvances
+            .Where(a => a.BranchId == branchId
+                && a.CreatedAt > since && a.CreatedAt <= now
+                && a.PaymentMethod == DeliverymanAdvancePaymentMethod.Cash)
             .SumAsync(a => a.Amount, cancellationToken);
 
         // Abonos en efectivo de reservas recibidos en este período
@@ -92,7 +94,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 && d.Order.UpdatedAt > since && d.Order.UpdatedAt <= now)
             .SumAsync(d => d.Amount, cancellationToken);
 
-        var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses - advances;
+        var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses - advancesCash;
 
         // --- BANCOS ---
         bool isAdmin = _currentUser.Role == "superadmin" || _currentUser.Role == "admin";
@@ -146,7 +148,14 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                     && d.Order.UpdatedAt > since && d.Order.UpdatedAt <= now)
                 .SumAsync(d => d.Amount, cancellationToken);
 
-            var expectedBalance = openingBalance + bankPaymentsIn + bankDepositPaymentsIn - bankDepositsAlreadyCounted - expensePaymentsOut + incomingTransfers - outgoingTransfers;
+            var deliverymanBankIn = await _context.DeliverymanAdvances
+                .Where(a => a.BranchId == branchId
+                    && a.BankId == bank.Id
+                    && a.PaymentMethod == DeliverymanAdvancePaymentMethod.BankTransfer
+                    && a.CreatedAt > since && a.CreatedAt <= now)
+                .SumAsync(a => a.Amount, cancellationToken);
+
+            var expectedBalance = openingBalance + bankPaymentsIn + bankDepositPaymentsIn - bankDepositsAlreadyCounted - expensePaymentsOut + incomingTransfers - outgoingTransfers + deliverymanBankIn;
 
             bankExpected.Add(new BankExpectedBalanceDto
             {
@@ -164,7 +173,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             CashFromOrders = cashFromOrders,
             CashDeposits = cashDeposits,
             CashExpenses = cashExpenses,
-            Advances = advances,
+            Advances = advancesCash,
             AsOf = now,
             LastClosureAt = lastClosure?.ClosedAt,
             Banks = bankExpected

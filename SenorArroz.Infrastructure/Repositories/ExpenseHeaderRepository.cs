@@ -30,6 +30,7 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
             .Include(eh => eh.Branch)
             .Include(eh => eh.Supplier)
             .Include(eh => eh.CreatedBy)
+            .Include(eh => eh.Deliveryman)
             .Include(eh => eh.ExpenseDetails)
                 .ThenInclude(ed => ed.Expense)
                     .ThenInclude(e => e.Category)
@@ -90,6 +91,7 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
             .Include(eh => eh.Branch)
             .Include(eh => eh.Supplier)
             .Include(eh => eh.CreatedBy)
+            .Include(eh => eh.Deliveryman)
             .FirstOrDefaultAsync(eh => eh.Id == id);
     }
 
@@ -99,6 +101,7 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
             .Include(eh => eh.Branch)
             .Include(eh => eh.Supplier)
             .Include(eh => eh.CreatedBy)
+            .Include(eh => eh.Deliveryman)
             .Include(eh => eh.ExpenseDetails)
                 .ThenInclude(ed => ed.Expense)
                     .ThenInclude(e => e.Category)

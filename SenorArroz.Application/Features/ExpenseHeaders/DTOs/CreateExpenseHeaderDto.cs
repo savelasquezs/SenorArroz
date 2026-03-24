@@ -3,6 +3,10 @@ namespace SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 public class CreateExpenseHeaderDto
 {
     public int SupplierId { get; set; }
+
+    /// <summary>Domiciliario al que se imputa el gasto (liquidación).</summary>
+    public int? DeliverymanId { get; set; }
+
     public List<CreateExpenseDetailDto> ExpenseDetails { get; set; } = new();
     public List<CreateExpenseBankPaymentDto>? ExpenseBankPayments { get; set; }
 }

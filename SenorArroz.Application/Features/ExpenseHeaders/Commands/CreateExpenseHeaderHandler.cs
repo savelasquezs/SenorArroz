@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -80,12 +81,22 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             }
         }
 
+        if (request.ExpenseHeader.DeliverymanId.HasValue)
+        {
+            var dm = await _context.Users.FindAsync(new object[] { request.ExpenseHeader.DeliverymanId.Value }, cancellationToken);
+            if (dm == null || dm.Role != UserRole.Deliveryman || !dm.Active)
+                throw new BusinessException("Domiciliario inválido");
+            if (dm.BranchId != branchId)
+                throw new BusinessException("El domiciliario no pertenece a tu sucursal");
+        }
+
         // Crear ExpenseHeader
         var expenseHeader = new ExpenseHeader
         {
             BranchId = branchId,
             SupplierId = request.ExpenseHeader.SupplierId,
             CreatedById = _currentUser.Id,
+            DeliverymanId = request.ExpenseHeader.DeliverymanId,
             ExpenseDetails = request.ExpenseHeader.ExpenseDetails.Select(ed => new ExpenseDetail
             {
                 ExpenseId = ed.ExpenseId,

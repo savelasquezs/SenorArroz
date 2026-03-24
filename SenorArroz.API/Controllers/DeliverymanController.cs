@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Features.DeliverymanAdvances.Commands;
 using SenorArroz.Application.Features.DeliverymanAdvances.DTOs;
+using SenorArroz.Application.Features.Deliverymen.Commands;
+using SenorArroz.Application.Features.Deliverymen.DTOs;
 using SenorArroz.Application.Features.Deliverymen.Queries;
 using SenorArroz.Application.Features.Orders.Queries;
 using SenorArroz.Domain.Enums;
@@ -57,17 +59,45 @@ public class DeliverymanController : ControllerBase
         int id,
         [FromQuery] DateTime? date = null,
         [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null)
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] decimal? baseAmount = null)
     {
         var query = new GetDeliverymanDaySummaryQuery
         {
             DeliverymanId = id,
             Date = date,
             FromDate = fromDate,
-            ToDate = toDate
+            ToDate = toDate,
+            BaseAmount = baseAmount
         };
         var result = await _mediator.Send(query);
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Liquidación del día: crea abonos (efectivo / transferencia / gasto) y actualiza estado del día.
+    /// </summary>
+    [HttpPost("{id}/settle-day")]
+    [Authorize(Roles = "Superadmin,Admin,Cashier")]
+    public async Task<ActionResult<SettleDeliverymanDayResultDto>> SettleDay(int id, [FromBody] SettleDeliverymanDayDto dto)
+    {
+        var result = await _mediator.Send(new SettleDeliverymanDayCommand
+        {
+            DeliverymanId = id,
+            Settlement = dto
+        });
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Desbloquea la tarjeta del domiciliario para el día (tras liquidación total).
+    /// </summary>
+    [HttpPost("{id}/unlock-day")]
+    [Authorize(Roles = "Superadmin,Admin,Cashier")]
+    public async Task<ActionResult> UnlockDay(int id, [FromQuery] string date)
+    {
+        await _mediator.Send(new UnlockDeliverymanDayCommand { DeliverymanId = id, Date = date });
+        return NoContent();
     }
 
     /// <summary>

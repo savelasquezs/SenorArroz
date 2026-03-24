@@ -29,6 +29,7 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
             .Include(da => da.Deliveryman)
             .Include(da => da.Creator)
             .Include(da => da.Branch)
+            .Include(da => da.Bank)
             .AsQueryable();
 
         // Filtros
@@ -92,6 +93,7 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
             .Include(da => da.Deliveryman)
             .Include(da => da.Creator)
             .Include(da => da.Branch)
+            .Include(da => da.Bank)
             .FirstOrDefaultAsync(da => da.Id == id);
     }
 

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Application.Features.Deliverymen.DTOs;
 
@@ -16,4 +17,10 @@ public class DeliverymanDayStatsDto
     public decimal CurrentBalance { get; set; }
     [JsonPropertyName("averageDeliveryTime")]
     public int AverageDeliveryTimeMinutes { get; set; }
+
+    /// <summary>Tarjeta bloqueada (liquidación total hasta desbloqueo).</summary>
+    public bool DayBlocked { get; set; }
+
+    [JsonPropertyName("liquidationMode")]
+    public DeliverymanDayLiquidationMode LiquidationMode { get; set; }
 }

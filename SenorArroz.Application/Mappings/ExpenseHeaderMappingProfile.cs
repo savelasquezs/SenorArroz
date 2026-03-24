@@ -14,6 +14,7 @@ public class ExpenseHeaderMappingProfile : Profile
             .ForMember(dest => dest.SupplierName, opt => opt.MapFrom(src => src.Supplier.Name))
             .ForMember(dest => dest.SupplierPhone, opt => opt.MapFrom(src => src.Supplier.Phone))
             .ForMember(dest => dest.CreatedByName, opt => opt.MapFrom(src => src.CreatedBy.Name))
+            .ForMember(dest => dest.DeliverymanName, opt => opt.MapFrom(src => src.Deliveryman != null ? src.Deliveryman.Name : null))
             .ForMember(dest => dest.ExpenseDetails, opt => opt.MapFrom(src => src.ExpenseDetails))
             .ForMember(dest => dest.ExpenseBankPayments, opt => opt.MapFrom(src => src.ExpenseBankPayments))
             .ForMember(dest => dest.CategoryNames, opt => opt.Ignore()) // Se calcula en el handler

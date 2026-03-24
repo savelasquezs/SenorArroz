@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.DeliverymanAdvances.DTOs;
@@ -19,6 +20,7 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
     private readonly IUserRepository _userRepository;
     private readonly IOrderRepository _orderRepository;
     private readonly IDeliverymanAdvanceRepository _advanceRepository;
+    private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IMapper _mapper;
 
@@ -26,12 +28,14 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
         IUserRepository userRepository,
         IOrderRepository orderRepository,
         IDeliverymanAdvanceRepository advanceRepository,
+        IApplicationDbContext db,
         ICurrentUser currentUser,
         IMapper mapper)
     {
         _userRepository = userRepository;
         _orderRepository = orderRepository;
         _advanceRepository = advanceRepository;
+        _db = db;
         _currentUser = currentUser;
         _mapper = mapper;
     }
@@ -115,8 +119,33 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
                 CashToDeliver = cashToDeliver,
                 BaseAmount = baseAmount,
                 CurrentBalance = currentBalance,
-                AverageDeliveryTimeMinutes = avgTime
+                AverageDeliveryTimeMinutes = avgTime,
+                DayBlocked = false,
+                LiquidationMode = DeliverymanDayLiquidationMode.None
             });
+        }
+
+        var isSingleCalendarDay = !(request.FromDate.HasValue && request.ToDate.HasValue);
+        if (isSingleCalendarDay)
+        {
+            var colDate = request.Date?.Date ?? ColombiaTimeHelper.GetNowInColombia().Date;
+            var colDateOnly = DateOnly.FromDateTime(colDate);
+            var states = await _db.DeliverymanDayStates
+                .AsNoTracking()
+                .Where(s => s.Date == colDateOnly)
+                .ToListAsync(cancellationToken);
+            var stateByKey = states.ToDictionary(s => (s.BranchId, s.DeliverymanId));
+            var dmById = deliverymen.ToDictionary(d => d.Id);
+            foreach (var st in deliverymenStats)
+            {
+                if (!dmById.TryGetValue(st.DeliverymanId, out var dmUser))
+                    continue;
+                if (stateByKey.TryGetValue((dmUser.BranchId, st.DeliverymanId), out var ds))
+                {
+                    st.DayBlocked = ds.Blocked;
+                    st.LiquidationMode = ds.LiquidationMode;
+                }
+            }
         }
 
         return new DailyOverviewDto

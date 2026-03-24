@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Deliverymen.DTOs;
@@ -18,6 +19,7 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
     private readonly IUserRepository _userRepository;
     private readonly IOrderRepository _orderRepository;
     private readonly IDeliverymanAdvanceRepository _advanceRepository;
+    private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IMapper _mapper;
 
@@ -25,12 +27,14 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
         IUserRepository userRepository,
         IOrderRepository orderRepository,
         IDeliverymanAdvanceRepository advanceRepository,
+        IApplicationDbContext db,
         ICurrentUser currentUser,
         IMapper mapper)
     {
         _userRepository = userRepository;
         _orderRepository = orderRepository;
         _advanceRepository = advanceRepository;
+        _db = db;
         _currentUser = currentUser;
         _mapper = mapper;
     }
@@ -79,12 +83,24 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
             fromDate,
             toDate);
 
+        var baseAmount = request.BaseAmount is > 0 ? request.BaseAmount.Value : DefaultBaseAmount;
+
         // 4. Calcular stats
         var totalCash = CalculateTotalCash(orders);
         var totalDeliveryFee = orders.Sum(o => o.DeliveryFee ?? 0);
         var avgTime = CalculateAverageDeliveryTimeMinutes(orders);
-        var cashToDeliver = totalCash + DefaultBaseAmount - totalAdvances;
+        var cashToDeliver = totalCash + baseAmount - totalAdvances;
         var currentBalance = cashToDeliver;
+
+        var colDateOnly = DateOnly.FromDateTime(
+            request.Date?.Date ?? ColombiaTimeHelper.GetNowInColombia().Date);
+        var dayState = await _db.DeliverymanDayStates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                s => s.BranchId == branchId
+                     && s.DeliverymanId == request.DeliverymanId
+                     && s.Date == colDateOnly,
+                cancellationToken);
 
         var stats = new DeliverymanDayStatsDto
         {
@@ -95,9 +111,11 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
             TotalAdvances = totalAdvances,
             TotalDeliveryFee = totalDeliveryFee,
             CashToDeliver = cashToDeliver,
-            BaseAmount = DefaultBaseAmount,
+            BaseAmount = baseAmount,
             CurrentBalance = currentBalance,
-            AverageDeliveryTimeMinutes = avgTime
+            AverageDeliveryTimeMinutes = avgTime,
+            DayBlocked = dayState?.Blocked ?? false,
+            LiquidationMode = dayState?.LiquidationMode ?? DeliverymanDayLiquidationMode.None
         };
 
         // 5. Mapear pedidos a DTOs
