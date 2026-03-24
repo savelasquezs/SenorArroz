@@ -32,6 +32,9 @@ public class GetDeliverymanAssignedBranchSummaryHandler
         var query = _context.Orders.AsNoTracking()
             .Where(o => o.DeliveryManId == request.DeliveryManId);
 
+        if (request.Status.HasValue)
+            query = query.Where(o => o.Status == request.Status.Value);
+
         if (fromUtc.HasValue)
             query = query.Where(o => o.CreatedAt >= fromUtc.Value);
         if (toUtc.HasValue)
