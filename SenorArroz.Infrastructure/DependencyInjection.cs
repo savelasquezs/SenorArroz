@@ -50,6 +50,7 @@ public static class DependencyInjection
 
         // Bank and Payment Repositories
         services.AddScoped<IBankRepository, BankRepository>();
+        services.AddScoped<IBankLedgerService, BankLedgerService>();
         services.AddScoped<IAppRepository, AppRepository>();
         services.AddScoped<IBankPaymentRepository, BankPaymentRepository>();
         services.AddScoped<IAppPaymentRepository, AppPaymentRepository>();

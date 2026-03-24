@@ -11,12 +11,18 @@ namespace SenorArroz.Application.Features.Banks.Queries;
 public class GetBankDetailHandler : IRequestHandler<GetBankDetailQuery, BankDetailDto?>
 {
     private readonly IBankRepository _bankRepository;
+    private readonly IBankLedgerService _bankLedgerService;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
 
-    public GetBankDetailHandler(IBankRepository bankRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetBankDetailHandler(
+        IBankRepository bankRepository,
+        IBankLedgerService bankLedgerService,
+        IMapper mapper,
+        ICurrentUser currentUser)
     {
         _bankRepository = bankRepository;
+        _bankLedgerService = bankLedgerService;
         _mapper = mapper;
         _currentUser = currentUser;
     }
@@ -43,7 +49,8 @@ public class GetBankDetailHandler : IRequestHandler<GetBankDetailQuery, BankDeta
         bankDetailDto.ActiveApps = await _bankRepository.GetActiveAppsAsync(bank.Id);
         bankDetailDto.TotalBankPayments = await _bankRepository.GetTotalBankPaymentsAsync(bank.Id);
         bankDetailDto.TotalExpenseBankPayments = await _bankRepository.GetTotalExpenseBankPaymentsAsync(bank.Id);
-        bankDetailDto.CurrentBalance = await _bankRepository.GetCurrentBalanceAsync(bank.Id);
+        bankDetailDto.BalanceBreakdown = await _bankLedgerService.GetRunningBalanceBreakdownAsync(bank.Id, cancellationToken);
+        bankDetailDto.CurrentBalance = bankDetailDto.BalanceBreakdown.NetBalance;
 
         return bankDetailDto;
     }

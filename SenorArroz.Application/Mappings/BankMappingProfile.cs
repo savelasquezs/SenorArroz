@@ -21,7 +21,8 @@ public class BankMappingProfile : Profile
             .ForMember(dest => dest.ActiveApps, opt => opt.Ignore())
             .ForMember(dest => dest.TotalBankPayments, opt => opt.Ignore())
             .ForMember(dest => dest.TotalExpenseBankPayments, opt => opt.Ignore())
-            .ForMember(dest => dest.CurrentBalance, opt => opt.Ignore());
+            .ForMember(dest => dest.CurrentBalance, opt => opt.Ignore())
+            .ForMember(dest => dest.BalanceBreakdown, opt => opt.Ignore());
 
         CreateMap<CreateBankDto, Bank>();
         CreateMap<UpdateBankDto, Bank>();

@@ -238,10 +238,8 @@ public class BankRepository : IBankRepository
         return totalIncome - totalExpenses - outgoing + incoming + deliverymanTransferIn;
     }
 
-    /// <summary>
-    /// Ingresos al banco por abonos/liquidaciones de domiciliario vía transferencia (paridad con cuadre de caja).
-    /// </summary>
-    private async Task<decimal> GetTotalDeliverymanBankTransferInAsync(int bankId, DateTime? asOf)
+    /// <inheritdoc />
+    public async Task<decimal> GetTotalDeliverymanBankTransferInAsync(int bankId, DateTime? asOf = null)
     {
         var query = _context.DeliverymanAdvances.Where(a =>
             a.BankId == bankId && a.PaymentMethod == DeliverymanAdvancePaymentMethod.BankTransfer);
