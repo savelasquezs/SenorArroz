@@ -33,4 +33,24 @@ public class BankLedgerService : IBankLedgerService
             NetBalance = net
         };
     }
+
+    public async Task<BankBalanceBreakdownDto> GetPeriodBalanceBreakdownAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default)
+    {
+        var bankPaymentsIn = await _bankRepository.GetTotalBankPaymentsInPeriodAsync(bankId, fromUtc, toUtc);
+        var expenseOut = await _bankRepository.GetTotalExpenseBankPaymentsInPeriodAsync(bankId, fromUtc, toUtc);
+        var outgoing = await _bankRepository.GetTotalOutgoingTransfersInPeriodAsync(bankId, fromUtc, toUtc);
+        var incoming = await _bankRepository.GetTotalIncomingTransfersInPeriodAsync(bankId, fromUtc, toUtc);
+        var deliverymanIn = await _bankRepository.GetTotalDeliverymanBankTransferInPeriodAsync(bankId, fromUtc, toUtc);
+        var net = bankPaymentsIn - expenseOut - outgoing + incoming + deliverymanIn;
+
+        return new BankBalanceBreakdownDto
+        {
+            BankPaymentsIn = bankPaymentsIn,
+            ExpenseBankPaymentsOut = expenseOut,
+            OutgoingTransfers = outgoing,
+            IncomingTransfers = incoming,
+            DeliverymanBankTransferIn = deliverymanIn,
+            NetBalance = net
+        };
+    }
 }

@@ -1,6 +1,7 @@
 // SenorArroz.Application/Features/BankPayments/Queries/GetBankPaymentsHandler.cs
 using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BankPayments.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -23,36 +24,35 @@ public class GetBankPaymentsHandler : IRequestHandler<GetBankPaymentsQuery, Page
 
     public async Task<PagedResult<BankPaymentDto>> Handle(GetBankPaymentsQuery request, CancellationToken cancellationToken)
     {
+        int? restrictBranch = _currentUser.Role != "superadmin"
+            ? _currentUser.BranchId
+            : request.BranchId;
+
+        var (fromUtc, toUtc) = ColombiaTimeHelper.NormalizeApiDateFiltersToUtc(request.FromDate, request.ToDate);
+
         var pagedBankPayments = await _bankPaymentRepository.GetPagedAsync(
             request.OrderId,
             request.BankId,
             request.Verified,
-            request.FromDate,
-            request.ToDate,
+            fromUtc,
+            toUtc,
             request.Page,
             request.PageSize,
             request.SortBy,
-            request.SortOrder);
+            request.SortOrder,
+            restrictToBankBranchId: restrictBranch);
 
-        var bankPaymentDtos = new List<BankPaymentDto>();
-
-        foreach (var bankPayment in pagedBankPayments.Items)
-        {
-            // Check if user has access to this bank payment's branch
-            if (_currentUser.Role != "superadmin" && bankPayment.Bank.BranchId != _currentUser.BranchId)
-                continue;
-
-            var bankPaymentDto = _mapper.Map<BankPaymentDto>(bankPayment);
-            bankPaymentDtos.Add(bankPaymentDto);
-        }
+        var bankPaymentDtos = pagedBankPayments.Items
+            .Select(bp => _mapper.Map<BankPaymentDto>(bp))
+            .ToList();
 
         return new PagedResult<BankPaymentDto>
         {
             Items = bankPaymentDtos,
-            TotalCount = bankPaymentDtos.Count,
-            Page = request.Page,
-            PageSize = request.PageSize,
-            TotalPages = (int)Math.Ceiling(bankPaymentDtos.Count / (double)request.PageSize)
+            TotalCount = pagedBankPayments.TotalCount,
+            Page = pagedBankPayments.Page,
+            PageSize = pagedBankPayments.PageSize,
+            TotalPages = pagedBankPayments.TotalPages
         };
     }
 }

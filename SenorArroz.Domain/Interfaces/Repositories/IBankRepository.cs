@@ -40,4 +40,12 @@ public interface IBankRepository
 
     Task<decimal> GetCurrentBalanceAsync(int bankId);
     Task<decimal> GetBalanceAsOfAsync(int bankId, DateTime asOf);
+
+    /// <summary>Totales en rango UTC [fromUtc, toUtc] inclusive por CreatedAt.</summary>
+    Task<decimal> GetTotalBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
+
+    Task<decimal> GetTotalExpenseBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
+    Task<decimal> GetTotalOutgoingTransfersInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
+    Task<decimal> GetTotalIncomingTransfersInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
+    Task<decimal> GetTotalDeliverymanBankTransferInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
 }
