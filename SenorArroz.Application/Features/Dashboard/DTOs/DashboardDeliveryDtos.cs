@@ -11,6 +11,12 @@ public class DashboardDeliveryResponseDto
     public List<string> EvolutionLabels { get; set; } = new();
     public List<int> EvolutionDeliveries { get; set; } = new();
     public List<int> EvolutionFees { get; set; } = new();
+
+    /// <summary>Ventas totales (suma <c>order.Total</c> pedidos entregados) por bucket, alineado con <see cref="EvolutionLabels"/>.</summary>
+    public List<long> EvolutionSalesTotals { get; set; } = new();
+
+    /// <summary>100 × suma fees domicilio / suma ventas entregadas en el periodo (pedidos entregados, todos los tipos).</summary>
+    public double PeriodFeeToSalesPercent { get; set; }
 }
 
 public class DeliverymanEfficiencyApiDto

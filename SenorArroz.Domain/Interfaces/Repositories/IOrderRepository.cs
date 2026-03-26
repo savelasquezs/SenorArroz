@@ -109,6 +109,16 @@ public interface IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Pedidos <b>entregados</b> en el rango (por <see cref="Order.UpdatedAt"/>), solo UpdatedAt + Total,
+    /// para alinear ventas diarias con la evolución de domicilios (fees vs ventas).
+    /// </summary>
+    Task<List<(DateTime UpdatedAt, int Total)>> GetDeliveredOrdersSalesTicksForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
     // Dashboard ventas
     Task<List<BranchSalesComparisonAggregate>> GetDashboardSalesComparisonAsync(
         int? branchId,

@@ -116,6 +116,7 @@ public class GetDashboardMainHandler : IRequestHandler<GetDashboardMainQuery, Da
             cancellationToken);
         var timeAggregates = DeliveryDashboardAggregator.Build(
             deliveredDeliveryOrders,
+            Array.Empty<(DateTime, int)>(),
             displayWindowStart,
             displayWindowEnd);
 

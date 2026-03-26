@@ -43,7 +43,13 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
             to,
             cancellationToken);
 
-        var agg = DeliveryDashboardAggregator.Build(orders, from, to);
+        var salesTicks = await _orderRepository.GetDeliveredOrdersSalesTicksForDashboardAsync(
+            branchFilter,
+            from,
+            to,
+            cancellationToken);
+
+        var agg = DeliveryDashboardAggregator.Build(orders, salesTicks, from, to);
 
         return new DashboardDeliveryResponseDto
         {
@@ -61,6 +67,8 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
             EvolutionLabels = agg.EvolutionLabels,
             EvolutionDeliveries = agg.EvolutionDeliveries,
             EvolutionFees = agg.EvolutionFees,
+            EvolutionSalesTotals = agg.EvolutionSalesTotals,
+            PeriodFeeToSalesPercent = agg.PeriodFeeToSalesPercent,
         };
     }
 

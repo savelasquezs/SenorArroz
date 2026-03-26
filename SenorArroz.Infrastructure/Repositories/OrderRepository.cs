@@ -979,6 +979,27 @@ public class OrderRepository : IOrderRepository
         return await q.ToListAsync(cancellationToken);
     }
 
+    public async Task<List<(DateTime UpdatedAt, int Total)>> GetDeliveredOrdersSalesTicksForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var q = _context.Orders
+            .AsNoTracking()
+            .Where(o =>
+                o.Status == OrderStatus.Delivered
+                && o.UpdatedAt >= fromUtc
+                && o.UpdatedAt <= toUtc);
+
+        if (branchId.HasValue)
+            q = q.Where(o => o.BranchId == branchId.Value);
+
+        return await q
+            .Select(o => new ValueTuple<DateTime, int>(o.UpdatedAt, o.Total))
+            .ToListAsync(cancellationToken);
+    }
+
     private IQueryable<Order> DashboardNonCancelledOrdersInRange(
         int? branchId,
         DateTime fromUtc,

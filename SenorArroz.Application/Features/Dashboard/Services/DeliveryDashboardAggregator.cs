@@ -14,17 +14,25 @@ public static class DeliveryDashboardAggregator
 
     public static DeliveryAggregatesDto Build(
         IReadOnlyList<Order> orders,
+        IReadOnlyList<(DateTime UpdatedAt, int Total)> salesTicks,
         DateTime fromUtc,
         DateTime toUtc)
     {
+        var (labels, counts, fees, sales) = BuildEvolution(orders, salesTicks, fromUtc, toUtc);
+        var totalFees = orders.Sum(o => (long)(o.DeliveryFee ?? 0));
+        var totalSales = salesTicks.Sum(t => (long)t.Total);
+        var periodPct = totalSales > 0 ? Math.Round(100d * totalFees / totalSales, 2) : 0d;
+
         if (orders.Count == 0)
         {
             return new DeliveryAggregatesDto(
                 0, 0,
                 new List<DeliverymanEfficiencyRowDto>(),
-                new List<string>(),
-                new List<int>(),
-                new List<int>());
+                labels,
+                counts,
+                fees,
+                sales,
+                periodPct);
         }
 
         var prepList = new List<double>();
@@ -57,7 +65,7 @@ public static class DeliveryDashboardAggregator
             {
                 var first = g.First();
                 var dm = first.DeliveryMan!;
-                var fees = g.Sum(x => x.DeliveryFee ?? 0);
+                var feesDm = g.Sum(x => x.DeliveryFee ?? 0);
                 var dMins = new List<double>();
                 foreach (var o in g)
                 {
@@ -74,14 +82,12 @@ public static class DeliveryDashboardAggregator
                     dm.Name ?? $"#{dm.Id}",
                     g.Count(),
                     dMins.Count > 0 ? Math.Round(dMins.Average(), 1) : avgDel,
-                    fees);
+                    feesDm);
             })
             .OrderByDescending(x => x.DeliveredCount)
             .ToList();
 
-        var (labels, counts, fees) = BuildEvolution(orders, fromUtc, toUtc);
-
-        return new DeliveryAggregatesDto(avgPrep, avgDel, byDriver, labels, counts, fees);
+        return new DeliveryAggregatesDto(avgPrep, avgDel, byDriver, labels, counts, fees, sales, periodPct);
     }
 
     private static Dictionary<string, DateTime> ParseStatusTimes(string json)
@@ -122,8 +128,9 @@ public static class DeliveryDashboardAggregator
         return null;
     }
 
-    private static (List<string> Labels, List<int> Counts, List<int> Fees) BuildEvolution(
+    private static (List<string> Labels, List<int> Counts, List<int> Fees, List<long> Sales) BuildEvolution(
         IReadOnlyList<Order> orders,
+        IReadOnlyList<(DateTime UpdatedAt, int Total)> salesTicks,
         DateTime fromUtc,
         DateTime toUtc)
     {
@@ -133,6 +140,7 @@ public static class DeliveryDashboardAggregator
         {
             var hourBuckets = new int[24];
             var hourFees = new int[24];
+            var hourSales = new long[24];
             foreach (var o in orders)
             {
                 var h = o.UpdatedAt.Hour;
@@ -140,16 +148,21 @@ public static class DeliveryDashboardAggregator
                 hourFees[h] += o.DeliveryFee ?? 0;
             }
 
+            foreach (var t in salesTicks)
+                hourSales[t.UpdatedAt.Hour] += t.Total;
+
             var labels = Enumerable.Range(0, 24).Select(h => $"{h:00}:00").ToList();
-            return (labels, hourBuckets.ToList(), hourFees.ToList());
+            return (labels, hourBuckets.ToList(), hourFees.ToList(), hourSales.ToList());
         }
 
         if (dayCount <= 45)
         {
             var byDay = orders.GroupBy(o => o.UpdatedAt.Date).ToDictionary(g => g.Key, g => g.ToList());
+            var byDaySales = salesTicks.GroupBy(t => t.UpdatedAt.Date).ToDictionary(g => g.Key, g => g.Sum(x => (long)x.Total));
             var labels = new List<string>();
             var counts = new List<int>();
             var feeTotals = new List<int>();
+            var salesTotals = new List<long>();
             for (var d = fromUtc.Date; d <= toUtc.Date; d = d.AddDays(1))
             {
                 labels.Add(d.ToString("ddd, d MMM", EsCo));
@@ -163,14 +176,15 @@ public static class DeliveryDashboardAggregator
                     counts.Add(list.Count);
                     feeTotals.Add(list.Sum(x => x.DeliveryFee ?? 0));
                 }
+
+                salesTotals.Add(byDaySales.TryGetValue(d, out var s) ? s : 0L);
             }
 
-            return (labels, counts, feeTotals);
+            return (labels, counts, feeTotals, salesTotals);
         }
 
         if (dayCount <= 120)
         {
-            // Semanas (lunes como inicio)
             var weekStarts = new Dictionary<DateTime, List<Order>>();
             foreach (var o in orders)
             {
@@ -184,9 +198,19 @@ public static class DeliveryDashboardAggregator
                 l.Add(o);
             }
 
+            var weekSales = new Dictionary<DateTime, long>();
+            foreach (var t in salesTicks)
+            {
+                var ds = StartOfWeekUtc(t.UpdatedAt.Date);
+                if (!weekSales.TryGetValue(ds, out var acc))
+                    acc = 0;
+                weekSales[ds] = acc + t.Total;
+            }
+
             var labels = new List<string>();
             var counts = new List<int>();
             var feeTotals = new List<int>();
+            var salesTotals = new List<long>();
             var cur = StartOfWeekUtc(fromUtc.Date);
             var end = toUtc.Date;
             while (cur <= end)
@@ -203,18 +227,23 @@ public static class DeliveryDashboardAggregator
                     feeTotals.Add(list.Sum(x => x.DeliveryFee ?? 0));
                 }
 
+                salesTotals.Add(weekSales.TryGetValue(cur, out var s) ? s : 0L);
                 cur = cur.AddDays(7);
             }
 
-            return (labels, counts, feeTotals);
+            return (labels, counts, feeTotals, salesTotals);
         }
 
         {
             var byMonth = orders.GroupBy(o => new DateTime(o.UpdatedAt.Year, o.UpdatedAt.Month, 1))
                 .ToDictionary(g => g.Key, g => g.ToList());
+            var byMonthSales = salesTicks
+                .GroupBy(t => new DateTime(t.UpdatedAt.Year, t.UpdatedAt.Month, 1))
+                .ToDictionary(g => g.Key, g => g.Sum(x => (long)x.Total));
             var labels = new List<string>();
             var counts = new List<int>();
             var feeTotals = new List<int>();
+            var salesTotals = new List<long>();
             for (var m = new DateTime(fromUtc.Year, fromUtc.Month, 1);
                  m <= toUtc.Date;
                  m = m.AddMonths(1))
@@ -230,9 +259,11 @@ public static class DeliveryDashboardAggregator
                     counts.Add(list.Count);
                     feeTotals.Add(list.Sum(x => x.DeliveryFee ?? 0));
                 }
+
+                salesTotals.Add(byMonthSales.TryGetValue(m, out var s) ? s : 0L);
             }
 
-            return (labels, counts, feeTotals);
+            return (labels, counts, feeTotals, salesTotals);
         }
     }
 
@@ -265,4 +296,6 @@ public record DeliveryAggregatesDto(
     List<DeliverymanEfficiencyRowDto> Deliverymen,
     List<string> EvolutionLabels,
     List<int> EvolutionDeliveries,
-    List<int> EvolutionFees);
+    List<int> EvolutionFees,
+    List<long> EvolutionSalesTotals,
+    double PeriodFeeToSalesPercent);
