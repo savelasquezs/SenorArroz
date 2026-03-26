@@ -962,6 +962,7 @@ public class OrderRepository : IOrderRepository
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? deliveryManId = null,
         CancellationToken cancellationToken = default)
     {
         var q = _context.Orders
@@ -975,6 +976,8 @@ public class OrderRepository : IOrderRepository
 
         if (branchId.HasValue)
             q = q.Where(o => o.BranchId == branchId.Value);
+        if (deliveryManId.HasValue)
+            q = q.Where(o => o.DeliveryManId == deliveryManId.Value);
 
         return await q.ToListAsync(cancellationToken);
     }
@@ -983,6 +986,7 @@ public class OrderRepository : IOrderRepository
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? deliveryManId = null,
         CancellationToken cancellationToken = default)
     {
         var q = _context.Orders
@@ -994,6 +998,12 @@ public class OrderRepository : IOrderRepository
 
         if (branchId.HasValue)
             q = q.Where(o => o.BranchId == branchId.Value);
+        if (deliveryManId.HasValue)
+        {
+            q = q.Where(o =>
+                o.Type == OrderType.Delivery
+                && o.DeliveryManId == deliveryManId.Value);
+        }
 
         return await q
             .Select(o => new ValueTuple<DateTime, int>(o.UpdatedAt, o.Total))

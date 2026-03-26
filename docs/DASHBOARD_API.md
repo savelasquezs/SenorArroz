@@ -28,7 +28,8 @@ Los datos del dashboard **no** se exponen en un único endpoint. Cada vista del 
 
 | `GET /api/dashboard/main` | **Principal** | `branchId?`, `activityLimit?`, `kpiFrom?` + `kpiTo?` (ambas o ninguna) |
 
-| `GET /api/dashboard/delivery` | **Domicilios** | **`from` y `to` obligatorios** (UTC, ISO 8601), `branchId?` |
+| `GET /api/dashboard/delivery` | **Domicilios** | **`from` y `to` obligatorios**, `branchId?`, `deliveryManId?` (opcional; validación por sucursal) |
+| `GET /api/dashboard/delivery/me` | **Domiciliarios** | **`from` y `to` obligatorios**, `branchId?` (opcional; filtra pedidos de esa sucursal). Mismo DTO que `delivery`, siempre del usuario del token. |
 
 | `GET /api/dashboard/sales/comparison` | **Ventas** — comparativa sucursales | **`from` y `to` obligatorios**, `branchId?` |
 | `GET /api/dashboard/sales/evolution` | **Ventas** — líneas tiempo | **`from` y `to` obligatorios**, `branchId?` |
@@ -106,13 +107,31 @@ Si **no** se envían `kpiFrom`/`kpiTo`, los KPIs usan ventanas rolling (7 días 
 
 | `branchId` | int? | Solo superadmin; mismo criterio de alcance que en `main`. |
 
+| `deliveryManId` | int? | Opcional. Solo pedidos domicilio **entregados** asignados a ese repartidor. Administrador: debe ser domiciliario de su sucursal. Superadmin con `branchId`: el usuario debe tener esa sucursal como `BranchId`. Si se omite, se mantiene el agregado de todos los repartidores del alcance. Con filtro, las series `evolutionSalesTotals` usan solo los `Total` de esos pedidos (coherente con fees). |
+
 
 
 El front suele enviar el día completo (inicio 00:00 y fin 23:59:59.999 en zona local, en ISO). El backend acota el rango máximo (~400 días).
 
 
 
-**Respuesta (`200`):** `DashboardDeliveryResponseDto` — promedios de preparación y entrega, lista de repartidores agregada, series de evolución (etiquetas + entregas + fees por bucket según amplitud del rango).
+**Respuesta (`200`):** `DashboardDeliveryResponseDto` — promedios de preparación y entrega, lista de repartidores agregada, series de evolución (etiquetas + entregas + fees + ventas por bucket según amplitud del rango).
+
+
+
+## `GET /api/dashboard/delivery/me`
+
+
+
+**Roles:** `Deliveryman`.
+
+
+
+**Query:** mismos `from`, `to` y `branchId?` que en `delivery`. El **`deliveryManId` no se acepta** (siempre el usuario autenticado). El domiciliario puede omitir `branchId` para agregar todas sus entregas en el rango, o fijar una sucursal concreta.
+
+
+
+**Respuesta (`200`):** mismo cuerpo que `GET /api/dashboard/delivery`.
 
 
 

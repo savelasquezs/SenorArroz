@@ -57,6 +57,7 @@ public class DashboardController : ControllerBase
         [FromQuery(Name = "from")] DateTime fromUtc,
         [FromQuery(Name = "to")] DateTime toUtc,
         [FromQuery] int? branchId = null,
+        [FromQuery(Name = "deliveryManId")] int? deliveryManId = null,
         CancellationToken cancellationToken = default)
     {
         var result = await _mediator.Send(
@@ -65,6 +66,7 @@ public class DashboardController : ControllerBase
                 FromUtc = fromUtc,
                 ToUtc = toUtc,
                 BranchId = branchId,
+                DeliveryManId = deliveryManId,
             },
             cancellationToken);
 

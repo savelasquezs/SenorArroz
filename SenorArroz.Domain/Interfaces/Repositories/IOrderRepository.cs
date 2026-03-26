@@ -107,16 +107,20 @@ public interface IOrderRepository
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? deliveryManId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Pedidos <b>entregados</b> en el rango (por <see cref="Order.UpdatedAt"/>), solo UpdatedAt + Total,
     /// para alinear ventas diarias con la evolución de domicilios (fees vs ventas).
+    /// Si <paramref name="deliveryManId"/> tiene valor, solo pedidos domicilio entregados por ese repartidor
+    /// (misma base que el KPI % fees/ventas filtrado).
     /// </summary>
     Task<List<(DateTime UpdatedAt, int Total)>> GetDeliveredOrdersSalesTicksForDashboardAsync(
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? deliveryManId = null,
         CancellationToken cancellationToken = default);
 
     // Dashboard ventas
