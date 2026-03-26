@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -10,15 +9,13 @@ namespace SenorArroz.Application.Features.Dashboard.Services;
 /// </summary>
 public static class DeliveryDashboardAggregator
 {
-    private static readonly CultureInfo EsCo = CultureInfo.GetCultureInfo("es-CO");
-
     public static DeliveryAggregatesDto Build(
         IReadOnlyList<Order> orders,
         IReadOnlyList<(DateTime UpdatedAt, int Total)> salesTicks,
         DateTime fromUtc,
         DateTime toUtc)
     {
-        var (labels, counts, fees, sales) = BuildEvolution(orders, salesTicks, fromUtc, toUtc);
+        var (labels, counts, fees, sales) = BuildEvolutionSeries(orders, salesTicks, fromUtc, toUtc);
         var totalFees = orders.Sum(o => (long)(o.DeliveryFee ?? 0));
         var totalSales = salesTicks.Sum(t => (long)t.Total);
         var periodPct = totalSales > 0 ? Math.Round(100d * totalFees / totalSales, 2) : 0d;
@@ -128,157 +125,36 @@ public static class DeliveryDashboardAggregator
         return null;
     }
 
-    private static (List<string> Labels, List<int> Counts, List<int> Fees, List<long> Sales) BuildEvolution(
+    private static (List<string> Labels, List<int> Counts, List<int> Fees, List<long> Sales) BuildEvolutionSeries(
         IReadOnlyList<Order> orders,
         IReadOnlyList<(DateTime UpdatedAt, int Total)> salesTicks,
         DateTime fromUtc,
         DateTime toUtc)
     {
-        var dayCount = InclusiveUtcDayCount(fromUtc, toUtc);
+        var buckets = DashboardDeliveryTimeBuckets.Create(fromUtc, toUtc);
+        var n = buckets.Count;
+        var counts = new int[n];
+        var fees = new int[n];
+        var sales = new long[n];
 
-        if (dayCount <= 1)
+        foreach (var o in orders)
         {
-            var hourBuckets = new int[24];
-            var hourFees = new int[24];
-            var hourSales = new long[24];
-            foreach (var o in orders)
-            {
-                var h = o.UpdatedAt.Hour;
-                hourBuckets[h]++;
-                hourFees[h] += o.DeliveryFee ?? 0;
-            }
-
-            foreach (var t in salesTicks)
-                hourSales[t.UpdatedAt.Hour] += t.Total;
-
-            var labels = Enumerable.Range(0, 24).Select(h => $"{h:00}:00").ToList();
-            return (labels, hourBuckets.ToList(), hourFees.ToList(), hourSales.ToList());
+            var i = buckets.GetBucketIndex(o.UpdatedAt);
+            if ((uint)i >= (uint)n)
+                continue;
+            counts[i]++;
+            fees[i] += o.DeliveryFee ?? 0;
         }
 
-        if (dayCount <= 45)
+        foreach (var t in salesTicks)
         {
-            var byDay = orders.GroupBy(o => o.UpdatedAt.Date).ToDictionary(g => g.Key, g => g.ToList());
-            var byDaySales = salesTicks.GroupBy(t => t.UpdatedAt.Date).ToDictionary(g => g.Key, g => g.Sum(x => (long)x.Total));
-            var labels = new List<string>();
-            var counts = new List<int>();
-            var feeTotals = new List<int>();
-            var salesTotals = new List<long>();
-            for (var d = fromUtc.Date; d <= toUtc.Date; d = d.AddDays(1))
-            {
-                labels.Add(d.ToString("ddd, d MMM", EsCo));
-                if (!byDay.TryGetValue(d, out var list))
-                {
-                    counts.Add(0);
-                    feeTotals.Add(0);
-                }
-                else
-                {
-                    counts.Add(list.Count);
-                    feeTotals.Add(list.Sum(x => x.DeliveryFee ?? 0));
-                }
-
-                salesTotals.Add(byDaySales.TryGetValue(d, out var s) ? s : 0L);
-            }
-
-            return (labels, counts, feeTotals, salesTotals);
+            var i = buckets.GetBucketIndex(t.UpdatedAt);
+            if ((uint)i >= (uint)n)
+                continue;
+            sales[i] += t.Total;
         }
 
-        if (dayCount <= 120)
-        {
-            var weekStarts = new Dictionary<DateTime, List<Order>>();
-            foreach (var o in orders)
-            {
-                var ds = StartOfWeekUtc(o.UpdatedAt.Date);
-                if (!weekStarts.TryGetValue(ds, out var l))
-                {
-                    l = new List<Order>();
-                    weekStarts[ds] = l;
-                }
-
-                l.Add(o);
-            }
-
-            var weekSales = new Dictionary<DateTime, long>();
-            foreach (var t in salesTicks)
-            {
-                var ds = StartOfWeekUtc(t.UpdatedAt.Date);
-                if (!weekSales.TryGetValue(ds, out var acc))
-                    acc = 0;
-                weekSales[ds] = acc + t.Total;
-            }
-
-            var labels = new List<string>();
-            var counts = new List<int>();
-            var feeTotals = new List<int>();
-            var salesTotals = new List<long>();
-            var cur = StartOfWeekUtc(fromUtc.Date);
-            var end = toUtc.Date;
-            while (cur <= end)
-            {
-                labels.Add($"Sem. {cur.ToString("dd MMM", EsCo)}");
-                if (!weekStarts.TryGetValue(cur, out var list))
-                {
-                    counts.Add(0);
-                    feeTotals.Add(0);
-                }
-                else
-                {
-                    counts.Add(list.Count);
-                    feeTotals.Add(list.Sum(x => x.DeliveryFee ?? 0));
-                }
-
-                salesTotals.Add(weekSales.TryGetValue(cur, out var s) ? s : 0L);
-                cur = cur.AddDays(7);
-            }
-
-            return (labels, counts, feeTotals, salesTotals);
-        }
-
-        {
-            var byMonth = orders.GroupBy(o => new DateTime(o.UpdatedAt.Year, o.UpdatedAt.Month, 1))
-                .ToDictionary(g => g.Key, g => g.ToList());
-            var byMonthSales = salesTicks
-                .GroupBy(t => new DateTime(t.UpdatedAt.Year, t.UpdatedAt.Month, 1))
-                .ToDictionary(g => g.Key, g => g.Sum(x => (long)x.Total));
-            var labels = new List<string>();
-            var counts = new List<int>();
-            var feeTotals = new List<int>();
-            var salesTotals = new List<long>();
-            for (var m = new DateTime(fromUtc.Year, fromUtc.Month, 1);
-                 m <= toUtc.Date;
-                 m = m.AddMonths(1))
-            {
-                labels.Add(m.ToString("MMM yyyy", EsCo));
-                if (!byMonth.TryGetValue(m, out var list))
-                {
-                    counts.Add(0);
-                    feeTotals.Add(0);
-                }
-                else
-                {
-                    counts.Add(list.Count);
-                    feeTotals.Add(list.Sum(x => x.DeliveryFee ?? 0));
-                }
-
-                salesTotals.Add(byMonthSales.TryGetValue(m, out var s) ? s : 0L);
-            }
-
-            return (labels, counts, feeTotals, salesTotals);
-        }
-    }
-
-    private static DateTime StartOfWeekUtc(DateTime date)
-    {
-        var d = date.Date;
-        var diff = ((int)d.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        return d.AddDays(-diff);
-    }
-
-    private static int InclusiveUtcDayCount(DateTime fromUtc, DateTime toUtc)
-    {
-        var f = fromUtc.Date;
-        var t = toUtc.Date;
-        return (int)(t - f).TotalDays + 1;
+        return (buckets.Labels.ToList(), counts.ToList(), fees.ToList(), sales.ToList());
     }
 }
 
@@ -288,7 +164,10 @@ public record DeliverymanEfficiencyRowDto(
     string Name,
     int DeliveredCount,
     double AvgDeliveryMinutes,
-    int DeliveryFeeTotal);
+    int DeliveryFeeTotal,
+    int RouteCompletedCount = 0,
+    double? RouteOnTimePercent = null,
+    double AvgRouteActualMinutes = 0);
 
 public record DeliveryAggregatesDto(
     double AvgPrepMinutes,

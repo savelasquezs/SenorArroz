@@ -25,6 +25,9 @@ public class DeliveryRouteSummaryItemDto
 
     /// <summary>actual_duration_seconds − meta_duration_seconds; positivo = tardó más que la meta.</summary>
     public int? VarianceSeconds { get; set; }
+
+    /// <summary>Indica si la duración real fue ≤ meta (null si no hubo datos de SLA).</summary>
+    public bool? MetSla { get; set; }
 }
 
 public class DeliverymanRouteDayStatsDto

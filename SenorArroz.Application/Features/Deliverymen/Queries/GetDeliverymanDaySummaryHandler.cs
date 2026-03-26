@@ -267,6 +267,7 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
                 ActualDurationSeconds = r.ActualDurationSeconds,
                 MetaDurationSeconds = r.MetaDurationSeconds,
                 VarianceSeconds = variance,
+                MetSla = r.MetSla,
             };
         }).ToList();
 
