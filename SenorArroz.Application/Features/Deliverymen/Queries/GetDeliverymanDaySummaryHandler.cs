@@ -248,11 +248,26 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
             };
         }
 
-        var items = list.Select(r => new DeliveryRouteSummaryItemDto
+        var items = list.Select(r =>
         {
-            Id = r.Id,
-            TotalDistanceMeters = (r.PlannedDistanceMeters ?? 0) + (r.ReturnToBranchMeters ?? 0),
-            CompletedAtUtc = r.CompletedAtUtc,
+            DateTime? plannedEnd = r.RouteStartedAtUtc is { } rs && r.MetaDurationSeconds is { } meta
+                ? rs.AddSeconds(meta)
+                : null;
+            int? variance = r.ActualDurationSeconds is { } act && r.MetaDurationSeconds is { } m
+                ? act - m
+                : null;
+
+            return new DeliveryRouteSummaryItemDto
+            {
+                Id = r.Id,
+                TotalDistanceMeters = (r.PlannedDistanceMeters ?? 0) + (r.ReturnToBranchMeters ?? 0),
+                RouteStartedAtUtc = r.RouteStartedAtUtc,
+                PlannedEndAtUtc = plannedEnd,
+                CompletedAtUtc = r.CompletedAtUtc,
+                ActualDurationSeconds = r.ActualDurationSeconds,
+                MetaDurationSeconds = r.MetaDurationSeconds,
+                VarianceSeconds = variance,
+            };
         }).ToList();
 
         return new DeliverymanRouteDayStatsDto
