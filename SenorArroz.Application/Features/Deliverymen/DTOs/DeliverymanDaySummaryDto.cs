@@ -15,4 +15,11 @@ public class DeliverymanDaySummaryDto
 
     [JsonPropertyName("fullDayOrders")]
     public List<OrderDto> FullDayOrders { get; set; } = new();
+
+    /// <summary>Rutas completadas alineadas al ciclo de liquidación (si aplica).</summary>
+    [JsonPropertyName("routeDayStats")]
+    public DeliverymanRouteDayStatsDto? RouteDayStats { get; set; }
+
+    [JsonPropertyName("fullDayRouteDayStats")]
+    public DeliverymanRouteDayStatsDto? FullDayRouteDayStats { get; set; }
 }

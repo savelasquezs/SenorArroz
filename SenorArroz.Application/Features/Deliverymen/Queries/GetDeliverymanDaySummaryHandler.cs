@@ -186,12 +186,80 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
 
         var fullDayOrderDtos = fullDayOrdersList.Select(o => _mapper.Map<OrderDto>(o)).ToList();
 
+        var routeDayStats = await BuildRouteDayStatsAsync(
+            request.DeliverymanId,
+            branchId,
+            fromDate,
+            toDate,
+            lastLiquidationAtUtc,
+            applyLiquidationFilter: useSettlementCycle && lastLiquidationAtUtc.HasValue,
+            cancellationToken);
+
+        var fullDayRouteStats = await BuildRouteDayStatsAsync(
+            request.DeliverymanId,
+            branchId,
+            fromDate,
+            toDate,
+            lastLiquidationAtUtc: null,
+            applyLiquidationFilter: false,
+            cancellationToken);
+
         return new DeliverymanDaySummaryDto
         {
             Stats = stats,
             Orders = orderDtos,
             FullDayStats = fullDayStats,
-            FullDayOrders = fullDayOrderDtos
+            FullDayOrders = fullDayOrderDtos,
+            RouteDayStats = routeDayStats,
+            FullDayRouteDayStats = fullDayRouteStats,
+        };
+    }
+
+    private async Task<DeliverymanRouteDayStatsDto> BuildRouteDayStatsAsync(
+        int deliverymanId,
+        int branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        DateTime? lastLiquidationAtUtc,
+        bool applyLiquidationFilter,
+        CancellationToken cancellationToken)
+    {
+        var q = _db.DeliveryRoutes.AsNoTracking()
+            .Where(r => r.DeliverymanId == deliverymanId
+                        && r.BranchId == branchId
+                        && r.Status == DeliveryRouteStatus.Completed
+                        && r.CompletedAtUtc != null
+                        && r.CompletedAtUtc >= fromUtc
+                        && r.CompletedAtUtc <= toUtc);
+        if (applyLiquidationFilter && lastLiquidationAtUtc.HasValue)
+            q = q.Where(r => r.CompletedAtUtc >= lastLiquidationAtUtc.Value);
+
+        var list = await q
+            .OrderBy(r => r.CompletedAtUtc)
+            .ToListAsync(cancellationToken);
+
+        if (list.Count == 0)
+        {
+            return new DeliverymanRouteDayStatsDto
+            {
+                CompletedRoutesCount = 0,
+                TotalDistanceMeters = 0,
+                Routes = new List<DeliveryRouteSummaryItemDto>(),
+            };
+        }
+
+        var items = list.Select(r => new DeliveryRouteSummaryItemDto
+        {
+            Id = r.Id,
+            TotalDistanceMeters = (r.PlannedDistanceMeters ?? 0) + (r.ReturnToBranchMeters ?? 0),
+            CompletedAtUtc = r.CompletedAtUtc,
+        }).ToList();
+
+        return new DeliverymanRouteDayStatsDto
+        {
+            CompletedRoutesCount = list.Count,
+            TotalDistanceMeters = items.Sum(i => i.TotalDistanceMeters),
+            Routes = items,
         };
     }
 

@@ -13,12 +13,18 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
     private readonly IOrderRepository _orderRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
 
-    public AssignDeliveryManHandler(IOrderRepository orderRepository, IMapper mapper, ICurrentUser currentUser)
+    public AssignDeliveryManHandler(
+        IOrderRepository orderRepository,
+        IMapper mapper,
+        ICurrentUser currentUser,
+        IDeliveryRouteWorkflowService deliveryRouteWorkflow)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _deliveryRouteWorkflow = deliveryRouteWorkflow;
     }
 
     public async Task<OrderDto> Handle(AssignDeliveryManCommand request, CancellationToken cancellationToken)
@@ -49,6 +55,10 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
                 null);
         }
 
-        return _mapper.Map<OrderDto>(order);
+        order = await _orderRepository.GetByIdAsync(request.Id);
+        if (order != null)
+            await _deliveryRouteWorkflow.OnOrderAssignedToDeliverymanAsync(order, cancellationToken);
+
+        return _mapper.Map<OrderDto>(order ?? throw new BusinessException("Pedido no encontrado"));
     }
 }

@@ -16,6 +16,7 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
     private readonly ICurrentUser _currentUser;
     private readonly IPasswordService _passwordService;
     private readonly IOrderNotificationService _notificationService;
+    private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
 
     public SelfAssignOrdersHandler(
         IOrderRepository orderRepository, 
@@ -23,7 +24,8 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
         IMapper mapper, 
         ICurrentUser currentUser,
         IPasswordService passwordService,
-        IOrderNotificationService notificationService)
+        IOrderNotificationService notificationService,
+        IDeliveryRouteWorkflowService deliveryRouteWorkflow)
     {
         _orderRepository = orderRepository;
         _userRepository = userRepository;
@@ -31,6 +33,7 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
         _currentUser = currentUser;
         _passwordService = passwordService;
         _notificationService = notificationService;
+        _deliveryRouteWorkflow = deliveryRouteWorkflow;
     }
 
     public async Task<List<OrderDto>> Handle(SelfAssignOrdersCommand request, CancellationToken cancellationToken)
@@ -87,6 +90,10 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
 
             // Notificar a todos los domiciliarios conectados para que actualicen su lista
             await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
+
+            var fullOrder = await _orderRepository.GetByIdAsync(orderId);
+            if (fullOrder != null)
+                await _deliveryRouteWorkflow.OnOrderAssignedToDeliverymanAsync(fullOrder, cancellationToken);
         }
 
         return assignedOrders;

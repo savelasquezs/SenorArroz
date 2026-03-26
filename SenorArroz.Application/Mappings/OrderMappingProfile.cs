@@ -57,6 +57,8 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.Address, opt => opt.Ignore())
             .ForMember(dest => dest.LoyaltyRule, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryMan, opt => opt.Ignore())
+            .ForMember(dest => dest.DeliveryRouteId, opt => opt.Ignore())
+            .ForMember(dest => dest.DeliveryRoute, opt => opt.Ignore())
             .ForMember(dest => dest.OrderDetails, opt => opt.Ignore())
             .ForMember(dest => dest.BankPayments, opt => opt.Ignore())
             .ForMember(dest => dest.AppPayments, opt => opt.Ignore());

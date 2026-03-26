@@ -36,6 +36,10 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<DeliverymanDayState> DeliverymanDayStates { get; set; }
 
+        public virtual DbSet<DeliveryRoute> DeliveryRoutes { get; set; }
+
+        public virtual DbSet<DeliveryRouteStop> DeliveryRouteStops { get; set; }
+
         public virtual DbSet<Expense> Expenses { get; set; }
 
         public virtual DbSet<ExpenseBankPayment> ExpenseBankPayments { get; set; }
@@ -91,6 +95,8 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new CashClosureInformalLoanConfiguration());
             modelBuilder.ApplyConfiguration(new DeliverymanAdvanceConfiguration());
             modelBuilder.ApplyConfiguration(new DeliverymanDayStateConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryRouteConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryRouteStopConfiguration());
             modelBuilder.ApplyConfiguration(new SupplierConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseCategoryConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseConfiguration());

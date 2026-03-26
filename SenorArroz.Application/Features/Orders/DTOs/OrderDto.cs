@@ -25,6 +25,8 @@ public class OrderDto
     public int? LoyaltyRuleId { get; set; }
     public string? LoyaltyRuleName { get; set; }
     public int? DeliveryManId { get; set; }
+    /// <summary>Ruta de domicilio (métricas SLA) cuando aplica.</summary>
+    public int? DeliveryRouteId { get; set; }
     public string? DeliveryManName { get; set; }
     public string? GuestName { get; set; }
     public OrderType? Type { get; set; }

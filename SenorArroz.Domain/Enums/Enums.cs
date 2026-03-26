@@ -61,6 +61,19 @@ namespace SenorArroz.Domain.Enums
         ExpenseOffset = 2,
     }
 
+    /// <summary>Estado del ciclo ruta domicilio (métricas y SLA).</summary>
+    public enum DeliveryRouteStatus
+    {
+        /// <summary>Aún se agregan pedidos; sin plan Google definitivo.</summary>
+        Open,
+        /// <summary>Plan consolidado; corre el reloj operativo vs meta.</summary>
+        InProgress,
+        /// <summary>Todos los pedidos entregados o cancelados.</summary>
+        Completed,
+        /// <summary>Ruta vaciada / abandonada sin completar (poco uso).</summary>
+        Cancelled,
+    }
+
     /// <summary>Modo de liquidación del día (domiciliario).</summary>
     public enum DeliverymanDayLiquidationMode
     {

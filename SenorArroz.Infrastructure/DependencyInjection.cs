@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
+using SenorArroz.Application.Options;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Domain.Interfaces.Services;
 using SenorArroz.Infrastructure.Data;
@@ -17,11 +19,18 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
+        services.Configure<DeliveryRouteOptions>(configuration.GetSection(DeliveryRouteOptions.SectionName));
+        services.Configure<GoogleMapsRouteOptions>(configuration.GetSection(GoogleMapsRouteOptions.SectionName));
+
         // Database
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
 
         services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+
+        services.AddHttpClient<GoogleRoutesDrivingMetricsService>();
+        services.AddScoped<IGoogleRoutesDrivingMetricsService>(sp => sp.GetRequiredService<GoogleRoutesDrivingMetricsService>());
+        services.AddScoped<IDeliveryRouteWorkflowService, DeliveryRouteWorkflowService>();
 
         // Repositories
         services.AddScoped<IBranchRepository, BranchRepository>();
@@ -75,6 +84,7 @@ public static class DependencyInjection
         services.AddHostedService<TokenCleanupService>();
         services.AddHostedService<PasswordResetCleanupService>();
         services.AddHostedService<ReservationNotificationService>();
+        services.AddHostedService<DeliveryRouteConsolidationWorker>();
 
         return services;
     }

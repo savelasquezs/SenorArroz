@@ -11,6 +11,8 @@ public class Order : BaseEntity
     public int? CustomerId { get; set; }
     public int? AddressId { get; set; }
     public int? LoyaltyRuleId { get; set; }
+    /// <summary>Ruta de domicilio activa o última asociada (null si no aplica).</summary>
+    public int? DeliveryRouteId { get; set; }
     public int? DeliveryManId { get; set; }
     public string? GuestName { get; set; }
 
@@ -44,6 +46,7 @@ public class Order : BaseEntity
     public virtual Address? Address { get; set; }
     public virtual LoyaltyRule? LoyaltyRule { get; set; }
     public virtual User? DeliveryMan { get; set; }
+    public virtual DeliveryRoute? DeliveryRoute { get; set; }
 
     public virtual ICollection<OrderDetail> OrderDetails { get; set; } = new List<OrderDetail>();
     public virtual ICollection<BankPayment> BankPayments { get; set; } = new List<BankPayment>();

@@ -15,19 +15,22 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     private readonly ICurrentUser _currentUser;
     private readonly IOrderBusinessRulesService _businessRules;
     private readonly IOrderNotificationService _notificationService;
+    private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
 
     public ChangeOrderStatusHandler(
         IOrderRepository orderRepository, 
         IMapper mapper, 
         ICurrentUser currentUser,
         IOrderBusinessRulesService businessRules,
-        IOrderNotificationService notificationService)
+        IOrderNotificationService notificationService,
+        IDeliveryRouteWorkflowService deliveryRouteWorkflow)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
         _businessRules = businessRules;
         _notificationService = notificationService;
+        _deliveryRouteWorkflow = deliveryRouteWorkflow;
     }
 
     public async Task<OrderDto> Handle(ChangeOrderStatusCommand request, CancellationToken cancellationToken)
@@ -95,6 +98,12 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         {
             await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
         }
+
+        if (request.StatusChange.Status == OrderStatus.Cancelled)
+            await _deliveryRouteWorkflow.OnOrderCancelledWhileRouteOpenAsync(request.Id, cancellationToken);
+
+        if (request.StatusChange.Status is OrderStatus.Delivered or OrderStatus.Cancelled)
+            await _deliveryRouteWorkflow.TryCompleteInProgressRouteAsync(request.Id, cancellationToken);
 
         return orderDto;
     }

@@ -20,6 +20,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.CustomerId).HasColumnName("customer_id");
         builder.Property(o => o.AddressId).HasColumnName("address_id");
         builder.Property(o => o.LoyaltyRuleId).HasColumnName("loyalty_rule_id");
+        builder.Property(o => o.DeliveryRouteId).HasColumnName("delivery_route_id");
         builder.Property(o => o.DeliveryManId).HasColumnName("delivery_man_id");
         builder.Property(o => o.GuestName).HasColumnName("guestname").HasMaxLength(100);
 
@@ -95,6 +96,11 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
             .HasForeignKey(o => o.DeliveryManId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.HasOne(o => o.DeliveryRoute)
+            .WithMany()
+            .HasForeignKey(o => o.DeliveryRouteId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         // Índices
         builder.HasIndex(o => o.BranchId).HasDatabaseName("idx_order_branch");
         builder.HasIndex(o => o.CustomerId).HasDatabaseName("idx_order_customer");
@@ -102,6 +108,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.HasIndex(o => o.Type).HasDatabaseName("idx_order_type");
         builder.HasIndex(o => o.CreatedAt).HasDatabaseName("idx_order_date");
         builder.HasIndex(o => o.DeliveryManId).HasDatabaseName("idx_order_delivery_man");
+        builder.HasIndex(o => o.DeliveryRouteId).HasDatabaseName("idx_order_delivery_route");
     }
 
     /// <summary>

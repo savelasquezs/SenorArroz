@@ -1,0 +1,379 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SenorArroz.Application.Common.Helpers;
+using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Options;
+using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
+
+namespace SenorArroz.Application.Common.Services;
+
+public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
+{
+    private readonly IApplicationDbContext _db;
+    private readonly IGoogleRoutesDrivingMetricsService _routesMetrics;
+    private readonly DeliveryRouteOptions _opt;
+    private readonly ILogger<DeliveryRouteWorkflowService> _logger;
+
+    public DeliveryRouteWorkflowService(
+        IApplicationDbContext db,
+        IGoogleRoutesDrivingMetricsService routesMetrics,
+        IOptions<DeliveryRouteOptions> options,
+        ILogger<DeliveryRouteWorkflowService> logger)
+    {
+        _db = db;
+        _routesMetrics = routesMetrics;
+        _opt = options.Value;
+        _logger = logger;
+    }
+
+    public async Task OnOrderAssignedToDeliverymanAsync(Order order, CancellationToken cancellationToken = default)
+    {
+        if (order.Type != OrderType.Delivery || order.DeliveryManId is null)
+            return;
+
+        var tracked = await _db.Orders
+            .Include(o => o.Address)
+            .FirstOrDefaultAsync(o => o.Id == order.Id, cancellationToken);
+        if (tracked is null || tracked.DeliveryManId is null)
+            return;
+
+        var oldRouteIds = await _db.DeliveryRouteStops
+            .AsNoTracking()
+            .Where(s => s.OrderId == tracked.Id)
+            .Select(s => s.DeliveryRouteId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var oldStops = await _db.DeliveryRouteStops
+            .Where(s => s.OrderId == tracked.Id)
+            .ToListAsync(cancellationToken);
+        _db.DeliveryRouteStops.RemoveRange(oldStops);
+        tracked.DeliveryRouteId = null;
+
+        var route = await _db.DeliveryRoutes
+            .FirstOrDefaultAsync(r =>
+                    r.DeliverymanId == tracked.DeliveryManId.Value
+                    && r.BranchId == tracked.BranchId
+                    && r.Status == DeliveryRouteStatus.Open,
+                cancellationToken);
+
+        if (route is null)
+        {
+            route = new DeliveryRoute
+            {
+                DeliverymanId = tracked.DeliveryManId.Value,
+                BranchId = tracked.BranchId,
+                Status = DeliveryRouteStatus.Open,
+                LastAssignmentAtUtc = DateTime.UtcNow,
+                PerOrderBufferSeconds = _opt.PerOrderBufferSeconds,
+                ComplexAccessBufferSeconds = _opt.ComplexAccessBufferSeconds,
+            };
+            _db.DeliveryRoutes.Add(route);
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        var maxSeq = await _db.DeliveryRouteStops
+            .Where(s => s.DeliveryRouteId == route.Id)
+            .Select(s => (int?)s.StopSequence)
+            .MaxAsync(cancellationToken) ?? 0;
+
+        var snapshot = BuildAddressSnapshot(tracked);
+        _db.DeliveryRouteStops.Add(new DeliveryRouteStop
+        {
+            DeliveryRouteId = route.Id,
+            OrderId = tracked.Id,
+            StopSequence = maxSeq + 1,
+            AddressSnapshotText = snapshot,
+        });
+        tracked.DeliveryRouteId = route.Id;
+        route.LastAssignmentAtUtc = DateTime.UtcNow;
+        route.PerOrderBufferSeconds = _opt.PerOrderBufferSeconds;
+        route.ComplexAccessBufferSeconds = _opt.ComplexAccessBufferSeconds;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        foreach (var rid in oldRouteIds.Where(id => id != route.Id))
+            await PruneEmptyOpenRouteAsync(rid, cancellationToken);
+    }
+
+    public async Task OnOrderUnassignedAsync(int orderId, CancellationToken cancellationToken = default)
+    {
+        var stops = await _db.DeliveryRouteStops
+            .Where(s => s.OrderId == orderId)
+            .ToListAsync(cancellationToken);
+        if (stops.Count == 0)
+            return;
+
+        var routeIds = stops.Select(s => s.DeliveryRouteId).Distinct().ToList();
+        _db.DeliveryRouteStops.RemoveRange(stops);
+
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+        if (order is not null)
+            order.DeliveryRouteId = null;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        foreach (var rid in routeIds)
+            await PruneEmptyOpenRouteAsync(rid, cancellationToken);
+    }
+
+    public async Task OnOrderCancelledWhileRouteOpenAsync(int orderId, CancellationToken cancellationToken = default)
+    {
+        var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+        if (order?.DeliveryRouteId is not int routeId)
+            return;
+
+        var route = await _db.DeliveryRoutes.FirstOrDefaultAsync(r => r.Id == routeId, cancellationToken);
+        if (route?.Status != DeliveryRouteStatus.Open)
+            return;
+
+        var stop = await _db.DeliveryRouteStops
+            .FirstOrDefaultAsync(s => s.OrderId == orderId, cancellationToken);
+        if (stop is null)
+            return;
+
+        _db.DeliveryRouteStops.Remove(stop);
+        order.DeliveryRouteId = null;
+        await _db.SaveChangesAsync(cancellationToken);
+        await PruneEmptyOpenRouteAsync(routeId, cancellationToken);
+    }
+
+    public async Task TryCompleteInProgressRouteAsync(int orderId, CancellationToken cancellationToken = default)
+    {
+        var order = await _db.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+        if (order?.DeliveryRouteId is not int routeId)
+            return;
+
+        var route = await _db.DeliveryRoutes
+            .Include(r => r.Stops)
+            .FirstOrDefaultAsync(r => r.Id == routeId, cancellationToken);
+        if (route is null || route.Status != DeliveryRouteStatus.InProgress)
+            return;
+
+        var ids = route.Stops.Select(s => s.OrderId).ToList();
+        var orders = await _db.Orders
+            .Include(o => o.Address)
+            .Where(o => ids.Contains(o.Id))
+            .ToListAsync(cancellationToken);
+
+        var allTerminal = orders.Count > 0 && orders.All(o =>
+            o.Status == OrderStatus.Delivered || o.Status == OrderStatus.Cancelled);
+
+        if (!allTerminal)
+            return;
+
+        if (route.RouteStartedAtUtc is null || route.MetaDurationSeconds is null)
+        {
+            _logger.LogWarning("Ruta {RouteId} InProgress sin route_started_at o meta; se cierra sin SLA.", route.Id);
+            route.CompletedAtUtc = DateTime.UtcNow;
+            route.Status = DeliveryRouteStatus.Completed;
+            await TrySetReturnToBranchMetersAsync(route, orders, cancellationToken);
+            await _db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        var completedAt = DateTime.UtcNow;
+        route.CompletedAtUtc = completedAt;
+        var actual = (int)Math.Max(0, (completedAt - route.RouteStartedAtUtc.Value).TotalSeconds);
+        route.ActualDurationSeconds = actual;
+        route.MetSla = actual <= route.MetaDurationSeconds.Value;
+        route.Status = DeliveryRouteStatus.Completed;
+        await TrySetReturnToBranchMetersAsync(route, orders, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task TrySetReturnToBranchMetersAsync(
+        DeliveryRoute route,
+        IReadOnlyList<Order> routeOrders,
+        CancellationToken cancellationToken)
+    {
+        var branch = await _db.Branches.AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == route.BranchId, cancellationToken);
+        if (branch?.Latitude is null || branch.Longitude is null)
+            return;
+
+        Order? lastDelivered = null;
+        DateTime? maxDelivered = null;
+        foreach (var o in routeOrders.Where(x => x.Status == OrderStatus.Delivered))
+        {
+            var st = o.GetStatusTimes();
+            if (!st.TryGetValue("delivered", out var dt))
+                continue;
+            if (maxDelivered is null || dt > maxDelivered.Value)
+            {
+                maxDelivered = dt;
+                lastDelivered = o;
+            }
+        }
+
+        if (lastDelivered?.Address?.Latitude is null || lastDelivered.Address.Longitude is null)
+            return;
+
+        var m = GeoHelper.HaversineDistanceMeters(
+            (double)lastDelivered.Address.Latitude.Value,
+            (double)lastDelivered.Address.Longitude.Value,
+            (double)branch.Latitude.Value,
+            (double)branch.Longitude.Value);
+        route.ReturnToBranchMeters = (int)Math.Round(Math.Max(0, m));
+    }
+
+    public async Task<int> ConsolidatePendingRoutesAsync(CancellationToken cancellationToken = default)
+    {
+        var delay = TimeSpan.FromSeconds(Math.Max(0, _opt.ConsolidationDelaySeconds));
+        var cutoff = DateTime.UtcNow - delay;
+
+        var routes = await _db.DeliveryRoutes
+            .Include(r => r.Stops)
+            .Where(r => r.Status == DeliveryRouteStatus.Open
+                        && r.LastAssignmentAtUtc <= cutoff
+                        && r.Stops.Any())
+            .ToListAsync(cancellationToken);
+
+        var count = 0;
+        foreach (var route in routes)
+        {
+            if (await TryConsolidateRouteAsync(route, cancellationToken))
+                count++;
+        }
+
+        return count;
+    }
+
+    private async Task<bool> TryConsolidateRouteAsync(DeliveryRoute route, CancellationToken cancellationToken)
+    {
+        var stopList = route.Stops.OrderBy(s => s.StopSequence).ToList();
+        var orderIds = stopList.Select(s => s.OrderId).ToList();
+        var orders = await _db.Orders
+            .Include(o => o.Address)
+            .Where(o => orderIds.Contains(o.Id))
+            .ToListAsync(cancellationToken);
+        var dict = orders.ToDictionary(o => o.Id);
+
+        var stale = stopList.Where(s =>
+        {
+            if (!dict.TryGetValue(s.OrderId, out var o))
+                return true;
+            return o.Status is OrderStatus.Delivered or OrderStatus.Cancelled;
+        }).ToList();
+
+        foreach (var s in stale)
+        {
+            if (dict.TryGetValue(s.OrderId, out var o))
+                o.DeliveryRouteId = null;
+            _db.DeliveryRouteStops.Remove(s);
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        route = await _db.DeliveryRoutes
+            .Include(r => r.Stops)
+            .FirstAsync(r => r.Id == route.Id, cancellationToken);
+
+        if (!route.Stops.Any())
+        {
+            route.Status = DeliveryRouteStatus.Cancelled;
+            await _db.SaveChangesAsync(cancellationToken);
+            return false;
+        }
+
+        stopList = route.Stops.OrderBy(s => s.StopSequence).ToList();
+        orderIds = stopList.Select(s => s.OrderId).ToList();
+        orders = await _db.Orders
+            .Include(o => o.Address)
+            .Where(o => orderIds.Contains(o.Id))
+            .ToListAsync(cancellationToken);
+        dict = orders.ToDictionary(o => o.Id);
+
+        var eligibleStops = stopList.Where(s =>
+            dict.TryGetValue(s.OrderId, out var o)
+            && o.Status is not (OrderStatus.Delivered or OrderStatus.Cancelled)).ToList();
+
+        if (eligibleStops.Count == 0)
+        {
+            route.Status = DeliveryRouteStatus.Cancelled;
+            foreach (var s in route.Stops.ToList())
+            {
+                if (dict.TryGetValue(s.OrderId, out var o))
+                    o.DeliveryRouteId = null;
+                _db.DeliveryRouteStops.Remove(s);
+            }
+            await _db.SaveChangesAsync(cancellationToken);
+            return false;
+        }
+
+        var keywords = ComplexAccessKeywordEvaluator.ParseKeywords(_opt.ComplexAccessKeywords);
+        var complexBuffer = _opt.ComplexAccessBufferSeconds;
+        var k = 0;
+        foreach (var stop in eligibleStops)
+        {
+            var ord = dict[stop.OrderId];
+            var text = stop.AddressSnapshotText ?? BuildAddressSnapshot(ord);
+            stop.AddressSnapshotText = text;
+            var (matches, term) = ComplexAccessKeywordEvaluator.Evaluate(text, keywords);
+            stop.RequiresComplexAccessBuffer = matches;
+            stop.ComplexAccessMatchTerm = term;
+            stop.ComplexAccessBonusSeconds = matches ? complexBuffer : 0;
+            if (matches) k++;
+        }
+
+        var waypoints = new List<(double Lat, double Lng)>();
+        foreach (var stop in eligibleStops)
+        {
+            var ord = dict[stop.OrderId];
+            if (ord.Address?.Latitude is decimal lat && ord.Address.Longitude is decimal lng)
+                waypoints.Add(((double)lat, (double)lng));
+        }
+
+        int distMeters;
+        int driveSecs;
+        if (waypoints.Count >= 2)
+            (distMeters, driveSecs) = await _routesMetrics.ComputeRouteAsync(waypoints, cancellationToken);
+        else
+        {
+            distMeters = 0;
+            driveSecs = 0;
+        }
+
+        var n = eligibleStops.Count;
+        var perOrder = _opt.PerOrderBufferSeconds;
+        var meta = driveSecs + n * perOrder + k * complexBuffer;
+
+        route.PlannedDistanceMeters = distMeters;
+        route.PlannedDrivingDurationSeconds = driveSecs;
+        route.StopCount = n;
+        route.ComplexAccessStopCount = k;
+        route.MetaDurationSeconds = meta;
+        route.PerOrderBufferSeconds = perOrder;
+        route.ComplexAccessBufferSeconds = complexBuffer;
+        route.RouteStartedAtUtc = route.LastAssignmentAtUtc.AddSeconds(_opt.ConsolidationDelaySeconds);
+        route.ConsolidatedAtUtc = DateTime.UtcNow;
+        route.Status = DeliveryRouteStatus.InProgress;
+
+        await _db.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    private async Task PruneEmptyOpenRouteAsync(int routeId, CancellationToken cancellationToken)
+    {
+        var route = await _db.DeliveryRoutes
+            .Include(r => r.Stops)
+            .FirstOrDefaultAsync(r => r.Id == routeId, cancellationToken);
+        if (route is null || route.Status != DeliveryRouteStatus.Open || route.Stops.Any())
+            return;
+
+        _db.DeliveryRoutes.Remove(route);
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string? BuildAddressSnapshot(Order order)
+    {
+        if (order.Address is null)
+            return order.Notes;
+        var parts = new[] { order.Address.AddressText, order.Address.AdditionalInfo }
+            .Where(x => !string.IsNullOrWhiteSpace(x));
+        var t = string.Join(" — ", parts);
+        return string.IsNullOrWhiteSpace(t) ? order.Notes : t;
+    }
+}
