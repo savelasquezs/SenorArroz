@@ -8,10 +8,10 @@ namespace SenorArroz.Infrastructure.Migrations;
 /// Solo añade coordenadas a branch (bases ya existentes). No recrea el esquema completo.
 /// </summary>
 public partial class AddBranchLatitudeLongitude : Migration
-{
-    /// <inheritdoc />
-    protected override void Up(MigrationBuilder migrationBuilder)
     {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
         migrationBuilder.AddColumn<decimal>(
             name: "latitude",
             table: "branch",
@@ -23,11 +23,11 @@ public partial class AddBranchLatitudeLongitude : Migration
             table: "branch",
             type: "numeric(10,6)",
             nullable: true);
-    }
+        }
 
-    /// <inheritdoc />
-    protected override void Down(MigrationBuilder migrationBuilder)
-    {
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
         migrationBuilder.DropColumn(
             name: "latitude",
             table: "branch");

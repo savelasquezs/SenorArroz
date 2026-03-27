@@ -79,6 +79,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             await _orderRepository.UpdateAsync(existingOrder);
         }
 
+        var routeIdSnapshot = existingOrder.DeliveryRouteId;
+
         var order = await _orderRepository.ChangeStatusAsync(
             request.Id, 
             request.StatusChange.Status, 
@@ -103,7 +105,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             await _deliveryRouteWorkflow.OnOrderCancelledWhileRouteOpenAsync(request.Id, cancellationToken);
 
         if (request.StatusChange.Status is OrderStatus.Delivered or OrderStatus.Cancelled)
-            await _deliveryRouteWorkflow.TryCompleteInProgressRouteAsync(request.Id, cancellationToken);
+            await _deliveryRouteWorkflow.TryFinalizeRouteWhenAllTerminalAsync(
+                request.Id, routeIdSnapshot, cancellationToken);
 
         return orderDto;
     }

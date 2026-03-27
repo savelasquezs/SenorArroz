@@ -58,6 +58,21 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
 
         var assignedOrders = new List<OrderDto>();
 
+        if (request.OrderIds.Count > 0)
+        {
+            var probe = await _orderRepository.GetByIdAsync(request.OrderIds[0]);
+            if (probe != null
+                && await _deliveryRouteWorkflow.DeliverymanHasPendingOrdersOnActiveRouteAsync(
+                    userId,
+                    probe.BranchId,
+                    cancellationToken,
+                    request.OrderIds))
+            {
+                throw new BusinessException(
+                    "Termina o entrega los pedidos de tu ruta actual antes de tomar más. Si necesitas otro pedido urgente, pide a caja que te lo asigne.");
+            }
+        }
+
         foreach (var orderId in request.OrderIds)
         {
             // Get order to validate

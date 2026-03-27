@@ -219,6 +219,64 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         route.ReturnToBranchMeters = (int)Math.Round(Math.Max(0, m));
     }
 
+    public async Task TryFinalizeRouteWhenAllTerminalAsync(
+        int orderId,
+        int? routeIdIfOrderUnlinked = null,
+        CancellationToken cancellationToken = default)
+    {
+        var orderRow = await _db.Orders.AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
+        var routeId = orderRow?.DeliveryRouteId ?? routeIdIfOrderUnlinked;
+        if (routeId is not int rid)
+            return;
+
+        var route = await _db.DeliveryRoutes
+            .Include(r => r.Stops)
+            .FirstOrDefaultAsync(r => r.Id == rid, cancellationToken);
+        if (route is null || route.Status == DeliveryRouteStatus.Completed)
+            return;
+
+        var ids = route.Stops.Select(s => s.OrderId).ToList();
+        if (ids.Count == 0)
+            return;
+
+        var orders = await _db.Orders
+            .Include(o => o.Address)
+            .Where(o => ids.Contains(o.Id))
+            .ToListAsync(cancellationToken);
+
+        var allTerminal = orders.Count > 0 && orders.All(o =>
+            o.Status == OrderStatus.Delivered || o.Status == OrderStatus.Cancelled);
+        if (!allTerminal)
+            return;
+
+        if (route.Status == DeliveryRouteStatus.Open)
+            await CompleteOpenRouteWithFullMetaAsync(route, orders, cancellationToken);
+        else if (route.Status == DeliveryRouteStatus.InProgress)
+            await TryCompleteInProgressRouteAsync(orderId, cancellationToken);
+    }
+
+    public async Task<bool> DeliverymanHasPendingOrdersOnActiveRouteAsync(
+        int deliverymanId,
+        int branchId,
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<int>? excludeOrderIds = null)
+    {
+        var q =
+            from r in _db.DeliveryRoutes
+            join s in _db.DeliveryRouteStops on r.Id equals s.DeliveryRouteId
+            join o in _db.Orders on s.OrderId equals o.Id
+            where r.DeliverymanId == deliverymanId
+                  && r.BranchId == branchId
+                  && (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress)
+                  && o.Status != OrderStatus.Delivered
+                  && o.Status != OrderStatus.Cancelled
+                  && (excludeOrderIds == null || !excludeOrderIds.Contains(o.Id))
+            select o.Id;
+
+        return await q.AnyAsync(cancellationToken);
+    }
+
     public async Task<int> ConsolidatePendingRoutesAsync(CancellationToken cancellationToken = default)
     {
         var delay = TimeSpan.FromSeconds(Math.Max(0, _opt.ConsolidationDelaySeconds));
@@ -234,11 +292,164 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         var count = 0;
         foreach (var route in routes)
         {
+            var stopList = route.Stops.OrderBy(s => s.StopSequence).ToList();
+            var orderIds = stopList.Select(s => s.OrderId).ToList();
+            var ordersSnapshot = await _db.Orders
+                .AsNoTracking()
+                .Where(o => orderIds.Contains(o.Id))
+                .ToListAsync(cancellationToken);
+
+            var allTerminal = ordersSnapshot.Count > 0 && ordersSnapshot.All(o =>
+                o.Status == OrderStatus.Delivered || o.Status == OrderStatus.Cancelled);
+
+            if (allTerminal)
+            {
+                var ordersTracked = await _db.Orders
+                    .Include(o => o.Address)
+                    .Where(o => orderIds.Contains(o.Id))
+                    .ToListAsync(cancellationToken);
+                await CompleteOpenRouteWithFullMetaAsync(route, ordersTracked, cancellationToken);
+                count++;
+                continue;
+            }
+
             if (await TryConsolidateRouteAsync(route, cancellationToken))
                 count++;
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// Google + buffers + meta; actualiza paradas. No cambia Status ni ConsolidatedAt.
+    /// </summary>
+    private async Task ApplyRoutePlanningCoreAsync(
+        DeliveryRoute route,
+        List<DeliveryRouteStop> planningStops,
+        Dictionary<int, Order> dict,
+        CancellationToken cancellationToken)
+    {
+        var keywords = ComplexAccessKeywordEvaluator.ParseKeywords(_opt.ComplexAccessKeywords);
+        var complexBuffer = _opt.ComplexAccessBufferSeconds;
+        var k = 0;
+        foreach (var stop in planningStops)
+        {
+            var ord = dict[stop.OrderId];
+            var text = stop.AddressSnapshotText ?? BuildAddressSnapshot(ord);
+            stop.AddressSnapshotText = text;
+            var (matches, term) = ComplexAccessKeywordEvaluator.Evaluate(text, keywords);
+            stop.RequiresComplexAccessBuffer = matches;
+            stop.ComplexAccessMatchTerm = term;
+            stop.ComplexAccessBonusSeconds = matches ? complexBuffer : 0;
+            if (matches) k++;
+        }
+
+        var branch = await _db.Branches.AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == route.BranchId, cancellationToken);
+        var branchHasCoords = branch?.Latitude is not null && branch?.Longitude is not null;
+
+        var warnings = new List<string>();
+        if (!branchHasCoords)
+        {
+            warnings.Add(
+                "La sucursal no tiene coordenadas configuradas; el tiempo y la distancia en ruta no incluyen el tramo desde el local. Configúralas en la ficha de la sucursal.");
+        }
+
+        var stopsMissingCoords = planningStops
+            .Where(s =>
+            {
+                var o = dict[s.OrderId];
+                return o.Address?.Latitude is null || o.Address.Longitude is null;
+            })
+            .ToList();
+
+        if (stopsMissingCoords.Count > 0)
+        {
+            var ids = string.Join(", ", stopsMissingCoords.Select(s => s.OrderId));
+            warnings.Add(
+                $"Uno o más pedidos no tienen coordenadas en la dirección (#{ids}). Abre cada pedido y ubica el pin en el mapa. Hasta entonces la meta solo usa márgenes por pedido.");
+        }
+
+        var waypoints = new List<(double Lat, double Lng)>();
+        if (branchHasCoords)
+        {
+            waypoints.Add(((double)branch!.Latitude!.Value, (double)branch.Longitude!.Value));
+        }
+
+        foreach (var stop in planningStops)
+        {
+            var ord = dict[stop.OrderId];
+            if (ord.Address?.Latitude is decimal lat && ord.Address.Longitude is decimal lng)
+                waypoints.Add(((double)lat, (double)lng));
+        }
+
+        var n = planningStops.Count;
+        var perOrder = _opt.PerOrderBufferSeconds;
+        int distMeters = 0;
+        int driveSecs = 0;
+
+        var skipGoogle = stopsMissingCoords.Count > 0 || waypoints.Count < 2;
+        if (skipGoogle)
+        {
+            if (stopsMissingCoords.Count == 0 && waypoints.Count < 2)
+            {
+                warnings.Add(
+                    "No hay suficientes puntos con coordenadas para calcular la ruta en mapa. La meta usa solo los márgenes por pedido.");
+            }
+
+            _logger.LogWarning(
+                "Ruta {RouteId}: planificación sin Google (paradas sin coords o menos de 2 waypoints). Stops={N}, waypoints={W}",
+                route.Id, n, waypoints.Count);
+        }
+        else
+        {
+            (distMeters, driveSecs) = await _routesMetrics.ComputeRouteAsync(waypoints, cancellationToken);
+            if (distMeters == 0 && driveSecs == 0)
+            {
+                warnings.Add(
+                    "No se obtuvo tiempo ni distancia desde Google Maps (revisa la clave de API o la red). La meta usa solo los márgenes por pedido.");
+                _logger.LogWarning("Ruta {RouteId}: Google Routes devolvió distancia y duración en cero.", route.Id);
+            }
+        }
+
+        var meta = driveSecs + n * perOrder + k * complexBuffer;
+
+        route.PlannedDistanceMeters = distMeters;
+        route.PlannedDrivingDurationSeconds = driveSecs;
+        route.StopCount = n;
+        route.ComplexAccessStopCount = k;
+        route.MetaDurationSeconds = meta;
+        route.PerOrderBufferSeconds = perOrder;
+        route.ComplexAccessBufferSeconds = complexBuffer;
+        route.PlanningWarnings = warnings.Count > 0 ? string.Join('\n', warnings) : null;
+        route.RouteStartedAtUtc = route.LastAssignmentAtUtc.AddSeconds(_opt.ConsolidationDelaySeconds);
+    }
+
+    private async Task CompleteOpenRouteWithFullMetaAsync(
+        DeliveryRoute route,
+        List<Order> orders,
+        CancellationToken cancellationToken)
+    {
+        var stopList = route.Stops.OrderBy(s => s.StopSequence).ToList();
+        var dict = orders.ToDictionary(o => o.Id);
+        if (stopList.Count == 0)
+            return;
+        if (stopList.Any(s =>
+                !dict.TryGetValue(s.OrderId, out var o)
+                || (o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled)))
+            return;
+
+        await ApplyRoutePlanningCoreAsync(route, stopList, dict, cancellationToken);
+
+        var now = DateTime.UtcNow;
+        route.ConsolidatedAtUtc = now;
+        route.CompletedAtUtc = now;
+        route.ActualDurationSeconds = route.MetaDurationSeconds;
+        route.MetSla = true;
+        route.Status = DeliveryRouteStatus.Completed;
+
+        await TrySetReturnToBranchMetersAsync(route, orders, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<bool> TryConsolidateRouteAsync(DeliveryRoute route, CancellationToken cancellationToken)
@@ -303,100 +514,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
             return false;
         }
 
-        var keywords = ComplexAccessKeywordEvaluator.ParseKeywords(_opt.ComplexAccessKeywords);
-        var complexBuffer = _opt.ComplexAccessBufferSeconds;
-        var k = 0;
-        foreach (var stop in eligibleStops)
-        {
-            var ord = dict[stop.OrderId];
-            var text = stop.AddressSnapshotText ?? BuildAddressSnapshot(ord);
-            stop.AddressSnapshotText = text;
-            var (matches, term) = ComplexAccessKeywordEvaluator.Evaluate(text, keywords);
-            stop.RequiresComplexAccessBuffer = matches;
-            stop.ComplexAccessMatchTerm = term;
-            stop.ComplexAccessBonusSeconds = matches ? complexBuffer : 0;
-            if (matches) k++;
-        }
-
-        var branch = await _db.Branches.AsNoTracking()
-            .FirstOrDefaultAsync(b => b.Id == route.BranchId, cancellationToken);
-        var branchHasCoords = branch?.Latitude is not null && branch?.Longitude is not null;
-
-        var warnings = new List<string>();
-        if (!branchHasCoords)
-        {
-            warnings.Add(
-                "La sucursal no tiene coordenadas configuradas; el tiempo y la distancia en ruta no incluyen el tramo desde el local. Configúralas en la ficha de la sucursal.");
-        }
-
-        var stopsMissingCoords = eligibleStops
-            .Where(s =>
-            {
-                var o = dict[s.OrderId];
-                return o.Address?.Latitude is null || o.Address.Longitude is null;
-            })
-            .ToList();
-
-        if (stopsMissingCoords.Count > 0)
-        {
-            var ids = string.Join(", ", stopsMissingCoords.Select(s => s.OrderId));
-            warnings.Add(
-                $"Uno o más pedidos no tienen coordenadas en la dirección (#{ids}). Abre cada pedido y ubica el pin en el mapa. Hasta entonces la meta solo usa márgenes por pedido.");
-        }
-
-        var waypoints = new List<(double Lat, double Lng)>();
-        if (branchHasCoords)
-        {
-            waypoints.Add(((double)branch!.Latitude!.Value, (double)branch.Longitude!.Value));
-        }
-
-        foreach (var stop in eligibleStops)
-        {
-            var ord = dict[stop.OrderId];
-            if (ord.Address?.Latitude is decimal lat && ord.Address.Longitude is decimal lng)
-                waypoints.Add(((double)lat, (double)lng));
-        }
-
-        var n = eligibleStops.Count;
-        var perOrder = _opt.PerOrderBufferSeconds;
-        int distMeters = 0;
-        int driveSecs = 0;
-
-        var skipGoogle = stopsMissingCoords.Count > 0 || waypoints.Count < 2;
-        if (skipGoogle)
-        {
-            if (stopsMissingCoords.Count == 0 && waypoints.Count < 2)
-            {
-                warnings.Add(
-                    "No hay suficientes puntos con coordenadas para calcular la ruta en mapa. La meta usa solo los márgenes por pedido.");
-            }
-
-            _logger.LogWarning(
-                "Ruta {RouteId}: consolidación sin Google (paradas sin coords o menos de 2 waypoints). Stops={N}, waypoints={W}",
-                route.Id, n, waypoints.Count);
-        }
-        else
-        {
-            (distMeters, driveSecs) = await _routesMetrics.ComputeRouteAsync(waypoints, cancellationToken);
-            if (distMeters == 0 && driveSecs == 0)
-            {
-                warnings.Add(
-                    "No se obtuvo tiempo ni distancia desde Google Maps (revisa la clave de API o la red). La meta usa solo los márgenes por pedido.");
-                _logger.LogWarning("Ruta {RouteId}: Google Routes devolvió distancia y duración en cero.", route.Id);
-            }
-        }
-
-        var meta = driveSecs + n * perOrder + k * complexBuffer;
-
-        route.PlannedDistanceMeters = distMeters;
-        route.PlannedDrivingDurationSeconds = driveSecs;
-        route.StopCount = n;
-        route.ComplexAccessStopCount = k;
-        route.MetaDurationSeconds = meta;
-        route.PerOrderBufferSeconds = perOrder;
-        route.ComplexAccessBufferSeconds = complexBuffer;
-        route.PlanningWarnings = warnings.Count > 0 ? string.Join('\n', warnings) : null;
-        route.RouteStartedAtUtc = route.LastAssignmentAtUtc.AddSeconds(_opt.ConsolidationDelaySeconds);
+        await ApplyRoutePlanningCoreAsync(route, eligibleStops, dict, cancellationToken);
         route.ConsolidatedAtUtc = DateTime.UtcNow;
         route.Status = DeliveryRouteStatus.InProgress;
 
