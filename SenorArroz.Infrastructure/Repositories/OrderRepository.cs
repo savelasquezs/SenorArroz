@@ -66,6 +66,9 @@ public class OrderRepository : IOrderRepository
             .FirstOrDefaultAsync(o => o.Id == id);
     }
 
+    /// <summary>
+    /// Lista paginada de pedidos. Con rango de fechas completo, filtra por día operativo (creado o <see cref="Order.ReservedFor"/> en el rango UTC).
+    /// </summary>
     public async Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null, bool forKitchen = false)
     {
         var query = _context.Orders
@@ -90,14 +93,34 @@ public class OrderRepository : IOrderRepository
             query = query.Where(o => o.BranchId == branchId.Value);
         }
 
-        // Filtrar por rango de fechas si se especifica
-        if (fromDate.HasValue)
+        // Día operativo (misma regla que SearchOrders): creados en el rango UTC o ReservedFor en el rango
+        if (fromDate.HasValue && toDate.HasValue)
         {
-            query = query.Where(o => o.CreatedAt >= fromDate.Value);
+            var fromUtc = fromDate.Value.Kind == DateTimeKind.Utc
+                ? fromDate.Value
+                : DateTime.SpecifyKind(fromDate.Value, DateTimeKind.Utc);
+            var toUtc = toDate.Value.Kind == DateTimeKind.Utc
+                ? toDate.Value
+                : DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
+            query = WhereOperationalDateRangeUtc(query, fromUtc, toUtc);
         }
-        if (toDate.HasValue)
+        else if (fromDate.HasValue)
         {
-            query = query.Where(o => o.CreatedAt <= toDate.Value);
+            var fromUtc = fromDate.Value.Kind == DateTimeKind.Utc
+                ? fromDate.Value
+                : DateTime.SpecifyKind(fromDate.Value, DateTimeKind.Utc);
+            query = query.Where(o =>
+                o.CreatedAt >= fromUtc
+                || (o.ReservedFor.HasValue && o.ReservedFor.Value >= fromUtc));
+        }
+        else if (toDate.HasValue)
+        {
+            var toUtc = toDate.Value.Kind == DateTimeKind.Utc
+                ? toDate.Value
+                : DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
+            query = query.Where(o =>
+                o.CreatedAt <= toUtc
+                || (o.ReservedFor.HasValue && o.ReservedFor.Value <= toUtc));
         }
 
         if (forKitchen)
