@@ -41,5 +41,19 @@ public class OrderNotificationService : IOrderNotificationService
             .Group($"Branch_{order.BranchId}_Delivery")
             .SendAsync("OrderAssigned", order);
     }
+
+    public async Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind)
+    {
+        await _hubContext.Clients
+            .Group($"Branch_{order.BranchId}_Kitchen")
+            .SendAsync("OrderModified", new { order, modificationKind });
+    }
+
+    public async Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind)
+    {
+        await _hubContext.Clients
+            .Group($"Branch_{order.BranchId}_Delivery")
+            .SendAsync("OrderModified", new { order, modificationKind });
+    }
 }
 

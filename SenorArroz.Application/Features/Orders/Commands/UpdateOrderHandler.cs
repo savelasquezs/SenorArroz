@@ -10,6 +10,10 @@ namespace SenorArroz.Application.Features.Orders.Commands;
 
 public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 {
+    private const string ModSchedule = "schedule";
+    private const string ModContent = "content";
+    private const string ModMultiple = "multiple";
+
     private readonly IOrderRepository _orderRepository;
     private readonly IAddressRepository _addressRepository;
     private readonly IMapper _mapper;
@@ -18,9 +22,9 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
     private readonly IOrderNotificationService _notificationService;
 
     public UpdateOrderHandler(
-        IOrderRepository orderRepository, 
+        IOrderRepository orderRepository,
         IAddressRepository addressRepository,
-        IMapper mapper, 
+        IMapper mapper,
         ICurrentUser currentUser,
         IOrderBusinessRulesService businessRules,
         IOrderNotificationService notificationService)
@@ -50,6 +54,10 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         // Validar si puede modificar productos
         if (request.Order.OrderDetails != null && !_businessRules.CanUpdateOrderProducts(existingOrder, _currentUser.Role))
             throw new BusinessException("No tienes permisos para modificar los productos de este pedido");
+
+        var beforeReservedFor = existingOrder.ReservedFor;
+        var beforePrepareAt = existingOrder.PrepareAt;
+        var beforeNotes = existingOrder.Notes;
 
         // Validar prepare_at <= reserved_for cuando ambos tienen valor
         if (request.Order.PrepareAt.HasValue && request.Order.ReservedFor.HasValue
@@ -169,20 +177,60 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             }
         }
 
+        var scheduleChanged = !NullableUtcInstantEquals(beforeReservedFor, existingOrder.ReservedFor)
+            || !NullableUtcInstantEquals(beforePrepareAt, existingOrder.PrepareAt);
+
+        if (scheduleChanged && existingOrder.Status == OrderStatus.Taken)
+        {
+            if (existingOrder.PrepareAt.HasValue && existingOrder.PrepareAt.Value <= DateTime.UtcNow)
+                existingOrder.PreparedNotifiedAt = DateTime.UtcNow;
+            else
+                existingOrder.PreparedNotifiedAt = null;
+        }
+
         var updatedOrder = await _orderRepository.UpdateAsync(existingOrder);
         var result = _mapper.Map<OrderDto>(updatedOrder);
 
-        // Si pedido en taken, prepare_at pasó a estar en el pasado y aún no en cocina → notificar
-        if (updatedOrder.Status == OrderStatus.Taken
-            && updatedOrder.PrepareAt.HasValue
-            && updatedOrder.PrepareAt.Value <= DateTime.UtcNow
-            && !updatedOrder.PreparedNotifiedAt.HasValue)
+        var notesChanged = request.Order.Notes != null
+            && !string.Equals(beforeNotes ?? "", updatedOrder.Notes ?? "", StringComparison.Ordinal);
+        var productsChanged = request.Order.OrderDetails != null;
+
+        string? modificationKind = (scheduleChanged, notesChanged, productsChanged) switch
         {
-            await _notificationService.NotifyReservationToKitchen(result);
-            updatedOrder.PreparedNotifiedAt = DateTime.UtcNow;
-            await _orderRepository.UpdateAsync(updatedOrder);
+            (true, true, _) or (true, _, true) or (_, true, true) => ModMultiple,
+            (true, false, false) => ModSchedule,
+            _ when notesChanged || productsChanged => ModContent,
+            _ => null,
+        };
+
+        if (modificationKind != null)
+        {
+            if (updatedOrder.Status is OrderStatus.Taken or OrderStatus.InPreparation)
+                await _notificationService.NotifyOrderModifiedToKitchen(result, modificationKind);
+
+            if (updatedOrder.Status == OrderStatus.OnTheWay)
+                await _notificationService.NotifyOrderModifiedToDelivery(result, modificationKind);
         }
 
         return result;
     }
+
+    private static bool NullableUtcInstantEquals(DateTime? a, DateTime? b)
+    {
+        if (a.HasValue != b.HasValue)
+            return false;
+        if (!a.HasValue)
+            return true;
+        var av = a.GetValueOrDefault();
+        var bv = b.GetValueOrDefault();
+        return DateTime.Equals(NormalizeToUtc(av), NormalizeToUtc(bv));
+    }
+
+    private static DateTime NormalizeToUtc(DateTime dt) =>
+        dt.Kind switch
+        {
+            DateTimeKind.Utc => dt,
+            DateTimeKind.Local => dt.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
+        };
 }
