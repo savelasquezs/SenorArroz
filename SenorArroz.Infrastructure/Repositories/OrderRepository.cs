@@ -94,6 +94,8 @@ public class OrderRepository : IOrderRepository
         }
 
         // Día operativo (misma regla que SearchOrders): creados en el rango UTC o ReservedFor en el rango
+        DateTime? rangeFromUtc = null;
+        DateTime? rangeToUtc = null;
         if (fromDate.HasValue && toDate.HasValue)
         {
             var fromUtc = fromDate.Value.Kind == DateTimeKind.Utc
@@ -102,6 +104,8 @@ public class OrderRepository : IOrderRepository
             var toUtc = toDate.Value.Kind == DateTimeKind.Utc
                 ? toDate.Value
                 : DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
+            rangeFromUtc = fromUtc;
+            rangeToUtc = toUtc;
             query = WhereOperationalDateRangeUtc(query, fromUtc, toUtc);
         }
         else if (fromDate.HasValue)
@@ -129,9 +133,23 @@ public class OrderRepository : IOrderRepository
             query = query.Where(o => o.Status == OrderStatus.Taken
                 || o.Status == OrderStatus.InPreparation
                 || o.Status == OrderStatus.Ready);
-            query = query.Where(o =>
-                o.Type != OrderType.Reservation
-                || (o.PrepareAt.HasValue && o.PrepareAt.Value <= now));
+            // Reserva: en cocina si ya tocó preparar, O si la entrega (ReservedFor) cae en el día operativo del listado
+            // (evita ocultar pedidos tomados ayer con entrega hoy mientras prepareAt sigue en el futuro)
+            if (rangeFromUtc.HasValue && rangeToUtc.HasValue)
+            {
+                var rf = rangeFromUtc.Value;
+                var rt = rangeToUtc.Value;
+                query = query.Where(o =>
+                    o.Type != OrderType.Reservation
+                    || (o.PrepareAt.HasValue && o.PrepareAt.Value <= now)
+                    || (o.ReservedFor.HasValue && o.ReservedFor.Value >= rf && o.ReservedFor.Value <= rt));
+            }
+            else
+            {
+                query = query.Where(o =>
+                    o.Type != OrderType.Reservation
+                    || (o.PrepareAt.HasValue && o.PrepareAt.Value <= now));
+            }
         }
 
         // Aplicar ordenamiento
