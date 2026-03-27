@@ -325,7 +325,11 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Address)
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
-            .Where(o => o.CreatedAt.Date >= fromDate.Date && o.CreatedAt.Date <= toDate.Date)
+            .Where(o =>
+                (o.CreatedAt.Date >= fromDate.Date && o.CreatedAt.Date <= toDate.Date)
+                || (o.ReservedFor.HasValue
+                    && o.ReservedFor.Value.Date >= fromDate.Date
+                    && o.ReservedFor.Value.Date <= toDate.Date))
             .AsQueryable();
 
         if (branchId.HasValue)
@@ -543,11 +547,15 @@ public class OrderRepository : IOrderRepository
         if (branchId.HasValue)
             query = query.Where(o => o.BranchId == branchId);
 
-        if (fromDate.HasValue)
-            query = query.Where(o => o.CreatedAt >= fromDate.Value);
-
-        if (toDate.HasValue)
-            query = query.Where(o => o.CreatedAt <= toDate.Value);
+        if (fromDate.HasValue && toDate.HasValue)
+            query = WhereOperationalDateRangeUtc(query, fromDate.Value, toDate.Value);
+        else
+        {
+            if (fromDate.HasValue)
+                query = query.Where(o => o.CreatedAt >= fromDate.Value);
+            if (toDate.HasValue)
+                query = query.Where(o => o.CreatedAt <= toDate.Value);
+        }
 
         return await query.SumAsync(o => o.Total);
     }
@@ -559,11 +567,15 @@ public class OrderRepository : IOrderRepository
         if (branchId.HasValue)
             query = query.Where(o => o.BranchId == branchId);
 
-        if (fromDate.HasValue)
-            query = query.Where(o => o.CreatedAt >= fromDate.Value);
-
-        if (toDate.HasValue)
-            query = query.Where(o => o.CreatedAt <= toDate.Value);
+        if (fromDate.HasValue && toDate.HasValue)
+            query = WhereOperationalDateRangeUtc(query, fromDate.Value, toDate.Value);
+        else
+        {
+            if (fromDate.HasValue)
+                query = query.Where(o => o.CreatedAt >= fromDate.Value);
+            if (toDate.HasValue)
+                query = query.Where(o => o.CreatedAt <= toDate.Value);
+        }
 
         return await query.AverageAsync(o => (decimal?)o.Total) ?? 0;
     }
@@ -579,11 +591,15 @@ public class OrderRepository : IOrderRepository
         if (branchId.HasValue)
             query = query.Where(od => od.Order.BranchId == branchId);
 
-        if (fromDate.HasValue)
-            query = query.Where(od => od.Order.CreatedAt >= fromDate.Value);
-
-        if (toDate.HasValue)
-            query = query.Where(od => od.Order.CreatedAt <= toDate.Value);
+        if (fromDate.HasValue && toDate.HasValue)
+            query = WhereOrderDetailOperationalDateRangeUtc(query, fromDate.Value, toDate.Value);
+        else
+        {
+            if (fromDate.HasValue)
+                query = query.Where(od => od.Order.CreatedAt >= fromDate.Value);
+            if (toDate.HasValue)
+                query = query.Where(od => od.Order.CreatedAt <= toDate.Value);
+        }
 
         return await query
             .GroupBy(od => od.ProductId)
@@ -765,14 +781,21 @@ public class OrderRepository : IOrderRepository
         if (type.HasValue)
             query = query.Where(o => o.Type == type.Value);
 
-        // PostgreSQL timestamp with time zone requiere UTC
-        if (fromDate.HasValue)
+        // Rango calendario (UTC): pedidos creados en el rango o con ReservedFor en el mismo rango (día operativo)
+        if (fromDate.HasValue && toDate.HasValue)
+        {
+            var fromUtc = fromDate.Value.Kind == DateTimeKind.Utc ? fromDate.Value : DateTime.SpecifyKind(fromDate.Value, DateTimeKind.Utc);
+            var toUtc = toDate.Value.Kind == DateTimeKind.Utc ? toDate.Value : DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
+            query = query.Where(o =>
+                (o.CreatedAt >= fromUtc && o.CreatedAt <= toUtc)
+                || (o.ReservedFor.HasValue && o.ReservedFor.Value >= fromUtc && o.ReservedFor.Value <= toUtc));
+        }
+        else if (fromDate.HasValue)
         {
             var fromUtc = fromDate.Value.Kind == DateTimeKind.Utc ? fromDate.Value : DateTime.SpecifyKind(fromDate.Value, DateTimeKind.Utc);
             query = query.Where(o => o.CreatedAt >= fromUtc);
         }
-
-        if (toDate.HasValue)
+        else if (toDate.HasValue)
         {
             var toUtc = toDate.Value.Kind == DateTimeKind.Utc ? toDate.Value : DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
             query = query.Where(o => o.CreatedAt <= toUtc);
@@ -887,7 +910,7 @@ public class OrderRepository : IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var q = _context.Orders.Where(o => o.CreatedAt >= fromUtc && o.CreatedAt <= toUtc);
+        var q = WhereOperationalDateRangeUtc(_context.Orders, fromUtc, toUtc);
         if (branchId.HasValue)
             q = q.Where(o => o.BranchId == branchId.Value);
 
@@ -1019,11 +1042,10 @@ public class OrderRepository : IOrderRepository
         DateTime fromUtc,
         DateTime toUtc)
     {
-        var q = _context.Orders.AsNoTracking()
-            .Where(o =>
-                o.Status != OrderStatus.Cancelled
-                && o.CreatedAt >= fromUtc
-                && o.CreatedAt <= toUtc);
+        var q = WhereOperationalDateRangeUtc(
+            _context.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled),
+            fromUtc,
+            toUtc);
 
         if (branchId.HasValue)
             q = q.Where(o => o.BranchId == branchId.Value);
@@ -1059,7 +1081,11 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken = default)
     {
         return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .GroupBy(o => new { o.BranchId, Day = o.CreatedAt.Date })
+            .GroupBy(o => new
+            {
+                o.BranchId,
+                Day = o.ReservedFor.HasValue ? o.ReservedFor.Value.Date : o.CreatedAt.Date
+            })
             .Select(g => new SalesDayPoint(g.Key.BranchId, g.Key.Day, g.Sum(o => o.Total)))
             .ToListAsync(cancellationToken);
     }
@@ -1071,7 +1097,7 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken = default)
     {
         return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .GroupBy(o => o.CreatedAt.Date)
+            .GroupBy(o => o.ReservedFor.HasValue ? o.ReservedFor.Value.Date : o.CreatedAt.Date)
             .Select(g => new OrdersDayPoint(g.Key, g.Count()))
             .ToListAsync(cancellationToken);
     }
@@ -1083,7 +1109,12 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken = default)
     {
         return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .GroupBy(o => new { o.BranchId, o.CreatedAt.Year, o.CreatedAt.Month })
+            .GroupBy(o => new
+            {
+                o.BranchId,
+                Year = o.ReservedFor.HasValue ? o.ReservedFor.Value.Year : o.CreatedAt.Year,
+                Month = o.ReservedFor.HasValue ? o.ReservedFor.Value.Month : o.CreatedAt.Month
+            })
             .Select(g => new SalesMonthPoint(
                 g.Key.BranchId,
                 g.Key.Year,
@@ -1099,7 +1130,11 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken = default)
     {
         return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .GroupBy(o => new { o.CreatedAt.Year, o.CreatedAt.Month })
+            .GroupBy(o => new
+            {
+                Year = o.ReservedFor.HasValue ? o.ReservedFor.Value.Year : o.CreatedAt.Year,
+                Month = o.ReservedFor.HasValue ? o.ReservedFor.Value.Month : o.CreatedAt.Month
+            })
             .Select(g => new OrdersMonthPoint(g.Key.Year, g.Key.Month, g.Count()))
             .ToListAsync(cancellationToken);
     }
@@ -1111,7 +1146,11 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken = default)
     {
         return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .GroupBy(o => new { o.BranchId, o.CreatedAt.Year })
+            .GroupBy(o => new
+            {
+                o.BranchId,
+                Year = o.ReservedFor.HasValue ? o.ReservedFor.Value.Year : o.CreatedAt.Year
+            })
             .Select(g => new SalesYearPoint(g.Key.BranchId, g.Key.Year, g.Sum(o => o.Total)))
             .ToListAsync(cancellationToken);
     }
@@ -1123,7 +1162,7 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken = default)
     {
         return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .GroupBy(o => o.CreatedAt.Year)
+            .GroupBy(o => o.ReservedFor.HasValue ? o.ReservedFor.Value.Year : o.CreatedAt.Year)
             .Select(g => new OrdersYearPoint(g.Key, g.Count()))
             .ToListAsync(cancellationToken);
     }
@@ -1135,7 +1174,11 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken = default)
     {
         return await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
-            .GroupBy(o => new { o.BranchId, o.CreatedAt.Hour })
+            .GroupBy(o => new
+            {
+                o.BranchId,
+                Hour = o.ReservedFor.HasValue ? o.ReservedFor.Value.Hour : o.CreatedAt.Hour
+            })
             .Select(g => new SalesHourPoint(g.Key.BranchId, g.Key.Hour, g.Sum(o => o.Total)))
             .ToListAsync(cancellationToken);
     }
@@ -1147,7 +1190,7 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken = default)
     {
         return await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
-            .GroupBy(o => o.CreatedAt.Hour)
+            .GroupBy(o => o.ReservedFor.HasValue ? o.ReservedFor.Value.Hour : o.CreatedAt.Hour)
             .Select(g => new OrdersHourPoint(g.Key, g.Count()))
             .ToListAsync(cancellationToken);
     }
@@ -1158,12 +1201,12 @@ public class OrderRepository : IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var q = _context.OrderDetails
-            .AsNoTracking()
-            .Where(od =>
-                od.Order.Status != OrderStatus.Cancelled
-                && od.Order.CreatedAt >= fromUtc
-                && od.Order.CreatedAt <= toUtc);
+        var q = WhereOrderDetailOperationalDateRangeUtc(
+            _context.OrderDetails
+                .AsNoTracking()
+                .Where(od => od.Order.Status != OrderStatus.Cancelled),
+            fromUtc,
+            toUtc);
 
         if (branchId.HasValue)
             q = q.Where(od => od.Order.BranchId == branchId.Value);
@@ -1186,12 +1229,12 @@ public class OrderRepository : IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var q = _context.OrderDetails
-            .AsNoTracking()
-            .Where(od =>
-                od.Order.Status != OrderStatus.Cancelled
-                && od.Order.CreatedAt >= fromUtc
-                && od.Order.CreatedAt <= toUtc);
+        var q = WhereOrderDetailOperationalDateRangeUtc(
+            _context.OrderDetails
+                .AsNoTracking()
+                .Where(od => od.Order.Status != OrderStatus.Cancelled),
+            fromUtc,
+            toUtc);
 
         if (branchId.HasValue)
             q = q.Where(od => od.Order.BranchId == branchId.Value);
@@ -1218,13 +1261,12 @@ public class OrderRepository : IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var q = _context.OrderDetails
-            .AsNoTracking()
-            .Where(od =>
-                od.Order.Status != OrderStatus.Cancelled
-                && od.Order.CreatedAt >= fromUtc
-                && od.Order.CreatedAt <= toUtc
-                && od.Product.WeightGrams != null);
+        var q = WhereOrderDetailOperationalDateRangeUtc(
+            _context.OrderDetails
+                .AsNoTracking()
+                .Where(od => od.Order.Status != OrderStatus.Cancelled && od.Product.WeightGrams != null),
+            fromUtc,
+            toUtc);
 
         if (branchId.HasValue)
             q = q.Where(od => od.Order.BranchId == branchId.Value);
@@ -1258,14 +1300,15 @@ public class OrderRepository : IOrderRepository
         CategoryWeightEvolutionGranularity granularity,
         CancellationToken cancellationToken = default)
     {
-        var q = _context.OrderDetails
-            .AsNoTracking()
-            .Where(od =>
-                od.Order.Status != OrderStatus.Cancelled
-                && od.Order.CreatedAt >= fromUtc
-                && od.Order.CreatedAt <= toUtc
-                && od.Product.WeightGrams != null
-                && od.Product.CategoryId == categoryId);
+        var q = WhereOrderDetailOperationalDateRangeUtc(
+            _context.OrderDetails
+                .AsNoTracking()
+                .Where(od =>
+                    od.Order.Status != OrderStatus.Cancelled
+                    && od.Product.WeightGrams != null
+                    && od.Product.CategoryId == categoryId),
+            fromUtc,
+            toUtc);
 
         if (branchId.HasValue)
             q = q.Where(od => od.Order.BranchId == branchId.Value);
@@ -1287,13 +1330,13 @@ public class OrderRepository : IOrderRepository
         CategoryWeightEvolutionGranularity granularity,
         CancellationToken cancellationToken = default)
     {
-        var q = _context.OrderDetails
-            .AsNoTracking()
-            .Where(od =>
-                od.Order.Status != OrderStatus.Cancelled
-                && od.Order.CreatedAt >= fromUtc
-                && od.Order.CreatedAt <= toUtc
-                && od.Product.WeightGrams != null);
+        var q = WhereOrderDetailOperationalDateRangeUtc(
+            _context.OrderDetails
+                .AsNoTracking()
+                .Where(od =>
+                    od.Order.Status != OrderStatus.Cancelled && od.Product.WeightGrams != null),
+            fromUtc,
+            toUtc);
 
         if (branchId.HasValue)
             q = q.Where(od => od.Order.BranchId == branchId.Value);
@@ -1312,7 +1355,7 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken)
     {
         var rows = await q
-            .GroupBy(od => od.Order.CreatedAt.Date)
+            .GroupBy(od => od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Date : od.Order.CreatedAt.Date)
             .Select(g => new
             {
                 Bucket = g.Key,
@@ -1331,7 +1374,11 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken)
     {
         var rows = await q
-            .GroupBy(od => new { od.Order.CreatedAt.Year, od.Order.CreatedAt.Month })
+            .GroupBy(od => new
+            {
+                Year = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Year : od.Order.CreatedAt.Year,
+                Month = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Month : od.Order.CreatedAt.Month
+            })
             .Select(g => new
             {
                 g.Key.Year,
@@ -1354,7 +1401,7 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken)
     {
         var rows = await q
-            .GroupBy(od => od.Order.CreatedAt.Year)
+            .GroupBy(od => od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Year : od.Order.CreatedAt.Year)
             .Select(g => new
             {
                 Year = g.Key,
@@ -1379,7 +1426,7 @@ public class OrderRepository : IOrderRepository
             {
                 od.Product.CategoryId,
                 Name = od.Product.Category.Name ?? string.Empty,
-                Bucket = od.Order.CreatedAt.Date,
+                Bucket = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Date : od.Order.CreatedAt.Date,
             })
             .Select(g => new
             {
@@ -1413,8 +1460,8 @@ public class OrderRepository : IOrderRepository
             {
                 od.Product.CategoryId,
                 Name = od.Product.Category.Name ?? string.Empty,
-                od.Order.CreatedAt.Year,
-                od.Order.CreatedAt.Month,
+                Year = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Year : od.Order.CreatedAt.Year,
+                Month = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Month : od.Order.CreatedAt.Month,
             })
             .Select(g => new
             {
@@ -1452,7 +1499,7 @@ public class OrderRepository : IOrderRepository
             {
                 od.Product.CategoryId,
                 Name = od.Product.Category.Name ?? string.Empty,
-                Year = od.Order.CreatedAt.Year,
+                Year = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Year : od.Order.CreatedAt.Year,
             })
             .Select(g => new
             {
@@ -1477,5 +1524,32 @@ public class OrderRepository : IOrderRepository
                     .ToList()))
             .OrderBy(s => s.CategoryName)
             .ToList();
+    }
+
+    /// <summary>
+    /// Incluye pedidos creados en el rango UTC o con <see cref="Order.ReservedFor"/> en el mismo rango (día operativo Colombia → UTC en el handler).
+    /// </summary>
+    private static IQueryable<Order> WhereOperationalDateRangeUtc(
+        IQueryable<Order> orders,
+        DateTime fromUtc,
+        DateTime toUtc)
+    {
+        var from = fromUtc.Kind == DateTimeKind.Utc ? fromUtc : DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        var to = toUtc.Kind == DateTimeKind.Utc ? toUtc : DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+        return orders.Where(o =>
+            (o.CreatedAt >= from && o.CreatedAt <= to)
+            || (o.ReservedFor.HasValue && o.ReservedFor.Value >= from && o.ReservedFor.Value <= to));
+    }
+
+    private static IQueryable<OrderDetail> WhereOrderDetailOperationalDateRangeUtc(
+        IQueryable<OrderDetail> query,
+        DateTime fromUtc,
+        DateTime toUtc)
+    {
+        var from = fromUtc.Kind == DateTimeKind.Utc ? fromUtc : DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        var to = toUtc.Kind == DateTimeKind.Utc ? toUtc : DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+        return query.Where(od =>
+            (od.Order.CreatedAt >= from && od.Order.CreatedAt <= to)
+            || (od.Order.ReservedFor.HasValue && od.Order.ReservedFor.Value >= from && od.Order.ReservedFor.Value <= to));
     }
 }

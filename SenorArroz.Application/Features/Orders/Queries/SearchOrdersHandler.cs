@@ -51,7 +51,7 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             branchFilter = _currentUser.BranchId;
         }
 
-        // Filtro por CreatedAt: días calendario en Colombia → rango UTC (mismo criterio que historial domiciliario)
+        // Filtro por día operativo: días calendario en Colombia → rango UTC; incluye pedidos creados en el rango o con ReservedFor en el mismo rango
         DateTime? fromDateUtc = null;
         DateTime? toDateUtc = null;
         if (request.FromDate.HasValue || request.ToDate.HasValue)
