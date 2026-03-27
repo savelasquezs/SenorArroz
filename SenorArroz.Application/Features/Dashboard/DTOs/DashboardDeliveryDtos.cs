@@ -75,3 +75,19 @@ public class DashboardDeliveryRouteHistoryItemDto
     public bool? MetSla { get; set; }
     public int TotalDistanceMeters { get; set; }
 }
+
+/// <summary>Paradas de una ruta cerrada (detalle para dashboard).</summary>
+public class DashboardDeliveryRouteStopsResponseDto
+{
+    public int RouteId { get; set; }
+    public List<DashboardDeliveryRouteStopItemDto> Stops { get; set; } = new();
+}
+
+public class DashboardDeliveryRouteStopItemDto
+{
+    public int OrderId { get; set; }
+    public int StopSequence { get; set; }
+    public string? AddressSnapshotText { get; set; }
+    public string? CustomerName { get; set; }
+    public string? AddressText { get; set; }
+}
