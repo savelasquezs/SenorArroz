@@ -318,7 +318,38 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
             if (matches) k++;
         }
 
+        var branch = await _db.Branches.AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == route.BranchId, cancellationToken);
+        var branchHasCoords = branch?.Latitude is not null && branch?.Longitude is not null;
+
+        var warnings = new List<string>();
+        if (!branchHasCoords)
+        {
+            warnings.Add(
+                "La sucursal no tiene coordenadas configuradas; el tiempo y la distancia en ruta no incluyen el tramo desde el local. Configúralas en la ficha de la sucursal.");
+        }
+
+        var stopsMissingCoords = eligibleStops
+            .Where(s =>
+            {
+                var o = dict[s.OrderId];
+                return o.Address?.Latitude is null || o.Address.Longitude is null;
+            })
+            .ToList();
+
+        if (stopsMissingCoords.Count > 0)
+        {
+            var ids = string.Join(", ", stopsMissingCoords.Select(s => s.OrderId));
+            warnings.Add(
+                $"Uno o más pedidos no tienen coordenadas en la dirección (#{ids}). Abre cada pedido y ubica el pin en el mapa. Hasta entonces la meta solo usa márgenes por pedido.");
+        }
+
         var waypoints = new List<(double Lat, double Lng)>();
+        if (branchHasCoords)
+        {
+            waypoints.Add(((double)branch!.Latitude!.Value, (double)branch.Longitude!.Value));
+        }
+
         foreach (var stop in eligibleStops)
         {
             var ord = dict[stop.OrderId];
@@ -326,18 +357,35 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
                 waypoints.Add(((double)lat, (double)lng));
         }
 
-        int distMeters;
-        int driveSecs;
-        if (waypoints.Count >= 2)
-            (distMeters, driveSecs) = await _routesMetrics.ComputeRouteAsync(waypoints, cancellationToken);
-        else
-        {
-            distMeters = 0;
-            driveSecs = 0;
-        }
-
         var n = eligibleStops.Count;
         var perOrder = _opt.PerOrderBufferSeconds;
+        int distMeters = 0;
+        int driveSecs = 0;
+
+        var skipGoogle = stopsMissingCoords.Count > 0 || waypoints.Count < 2;
+        if (skipGoogle)
+        {
+            if (stopsMissingCoords.Count == 0 && waypoints.Count < 2)
+            {
+                warnings.Add(
+                    "No hay suficientes puntos con coordenadas para calcular la ruta en mapa. La meta usa solo los márgenes por pedido.");
+            }
+
+            _logger.LogWarning(
+                "Ruta {RouteId}: consolidación sin Google (paradas sin coords o menos de 2 waypoints). Stops={N}, waypoints={W}",
+                route.Id, n, waypoints.Count);
+        }
+        else
+        {
+            (distMeters, driveSecs) = await _routesMetrics.ComputeRouteAsync(waypoints, cancellationToken);
+            if (distMeters == 0 && driveSecs == 0)
+            {
+                warnings.Add(
+                    "No se obtuvo tiempo ni distancia desde Google Maps (revisa la clave de API o la red). La meta usa solo los márgenes por pedido.");
+                _logger.LogWarning("Ruta {RouteId}: Google Routes devolvió distancia y duración en cero.", route.Id);
+            }
+        }
+
         var meta = driveSecs + n * perOrder + k * complexBuffer;
 
         route.PlannedDistanceMeters = distMeters;
@@ -347,6 +395,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         route.MetaDurationSeconds = meta;
         route.PerOrderBufferSeconds = perOrder;
         route.ComplexAccessBufferSeconds = complexBuffer;
+        route.PlanningWarnings = warnings.Count > 0 ? string.Join('\n', warnings) : null;
         route.RouteStartedAtUtc = route.LastAssignmentAtUtc.AddSeconds(_opt.ConsolidationDelaySeconds);
         route.ConsolidatedAtUtc = DateTime.UtcNow;
         route.Status = DeliveryRouteStatus.InProgress;

@@ -85,15 +85,16 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             // Cambiar estado a OnTheWay automáticamente después de asignar
             assignedOrder = await _orderRepository.ChangeStatusAsync(orderId, Domain.Enums.OrderStatus.OnTheWay, null);
 
-            var orderDto = _mapper.Map<OrderDto>(assignedOrder);
-            assignedOrders.Add(orderDto);
-
-            // Notificar a todos los domiciliarios conectados para que actualicen su lista
-            await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
-
             var fullOrder = await _orderRepository.GetByIdAsync(orderId);
             if (fullOrder != null)
                 await _deliveryRouteWorkflow.OnOrderAssignedToDeliverymanAsync(fullOrder, cancellationToken);
+
+            // DTO y notificación después del workflow para incluir deliveryRouteId (y coherencia con BD)
+            var afterRoute = await _orderRepository.GetByIdAsync(orderId) ?? assignedOrder;
+            var orderDto = _mapper.Map<OrderDto>(afterRoute);
+            assignedOrders.Add(orderDto);
+
+            await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
         }
 
         return assignedOrders;

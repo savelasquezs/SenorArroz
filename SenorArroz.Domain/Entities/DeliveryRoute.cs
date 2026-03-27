@@ -29,8 +29,8 @@ public class DeliveryRoute : BaseEntity
     /// <summary>Segundos sumados por pedido (4 min por defecto).</summary>
     public int PerOrderBufferSeconds { get; set; } = 240;
 
-    /// <summary>Segundos por parada con acceso complejo (5 min por defecto).</summary>
-    public int ComplexAccessBufferSeconds { get; set; } = 300;
+    /// <summary>Segundos por parada con acceso complejo (8 min por defecto en opciones).</summary>
+    public int ComplexAccessBufferSeconds { get; set; } = 480;
 
     /// <summary>
     /// Meta total en segundos: tiempo manejando Google + N×per_order + K×complex.
@@ -41,6 +41,9 @@ public class DeliveryRoute : BaseEntity
     public DateTime? CompletedAtUtc { get; set; }
     public int? ActualDurationSeconds { get; set; }
     public bool? MetSla { get; set; }
+
+    /// <summary>Advertencias al consolidar (saltos de línea). Null si el plan usó Google sin incidencias.</summary>
+    public string? PlanningWarnings { get; set; }
 
     public virtual User Deliveryman { get; set; } = null!;
     public virtual Branch Branch { get; set; } = null!;

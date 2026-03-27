@@ -53,6 +53,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Address)
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
+            .Include(o => o.DeliveryRoute)
             .Include(o => o.OrderDetails)
                 .ThenInclude(od => od.Product)
             .Include(o => o.BankPayments)
@@ -425,6 +426,7 @@ public class OrderRepository : IOrderRepository
                 .ThenInclude(a => a.Neighborhood)
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
+            .Include(o => o.DeliveryRoute)
             .Where(o => o.DeliveryManId == deliveryManId && 
                       (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready) &&
                       o.Type == OrderType.Delivery)
@@ -442,6 +444,7 @@ public class OrderRepository : IOrderRepository
                 .ThenInclude(a => a.Neighborhood)
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
+            .Include(o => o.DeliveryRoute)
             .Where(o => o.Status == OrderStatus.Ready && 
                        o.DeliveryManId == null && 
                        o.Type == OrderType.Delivery)
@@ -733,6 +736,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Address)
             .Include(o => o.LoyaltyRule)
             .Include(o => o.DeliveryMan)
+            .Include(o => o.DeliveryRoute)
             .Include(o => o.BankPayments)
             .Include(o => o.AppPayments)
             .AsQueryable();

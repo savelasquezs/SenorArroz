@@ -30,7 +30,8 @@ public class DeliveryRouteConfiguration : IEntityTypeConfiguration<DeliveryRoute
         builder.Property(e => e.StopCount).HasColumnName("stop_count");
         builder.Property(e => e.ComplexAccessStopCount).HasColumnName("complex_access_stop_count");
         builder.Property(e => e.PerOrderBufferSeconds).HasColumnName("per_order_buffer_seconds").HasDefaultValue(240);
-        builder.Property(e => e.ComplexAccessBufferSeconds).HasColumnName("complex_access_buffer_seconds").HasDefaultValue(300);
+        builder.Property(e => e.ComplexAccessBufferSeconds).HasColumnName("complex_access_buffer_seconds").HasDefaultValue(480);
+        builder.Property(e => e.PlanningWarnings).HasColumnName("planning_warnings").HasMaxLength(2000);
         builder.Property(e => e.MetaDurationSeconds).HasColumnName("meta_duration_seconds");
         builder.Property(e => e.ConsolidatedAtUtc).HasColumnName("consolidated_at_utc");
         builder.Property(e => e.CompletedAtUtc).HasColumnName("completed_at_utc");
