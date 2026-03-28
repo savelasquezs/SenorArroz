@@ -133,22 +133,27 @@ public class OrderRepository : IOrderRepository
             query = query.Where(o => o.Status == OrderStatus.Taken
                 || o.Status == OrderStatus.InPreparation
                 || o.Status == OrderStatus.Ready);
-            // Reserva: en cocina si ya tocó preparar, O si la entrega (ReservedFor) cae en el día operativo del listado
-            // (evita ocultar pedidos tomados ayer con entrega hoy mientras prepareAt sigue en el futuro)
+
+            // Hora en que el pedido debe entrar a cocina: prepare_at, o reserved_for - 1h (misma regla que creación).
+            // Domicilio/local programado: no listar hasta esa hora (antes solo se aplicaba a Type == Reservation).
+            // Reserva + rango operativo: sigue pudiendo verse antes si reserved_for cae en el día del listado (planificación).
             if (rangeFromUtc.HasValue && rangeToUtc.HasValue)
             {
                 var rf = rangeFromUtc.Value;
                 var rt = rangeToUtc.Value;
                 query = query.Where(o =>
-                    o.Type != OrderType.Reservation
-                    || (o.PrepareAt.HasValue && o.PrepareAt.Value <= now)
-                    || (o.ReservedFor.HasValue && o.ReservedFor.Value >= rf && o.ReservedFor.Value <= rt));
+                    (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) == null
+                    || (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) <= now
+                    || (o.Type == OrderType.Reservation
+                        && o.ReservedFor.HasValue
+                        && o.ReservedFor.Value >= rf
+                        && o.ReservedFor.Value <= rt));
             }
             else
             {
                 query = query.Where(o =>
-                    o.Type != OrderType.Reservation
-                    || (o.PrepareAt.HasValue && o.PrepareAt.Value <= now));
+                    (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) == null
+                    || (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) <= now);
             }
         }
 

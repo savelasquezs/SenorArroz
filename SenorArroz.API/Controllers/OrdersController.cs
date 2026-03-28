@@ -34,7 +34,7 @@ public class OrdersController : ControllerBase
     /// <param name="branchId">ID de sucursal para filtrar (solo superadmin)</param>
     /// <param name="fromDate">Fecha inicial del filtro (default: inicio del día actual)</param>
     /// <param name="toDate">Fecha final del filtro (default: fin del día actual)</param>
-    /// <param name="forKitchen">Si es true, filtra reservas por prepareAt y estados cocina</param>
+    /// <param name="forKitchen">Si es true, solo estados de cocina y oculta pedidos programados hasta prepareAt (domicilio/local/reserva)</param>
     [HttpGet]
     public async Task<ActionResult<PagedResult<OrderDto>>> GetOrders(
         [FromQuery] int page = 1,
