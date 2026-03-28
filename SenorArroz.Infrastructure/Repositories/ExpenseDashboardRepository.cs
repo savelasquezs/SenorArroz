@@ -186,4 +186,25 @@ public class ExpenseDashboardRepository : IExpenseDashboardRepository
             .ThenBy(r => r.CategoryName)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<Dictionary<int, long>> GetTotalsByExpenseCatalogIdsInRangeAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        IReadOnlyCollection<int> expenseCatalogIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (expenseCatalogIds == null || expenseCatalogIds.Count == 0)
+            return new Dictionary<int, long>();
+
+        var q = BaseDetailsInRange(branchId, fromUtc, toUtc)
+            .Where(ed => expenseCatalogIds.Contains(ed.ExpenseId));
+
+        return await q
+            .GroupBy(ed => ed.ExpenseId)
+            .ToDictionaryAsync(
+                g => g.Key,
+                g => g.Sum(ed => (long)(ed.Total ?? ed.Quantity * ed.Amount)),
+                cancellationToken);
+    }
 }

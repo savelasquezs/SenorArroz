@@ -200,6 +200,15 @@ public interface IOrderRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gramos vendidos por producto (cantidad × peso) en el rango; solo productos con <c>WeightGrams</c>.
+    /// </summary>
+    Task<List<SalesProductWeightRow>> GetSalesProductWeightAggregatesForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Evolución de gramos vendidos para una categoría (solo líneas con peso en producto), agrupada por día, mes o año.
     /// </summary>
     Task<List<SalesCategoryWeightEvolutionPoint>> GetSalesCategoryWeightEvolutionAsync(

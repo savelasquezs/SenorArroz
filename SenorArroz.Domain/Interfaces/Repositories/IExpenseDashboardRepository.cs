@@ -37,4 +37,14 @@ public interface IExpenseDashboardRepository
         DateTime toUtc,
         string granularity,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Total COP por ítem de catálogo de gasto (<c>Expense.Id</c>) en el rango, filtrado a los ids indicados.
+    /// </summary>
+    Task<Dictionary<int, long>> GetTotalsByExpenseCatalogIdsInRangeAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        IReadOnlyCollection<int> expenseCatalogIds,
+        CancellationToken cancellationToken = default);
 }

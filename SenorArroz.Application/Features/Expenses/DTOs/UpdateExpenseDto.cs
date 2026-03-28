@@ -15,6 +15,8 @@ public class UpdateExpenseDto
 
     [Required(ErrorMessage = "La unidad es requerida")]
     public ExpenseUnit Unit { get; set; } = ExpenseUnit.Unit;
+
+    public List<ExpenseMenuTargetInputDto> MenuTargets { get; set; } = new();
 }
 
 

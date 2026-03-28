@@ -9,6 +9,7 @@ public class CreateExpenseCommand : IRequest<ExpenseDto>
     public string Name { get; set; } = string.Empty;
     public int CategoryId { get; set; }
     public Domain.Enums.ExpenseUnit Unit { get; set; }
+    public List<ExpenseMenuTargetInputDto> MenuTargets { get; set; } = new();
 }
 
 

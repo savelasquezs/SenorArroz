@@ -13,6 +13,8 @@ public class ExpenseDto
     public string UnitDisplay { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+
+    public List<ExpenseMenuTargetDto> MenuTargets { get; set; } = new();
 }
 
 

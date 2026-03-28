@@ -13,6 +13,10 @@ public class ExpenseMappingProfile : Profile
     public ExpenseMappingProfile()
     {
         // Expense mappings
+        CreateMap<ExpenseMenuTarget, ExpenseMenuTargetDto>()
+            .ForMember(dest => dest.TargetName, opt => opt.Ignore())
+            .ForMember(dest => dest.ProductMissingWeight, opt => opt.Ignore());
+
         CreateMap<Expense, ExpenseDto>()
             .ForMember(dest => dest.CategoryName, opt => opt.MapFrom(src => src.Category.Name))
             .ForMember(dest => dest.UnitDisplay, opt => opt.MapFrom(src => GetUnitDisplay(src.Unit)));

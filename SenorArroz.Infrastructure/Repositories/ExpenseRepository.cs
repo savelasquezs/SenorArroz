@@ -26,6 +26,7 @@ public class ExpenseRepository : IExpenseRepository
     {
         var query = _context.Expenses
             .Include(e => e.Category)
+            .Include(e => e.MenuTargets)
             .AsQueryable();
 
         // Category filter
@@ -73,6 +74,7 @@ public class ExpenseRepository : IExpenseRepository
     {
         return await _context.Expenses
             .Include(e => e.Category)
+            .Include(e => e.MenuTargets)
             .OrderBy(e => e.Name)
             .ToListAsync();
     }
@@ -81,6 +83,7 @@ public class ExpenseRepository : IExpenseRepository
     {
         return await _context.Expenses
             .Include(e => e.Category)
+            .Include(e => e.MenuTargets)
             .Where(e => e.CategoryId == categoryId)
             .OrderBy(e => e.Name)
             .ToListAsync();
@@ -90,6 +93,7 @@ public class ExpenseRepository : IExpenseRepository
     {
         return await _context.Expenses
             .Include(e => e.Category)
+            .Include(e => e.MenuTargets)
             .FirstOrDefaultAsync(e => e.Id == id);
     }
 
