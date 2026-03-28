@@ -299,7 +299,7 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
     private static string NormalizeGranularity(string? g)
     {
         var x = (g ?? "day").Trim().ToLowerInvariant();
-        if (x == "hour")
+        if (x is "hour" or "fortnight")
             return "day";
         return x is "month" or "year" ? x : "day";
     }
