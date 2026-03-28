@@ -136,11 +136,6 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
                     });
                 }
             }
-
-            existingOrder.Subtotal = existingOrder.OrderDetails.Sum(d => d.Quantity * d.UnitPrice);
-            existingOrder.DiscountTotal = existingOrder.OrderDetails.Sum(d => d.Discount);
-            existingOrder.Total = existingOrder.OrderDetails.Sum(d => (d.Subtotal ?? (d.Quantity * d.UnitPrice - d.Discount)))
-                + (existingOrder.DeliveryFee ?? 0);
         }
 
         // Recalcular prepare_at si reserved_for cambió y prepare_at no se envió explícitamente
@@ -188,6 +183,8 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
                 existingOrder.PreparedNotifiedAt = null;
         }
 
+        RecalculateOrderTotals(existingOrder);
+
         var updatedOrder = await _orderRepository.UpdateAsync(existingOrder);
         var result = _mapper.Map<OrderDto>(updatedOrder);
 
@@ -213,6 +210,14 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         }
 
         return result;
+    }
+
+    private static void RecalculateOrderTotals(Domain.Entities.Order order)
+    {
+        order.Subtotal = order.OrderDetails.Sum(d => d.Quantity * d.UnitPrice);
+        order.DiscountTotal = order.OrderDetails.Sum(d => d.Discount);
+        order.Total = order.OrderDetails.Sum(d => (d.Subtotal ?? (d.Quantity * d.UnitPrice - d.Discount)))
+            + (order.DeliveryFee ?? 0);
     }
 
     private static bool NullableUtcInstantEquals(DateTime? a, DateTime? b)

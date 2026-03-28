@@ -63,12 +63,7 @@ namespace SenorArroz.Application.Features.Customers.Commands
                     throw new NotFoundException($"Barrio con ID {request.InitialAddress.NeighborhoodId} no encontrado");
                 }
 
-                // Si el frontend envía un DeliveryFee > 0, respetar ese valor.
-                // En caso contrario, usar la tarifa configurada en el barrio.
-                var deliveryFee = request.InitialAddress.DeliveryFee > 0
-                    ? request.InitialAddress.DeliveryFee
-                    : neighborhood.DeliveryFee;
-
+                // Tarifa enviada por el cliente (puede ser 0 = envío bonificado). El formulario precarga la del barrio.
                 var address = new Address
                 {
                     CustomerId = customer.Id,
@@ -77,7 +72,7 @@ namespace SenorArroz.Application.Features.Customers.Commands
                     AdditionalInfo = request.InitialAddress.AdditionalInfo?.Trim(),
                     Latitude = request.InitialAddress.Latitude,
                     Longitude = request.InitialAddress.Longitude,
-                    DeliveryFee = deliveryFee
+                    DeliveryFee = request.InitialAddress.DeliveryFee
                 };
 
                 await _addressRepository.CreateAsync(address);
