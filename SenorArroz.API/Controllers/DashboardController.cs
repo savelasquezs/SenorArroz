@@ -49,6 +49,31 @@ public class DashboardController : ControllerBase
     }
 
     /// <summary>
+    /// Principal — comparación ventas vs gastos en el rango (gastos por categoría para barras apiladas; top 8 + Otros).
+    /// </summary>
+    [HttpGet("principal/sales-vs-expenses")]
+    [ProducesResponseType(typeof(DashboardPrincipalSalesVsExpensesResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DashboardPrincipalSalesVsExpensesResponseDto>> GetPrincipalSalesVsExpenses(
+        [FromQuery(Name = "from")] DateTime fromUtc,
+        [FromQuery(Name = "to")] DateTime toUtc,
+        [FromQuery] int? branchId = null,
+        [FromQuery] string granularity = "day",
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetDashboardPrincipalSalesVsExpensesQuery
+            {
+                FromUtc = fromUtc,
+                ToUtc = toUtc,
+                BranchId = branchId,
+                Granularity = granularity,
+            },
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Sección Domicilios: métricas de entregas en un rango (fechas obligatorias, UTC recomendado ISO 8601).
     /// </summary>
     [HttpGet("delivery")]

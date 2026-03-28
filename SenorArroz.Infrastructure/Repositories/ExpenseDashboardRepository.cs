@@ -117,4 +117,73 @@ public class ExpenseDashboardRepository : IExpenseDashboardRepository
             .OrderBy(x => x.BucketStart)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<List<ExpenseCategoryTimeBucketRow>> GetTimeSeriesByCategoryAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        string granularity,
+        CancellationToken cancellationToken = default)
+    {
+        var q = BaseDetailsInRange(branchId, fromUtc, toUtc);
+        var g = granularity?.ToLowerInvariant() ?? "day";
+
+        if (g == "year")
+        {
+            return await q
+                .GroupBy(ed => new
+                {
+                    ed.Header.CreatedAt.Year,
+                    ed.Expense.CategoryId,
+                })
+                .Select(x => new ExpenseCategoryTimeBucketRow
+                {
+                    BucketStart = new DateTime(x.Key.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                    CategoryId = x.Key.CategoryId,
+                    CategoryName = x.Max(ed => ed.Expense.Category.Name) ?? string.Empty,
+                    TotalCop = x.Sum(ed => (long)(ed.Total ?? ed.Quantity * ed.Amount)),
+                })
+                .OrderBy(r => r.BucketStart)
+                .ThenBy(r => r.CategoryName)
+                .ToListAsync(cancellationToken);
+        }
+
+        if (g == "month")
+        {
+            return await q
+                .GroupBy(ed => new
+                {
+                    ed.Header.CreatedAt.Year,
+                    ed.Header.CreatedAt.Month,
+                    ed.Expense.CategoryId,
+                })
+                .Select(x => new ExpenseCategoryTimeBucketRow
+                {
+                    BucketStart = new DateTime(x.Key.Year, x.Key.Month, 1, 0, 0, 0, DateTimeKind.Utc),
+                    CategoryId = x.Key.CategoryId,
+                    CategoryName = x.Max(ed => ed.Expense.Category.Name) ?? string.Empty,
+                    TotalCop = x.Sum(ed => (long)(ed.Total ?? ed.Quantity * ed.Amount)),
+                })
+                .OrderBy(r => r.BucketStart)
+                .ThenBy(r => r.CategoryName)
+                .ToListAsync(cancellationToken);
+        }
+
+        return await q
+            .GroupBy(ed => new
+            {
+                Day = ed.Header.CreatedAt.Date,
+                ed.Expense.CategoryId,
+            })
+            .Select(x => new ExpenseCategoryTimeBucketRow
+            {
+                BucketStart = x.Key.Day,
+                CategoryId = x.Key.CategoryId,
+                CategoryName = x.Max(ed => ed.Expense.Category.Name) ?? string.Empty,
+                TotalCop = x.Sum(ed => (long)(ed.Total ?? ed.Quantity * ed.Amount)),
+            })
+            .OrderBy(r => r.BucketStart)
+            .ThenBy(r => r.CategoryName)
+            .ToListAsync(cancellationToken);
+    }
 }

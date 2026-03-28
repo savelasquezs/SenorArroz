@@ -27,4 +27,14 @@ public interface IExpenseDashboardRepository
         int? expenseId,
         bool monthlyBuckets,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Serie por categoría alineada a buckets <c>day</c>, <c>month</c> o <c>year</c> (CreatedAt del encabezado).
+    /// </summary>
+    Task<List<ExpenseCategoryTimeBucketRow>> GetTimeSeriesByCategoryAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        string granularity,
+        CancellationToken cancellationToken = default);
 }

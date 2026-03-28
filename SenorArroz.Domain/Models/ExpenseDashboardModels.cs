@@ -21,3 +21,12 @@ public class ExpenseTimeBucketRow
     public DateTime BucketStart { get; set; }
     public long TotalCop { get; set; }
 }
+
+/// <summary>Gasto agregado por bucket temporal y categoría (para gráficos apilados).</summary>
+public class ExpenseCategoryTimeBucketRow
+{
+    public DateTime BucketStart { get; set; }
+    public int CategoryId { get; set; }
+    public string CategoryName { get; set; } = string.Empty;
+    public long TotalCop { get; set; }
+}
