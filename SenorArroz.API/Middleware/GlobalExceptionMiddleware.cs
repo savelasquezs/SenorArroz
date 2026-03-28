@@ -1,4 +1,6 @@
 // SenorArroz.API/Middleware/GlobalExceptionMiddleware.cs
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using SenorArroz.Domain.Exceptions;
 using System.Net;
 using System.Text.Json;
@@ -9,11 +11,19 @@ public class GlobalExceptionMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<GlobalExceptionMiddleware> _logger;
+    private readonly IHostEnvironment _environment;
+    private readonly IConfiguration _configuration;
 
-    public GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExceptionMiddleware> logger)
+    public GlobalExceptionMiddleware(
+        RequestDelegate next,
+        ILogger<GlobalExceptionMiddleware> logger,
+        IHostEnvironment environment,
+        IConfiguration configuration)
     {
         _next = next;
         _logger = logger;
+        _environment = environment;
+        _configuration = configuration;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -29,7 +39,7 @@ public class GlobalExceptionMiddleware
         }
     }
 
-    private static async Task HandleExceptionAsync(HttpContext context, Exception exception)
+    private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
         var response = context.Response;
         response.ContentType = "application/json";
@@ -40,6 +50,10 @@ public class GlobalExceptionMiddleware
             Message = exception.Message,
             Timestamp = DateTime.UtcNow
         };
+
+        var exposeInternal =
+            _environment.IsDevelopment()
+            || _configuration.GetValue<bool>("ExposeInternalApiErrors");
 
         switch (exception)
         {
@@ -65,6 +79,10 @@ public class GlobalExceptionMiddleware
             default:
                 response.StatusCode = (int)HttpStatusCode.InternalServerError;
                 errorResponse.Message = "Error interno del servidor";
+                if (exposeInternal)
+                {
+                    errorResponse.Detail = exception.ToString();
+                }
                 break;
         }
 
@@ -81,6 +99,7 @@ public class GlobalExceptionMiddleware
     {
         public bool Success { get; set; }
         public string Message { get; set; } = string.Empty;
+        public string? Detail { get; set; }
         public IDictionary<string, string[]>? Errors { get; set; }
         public DateTime Timestamp { get; set; }
     }

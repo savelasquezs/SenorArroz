@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -19,16 +19,18 @@ public class GetBranchNeighborhoodsHandler : IRequestHandler<GetBranchNeighborho
     public async Task<IEnumerable<BranchNeighborhoodDto>> Handle(GetBranchNeighborhoodsQuery request, CancellationToken cancellationToken)
     {
         var neighborhoods = await _neighborhoodRepository.GetByBranchIdAsync(request.BranchId);
-        var neighborhoodDtos = new List<BranchNeighborhoodDto>();
+        var neighborhoodList = neighborhoods.ToList();
+        var hoodStats = await _neighborhoodRepository.GetNeighborhoodStatsBulkAsync(
+            neighborhoodList.Select(n => n.Id).ToList(),
+            cancellationToken);
 
-        foreach (var neighborhood in neighborhoods)
+        var neighborhoodDtos = new List<BranchNeighborhoodDto>(neighborhoodList.Count);
+        foreach (var neighborhood in neighborhoodList)
         {
             var dto = _mapper.Map<BranchNeighborhoodDto>(neighborhood);
-
-            // Add statistics
-            dto.TotalCustomers = await _neighborhoodRepository.GetTotalCustomersAsync(neighborhood.Id);
-            dto.TotalAddresses = await _neighborhoodRepository.GetTotalAddressesAsync(neighborhood.Id);
-
+            var (customers, addresses) = hoodStats[neighborhood.Id];
+            dto.TotalCustomers = customers;
+            dto.TotalAddresses = addresses;
             neighborhoodDtos.Add(dto);
         }
 

@@ -1,4 +1,4 @@
-﻿using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Entities;
 
 
 namespace SenorArroz.Domain.Interfaces.Repositories
@@ -14,5 +14,12 @@ namespace SenorArroz.Domain.Interfaces.Repositories
         Task<bool> NameExistsAsync(string name, int branchId, int? excludeId = null);
         Task<int> GetTotalCustomersAsync(int id);
         Task<int> GetTotalAddressesAsync(int id);
+
+        /// <summary>
+        /// Totales por barrio en 2 consultas (evita N+1 en detalle de sucursal).
+        /// </summary>
+        Task<IReadOnlyDictionary<int, (int TotalCustomers, int TotalAddresses)>> GetNeighborhoodStatsBulkAsync(
+            IReadOnlyCollection<int> neighborhoodIds,
+            CancellationToken cancellationToken = default);
     }
 }

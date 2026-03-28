@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
@@ -90,5 +90,38 @@ public class NeighborhoodRepository : INeighborhoodRepository
     {
         return await _context.Addresses
             .CountAsync(a => a.NeighborhoodId == neighborhoodId);
+    }
+
+    public async Task<IReadOnlyDictionary<int, (int TotalCustomers, int TotalAddresses)>> GetNeighborhoodStatsBulkAsync(
+        IReadOnlyCollection<int> neighborhoodIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (neighborhoodIds == null || neighborhoodIds.Count == 0)
+            return new Dictionary<int, (int, int)>();
+
+        var ids = neighborhoodIds.Distinct().ToList();
+
+        var addressRows = await _context.Addresses.AsNoTracking()
+            .Where(a => ids.Contains(a.NeighborhoodId))
+            .GroupBy(a => a.NeighborhoodId)
+            .Select(g => new { NeighborhoodId = g.Key, AddressCount = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var customerRows = await _context.Addresses.AsNoTracking()
+            .Where(a => ids.Contains(a.NeighborhoodId))
+            .GroupBy(a => a.NeighborhoodId)
+            .Select(g => new
+            {
+                NeighborhoodId = g.Key,
+                CustomerCount = g.Select(x => x.CustomerId).Distinct().Count()
+            })
+            .ToListAsync(cancellationToken);
+
+        var addrByHood = addressRows.ToDictionary(x => x.NeighborhoodId, x => x.AddressCount);
+        var custByHood = customerRows.ToDictionary(x => x.NeighborhoodId, x => x.CustomerCount);
+
+        return ids.ToDictionary(
+            id => id,
+            id => (custByHood.GetValueOrDefault(id), addrByHood.GetValueOrDefault(id)));
     }
 }

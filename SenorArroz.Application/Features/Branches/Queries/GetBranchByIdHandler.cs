@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Branches.DTOs;
@@ -24,15 +24,15 @@ public class GetBranchByIdHandler(
         if (branch == null)
             return null;
 
+        var users = branch.Users ?? [];
         if (_currentUser.Role == "admin")
         {
-            branch.Users = [..branch.Users.Where(u => u.Role !=UserRole.Superadmin )];
+            users = [.. users.Where(u => u.Role != UserRole.Superadmin)];
         }
-            branch.Users=[..branch.Users.Where(u => u.Id != _currentUser.Id)];
-
+        branch.Users = [.. users.Where(u => u.Id != _currentUser.Id)];
 
         var branchDto = _mapper.Map<BranchDto>(branch);
-        
+
         // Add statistics
         branchDto.TotalUsers = await _branchRepository.GetTotalUsersAsync(branch.Id);
         branchDto.ActiveUsers = await _branchRepository.GetActiveUsersAsync(branch.Id);
@@ -40,11 +40,13 @@ public class GetBranchByIdHandler(
         branchDto.ActiveCustomers = await _branchRepository.GetActiveCustomersAsync(branch.Id);
         branchDto.TotalNeighborhoods = await _branchRepository.GetTotalNeighborhoodsAsync(branch.Id);
 
-        // Add neighborhood statistics
+        var hoodIds = branchDto.Neighborhoods.Select(n => n.Id).ToList();
+        var hoodStats = await _neighborhoodRepository.GetNeighborhoodStatsBulkAsync(hoodIds, cancellationToken);
         foreach (var neighborhoodDto in branchDto.Neighborhoods)
         {
-            neighborhoodDto.TotalCustomers = await _neighborhoodRepository.GetTotalCustomersAsync(neighborhoodDto.Id);
-            neighborhoodDto.TotalAddresses = await _neighborhoodRepository.GetTotalAddressesAsync(neighborhoodDto.Id);
+            var (customers, addresses) = hoodStats[neighborhoodDto.Id];
+            neighborhoodDto.TotalCustomers = customers;
+            neighborhoodDto.TotalAddresses = addresses;
         }
 
         return branchDto;
