@@ -1,4 +1,4 @@
-﻿// SenorArroz.Infrastructure/Repositories/BranchRepository.cs
+// SenorArroz.Infrastructure/Repositories/BranchRepository.cs
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -87,10 +87,11 @@ public class BranchRepository : IBranchRepository
 
     public async Task<Branch?> GetByIdWithDetailsAsync(int id)
     {
+        // Sin Customers: el DTO no los serializa y GetBranchByIdHandler asigna totales vía consultas agregadas.
+        // Incluirlos cargaba miles de filas y provocaba timeouts (p. ej. junto al prefetch del layout).
         return await _context.Branches
             .Include(b => b.Users)
             .Include(b => b.Neighborhoods)
-            .Include(b => b.Customers.Where(c => c.Active))
             .FirstOrDefaultAsync(b => b.Id == id);
     }
 
