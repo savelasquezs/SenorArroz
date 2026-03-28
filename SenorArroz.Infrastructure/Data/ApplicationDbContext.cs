@@ -50,6 +50,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<ExpenseHeader> ExpenseHeaders { get; set; }
 
+        public virtual DbSet<ExpenseMenuTarget> ExpenseMenuTargets { get; set; }
+
         public virtual DbSet<LoyaltyRule> LoyaltyRules { get; set; }
 
         public virtual DbSet<Neighborhood> Neighborhoods { get; set; }
@@ -102,6 +104,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new ExpenseConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseHeaderConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseDetailConfiguration());
+            modelBuilder.ApplyConfiguration(new ExpenseMenuTargetConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseBankPaymentConfiguration());
             modelBuilder.ApplyConfiguration(new SupplierExpenseConfiguration());
             modelBuilder.ApplyConfiguration(new ReservationDepositConfiguration());

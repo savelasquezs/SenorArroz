@@ -1,4 +1,4 @@
-﻿using SenorArroz.Domain.Entities.Common;
+using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
@@ -13,4 +13,5 @@ public class Expense : BaseEntity
     public virtual ExpenseCategory Category { get; set; } = null!;
     public virtual ICollection<ExpenseDetail> ExpenseDetails { get; set; } = new List<ExpenseDetail>();
     public virtual ICollection<SupplierExpense> SupplierExpenses { get; set; } = new List<SupplierExpense>();
+    public virtual ICollection<ExpenseMenuTarget> MenuTargets { get; set; } = new List<ExpenseMenuTarget>();
 }

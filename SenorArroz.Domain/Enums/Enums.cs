@@ -9,6 +9,13 @@ namespace SenorArroz.Domain.Enums
         Gallon
     }
 
+    /// <summary>Destino de imputación de un gasto de catálogo hacia el menú (costo por gramo vendido).</summary>
+    public enum ExpenseMenuTargetType
+    {
+        ProductCategory = 0,
+        Product = 1,
+    }
+
     public enum OrderStatus
     {
         Taken,          // taken
