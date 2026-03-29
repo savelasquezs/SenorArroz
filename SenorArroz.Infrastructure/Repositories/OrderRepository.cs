@@ -135,26 +135,10 @@ public class OrderRepository : IOrderRepository
                 || o.Status == OrderStatus.Ready);
 
             // Hora en que el pedido debe entrar a cocina: prepare_at, o reserved_for - 1h (misma regla que creación).
-            // Domicilio/local programado: no listar hasta esa hora (antes solo se aplicaba a Type == Reservation).
-            // Reserva + rango operativo: sigue pudiendo verse antes si reserved_for cae en el día del listado (planificación).
-            if (rangeFromUtc.HasValue && rangeToUtc.HasValue)
-            {
-                var rf = rangeFromUtc.Value;
-                var rt = rangeToUtc.Value;
-                query = query.Where(o =>
-                    (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) == null
-                    || (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) <= now
-                    || (o.Type == OrderType.Reservation
-                        && o.ReservedFor.HasValue
-                        && o.ReservedFor.Value >= rf
-                        && o.ReservedFor.Value <= rt));
-            }
-            else
-            {
-                query = query.Where(o =>
-                    (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) == null
-                    || (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) <= now);
-            }
+            // Mismo criterio con rango de día operativo o sin él: no anticipar reservas aunque reserved_for sea "hoy".
+            query = query.Where(o =>
+                (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) == null
+                || (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) <= now);
         }
 
         // Aplicar ordenamiento
