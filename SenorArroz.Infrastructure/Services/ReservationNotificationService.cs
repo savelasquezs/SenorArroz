@@ -13,7 +13,7 @@ public class ReservationNotificationService : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<ReservationNotificationService> _logger;
-    private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(5);
+    private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(2);
 
     public ReservationNotificationService(
         IServiceProvider serviceProvider,
