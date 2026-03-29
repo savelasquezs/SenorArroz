@@ -20,8 +20,8 @@ public class GetProductsHandler : IRequestHandler<GetProductsQuery, PagedResult<
 
     public async Task<PagedResult<ProductDto>> Handle(GetProductsQuery request, CancellationToken cancellationToken)
     {
-        // Catálogo compartido: todas las sucursales ven todos los productos.
-        // Filtro por sucursal solo si viene explícito en la query (?branchId=).
+        // Catálogo transversal: el mismo menú de productos aplica a todas las sucursales.
+        // No se deriva sucursal del token; BranchId en la query es opcional (p. ej. vistas admin/filtrado explícito).
         int? branchFilter = request.BranchId.HasValue && request.BranchId.Value > 0
             ? request.BranchId.Value
             : null;

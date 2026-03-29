@@ -22,7 +22,8 @@ public class GetProductCategoriesHandler : IRequestHandler<GetProductCategoriesQ
 
     public async Task<PagedResult<ProductCategoryDto>> Handle(GetProductCategoriesQuery request, CancellationToken cancellationToken)
     {
-        // Catálogo compartido: todas las sucursales ven todas las categorías.
+        // Categorías de menú transversales: compartidas entre sucursales.
+        // BranchId en la query es opcional (filtrado explícito); no se toma de ICurrentUser.
         int? branchFilter = request.BranchId.HasValue && request.BranchId.Value > 0
             ? request.BranchId.Value
             : null;
