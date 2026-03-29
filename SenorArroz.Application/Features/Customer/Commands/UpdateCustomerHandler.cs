@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Exceptions;
@@ -51,7 +51,9 @@ namespace SenorArroz.Application.Features.Customers.Commands
 
             // Add additional data
             customerDto.TotalOrders = await _customerRepository.GetTotalOrdersAsync(customer.Id);
+            customerDto.FirstOrderDate = await _customerRepository.GetFirstOrderDateAsync(customer.Id);
             customerDto.LastOrderDate = await _customerRepository.GetLastOrderDateAsync(customer.Id);
+            customerDto.TotalAccumulated = await _customerRepository.GetTotalOrderRevenueAsync(customer.Id);
 
             return customerDto;
         }

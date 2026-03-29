@@ -83,8 +83,10 @@ namespace SenorArroz.Application.Features.Customers.Commands
             var customerDto = _mapper.Map<CustomerDto>(createdCustomer);
 
             // Add additional data
-            customerDto.TotalOrders = 0; // New customer has no orders
+            customerDto.TotalOrders = 0;
+            customerDto.FirstOrderDate = null;
             customerDto.LastOrderDate = null;
+            customerDto.TotalAccumulated = 0;
 
             return customerDto;
         }

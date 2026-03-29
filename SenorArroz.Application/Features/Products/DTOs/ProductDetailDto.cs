@@ -22,4 +22,7 @@ public class ProductDetailDto
     public int TotalOrders { get; set; }
     public int TotalCustomers { get; set; }
     public DateTime? LastSoldAt { get; set; }
+
+    /// <summary>Venta diaria de unidades (últimos 90 días, incluye días en cero). Mismo criterio de día que el dashboard de peso.</summary>
+    public List<ProductSalesUnitsEvolutionPointDto> SalesUnitsEvolution { get; set; } = new();
 }
