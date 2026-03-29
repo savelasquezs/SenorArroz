@@ -1,7 +1,9 @@
-﻿// SenorArroz.Infrastructure/Repositories/ProductRepository.cs
+// SenorArroz.Infrastructure/Repositories/ProductRepository.cs
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Domain.Models;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -246,4 +248,43 @@ public class ProductRepository : IProductRepository
             .Select(od => (DateTime?)od.Order.CreatedAt)
             .FirstOrDefaultAsync();
     }
+
+    public async Task<IReadOnlyList<ProductSalesUnitsEvolutionPoint>> GetSalesUnitsEvolutionByProductAsync(
+        int productId,
+        DateTime rangeEndInclusiveUtc,
+        int numberOfDays,
+        CancellationToken cancellationToken = default)
+    {
+        if (numberOfDays < 1)
+            numberOfDays = 1;
+
+        var end = rangeEndInclusiveUtc.Date;
+        var start = end.AddDays(-(numberOfDays - 1));
+
+        var grouped = await _context.OrderDetails
+            .AsNoTracking()
+            .Where(od =>
+                od.ProductId == productId &&
+                od.Order.Status != OrderStatus.Cancelled)
+            .Select(od => new
+            {
+                Bucket = od.Order.ReservedFor.HasValue
+                    ? od.Order.ReservedFor!.Value.Date
+                    : od.Order.CreatedAt.Date,
+                od.Quantity
+            })
+            .Where(x => x.Bucket >= start && x.Bucket <= end)
+            .GroupBy(x => x.Bucket)
+            .Select(g => new { Bucket = g.Key, Units = g.Sum(x => x.Quantity) })
+            .ToListAsync(cancellationToken);
+
+        var map = grouped.ToDictionary(x => x.Bucket, x => x.Units);
+        var list = new List<ProductSalesUnitsEvolutionPoint>(numberOfDays);
+        for (var d = start; d <= end; d = d.AddDays(1))
+        {
+            list.Add(new ProductSalesUnitsEvolutionPoint(d, map.GetValueOrDefault(d, 0)));
+        }
+
+        return list;
     }
+}

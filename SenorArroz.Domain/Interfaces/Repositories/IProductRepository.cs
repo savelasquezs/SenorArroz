@@ -1,5 +1,6 @@
-﻿// SenorArroz.Domain/Interfaces/Repositories/IProductRepository.cs
+// SenorArroz.Domain/Interfaces/Repositories/IProductRepository.cs
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Models;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.Domain.Interfaces.Repositories;
@@ -44,4 +45,14 @@ public interface IProductRepository
 
     Task<int> GetTotalCustomersAsync(int productId);
     Task<DateTime?> GetLastSoldAtAsync(int productId);
+
+    /// <summary>
+    /// Serie diaria de unidades vendidas (suma de cantidades en líneas) por día calendario.
+    /// Día = <c>ReservedFor</c> si existe, si no <c>Order.CreatedAt</c>. Incluye días sin ventas con 0.
+    /// </summary>
+    Task<IReadOnlyList<ProductSalesUnitsEvolutionPoint>> GetSalesUnitsEvolutionByProductAsync(
+        int productId,
+        DateTime rangeEndInclusiveUtc,
+        int numberOfDays,
+        CancellationToken cancellationToken = default);
 }

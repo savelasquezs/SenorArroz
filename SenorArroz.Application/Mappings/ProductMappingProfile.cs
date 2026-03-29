@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Mappings/ProductMappingProfile.cs
+// SenorArroz.Application/Mappings/ProductMappingProfile.cs
 using AutoMapper;
 using SenorArroz.Application.Features.Products.Commands;
 using SenorArroz.Application.Features.Products.DTOs;
@@ -37,7 +37,8 @@ public class ProductMappingProfile : Profile
             .ForMember(dest => dest.TotalRevenue, opt => opt.Ignore())
             .ForMember(dest => dest.TotalOrders, opt => opt.Ignore())
             .ForMember(dest => dest.TotalCustomers, opt => opt.Ignore())
-            .ForMember(dest => dest.LastSoldAt, opt => opt.Ignore());
+            .ForMember(dest => dest.LastSoldAt, opt => opt.Ignore())
+            .ForMember(dest => dest.SalesUnitsEvolution, opt => opt.Ignore());
 
         CreateMap<CreateProductDto, CreateProductCommand>();
         CreateMap<UpdateProductDto, UpdateProductCommand>()

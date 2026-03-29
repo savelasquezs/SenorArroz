@@ -33,6 +33,20 @@ public class GetProductDetailHandler : IRequestHandler<GetProductDetailQuery, Pr
         productDetailDto.TotalCustomers = await _productRepository.GetTotalCustomersAsync(product.Id);
         productDetailDto.LastSoldAt = await _productRepository.GetLastSoldAtAsync(product.Id);
 
+        const int salesChartDays = 90;
+        var evolution = await _productRepository.GetSalesUnitsEvolutionByProductAsync(
+            product.Id,
+            DateTime.UtcNow.Date,
+            salesChartDays,
+            cancellationToken);
+        productDetailDto.SalesUnitsEvolution = evolution
+            .Select(e => new ProductSalesUnitsEvolutionPointDto
+            {
+                BucketStart = e.BucketDate,
+                UnitsSold = e.UnitsSold
+            })
+            .ToList();
+
         return productDetailDto;
     }
 }
