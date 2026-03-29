@@ -1,5 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
@@ -164,13 +165,37 @@ public class CustomerRepository : ICustomerRepository
     public async Task<int> GetTotalOrdersAsync(int customerId)
     {
         return await _context.Orders
-            .CountAsync(o => o.CustomerId == customerId);
+            .CountAsync(o =>
+                o.CustomerId == customerId &&
+                o.Status != OrderStatus.Cancelled);
     }
 
     public async Task<DateTime?> GetLastOrderDateAsync(int customerId)
     {
+        var q = _context.Orders.Where(o =>
+            o.CustomerId == customerId &&
+            o.Status != OrderStatus.Cancelled);
+        if (!await q.AnyAsync())
+            return null;
+        return await q.MaxAsync(o => o.CreatedAt);
+    }
+
+    public async Task<DateTime?> GetFirstOrderDateAsync(int customerId)
+    {
+        var q = _context.Orders.Where(o =>
+            o.CustomerId == customerId &&
+            o.Status != OrderStatus.Cancelled);
+        if (!await q.AnyAsync())
+            return null;
+        return await q.MinAsync(o => o.CreatedAt);
+    }
+
+    public async Task<int> GetTotalOrderRevenueAsync(int customerId)
+    {
         return await _context.Orders
-            .Where(o => o.CustomerId == customerId)
-            .MaxAsync(o => (DateTime?)o.CreatedAt);
+            .Where(o =>
+                o.CustomerId == customerId &&
+                o.Status != OrderStatus.Cancelled)
+            .SumAsync(o => o.Total);
     }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -19,6 +19,9 @@ namespace SenorArroz.Application.Features.Customers.DTOs
         public DateTime UpdatedAt { get; set; }
         public List<CustomerAddressDto> Addresses { get; set; } = new();
         public int TotalOrders { get; set; }
+        public DateTime? FirstOrderDate { get; set; }
         public DateTime? LastOrderDate { get; set; }
+        /// <summary>Suma de totales de pedidos no cancelados (misma moneda que pedidos).</summary>
+        public int TotalAccumulated { get; set; }
     }
 }

@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using SenorArroz.Application.Features.Customers.Commands;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Application.Features.Customers.Queries;
@@ -15,7 +15,9 @@ public class CustomerMappingProfile : Profile
             .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Branch.Name))
             .ForMember(dest => dest.Addresses, opt => opt.MapFrom(src => src.Addresses))
             .ForMember(dest => dest.TotalOrders, opt => opt.Ignore()) // Will be set manually
-            .ForMember(dest => dest.LastOrderDate, opt => opt.Ignore()); // Will be set manually
+            .ForMember(dest => dest.FirstOrderDate, opt => opt.Ignore())
+            .ForMember(dest => dest.LastOrderDate, opt => opt.Ignore()) // Will be set manually
+            .ForMember(dest => dest.TotalAccumulated, opt => opt.Ignore());
 
         CreateMap<CreateCustomerDto, CreateCustomerCommand>();
         CreateMap<UpdateCustomerDto, UpdateCustomerCommand>()

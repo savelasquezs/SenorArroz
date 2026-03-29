@@ -1,4 +1,4 @@
-﻿using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Shared.Models;
 
 
@@ -25,7 +25,11 @@ namespace SenorArroz.Domain.Interfaces.Repositories
         Task<bool> DeleteAsync(int id);
         Task<bool> ExistsAsync(int id);
         Task<bool> PhoneExistsAsync(string phone, int branchId, int? excludeId = null);
+        /// <summary>Pedidos no cancelados.</summary>
         Task<int> GetTotalOrdersAsync(int customerId);
         Task<DateTime?> GetLastOrderDateAsync(int customerId);
+        Task<DateTime?> GetFirstOrderDateAsync(int customerId);
+        /// <summary>Suma de <c>Order.Total</c> en pedidos no cancelados.</summary>
+        Task<int> GetTotalOrderRevenueAsync(int customerId);
     }
 }
