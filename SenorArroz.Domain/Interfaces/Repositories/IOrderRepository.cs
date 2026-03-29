@@ -184,6 +184,13 @@ public interface IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Ventas por producto incluyendo categoría de producto (mismas reglas que agregado por producto).</summary>
+    Task<List<SalesProductCategoryAggregateRow>> GetSalesProductCategoryAggregatesForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
     Task<List<SalesCategoryAggregateRow>> GetSalesCategoryAggregatesForDashboardAsync(
         int? branchId,
         DateTime fromUtc,

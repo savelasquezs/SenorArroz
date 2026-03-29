@@ -1269,6 +1269,42 @@ public class OrderRepository : IOrderRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<SalesProductCategoryAggregateRow>> GetSalesProductCategoryAggregatesForDashboardAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var q = WhereOrderDetailOperationalDateRangeUtc(
+            _context.OrderDetails
+                .AsNoTracking()
+                .Where(od => od.Order.Status != OrderStatus.Cancelled),
+            fromUtc,
+            toUtc);
+
+        if (branchId.HasValue)
+            q = q.Where(od => od.Order.BranchId == branchId.Value);
+
+        return await q
+            .GroupBy(od => new
+            {
+                od.ProductId,
+                ProductName = od.Product.Name ?? string.Empty,
+                od.Product.CategoryId,
+                CategoryName = od.Product.Category.Name ?? string.Empty,
+            })
+            .Select(g => new SalesProductCategoryAggregateRow
+            {
+                ProductId = g.Key.ProductId,
+                ProductName = g.Key.ProductName,
+                CategoryId = g.Key.CategoryId,
+                CategoryName = g.Key.CategoryName,
+                QuantitySold = g.Sum(od => od.Quantity),
+                RevenueCop = g.Sum(od => (long)(od.Subtotal ?? (od.Quantity * od.UnitPrice - od.Discount))),
+            })
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<List<SalesCategoryAggregateRow>> GetSalesCategoryAggregatesForDashboardAsync(
         int? branchId,
         DateTime fromUtc,

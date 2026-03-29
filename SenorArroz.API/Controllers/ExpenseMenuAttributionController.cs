@@ -39,4 +39,25 @@ public class ExpenseMenuAttributionController : ControllerBase
             result,
             "Imputación calculada"));
     }
+
+    /// <summary>
+    /// Costeo por categoría de menú: gastos imputados, gramos, $/g mezclado y margen por producto (mismo periodo que imputación).
+    /// </summary>
+    [HttpGet("category-costing-dashboard")]
+    public async Task<ActionResult<ApiResponse<MenuCategoryCostingDashboardResponseDto>>> GetCategoryCostingDashboard(
+        [FromQuery] DateTime fromUtc,
+        [FromQuery] DateTime toUtc,
+        [FromQuery] int? branchId = null)
+    {
+        var result = await _mediator.Send(new GetMenuCategoryCostingDashboardQuery
+        {
+            FromUtc = fromUtc,
+            ToUtc = toUtc,
+            BranchId = branchId,
+        });
+
+        return Ok(ApiResponse<MenuCategoryCostingDashboardResponseDto>.SuccessResponse(
+            result,
+            "Costeo por categoría calculado"));
+    }
 }

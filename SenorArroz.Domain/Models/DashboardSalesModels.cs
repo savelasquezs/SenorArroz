@@ -37,6 +37,19 @@ public class SalesProductAggregateRow
     public long RevenueCop { get; set; }
 }
 
+/// <summary>
+/// Ventas por producto con categoría de menú (costeo dashboard).
+/// </summary>
+public class SalesProductCategoryAggregateRow
+{
+    public int ProductId { get; set; }
+    public string ProductName { get; set; } = string.Empty;
+    public int CategoryId { get; set; }
+    public string CategoryName { get; set; } = string.Empty;
+    public int QuantitySold { get; set; }
+    public long RevenueCop { get; set; }
+}
+
 /// <summary>Agregado por categoría de producto (mismas líneas de pedido).</summary>
 public class SalesCategoryAggregateRow
 {
