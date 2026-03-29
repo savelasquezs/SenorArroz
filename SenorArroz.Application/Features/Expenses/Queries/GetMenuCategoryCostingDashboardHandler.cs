@@ -174,23 +174,12 @@ public class GetMenuCategoryCostingDashboardHandler
             }
         }
 
+        // Solo categorías con gramos vendidos en el periodo (modelo de costeo por peso).
         var categoryIds = new HashSet<int>();
         foreach (var kv in gramsByCategory)
         {
             if (kv.Value > 0)
                 categoryIds.Add(kv.Key);
-        }
-
-        foreach (var row in prodSales)
-            categoryIds.Add(row.CategoryId);
-
-        foreach (var line in lines)
-        {
-            if (line.TargetType == ExpenseMenuTargetType.ProductCategory)
-                categoryIds.Add(line.TargetId);
-            if (line.TargetType == ExpenseMenuTargetType.Product &&
-                productCategoryMap.TryGetValue(line.TargetId, out var cid))
-                categoryIds.Add(cid);
         }
 
         if (categoryIds.Count == 0)
@@ -240,11 +229,13 @@ public class GetMenuCategoryCostingDashboardHandler
                 .Where(l => l.TargetType == ExpenseMenuTargetType.ProductCategory && l.TargetId == catId)
                 .Sum(l => l.AllocatedCop);
 
-            var productIdsInCat = new HashSet<int>(
-                prodSales.Where(p => p.CategoryId == catId).Select(p => p.ProductId));
+            var productIdsInCat = new HashSet<int>();
+            foreach (var p in prodSales.Where(x => x.CategoryId == catId && gramsByProduct.GetValueOrDefault(x.ProductId) > 0))
+                productIdsInCat.Add(p.ProductId);
             foreach (var l in lines.Where(l =>
                          l.TargetType == ExpenseMenuTargetType.Product &&
-                         productCategoryMap.GetValueOrDefault(l.TargetId) == catId))
+                         productCategoryMap.GetValueOrDefault(l.TargetId) == catId &&
+                         gramsByProduct.GetValueOrDefault(l.TargetId) > 0))
                 productIdsInCat.Add(l.TargetId);
 
             var revenueByProduct = prodSales
@@ -252,16 +243,8 @@ public class GetMenuCategoryCostingDashboardHandler
                 .ToDictionary(p => p.ProductId, p => p.RevenueCop);
 
             long sumGramsWeighted = 0;
-            long sumRevenue = 0;
             foreach (var pid in productIdsInCat)
-            {
-                var g = gramsByProduct.GetValueOrDefault(pid);
-                if (g > 0)
-                    sumGramsWeighted += g;
-                var rev = revenueByProduct.GetValueOrDefault(pid);
-                if (rev > 0)
-                    sumRevenue += rev;
-            }
+                sumGramsWeighted += gramsByProduct.GetValueOrDefault(pid);
 
             var productRows = new List<MenuProductCostingRowDto>();
             foreach (var pid in productIdsInCat.OrderBy(id => productNameMap.GetValueOrDefault(id, $"#{id}"), StringComparer.OrdinalIgnoreCase))
@@ -273,16 +256,10 @@ public class GetMenuCategoryCostingDashboardHandler
                     .Sum(l => l.AllocatedCop);
 
                 decimal sharedFraction;
-                if (categoryOnlyPool <= 0)
+                if (categoryOnlyPool <= 0 || sumGramsWeighted <= 0)
                     sharedFraction = 0;
-                else if (sumGramsWeighted > 0 && grams > 0)
-                    sharedFraction = (decimal)grams / sumGramsWeighted;
-                else if (sumRevenue > 0 && revenue > 0)
-                    sharedFraction = (decimal)revenue / sumRevenue;
-                else if (productIdsInCat.Count > 0)
-                    sharedFraction = 1m / productIdsInCat.Count;
                 else
-                    sharedFraction = 0;
+                    sharedFraction = (decimal)grams / sumGramsWeighted;
 
                 var shared = (long)Math.Round(categoryOnlyPool * sharedFraction, 0, MidpointRounding.AwayFromZero);
                 var totalCost = direct + shared;
@@ -295,6 +272,10 @@ public class GetMenuCategoryCostingDashboardHandler
                     ? Math.Round((decimal)(revenue - totalCost) / revenue * 100, 1, MidpointRounding.AwayFromZero)
                     : null;
 
+                decimal? costPerGram = grams > 0
+                    ? Math.Round((decimal)totalCost / grams, 4, MidpointRounding.AwayFromZero)
+                    : null;
+
                 productRows.Add(new MenuProductCostingRowDto
                 {
                     ProductId = pid,
@@ -302,12 +283,15 @@ public class GetMenuCategoryCostingDashboardHandler
                     RevenueCop = revenue,
                     GramsSold = grams,
                     AvgPricePerGramCop = avgPricePerGram,
+                    AllocatedCostPerGramCop = costPerGram,
                     AllocatedCostCop = totalCost,
                     MarginPercent = margin,
                 });
             }
 
-            var totalRevenueCat = prodSales.Where(p => p.CategoryId == catId).Sum(p => p.RevenueCop);
+            var totalRevenueCat = prodSales
+                .Where(p => p.CategoryId == catId && productIdsInCat.Contains(p.ProductId))
+                .Sum(p => p.RevenueCop);
 
             blocks.Add(new MenuCategoryCostingBlockDto
             {

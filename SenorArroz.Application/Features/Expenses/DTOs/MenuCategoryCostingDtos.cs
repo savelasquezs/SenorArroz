@@ -13,6 +13,7 @@ public class MenuProductCostingRowDto
     public long RevenueCop { get; set; }
     public long GramsSold { get; set; }
     public decimal? AvgPricePerGramCop { get; set; }
+    public decimal? AllocatedCostPerGramCop { get; set; }
     public long AllocatedCostCop { get; set; }
     public decimal? MarginPercent { get; set; }
 }
