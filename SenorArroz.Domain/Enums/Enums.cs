@@ -90,4 +90,20 @@ namespace SenorArroz.Domain.Enums
         /// <summary>Liquidar y devolver base; sin bloqueo prolongado.</summary>
         LiquidateAndReturnBase = 2,
     }
+
+    /// <summary>Rol de comanda / cola de impresión térmica (agente local).</summary>
+    public enum PrintJobKind
+    {
+        Kitchen,
+        Delivery,
+        Cashier,
+    }
+
+    public enum PrintJobStatus
+    {
+        Pending,
+        Processing,
+        Done,
+        Failed,
+    }
 }

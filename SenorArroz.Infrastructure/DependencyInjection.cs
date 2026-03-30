@@ -28,6 +28,8 @@ public static class DependencyInjection
 
         services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
 
+        services.AddScoped<IPrintQueueService, PrintQueueService>();
+
         services.AddHttpClient<GoogleRoutesDrivingMetricsService>();
         services.AddScoped<IGoogleRoutesDrivingMetricsService>(sp => sp.GetRequiredService<GoogleRoutesDrivingMetricsService>());
         services.AddScoped<IDeliveryRouteWorkflowService, DeliveryRouteWorkflowService>();

@@ -1,0 +1,73 @@
+namespace SenorArroz.Shared.Models.Printing;
+
+/// <summary>Raíz del snapshot en <c>payload_json</c> (versión 1). Serializar con nombres camelCase.</summary>
+public class PrintTicketPayloadBatchV1
+{
+    public int Version { get; set; } = 1;
+
+    public List<PrintTicketOrderPayloadV1> Orders { get; set; } = new();
+}
+
+public class PrintTicketOrderPayloadV1
+{
+    public int OrderId { get; set; }
+    public string BranchName { get; set; } = string.Empty;
+    /// <summary>valores: kitchen, delivery, cashier</summary>
+    public string Kind { get; set; } = string.Empty;
+    public DateTime PrintedAtUtc { get; set; }
+    public List<PrintTicketLineV1> Lines { get; set; } = new();
+    public PrintTicketTotalsV1 Totals { get; set; } = new();
+    public PrintTicketCustomerV1? Customer { get; set; }
+    public PrintTicketPaymentsV1 Payments { get; set; } = new();
+    public string? LoyaltyRuleName { get; set; }
+    public string? OrderType { get; set; }
+    public string? OrderStatus { get; set; }
+    public DateTime? ReservedFor { get; set; }
+    public DateTime? PrepareAt { get; set; }
+}
+
+public class PrintTicketLineV1
+{
+    public string ProductName { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+    /// <summary>En pesos enteros (misma unidad que el dominio).</summary>
+    public int UnitPrice { get; set; }
+    public int LineSubtotal { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class PrintTicketTotalsV1
+{
+    public int Subtotal { get; set; }
+    public int DiscountTotal { get; set; }
+    public int DeliveryFee { get; set; }
+    public int GrandTotal { get; set; }
+}
+
+public class PrintTicketCustomerV1
+{
+    public string? Name { get; set; }
+    public string? Phone { get; set; }
+    public string? AddressDescription { get; set; }
+    public string? NeighborhoodName { get; set; }
+    public string? AddressAdditionalInfo { get; set; }
+}
+
+public class PrintTicketPaymentsV1
+{
+    public List<PrintTicketBankPaymentV1> Bank { get; set; } = new();
+    public List<PrintTicketAppPaymentV1> App { get; set; } = new();
+}
+
+public class PrintTicketBankPaymentV1
+{
+    public string BankName { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public bool IsVerified { get; set; }
+}
+
+public class PrintTicketAppPaymentV1
+{
+    public string AppName { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+}

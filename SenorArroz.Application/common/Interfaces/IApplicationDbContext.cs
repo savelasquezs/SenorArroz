@@ -25,6 +25,10 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<Branch> Branches { get; set; }
 
+        DbSet<BranchPrintSettings> BranchPrintSettings { get; set; }
+
+        DbSet<PrintJob> PrintJobs { get; set; }
+
         DbSet<Customer> Customers { get; set; }
 
         DbSet<DeliverymanAdvance> DeliverymanAdvances { get; set; }

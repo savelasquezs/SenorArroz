@@ -23,4 +23,6 @@ public class Branch : BaseEntity
     public virtual ICollection<ExpenseHeader> ExpenseHeaders { get; set; } = new List<ExpenseHeader>();
     public virtual ICollection<Supplier> Suppliers { get; set; } = new List<Supplier>();
     public virtual ICollection<CashRegisterClosure> CashRegisterClosures { get; set; } = new List<CashRegisterClosure>();
+
+    public virtual BranchPrintSettings? PrintSettings { get; set; }
 }

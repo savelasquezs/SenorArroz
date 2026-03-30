@@ -30,6 +30,10 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<Branch> Branches { get; set; }
 
+        public virtual DbSet<BranchPrintSettings> BranchPrintSettings { get; set; }
+
+        public virtual DbSet<PrintJob> PrintJobs { get; set; }
+
         public virtual DbSet<Customer> Customers { get; set; }
 
         public virtual DbSet<DeliverymanAdvance> DeliverymanAdvances { get; set; }
@@ -78,6 +82,8 @@ namespace SenorArroz.Infrastructure.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.ApplyConfiguration(new BranchConfiguration());
+            modelBuilder.ApplyConfiguration(new BranchPrintSettingsConfiguration());
+            modelBuilder.ApplyConfiguration(new PrintJobConfiguration());
             modelBuilder.ApplyConfiguration(new UserConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerConfiguration());
             modelBuilder.ApplyConfiguration(new NeighborhoodConfiguration());
