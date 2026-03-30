@@ -2,11 +2,11 @@ using System.Security.Cryptography;
 using System.Text;
 using SenorArroz.Domain.Entities;
 
-namespace SenorArroz.Infrastructure.Services;
+namespace SenorArroz.Application.Common.Printing;
 
-public static class PrintAgentTokenHelper
+public static class PrintAgentTokenCrypto
 {
-    /// <summary>SHA-256 en hex minúsculas de <c>salt + plainToken</c> (mismo algoritmo al rotar token en admin).</summary>
+    /// <summary>SHA-256 hex minúsculas de <c>salt + plainToken</c>.</summary>
     public static string ComputeHash(string salt, string plainToken)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(salt + plainToken));
@@ -28,5 +28,19 @@ public static class PrintAgentTokenHelper
         {
             return false;
         }
+    }
+
+    /// <summary>Salt hexadecimal (para persistir en <c>agent_token_salt</c>).</summary>
+    public static string NewSalt(int byteLength = 16)
+    {
+        var buf = RandomNumberGenerator.GetBytes(byteLength);
+        return Convert.ToHexString(buf).ToLowerInvariant();
+    }
+
+    /// <summary>Token en claro URL-safe (copiar al appsettings del agente).</summary>
+    public static string NewPlainToken(int byteLength = 32)
+    {
+        var buf = RandomNumberGenerator.GetBytes(byteLength);
+        return Convert.ToBase64String(buf).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 }

@@ -92,6 +92,7 @@ public class BranchRepository : IBranchRepository
         return await _context.Branches
             .Include(b => b.Users)
             .Include(b => b.Neighborhoods)
+            .Include(b => b.PrintSettings)
             .FirstOrDefaultAsync(b => b.Id == id);
     }
 

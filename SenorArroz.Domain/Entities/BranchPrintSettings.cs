@@ -26,6 +26,11 @@ public class BranchPrintSettings
     public bool EnableDeliveryJobs { get; set; } = true;
     public bool EnableCashierJobs { get; set; }
 
+    /// <summary>Nombre exacto de la cola Windows para cocina (desde panel de impresión).</summary>
+    public string? PrinterQueueKitchen { get; set; }
+    public string? PrinterQueueDelivery { get; set; }
+    public string? PrinterQueueCashier { get; set; }
+
     /// <summary>SHA-256 hex en minúsculas de salt+token; vacío si el agente no está configurado.</summary>
     public string AgentTokenHash { get; set; } = string.Empty;
     public string AgentTokenSalt { get; set; } = string.Empty;

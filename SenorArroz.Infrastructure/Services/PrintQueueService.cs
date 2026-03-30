@@ -27,7 +27,7 @@ public class PrintQueueService : IPrintQueueService
         var settings = await _db.BranchPrintSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.BranchId == branchId, cancellationToken);
         if (settings == null) return false;
-        return PrintAgentTokenHelper.IsValid(plainToken, settings);
+        return PrintAgentTokenCrypto.IsValid(plainToken, settings);
     }
 
     public async Task<PrintJob> EnqueueAsync(int branchId, PrintJobKind kind, IReadOnlyList<int> orderIds, CancellationToken cancellationToken = default)

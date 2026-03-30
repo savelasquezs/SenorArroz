@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
@@ -10,11 +11,13 @@ namespace SenorArroz.Application.Features.Branches.Commands;
 public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDto>
 {
     private readonly IBranchRepository _branchRepository;
+    private readonly IApplicationDbContext _db;
     private readonly IMapper _mapper;
 
-    public CreateBranchHandler(IBranchRepository branchRepository, IMapper mapper)
+    public CreateBranchHandler(IBranchRepository branchRepository, IApplicationDbContext db, IMapper mapper)
     {
         _branchRepository = branchRepository;
+        _db = db;
         _mapper = mapper;
     }
 
@@ -50,6 +53,9 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
         };
 
         branch = await _branchRepository.CreateAsync(branch);
+
+        _db.BranchPrintSettings.Add(new BranchPrintSettings { BranchId = branch.Id });
+        await _db.SaveChangesAsync(cancellationToken);
 
         var branchDto = _mapper.Map<BranchDto>(branch);
 
