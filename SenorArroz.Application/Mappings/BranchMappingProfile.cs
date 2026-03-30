@@ -19,7 +19,13 @@ public class BranchMappingProfile : Profile
             .ForMember(dest => dest.ActiveCustomers, opt => opt.MapFrom(src => src.Customers.Count(c => c.Active)))
             .ForMember(dest => dest.TotalNeighborhoods, opt => opt.MapFrom(src => src.Neighborhoods.Count))
             .ForMember(dest => dest.Users, opt => opt.MapFrom(src => src.Users))
-            .ForMember(dest => dest.Neighborhoods, opt => opt.MapFrom(src => src.Neighborhoods));
+            .ForMember(dest => dest.Neighborhoods, opt => opt.MapFrom(src => src.Neighborhoods))
+            .ForMember(dest => dest.PrintSettings, opt => opt.MapFrom(src => src.PrintSettings));
+
+        CreateMap<BranchPrintSettings, BranchPrintSettingsDto>()
+            .ForMember(dest => dest.AgentTokenConfigured, opt => opt.MapFrom(src => !string.IsNullOrWhiteSpace(src.AgentTokenHash)));
+
+        CreateMap<BranchPrintSettings, PrintAgentConfigDto>();
 
         // Neighborhood -> BranchNeighborhoodDto
         CreateMap<Neighborhood, BranchNeighborhoodDto>();

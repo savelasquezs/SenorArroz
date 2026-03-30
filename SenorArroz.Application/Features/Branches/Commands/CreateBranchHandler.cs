@@ -1,6 +1,8 @@
 using AutoMapper;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.BranchPrintSettings.DTOs;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
@@ -54,7 +56,7 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
 
         branch = await _branchRepository.CreateAsync(branch);
 
-        _db.BranchPrintSettings.Add(new BranchPrintSettings { BranchId = branch.Id });
+        _db.BranchPrintSettings.Add(new SenorArroz.Domain.Entities.BranchPrintSettings { BranchId = branch.Id });
         await _db.SaveChangesAsync(cancellationToken);
 
         var branchDto = _mapper.Map<BranchDto>(branch);
@@ -65,6 +67,10 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
         branchDto.TotalCustomers = 0;
         branchDto.ActiveCustomers = 0;
         branchDto.TotalNeighborhoods = 0;
+
+        var ps = await _db.BranchPrintSettings.AsNoTracking()
+            .FirstAsync(s => s.BranchId == branch.Id, cancellationToken);
+        branchDto.PrintSettings = _mapper.Map<BranchPrintSettingsDto>(ps);
 
         return branchDto;
     }

@@ -1,6 +1,8 @@
 using AutoMapper;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.BranchPrintSettings.DTOs;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -10,12 +12,14 @@ namespace SenorArroz.Application.Features.Branches.Commands;
 public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDto>
 {
     private readonly IBranchRepository _branchRepository;
+    private readonly IApplicationDbContext _db;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
 
-    public UpdateBranchHandler(IBranchRepository branchRepository, IMapper mapper, ICurrentUser currentUser)
+    public UpdateBranchHandler(IBranchRepository branchRepository, IApplicationDbContext db, IMapper mapper, ICurrentUser currentUser)
     {
         _branchRepository = branchRepository;
+        _db = db;
         _mapper = mapper;
         _currentUser = currentUser;
     }
@@ -78,6 +82,10 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
         branchDto.TotalCustomers = await _branchRepository.GetTotalCustomersAsync(branch.Id);
         branchDto.ActiveCustomers = await _branchRepository.GetActiveCustomersAsync(branch.Id);
         branchDto.TotalNeighborhoods = await _branchRepository.GetTotalNeighborhoodsAsync(branch.Id);
+
+        var ps = await _db.BranchPrintSettings.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.BranchId == branch.Id, cancellationToken);
+        branchDto.PrintSettings = ps is null ? null : _mapper.Map<BranchPrintSettingsDto>(ps);
 
         return branchDto;
     }
