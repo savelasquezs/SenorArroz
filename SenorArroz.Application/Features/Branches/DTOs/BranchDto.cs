@@ -1,3 +1,5 @@
+using SenorArroz.Application.Features.BranchPrintSettings.DTOs;
+
 namespace SenorArroz.Application.Features.Branches.DTOs;
 
 public class BranchDto
@@ -22,4 +24,6 @@ public class BranchDto
     // Related data
     public List<BranchNeighborhoodDto> Neighborhoods { get; set; } = new();
     public List<BranchUserDto> Users { get; set; } = new();
+
+    public BranchPrintSettingsDto? PrintSettings { get; set; }
 }

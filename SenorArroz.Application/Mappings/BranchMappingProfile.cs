@@ -1,7 +1,8 @@
-﻿using AutoMapper;
+using AutoMapper;
 using SenorArroz.Application.Features.Branches.Commands;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Application.Features.Branches.Queries;
+using SenorArroz.Application.Features.BranchPrintSettings.DTOs;
 using SenorArroz.Domain.Entities;
 
 namespace SenorArroz.Application.Mappings;
