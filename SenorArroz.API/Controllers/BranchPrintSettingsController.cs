@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BranchPrintSettings.Commands;
 using SenorArroz.Application.Features.BranchPrintSettings.DTOs;
+using SenorArroz.Domain.Exceptions;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
@@ -39,7 +40,7 @@ public class BranchPrintSettingsController : ControllerBase
             var result = await _mediator.Send(new UpdateBranchPrintSettingsCommand(branchId, dto), cancellationToken);
             return Ok(ApiResponse<BranchPrintSettingsDto>.SuccessResponse(result, "Configuración de impresión actualizada."));
         }
-        catch (SenorArroz.Domain.Exceptions.NotFoundException ex)
+        catch (NotFoundException ex)
         {
             return NotFound(ApiResponse<BranchPrintSettingsDto>.ErrorResponse(ex.Message));
         }
@@ -60,7 +61,7 @@ public class BranchPrintSettingsController : ControllerBase
                 result,
                 "Token generado. Guárdelo en el agente; no se volverá a mostrar."));
         }
-        catch (SenorArroz.Domain.Exceptions.NotFoundException ex)
+        catch (NotFoundException ex)
         {
             return NotFound(ApiResponse<RotateBranchAgentTokenResponseDto>.ErrorResponse(ex.Message));
         }
