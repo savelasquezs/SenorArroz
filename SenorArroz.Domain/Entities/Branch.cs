@@ -5,6 +5,13 @@ namespace SenorArroz.Domain.Entities;
 public class Branch : BaseEntity
 {
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>Nombre comercial en ticket (opcional). Si está vacío, se usa <see cref="Name"/>.</summary>
+    public string? BusinessName { get; set; }
+
+    /// <summary>NIT en ticket (opcional).</summary>
+    public string? Nit { get; set; }
+
     public string Address { get; set; } = string.Empty;
     public string Phone1 { get; set; } = string.Empty;
     public string? Phone2 { get; set; }

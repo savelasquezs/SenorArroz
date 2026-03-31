@@ -25,7 +25,8 @@ public class BranchMappingProfile : Profile
         CreateMap<BranchPrintSettings, BranchPrintSettingsDto>()
             .ForMember(dest => dest.AgentTokenConfigured, opt => opt.MapFrom(src => !string.IsNullOrWhiteSpace(src.AgentTokenHash)));
 
-        CreateMap<BranchPrintSettings, PrintAgentConfigDto>();
+        CreateMap<BranchPrintSettings, PrintAgentConfigDto>()
+            .ForMember(d => d.ReceiptLogoUrl, o => o.Ignore());
 
         // Neighborhood -> BranchNeighborhoodDto
         CreateMap<Neighborhood, BranchNeighborhoodDto>();

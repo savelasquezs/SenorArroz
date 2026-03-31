@@ -8,6 +8,13 @@ public class CreateBranchDto
     [StringLength(100, ErrorMessage = "El nombre no puede exceder 100 caracteres")]
     public string Name { get; set; } = string.Empty;
 
+    [StringLength(150, ErrorMessage = "El nombre comercial no puede exceder 150 caracteres")]
+    public string? BusinessName { get; set; }
+
+    [StringLength(32, ErrorMessage = "El NIT no puede exceder 32 caracteres")]
+    [RegularExpression(@"^[\d.\-]*$", ErrorMessage = "El NIT solo puede contener dígitos, puntos y guiones")]
+    public string? Nit { get; set; }
+
     [Required(ErrorMessage = "La dirección es requerida")]
     [StringLength(200, ErrorMessage = "La dirección no puede exceder 200 caracteres")]
     public string Address { get; set; } = string.Empty;

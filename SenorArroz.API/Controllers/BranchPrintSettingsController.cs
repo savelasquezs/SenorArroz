@@ -23,6 +23,113 @@ public class BranchPrintSettingsController : ControllerBase
         _currentUser = currentUser;
     }
 
+    /// <summary>Sube el logo del ticket (PNG, JPEG, WebP o GIF, máx. 1,5 MB). Campo multipart: file.</summary>
+    [HttpPost("receipt-logo")]
+    [RequestSizeLimit(1_572_864)]
+    [Consumes("multipart/form-data")]
+    public async Task<ActionResult<ApiResponse<BranchPrintSettingsDto>>> UploadReceiptLogo(
+        int branchId,
+        IFormFile? file,
+        CancellationToken cancellationToken)
+    {
+        if (!CanAccessBranch(branchId))
+            return Forbid();
+
+        if (file == null || file.Length == 0)
+            return BadRequest(ApiResponse<BranchPrintSettingsDto>.ErrorResponse("Seleccione un archivo de imagen."));
+
+        if (!TryMapLogoExtension(file.ContentType, file.FileName, out var extension, out var error))
+            return BadRequest(ApiResponse<BranchPrintSettingsDto>.ErrorResponse(error));
+
+        try
+        {
+            await using var ms = new MemoryStream();
+            await file.CopyToAsync(ms, cancellationToken);
+            var bytes = ms.ToArray();
+            var result = await _mediator.Send(new UploadBranchReceiptLogoCommand(branchId, bytes, extension), cancellationToken);
+            return Ok(ApiResponse<BranchPrintSettingsDto>.SuccessResponse(result, "Logo de ticket actualizado."));
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(ApiResponse<BranchPrintSettingsDto>.ErrorResponse(ex.Message));
+        }
+        catch (BusinessException ex)
+        {
+            return BadRequest(ApiResponse<BranchPrintSettingsDto>.ErrorResponse(ex.Message));
+        }
+    }
+
+    [HttpDelete("receipt-logo")]
+    public async Task<ActionResult<ApiResponse<BranchPrintSettingsDto>>> DeleteReceiptLogo(
+        int branchId,
+        CancellationToken cancellationToken)
+    {
+        if (!CanAccessBranch(branchId))
+            return Forbid();
+
+        try
+        {
+            var result = await _mediator.Send(new DeleteBranchReceiptLogoCommand(branchId), cancellationToken);
+            return Ok(ApiResponse<BranchPrintSettingsDto>.SuccessResponse(result, "Logo de ticket eliminado."));
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(ApiResponse<BranchPrintSettingsDto>.ErrorResponse(ex.Message));
+        }
+    }
+
+    private static bool TryMapLogoExtension(string? contentType, string? fileName, out string extensionWithDot, out string error)
+    {
+        extensionWithDot = ".png";
+        error = string.Empty;
+        var ct = (contentType ?? string.Empty).Trim().ToLowerInvariant();
+        if (ct is "image/png" or "image/x-png")
+        {
+            extensionWithDot = ".png";
+            return true;
+        }
+        if (ct is "image/jpeg" or "image/jpg" or "image/pjpeg")
+        {
+            extensionWithDot = ".jpg";
+            return true;
+        }
+        if (ct == "image/webp")
+        {
+            extensionWithDot = ".webp";
+            return true;
+        }
+        if (ct == "image/gif")
+        {
+            extensionWithDot = ".gif";
+            return true;
+        }
+
+        var name = (fileName ?? string.Empty).ToLowerInvariant();
+        if (name.EndsWith(".png", StringComparison.Ordinal))
+        {
+            extensionWithDot = ".png";
+            return true;
+        }
+        if (name.EndsWith(".jpg", StringComparison.Ordinal) || name.EndsWith(".jpeg", StringComparison.Ordinal))
+        {
+            extensionWithDot = ".jpg";
+            return true;
+        }
+        if (name.EndsWith(".webp", StringComparison.Ordinal))
+        {
+            extensionWithDot = ".webp";
+            return true;
+        }
+        if (name.EndsWith(".gif", StringComparison.Ordinal))
+        {
+            extensionWithDot = ".gif";
+            return true;
+        }
+
+        error = "Tipo de archivo no permitido. Use PNG, JPEG, WebP o GIF.";
+        return false;
+    }
+
     [HttpPut]
     public async Task<ActionResult<ApiResponse<BranchPrintSettingsDto>>> Update(
         int branchId,

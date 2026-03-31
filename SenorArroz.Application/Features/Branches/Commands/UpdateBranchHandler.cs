@@ -66,6 +66,8 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
 
         // Update branch
         branch.Name = request.Name.Trim();
+        branch.BusinessName = NullIfWhiteSpace(request.BusinessName);
+        branch.Nit = NullIfWhiteSpace(request.Nit);
         branch.Address = request.Address.Trim();
         branch.Phone1 = request.Phone1;
         branch.Phone2 = request.Phone2;
@@ -89,4 +91,7 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
 
         return branchDto;
     }
+
+    private static string? NullIfWhiteSpace(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }

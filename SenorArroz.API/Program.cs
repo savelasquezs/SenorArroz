@@ -6,7 +6,9 @@ using Microsoft.OpenApi.Models;
 using SenorArroz.API.Extensions;
 using SenorArroz.API.Middleware;
 using SenorArroz.Application;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Infrastructure;
+using SenorArroz.Infrastructure.Storage;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -72,6 +74,13 @@ builder.Services.AddSwaggerGen(c =>
 // Add Application and Infrastructure services
 builder.Services.AddApplication();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+
+builder.Services.AddScoped<IBranchReceiptLogoStorage>(sp =>
+{
+    var env = sp.GetRequiredService<IWebHostEnvironment>();
+    var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+    return new BranchReceiptLogoStorage(root);
+});
 
 // SignalR
 builder.Services.AddSignalR();

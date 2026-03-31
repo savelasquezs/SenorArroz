@@ -12,6 +12,12 @@ public class PrintTicketOrderPayloadV1
 {
     public int OrderId { get; set; }
     public string BranchName { get; set; } = string.Empty;
+    /// <summary>Nombre comercial en cabecera; si viene vacío el cliente de impresión puede usar <see cref="BranchName"/>.</summary>
+    public string? BusinessName { get; set; }
+    public string? BranchNit { get; set; }
+    public string? BranchAddress { get; set; }
+    /// <summary>URL absoluta del logo (misma API pública que sirve estáticos).</summary>
+    public string? ReceiptLogoUrl { get; set; }
     /// <summary>valores: kitchen, delivery, cashier</summary>
     public string Kind { get; set; } = string.Empty;
     public DateTime PrintedAtUtc { get; set; }

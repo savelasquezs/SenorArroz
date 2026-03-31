@@ -31,6 +31,9 @@ public class BranchPrintSettings
     public string? PrinterQueueDelivery { get; set; }
     public string? PrinterQueueCashier { get; set; }
 
+    /// <summary>Ruta relativa servida por estáticos (ej. /uploads/branch-print/1/logo.png).</summary>
+    public string? ReceiptLogoPath { get; set; }
+
     /// <summary>SHA-256 hex en minúsculas de salt+token; vacío si el agente no está configurado.</summary>
     public string AgentTokenHash { get; set; } = string.Empty;
     public string AgentTokenSalt { get; set; } = string.Empty;

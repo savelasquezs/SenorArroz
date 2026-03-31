@@ -47,6 +47,8 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
         var branch = new Branch
         {
             Name = request.Name.Trim(),
+            BusinessName = NullIfWhiteSpace(request.BusinessName),
+            Nit = NullIfWhiteSpace(request.Nit),
             Address = request.Address.Trim(),
             Phone1 = request.Phone1,
             Phone2 = request.Phone2,
@@ -74,4 +76,7 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
 
         return branchDto;
     }
+
+    private static string? NullIfWhiteSpace(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }

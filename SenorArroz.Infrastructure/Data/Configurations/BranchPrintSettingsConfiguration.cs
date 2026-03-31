@@ -33,6 +33,7 @@ public class BranchPrintSettingsConfiguration : IEntityTypeConfiguration<BranchP
         builder.Property(s => s.PrinterQueueKitchen).HasColumnName("printer_queue_kitchen").HasMaxLength(128);
         builder.Property(s => s.PrinterQueueDelivery).HasColumnName("printer_queue_delivery").HasMaxLength(128);
         builder.Property(s => s.PrinterQueueCashier).HasColumnName("printer_queue_cashier").HasMaxLength(128);
+        builder.Property(s => s.ReceiptLogoPath).HasColumnName("receipt_logo_path").HasMaxLength(500);
         builder.Property(s => s.AgentTokenHash).HasColumnName("agent_token_hash").HasMaxLength(128).IsRequired();
         builder.Property(s => s.AgentTokenSalt).HasColumnName("agent_token_salt").HasMaxLength(64).IsRequired();
         builder.Property(s => s.AgentTokenUpdatedAt).HasColumnName("agent_token_updated_at");

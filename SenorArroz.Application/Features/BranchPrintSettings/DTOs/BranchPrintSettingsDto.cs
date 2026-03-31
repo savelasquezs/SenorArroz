@@ -29,6 +29,9 @@ public class BranchPrintSettingsDto
     public string? PrinterQueueDelivery { get; set; }
     public string? PrinterQueueCashier { get; set; }
 
+    /// <summary>Ruta relativa del logo en tickets (estáticos), ej. /uploads/branch-print/1/logo.png.</summary>
+    public string? ReceiptLogoPath { get; set; }
+
     /// <summary>True si hay hash persistido (el agente puede autenticarse si el token fue configurado).</summary>
     public bool AgentTokenConfigured { get; set; }
     public DateTime? AgentTokenUpdatedAt { get; set; }

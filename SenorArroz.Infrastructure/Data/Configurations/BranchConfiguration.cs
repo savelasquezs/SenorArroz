@@ -15,6 +15,8 @@ public class BranchConfiguration : IEntityTypeConfiguration<Branch>
         builder.Property(b => b.Id).HasColumnName("id");
 
         builder.Property(b => b.Name).HasColumnName("name").HasMaxLength(100).IsRequired();
+        builder.Property(b => b.BusinessName).HasColumnName("business_name").HasMaxLength(150);
+        builder.Property(b => b.Nit).HasColumnName("nit").HasMaxLength(32);
         builder.Property(b => b.Address).HasColumnName("address").HasMaxLength(200).IsRequired();
         builder.Property(b => b.Phone1).HasColumnName("phone1").HasMaxLength(10).IsRequired();
         builder.Property(b => b.Phone2).HasColumnName("phone2").HasMaxLength(10);

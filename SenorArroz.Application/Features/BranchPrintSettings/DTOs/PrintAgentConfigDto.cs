@@ -12,4 +12,7 @@ public class PrintAgentConfigDto
     public bool EnableCashierJobs { get; set; }
 
     public short PaperWidthMm { get; set; }
+
+    /// <summary>URL absoluta del logo para tickets; el agente y el payload pueden usarla para descargar la imagen.</summary>
+    public string? ReceiptLogoUrl { get; set; }
 }

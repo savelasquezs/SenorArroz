@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Shared.Models.Printing;
@@ -6,15 +7,19 @@ namespace SenorArroz.Application.Common.Printing;
 
 public static class PrintTicketPayloadBuilder
 {
-    public static PrintTicketPayloadBatchV1 BuildBatch(IReadOnlyList<Order> orders, PrintJobKind kind, DateTime printedAtUtc)
+    public static PrintTicketPayloadBatchV1 BuildBatch(
+        IReadOnlyList<Order> orders,
+        PrintJobKind kind,
+        DateTime printedAtUtc,
+        string? publicApiBaseUrl)
     {
         var batch = new PrintTicketPayloadBatchV1 { Version = 1 };
         foreach (var order in orders.OrderBy(o => o.Id))
-            batch.Orders.Add(BuildOrder(order, kind, printedAtUtc));
+            batch.Orders.Add(BuildOrder(order, kind, printedAtUtc, publicApiBaseUrl));
         return batch;
     }
 
-    public static PrintTicketOrderPayloadV1 BuildOrder(Order order, PrintJobKind kind, DateTime printedAtUtc)
+    public static PrintTicketOrderPayloadV1 BuildOrder(Order order, PrintJobKind kind, DateTime printedAtUtc, string? publicApiBaseUrl)
     {
         var kindStr = KindToApiString(kind);
         var lines = order.OrderDetails
@@ -61,10 +66,17 @@ public static class PrintTicketPayloadBuilder
             };
         }
 
+        var branch = order.Branch;
+        var logoPath = branch?.PrintSettings?.ReceiptLogoPath;
+
         return new PrintTicketOrderPayloadV1
         {
             OrderId = order.Id,
-            BranchName = order.Branch?.Name ?? string.Empty,
+            BranchName = branch?.Name ?? string.Empty,
+            BusinessName = NullIfWhiteSpace(branch?.BusinessName),
+            BranchNit = NullIfWhiteSpace(branch?.Nit),
+            BranchAddress = branch?.Address,
+            ReceiptLogoUrl = PublicUrlHelper.ToAbsolutePublicUrl(publicApiBaseUrl, logoPath),
             Kind = kindStr,
             PrintedAtUtc = printedAtUtc,
             Lines = lines,
@@ -113,4 +125,7 @@ public static class PrintTicketPayloadBuilder
         OrderStatus.Cancelled => "cancelled",
         _ => s.ToString().ToLowerInvariant(),
     };
+
+    private static string? NullIfWhiteSpace(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }

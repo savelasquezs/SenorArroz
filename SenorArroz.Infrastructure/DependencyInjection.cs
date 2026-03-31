@@ -21,6 +21,7 @@ public static class DependencyInjection
     {
         services.Configure<DeliveryRouteOptions>(configuration.GetSection(DeliveryRouteOptions.SectionName));
         services.Configure<GoogleMapsRouteOptions>(configuration.GetSection(GoogleMapsRouteOptions.SectionName));
+        services.Configure<ApiPublicOptions>(configuration.GetSection(ApiPublicOptions.SectionName));
 
         // Database
         services.AddDbContext<ApplicationDbContext>(options =>

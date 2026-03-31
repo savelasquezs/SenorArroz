@@ -2,10 +2,12 @@ using System.Data;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Printing;
+using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
@@ -16,10 +18,13 @@ namespace SenorArroz.Infrastructure.Services;
 public class PrintQueueService : IPrintQueueService
 {
     private readonly ApplicationDbContext _db;
+    private readonly string? _publicApiBaseUrl;
 
-    public PrintQueueService(ApplicationDbContext db)
+    public PrintQueueService(ApplicationDbContext db, IOptions<ApiPublicOptions> apiPublic)
     {
         _db = db;
+        var b = apiPublic.Value.BaseUrl?.Trim();
+        _publicApiBaseUrl = string.IsNullOrEmpty(b) ? null : b.TrimEnd('/');
     }
 
     public async Task<bool> IsAgentTokenValidAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default)
@@ -52,7 +57,7 @@ public class PrintQueueService : IPrintQueueService
 
         var orders = await _db.Orders
             .AsNoTracking()
-            .Include(o => o.Branch)
+            .Include(o => o.Branch).ThenInclude(b => b.PrintSettings)
             .Include(o => o.Customer)
             .Include(o => o.Address).ThenInclude(a => a!.Neighborhood)
             .Include(o => o.LoyaltyCycleStep)
@@ -69,7 +74,7 @@ public class PrintQueueService : IPrintQueueService
             throw new InvalidOperationException("Los pedidos deben pertenecer a la sucursal.");
 
         var printedAt = DateTime.UtcNow;
-        var batch = PrintTicketPayloadBuilder.BuildBatch(orders, kind, printedAt);
+        var batch = PrintTicketPayloadBuilder.BuildBatch(orders, kind, printedAt, _publicApiBaseUrl);
         var payloadJson = PrintTicketPayloadJson.SerializeBatch(batch);
         var orderIdsJson = JsonSerializer.Serialize(ids.OrderBy(i => i).ToList());
 
