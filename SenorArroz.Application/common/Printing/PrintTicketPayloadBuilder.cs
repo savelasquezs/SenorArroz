@@ -11,26 +11,60 @@ public static class PrintTicketPayloadBuilder
         IReadOnlyList<Order> orders,
         PrintJobKind kind,
         DateTime printedAtUtc,
-        string? publicApiBaseUrl)
+        string? publicApiBaseUrl,
+        string restaurantDisplayName,
+        string kitchenFooterMessage,
+        IReadOnlyDictionary<int, LoyaltyKitchenSnapshot?> loyaltyByOrderId)
     {
         var batch = new PrintTicketPayloadBatchV1 { Version = 1 };
         foreach (var order in orders.OrderBy(o => o.Id))
-            batch.Orders.Add(BuildOrder(order, kind, printedAtUtc, publicApiBaseUrl));
+        {
+            loyaltyByOrderId.TryGetValue(order.Id, out var loyalty);
+            batch.Orders.Add(BuildOrder(
+                order,
+                kind,
+                printedAtUtc,
+                publicApiBaseUrl,
+                restaurantDisplayName,
+                kitchenFooterMessage,
+                loyalty));
+        }
+
         return batch;
     }
 
-    public static PrintTicketOrderPayloadV1 BuildOrder(Order order, PrintJobKind kind, DateTime printedAtUtc, string? publicApiBaseUrl)
+    public static PrintTicketOrderPayloadV1 BuildOrder(
+        Order order,
+        PrintJobKind kind,
+        DateTime printedAtUtc,
+        string? publicApiBaseUrl,
+        string restaurantDisplayName,
+        string kitchenFooterMessage,
+        LoyaltyKitchenSnapshot? loyalty)
     {
         var kindStr = KindToApiString(kind);
         var lines = order.OrderDetails
             .OrderBy(d => d.Id)
-            .Select(d => new PrintTicketLineV1
+            .Select(d =>
             {
-                ProductName = d.Product?.Name ?? $"#{d.ProductId}",
-                Quantity = d.Quantity,
-                UnitPrice = d.UnitPrice,
-                LineSubtotal = d.Subtotal ?? Math.Max(0, d.UnitPrice * d.Quantity - d.Discount),
-                Notes = d.Notes,
+                var gross = d.UnitPrice * d.Quantity;
+                var disc = d.Discount;
+                int? pct = gross > 0 && disc > 0
+                    ? Math.Clamp((int)Math.Round(100.0 * disc / gross), 1, 100)
+                    : null;
+
+                return new PrintTicketLineV1
+                {
+                    ProductName = d.Product?.Name ?? $"#{d.ProductId}",
+                    KitchenProductName = KitchenProductNameFormatter.Format(d.Product?.Name ?? string.Empty),
+                    Quantity = d.Quantity,
+                    UnitPrice = d.UnitPrice,
+                    LineSubtotal = d.Subtotal ?? Math.Max(0, gross - disc),
+                    LineDiscount = disc,
+                    LineGrossSubtotal = gross,
+                    LineDiscountPercent = pct,
+                    Notes = d.Notes,
+                };
             })
             .ToList();
 
@@ -69,6 +103,18 @@ public static class PrintTicketPayloadBuilder
         var branch = order.Branch;
         var logoPath = branch?.PrintSettings?.ReceiptLogoPath;
 
+        int? loyDelivered = null;
+        int? loyUntil = null;
+        string? loyNext = null;
+        string? loyGift = null;
+        if (loyalty is not null)
+        {
+            loyDelivered = loyalty.DeliveredCount;
+            loyUntil = loyalty.OrdersUntilCycleEnd;
+            loyNext = NullIfWhiteSpace(loyalty.NextRewardLabel);
+            loyGift = NullIfWhiteSpace(loyalty.ThisOrderGiftLabel);
+        }
+
         return new PrintTicketOrderPayloadV1
         {
             OrderId = order.Id,
@@ -77,6 +123,12 @@ public static class PrintTicketPayloadBuilder
             BranchNit = NullIfWhiteSpace(branch?.Nit),
             BranchAddress = branch?.Address,
             ReceiptLogoUrl = PublicUrlHelper.ToAbsolutePublicUrl(publicApiBaseUrl, logoPath),
+            RestaurantDisplayName = NullIfWhiteSpace(restaurantDisplayName),
+            KitchenFooterMessage = NullIfWhiteSpace(kitchenFooterMessage),
+            LoyaltyDeliveredCount = loyDelivered,
+            LoyaltyOrdersUntilCycleEnd = loyUntil,
+            LoyaltyNextRewardLabel = loyNext,
+            LoyaltyThisOrderGiftLabel = loyGift,
             Kind = kindStr,
             PrintedAtUtc = printedAtUtc,
             Lines = lines,

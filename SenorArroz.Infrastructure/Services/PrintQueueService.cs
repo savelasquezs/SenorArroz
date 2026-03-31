@@ -10,6 +10,7 @@ using SenorArroz.Application.Common.Printing;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models.Printing;
 
@@ -19,12 +20,23 @@ public class PrintQueueService : IPrintQueueService
 {
     private readonly ApplicationDbContext _db;
     private readonly string? _publicApiBaseUrl;
+    private readonly BrandingOptions _branding;
+    private readonly IOrderRepository _orderRepository;
+    private readonly ILoyaltyCycleStepRepository _loyaltyCycleStepRepository;
 
-    public PrintQueueService(ApplicationDbContext db, IOptions<ApiPublicOptions> apiPublic)
+    public PrintQueueService(
+        ApplicationDbContext db,
+        IOptions<ApiPublicOptions> apiPublic,
+        IOptions<BrandingOptions> branding,
+        IOrderRepository orderRepository,
+        ILoyaltyCycleStepRepository loyaltyCycleStepRepository)
     {
         _db = db;
         var b = apiPublic.Value.BaseUrl?.Trim();
         _publicApiBaseUrl = string.IsNullOrEmpty(b) ? null : b.TrimEnd('/');
+        _branding = branding.Value;
+        _orderRepository = orderRepository;
+        _loyaltyCycleStepRepository = loyaltyCycleStepRepository;
     }
 
     public async Task<bool> IsAgentTokenValidAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default)
@@ -73,8 +85,26 @@ public class PrintQueueService : IPrintQueueService
         if (orders.Any(o => o.BranchId != branchId))
             throw new InvalidOperationException("Los pedidos deben pertenecer a la sucursal.");
 
+        var loyaltyByOrder = new Dictionary<int, LoyaltyKitchenSnapshot?>();
+        foreach (var order in orders)
+            loyaltyByOrder[order.Id] = await BuildLoyaltyKitchenSnapshotAsync(order, cancellationToken).ConfigureAwait(false);
+
         var printedAt = DateTime.UtcNow;
-        var batch = PrintTicketPayloadBuilder.BuildBatch(orders, kind, printedAt, _publicApiBaseUrl);
+        var restaurantName = string.IsNullOrWhiteSpace(_branding.RestaurantDisplayName)
+            ? "El señor arroz"
+            : _branding.RestaurantDisplayName.Trim();
+        var footer = string.IsNullOrWhiteSpace(_branding.KitchenFooterMessage)
+            ? "Gracias por confiar en El señor arroz"
+            : _branding.KitchenFooterMessage.Trim();
+
+        var batch = PrintTicketPayloadBuilder.BuildBatch(
+            orders,
+            kind,
+            printedAt,
+            _publicApiBaseUrl,
+            restaurantName,
+            footer,
+            loyaltyByOrder);
         var payloadJson = PrintTicketPayloadJson.SerializeBatch(batch);
         var orderIdsJson = JsonSerializer.Serialize(ids.OrderBy(i => i).ToList());
 
@@ -91,6 +121,36 @@ public class PrintQueueService : IPrintQueueService
         _db.PrintJobs.Add(job);
         await _db.SaveChangesAsync(cancellationToken);
         return job;
+    }
+
+    private async Task<LoyaltyKitchenSnapshot?> BuildLoyaltyKitchenSnapshotAsync(Order order, CancellationToken cancellationToken)
+    {
+        if (order.CustomerId is not int cid)
+            return null;
+
+        var delivered = await _orderRepository.CountDeliveredOrdersForCustomerAsync(cid, cancellationToken).ConfigureAwait(false);
+        var cycleLen = await _loyaltyCycleStepRepository.GetCycleLengthAsync(order.BranchId, cancellationToken).ConfigureAwait(false);
+
+        int? until = null;
+        string? nextLabel = null;
+        if (cycleLen > 0)
+        {
+            var mod = delivered % cycleLen;
+            until = mod == 0 ? cycleLen : cycleLen - mod;
+            var nextStepIndex = mod + 1;
+            var step = await _loyaltyCycleStepRepository
+                .GetByBranchAndStepIndexAsync(order.BranchId, nextStepIndex, cancellationToken)
+                .ConfigureAwait(false);
+            nextLabel = string.IsNullOrWhiteSpace(step?.RewardLabel) ? null : step!.RewardLabel.Trim();
+        }
+
+        var gift = !string.IsNullOrWhiteSpace(order.LoyaltyRewardSnapshot)
+            ? order.LoyaltyRewardSnapshot.Trim()
+            : (string.IsNullOrWhiteSpace(order.LoyaltyCycleStep?.RewardLabel)
+                ? null
+                : order.LoyaltyCycleStep!.RewardLabel.Trim());
+
+        return new LoyaltyKitchenSnapshot(delivered, until, nextLabel, gift);
     }
 
     public async Task ValidateDeliverymanDeliveryEnqueueAsync(

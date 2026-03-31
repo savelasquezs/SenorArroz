@@ -18,6 +18,20 @@ public class PrintTicketOrderPayloadV1
     public string? BranchAddress { get; set; }
     /// <summary>URL absoluta del logo (misma API pública que sirve estáticos).</summary>
     public string? ReceiptLogoUrl { get; set; }
+
+    /// <summary>Nombre de marca para cabecera de cocina (desde configuración).</summary>
+    public string? RestaurantDisplayName { get; set; }
+    /// <summary>Cierre del ticket de cocina.</summary>
+    public string? KitchenFooterMessage { get; set; }
+
+    /// <summary>Pedidos ya entregados del cliente (misma sucursal / programa).</summary>
+    public int? LoyaltyDeliveredCount { get; set; }
+    /// <summary>Pedidos faltantes para cerrar el ciclo de premios (null si no hay ciclo).</summary>
+    public int? LoyaltyOrdersUntilCycleEnd { get; set; }
+    public string? LoyaltyNextRewardLabel { get; set; }
+    /// <summary>Regalo aplicado a este pedido, si ya fue asignado.</summary>
+    public string? LoyaltyThisOrderGiftLabel { get; set; }
+
     /// <summary>valores: kitchen, delivery, cashier</summary>
     public string Kind { get; set; } = string.Empty;
     public DateTime PrintedAtUtc { get; set; }
@@ -35,10 +49,18 @@ public class PrintTicketOrderPayloadV1
 public class PrintTicketLineV1
 {
     public string ProductName { get; set; } = string.Empty;
+    /// <summary>Nombre abreviado para cocina (arroz/con/chich). Si null, el agente usa <see cref="ProductName"/>.</summary>
+    public string? KitchenProductName { get; set; }
     public int Quantity { get; set; }
     /// <summary>En pesos enteros (misma unidad que el dominio).</summary>
     public int UnitPrice { get; set; }
     public int LineSubtotal { get; set; }
+    /// <summary>Descuento en pesos de la línea.</summary>
+    public int LineDiscount { get; set; }
+    /// <summary>Precio × cantidad antes de descuento.</summary>
+    public int LineGrossSubtotal { get; set; }
+    /// <summary>Porcentaje de descuento aproximado (1–100), null si no aplica.</summary>
+    public int? LineDiscountPercent { get; set; }
     public string? Notes { get; set; }
 }
 
