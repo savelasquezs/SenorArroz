@@ -93,7 +93,7 @@ public static class PrintTicketPayloadBuilder
             customer = new PrintTicketCustomerV1
             {
                 Name = order.Customer?.Name ?? order.GuestName,
-                Phone = order.Customer?.Phone1 ?? order.Customer?.Phone2,
+                Phone = JoinPhones(order.Customer?.Phone1, order.Customer?.Phone2),
                 AddressDescription = order.Address?.AddressText,
                 NeighborhoodName = order.Address?.Neighborhood?.Name,
                 AddressAdditionalInfo = order.Address?.AdditionalInfo,
@@ -188,5 +188,14 @@ public static class PrintTicketPayloadBuilder
             return null;
         var p = path.Trim();
         return p.StartsWith('/') ? p : "/" + p;
+    }
+
+    private static string? JoinPhones(string? phone1, string? phone2)
+    {
+        var a = NullIfWhiteSpace(phone1);
+        var b = NullIfWhiteSpace(phone2);
+        if (a is null) return b;
+        if (b is null) return a;
+        return $"{a} - {b}";
     }
 }
