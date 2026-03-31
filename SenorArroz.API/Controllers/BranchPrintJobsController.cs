@@ -30,13 +30,8 @@ public class BranchPrintJobsController : ControllerBase
         [FromBody] EnqueuePrintJobsRequest request,
         CancellationToken cancellationToken)
     {
-        if (!CanAccessBranch(branchId))
-            return Forbid();
-
-        if (string.Equals(_currentUser.Role, "kitchen", StringComparison.OrdinalIgnoreCase)
-            && request.Kind != PrintJobKind.Kitchen)
-            return Forbid();
-
+        // Domiciliario: la sucursal en la URL debe coincidir con la del pedido, no con user.branch_id
+        // (puede trabajar rutas de otra sucursal; antes Forbid() bloqueaba toda la reimpresión desde el celular).
         if (string.Equals(_currentUser.Role, "deliveryman", StringComparison.OrdinalIgnoreCase))
         {
             if (request.Kind != PrintJobKind.Delivery)
@@ -54,6 +49,15 @@ public class BranchPrintJobsController : ControllerBase
                 return BadRequest(ApiResponse<EnqueuePrintJobResponse>.ErrorResponse(ex.Message));
             }
         }
+        else
+        {
+            if (!CanAccessBranch(branchId))
+                return Forbid();
+        }
+
+        if (string.Equals(_currentUser.Role, "kitchen", StringComparison.OrdinalIgnoreCase)
+            && request.Kind != PrintJobKind.Kitchen)
+            return Forbid();
 
         try
         {
