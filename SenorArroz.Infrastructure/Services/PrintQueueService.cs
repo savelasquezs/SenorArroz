@@ -7,6 +7,7 @@ using Npgsql;
 using NpgsqlTypes;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Printing;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -135,9 +136,9 @@ public class PrintQueueService : IPrintQueueService
         string? nextLabel = null;
         if (cycleLen > 0)
         {
-            var mod = delivered % cycleLen;
-            until = mod == 0 ? cycleLen : cycleLen - mod;
-            var nextStepIndex = mod + 1;
+            until = LoyaltyDeliveriesPerReward.GetDeliveriesUntilNextReward(delivered);
+            var nextMilestone = LoyaltyDeliveriesPerReward.GetNextRewardMilestoneDeliveries(delivered);
+            var nextStepIndex = LoyaltyDeliveriesPerReward.GetStepIndexAtMilestone(nextMilestone, cycleLen);
             var step = await _loyaltyCycleStepRepository
                 .GetByBranchAndStepIndexAsync(order.BranchId, nextStepIndex, cancellationToken)
                 .ConfigureAwait(false);

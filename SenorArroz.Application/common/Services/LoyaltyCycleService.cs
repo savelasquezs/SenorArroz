@@ -29,14 +29,16 @@ public class LoyaltyCycleService : ILoyaltyCycleService
 
         var delivered = await _orders.CountDeliveredOrdersForCustomerAsync(dto.Id, cancellationToken);
         dto.LoyaltyDeliveredCount = delivered;
-        var nextStepIndex = (delivered % cycleLen) + 1;
+        var nextMilestone = LoyaltyDeliveriesPerReward.GetNextRewardMilestoneDeliveries(delivered);
+        var nextStepIndex = LoyaltyDeliveriesPerReward.GetStepIndexAtMilestone(nextMilestone, cycleLen);
         dto.LoyaltyNextStepIndex = nextStepIndex;
         var step = await _steps.GetByBranchAndStepIndexAsync(dto.BranchId, nextStepIndex, cancellationToken);
         dto.LoyaltyNextRewardLabel = step?.RewardLabel;
         if (!string.IsNullOrWhiteSpace(step?.RewardLabel))
         {
+            var falta = LoyaltyDeliveriesPerReward.GetDeliveriesUntilNextReward(delivered);
             dto.LoyaltyNextRewardMessage =
-                $"Este cliente tiene {delivered} pedido(s) entregado(s) con nosotros. En el próximo pedido entregado le corresponde: {step!.RewardLabel}.";
+                $"Este cliente tiene {delivered} pedido(s) entregado(s) con nosotros. Le faltan {falta} entrega(s) para el premio: {step!.RewardLabel}.";
         }
         else
             dto.LoyaltyNextRewardMessage = null;
@@ -55,7 +57,13 @@ public class LoyaltyCycleService : ILoyaltyCycleService
         if (k <= 0)
             return;
 
-        var stepIndex = ((k - 1) % cycleLen) + 1;
+        if (!LoyaltyDeliveriesPerReward.TryGetStepIndexForDeliveredCount(
+                k,
+                cycleLen,
+                LoyaltyDeliveriesPerReward.DefaultInterval,
+                out var stepIndex))
+            return;
+
         var step = await _steps.GetByBranchAndStepIndexAsync(branchId, stepIndex, cancellationToken);
         if (step == null)
             return;
