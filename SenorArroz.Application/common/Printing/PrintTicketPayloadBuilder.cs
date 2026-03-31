@@ -101,7 +101,7 @@ public static class PrintTicketPayloadBuilder
         }
 
         var branch = order.Branch;
-        var logoPath = branch?.PrintSettings?.ReceiptLogoPath;
+        var logoPath = NormalizeReceiptLogoPath(branch?.PrintSettings?.ReceiptLogoPath);
 
         int? loyDelivered = null;
         int? loyUntil = null;
@@ -123,6 +123,7 @@ public static class PrintTicketPayloadBuilder
             BranchNit = NullIfWhiteSpace(branch?.Nit),
             BranchAddress = branch?.Address,
             ReceiptLogoUrl = PublicUrlHelper.ToAbsolutePublicUrl(publicApiBaseUrl, logoPath),
+            ReceiptLogoPath = logoPath,
             RestaurantDisplayName = NullIfWhiteSpace(restaurantDisplayName),
             KitchenFooterMessage = NullIfWhiteSpace(kitchenFooterMessage),
             LoyaltyDeliveredCount = loyDelivered,
@@ -180,4 +181,12 @@ public static class PrintTicketPayloadBuilder
 
     private static string? NullIfWhiteSpace(string? s) =>
         string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    private static string? NormalizeReceiptLogoPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+        var p = path.Trim();
+        return p.StartsWith('/') ? p : "/" + p;
+    }
 }

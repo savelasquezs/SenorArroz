@@ -18,6 +18,8 @@ public class PrintTicketOrderPayloadV1
     public string? BranchAddress { get; set; }
     /// <summary>URL absoluta del logo (misma API pública que sirve estáticos).</summary>
     public string? ReceiptLogoUrl { get; set; }
+    /// <summary>Ruta en el host (ej. /uploads/branch-print/1/logo.png). El agente la combina con su ApiBaseUrl si <see cref="ReceiptLogoUrl"/> es null.</summary>
+    public string? ReceiptLogoPath { get; set; }
 
     /// <summary>Nombre de marca para cabecera de cocina (desde configuración).</summary>
     public string? RestaurantDisplayName { get; set; }
