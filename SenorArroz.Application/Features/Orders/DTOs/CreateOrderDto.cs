@@ -8,7 +8,6 @@ public class CreateOrderDto
     public int TakenById { get; set; }
     public int? CustomerId { get; set; }
     public int? AddressId { get; set; }
-    public int? LoyaltyRuleId { get; set; }
     public string? GuestName { get; set; }
     public OrderType Type { get; set; }
     public int? DeliveryFee { get; set; }

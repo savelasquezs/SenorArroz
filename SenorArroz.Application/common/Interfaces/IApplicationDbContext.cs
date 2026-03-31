@@ -51,8 +51,6 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<ExpenseMenuTarget> ExpenseMenuTargets { get; set; }
 
-        DbSet<LoyaltyRule> LoyaltyRules { get; set; }
-
         DbSet<LoyaltyCycleStep> LoyaltyCycleSteps { get; set; }
 
         DbSet<Neighborhood> Neighborhoods { get; set; }

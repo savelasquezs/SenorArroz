@@ -79,7 +79,7 @@ public static class PrintTicketPayloadBuilder
             Payments = payments,
             LoyaltyRuleName = !string.IsNullOrWhiteSpace(order.LoyaltyRewardSnapshot)
                 ? order.LoyaltyRewardSnapshot
-                : order.LoyaltyCycleStep?.RewardLabel ?? order.LoyaltyRule?.Description,
+                : order.LoyaltyCycleStep?.RewardLabel,
             OrderType = order.Type.HasValue ? OrderTypeToString(order.Type.Value) : null,
             OrderStatus = OrderStatusToString(order.Status),
             ReservedFor = order.ReservedFor,

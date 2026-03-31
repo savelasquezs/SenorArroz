@@ -27,9 +27,7 @@ public class OrderMappingProfile : Profile
                     ? src.LoyaltyRewardSnapshot
                     : src.LoyaltyCycleStep != null
                         ? src.LoyaltyCycleStep.RewardLabel
-                        : src.LoyaltyRule != null
-                            ? src.LoyaltyRule.Description
-                            : null))
+                        : null))
             .ForMember(dest => dest.DeliveryManName, opt => opt.MapFrom(src => src.DeliveryMan != null ? src.DeliveryMan.Name : null))
             .ForMember(dest => dest.TypeDisplayName, opt => opt.MapFrom(src => GetTypeDisplayName(src.Type)))
             .ForMember(dest => dest.StatusDisplayName, opt => opt.MapFrom(src => GetStatusDisplayName(src.Status)))
@@ -64,7 +62,6 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.TakenBy, opt => opt.Ignore())
             .ForMember(dest => dest.Customer, opt => opt.Ignore())
             .ForMember(dest => dest.Address, opt => opt.Ignore())
-            .ForMember(dest => dest.LoyaltyRule, opt => opt.Ignore())
             .ForMember(dest => dest.LoyaltyCycleStep, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryMan, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryRouteId, opt => opt.Ignore())

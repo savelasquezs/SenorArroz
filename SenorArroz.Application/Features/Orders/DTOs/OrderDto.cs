@@ -22,7 +22,7 @@ public class OrderDto
     public string? NeighborhoodName { get; set; }
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
-    public int? LoyaltyRuleId { get; set; }
+    /// <summary>Texto de premio fidelidad (snapshot o paso del ciclo); mantiene nombre JSON legacy para clientes.</summary>
     public string? LoyaltyRuleName { get; set; }
     public int? LoyaltyCycleStepId { get; set; }
     public string? LoyaltyRewardSnapshot { get; set; }

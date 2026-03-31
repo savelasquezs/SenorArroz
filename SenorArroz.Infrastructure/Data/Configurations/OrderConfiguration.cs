@@ -19,7 +19,6 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.TakenById).HasColumnName("taken_by_id").IsRequired();
         builder.Property(o => o.CustomerId).HasColumnName("customer_id");
         builder.Property(o => o.AddressId).HasColumnName("address_id");
-        builder.Property(o => o.LoyaltyRuleId).HasColumnName("loyalty_rule_id");
         builder.Property(o => o.LoyaltyCycleStepId).HasColumnName("loyalty_cycle_step_id");
         builder.Property(o => o.LoyaltyRewardSnapshot).HasColumnName("loyalty_reward_snapshot").HasMaxLength(500);
         builder.Property(o => o.DeliveryRouteId).HasColumnName("delivery_route_id");
@@ -86,11 +85,6 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.HasOne(o => o.Address)
             .WithMany(a => a.Orders)
             .HasForeignKey(o => o.AddressId)
-            .OnDelete(DeleteBehavior.SetNull);
-
-        builder.HasOne(o => o.LoyaltyRule)
-            .WithMany(lr => lr.Orders)
-            .HasForeignKey(o => o.LoyaltyRuleId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(o => o.LoyaltyCycleStep)
