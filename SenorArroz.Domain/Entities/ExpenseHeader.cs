@@ -11,7 +11,10 @@ public class ExpenseHeader : BaseEntity
     /// <summary>Gasto imputado a un domiciliario (liquidación / abonos).</summary>
     public int? DeliverymanId { get; set; }
 
-    public decimal? Total { get; set; } // Suma de los totales por detalle
+    public decimal? Total { get; set; } // Suma líneas + VatAmount (recalculado en BD)
+
+    /// <summary>IVA en pesos cuando aplica (p. ej. 19 % sobre subtotal de líneas).</summary>
+    public decimal VatAmount { get; set; }
 
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;

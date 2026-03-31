@@ -890,6 +890,11 @@ namespace SenorArroz.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("total");
 
+                    b.Property<decimal>("VatAmount")
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("vat_amount")
+                        .HasDefaultValue(0m);
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")

@@ -18,6 +18,10 @@ public class ExpenseHeaderConfiguration : IEntityTypeConfiguration<ExpenseHeader
         builder.Property(eh => eh.CreatedById).HasColumnName("created_by_id").IsRequired();
         builder.Property(eh => eh.DeliverymanId).HasColumnName("deliveryman_id");
         builder.Property(eh => eh.Total).HasColumnName("total").HasColumnType("numeric(12,2)");
+        builder.Property(eh => eh.VatAmount)
+            .HasColumnName("vat_amount")
+            .HasColumnType("numeric(12,2)")
+            .HasDefaultValue(0m);
 
         builder.Property(eh => eh.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
         builder.Property(eh => eh.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");

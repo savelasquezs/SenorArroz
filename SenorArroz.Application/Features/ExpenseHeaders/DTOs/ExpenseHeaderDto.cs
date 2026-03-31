@@ -9,6 +9,9 @@ public class ExpenseHeaderDto
     public string SupplierName { get; set; } = string.Empty;
     public string? SupplierPhone { get; set; }
     public decimal? Total { get; set; }
+
+    /// <summary>IVA en pesos (19 % del subtotal de líneas cuando aplica).</summary>
+    public decimal VatAmount { get; set; }
     public int CreatedById { get; set; }
     public string CreatedByName { get; set; } = string.Empty;
     public int? DeliverymanId { get; set; }

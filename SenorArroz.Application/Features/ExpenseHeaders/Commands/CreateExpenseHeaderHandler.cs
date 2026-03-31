@@ -1,6 +1,7 @@
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 using SenorArroz.Application.Features.ExpenseHeaders.Helpers;
@@ -55,8 +56,11 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             throw new NotFoundException($"Gastos con IDs {string.Join(", ", missingIds)} no encontrados");
         }
 
-        // Validar que los banks existen y pertenecen a la sucursal
         var branchId = _currentUser.BranchId;
+        var subtotal = ExpenseInvoiceTotalsHelper.SubtotalFromCreateDetails(request.ExpenseHeader.ExpenseDetails);
+        var vatAmount = ExpenseInvoiceTotalsHelper.ComputeVatAmount(subtotal, request.ExpenseHeader.IncludeVat);
+        var grossTotal = ExpenseInvoiceTotalsHelper.GrossTotal(subtotal, vatAmount);
+
         if (request.ExpenseHeader.ExpenseBankPayments != null && request.ExpenseHeader.ExpenseBankPayments.Any())
         {
             var bankIds = request.ExpenseHeader.ExpenseBankPayments.Select(ebp => ebp.BankId).Distinct().ToList();
@@ -71,15 +75,9 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
                 throw new NotFoundException($"Bancos con IDs {string.Join(", ", missingBankIds)} no encontrados o no pertenecen a la sucursal");
             }
 
-            // Validar que la suma de pagos bancarios no exceda el total (se calculará después)
             var totalBankPayments = request.ExpenseHeader.ExpenseBankPayments.Sum(ebp => (decimal)ebp.Amount);
-            var totalExpenseDetails = request.ExpenseHeader.ExpenseDetails.Sum(ed =>
-                ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero));
-            
-            if (totalBankPayments > totalExpenseDetails)
-            {
-                throw new BusinessException("La suma de pagos bancarios no puede exceder el total de los gastos");
-            }
+            if (totalBankPayments > grossTotal)
+                throw new BusinessException("La suma de pagos bancarios no puede exceder el total de la factura (incluye IVA si aplica)");
         }
 
         if (request.ExpenseHeader.DeliverymanId.HasValue)
@@ -98,6 +96,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             SupplierId = request.ExpenseHeader.SupplierId,
             CreatedById = _currentUser.Id,
             DeliverymanId = request.ExpenseHeader.DeliverymanId,
+            VatAmount = vatAmount,
             ExpenseDetails = request.ExpenseHeader.ExpenseDetails.Select(ed => new ExpenseDetail
             {
                 ExpenseId = ed.ExpenseId,
@@ -111,9 +110,6 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
                 Amount = ebp.Amount
             }).ToList() ?? new List<ExpenseBankPayment>()
         };
-
-        expenseHeader.Total = expenseHeader.ExpenseDetails.Sum(ed =>
-            ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero));
 
         var created = await _expenseHeaderRepository.CreateAsync(expenseHeader);
 

@@ -1,6 +1,7 @@
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 using SenorArroz.Application.Features.ExpenseHeaders.Helpers;
@@ -131,8 +132,10 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             }
         }
 
-        expenseHeader.Total = expenseHeader.ExpenseDetails.Sum(ed =>
-            ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero));
+        var subtotalForVat = ExpenseInvoiceTotalsHelper.SubtotalFromTrackedDetails(expenseHeader.ExpenseDetails);
+        expenseHeader.VatAmount = ExpenseInvoiceTotalsHelper.ComputeVatAmount(
+            subtotalForVat,
+            request.ExpenseHeader.IncludeVat);
 
         // Manejar pagos: reemplazar la lista completa con lo enviado
         if (request.ExpenseHeader.ExpenseBankPayments != null)
@@ -172,14 +175,13 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         }
 
         var totalBankPayments = expenseHeader.ExpenseBankPayments.Sum(p => p.Amount);
-        var totalDetails = expenseHeader.ExpenseDetails.Sum(ed =>
-            ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero));
-        if (totalBankPayments > totalDetails)
-            throw new BusinessException("La suma de pagos bancarios no puede exceder el total de los gastos");
+        var grossTotal = ExpenseInvoiceTotalsHelper.GrossTotal(subtotalForVat, expenseHeader.VatAmount);
+        if (totalBankPayments > grossTotal)
+            throw new BusinessException("La suma de pagos bancarios no puede exceder el total de la factura (incluye IVA si aplica)");
 
         var updated = await _expenseHeaderRepository.UpdateAsync(expenseHeader);
 
-        await SyncLinkedDeliverymanAdvanceAmountAsync(updated.Id, expenseHeader.Total ?? 0, cancellationToken);
+        await SyncLinkedDeliverymanAdvanceAmountAsync(updated.Id, updated.Total ?? 0, cancellationToken);
 
         if (newDetailInfos.Any())
         {

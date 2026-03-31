@@ -9,6 +9,9 @@ public class CreateExpenseHeaderDto
 
     public List<CreateExpenseDetailDto> ExpenseDetails { get; set; } = new();
     public List<CreateExpenseBankPaymentDto>? ExpenseBankPayments { get; set; }
+
+    /// <summary>Incluir IVA 19 % sobre el subtotal de las líneas (total factura = subtotal + IVA).</summary>
+    public bool IncludeVat { get; set; }
 }
 
 public class CreateExpenseDetailDto

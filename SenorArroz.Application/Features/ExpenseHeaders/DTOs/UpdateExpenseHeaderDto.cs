@@ -5,6 +5,9 @@ public class UpdateExpenseHeaderDto
     public int? SupplierId { get; set; }
     public List<UpdateExpenseDetailDto>? ExpenseDetails { get; set; }
     public List<CreateExpenseBankPaymentDto>? ExpenseBankPayments { get; set; }
+
+    /// <summary>Incluir IVA 19 % sobre el subtotal de las líneas.</summary>
+    public bool IncludeVat { get; set; }
 }
 
 public class UpdateExpenseDetailDto
