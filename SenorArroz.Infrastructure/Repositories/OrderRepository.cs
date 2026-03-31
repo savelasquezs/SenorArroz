@@ -26,6 +26,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Customer)
             .Include(o => o.Address)
             .Include(o => o.LoyaltyRule)
+            .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
             .FirstOrDefaultAsync(o => o.Id == id);
     }
@@ -38,6 +39,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Customer)
             .Include(o => o.Address)
             .Include(o => o.LoyaltyRule)
+            .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
             .Include(o => o.OrderDetails)
                 .ThenInclude(od => od.Product)
@@ -52,6 +54,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Customer)
             .Include(o => o.Address)
             .Include(o => o.LoyaltyRule)
+            .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
             .Include(o => o.DeliveryRoute)
             .Include(o => o.OrderDetails)
@@ -77,6 +80,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Customer)
             .Include(o => o.Address)
             .Include(o => o.LoyaltyRule)
+            .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
             .Include(o => o.BankPayments)
                 .ThenInclude(bp => bp.Bank)
@@ -1623,6 +1627,28 @@ public class OrderRepository : IOrderRepository
                     .ToList()))
             .OrderBy(s => s.CategoryName)
             .ToList();
+    }
+
+    public async Task<int> CountDeliveredOrdersForCustomerAsync(int customerId, CancellationToken cancellationToken = default)
+    {
+        return await _context.Orders.CountAsync(
+            o => o.CustomerId == customerId && o.Status == OrderStatus.Delivered,
+            cancellationToken);
+    }
+
+    public async Task UpdateOrderLoyaltyCycleAsync(
+        int orderId,
+        int? loyaltyCycleStepId,
+        string? loyaltyRewardSnapshot,
+        CancellationToken cancellationToken = default)
+    {
+        var order = await _context.Orders.FindAsync(new object[] { orderId }, cancellationToken);
+        if (order == null)
+            return;
+
+        order.LoyaltyCycleStepId = loyaltyCycleStepId;
+        order.LoyaltyRewardSnapshot = loyaltyRewardSnapshot;
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>

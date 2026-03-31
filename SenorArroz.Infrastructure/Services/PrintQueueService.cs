@@ -56,6 +56,7 @@ public class PrintQueueService : IPrintQueueService
             .Include(o => o.Customer)
             .Include(o => o.Address).ThenInclude(a => a!.Neighborhood)
             .Include(o => o.LoyaltyRule)
+            .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.OrderDetails).ThenInclude(d => d.Product)
             .Include(o => o.BankPayments).ThenInclude(b => b.Bank)
             .Include(o => o.AppPayments).ThenInclude(a => a.App)

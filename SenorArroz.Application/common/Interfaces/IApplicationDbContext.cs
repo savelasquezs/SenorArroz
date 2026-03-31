@@ -53,6 +53,8 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<LoyaltyRule> LoyaltyRules { get; set; }
 
+        DbSet<LoyaltyCycleStep> LoyaltyCycleSteps { get; set; }
+
         DbSet<Neighborhood> Neighborhoods { get; set; }
 
         DbSet<Order> Orders { get; set; }

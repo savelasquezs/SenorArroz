@@ -58,6 +58,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<LoyaltyRule> LoyaltyRules { get; set; }
 
+        public virtual DbSet<LoyaltyCycleStep> LoyaltyCycleSteps { get; set; }
+
         public virtual DbSet<Neighborhood> Neighborhoods { get; set; }
 
         public virtual DbSet<Order> Orders { get; set; }
@@ -91,6 +93,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new ProductCategoryConfiguration());
             modelBuilder.ApplyConfiguration(new ProductConfiguration());
             modelBuilder.ApplyConfiguration(new LoyaltyRuleConfiguration());
+            modelBuilder.ApplyConfiguration(new LoyaltyCycleStepConfiguration());
             modelBuilder.ApplyConfiguration(new OrderConfiguration());
             modelBuilder.ApplyConfiguration(new OrderDetailConfiguration());
             modelBuilder.ApplyConfiguration(new BankConfiguration());

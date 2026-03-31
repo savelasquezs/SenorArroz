@@ -235,4 +235,9 @@ public interface IOrderRepository
         DateTime toUtc,
         CategoryWeightEvolutionGranularity granularity,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Pedidos entregados vinculados al cliente (fidelización).</summary>
+    Task<int> CountDeliveredOrdersForCustomerAsync(int customerId, CancellationToken cancellationToken = default);
+
+    Task UpdateOrderLoyaltyCycleAsync(int orderId, int? loyaltyCycleStepId, string? loyaltyRewardSnapshot, CancellationToken cancellationToken = default);
 }

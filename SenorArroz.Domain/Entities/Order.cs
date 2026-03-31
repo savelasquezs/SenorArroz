@@ -11,6 +11,10 @@ public class Order : BaseEntity
     public int? CustomerId { get; set; }
     public int? AddressId { get; set; }
     public int? LoyaltyRuleId { get; set; }
+    /// <summary>Paso del ciclo de fidelidad aplicado al marcar entregado (con cliente).</summary>
+    public int? LoyaltyCycleStepId { get; set; }
+    /// <summary>Copia del texto de premio al momento de entrega.</summary>
+    public string? LoyaltyRewardSnapshot { get; set; }
     /// <summary>Ruta de domicilio activa o última asociada (null si no aplica).</summary>
     public int? DeliveryRouteId { get; set; }
     public int? DeliveryManId { get; set; }
@@ -45,6 +49,7 @@ public class Order : BaseEntity
     public virtual Customer? Customer { get; set; }
     public virtual Address? Address { get; set; }
     public virtual LoyaltyRule? LoyaltyRule { get; set; }
+    public virtual LoyaltyCycleStep? LoyaltyCycleStep { get; set; }
     public virtual User? DeliveryMan { get; set; }
     public virtual DeliveryRoute? DeliveryRoute { get; set; }
 

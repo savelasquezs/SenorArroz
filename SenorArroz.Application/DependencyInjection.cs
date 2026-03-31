@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
@@ -34,6 +34,7 @@ namespace SenorArroz.Application
 
             // Business Rules Service
             services.AddScoped<IOrderBusinessRulesService, OrderBusinessRulesService>();
+            services.AddScoped<ILoyaltyCycleService, LoyaltyCycleService>();
 
             return services;
         }

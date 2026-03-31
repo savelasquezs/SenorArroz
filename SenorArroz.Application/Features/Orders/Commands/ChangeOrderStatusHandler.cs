@@ -18,6 +18,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     private readonly IOrderNotificationService _notificationService;
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
     private readonly IPrintQueueService _printQueue;
+    private readonly ILoyaltyCycleService _loyaltyCycle;
     private readonly ILogger<ChangeOrderStatusHandler> _logger;
 
     public ChangeOrderStatusHandler(
@@ -28,6 +29,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         IOrderNotificationService notificationService,
         IDeliveryRouteWorkflowService deliveryRouteWorkflow,
         IPrintQueueService printQueue,
+        ILoyaltyCycleService loyaltyCycle,
         ILogger<ChangeOrderStatusHandler> logger)
     {
         _orderRepository = orderRepository;
@@ -37,6 +39,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         _notificationService = notificationService;
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
         _printQueue = printQueue;
+        _loyaltyCycle = loyaltyCycle;
         _logger = logger;
     }
 
@@ -87,11 +90,22 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         }
 
         var routeIdSnapshot = existingOrder.DeliveryRouteId;
+        var previousStatus = existingOrder.Status;
 
         var order = await _orderRepository.ChangeStatusAsync(
             request.Id, 
             request.StatusChange.Status, 
             request.StatusChange.Reason);
+
+        if (previousStatus == OrderStatus.Delivered && request.StatusChange.Status != OrderStatus.Delivered)
+            await _loyaltyCycle.OnOrderLeftDeliveredAsync(order.Id, cancellationToken);
+
+        if (request.StatusChange.Status == OrderStatus.Delivered
+            && previousStatus != OrderStatus.Delivered
+            && order.CustomerId.HasValue)
+        {
+            await _loyaltyCycle.OnOrderDeliveredAsync(order.Id, order.BranchId, order.CustomerId, cancellationToken);
+        }
 
         var orderDto = _mapper.Map<OrderDto>(order);
 

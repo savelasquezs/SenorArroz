@@ -23,5 +23,16 @@ namespace SenorArroz.Application.Features.Customers.DTOs
         public DateTime? LastOrderDate { get; set; }
         /// <summary>Suma de totales de pedidos no cancelados (misma moneda que pedidos).</summary>
         public int TotalAccumulated { get; set; }
+
+        /// <summary>Pedidos entregados con este cliente (derivado; no persistido en BD).</summary>
+        public int LoyaltyDeliveredCount { get; set; }
+
+        /// <summary>Paso del ciclo que aplicaría en la próxima entrega (1-based), si hay programa.</summary>
+        public int? LoyaltyNextStepIndex { get; set; }
+
+        public string? LoyaltyNextRewardLabel { get; set; }
+
+        /// <summary>Mensaje listo para mostrar en toma de pedidos.</summary>
+        public string? LoyaltyNextRewardMessage { get; set; }
     }
 }

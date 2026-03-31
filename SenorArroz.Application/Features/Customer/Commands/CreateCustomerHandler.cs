@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
@@ -14,17 +15,20 @@ namespace SenorArroz.Application.Features.Customers.Commands
         private readonly IAddressRepository _addressRepository;
         private readonly INeighborhoodRepository _neighborhoodRepository;
         private readonly IMapper _mapper;
+        private readonly ILoyaltyCycleService _loyaltyCycle;
 
         public CreateCustomerHandler(
             ICustomerRepository customerRepository,
             IAddressRepository addressRepository,
             INeighborhoodRepository neighborhoodRepository,
-            IMapper mapper)
+            IMapper mapper,
+            ILoyaltyCycleService loyaltyCycle)
         {
             _customerRepository = customerRepository;
             _addressRepository = addressRepository;
             _neighborhoodRepository = neighborhoodRepository;
             _mapper = mapper;
+            _loyaltyCycle = loyaltyCycle;
         }
 
         public async Task<CustomerDto> Handle(CreateCustomerCommand request, CancellationToken cancellationToken)
@@ -87,6 +91,7 @@ namespace SenorArroz.Application.Features.Customers.Commands
             customerDto.FirstOrderDate = null;
             customerDto.LastOrderDate = null;
             customerDto.TotalAccumulated = 0;
+            await _loyaltyCycle.ApplyLoyaltyPreviewToCustomerDtoAsync(customerDto, cancellationToken);
 
             return customerDto;
         }

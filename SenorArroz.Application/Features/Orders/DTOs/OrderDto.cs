@@ -24,6 +24,8 @@ public class OrderDto
     public decimal? Longitude { get; set; }
     public int? LoyaltyRuleId { get; set; }
     public string? LoyaltyRuleName { get; set; }
+    public int? LoyaltyCycleStepId { get; set; }
+    public string? LoyaltyRewardSnapshot { get; set; }
     public int? DeliveryManId { get; set; }
     /// <summary>Ruta de domicilio (métricas SLA) cuando aplica.</summary>
     public int? DeliveryRouteId { get; set; }

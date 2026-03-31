@@ -17,12 +17,18 @@ namespace SenorArroz.Application.Features.Customers.Queries
         private readonly ICustomerRepository _customerRepository;
         private readonly IMapper _mapper;
         private readonly ICurrentUser _currentUser;
+        private readonly ILoyaltyCycleService _loyaltyCycle;
 
-        public GetCustomersHandler(ICustomerRepository customerRepository, IMapper mapper, ICurrentUser currentUser)
+        public GetCustomersHandler(
+            ICustomerRepository customerRepository,
+            IMapper mapper,
+            ICurrentUser currentUser,
+            ILoyaltyCycleService loyaltyCycle)
         {
             _customerRepository = customerRepository;
             _mapper = mapper;
             _currentUser = currentUser;
+            _loyaltyCycle = loyaltyCycle;
         }
 
         public async Task<PagedResult<CustomerDto>> Handle(GetCustomersQuery request, CancellationToken cancellationToken)
@@ -61,6 +67,7 @@ namespace SenorArroz.Application.Features.Customers.Queries
                 customerDto.FirstOrderDate = await _customerRepository.GetFirstOrderDateAsync(customer.Id);
                 customerDto.LastOrderDate = await _customerRepository.GetLastOrderDateAsync(customer.Id);
                 customerDto.TotalAccumulated = await _customerRepository.GetTotalOrderRevenueAsync(customer.Id);
+                await _loyaltyCycle.ApplyLoyaltyPreviewToCustomerDtoAsync(customerDto, cancellationToken);
 
                 customerDtos.Add(customerDto);
             }

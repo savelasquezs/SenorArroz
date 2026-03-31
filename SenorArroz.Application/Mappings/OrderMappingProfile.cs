@@ -22,7 +22,14 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.NeighborhoodName, opt => opt.MapFrom(src => src.Address != null && src.Address.Neighborhood != null ? src.Address.Neighborhood.Name : null))
             .ForMember(dest => dest.Latitude, opt => opt.MapFrom(src => src.Address != null ? src.Address.Latitude : null))
             .ForMember(dest => dest.Longitude, opt => opt.MapFrom(src => src.Address != null ? src.Address.Longitude : null))
-            .ForMember(dest => dest.LoyaltyRuleName, opt => opt.MapFrom(src => src.LoyaltyRule != null ? src.LoyaltyRule.Description : null))
+            .ForMember(dest => dest.LoyaltyRuleName, opt => opt.MapFrom(src =>
+                !string.IsNullOrWhiteSpace(src.LoyaltyRewardSnapshot)
+                    ? src.LoyaltyRewardSnapshot
+                    : src.LoyaltyCycleStep != null
+                        ? src.LoyaltyCycleStep.RewardLabel
+                        : src.LoyaltyRule != null
+                            ? src.LoyaltyRule.Description
+                            : null))
             .ForMember(dest => dest.DeliveryManName, opt => opt.MapFrom(src => src.DeliveryMan != null ? src.DeliveryMan.Name : null))
             .ForMember(dest => dest.TypeDisplayName, opt => opt.MapFrom(src => GetTypeDisplayName(src.Type)))
             .ForMember(dest => dest.StatusDisplayName, opt => opt.MapFrom(src => GetStatusDisplayName(src.Status)))
@@ -58,6 +65,7 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.Customer, opt => opt.Ignore())
             .ForMember(dest => dest.Address, opt => opt.Ignore())
             .ForMember(dest => dest.LoyaltyRule, opt => opt.Ignore())
+            .ForMember(dest => dest.LoyaltyCycleStep, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryMan, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryRouteId, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryRoute, opt => opt.Ignore())

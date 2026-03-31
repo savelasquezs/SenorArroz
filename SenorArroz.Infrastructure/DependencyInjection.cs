@@ -69,6 +69,7 @@ public static class DependencyInjection
 
         // Order Repositories
         services.AddScoped<IOrderRepository, OrderRepository>();
+        services.AddScoped<ILoyaltyCycleStepRepository, LoyaltyCycleStepRepository>();
         services.AddScoped<IReservationDepositRepository, ReservationDepositRepository>();
 
         // Cash Register Repositories
