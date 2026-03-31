@@ -9,6 +9,13 @@ public interface IPrintQueueService
 
     Task<PrintJob> EnqueueAsync(int branchId, PrintJobKind kind, IReadOnlyList<int> orderIds, CancellationToken cancellationToken = default);
 
+    /// <summary>Valida que los pedidos sean domicilio, en ruta y asignados al domiciliario (reimpresión / POST desde app móvil).</summary>
+    Task ValidateDeliverymanDeliveryEnqueueAsync(
+        int branchId,
+        int deliverymanUserId,
+        IReadOnlyList<int> orderIds,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Marca jobs pendientes como <see cref="PrintJobStatus.Processing"/> y los devuelve (SKIP LOCKED).</summary>
     Task<IReadOnlyList<PrintJobAgentItemDto>> ClaimPendingForAgentAsync(
         int branchId,

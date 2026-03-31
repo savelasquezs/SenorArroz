@@ -1,7 +1,9 @@
 using AutoMapper;
 using MediatR;
+using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Domain.Interfaces.Services;
@@ -17,6 +19,8 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
     private readonly IPasswordService _passwordService;
     private readonly IOrderNotificationService _notificationService;
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
+    private readonly IPrintQueueService _printQueue;
+    private readonly ILogger<SelfAssignOrdersHandler> _logger;
 
     public SelfAssignOrdersHandler(
         IOrderRepository orderRepository, 
@@ -25,7 +29,9 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
         ICurrentUser currentUser,
         IPasswordService passwordService,
         IOrderNotificationService notificationService,
-        IDeliveryRouteWorkflowService deliveryRouteWorkflow)
+        IDeliveryRouteWorkflowService deliveryRouteWorkflow,
+        IPrintQueueService printQueue,
+        ILogger<SelfAssignOrdersHandler> logger)
     {
         _orderRepository = orderRepository;
         _userRepository = userRepository;
@@ -34,6 +40,8 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
         _passwordService = passwordService;
         _notificationService = notificationService;
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
+        _printQueue = printQueue;
+        _logger = logger;
     }
 
     public async Task<List<OrderDto>> Handle(SelfAssignOrdersCommand request, CancellationToken cancellationToken)
@@ -110,6 +118,27 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             assignedOrders.Add(orderDto);
 
             await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
+
+            // Ticket de domicilio solo cuando el domiciliario se autoasigna (no cuando caja/admin asigna).
+            if (afterRoute.Type == OrderType.Delivery)
+            {
+                try
+                {
+                    await _printQueue.EnqueueAsync(
+                        afterRoute.BranchId,
+                        PrintJobKind.Delivery,
+                        new[] { orderId },
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "No se encoló ticket de domicilio para pedido {OrderId} (sucursal {BranchId}). La asignación se completó.",
+                        orderId,
+                        afterRoute.BranchId);
+                }
+            }
         }
 
         return assignedOrders;

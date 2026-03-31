@@ -24,7 +24,7 @@ public class BranchPrintJobsController : ControllerBase
 
     /// <summary>Encola un trabajo de impresión con snapshot del ticket (usuarios de sucursal).</summary>
     [HttpPost]
-    [Authorize(Roles = "Superadmin, Admin, Kitchen")]
+    [Authorize(Roles = "Superadmin, Admin, Kitchen, Deliveryman")]
     public async Task<ActionResult<ApiResponse<EnqueuePrintJobResponse>>> Enqueue(
         int branchId,
         [FromBody] EnqueuePrintJobsRequest request,
@@ -36,6 +36,24 @@ public class BranchPrintJobsController : ControllerBase
         if (string.Equals(_currentUser.Role, "kitchen", StringComparison.OrdinalIgnoreCase)
             && request.Kind != PrintJobKind.Kitchen)
             return Forbid();
+
+        if (string.Equals(_currentUser.Role, "deliveryman", StringComparison.OrdinalIgnoreCase))
+        {
+            if (request.Kind != PrintJobKind.Delivery)
+                return Forbid();
+            try
+            {
+                await _printQueue.ValidateDeliverymanDeliveryEnqueueAsync(
+                    branchId,
+                    _currentUser.Id,
+                    request.OrderIds,
+                    cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<EnqueuePrintJobResponse>.ErrorResponse(ex.Message));
+            }
+        }
 
         try
         {

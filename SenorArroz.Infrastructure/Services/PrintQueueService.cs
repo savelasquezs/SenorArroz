@@ -88,6 +88,37 @@ public class PrintQueueService : IPrintQueueService
         return job;
     }
 
+    public async Task ValidateDeliverymanDeliveryEnqueueAsync(
+        int branchId,
+        int deliverymanUserId,
+        IReadOnlyList<int> orderIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = orderIds.Distinct().ToList();
+        if (ids.Count == 0)
+            throw new InvalidOperationException("Debe indicar al menos un pedido.");
+
+        var orders = await _db.Orders.AsNoTracking()
+            .Where(o => ids.Contains(o.Id))
+            .Select(o => new { o.Id, o.BranchId, o.Status, o.Type, o.DeliveryManId })
+            .ToListAsync(cancellationToken);
+
+        if (orders.Count != ids.Count)
+            throw new InvalidOperationException("Uno o más pedidos no existen.");
+
+        foreach (var o in orders)
+        {
+            if (o.BranchId != branchId)
+                throw new InvalidOperationException("Los pedidos deben pertenecer a la sucursal.");
+            if (o.Type != OrderType.Delivery)
+                throw new InvalidOperationException("Solo se pueden imprimir pedidos de domicilio.");
+            if (o.Status != OrderStatus.OnTheWay)
+                throw new InvalidOperationException("El pedido debe estar en ruta (en camino).");
+            if (o.DeliveryManId != deliverymanUserId)
+                throw new InvalidOperationException("Solo puedes imprimir pedidos asignados a ti.");
+        }
+    }
+
     public async Task<IReadOnlyList<PrintJobAgentItemDto>> ClaimPendingForAgentAsync(
         int branchId,
         IReadOnlyList<PrintJobKind> kinds,
