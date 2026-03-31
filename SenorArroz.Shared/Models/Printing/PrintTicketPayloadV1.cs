@@ -72,6 +72,8 @@ public class PrintTicketTotalsV1
     public int DiscountTotal { get; set; }
     public int DeliveryFee { get; set; }
     public int GrandTotal { get; set; }
+    /// <summary>Efectivo a cobrar en domicilio (≥ 0). Null en snapshots viejos sin el campo.</summary>
+    public int? CashToCollect { get; set; }
 }
 
 public class PrintTicketCustomerV1

@@ -1,4 +1,5 @@
 using SenorArroz.Application.Common;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Shared.Models.Printing;
@@ -139,6 +140,7 @@ public static class PrintTicketPayloadBuilder
                 DiscountTotal = order.DiscountTotal,
                 DeliveryFee = order.DeliveryFee ?? 0,
                 GrandTotal = order.Total,
+                CashToCollect = OrderCashPortionHelper.GetCashToCollectDisplay(order),
             },
             Customer = customer,
             Payments = payments,

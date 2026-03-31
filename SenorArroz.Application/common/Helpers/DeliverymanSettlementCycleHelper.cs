@@ -90,11 +90,7 @@ public static class DeliverymanSettlementCycleHelper
     {
         decimal total = 0;
         foreach (var order in orders)
-        {
-            var bankTotal = order.BankPayments?.Sum(bp => bp.Amount) ?? 0;
-            var appTotal = order.AppPayments?.Sum(ap => ap.Amount) ?? 0;
-            total += order.Total - bankTotal - appTotal;
-        }
+            total += OrderCashPortionHelper.GetCashPortion(order);
 
         return total;
     }
