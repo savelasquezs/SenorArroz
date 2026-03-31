@@ -2,6 +2,8 @@ using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -14,75 +16,91 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
     private readonly IAppPaymentRepository _appPaymentRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly ILoyaltyCycleService _loyaltyCycle;
+    private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
 
     public CancelOrderHandler(
-        IOrderRepository orderRepository, 
+        IOrderRepository orderRepository,
         IBankPaymentRepository bankPaymentRepository,
         IAppPaymentRepository appPaymentRepository,
-        IMapper mapper, 
-        ICurrentUser currentUser)
+        IMapper mapper,
+        ICurrentUser currentUser,
+        ILoyaltyCycleService loyaltyCycle,
+        IDeliveryRouteWorkflowService deliveryRouteWorkflow)
     {
         _orderRepository = orderRepository;
         _bankPaymentRepository = bankPaymentRepository;
         _appPaymentRepository = appPaymentRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _loyaltyCycle = loyaltyCycle;
+        _deliveryRouteWorkflow = deliveryRouteWorkflow;
     }
 
     public async Task<OrderDto> Handle(CancelOrderCommand request, CancellationToken cancellationToken)
     {
-        // Validate cancellation reason
         if (string.IsNullOrWhiteSpace(request.Cancellation.Reason))
             throw new BusinessException("La razón de cancelación es obligatoria");
 
-        // Get order first to validate access
         var existingOrder = await _orderRepository.GetByIdAsync(request.Id);
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
-        // Validate branch access
         if (_currentUser.Role != "superadmin" && existingOrder.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
-        // Validate role permissions - only admin and superadmin can cancel
         if (!new[] { "superadmin", "admin" }.Contains(_currentUser.Role.ToLower()))
             throw new BusinessException("Solo administradores pueden cancelar pedidos");
 
-        // Validate that order is from the same day
-        var today = DateTime.Today;
-        var orderDate = existingOrder.CreatedAt.Date;
-        if (orderDate != today)
-            throw new BusinessException("Solo se pueden cancelar pedidos del mismo día");
-
-        // Validate that order is not already cancelled
-        if (existingOrder.Status == Domain.Enums.OrderStatus.Cancelled)
+        if (existingOrder.Status == OrderStatus.Cancelled)
             throw new BusinessException("El pedido ya está cancelado");
 
-        // Cancel all associated payments
+        // Reserva con horario de preparación y entrega: se mantiene la regla de mismo día (fecha UTC de creación).
+        if (IsScheduledReservation(existingOrder))
+        {
+            var todayUtc = DateTime.UtcNow.Date;
+            if (existingOrder.CreatedAt.Date != todayUtc)
+                throw new BusinessException(
+                    "Las reservas con horario de preparación y entrega solo se pueden cancelar el mismo día en que se registró el pedido.");
+        }
+
+        var routeIdSnapshot = existingOrder.DeliveryRouteId;
+        var previousStatus = existingOrder.Status;
+
         await CancelAssociatedPaymentsAsync(request.Id);
 
-        // Cancel the order
         var order = await _orderRepository.CancelOrderAsync(
-            request.Id, 
+            request.Id,
             request.Cancellation.Reason);
+
+        if (previousStatus == OrderStatus.Delivered)
+            await _loyaltyCycle.OnOrderLeftDeliveredAsync(order.Id, cancellationToken);
+
+        await _deliveryRouteWorkflow.OnOrderCancelledWhileRouteOpenAsync(request.Id, cancellationToken);
+        await _deliveryRouteWorkflow.TryFinalizeRouteWhenAllTerminalAsync(
+            request.Id,
+            routeIdSnapshot,
+            cancellationToken);
 
         return _mapper.Map<OrderDto>(order);
     }
 
+    /// <summary>
+    /// Reserva con ambas fechas definidas (cocina y entrega); a este caso le aplica la restricción de cancelación por día.
+    /// </summary>
+    private static bool IsScheduledReservation(Order order) =>
+        order.Type == OrderType.Reservation
+        && order.PrepareAt.HasValue
+        && order.ReservedFor.HasValue;
+
     private async Task CancelAssociatedPaymentsAsync(int orderId)
     {
-        // Cancel App Payments
         var appPayments = await _appPaymentRepository.GetByOrderIdAsync(orderId);
         foreach (var appPayment in appPayments)
-        {
             await _appPaymentRepository.DeleteAsync(appPayment.Id);
-        }
 
-        // Cancel Bank Payments (only unverified ones)
         var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(orderId);
         foreach (var bankPayment in bankPayments)
-        {
             await _bankPaymentRepository.DeleteAsync(bankPayment.Id);
-        }
     }
 }

@@ -656,7 +656,7 @@ public class OrderRepository : IOrderRepository
     public async Task<bool> CanCancelOrderAsync(int orderId)
     {
         var order = await _context.Orders.FindAsync(orderId);
-        return order != null && order.Status != OrderStatus.Delivered && order.Status != OrderStatus.Cancelled;
+        return order != null && order.Status != OrderStatus.Cancelled;
     }
 
     public async Task<bool> CanChangeStatusAsync(int orderId, OrderStatus newStatus)
@@ -665,17 +665,20 @@ public class OrderRepository : IOrderRepository
         if (order == null)
             return false;
 
-        // Lógica de transiciones de estado válidas
+        if (newStatus == OrderStatus.Cancelled)
+            return order.Status != OrderStatus.Cancelled;
+
+        // Transiciones no destructivas (hacia Cancelled arriba)
         return order.Status switch
         {
             OrderStatus.Taken => newStatus == OrderStatus.InPreparation || newStatus == OrderStatus.Cancelled,
             OrderStatus.InPreparation => newStatus == OrderStatus.Ready || newStatus == OrderStatus.Cancelled,
-            OrderStatus.Ready => newStatus == OrderStatus.OnTheWay || 
+            OrderStatus.Ready => newStatus == OrderStatus.OnTheWay ||
                                newStatus == OrderStatus.Cancelled ||
-                               (newStatus == OrderStatus.Delivered && order.Type == OrderType.Onsite), // Permitir Ready→Delivered para OnSite
+                               (newStatus == OrderStatus.Delivered && order.Type == OrderType.Onsite),
             OrderStatus.OnTheWay => newStatus == OrderStatus.Delivered || newStatus == OrderStatus.Ready,
-            OrderStatus.Delivered => false, // No se puede cambiar desde entregado
-            OrderStatus.Cancelled => false, // No se puede cambiar desde cancelado
+            OrderStatus.Delivered => false,
+            OrderStatus.Cancelled => false,
             _ => false
         };
     }
