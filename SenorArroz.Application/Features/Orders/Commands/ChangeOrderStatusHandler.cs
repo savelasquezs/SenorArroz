@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Enums;
@@ -16,6 +17,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     private readonly IOrderBusinessRulesService _businessRules;
     private readonly IOrderNotificationService _notificationService;
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
+    private readonly IPrintQueueService _printQueue;
+    private readonly ILogger<ChangeOrderStatusHandler> _logger;
 
     public ChangeOrderStatusHandler(
         IOrderRepository orderRepository, 
@@ -23,7 +26,9 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         ICurrentUser currentUser,
         IOrderBusinessRulesService businessRules,
         IOrderNotificationService notificationService,
-        IDeliveryRouteWorkflowService deliveryRouteWorkflow)
+        IDeliveryRouteWorkflowService deliveryRouteWorkflow,
+        IPrintQueueService printQueue,
+        ILogger<ChangeOrderStatusHandler> logger)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
@@ -31,6 +36,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         _businessRules = businessRules;
         _notificationService = notificationService;
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
+        _printQueue = printQueue;
+        _logger = logger;
     }
 
     public async Task<OrderDto> Handle(ChangeOrderStatusCommand request, CancellationToken cancellationToken)
@@ -92,6 +99,27 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         if (request.StatusChange.Status == OrderStatus.Ready)
         {
             await _notificationService.NotifyOrderReadyToDelivery(orderDto);
+
+            // Comanda de cocina al pasar a listo solo si quien confirma es cocina (evita impresión si Admin/Superadmin cambia estado).
+            if (string.Equals(_currentUser.Role, "kitchen", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    await _printQueue.EnqueueAsync(
+                        order.BranchId,
+                        PrintJobKind.Kitchen,
+                        new[] { order.Id },
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "No se encoló comanda de cocina para pedido {OrderId} (sucursal {BranchId}). El estado sí se actualizó.",
+                        order.Id,
+                        order.BranchId);
+                }
+            }
         }
 
         // Notificar a todos los domiciliarios cuando un pedido es asignado (OnTheWay)

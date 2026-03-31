@@ -24,13 +24,17 @@ public class BranchPrintJobsController : ControllerBase
 
     /// <summary>Encola un trabajo de impresión con snapshot del ticket (usuarios de sucursal).</summary>
     [HttpPost]
-    [Authorize(Roles = "Superadmin, Admin")]
+    [Authorize(Roles = "Superadmin, Admin, Kitchen")]
     public async Task<ActionResult<ApiResponse<EnqueuePrintJobResponse>>> Enqueue(
         int branchId,
         [FromBody] EnqueuePrintJobsRequest request,
         CancellationToken cancellationToken)
     {
         if (!CanAccessBranch(branchId))
+            return Forbid();
+
+        if (string.Equals(_currentUser.Role, "kitchen", StringComparison.OrdinalIgnoreCase)
+            && request.Kind != PrintJobKind.Kitchen)
             return Forbid();
 
         try
