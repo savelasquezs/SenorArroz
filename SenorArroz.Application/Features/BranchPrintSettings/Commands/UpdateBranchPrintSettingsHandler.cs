@@ -38,7 +38,10 @@ public class UpdateBranchPrintSettingsHandler : IRequestHandler<UpdateBranchPrin
         entity.FooterMessageKitchen = d.FooterMessageKitchen;
         entity.FooterMessageDelivery = d.FooterMessageDelivery;
         entity.FooterMessageCashier = d.FooterMessageCashier;
-        entity.PaperWidthMm = d.PaperWidthMm;
+        entity.PaperWidthMmKitchen = NormalizePaperWidth(d.PaperWidthMmKitchen);
+        entity.PaperWidthMmDelivery = NormalizePaperWidth(d.PaperWidthMmDelivery);
+        entity.PaperWidthMmCashier = NormalizePaperWidth(d.PaperWidthMmCashier);
+        entity.PaperWidthMm = entity.PaperWidthMmKitchen;
         entity.EnableKitchenJobs = d.EnableKitchenJobs;
         entity.EnableDeliveryJobs = d.EnableDeliveryJobs;
         entity.EnableCashierJobs = d.EnableCashierJobs;
@@ -53,4 +56,7 @@ public class UpdateBranchPrintSettingsHandler : IRequestHandler<UpdateBranchPrin
 
     private static string? NullIfWhiteSpace(string? s) =>
         string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    private static short NormalizePaperWidth(short widthMm) =>
+        widthMm >= 72 ? (short)80 : (short)58;
 }

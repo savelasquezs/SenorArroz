@@ -19,7 +19,12 @@ public class BranchPrintSettingsDto
     public string? FooterMessageDelivery { get; set; }
     public string? FooterMessageCashier { get; set; }
 
+    /// <summary>Igual a cocina; conservado por compatibilidad con clientes antiguos.</summary>
     public short PaperWidthMm { get; set; }
+
+    public short PaperWidthMmKitchen { get; set; }
+    public short PaperWidthMmDelivery { get; set; }
+    public short PaperWidthMmCashier { get; set; }
 
     public bool EnableKitchenJobs { get; set; }
     public bool EnableDeliveryJobs { get; set; }

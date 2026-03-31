@@ -20,7 +20,12 @@ public class BranchPrintSettings
     public string? FooterMessageDelivery { get; set; }
     public string? FooterMessageCashier { get; set; }
 
-    public short PaperWidthMm { get; set; } = 57;
+    /// <summary>Legado: se mantiene en BD igual a <see cref="PaperWidthMmKitchen"/> al guardar.</summary>
+    public short PaperWidthMm { get; set; } = 58;
+
+    public short PaperWidthMmKitchen { get; set; } = 58;
+    public short PaperWidthMmDelivery { get; set; } = 58;
+    public short PaperWidthMmCashier { get; set; } = 58;
 
     public bool EnableKitchenJobs { get; set; } = true;
     public bool EnableDeliveryJobs { get; set; } = true;

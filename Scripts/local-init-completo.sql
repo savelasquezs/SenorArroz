@@ -1210,7 +1210,10 @@ CREATE TABLE IF NOT EXISTS branch_print_settings (
     footer_message_kitchen character varying(200),
     footer_message_delivery character varying(200),
     footer_message_cashier character varying(200),
-    paper_width_mm smallint NOT NULL DEFAULT 57,
+    paper_width_mm smallint NOT NULL DEFAULT 58,
+    paper_width_mm_kitchen smallint NOT NULL DEFAULT 58,
+    paper_width_mm_delivery smallint NOT NULL DEFAULT 58,
+    paper_width_mm_cashier smallint NOT NULL DEFAULT 58,
     enable_kitchen_jobs boolean NOT NULL DEFAULT true,
     enable_delivery_jobs boolean NOT NULL DEFAULT true,
     enable_cashier_jobs boolean NOT NULL DEFAULT false,
@@ -1276,3 +1279,25 @@ END $$;
 ALTER TABLE branch ADD COLUMN IF NOT EXISTS business_name character varying(150);
 ALTER TABLE branch ADD COLUMN IF NOT EXISTS nit character varying(32);
 ALTER TABLE branch_print_settings ADD COLUMN IF NOT EXISTS receipt_logo_path character varying(500);
+
+-- Anchos de papel por cola (cocina / domicilio / caja)
+ALTER TABLE branch_print_settings ADD COLUMN IF NOT EXISTS paper_width_mm_kitchen smallint;
+ALTER TABLE branch_print_settings ADD COLUMN IF NOT EXISTS paper_width_mm_delivery smallint;
+ALTER TABLE branch_print_settings ADD COLUMN IF NOT EXISTS paper_width_mm_cashier smallint;
+
+UPDATE branch_print_settings SET
+    paper_width_mm_kitchen = COALESCE(paper_width_mm_kitchen, paper_width_mm),
+    paper_width_mm_delivery = COALESCE(paper_width_mm_delivery, paper_width_mm),
+    paper_width_mm_cashier = COALESCE(paper_width_mm_cashier, paper_width_mm)
+WHERE paper_width_mm_kitchen IS NULL
+   OR paper_width_mm_delivery IS NULL
+   OR paper_width_mm_cashier IS NULL;
+
+ALTER TABLE branch_print_settings ALTER COLUMN paper_width_mm_kitchen SET NOT NULL;
+ALTER TABLE branch_print_settings ALTER COLUMN paper_width_mm_kitchen SET DEFAULT 58;
+ALTER TABLE branch_print_settings ALTER COLUMN paper_width_mm_delivery SET NOT NULL;
+ALTER TABLE branch_print_settings ALTER COLUMN paper_width_mm_delivery SET DEFAULT 58;
+ALTER TABLE branch_print_settings ALTER COLUMN paper_width_mm_cashier SET NOT NULL;
+ALTER TABLE branch_print_settings ALTER COLUMN paper_width_mm_cashier SET DEFAULT 58;
+
+UPDATE branch_print_settings SET paper_width_mm = paper_width_mm_kitchen WHERE paper_width_mm <> paper_width_mm_kitchen;

@@ -27,6 +27,9 @@ public class BranchPrintSettingsConfiguration : IEntityTypeConfiguration<BranchP
         builder.Property(s => s.FooterMessageDelivery).HasColumnName("footer_message_delivery").HasMaxLength(200);
         builder.Property(s => s.FooterMessageCashier).HasColumnName("footer_message_cashier").HasMaxLength(200);
         builder.Property(s => s.PaperWidthMm).HasColumnName("paper_width_mm");
+        builder.Property(s => s.PaperWidthMmKitchen).HasColumnName("paper_width_mm_kitchen");
+        builder.Property(s => s.PaperWidthMmDelivery).HasColumnName("paper_width_mm_delivery");
+        builder.Property(s => s.PaperWidthMmCashier).HasColumnName("paper_width_mm_cashier");
         builder.Property(s => s.EnableKitchenJobs).HasColumnName("enable_kitchen_jobs");
         builder.Property(s => s.EnableDeliveryJobs).HasColumnName("enable_delivery_jobs");
         builder.Property(s => s.EnableCashierJobs).HasColumnName("enable_cashier_jobs");

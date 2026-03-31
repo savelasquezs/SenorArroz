@@ -25,7 +25,13 @@ public class UpdateBranchPrintSettingsDto
     public string? FooterMessageCashier { get; set; }
 
     [Range(40, 120)]
-    public short PaperWidthMm { get; set; } = 57;
+    public short PaperWidthMmKitchen { get; set; } = 58;
+
+    [Range(40, 120)]
+    public short PaperWidthMmDelivery { get; set; } = 58;
+
+    [Range(40, 120)]
+    public short PaperWidthMmCashier { get; set; } = 58;
 
     public bool EnableKitchenJobs { get; set; } = true;
     public bool EnableDeliveryJobs { get; set; } = true;

@@ -23,10 +23,12 @@ public class BranchMappingProfile : Profile
             .ForMember(dest => dest.PrintSettings, opt => opt.MapFrom(src => src.PrintSettings));
 
         CreateMap<BranchPrintSettings, BranchPrintSettingsDto>()
-            .ForMember(dest => dest.AgentTokenConfigured, opt => opt.MapFrom(src => !string.IsNullOrWhiteSpace(src.AgentTokenHash)));
+            .ForMember(dest => dest.AgentTokenConfigured, opt => opt.MapFrom(src => !string.IsNullOrWhiteSpace(src.AgentTokenHash)))
+            .ForMember(dest => dest.PaperWidthMm, opt => opt.MapFrom(src => src.PaperWidthMmKitchen));
 
         CreateMap<BranchPrintSettings, PrintAgentConfigDto>()
-            .ForMember(d => d.ReceiptLogoUrl, o => o.Ignore());
+            .ForMember(d => d.ReceiptLogoUrl, o => o.Ignore())
+            .ForMember(d => d.PaperWidthMm, o => o.MapFrom(s => s.PaperWidthMmKitchen));
 
         // Neighborhood -> BranchNeighborhoodDto
         CreateMap<Neighborhood, BranchNeighborhoodDto>();
