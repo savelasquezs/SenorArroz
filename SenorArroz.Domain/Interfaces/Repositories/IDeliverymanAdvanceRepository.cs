@@ -81,5 +81,11 @@ public interface IDeliverymanAdvanceRepository
         int deliverymanId,
         DateTime? fromDate = null,
         DateTime? toDate = null);
+
+    /// <summary>Si ya existe abono por gasto (ExpenseOffset) para este gasto y domiciliario.</summary>
+    Task<bool> ExistsExpenseOffsetForExpenseHeaderAsync(
+        int deliverymanId,
+        int expenseHeaderId,
+        CancellationToken cancellationToken = default);
 }
 

@@ -227,5 +227,14 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
 
         return await query.CountAsync();
     }
+
+    public Task<bool> ExistsExpenseOffsetForExpenseHeaderAsync(
+        int deliverymanId,
+        int expenseHeaderId,
+        CancellationToken cancellationToken = default) =>
+        _context.DeliverymanAdvances
+            .AnyAsync(
+                da => da.DeliverymanId == deliverymanId && da.ExpenseHeaderId == expenseHeaderId,
+                cancellationToken);
 }
 

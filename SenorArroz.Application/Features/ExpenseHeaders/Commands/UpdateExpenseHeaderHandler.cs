@@ -179,6 +179,8 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         if (totalBankPayments > grossTotal)
             throw new BusinessException("La suma de pagos bancarios no puede exceder el total de la factura (incluye IVA si aplica)");
 
+        expenseHeader.Total = grossTotal;
+
         var updated = await _expenseHeaderRepository.UpdateAsync(expenseHeader);
 
         await SyncLinkedDeliverymanAdvanceAmountAsync(updated.Id, updated.Total ?? 0, cancellationToken);

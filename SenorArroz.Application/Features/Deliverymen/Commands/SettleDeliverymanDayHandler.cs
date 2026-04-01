@@ -166,6 +166,17 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
             var expenseTotal = expense.Total ?? 0;
             if (Math.Abs(expenseTotal - line.Amount) > Tolerance)
                 throw new BusinessException($"El monto del gasto #{line.ExpenseHeaderId} no coincide con el total registrado");
+
+            var existingOffset = await _context.DeliverymanAdvances.AsNoTracking()
+                .FirstOrDefaultAsync(
+                    a => a.DeliverymanId == request.DeliverymanId
+                         && a.ExpenseHeaderId == line.ExpenseHeaderId
+                         && a.PaymentMethod == DeliverymanAdvancePaymentMethod.ExpenseOffset,
+                    cancellationToken);
+            if (existingOffset != null
+                && Math.Abs(existingOffset.Amount - line.Amount) > Tolerance)
+                throw new BusinessException(
+                    $"El abono existente del gasto #{line.ExpenseHeaderId} no coincide con el monto indicado en la liquidación.");
         }
 
         if (s.CashAmount < 0)
@@ -213,6 +224,13 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
 
         foreach (var line in s.ExpenseOffsets)
         {
+            var alreadyRecorded = await _advanceRepository.ExistsExpenseOffsetForExpenseHeaderAsync(
+                request.DeliverymanId,
+                line.ExpenseHeaderId,
+                cancellationToken);
+            if (alreadyRecorded)
+                continue;
+
             newAdvances.Add(new DeliverymanAdvance
             {
                 DeliverymanId = request.DeliverymanId,

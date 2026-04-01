@@ -97,6 +97,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             CreatedById = _currentUser.Id,
             DeliverymanId = request.ExpenseHeader.DeliverymanId,
             VatAmount = vatAmount,
+            Total = grossTotal,
             ExpenseDetails = request.ExpenseHeader.ExpenseDetails.Select(ed => new ExpenseDetail
             {
                 ExpenseId = ed.ExpenseId,

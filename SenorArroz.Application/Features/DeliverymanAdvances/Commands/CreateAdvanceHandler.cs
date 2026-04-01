@@ -85,6 +85,12 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
             var expenseTotal = expense.Total ?? 0;
             if (Math.Abs(expenseTotal - request.Advance.Amount) > 0.02m)
                 throw new BusinessException("El monto del abono debe coincidir con el total del gasto");
+
+            if (await _advanceRepository.ExistsExpenseOffsetForExpenseHeaderAsync(
+                    request.Advance.DeliverymanId,
+                    request.Advance.ExpenseHeaderId.Value,
+                    cancellationToken))
+                throw new BusinessException("Ya existe un abono vinculado a este gasto para este domiciliario.");
         }
 
         var advance = new DeliverymanAdvance
