@@ -357,6 +357,7 @@ CREATE TABLE IF NOT EXISTS delivery_route (
     completed_at_utc timestamp with time zone,
     actual_duration_seconds integer,
     met_sla boolean,
+    planning_warnings character varying(2000),
     created_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     updated_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     CONSTRAINT "PK_delivery_route" PRIMARY KEY (id),
@@ -383,6 +384,8 @@ CREATE TABLE IF NOT EXISTS delivery_route_stop (
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_delivery_route_stop_order" ON delivery_route_stop (order_id);
 CREATE INDEX IF NOT EXISTS "idx_delivery_route_stop_route" ON delivery_route_stop (delivery_route_id);
 CREATE INDEX IF NOT EXISTS "idx_delivery_route_dm_branch_status" ON delivery_route (deliveryman_id, branch_id, status);
+
+ALTER TABLE delivery_route ADD COLUMN IF NOT EXISTS planning_warnings character varying(2000);
 
 ALTER TABLE "order" ADD COLUMN IF NOT EXISTS delivery_route_id integer NULL;
 

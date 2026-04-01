@@ -124,6 +124,61 @@ public class PrintQueueService : IPrintQueueService
         return job;
     }
 
+    public async Task<PrintJob> EnqueueTestPrintAsync(int branchId, PrintJobKind kind, CancellationToken cancellationToken = default)
+    {
+        if (kind is not PrintJobKind.Kitchen and not PrintJobKind.Delivery)
+            throw new InvalidOperationException("Solo se admite comanda de cocina o domicilio.");
+
+        var branch = await _db.Branches.AsNoTracking()
+                .Include(b => b.PrintSettings)
+                .FirstOrDefaultAsync(b => b.Id == branchId, cancellationToken)
+            ?? throw new InvalidOperationException("Sucursal no encontrada.");
+
+        var settings = branch.PrintSettings
+            ?? throw new InvalidOperationException("La sucursal no tiene configuración de impresión.");
+
+        var enabled = kind switch
+        {
+            PrintJobKind.Kitchen => settings.EnableKitchenJobs,
+            PrintJobKind.Delivery => settings.EnableDeliveryJobs,
+            _ => false,
+        };
+        if (!enabled)
+            throw new InvalidOperationException("Este tipo de comanda está deshabilitado para la sucursal.");
+
+        var printedAt = DateTime.UtcNow;
+        var restaurantName = string.IsNullOrWhiteSpace(_branding.RestaurantDisplayName)
+            ? "El señor arroz"
+            : _branding.RestaurantDisplayName.Trim();
+        var footer = string.IsNullOrWhiteSpace(_branding.KitchenFooterMessage)
+            ? "Gracias por confiar en El señor arroz"
+            : _branding.KitchenFooterMessage.Trim();
+
+        var batch = PrintTicketPayloadBuilder.BuildTestBatch(
+            branch,
+            kind,
+            printedAt,
+            _publicApiBaseUrl,
+            restaurantName,
+            footer);
+        var payloadJson = PrintTicketPayloadJson.SerializeBatch(batch);
+        var orderIdsJson = JsonSerializer.Serialize(new[] { PrintTicketPayloadBuilder.TestPrintSyntheticOrderId });
+
+        var job = new PrintJob
+        {
+            BranchId = branchId,
+            Kind = kind,
+            Status = PrintJobStatus.Pending,
+            OrderIdsJson = orderIdsJson,
+            PayloadJson = payloadJson,
+            PayloadVersion = 1,
+        };
+
+        _db.PrintJobs.Add(job);
+        await _db.SaveChangesAsync(cancellationToken);
+        return job;
+    }
+
     private async Task<LoyaltyKitchenSnapshot?> BuildLoyaltyKitchenSnapshotAsync(Order order, CancellationToken cancellationToken)
     {
         if (order.CustomerId is not int cid)

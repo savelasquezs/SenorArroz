@@ -72,6 +72,37 @@ public class BranchPrintJobsController : ControllerBase
         }
     }
 
+    /// <summary>Encola impresión de prueba (payload ficticio; solo administradores de la sucursal).</summary>
+    [HttpPost("test")]
+    [Authorize(Roles = "Superadmin, Admin")]
+    public async Task<ActionResult<ApiResponse<EnqueuePrintJobResponse>>> EnqueueTest(
+        int branchId,
+        [FromBody] EnqueueTestPrintRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (!CanAccessBranch(branchId))
+            return Forbid();
+
+        if (request is null)
+            return BadRequest(ApiResponse<EnqueuePrintJobResponse>.ErrorResponse("Cuerpo requerido (kind)."));
+
+        if (request.Kind is not PrintJobKind.Kitchen and not PrintJobKind.Delivery)
+            return BadRequest(ApiResponse<EnqueuePrintJobResponse>.ErrorResponse(
+                "Indique kind: kitchen o delivery."));
+
+        try
+        {
+            var job = await _printQueue.EnqueueTestPrintAsync(branchId, request.Kind, cancellationToken);
+            return Ok(ApiResponse<EnqueuePrintJobResponse>.SuccessResponse(
+                new EnqueuePrintJobResponse(job.Id),
+                "Impresión de prueba encolada."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<EnqueuePrintJobResponse>.ErrorResponse(ex.Message));
+        }
+    }
+
     /// <summary>Obtiene y marca como en proceso los trabajos pendientes (agente local).</summary>
     [HttpGet("pending")]
     [AllowAnonymous]
@@ -167,6 +198,11 @@ public class EnqueuePrintJobsRequest
 {
     public PrintJobKind Kind { get; set; }
     public List<int> OrderIds { get; set; } = new();
+}
+
+public class EnqueueTestPrintRequest
+{
+    public PrintJobKind Kind { get; set; }
 }
 
 public class EnqueuePrintJobResponse

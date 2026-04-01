@@ -154,6 +154,125 @@ public static class PrintTicketPayloadBuilder
         };
     }
 
+    /// <summary>Id sintético en <c>order_ids_json</c> y en el payload; no corresponde a un pedido real.</summary>
+    public const int TestPrintSyntheticOrderId = 900001;
+
+    /// <summary>Snapshot de prueba sin pedido en BD. <paramref name="branch"/> debe incluir <see cref="Branch.PrintSettings"/>.</summary>
+    public static PrintTicketPayloadBatchV1 BuildTestBatch(
+        Branch branch,
+        PrintJobKind kind,
+        DateTime printedAtUtc,
+        string? publicApiBaseUrl,
+        string restaurantDisplayName,
+        string kitchenFooterMessage)
+    {
+        if (kind is not PrintJobKind.Kitchen and not PrintJobKind.Delivery)
+            throw new ArgumentOutOfRangeException(nameof(kind));
+
+        var kindStr = KindToApiString(kind);
+        var logoPath = NormalizeReceiptLogoPath(branch.PrintSettings?.ReceiptLogoPath);
+
+        var banner = new PrintTicketLineV1
+        {
+            ProductName = "════════ PRUEBA DE IMPRESIÓN ════════",
+            KitchenProductName = "PRUEBA",
+            Quantity = 1,
+            UnitPrice = 0,
+            LineSubtotal = 0,
+            LineDiscount = 0,
+            LineGrossSubtotal = 0,
+            LineDiscountPercent = null,
+            Notes = "No preparar ni entregar.",
+        };
+
+        const string line2Name = "Arroz con pollo y ensalada";
+        var gross2 = 28000 * 2;
+        var disc2 = 2000;
+        int? pct2 = gross2 > 0 && disc2 > 0
+            ? Math.Clamp((int)Math.Round(100.0 * disc2 / gross2), 1, 100)
+            : null;
+
+        var line2 = new PrintTicketLineV1
+        {
+            ProductName = line2Name,
+            KitchenProductName = KitchenProductNameFormatter.Format(line2Name),
+            Quantity = 2,
+            UnitPrice = 28000,
+            LineSubtotal = gross2 - disc2,
+            LineDiscount = disc2,
+            LineGrossSubtotal = gross2,
+            LineDiscountPercent = pct2,
+            Notes = "Sin cebolla",
+        };
+
+        const string line3Name = "Gaseosa Coca-Cola 400 ml";
+        var gross3 = 3500;
+        var line3 = new PrintTicketLineV1
+        {
+            ProductName = line3Name,
+            KitchenProductName = KitchenProductNameFormatter.Format(line3Name),
+            Quantity = 1,
+            UnitPrice = 3500,
+            LineSubtotal = gross3,
+            LineDiscount = 0,
+            LineGrossSubtotal = gross3,
+            LineDiscountPercent = null,
+            Notes = null,
+        };
+
+        var lines = new List<PrintTicketLineV1> { banner, line2, line3 };
+        var subtotal = line2.LineSubtotal + line3.LineSubtotal;
+        var discountTotal = line2.LineDiscount;
+        var deliveryFee = kind == PrintJobKind.Delivery ? 4500 : 0;
+        var grandTotal = subtotal + deliveryFee;
+
+        PrintTicketCustomerV1? customer = kind == PrintJobKind.Delivery
+            ? new PrintTicketCustomerV1
+            {
+                Name = "Cliente de prueba",
+                Phone = "300 1234567",
+                AddressDescription = "Calle 10 # 23-45",
+                NeighborhoodName = "Centro",
+                AddressAdditionalInfo = "Casa blanca, timbre 2",
+            }
+            : new PrintTicketCustomerV1
+            {
+                Name = "Cliente de prueba (mostrador)",
+                Phone = "300 9876543",
+            };
+
+        var orderPayload = new PrintTicketOrderPayloadV1
+        {
+            OrderId = TestPrintSyntheticOrderId,
+            BranchName = branch.Name ?? string.Empty,
+            BusinessName = NullIfWhiteSpace(branch.BusinessName),
+            BranchNit = NullIfWhiteSpace(branch.Nit),
+            BranchAddress = branch.Address,
+            ReceiptLogoUrl = PublicUrlHelper.ToAbsolutePublicUrl(publicApiBaseUrl, logoPath),
+            ReceiptLogoPath = logoPath,
+            RestaurantDisplayName = NullIfWhiteSpace(restaurantDisplayName),
+            KitchenFooterMessage = NullIfWhiteSpace(kitchenFooterMessage),
+            Kind = kindStr,
+            PrintedAtUtc = printedAtUtc,
+            Lines = lines,
+            Totals = new PrintTicketTotalsV1
+            {
+                Subtotal = subtotal,
+                DiscountTotal = discountTotal,
+                DeliveryFee = deliveryFee,
+                GrandTotal = grandTotal,
+                CashToCollect = kind == PrintJobKind.Delivery ? grandTotal : null,
+            },
+            Customer = customer,
+            Payments = new PrintTicketPaymentsV1(),
+            OrderType = kind == PrintJobKind.Delivery ? "delivery" : "onsite",
+            OrderStatus = kind == PrintJobKind.Delivery ? "on_the_way" : "in_preparation",
+            PrepareAt = printedAtUtc,
+        };
+
+        return new PrintTicketPayloadBatchV1 { Version = 1, Orders = new List<PrintTicketOrderPayloadV1> { orderPayload } };
+    }
+
     private static string KindToApiString(PrintJobKind k) => k switch
     {
         PrintJobKind.Kitchen => "kitchen",
