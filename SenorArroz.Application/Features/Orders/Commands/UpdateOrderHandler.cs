@@ -155,11 +155,12 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             }
         }
 
-        // Si cambia a Onsite/Delivery (no Reservation), limpiar reserved_for y prepare_at
+        // Si cambia a Onsite/Delivery (no Reservation), limpiar reserved_for; prepare_at solo si no se envió explícito (p. ej. "preparar ya")
         if (request.Order.Type.HasValue && request.Order.Type != OrderType.Reservation)
         {
             existingOrder.ReservedFor = null;
-            existingOrder.PrepareAt = null;
+            if (!request.Order.PrepareAt.HasValue)
+                existingOrder.PrepareAt = null;
         }
 
         // Handle address changes - update delivery fee from address if not provided
