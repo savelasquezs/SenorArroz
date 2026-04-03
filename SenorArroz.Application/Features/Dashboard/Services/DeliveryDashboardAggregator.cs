@@ -1,6 +1,5 @@
 using System.Text.Json;
 using SenorArroz.Domain.Entities;
-using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Application.Features.Dashboard.Services;
 
@@ -43,10 +42,9 @@ public static class DeliveryDashboardAggregator
             var ready = GetTime(times, "ready");
             var delivered = GetTime(times, "delivered");
 
-            if (ready.HasValue && taken.HasValue)
-                prepList.Add((ready.Value - taken.Value).TotalMinutes);
-            else if (ready.HasValue && inPrep.HasValue)
-                prepList.Add((ready.Value - inPrep.Value).TotalMinutes);
+            var prepMin = TryComputePrepMinutes(ready, o.PrepareAt, taken, inPrep);
+            if (prepMin != null)
+                prepList.Add(prepMin.Value);
 
             if (delivered.HasValue && ready.HasValue)
                 delList.Add((delivered.Value - ready.Value).TotalMinutes);
@@ -85,6 +83,35 @@ public static class DeliveryDashboardAggregator
             .ToList();
 
         return new DeliveryAggregatesDto(avgPrep, avgDel, byDriver, labels, counts, fees, sales, periodPct);
+    }
+
+    /// <summary>
+    /// Minutos de preparación (hasta <c>ready</c>). Si hay <see cref="Order.PrepareAt"/>,
+    /// el inicio es ese instante (cuando cocina puede trabajar el pedido, p. ej. reserva que luego cambia de tipo);
+    /// si no, se usa <c>taken</c> o <c>in_preparation</c> como antes.
+    /// </summary>
+    private static double? TryComputePrepMinutes(
+        DateTime? ready,
+        DateTime? prepareAt,
+        DateTime? taken,
+        DateTime? inPrep)
+    {
+        if (!ready.HasValue)
+            return null;
+
+        DateTime? start = null;
+        if (prepareAt.HasValue)
+            start = prepareAt.Value;
+        else if (taken.HasValue)
+            start = taken.Value;
+        else if (inPrep.HasValue)
+            start = inPrep.Value;
+
+        if (!start.HasValue)
+            return null;
+
+        var minutes = (ready.Value - start.Value).TotalMinutes;
+        return minutes < 0 ? 0 : minutes;
     }
 
     private static Dictionary<string, DateTime> ParseStatusTimes(string json)
