@@ -87,7 +87,16 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 && d.Order.UpdatedAt > since && d.Order.UpdatedAt <= now)
             .SumAsync(d => d.Amount, cancellationToken);
 
-        var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses;
+        // Abonos a domiciliario por transferencia: ya suman en el cuadre bancario (deliverymanBankIn);
+        // no deben esperarse también en efectivo físico (balance total caja + banco).
+        var advancesBankTransfer = await _context.DeliverymanAdvances
+            .Where(a => a.BranchId == branchId
+                && a.PaymentMethod == DeliverymanAdvancePaymentMethod.BankTransfer
+                && a.CreatedAt > since && a.CreatedAt <= now)
+            .SumAsync(a => a.Amount, cancellationToken);
+
+        var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses
+            - advancesBankTransfer;
 
         // --- BANCOS ---
         bool isAdmin = _currentUser.Role == "superadmin" || _currentUser.Role == "admin";
@@ -166,6 +175,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             CashFromOrders = cashFromOrders,
             CashDeposits = cashDeposits,
             CashExpenses = cashExpenses,
+            AdvancesBankTransfer = advancesBankTransfer,
             AsOf = now,
             LastClosureAt = lastClosure?.ClosedAt,
             Banks = bankExpected

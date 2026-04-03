@@ -7,6 +7,13 @@ public class CashRegisterExpectedDto
     public decimal CashFromOrders { get; set; }
     public decimal CashDeposits { get; set; }
     public decimal CashExpenses { get; set; }
+
+    /// <summary>
+    /// Abonos a domiciliarios por transferencia en el período: se restan del efectivo esperado
+    /// porque ese monto ya computa en el cuadre bancario.
+    /// </summary>
+    public decimal AdvancesBankTransfer { get; set; }
+
     public DateTime AsOf { get; set; }
     public DateTime? LastClosureAt { get; set; }
     public List<BankExpectedBalanceDto> Banks { get; set; } = new();
