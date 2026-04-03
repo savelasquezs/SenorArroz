@@ -1,4 +1,5 @@
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -24,13 +25,7 @@ public class GetDashboardSalesProductsHandler
         GetDashboardSalesProductsQuery request,
         CancellationToken cancellationToken)
     {
-        var from = request.FromUtc;
-        var to = request.ToUtc;
-        if (to < from)
-            (from, to) = (to, from);
-
-        if ((to.Date - from.Date).TotalDays + 1 > MaxRangeDays)
-            to = from.Date.AddDays(MaxRangeDays - 1).AddDays(1).AddTicks(-1);
+        var (from, to) = ColombiaTimeHelper.NormalizeDashboardRangeUtc(request.FromUtc, request.ToUtc, MaxRangeDays);
 
         var top = Math.Clamp(request.Top <= 0 ? 10 : request.Top, 5, 20);
         var branchFilter = ResolveBranchFilter(request.BranchId);

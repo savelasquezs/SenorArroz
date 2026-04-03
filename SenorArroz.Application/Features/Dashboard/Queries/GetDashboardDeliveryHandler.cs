@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
 using SenorArroz.Application.Features.Dashboard.Services;
@@ -33,7 +34,7 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
         GetDashboardDeliveryQuery request,
         CancellationToken cancellationToken)
     {
-        var (from, to) = ClampRange(request.FromUtc, request.ToUtc);
+        var (from, to) = ColombiaTimeHelper.NormalizeDashboardRangeUtc(request.FromUtc, request.ToUtc, MaxRangeDays);
 
         var branchFilter = ResolveBranchFilter(request.BranchId);
 
@@ -158,20 +159,6 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
             PeriodFeeToSalesPercent = agg.PeriodFeeToSalesPercent,
             RouteMetrics = routeMetricsDto,
         };
-    }
-
-    private static (DateTime From, DateTime To) ClampRange(DateTime fromUtc, DateTime toUtc)
-    {
-        var from = fromUtc;
-        var to = toUtc;
-        if (to < from)
-            (from, to) = (to, from);
-
-        var spanDays = (to.Date - from.Date).TotalDays + 1;
-        if (spanDays > MaxRangeDays)
-            to = from.Date.AddDays(MaxRangeDays - 1).AddDays(1).AddTicks(-1);
-
-        return (from, to);
     }
 
     private int? ResolveBranchFilter(int? requestedBranchId)

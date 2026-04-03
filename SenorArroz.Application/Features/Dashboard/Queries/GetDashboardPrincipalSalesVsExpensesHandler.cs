@@ -1,5 +1,6 @@
 using System.Globalization;
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -39,7 +40,7 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
         GetDashboardPrincipalSalesVsExpensesQuery request,
         CancellationToken cancellationToken)
     {
-        var (from, to) = NormalizeRange(request.FromUtc, request.ToUtc);
+        var (from, to) = ColombiaTimeHelper.NormalizeDashboardRangeUtc(request.FromUtc, request.ToUtc, MaxRangeDays);
         var branchFilter = ResolveBranchFilter(request.BranchId);
         var gran = NormalizeGranularity(request.Granularity);
 
@@ -74,9 +75,9 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
         CancellationToken cancellationToken)
     {
         var salesPoints = await _orderRepository.GetDashboardSalesByDayAsync(branchFilter, from, to, cancellationToken);
-        var (days, labels) = EnumerateDays(from, to);
+        var (days, labels) = ColombiaTimeHelper.EnumerateColombiaDashboardDays(from, to, MaxDayBuckets, EsCo);
         var salesCop = SumSalesByDay(branchesInOrder, salesPoints, days);
-        var buckets = days.Select(d => DateTime.SpecifyKind(d, DateTimeKind.Utc)).ToList();
+        var buckets = days;
         var expenseCategories = BuildExpenseCategorySeries(expenseRows, buckets, "day");
         return new DashboardPrincipalSalesVsExpensesResponseDto
         {
@@ -96,10 +97,10 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
         CancellationToken cancellationToken)
     {
         var salesPoints = await _orderRepository.GetDashboardSalesByMonthAsync(branchFilter, from, to, cancellationToken);
-        var (keys, labels) = EnumerateMonths(from, to);
+        var (keys, labels) = ColombiaTimeHelper.EnumerateColombiaDashboardMonths(from, to, MaxMonthBuckets, EsCo);
         var salesCop = SumSalesByMonth(branchesInOrder, salesPoints, keys);
         var buckets = keys
-            .Select(k => new DateTime(k.Year, k.Month, 1, 0, 0, 0, DateTimeKind.Utc))
+            .Select(k => new DateTime(k.Year, k.Month, 1, 0, 0, 0, DateTimeKind.Unspecified))
             .ToList();
         var expenseCategories = BuildExpenseCategorySeries(expenseRows, buckets, "month");
         return new DashboardPrincipalSalesVsExpensesResponseDto
@@ -120,9 +121,9 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
         CancellationToken cancellationToken)
     {
         var salesPoints = await _orderRepository.GetDashboardSalesByYearAsync(branchFilter, from, to, cancellationToken);
-        var (years, labels) = EnumerateYears(from, to);
+        var (years, labels) = ColombiaTimeHelper.EnumerateColombiaDashboardYears(from, to, MaxYearBuckets);
         var salesCop = SumSalesByYear(branchesInOrder, salesPoints, years);
-        var buckets = years.Select(y => new DateTime(y, 1, 1, 0, 0, 0, DateTimeKind.Utc)).ToList();
+        var buckets = years.Select(y => new DateTime(y, 1, 1, 0, 0, 0, DateTimeKind.Unspecified)).ToList();
         var expenseCategories = BuildExpenseCategorySeries(expenseRows, buckets, "year");
         return new DashboardPrincipalSalesVsExpensesResponseDto
         {
@@ -200,9 +201,9 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
     private static DateTime NormalizeExpenseBucket(DateTime raw, string gran) =>
         gran switch
         {
-            "year" => new DateTime(raw.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-            "month" => new DateTime(raw.Year, raw.Month, 1, 0, 0, 0, DateTimeKind.Utc),
-            _ => DateTime.SpecifyKind(raw.Date, DateTimeKind.Utc),
+            "year" => new DateTime(raw.Year, 1, 1, 0, 0, 0, DateTimeKind.Unspecified),
+            "month" => new DateTime(raw.Year, raw.Month, 1, 0, 0, 0, DateTimeKind.Unspecified),
+            _ => DateTime.SpecifyKind(raw.Date, DateTimeKind.Unspecified),
         };
 
     private static List<long> SumSalesByDay(
@@ -231,69 +232,6 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
     {
         var map = points.ToLookup(p => (p.BranchId, p.Year));
         return years.Select(y => branches.Sum(b => map[(b.Id, y)].Sum(x => (long)x.SalesCop))).ToList();
-    }
-
-    private static (List<DateTime> Days, List<string> Labels) EnumerateDays(DateTime fromUtc, DateTime toUtc)
-    {
-        var from = fromUtc.Date;
-        var to = toUtc.Date;
-        if (to < from)
-            (from, to) = (to, from);
-
-        var days = new List<DateTime>();
-        for (var d = from; d <= to && days.Count < MaxDayBuckets; d = d.AddDays(1))
-            days.Add(d);
-
-        var labels = days.Select(d => d.ToString("ddd d MMM", EsCo)).ToList();
-        return (days, labels);
-    }
-
-    private static (List<(int Year, int Month)> Keys, List<string> Labels) EnumerateMonths(
-        DateTime fromUtc,
-        DateTime toUtc)
-    {
-        var s = new DateTime(fromUtc.Year, fromUtc.Month, 1, 0, 0, 0, fromUtc.Kind);
-        var e = new DateTime(toUtc.Year, toUtc.Month, 1, 0, 0, 0, toUtc.Kind);
-        if (e < s)
-            (s, e) = (e, s);
-
-        var keys = new List<(int Year, int Month)>();
-        for (var cur = s; cur <= e && keys.Count < MaxMonthBuckets; cur = cur.AddMonths(1))
-            keys.Add((cur.Year, cur.Month));
-
-        var labels = keys
-            .Select(k => new DateTime(k.Year, k.Month, 1).ToString("MMM yyyy", EsCo))
-            .ToList();
-
-        return (keys, labels);
-    }
-
-    private static (List<int> Years, List<string> Labels) EnumerateYears(DateTime fromUtc, DateTime toUtc)
-    {
-        var y0 = fromUtc.Year;
-        var y1 = toUtc.Year;
-        if (y1 < y0)
-            (y0, y1) = (y1, y0);
-
-        var years = new List<int>();
-        for (var y = y0; y <= y1 && years.Count < MaxYearBuckets; y++)
-            years.Add(y);
-
-        var labels = years.Select(y => y.ToString()).ToList();
-        return (years, labels);
-    }
-
-    private static (DateTime From, DateTime To) NormalizeRange(DateTime fromUtc, DateTime toUtc)
-    {
-        var from = fromUtc;
-        var to = toUtc;
-        if (to < from)
-            (from, to) = (to, from);
-
-        if ((to.Date - from.Date).TotalDays + 1 > MaxRangeDays)
-            to = from.Date.AddDays(MaxRangeDays - 1).AddDays(1).AddTicks(-1);
-
-        return (from, to);
     }
 
     private static string NormalizeGranularity(string? g)

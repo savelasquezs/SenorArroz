@@ -1,4 +1,5 @@
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
 using SenorArroz.Domain.Enums;
@@ -30,7 +31,7 @@ public class GetDashboardCategoryWeightsHandler
         GetDashboardCategoryWeightsQuery request,
         CancellationToken cancellationToken)
     {
-        var (from, to) = NormalizeRange(request.FromUtc, request.ToUtc);
+        var (from, to) = ColombiaTimeHelper.NormalizeDashboardRangeUtc(request.FromUtc, request.ToUtc, MaxRangeDays);
         var branchFilter = ResolveBranchFilter(request.BranchId);
         var granularity = ParseGranularity(request.Granularity);
 
@@ -99,19 +100,6 @@ public class GetDashboardCategoryWeightsHandler
             Evolution = evolution,
             EvolutionsByCategory = evolutionsByCategory,
         };
-    }
-
-    private static (DateTime From, DateTime To) NormalizeRange(DateTime fromUtc, DateTime toUtc)
-    {
-        var from = fromUtc;
-        var to = toUtc;
-        if (to < from)
-            (from, to) = (to, from);
-
-        if ((to.Date - from.Date).TotalDays + 1 > MaxRangeDays)
-            to = from.Date.AddDays(MaxRangeDays - 1).AddDays(1).AddTicks(-1);
-
-        return (from, to);
     }
 
     private int? ResolveBranchFilter(int? requestedBranchId)

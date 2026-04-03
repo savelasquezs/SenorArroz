@@ -1,4 +1,5 @@
 using System.Globalization;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Features.Dashboard.DTOs;
 using SenorArroz.Domain.Models;
 
@@ -75,20 +76,7 @@ public static class SalesDashboardChartBuilder
 
     private static (List<DateTime> Days, List<string> Labels) EnumerateDays(DateTime fromUtc, DateTime toUtc)
     {
-        var from = fromUtc.Date;
-        var to = toUtc.Date;
-        if (to < from)
-            (from, to) = (to, from);
-
-        var days = new List<DateTime>();
-        for (var d = from; d <= to && days.Count < MaxDayBuckets; d = d.AddDays(1))
-            days.Add(d);
-
-        var labels = days.Select(d =>
-                d.ToString("ddd d MMM", EsCo))
-            .ToList();
-
-        return (days, labels);
+        return ColombiaTimeHelper.EnumerateColombiaDashboardDays(fromUtc, toUtc, MaxDayBuckets, EsCo);
     }
 
     private static SalesTimeSeriesBlockDto BuildSalesByMonth(
@@ -128,20 +116,7 @@ public static class SalesDashboardChartBuilder
         DateTime fromUtc,
         DateTime toUtc)
     {
-        var s = new DateTime(fromUtc.Year, fromUtc.Month, 1, 0, 0, 0, fromUtc.Kind);
-        var e = new DateTime(toUtc.Year, toUtc.Month, 1, 0, 0, 0, toUtc.Kind);
-        if (e < s)
-            (s, e) = (e, s);
-
-        var keys = new List<(int Year, int Month)>();
-        for (var cur = s; cur <= e && keys.Count < MaxMonthBuckets; cur = cur.AddMonths(1))
-            keys.Add((cur.Year, cur.Month));
-
-        var labels = keys.Select(k =>
-                new DateTime(k.Year, k.Month, 1).ToString("MMM yyyy", EsCo))
-            .ToList();
-
-        return (keys, labels);
+        return ColombiaTimeHelper.EnumerateColombiaDashboardMonths(fromUtc, toUtc, MaxMonthBuckets, EsCo);
     }
 
     private static SalesTimeSeriesBlockDto BuildSalesByYear(
@@ -179,17 +154,7 @@ public static class SalesDashboardChartBuilder
 
     private static (List<int> Years, List<string> Labels) EnumerateYears(DateTime fromUtc, DateTime toUtc)
     {
-        var y0 = fromUtc.Year;
-        var y1 = toUtc.Year;
-        if (y1 < y0)
-            (y0, y1) = (y1, y0);
-
-        var years = new List<int>();
-        for (var y = y0; y <= y1 && years.Count < MaxYearBuckets; y++)
-            years.Add(y);
-
-        var labels = years.Select(y => y.ToString()).ToList();
-        return (years, labels);
+        return ColombiaTimeHelper.EnumerateColombiaDashboardYears(fromUtc, toUtc, MaxYearBuckets);
     }
 
     private static SalesTimeSeriesBlockDto BuildSalesByHour(

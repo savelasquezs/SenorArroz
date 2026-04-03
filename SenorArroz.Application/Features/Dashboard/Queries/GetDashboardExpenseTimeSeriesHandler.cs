@@ -1,4 +1,5 @@
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -32,10 +33,12 @@ public class GetDashboardExpenseTimeSeriesHandler
         GetDashboardExpenseTimeSeriesQuery request,
         CancellationToken cancellationToken)
     {
-        var (from, to) = NormalizeRange(request.FromUtc, request.ToUtc);
+        var (from, to) = ColombiaTimeHelper.NormalizeDashboardRangeUtc(request.FromUtc, request.ToUtc, MaxRangeDays);
         var branchFilter = ResolveBranchFilter(request.BranchId);
 
-        var spanDays = (int)(to.Date - from.Date).TotalDays + 1;
+        var d0 = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(from);
+        var d1 = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(to);
+        var spanDays = (int)(d1 - d0).TotalDays + 1;
         var monthly = request.Granularity?.Equals("month", StringComparison.OrdinalIgnoreCase) == true
             || (string.IsNullOrWhiteSpace(request.Granularity) && spanDays > DayThreshold);
 
@@ -67,12 +70,14 @@ public class GetDashboardExpenseTimeSeriesHandler
         if (monthly)
         {
             dict = rows.ToDictionary(
-                r => new DateTime(r.BucketStart.Year, r.BucketStart.Month, 1),
+                r => new DateTime(r.BucketStart.Year, r.BucketStart.Month, 1, 0, 0, 0, DateTimeKind.Unspecified),
                 r => r.TotalCop);
         }
         else
         {
-            dict = rows.ToDictionary(r => r.BucketStart.Date, r => r.TotalCop);
+            dict = rows.ToDictionary(
+                r => DateTime.SpecifyKind(r.BucketStart.Date, DateTimeKind.Unspecified),
+                r => r.TotalCop);
         }
 
         var labels = new List<string>();
@@ -80,15 +85,18 @@ public class GetDashboardExpenseTimeSeriesHandler
 
         if (monthly)
         {
-            for (var d = new DateTime(from.Year, from.Month, 1); d <= to.Date; d = d.AddMonths(1))
+            for (var d = new DateTime(d0.Year, d0.Month, 1);
+                 d <= new DateTime(d1.Year, d1.Month, 1);
+                 d = d.AddMonths(1))
             {
-                labels.Add($"{d:yyyy-MM}");
-                amounts.Add(dict.GetValueOrDefault(d, 0L));
+                var key = new DateTime(d.Year, d.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
+                labels.Add($"{key:yyyy-MM}");
+                amounts.Add(dict.GetValueOrDefault(key, 0L));
             }
         }
         else
         {
-            for (var d = from.Date; d <= to.Date; d = d.AddDays(1))
+            for (var d = d0; d <= d1; d = d.AddDays(1))
             {
                 labels.Add(d.ToString("yyyy-MM-dd"));
                 amounts.Add(dict.GetValueOrDefault(d, 0L));
@@ -136,11 +144,16 @@ public class GetDashboardExpenseTimeSeriesHandler
         DateTime to,
         bool monthly)
     {
+        var d0 = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(from);
+        var d1 = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(to);
+
         var labels = new List<string>();
         var amounts = new List<long>();
         if (monthly)
         {
-            for (var d = new DateTime(from.Year, from.Month, 1); d <= to.Date; d = d.AddMonths(1))
+            for (var d = new DateTime(d0.Year, d0.Month, 1);
+                 d <= new DateTime(d1.Year, d1.Month, 1);
+                 d = d.AddMonths(1))
             {
                 labels.Add($"{d:yyyy-MM}");
                 amounts.Add(0L);
@@ -148,7 +161,7 @@ public class GetDashboardExpenseTimeSeriesHandler
         }
         else
         {
-            for (var d = from.Date; d <= to.Date; d = d.AddDays(1))
+            for (var d = d0; d <= d1; d = d.AddDays(1))
             {
                 labels.Add(d.ToString("yyyy-MM-dd"));
                 amounts.Add(0L);
@@ -162,19 +175,6 @@ public class GetDashboardExpenseTimeSeriesHandler
             Granularity = monthly ? "month" : "day",
             SeriesLabel = label,
         };
-    }
-
-    private static (DateTime From, DateTime To) NormalizeRange(DateTime fromUtc, DateTime toUtc)
-    {
-        var from = fromUtc;
-        var to = toUtc;
-        if (to < from)
-            (from, to) = (to, from);
-
-        if ((to.Date - from.Date).TotalDays + 1 > MaxRangeDays)
-            to = from.Date.AddDays(MaxRangeDays - 1).AddDays(1).AddTicks(-1);
-
-        return (from, to);
     }
 
     private int? ResolveBranchFilter(int? requestedBranchId)

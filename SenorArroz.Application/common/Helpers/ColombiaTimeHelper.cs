@@ -1,19 +1,50 @@
+using System.Globalization;
+
 namespace SenorArroz.Application.Common.Helpers;
 
 public static class ColombiaTimeHelper
 {
-    private static readonly TimeZoneInfo ColombiaTimeZone = 
-        TimeZoneInfo.FindSystemTimeZoneById("SA Pacific Standard Time"); // UTC-5
+    private static readonly Lazy<TimeZoneInfo> ColombiaTimeZoneLazy = new(ResolveColombiaTimeZone);
+
+    private static TimeZoneInfo ColombiaTimeZone => ColombiaTimeZoneLazy.Value;
+
+    private static TimeZoneInfo ResolveColombiaTimeZone()
+    {
+        foreach (var id in new[] { "America/Bogota", "SA Pacific Standard Time" })
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(id);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return TimeZoneInfo.CreateCustomTimeZone(
+            "Colombia-UTC-5",
+            TimeSpan.FromHours(-5),
+            "Colombia (UTC-5)",
+            "Colombia (UTC-5)");
+    }
+
+    public static DateTime EnsureUtc(DateTime dt)
+    {
+        return dt.Kind == DateTimeKind.Utc
+            ? dt
+            : DateTime.SpecifyKind(dt.ToUniversalTime(), DateTimeKind.Utc);
+    }
 
     /// <summary>
     /// Convierte una fecha de hora de Colombia a UTC
     /// </summary>
     public static DateTime ConvertColombiaToUtc(DateTime colombiaDateTime)
     {
-        // Asegurar que la fecha no tenga Kind.Utc para poder convertirla
         var unspecified = DateTime.SpecifyKind(colombiaDateTime, DateTimeKind.Unspecified);
         var utcDateTime = TimeZoneInfo.ConvertTimeToUtc(unspecified, ColombiaTimeZone);
-        // Asegurar que el resultado tenga Kind.Utc explícitamente
         return DateTime.SpecifyKind(utcDateTime, DateTimeKind.Utc);
     }
 
@@ -30,7 +61,7 @@ public static class ColombiaTimeHelper
     /// </summary>
     public static DateTime GetTodayStartInUtc()
     {
-        var colombiaToday = GetNowInColombia().Date; // 00:00:00 en Colombia
+        var colombiaToday = GetNowInColombia().Date;
         var utcStart = ConvertColombiaToUtc(colombiaToday);
         return DateTime.SpecifyKind(utcStart, DateTimeKind.Utc);
     }
@@ -40,15 +71,79 @@ public static class ColombiaTimeHelper
     /// </summary>
     public static DateTime GetTodayEndInUtc()
     {
-        var colombiaTodayEnd = GetNowInColombia().Date.AddDays(1).AddTicks(-1); // 23:59:59.999 en Colombia
+        var colombiaTodayEnd = GetNowInColombia().Date.AddDays(1).AddTicks(-1);
         var utcEnd = ConvertColombiaToUtc(colombiaTodayEnd);
         return DateTime.SpecifyKind(utcEnd, DateTimeKind.Utc);
     }
 
     /// <summary>
+    /// Fecha de calendario en Colombia (medianoche local interpretada como fecha-only, Kind Unspecified).
+    /// </summary>
+    public static DateTime ConvertUtcToColombiaCalendarDate(DateTime utcInstant)
+    {
+        var utc = EnsureUtc(utcInstant);
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, ColombiaTimeZone);
+        return DateTime.SpecifyKind(local.Date, DateTimeKind.Unspecified);
+    }
+
+    /// <summary>Día operativo del pedido (ReservedFor o CreatedAt) en calendario Colombia.</summary>
+    public static DateTime OrderOperationalColombiaCalendarDate(DateTime createdAtUtc, DateTime? reservedForUtc)
+    {
+        var instant = reservedForUtc ?? createdAtUtc;
+        return ConvertUtcToColombiaCalendarDate(instant);
+    }
+
+    public static (int Year, int Month) OrderOperationalColombiaYearMonth(DateTime createdAtUtc, DateTime? reservedForUtc)
+    {
+        var instant = reservedForUtc ?? createdAtUtc;
+        var utc = EnsureUtc(instant);
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, ColombiaTimeZone);
+        return (local.Year, local.Month);
+    }
+
+    public static int OrderOperationalColombiaYear(DateTime createdAtUtc, DateTime? reservedForUtc)
+    {
+        var instant = reservedForUtc ?? createdAtUtc;
+        var utc = EnsureUtc(instant);
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, ColombiaTimeZone);
+        return local.Year;
+    }
+
+    public static int OrderOperationalColombiaHour(DateTime createdAtUtc, DateTime? reservedForUtc)
+    {
+        var instant = reservedForUtc ?? createdAtUtc;
+        var utc = EnsureUtc(instant);
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, ColombiaTimeZone);
+        return local.Hour;
+    }
+
+    public static DateTime ExpenseColombiaCalendarDate(DateTime headerCreatedAtUtc)
+        => ConvertUtcToColombiaCalendarDate(headerCreatedAtUtc);
+
+    public static (int Year, int Month) ExpenseColombiaYearMonth(DateTime headerCreatedAtUtc)
+    {
+        var utc = EnsureUtc(headerCreatedAtUtc);
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, ColombiaTimeZone);
+        return (local.Year, local.Month);
+    }
+
+    public static int ExpenseColombiaYear(DateTime headerCreatedAtUtc)
+    {
+        var utc = EnsureUtc(headerCreatedAtUtc);
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, ColombiaTimeZone);
+        return local.Year;
+    }
+
+    /// <summary>Inicio UTC del día calendario Colombia.</summary>
+    public static DateTime ColombiaCalendarDayStartUtc(DateTime colombiaDateOnly)
+    {
+        var day = colombiaDateOnly.Date;
+        var (from, _) = GetColombiaCalendarDateRangeUtc(day, day);
+        return from;
+    }
+
+    /// <summary>
     /// Rango UTC para filtrar instantes guardados en UTC (p. ej. <c>CreatedAt</c>) por días calendario en Colombia.
-    /// <paramref name="fromDate"/> y <paramref name="toDate"/> son fechas de calendario (se usa solo la parte fecha);
-    /// se interpretan como medianoche inicio en Bogotá hasta el último tick del último día en Bogotá.
     /// </summary>
     public static (DateTime FromUtc, DateTime ToUtc) GetColombiaCalendarDateRangeUtc(DateTime fromDate, DateTime toDate)
     {
@@ -63,6 +158,98 @@ public static class ColombiaTimeHelper
         var fromUtc = DateTime.SpecifyKind(ConvertColombiaToUtc(startColombia), DateTimeKind.Utc);
         var toUtc = DateTime.SpecifyKind(ConvertColombiaToUtc(endColombia), DateTimeKind.Utc);
         return (fromUtc, toUtc);
+    }
+
+    /// <summary>
+    /// Normaliza FromUtc/ToUtc del dashboard al rango UTC de los días calendario Colombia tocados por esos instantes,
+    /// con tope de días inclusivos.
+    /// </summary>
+    public static (DateTime FromUtc, DateTime ToUtc) NormalizeDashboardRangeUtc(
+        DateTime fromUtc,
+        DateTime toUtc,
+        int maxColombiaInclusiveDays = 400)
+    {
+        var from = EnsureUtc(fromUtc);
+        var to = EnsureUtc(toUtc);
+        if (to < from)
+            (from, to) = (to, from);
+
+        var d0 = ConvertUtcToColombiaCalendarDate(from);
+        var d1 = ConvertUtcToColombiaCalendarDate(to);
+        var span = (int)(d1 - d0).TotalDays + 1;
+        if (span > maxColombiaInclusiveDays)
+            d1 = d0.AddDays(maxColombiaInclusiveDays - 1);
+
+        return GetColombiaCalendarDateRangeUtc(d0, d1);
+    }
+
+    /// <summary>Último día calendario Colombia dentro del rango normalizado (para buckets por hora).</summary>
+    public static (DateTime FromUtc, DateTime ToUtc) GetLastColombiaDayBoundsInRangeUtc(DateTime rangeFromUtc, DateTime rangeToUtc)
+    {
+        var to = EnsureUtc(rangeToUtc);
+        var lastDay = ConvertUtcToColombiaCalendarDate(to);
+        return GetColombiaCalendarDateRangeUtc(lastDay, lastDay);
+    }
+
+    public static (List<DateTime> Days, List<string> Labels) EnumerateColombiaDashboardDays(
+        DateTime fromUtc,
+        DateTime toUtc,
+        int maxBuckets,
+        CultureInfo culture)
+    {
+        var d0 = ConvertUtcToColombiaCalendarDate(EnsureUtc(fromUtc));
+        var d1 = ConvertUtcToColombiaCalendarDate(EnsureUtc(toUtc));
+        if (d1 < d0)
+            (d0, d1) = (d1, d0);
+
+        var days = new List<DateTime>();
+        for (var d = d0; d <= d1 && days.Count < maxBuckets; d = d.AddDays(1))
+            days.Add(d);
+
+        var labels = days.Select(d => d.ToString("ddd d MMM", culture)).ToList();
+        return (days, labels);
+    }
+
+    public static (List<(int Year, int Month)> Keys, List<string> Labels) EnumerateColombiaDashboardMonths(
+        DateTime fromUtc,
+        DateTime toUtc,
+        int maxBuckets,
+        CultureInfo culture)
+    {
+        var d0 = ConvertUtcToColombiaCalendarDate(EnsureUtc(fromUtc));
+        var d1 = ConvertUtcToColombiaCalendarDate(EnsureUtc(toUtc));
+        if (d1 < d0)
+            (d0, d1) = (d1, d0);
+
+        var s = new DateTime(d0.Year, d0.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
+        var e = new DateTime(d1.Year, d1.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
+
+        var keys = new List<(int Year, int Month)>();
+        for (var cur = s; cur <= e && keys.Count < maxBuckets; cur = cur.AddMonths(1))
+            keys.Add((cur.Year, cur.Month));
+
+        var labels = keys.Select(k => new DateTime(k.Year, k.Month, 1).ToString("MMM yyyy", culture)).ToList();
+        return (keys, labels);
+    }
+
+    public static (List<int> Years, List<string> Labels) EnumerateColombiaDashboardYears(
+        DateTime fromUtc,
+        DateTime toUtc,
+        int maxBuckets)
+    {
+        var d0 = ConvertUtcToColombiaCalendarDate(EnsureUtc(fromUtc));
+        var d1 = ConvertUtcToColombiaCalendarDate(EnsureUtc(toUtc));
+        if (d1 < d0)
+            (d0, d1) = (d1, d0);
+
+        var y0 = d0.Year;
+        var y1 = d1.Year;
+        var years = new List<int>();
+        for (var y = y0; y <= y1 && years.Count < maxBuckets; y++)
+            years.Add(y);
+
+        var labels = years.Select(y => y.ToString()).ToList();
+        return (years, labels);
     }
 
     /// <summary>
@@ -90,4 +277,3 @@ public static class ColombiaTimeHelper
         return (null, tOnly);
     }
 }
-

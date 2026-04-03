@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
@@ -1113,14 +1114,18 @@ public class OrderRepository : IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+        var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .Select(o => new { o.BranchId, o.CreatedAt, o.ReservedFor, o.Total })
+            .ToListAsync(cancellationToken);
+
+        return rows
             .GroupBy(o => new
             {
                 o.BranchId,
-                Day = o.ReservedFor.HasValue ? o.ReservedFor.Value.Date : o.CreatedAt.Date
+                Day = ColombiaTimeHelper.OrderOperationalColombiaCalendarDate(o.CreatedAt, o.ReservedFor),
             })
-            .Select(g => new SalesDayPoint(g.Key.BranchId, g.Key.Day, g.Sum(o => o.Total)))
-            .ToListAsync(cancellationToken);
+            .Select(g => new SalesDayPoint(g.Key.BranchId, g.Key.Day, g.Sum(x => x.Total)))
+            .ToList();
     }
 
     public async Task<List<OrdersDayPoint>> GetDashboardOrdersByDayAsync(
@@ -1129,10 +1134,14 @@ public class OrderRepository : IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .GroupBy(o => o.ReservedFor.HasValue ? o.ReservedFor.Value.Date : o.CreatedAt.Date)
-            .Select(g => new OrdersDayPoint(g.Key, g.Count()))
+        var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .Select(o => new { o.CreatedAt, o.ReservedFor })
             .ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(o => ColombiaTimeHelper.OrderOperationalColombiaCalendarDate(o.CreatedAt, o.ReservedFor))
+            .Select(g => new OrdersDayPoint(g.Key, g.Count()))
+            .ToList();
     }
 
     public async Task<List<SalesMonthPoint>> GetDashboardSalesByMonthAsync(
@@ -1141,19 +1150,22 @@ public class OrderRepository : IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+        var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .Select(o => new { o.BranchId, o.CreatedAt, o.ReservedFor, o.Total })
+            .ToListAsync(cancellationToken);
+
+        return rows
             .GroupBy(o => new
             {
                 o.BranchId,
-                Year = o.ReservedFor.HasValue ? o.ReservedFor.Value.Year : o.CreatedAt.Year,
-                Month = o.ReservedFor.HasValue ? o.ReservedFor.Value.Month : o.CreatedAt.Month
+                Ym = ColombiaTimeHelper.OrderOperationalColombiaYearMonth(o.CreatedAt, o.ReservedFor),
             })
             .Select(g => new SalesMonthPoint(
                 g.Key.BranchId,
-                g.Key.Year,
-                g.Key.Month,
-                g.Sum(o => o.Total)))
-            .ToListAsync(cancellationToken);
+                g.Key.Ym.Year,
+                g.Key.Ym.Month,
+                g.Sum(x => x.Total)))
+            .ToList();
     }
 
     public async Task<List<OrdersMonthPoint>> GetDashboardOrdersByMonthAsync(
@@ -1162,14 +1174,14 @@ public class OrderRepository : IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .GroupBy(o => new
-            {
-                Year = o.ReservedFor.HasValue ? o.ReservedFor.Value.Year : o.CreatedAt.Year,
-                Month = o.ReservedFor.HasValue ? o.ReservedFor.Value.Month : o.CreatedAt.Month
-            })
-            .Select(g => new OrdersMonthPoint(g.Key.Year, g.Key.Month, g.Count()))
+        var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .Select(o => new { o.CreatedAt, o.ReservedFor })
             .ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(o => ColombiaTimeHelper.OrderOperationalColombiaYearMonth(o.CreatedAt, o.ReservedFor))
+            .Select(g => new OrdersMonthPoint(g.Key.Year, g.Key.Month, g.Count()))
+            .ToList();
     }
 
     public async Task<List<SalesYearPoint>> GetDashboardSalesByYearAsync(
@@ -1178,14 +1190,18 @@ public class OrderRepository : IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+        var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .Select(o => new { o.BranchId, o.CreatedAt, o.ReservedFor, o.Total })
+            .ToListAsync(cancellationToken);
+
+        return rows
             .GroupBy(o => new
             {
                 o.BranchId,
-                Year = o.ReservedFor.HasValue ? o.ReservedFor.Value.Year : o.CreatedAt.Year
+                Year = ColombiaTimeHelper.OrderOperationalColombiaYear(o.CreatedAt, o.ReservedFor),
             })
-            .Select(g => new SalesYearPoint(g.Key.BranchId, g.Key.Year, g.Sum(o => o.Total)))
-            .ToListAsync(cancellationToken);
+            .Select(g => new SalesYearPoint(g.Key.BranchId, g.Key.Year, g.Sum(x => x.Total)))
+            .ToList();
     }
 
     public async Task<List<OrdersYearPoint>> GetDashboardOrdersByYearAsync(
@@ -1194,10 +1210,14 @@ public class OrderRepository : IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .GroupBy(o => o.ReservedFor.HasValue ? o.ReservedFor.Value.Year : o.CreatedAt.Year)
-            .Select(g => new OrdersYearPoint(g.Key, g.Count()))
+        var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .Select(o => new { o.CreatedAt, o.ReservedFor })
             .ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(o => ColombiaTimeHelper.OrderOperationalColombiaYear(o.CreatedAt, o.ReservedFor))
+            .Select(g => new OrdersYearPoint(g.Key, g.Count()))
+            .ToList();
     }
 
     public async Task<List<SalesHourPoint>> GetDashboardSalesByHourAsync(
@@ -1206,14 +1226,18 @@ public class OrderRepository : IOrderRepository
         DateTime dayEndUtc,
         CancellationToken cancellationToken = default)
     {
-        return await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
+        var rows = await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
+            .Select(o => new { o.BranchId, o.CreatedAt, o.ReservedFor, o.Total })
+            .ToListAsync(cancellationToken);
+
+        return rows
             .GroupBy(o => new
             {
                 o.BranchId,
-                Hour = o.ReservedFor.HasValue ? o.ReservedFor.Value.Hour : o.CreatedAt.Hour
+                Hour = ColombiaTimeHelper.OrderOperationalColombiaHour(o.CreatedAt, o.ReservedFor),
             })
-            .Select(g => new SalesHourPoint(g.Key.BranchId, g.Key.Hour, g.Sum(o => o.Total)))
-            .ToListAsync(cancellationToken);
+            .Select(g => new SalesHourPoint(g.Key.BranchId, g.Key.Hour, g.Sum(x => x.Total)))
+            .ToList();
     }
 
     public async Task<List<OrdersHourPoint>> GetDashboardOrdersByHourAsync(
@@ -1222,10 +1246,14 @@ public class OrderRepository : IOrderRepository
         DateTime dayEndUtc,
         CancellationToken cancellationToken = default)
     {
-        return await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
-            .GroupBy(o => o.ReservedFor.HasValue ? o.ReservedFor.Value.Hour : o.CreatedAt.Hour)
-            .Select(g => new OrdersHourPoint(g.Key, g.Count()))
+        var rows = await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
+            .Select(o => new { o.CreatedAt, o.ReservedFor })
             .ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(o => ColombiaTimeHelper.OrderOperationalColombiaHour(o.CreatedAt, o.ReservedFor))
+            .Select(g => new OrdersHourPoint(g.Key, g.Count()))
+            .ToList();
     }
 
     public async Task<List<SalesProductAggregateRow>> GetSalesProductAggregatesForDashboardAsync(
@@ -1456,18 +1484,21 @@ public class OrderRepository : IOrderRepository
         IQueryable<OrderDetail> q,
         CancellationToken cancellationToken)
     {
-        var rows = await q
-            .GroupBy(od => od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Date : od.Order.CreatedAt.Date)
-            .Select(g => new
+        var raw = await q
+            .Select(od => new
             {
-                Bucket = g.Key,
-                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
+                od.Order.CreatedAt,
+                od.Order.ReservedFor,
+                W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
-            .OrderBy(x => x.Bucket)
             .ToListAsync(cancellationToken);
 
-        return rows
-            .Select(x => new SalesCategoryWeightEvolutionPoint(x.Bucket, x.TotalWeightGrams))
+        return raw
+            .GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaCalendarDate(x.CreatedAt, x.ReservedFor))
+            .Select(g => new SalesCategoryWeightEvolutionPoint(
+                ColombiaTimeHelper.ColombiaCalendarDayStartUtc(g.Key),
+                g.Sum(x => x.W)))
+            .OrderBy(p => p.BucketStartUtc)
             .ToList();
     }
 
@@ -1475,26 +1506,21 @@ public class OrderRepository : IOrderRepository
         IQueryable<OrderDetail> q,
         CancellationToken cancellationToken)
     {
-        var rows = await q
-            .GroupBy(od => new
+        var raw = await q
+            .Select(od => new
             {
-                Year = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Year : od.Order.CreatedAt.Year,
-                Month = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Month : od.Order.CreatedAt.Month
+                od.Order.CreatedAt,
+                od.Order.ReservedFor,
+                W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
-            .Select(g => new
-            {
-                g.Key.Year,
-                g.Key.Month,
-                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
-            })
-            .OrderBy(x => x.Year)
-            .ThenBy(x => x.Month)
             .ToListAsync(cancellationToken);
 
-        return rows
-            .Select(x => new SalesCategoryWeightEvolutionPoint(
-                new DateTime(x.Year, x.Month, 1, 0, 0, 0, DateTimeKind.Utc),
-                x.TotalWeightGrams))
+        return raw
+            .GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaYearMonth(x.CreatedAt, x.ReservedFor))
+            .Select(g => new SalesCategoryWeightEvolutionPoint(
+                ColombiaTimeHelper.ColombiaCalendarDayStartUtc(new DateTime(g.Key.Year, g.Key.Month, 1)),
+                g.Sum(x => x.W)))
+            .OrderBy(p => p.BucketStartUtc)
             .ToList();
     }
 
@@ -1502,20 +1528,21 @@ public class OrderRepository : IOrderRepository
         IQueryable<OrderDetail> q,
         CancellationToken cancellationToken)
     {
-        var rows = await q
-            .GroupBy(od => od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Year : od.Order.CreatedAt.Year)
-            .Select(g => new
+        var raw = await q
+            .Select(od => new
             {
-                Year = g.Key,
-                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
+                od.Order.CreatedAt,
+                od.Order.ReservedFor,
+                W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
-            .OrderBy(x => x.Year)
             .ToListAsync(cancellationToken);
 
-        return rows
-            .Select(x => new SalesCategoryWeightEvolutionPoint(
-                new DateTime(x.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-                x.TotalWeightGrams))
+        return raw
+            .GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaYear(x.CreatedAt, x.ReservedFor))
+            .Select(g => new SalesCategoryWeightEvolutionPoint(
+                ColombiaTimeHelper.ColombiaCalendarDayStartUtc(new DateTime(g.Key, 1, 1)),
+                g.Sum(x => x.W)))
+            .OrderBy(p => p.BucketStartUtc)
             .ToList();
     }
 
@@ -1523,30 +1550,26 @@ public class OrderRepository : IOrderRepository
         IQueryable<OrderDetail> q,
         CancellationToken cancellationToken)
     {
-        var rows = await q
-            .GroupBy(od => new
+        var raw = await q
+            .Select(od => new
             {
                 od.Product.CategoryId,
                 Name = od.Product.Category.Name ?? string.Empty,
-                Bucket = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Date : od.Order.CreatedAt.Date,
+                od.Order.CreatedAt,
+                od.Order.ReservedFor,
+                W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
-            .Select(g => new
-            {
-                g.Key.CategoryId,
-                g.Key.Name,
-                g.Key.Bucket,
-                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
-            })
-            .OrderBy(x => x.CategoryId)
-            .ThenBy(x => x.Bucket)
             .ToListAsync(cancellationToken);
 
-        return rows
-            .GroupBy(r => (r.CategoryId, r.Name))
+        return raw
+            .GroupBy(x => (x.CategoryId, x.Name))
             .Select(g => new SalesCategoryWeightEvolutionSeries(
                 g.Key.CategoryId,
                 g.Key.Name,
-                g.Select(x => new SalesCategoryWeightEvolutionPoint(x.Bucket, x.TotalWeightGrams))
+                g.GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaCalendarDate(x.CreatedAt, x.ReservedFor))
+                    .Select(gg => new SalesCategoryWeightEvolutionPoint(
+                        ColombiaTimeHelper.ColombiaCalendarDayStartUtc(gg.Key),
+                        gg.Sum(x => x.W)))
                     .OrderBy(p => p.BucketStartUtc)
                     .ToList()))
             .OrderBy(s => s.CategoryName)
@@ -1557,35 +1580,26 @@ public class OrderRepository : IOrderRepository
         IQueryable<OrderDetail> q,
         CancellationToken cancellationToken)
     {
-        var rows = await q
-            .GroupBy(od => new
+        var raw = await q
+            .Select(od => new
             {
                 od.Product.CategoryId,
                 Name = od.Product.Category.Name ?? string.Empty,
-                Year = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Year : od.Order.CreatedAt.Year,
-                Month = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Month : od.Order.CreatedAt.Month,
+                od.Order.CreatedAt,
+                od.Order.ReservedFor,
+                W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
-            .Select(g => new
-            {
-                g.Key.CategoryId,
-                g.Key.Name,
-                g.Key.Year,
-                g.Key.Month,
-                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
-            })
-            .OrderBy(x => x.CategoryId)
-            .ThenBy(x => x.Year)
-            .ThenBy(x => x.Month)
             .ToListAsync(cancellationToken);
 
-        return rows
-            .GroupBy(r => (r.CategoryId, r.Name))
+        return raw
+            .GroupBy(x => (x.CategoryId, x.Name))
             .Select(g => new SalesCategoryWeightEvolutionSeries(
                 g.Key.CategoryId,
                 g.Key.Name,
-                g.Select(x => new SalesCategoryWeightEvolutionPoint(
-                        new DateTime(x.Year, x.Month, 1, 0, 0, 0, DateTimeKind.Utc),
-                        x.TotalWeightGrams))
+                g.GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaYearMonth(x.CreatedAt, x.ReservedFor))
+                    .Select(gg => new SalesCategoryWeightEvolutionPoint(
+                        ColombiaTimeHelper.ColombiaCalendarDayStartUtc(new DateTime(gg.Key.Year, gg.Key.Month, 1)),
+                        gg.Sum(x => x.W)))
                     .OrderBy(p => p.BucketStartUtc)
                     .ToList()))
             .OrderBy(s => s.CategoryName)
@@ -1596,32 +1610,26 @@ public class OrderRepository : IOrderRepository
         IQueryable<OrderDetail> q,
         CancellationToken cancellationToken)
     {
-        var rows = await q
-            .GroupBy(od => new
+        var raw = await q
+            .Select(od => new
             {
                 od.Product.CategoryId,
                 Name = od.Product.Category.Name ?? string.Empty,
-                Year = od.Order.ReservedFor.HasValue ? od.Order.ReservedFor.Value.Year : od.Order.CreatedAt.Year,
+                od.Order.CreatedAt,
+                od.Order.ReservedFor,
+                W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
-            .Select(g => new
-            {
-                g.Key.CategoryId,
-                g.Key.Name,
-                g.Key.Year,
-                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
-            })
-            .OrderBy(x => x.CategoryId)
-            .ThenBy(x => x.Year)
             .ToListAsync(cancellationToken);
 
-        return rows
-            .GroupBy(r => (r.CategoryId, r.Name))
+        return raw
+            .GroupBy(x => (x.CategoryId, x.Name))
             .Select(g => new SalesCategoryWeightEvolutionSeries(
                 g.Key.CategoryId,
                 g.Key.Name,
-                g.Select(x => new SalesCategoryWeightEvolutionPoint(
-                        new DateTime(x.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-                        x.TotalWeightGrams))
+                g.GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaYear(x.CreatedAt, x.ReservedFor))
+                    .Select(gg => new SalesCategoryWeightEvolutionPoint(
+                        ColombiaTimeHelper.ColombiaCalendarDayStartUtc(new DateTime(gg.Key, 1, 1)),
+                        gg.Sum(x => x.W)))
                     .OrderBy(p => p.BucketStartUtc)
                     .ToList()))
             .OrderBy(s => s.CategoryName)

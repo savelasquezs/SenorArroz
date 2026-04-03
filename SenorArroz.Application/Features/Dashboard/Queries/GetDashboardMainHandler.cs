@@ -1,4 +1,5 @@
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
 using SenorArroz.Application.Features.Dashboard.Services;
@@ -28,8 +29,6 @@ public class GetDashboardMainHandler : IRequestHandler<GetDashboardMainQuery, Da
         var branchFilter = ResolveBranchFilter(request.BranchId);
         var activityLimit = Math.Clamp(request.ActivityLimit <= 0 ? 20 : request.ActivityLimit, 1, MaxActivityLimit);
 
-        var now = DateTime.UtcNow;
-
         PrincipalKpiSnapshot kpiDisplay;
         PrincipalKpiSnapshot kpiPrevPeriod;
         PrincipalKpiSnapshot kpiYearCompareCurrent;
@@ -40,20 +39,20 @@ public class GetDashboardMainHandler : IRequestHandler<GetDashboardMainQuery, Da
 
         if (request.KpiFromUtc.HasValue && request.KpiToUtc.HasValue)
         {
-            var kFrom = request.KpiFromUtc.Value;
-            var kTo = request.KpiToUtc.Value;
-            if (kTo < kFrom)
-                (kFrom, kTo) = (kTo, kFrom);
-
-            if ((kTo.Date - kFrom.Date).TotalDays + 1 > MaxKpiRangeDays)
-                kTo = kFrom.Date.AddDays(MaxKpiRangeDays - 1).AddDays(1).AddTicks(-1);
+            var (kFrom, kTo) = ColombiaTimeHelper.NormalizeDashboardRangeUtc(
+                request.KpiFromUtc.Value,
+                request.KpiToUtc.Value,
+                MaxKpiRangeDays);
 
             displayWindowStart = kFrom;
             displayWindowEnd = kTo;
 
-            var duration = kTo - kFrom;
-            var prevTo = kFrom.AddTicks(-1);
-            var prevFrom = prevTo - duration;
+            var d0 = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(kFrom);
+            var d1 = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(kTo);
+            var n = Math.Max(1, (int)(d1 - d0).TotalDays + 1);
+            var prevD1 = d0.AddDays(-1);
+            var prevD0 = prevD1.AddDays(-(n - 1));
+            var (prevFrom, prevTo) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(prevD0, prevD1);
 
             kpiDisplay = await _orderRepository.GetPrincipalKpiSnapshotAsync(branchFilter, kFrom, kTo, cancellationToken);
             kpiPrevPeriod = await _orderRepository.GetPrincipalKpiSnapshotAsync(
@@ -63,28 +62,38 @@ public class GetDashboardMainHandler : IRequestHandler<GetDashboardMainQuery, Da
                 cancellationToken);
 
             kpiYearCompareCurrent = kpiDisplay;
+            var d0Y = d0.AddYears(-1);
+            var d1Y = d1.AddYears(-1);
+            var (yPrevFrom, yPrevTo) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(d0Y, d1Y);
             kpiYearComparePrev = await _orderRepository.GetPrincipalKpiSnapshotAsync(
                 branchFilter,
-                kFrom.AddYears(-1),
-                kTo.AddYears(-1),
+                yPrevFrom,
+                yPrevTo,
                 cancellationToken);
         }
         else
         {
-            var weekEnd = now;
-            var weekStart = now.AddDays(-7);
-            displayWindowStart = weekStart;
-            displayWindowEnd = weekEnd;
+            var colToday = ColombiaTimeHelper.GetNowInColombia().Date;
+            var weekD0 = colToday.AddDays(-6);
+            (displayWindowStart, displayWindowEnd) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(weekD0, colToday);
 
-            var prevWeekEnd = weekStart;
-            var prevWeekStart = weekStart.AddDays(-7);
+            var prevWeekD1 = weekD0.AddDays(-1);
+            var prevWeekD0 = prevWeekD1.AddDays(-6);
+            var (prevWeekStart, prevWeekEnd) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(prevWeekD0, prevWeekD1);
 
-            var yearEnd = now;
-            var yearStart = now.AddDays(-365);
-            var prevYearEnd = yearStart;
-            var prevYearStart = yearStart.AddDays(-365);
+            var yearD1 = colToday;
+            var yearD0 = yearD1.AddDays(-364);
+            var (yearStartUtc, yearEndUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(yearD0, yearD1);
+            var prevYearD1 = yearD0.AddDays(-1);
+            var prevYearD0 = prevYearD1.AddDays(-364);
+            var (prevYearStartUtc, prevYearEndUtc) =
+                ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(prevYearD0, prevYearD1);
 
-            kpiDisplay = await _orderRepository.GetPrincipalKpiSnapshotAsync(branchFilter, weekStart, weekEnd, cancellationToken);
+            kpiDisplay = await _orderRepository.GetPrincipalKpiSnapshotAsync(
+                branchFilter,
+                displayWindowStart,
+                displayWindowEnd,
+                cancellationToken);
             kpiPrevPeriod = await _orderRepository.GetPrincipalKpiSnapshotAsync(
                 branchFilter,
                 prevWeekStart,
@@ -93,13 +102,13 @@ public class GetDashboardMainHandler : IRequestHandler<GetDashboardMainQuery, Da
 
             kpiYearCompareCurrent = await _orderRepository.GetPrincipalKpiSnapshotAsync(
                 branchFilter,
-                yearStart,
-                yearEnd,
+                yearStartUtc,
+                yearEndUtc,
                 cancellationToken);
             kpiYearComparePrev = await _orderRepository.GetPrincipalKpiSnapshotAsync(
                 branchFilter,
-                prevYearStart,
-                prevYearEnd,
+                prevYearStartUtc,
+                prevYearEndUtc,
                 cancellationToken);
         }
 
