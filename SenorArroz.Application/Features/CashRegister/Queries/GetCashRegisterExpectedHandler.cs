@@ -70,13 +70,6 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 (decimal)(eh.Total ?? 0) - eh.ExpenseBankPayments.Sum(ebp => ebp.Amount),
                 cancellationToken);
 
-        // Abonos de domiciliarios en efectivo (ingreso a caja)
-        var advancesCash = await _context.DeliverymanAdvances
-            .Where(a => a.BranchId == branchId
-                && a.CreatedAt > since && a.CreatedAt <= now
-                && a.PaymentMethod == DeliverymanAdvancePaymentMethod.Cash)
-            .SumAsync(a => a.Amount, cancellationToken);
-
         // Abonos en efectivo de reservas recibidos en este período
         var cashDeposits = await _context.ReservationDeposits
             .Where(d => d.BranchId == branchId
@@ -94,7 +87,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 && d.Order.UpdatedAt > since && d.Order.UpdatedAt <= now)
             .SumAsync(d => d.Amount, cancellationToken);
 
-        var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses - advancesCash;
+        var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses;
 
         // --- BANCOS ---
         bool isAdmin = _currentUser.Role == "superadmin" || _currentUser.Role == "admin";
@@ -173,7 +166,6 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             CashFromOrders = cashFromOrders,
             CashDeposits = cashDeposits,
             CashExpenses = cashExpenses,
-            Advances = advancesCash,
             AsOf = now,
             LastClosureAt = lastClosure?.ClosedAt,
             Banks = bankExpected

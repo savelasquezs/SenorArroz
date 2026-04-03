@@ -684,9 +684,12 @@ CREATE INDEX IF NOT EXISTS "IX_cash_closure_informal_loan_cash_closure_id" ON ca
 -- FUNCIONES
 -- =============================================================================
 
+-- Respeta total de línea enviado por la aplicación (factura); solo calcula si viene NULL (legacy / inserciones sin total).
 CREATE OR REPLACE FUNCTION public.calculate_expense_detail_total() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    NEW.total = NEW.quantity * NEW.amount;
+    IF NEW.total IS NULL THEN
+        NEW.total := ROUND((NEW.quantity * NEW.amount)::numeric, 2);
+    END IF;
     RETURN NEW;
 END; $$;
 
