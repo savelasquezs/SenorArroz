@@ -98,12 +98,14 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             DeliverymanId = request.ExpenseHeader.DeliverymanId,
             VatAmount = vatAmount,
             Total = grossTotal,
+            Notes = NormalizeExpenseNote(request.ExpenseHeader.Notes, 2000),
             ExpenseDetails = request.ExpenseHeader.ExpenseDetails.Select(ed => new ExpenseDetail
             {
                 ExpenseId = ed.ExpenseId,
                 Quantity = ed.Quantity,
                 Amount = ed.Amount,
-                Total = ExpenseInvoiceTotalsHelper.ResolveLineTotal(ed.Quantity, ed.Amount, ed.Total)
+                Total = ExpenseInvoiceTotalsHelper.ResolveLineTotal(ed.Quantity, ed.Amount, ed.Total),
+                Notes = NormalizeExpenseNote(ed.Notes, 1000),
             }).ToList(),
             ExpenseBankPayments = request.ExpenseHeader.ExpenseBankPayments?.Select(ebp => new ExpenseBankPayment
             {
@@ -190,6 +192,14 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
                 supplierExpense.LastUnitPrice = item.UnitAmount;
             }
         }
+    }
+
+    private static string? NormalizeExpenseNote(string? notes, int maxLen)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+            return null;
+        var t = notes.Trim();
+        return t.Length <= maxLen ? t : t[..maxLen];
     }
 }
 

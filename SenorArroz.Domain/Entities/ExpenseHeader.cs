@@ -16,6 +16,9 @@ public class ExpenseHeader : BaseEntity
     /// <summary>IVA en pesos cuando aplica (p. ej. 19 % sobre subtotal de líneas).</summary>
     public decimal VatAmount { get; set; }
 
+    /// <summary>Notas generales del comprobante (opcional).</summary>
+    public string? Notes { get; set; }
+
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;
     public virtual Supplier Supplier { get; set; } = null!;

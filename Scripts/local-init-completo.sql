@@ -196,6 +196,7 @@ CREATE TABLE IF NOT EXISTS expense_header (
     created_by_id integer NOT NULL,
     deliveryman_id integer,
     total numeric(12,2),
+    notes character varying(2000),
     created_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     updated_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     CONSTRAINT "PK_expense_header" PRIMARY KEY (id),
@@ -297,6 +298,7 @@ CREATE TABLE IF NOT EXISTS expense_detail (
     quantity numeric(12,2) NOT NULL DEFAULT 1,
     amount integer NOT NULL,
     total numeric(12,2),
+    notes character varying(1000),
     created_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     updated_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     CONSTRAINT "PK_expense_detail" PRIMARY KEY (id),
@@ -1311,6 +1313,12 @@ UPDATE branch_print_settings SET paper_width_mm = paper_width_mm_kitchen WHERE p
 -- Gastos: IVA opcional (total = suma líneas + vat_amount). Ver Scripts/add-expense-header-vat-amount.sql para producción.
 ALTER TABLE public.expense_header
     ADD COLUMN IF NOT EXISTS vat_amount numeric(12, 2) NOT NULL DEFAULT 0;
+
+-- Notas en gastos (cabecera y líneas). Ver Scripts/add-expense-notes.sql para producción.
+ALTER TABLE public.expense_header
+    ADD COLUMN IF NOT EXISTS notes character varying(2000);
+ALTER TABLE public.expense_detail
+    ADD COLUMN IF NOT EXISTS notes character varying(1000);
 
 CREATE OR REPLACE FUNCTION public.recalc_expense_header_total(p_header_id integer) RETURNS void
 LANGUAGE plpgsql

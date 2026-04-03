@@ -12,6 +12,10 @@ public class ExpenseHeaderDto
 
     /// <summary>IVA en pesos (19 % del subtotal de líneas cuando aplica).</summary>
     public decimal VatAmount { get; set; }
+
+    /// <summary>Notas generales del comprobante.</summary>
+    public string? Notes { get; set; }
+
     public int CreatedById { get; set; }
     public string CreatedByName { get; set; } = string.Empty;
     public int? DeliverymanId { get; set; }

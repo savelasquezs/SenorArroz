@@ -12,6 +12,9 @@ public class CreateExpenseHeaderDto
     public List<CreateExpenseDetailDto> ExpenseDetails { get; set; } = new();
     public List<CreateExpenseBankPaymentDto>? ExpenseBankPayments { get; set; }
 
+    /// <summary>Notas generales del comprobante (opcional).</summary>
+    public string? Notes { get; set; }
+
     /// <summary>Incluir IVA 19 % sobre el subtotal de las líneas (total factura = subtotal + IVA).</summary>
     public bool IncludeVat { get; set; }
 }
@@ -24,6 +27,8 @@ public class CreateExpenseDetailDto
     /// <summary>Total de línea según factura (prioridad sobre cantidad × unitario).</summary>
     [JsonPropertyName("total")]
     public decimal? Total { get; set; }
+
+    public string? Notes { get; set; }
 }
 
 public class CreateExpenseBankPaymentDto

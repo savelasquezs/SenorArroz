@@ -10,6 +10,9 @@ public class ExpenseDetail : BaseEntity
     public int Amount { get; set; }
     public decimal? Total { get; set; } // Total por línea (cantidad × valor unitario)
 
+    /// <summary>Notas de la línea (opcional).</summary>
+    public string? Notes { get; set; }
+
     // Navigation Properties
     public virtual ExpenseHeader Header { get; set; } = null!;
     public virtual Expense Expense { get; set; } = null!;

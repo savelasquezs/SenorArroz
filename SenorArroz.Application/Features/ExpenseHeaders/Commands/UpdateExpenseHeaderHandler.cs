@@ -67,6 +67,8 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             expenseHeader.SupplierId = request.ExpenseHeader.SupplierId.Value;
         }
 
+        expenseHeader.Notes = NormalizeExpenseNote(request.ExpenseHeader.Notes, 2000);
+
         var newDetailInfos = new List<(int ExpenseId, decimal UnitAmount, int Quantity)>();
 
         // Manejar detalles: actualizar existentes, crear nuevos, eliminar los que no están en la lista
@@ -117,6 +119,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                             detailDto.Quantity,
                             detailDto.Amount,
                             detailDto.Total);
+                        existingDetail.Notes = NormalizeExpenseNote(detailDto.Notes, 1000);
                     }
                 }
                 else
@@ -130,7 +133,8 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                         Total = ExpenseInvoiceTotalsHelper.ResolveLineTotal(
                             detailDto.Quantity,
                             detailDto.Amount,
-                            detailDto.Total)
+                            detailDto.Total),
+                        Notes = NormalizeExpenseNote(detailDto.Notes, 1000),
                     };
                     expenseHeader.ExpenseDetails.Add(newDetail);
                     newDetailInfos.Add((newDetail.ExpenseId, (decimal)newDetail.Amount, (int)Math.Ceiling(newDetail.Quantity)));
@@ -288,6 +292,14 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                 supplierExpense.LastUnitPrice = item.UnitAmount;
             }
         }
+    }
+
+    private static string? NormalizeExpenseNote(string? notes, int maxLen)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+            return null;
+        var t = notes.Trim();
+        return t.Length <= maxLen ? t : t[..maxLen];
     }
 }
 

@@ -23,6 +23,10 @@ public class ExpenseHeaderConfiguration : IEntityTypeConfiguration<ExpenseHeader
             .HasColumnType("numeric(12,2)")
             .HasDefaultValue(0m);
 
+        builder.Property(eh => eh.Notes)
+            .HasColumnName("notes")
+            .HasMaxLength(2000);
+
         builder.Property(eh => eh.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
         builder.Property(eh => eh.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
 

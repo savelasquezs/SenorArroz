@@ -19,6 +19,10 @@ public class ExpenseDetailConfiguration : IEntityTypeConfiguration<ExpenseDetail
         builder.Property(ed => ed.Amount).HasColumnName("amount").IsRequired();
         builder.Property(ed => ed.Total).HasColumnName("total").HasColumnType("numeric(12,2)");
 
+        builder.Property(ed => ed.Notes)
+            .HasColumnName("notes")
+            .HasMaxLength(1000);
+
         builder.Property(ed => ed.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
         builder.Property(ed => ed.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
 

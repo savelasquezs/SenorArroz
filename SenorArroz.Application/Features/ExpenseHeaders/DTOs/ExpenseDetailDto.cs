@@ -11,6 +11,9 @@ public class ExpenseDetailDto
     public decimal Quantity { get; set; }
     public int Amount { get; set; }
     public decimal? Total { get; set; }
+
+    public string? Notes { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

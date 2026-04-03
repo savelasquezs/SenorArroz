@@ -5,6 +5,9 @@ namespace SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 public class UpdateExpenseHeaderDto
 {
     public int? SupplierId { get; set; }
+
+    public string? Notes { get; set; }
+
     public List<UpdateExpenseDetailDto>? ExpenseDetails { get; set; }
     public List<CreateExpenseBankPaymentDto>? ExpenseBankPayments { get; set; }
 
@@ -21,6 +24,8 @@ public class UpdateExpenseDetailDto
     /// <summary>Total de línea según factura (prioridad sobre cantidad × unitario).</summary>
     [JsonPropertyName("total")]
     public decimal? Total { get; set; }
+
+    public string? Notes { get; set; }
 }
 
 
