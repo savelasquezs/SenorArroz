@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 
 public class CreateExpenseHeaderDto
@@ -19,6 +21,8 @@ public class CreateExpenseDetailDto
     public int ExpenseId { get; set; }
     public decimal Quantity { get; set; }
     public int Amount { get; set; }
+    /// <summary>Total de línea según factura (prioridad sobre cantidad × unitario).</summary>
+    [JsonPropertyName("total")]
     public decimal? Total { get; set; }
 }
 

@@ -113,7 +113,10 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                         existingDetail.ExpenseId = detailDto.ExpenseId;
                         existingDetail.Quantity = detailDto.Quantity;
                         existingDetail.Amount = detailDto.Amount;
-                        existingDetail.Total = detailDto.Total ?? Math.Round(detailDto.Quantity * detailDto.Amount, 2, MidpointRounding.AwayFromZero);
+                        existingDetail.Total = ExpenseInvoiceTotalsHelper.ResolveLineTotal(
+                            detailDto.Quantity,
+                            detailDto.Amount,
+                            detailDto.Total);
                     }
                 }
                 else
@@ -124,7 +127,10 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                         ExpenseId = detailDto.ExpenseId,
                         Quantity = detailDto.Quantity,
                         Amount = detailDto.Amount,
-                        Total = detailDto.Total ?? Math.Round(detailDto.Quantity * detailDto.Amount, 2, MidpointRounding.AwayFromZero)
+                        Total = ExpenseInvoiceTotalsHelper.ResolveLineTotal(
+                            detailDto.Quantity,
+                            detailDto.Amount,
+                            detailDto.Total)
                     };
                     expenseHeader.ExpenseDetails.Add(newDetail);
                     newDetailInfos.Add((newDetail.ExpenseId, (decimal)newDetail.Amount, (int)Math.Ceiling(newDetail.Quantity)));

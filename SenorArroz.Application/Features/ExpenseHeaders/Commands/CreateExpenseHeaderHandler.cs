@@ -103,7 +103,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
                 ExpenseId = ed.ExpenseId,
                 Quantity = ed.Quantity,
                 Amount = ed.Amount,
-                Total = ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero)
+                Total = ExpenseInvoiceTotalsHelper.ResolveLineTotal(ed.Quantity, ed.Amount, ed.Total)
             }).ToList(),
             ExpenseBankPayments = request.ExpenseHeader.ExpenseBankPayments?.Select(ebp => new ExpenseBankPayment
             {
