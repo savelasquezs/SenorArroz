@@ -131,15 +131,23 @@ public class OrderRepository : IOrderRepository
         if (forKitchen)
         {
             var now = DateTime.UtcNow;
+            var todayStart = new DateTime(now.Year, now.Month, now.Day, 0, 0, 0, DateTimeKind.Utc);
+            var todayEnd = todayStart.AddDays(1);
+
             query = query.Where(o => o.Status == OrderStatus.Taken
                 || o.Status == OrderStatus.InPreparation
                 || o.Status == OrderStatus.Ready);
 
             // Hora en que el pedido debe entrar a cocina: prepare_at, o reserved_for - 1h (misma regla que creación).
-            // Mismo criterio con rango de día operativo o sin él: no anticipar reservas aunque reserved_for sea "hoy".
+            // Reservas del día calendario UTC aún en Taken: visibles en cocina (pestaña agenda) aunque prepare_at sea más tarde.
             query = query.Where(o =>
                 (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) == null
-                || (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) <= now);
+                || (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) <= now
+                || (o.Type == OrderType.Reservation
+                    && o.Status == OrderStatus.Taken
+                    && (
+                        (o.ReservedFor.HasValue && o.ReservedFor.Value >= todayStart && o.ReservedFor.Value < todayEnd)
+                        || (!o.ReservedFor.HasValue && o.PrepareAt.HasValue && o.PrepareAt.Value >= todayStart && o.PrepareAt.Value < todayEnd))));
         }
 
         // Aplicar ordenamiento
