@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Application.Features.CashRegister.Commands;
@@ -10,13 +11,16 @@ namespace SenorArroz.Application.Features.CashRegister.Commands;
 public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand, CashClosureDto>
 {
     private readonly ICashRegisterClosureRepository _closureRepository;
+    private readonly IApplicationDbContext _context;
     private readonly ICurrentUser _currentUser;
 
     public CloseCashRegisterHandler(
         ICashRegisterClosureRepository closureRepository,
+        IApplicationDbContext context,
         ICurrentUser currentUser)
     {
         _closureRepository = closureRepository;
+        _context = context;
         _currentUser = currentUser;
     }
 
@@ -24,6 +28,17 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
     {
         int branchId = request.BranchId ?? _currentUser.BranchId;
         var dto = request.Dto;
+
+        var undelivered = await _context.Orders
+            .Where(o => o.BranchId == branchId
+                && o.Status != OrderStatus.Delivered
+                && o.Status != OrderStatus.Cancelled)
+            .CountAsync(cancellationToken);
+        if (undelivered > 0)
+        {
+            throw new InvalidOperationException(
+                $"No se puede cerrar caja: hay {undelivered} pedido(s) sin entregar. Entrega o cancela esos pedidos antes de cuadrar.");
+        }
 
         // Validar que la diferencia de todos los bancos es 0
         foreach (var recon in dto.BankReconciliations)

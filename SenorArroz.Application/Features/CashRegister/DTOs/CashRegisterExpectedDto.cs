@@ -14,6 +14,11 @@ public class CashRegisterExpectedDto
     /// </summary>
     public decimal AdvancesBankTransfer { get; set; }
 
+    /// <summary>
+    /// Pedidos de la sucursal que aún no están entregados ni cancelados (no se puede cerrar caja si hay alguno).
+    /// </summary>
+    public int UndeliveredOrdersCount { get; set; }
+
     public DateTime AsOf { get; set; }
     public DateTime? LastClosureAt { get; set; }
     public List<BankExpectedBalanceDto> Banks { get; set; } = new();

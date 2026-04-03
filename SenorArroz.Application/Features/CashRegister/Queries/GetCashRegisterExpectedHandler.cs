@@ -98,6 +98,12 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses
             - advancesBankTransfer;
 
+        var undeliveredOrdersCount = await _context.Orders
+            .Where(o => o.BranchId == branchId
+                && o.Status != OrderStatus.Delivered
+                && o.Status != OrderStatus.Cancelled)
+            .CountAsync(cancellationToken);
+
         // --- BANCOS ---
         bool isAdmin = _currentUser.Role == "superadmin" || _currentUser.Role == "admin";
         var banks = await _bankRepository.GetByBranchIdAsync(branchId, excludeHiddenBanks: !isAdmin);
@@ -176,6 +182,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             CashDeposits = cashDeposits,
             CashExpenses = cashExpenses,
             AdvancesBankTransfer = advancesBankTransfer,
+            UndeliveredOrdersCount = undeliveredOrdersCount,
             AsOf = now,
             LastClosureAt = lastClosure?.ClosedAt,
             Banks = bankExpected
