@@ -22,12 +22,11 @@ namespace SenorArroz.Application.Features.Users.Commands
         public async Task<UserDto> Handle(GetUserByIdQuery request, CancellationToken cancellationToken)
         {
             // Buscar usuario por ID
-            var user = await _userRepository.GetByIdAsync(request.UserId, cancellationToken);
+            var user = await _userRepository.GetByIdAsync(request.Id, cancellationToken);
 
-            // Si no existe, lanzar excepción
             if (user == null)
             {
-                throw new NotFoundException($"Usuario con ID {request.UserId} no encontrado");
+                throw new NotFoundException($"Usuario con ID {request.Id} no encontrado");
             }
 
             // Mapear a DTO
