@@ -208,7 +208,7 @@ public class CustomersController : ControllerBase
     /// <param name="updateAddressDto">Datos a actualizar</param>
     /// <returns>Dirección actualizada</returns>
     [HttpPut("{customerId}/addresses/{addressId}")]
-    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier, Deliveryman")]
     public async Task<ActionResult<ApiResponse<CustomerAddressDto>>> UpdateCustomerAddress(
         int customerId,
         int addressId,
