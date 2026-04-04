@@ -38,7 +38,9 @@ public class BranchMappingProfile : Profile
         // User -> BranchUserDto
         CreateMap<User, BranchUserDto>()
             .ForMember(dest => dest.Role, opt => opt.MapFrom(src => src.Role.ToString()))
-            .ForMember(dest => dest.Active, opt => opt.MapFrom(src => src.Active));
+            .ForMember(dest => dest.Active, opt => opt.MapFrom(src => src.Active))
+            .ForMember(dest => dest.PayrollExpenseName,
+                opt => opt.MapFrom(src => src.PayrollExpense != null ? src.PayrollExpense.Name : null));
 
         // Commands
         CreateMap<CreateBranchDto, CreateBranchCommand>();

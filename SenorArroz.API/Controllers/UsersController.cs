@@ -66,6 +66,21 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
+    /// Resumen de nómina (líneas de gasto vinculadas + delivery para domiciliarios). Solo Admin/Superadmin.
+    /// </summary>
+    [HttpGet("{id:int}/payroll-insights")]
+    [Authorize(Roles = "Superadmin,Admin")]
+    public async Task<ActionResult<UserPayrollInsightsDto>> GetPayrollInsights(
+        int id,
+        [FromQuery] string from,
+        [FromQuery] string to,
+        [FromQuery] string seriesGranularity = "day")
+    {
+        var result = await _mediator.Send(new GetUserPayrollInsightsQuery(id, from, to, seriesGranularity));
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Crea un nuevo usuario
     /// </summary>
     [HttpPost]

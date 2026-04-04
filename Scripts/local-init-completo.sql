@@ -158,6 +158,7 @@ CREATE TABLE IF NOT EXISTS "user" (
     password_hash character varying(255) NOT NULL,
     active boolean NOT NULL DEFAULT TRUE,
     profile_image_url character varying(300),
+    payroll_expense_id integer,
     created_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     updated_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     CONSTRAINT "PK_user" PRIMARY KEY (id),
@@ -174,6 +175,11 @@ CREATE TABLE IF NOT EXISTS expense (
     CONSTRAINT "PK_expense" PRIMARY KEY (id),
     CONSTRAINT "FK_expense_expense_category_category_id" FOREIGN KEY (category_id) REFERENCES expense_category (id) ON DELETE RESTRICT
 );
+
+ALTER TABLE "user" DROP CONSTRAINT IF EXISTS "FK_user_expense_payroll_expense_id";
+ALTER TABLE "user" ADD CONSTRAINT "FK_user_expense_payroll_expense_id" FOREIGN KEY (payroll_expense_id) REFERENCES expense (id) ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_user_payroll_expense_id_unique" ON "user" (payroll_expense_id) WHERE payroll_expense_id IS NOT NULL;
 
 -- Imputación de gastos de catálogo a categorías/productos de menú (reparto por gramos vendidos; target_type 0=categoría, 1=producto)
 CREATE TABLE IF NOT EXISTS expense_menu_target (

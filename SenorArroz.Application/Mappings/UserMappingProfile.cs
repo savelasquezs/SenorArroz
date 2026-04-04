@@ -12,7 +12,9 @@ namespace SenorArroz.Application.Mappings
             // User -> UserDto (para responses)
             CreateMap<User, UserDto>()
                 .ForMember(dest => dest.BranchName,
-                           opt => opt.MapFrom(src => src.Branch != null ? src.Branch.Name : string.Empty));
+                           opt => opt.MapFrom(src => src.Branch != null ? src.Branch.Name : string.Empty))
+                .ForMember(dest => dest.PayrollExpenseName,
+                           opt => opt.MapFrom(src => src.PayrollExpense != null ? src.PayrollExpense.Name : null));
 
             // CreateUserDto -> User (para crear)
             CreateMap<CreateUserDto, User>()
@@ -20,7 +22,8 @@ namespace SenorArroz.Application.Mappings
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.Branch, opt => opt.Ignore())
-                .ForMember(dest => dest.PasswordHash, opt => opt.Ignore()) // Se asigna en el handler
+                .ForMember(dest => dest.PasswordHash, opt => opt.Ignore())
+                .ForMember(dest => dest.PayrollExpense, opt => opt.Ignore())
                 .ForMember(dest => dest.Active, opt => opt.MapFrom(src => true));
 
             // UpdateUserDto -> User (para actualizar)
@@ -29,8 +32,9 @@ namespace SenorArroz.Application.Mappings
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.Branch, opt => opt.Ignore())
-                .ForMember(dest => dest.BranchId, opt => opt.Ignore()) // No se puede cambiar la sucursal
-                .ForMember(dest => dest.PasswordHash, opt => opt.Ignore()); // Password se maneja por separado
+                .ForMember(dest => dest.BranchId, opt => opt.Ignore())
+                .ForMember(dest => dest.PasswordHash, opt => opt.Ignore())
+                .ForMember(dest => dest.PayrollExpense, opt => opt.Ignore());
         }
     }
 }

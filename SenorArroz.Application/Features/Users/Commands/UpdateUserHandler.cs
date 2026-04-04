@@ -3,6 +3,7 @@ using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.Users;
 using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -43,6 +44,12 @@ namespace SenorArroz.Application.Features.Users.Commands
                 throw new BusinessException($"Ya existe otro usuario con el email '{request.UserData.Email}'");
             }
 
+            await UserPayrollExpenseRules.ValidatePayrollExpenseAssignmentAsync(
+                request.UserData.PayrollExpenseId,
+                request.UserId,
+                _context,
+                cancellationToken);
+
             // 3. Mapear los cambios al usuario existente (BranchId se ignora en el perfil de AutoMapper)
             _mapper.Map(request.UserData, existingUser);
 
@@ -64,10 +71,10 @@ namespace SenorArroz.Application.Features.Users.Commands
             }
 
             // 5. Actualizar en la base de datos
-            var updatedUser = await _userRepository.UpdateAsync(existingUser, cancellationToken);
+            await _userRepository.UpdateAsync(existingUser, cancellationToken);
 
-            // 6. Retornar DTO
-            return _mapper.Map<UserDto>(updatedUser);
+            var reloaded = await _userRepository.GetByIdAsync(request.UserId, cancellationToken);
+            return _mapper.Map<UserDto>(reloaded!);
         }
     }
 

@@ -20,7 +20,8 @@ public class UserRepository : IUserRepository
     public async Task<User?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Users
-            .Include(u => u.Branch) // Incluye datos de la sucursal
+            .Include(u => u.Branch)
+            .Include(u => u.PayrollExpense)
             .FirstOrDefaultAsync(u => u.Id == id , cancellationToken);
     }
 
@@ -37,7 +38,7 @@ public class UserRepository : IUserRepository
         IQueryable<User> query = _context.Users.AsQueryable();
 
         // 👇 Ahora sí aplicamos el Include sobre IQueryable<User>
-        query = query.Include(u => u.Branch);
+        query = query.Include(u => u.Branch).Include(u => u.PayrollExpense);
 
         if (branchId.HasValue)
         {

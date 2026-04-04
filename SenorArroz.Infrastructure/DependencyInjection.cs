@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.Configure<GoogleMapsRouteOptions>(configuration.GetSection(GoogleMapsRouteOptions.SectionName));
         services.Configure<ApiPublicOptions>(configuration.GetSection(ApiPublicOptions.SectionName));
         services.Configure<BrandingOptions>(configuration.GetSection(BrandingOptions.SectionName));
+        services.Configure<DeliveryPayrollOptions>(configuration.GetSection(DeliveryPayrollOptions.SectionName));
 
         // Database
         services.AddDbContext<ApplicationDbContext>(options =>

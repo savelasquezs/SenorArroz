@@ -90,7 +90,7 @@ public class BranchRepository : IBranchRepository
         // Sin Customers: el DTO no los serializa y GetBranchByIdHandler asigna totales vía consultas agregadas.
         // Incluirlos cargaba miles de filas y provocaba timeouts (p. ej. junto al prefetch del layout).
         return await _context.Branches
-            .Include(b => b.Users)
+            .Include(b => b.Users).ThenInclude(u => u.PayrollExpense)
             .Include(b => b.Neighborhoods)
             .Include(b => b.PrintSettings)
             .FirstOrDefaultAsync(b => b.Id == id);

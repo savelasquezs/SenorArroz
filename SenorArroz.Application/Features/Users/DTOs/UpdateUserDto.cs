@@ -12,5 +12,7 @@ namespace SenorArroz.Application.Features.Users.DTOs
 
         /// <summary>Nueva sucursal (solo aplica si el actor es superadmin).</summary>
         public int? BranchId { get; set; }
+
+        public int? PayrollExpenseId { get; set; }
     }
 }

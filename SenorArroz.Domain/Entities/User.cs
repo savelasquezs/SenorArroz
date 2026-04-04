@@ -14,8 +14,12 @@ public class User : BaseEntity
     public bool Active { get; set; } = true;
     public string? ProfileImageUrl { get; set; }
 
+    /// <summary>Ítem de catálogo <c>expense</c> usado solo para préstamos/gastos de quincena de esta persona.</summary>
+    public int? PayrollExpenseId { get; set; }
+
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;
+    public virtual Expense? PayrollExpense { get; set; }
     public virtual ICollection<Order> TakenOrders { get; set; } = new List<Order>();
     public virtual ICollection<Order> DeliveryOrders { get; set; } = new List<Order>();
     public virtual ICollection<ExpenseHeader> CreatedExpenseHeaders { get; set; } = new List<ExpenseHeader>();

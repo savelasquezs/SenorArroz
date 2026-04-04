@@ -2,6 +2,7 @@
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.Users;
 using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -17,17 +18,20 @@ namespace SenorArroz.Application.Features.Users.Commands
         private readonly IPasswordService _passwordService;
         private readonly IMapper _mapper;
         private readonly ICurrentUser _currentUser;
+        private readonly IApplicationDbContext _db;
 
         public CreateUserHandler(
             IUserRepository userRepository,
             IPasswordService passwordService,
             IMapper mapper,
-            ICurrentUser currentUser)
+            ICurrentUser currentUser,
+            IApplicationDbContext db)
         {
             _userRepository = userRepository;
             _passwordService = passwordService;
             _mapper = mapper;
             _currentUser = currentUser;
+            _db = db;
         }
 
         public async Task<UserDto> Handle(CreateUserCommand request, CancellationToken cancellationToken)
@@ -105,6 +109,11 @@ namespace SenorArroz.Application.Features.Users.Commands
                 throw new BusinessException("No tienes permisos para crear usuarios.");
             }
 
+            await UserPayrollExpenseRules.ValidatePayrollExpenseAssignmentAsync(
+                request.UserData.PayrollExpenseId,
+                excludeUserId: null,
+                _db,
+                cancellationToken);
 
             // 2. Mapear DTO a entidad
             var user = _mapper.Map<User>(request.UserData);
@@ -115,8 +124,8 @@ namespace SenorArroz.Application.Features.Users.Commands
             // 4. Guardar en la base de datos
             var createdUser = await _userRepository.AddAsync(user, cancellationToken);
 
-            // 5. Mapear entidad a DTO para la respuesta
-            return _mapper.Map<UserDto>(createdUser);
+            var reloaded = await _userRepository.GetByIdAsync(createdUser.Id, cancellationToken);
+            return _mapper.Map<UserDto>(reloaded ?? createdUser);
         }
     }
 
