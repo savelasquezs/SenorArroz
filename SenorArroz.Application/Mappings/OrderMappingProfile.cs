@@ -35,7 +35,16 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.DeliveryRoutePlanningWarnings, opt => opt.MapFrom(src =>
                 src.DeliveryRoute != null ? src.DeliveryRoute.PlanningWarnings : null))
             .ForMember(dest => dest.BankPayments, opt => opt.MapFrom(src => src.BankPayments))
-            .ForMember(dest => dest.AppPayments, opt => opt.MapFrom(src => src.AppPayments));
+            .ForMember(dest => dest.AppPayments, opt => opt.MapFrom(src => src.AppPayments))
+            .ForMember(dest => dest.SummaryLines, opt => opt.MapFrom(src =>
+                src.OrderDetails
+                    .OrderBy(d => d.Id)
+                    .Select(d => new OrderLineSummaryDto
+                    {
+                        ProductName = d.Product != null ? d.Product.Name : string.Empty,
+                        Quantity = d.Quantity
+                    })
+                    .ToList()));
 
         // Order -> OrderWithDetailsDto
         CreateMap<Order, OrderWithDetailsDto>()

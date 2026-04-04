@@ -798,6 +798,7 @@ public class OrderRepository : IOrderRepository
             toDate = DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
 
         var query = _context.Orders
+            .AsSplitQuery()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -808,6 +809,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.DeliveryRoute)
             .Include(o => o.BankPayments)
             .Include(o => o.AppPayments)
+            .Include(o => o.OrderDetails)
+                .ThenInclude(od => od.Product)
             .AsQueryable();
 
         // Aplicar filtros

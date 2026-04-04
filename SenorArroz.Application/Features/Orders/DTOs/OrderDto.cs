@@ -51,4 +51,6 @@ public class OrderDto
     public List<BankPaymentDto> BankPayments { get; set; } = new();
     public List<AppPaymentDto> AppPayments { get; set; } = new();
     public decimal TotalDeposited { get; set; }
+    /// <summary>Líneas resumidas (p. ej. búsqueda/listado con detalles cargados).</summary>
+    public List<OrderLineSummaryDto> SummaryLines { get; set; } = new();
 }
