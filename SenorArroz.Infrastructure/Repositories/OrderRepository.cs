@@ -503,14 +503,17 @@ public class OrderRepository : IOrderRepository
 
     public async Task<List<Order>> GetReservationsForDateAsync(DateTime date, int? branchId = null)
     {
+        var day = date.Date;
+        var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(day, day);
         var query = _context.Orders
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
             .Include(o => o.Address)
-            .Where(o => o.Type == OrderType.Reservation && 
-                      o.ReservedFor.HasValue && 
-                      o.ReservedFor.Value.Date == date.Date)
+            .Where(o => o.Type == OrderType.Reservation &&
+                      o.ReservedFor.HasValue &&
+                      o.ReservedFor.Value >= fromUtc &&
+                      o.ReservedFor.Value <= toUtc)
             .AsQueryable();
 
         if (branchId.HasValue)
@@ -857,12 +860,11 @@ public class OrderRepository : IOrderRepository
 
         if (excludeFutureReservations)
         {
-            // Fin del día en Colombia (UTC-5) = inicio del día siguiente en UTC
-            var startOfTomorrowUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(1), DateTimeKind.Utc);
+            var startOfTomorrowColombiaUtc = ColombiaTimeHelper.GetColombiaStartOfTomorrowUtc();
             query = query.Where(o =>
                 o.Type != OrderType.Reservation ||
                 o.ReservedFor == null ||
-                o.ReservedFor < startOfTomorrowUtc);
+                o.ReservedFor < startOfTomorrowColombiaUtc);
         }
 
         if (minAmount.HasValue)

@@ -77,6 +77,17 @@ public static class ColombiaTimeHelper
     }
 
     /// <summary>
+    /// Inicio del día calendario siguiente en Colombia, en UTC (p. ej. para excluir reservas “futuras” respecto a hoy en Bogotá).
+    /// </summary>
+    public static DateTime GetColombiaStartOfTomorrowUtc()
+    {
+        var nextColombiaDay = GetNowInColombia().Date.AddDays(1);
+        var unspecified = DateTime.SpecifyKind(nextColombiaDay, DateTimeKind.Unspecified);
+        var utc = ConvertColombiaToUtc(unspecified);
+        return DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+    }
+
+    /// <summary>
     /// Fecha de calendario en Colombia (medianoche local interpretada como fecha-only, Kind Unspecified).
     /// </summary>
     public static DateTime ConvertUtcToColombiaCalendarDate(DateTime utcInstant)
