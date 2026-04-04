@@ -75,7 +75,8 @@ public interface IOrderRepository
         DateTime? reservedFromDate = null,
         DateTime? reservedToDate = null,
         bool excludeFutureReservations = false,
-        int? bankId = null
+        int? bankId = null,
+        int? neighborhoodId = null
     );
     
     // Reservas

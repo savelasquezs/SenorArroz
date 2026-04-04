@@ -336,11 +336,46 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
+    /// Barrios distintos donde el domiciliario tuvo pedidos en el mismo criterio de fechas que el historial
+    /// (opcionalmente filtrado por sucursal y estado).
+    /// </summary>
+    [HttpGet("delivery/assigned/{deliveryManId:int}/neighborhoods")]
+    [Authorize(Roles = "Admin,Superadmin,Deliveryman")]
+    public async Task<ActionResult<List<DeliverymanHistoryNeighborhoodDto>>> GetDeliverymanHistoryNeighborhoods(
+        int deliveryManId,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] int? branchId = null,
+        [FromQuery] OrderStatus? status = null)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value;
+        if (string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase))
+        {
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(userIdClaim, out var userId) || userId != deliveryManId)
+                return Forbid();
+        }
+
+        var query = new GetDeliverymanHistoryNeighborhoodsQuery
+        {
+            DeliveryManId = deliveryManId,
+            FromDate = fromDate,
+            ToDate = toDate,
+            BranchId = branchId is > 0 ? branchId : null,
+            Status = status
+        };
+
+        var result = await _mediator.Send(query);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Obtiene pedidos asignados a un domiciliario.
     /// Si se envía <paramref name="fromDate"/> y/o <paramref name="toDate"/>, filtra por <c>CreatedAt</c> en ese rango (inclusive por día calendario, interpretado en UTC).
     /// Si no se envían fechas, no se aplica filtro de fechas (útil para pedidos en ruta).
     /// <paramref name="branchId"/> (opcional): para el domiciliario, acota el historial a una sucursal (pestañas).
     /// <paramref name="status"/> (opcional): filtra por estado del pedido (p. ej. entregados en el historial).
+    /// <paramref name="neighborhoodId"/> (opcional): filtra por barrio de la dirección del pedido.
     /// </summary>
     [HttpGet("delivery/assigned/{deliveryManId}")]
     [Authorize(Roles = "Admin,Superadmin,Deliveryman")]
@@ -351,7 +386,8 @@ public class OrdersController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
         [FromQuery] int? branchId = null,
-        [FromQuery] OrderStatus? status = null)
+        [FromQuery] OrderStatus? status = null,
+        [FromQuery] int? neighborhoodId = null)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value;
         if (string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase))
@@ -375,6 +411,7 @@ public class OrdersController : ControllerBase
             DeliveryManId = deliveryManId,
             BranchId = branchId is > 0 ? branchId : null,
             Status = status,
+            NeighborhoodId = neighborhoodId is > 0 ? neighborhoodId : null,
             Page = page,
             PageSize = pageSize,
             FromDate = fromUtc,

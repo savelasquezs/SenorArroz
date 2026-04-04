@@ -79,7 +79,8 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             request.ReservedFromDate,
             request.ReservedToDate,
             request.ExcludeFutureReservations,
-            request.BankId);
+            request.BankId,
+            request.NeighborhoodId);
 
         var dtos = _mapper.Map<List<OrderDto>>(result.Items);
 

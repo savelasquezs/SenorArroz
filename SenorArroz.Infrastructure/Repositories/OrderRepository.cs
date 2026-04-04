@@ -788,7 +788,8 @@ public class OrderRepository : IOrderRepository
         DateTime? reservedFromDate = null,
         DateTime? reservedToDate = null,
         bool excludeFutureReservations = false,
-        int? bankId = null)
+        int? bankId = null,
+        int? neighborhoodId = null)
     {
         // PostgreSQL timestamp with time zone requiere UTC
         if (fromDate.HasValue && fromDate.Value.Kind != DateTimeKind.Utc)
@@ -801,6 +802,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
             .Include(o => o.Address)
+                .ThenInclude(a => a!.Neighborhood)
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
             .Include(o => o.DeliveryRoute)
@@ -881,6 +883,9 @@ public class OrderRepository : IOrderRepository
 
         if (bankId.HasValue)
             query = query.Where(o => o.BankPayments.Any(bp => bp.BankId == bankId.Value));
+
+        if (neighborhoodId.HasValue)
+            query = query.Where(o => o.Address != null && o.Address.NeighborhoodId == neighborhoodId.Value);
 
         // Aplicar ordenamiento
         query = ApplySorting(query, sortBy, sortOrder);

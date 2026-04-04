@@ -12,6 +12,8 @@ public class SearchOrdersQuery : IRequest<PagedResult<OrderDto>>
     public int? CustomerId { get; set; }
     public int? DeliveryManId { get; set; }
     public int? BankId { get; set; }
+    /// <summary>Filtro por barrio de la dirección del pedido (Address.NeighborhoodId).</summary>
+    public int? NeighborhoodId { get; set; }
     public OrderStatus? Status { get; set; }
     public OrderType? Type { get; set; }
     public DateTime? FromDate { get; set; }
