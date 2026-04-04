@@ -131,23 +131,29 @@ public class OrderRepository : IOrderRepository
         if (forKitchen)
         {
             var now = DateTime.UtcNow;
-            var todayStart = new DateTime(now.Year, now.Month, now.Day, 0, 0, 0, DateTimeKind.Utc);
-            var todayEnd = todayStart.AddDays(1);
+            var colombiaToday = ColombiaTimeHelper.GetNowInColombia().Date;
+            var (colombiaTodayStartUtc, colombiaTodayEndUtc) =
+                ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(colombiaToday, colombiaToday);
 
             query = query.Where(o => o.Status == OrderStatus.Taken
                 || o.Status == OrderStatus.InPreparation
                 || o.Status == OrderStatus.Ready);
 
             // Hora en que el pedido debe entrar a cocina: prepare_at, o reserved_for - 1h (misma regla que creación).
-            // Reservas del día calendario UTC aún en Taken: visibles en cocina (pestaña agenda) aunque prepare_at sea más tarde.
+            // Reservas del día calendario Colombia en Taken: visibles en agenda aunque prepare_at sea más tarde (evita perder noches CO que caen en “mañana” UTC).
             query = query.Where(o =>
                 (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) == null
                 || (o.PrepareAt ?? (o.ReservedFor.HasValue ? o.ReservedFor.Value.AddHours(-1) : (DateTime?)null)) <= now
                 || (o.Type == OrderType.Reservation
                     && o.Status == OrderStatus.Taken
                     && (
-                        (o.ReservedFor.HasValue && o.ReservedFor.Value >= todayStart && o.ReservedFor.Value < todayEnd)
-                        || (!o.ReservedFor.HasValue && o.PrepareAt.HasValue && o.PrepareAt.Value >= todayStart && o.PrepareAt.Value < todayEnd))));
+                        (o.ReservedFor.HasValue
+                            && o.ReservedFor.Value >= colombiaTodayStartUtc
+                            && o.ReservedFor.Value <= colombiaTodayEndUtc)
+                        || (!o.ReservedFor.HasValue
+                            && o.PrepareAt.HasValue
+                            && o.PrepareAt.Value >= colombiaTodayStartUtc
+                            && o.PrepareAt.Value <= colombiaTodayEndUtc))));
         }
 
         // Aplicar ordenamiento
