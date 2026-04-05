@@ -7,7 +7,9 @@ using SenorArroz.API.Extensions;
 using SenorArroz.API.Hosting;
 using SenorArroz.API.Middleware;
 using SenorArroz.Application;
+using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Options;
 using SenorArroz.Infrastructure;
 using SenorArroz.Infrastructure.Storage;
 using System.Text.Json;
@@ -82,6 +84,11 @@ builder.Services.AddInfrastructureServices(builder.Configuration);
 
 builder.Services.AddScoped<IBranchReceiptLogoStorage>(sp =>
 {
+    var opts = sp.GetRequiredService<IOptions<FirebaseStorageOptions>>().Value;
+    if (opts.Enabled && !string.IsNullOrWhiteSpace(opts.Bucket))
+        return new BranchReceiptLogoGcsStorage(
+            sp.GetRequiredService<IFirebaseGcsStorage>(),
+            sp.GetRequiredService<IOptions<FirebaseStorageOptions>>());
     var env = sp.GetRequiredService<IWebHostEnvironment>();
     var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
     return new BranchReceiptLogoStorage(root);

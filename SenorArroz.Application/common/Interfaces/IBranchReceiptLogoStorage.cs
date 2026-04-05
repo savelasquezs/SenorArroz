@@ -2,9 +2,9 @@ namespace SenorArroz.Application.Common.Interfaces;
 
 public interface IBranchReceiptLogoStorage
 {
-    /// <summary>Guarda el archivo y devuelve la ruta web relativa (ej. /uploads/branch-print/1/logo.png).</summary>
+    /// <summary>Guarda el archivo y devuelve la ruta bajo la API (ej. /uploads/...) o URL absoluta de Storage.</summary>
     Task<string> SaveAndReplaceAsync(int branchId, byte[] content, string fileExtension, CancellationToken cancellationToken = default);
 
-    /// <summary>Elimina archivos logo.* de la carpeta de la sucursal.</summary>
+    /// <summary>Quita el logo (disco o objetos bajo el prefijo de la sucursal en Storage).</summary>
     Task ClearAsync(int branchId, CancellationToken cancellationToken = default);
 }

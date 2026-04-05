@@ -308,6 +308,9 @@ public static class PrintTicketPayloadBuilder
         if (string.IsNullOrWhiteSpace(path))
             return null;
         var p = path.Trim();
+        if (Uri.TryCreate(p, UriKind.Absolute, out var u) &&
+            (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps))
+            return p;
         return p.StartsWith('/') ? p : "/" + p;
     }
 

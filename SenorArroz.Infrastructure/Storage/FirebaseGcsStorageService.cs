@@ -71,10 +71,11 @@ public sealed class FirebaseGcsStorageService : IFirebaseGcsStorage
 
         var p = prefix.Trim().TrimStart('/');
         var bucket = _opt.Bucket.Trim();
-        foreach (var obj in Client.ListObjects(bucket, p))
+        var names = Client.ListObjects(bucket, p).Select(o => o.Name).ToList();
+        foreach (var name in names)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await DeleteObjectAsync(obj.Name, cancellationToken).ConfigureAwait(false);
+            await DeleteObjectAsync(name, cancellationToken).ConfigureAwait(false);
         }
     }
 
