@@ -28,6 +28,8 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<CashClosureBankReconciliation> CashClosureBankReconciliations { get; set; }
         public virtual DbSet<CashClosureInformalLoan> CashClosureInformalLoans { get; set; }
 
+        public virtual DbSet<BranchInformalLoan> BranchInformalLoans { get; set; }
+
         public virtual DbSet<Branch> Branches { get; set; }
 
         public virtual DbSet<BranchPrintSettings> BranchPrintSettings { get; set; }
@@ -101,6 +103,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new CashRegisterClosureConfiguration());
             modelBuilder.ApplyConfiguration(new CashClosureBankReconciliationConfiguration());
             modelBuilder.ApplyConfiguration(new CashClosureInformalLoanConfiguration());
+            modelBuilder.ApplyConfiguration(new BranchInformalLoanConfiguration());
             modelBuilder.ApplyConfiguration(new DeliverymanAdvanceConfiguration());
             modelBuilder.ApplyConfiguration(new DeliverymanDayStateConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteConfiguration());

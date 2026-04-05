@@ -15,6 +15,12 @@ public class CashRegisterExpectedDto
     public decimal AdvancesBankTransfer { get; set; }
 
     /// <summary>
+    /// Suma de montos de préstamos informales activos en la sucursal. Se resta del efectivo esperado
+    /// (ExpectedCash ya incluye esta resta).
+    /// </summary>
+    public decimal InformalLoansActiveTotal { get; set; }
+
+    /// <summary>
     /// Pedidos de la sucursal que aún no están entregados ni cancelados (no se puede cerrar caja si hay alguno).
     /// </summary>
     public int UndeliveredOrdersCount { get; set; }

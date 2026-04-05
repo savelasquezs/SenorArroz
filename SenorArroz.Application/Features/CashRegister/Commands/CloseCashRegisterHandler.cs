@@ -67,11 +67,6 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 ActualBalance = r.ActualBalance,
                 Adjustments = r.Adjustments,
                 Difference = r.ActualBalance - r.ExpectedBalance
-            }).ToList(),
-            InformalLoans = dto.InformalLoans.Select(l => new CashClosureInformalLoan
-            {
-                Concept = l.Concept,
-                Amount = l.Amount
             }).ToList()
         };
 

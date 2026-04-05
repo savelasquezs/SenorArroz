@@ -16,8 +16,6 @@ public class CloseCashRegisterDto
 
     [Required]
     public List<CloseBankReconciliationDto> BankReconciliations { get; set; } = new();
-
-    public List<CloseInformalLoanDto> InformalLoans { get; set; } = new();
 }
 
 public class CloseBankReconciliationDto
@@ -28,12 +26,4 @@ public class CloseBankReconciliationDto
     [Required]
     public decimal ActualBalance { get; set; }
     public string Adjustments { get; set; } = "[]";
-}
-
-public class CloseInformalLoanDto
-{
-    [Required]
-    [MaxLength(200)]
-    public string Concept { get; set; } = string.Empty;
-    public decimal Amount { get; set; }
 }

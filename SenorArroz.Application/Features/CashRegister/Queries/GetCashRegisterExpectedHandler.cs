@@ -95,8 +95,12 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 && a.CreatedAt > since && a.CreatedAt <= now)
             .SumAsync(a => a.Amount, cancellationToken);
 
+        var informalLoansActiveTotal = await _context.BranchInformalLoans
+            .Where(l => l.BranchId == branchId && l.DeactivatedAt == null)
+            .SumAsync(l => l.Amount, cancellationToken);
+
         var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses
-            - advancesBankTransfer;
+            - advancesBankTransfer - informalLoansActiveTotal;
 
         var undeliveredOrdersCount = await _context.Orders
             .Where(o => o.BranchId == branchId
@@ -182,6 +186,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             CashDeposits = cashDeposits,
             CashExpenses = cashExpenses,
             AdvancesBankTransfer = advancesBankTransfer,
+            InformalLoansActiveTotal = informalLoansActiveTotal,
             UndeliveredOrdersCount = undeliveredOrdersCount,
             AsOf = now,
             LastClosureAt = lastClosure?.ClosedAt,

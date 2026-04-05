@@ -42,6 +42,62 @@ public class CashRegisterController : ControllerBase
     }
 
     /// <summary>
+    /// Lista préstamos informales de la sucursal (activos por defecto).
+    /// </summary>
+    [HttpGet("informal-loans")]
+    public async Task<ActionResult<List<BranchInformalLoanDto>>> GetInformalLoans(
+        [FromQuery] int? branchId = null,
+        [FromQuery] string scope = "active")
+    {
+        var result = await _mediator.Send(new GetBranchInformalLoansQuery { BranchId = branchId, Scope = scope });
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Registra un préstamo informal (sin cerrar caja).
+    /// </summary>
+    [HttpPost("informal-loans")]
+    public async Task<ActionResult<BranchInformalLoanDto>> CreateInformalLoan(
+        [FromBody] CreateBranchInformalLoanDto dto,
+        [FromQuery] int? branchId = null)
+    {
+        try
+        {
+            var result = await _mediator.Send(new CreateBranchInformalLoanCommand { BranchId = branchId, Dto = dto });
+            return StatusCode(StatusCodes.Status201Created, result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Da de baja lógica a un préstamo informal.
+    /// </summary>
+    [HttpPost("informal-loans/{id:int}/deactivate")]
+    public async Task<ActionResult<BranchInformalLoanDto>> DeactivateInformalLoan(
+        int id,
+        [FromBody] DeactivateBranchInformalLoanDto? dto,
+        [FromQuery] int? branchId = null)
+    {
+        try
+        {
+            var result = await _mediator.Send(new DeactivateBranchInformalLoanCommand
+            {
+                Id = id,
+                BranchId = branchId,
+                Dto = dto ?? new DeactivateBranchInformalLoanDto()
+            });
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Guarda el cuadre de caja
     /// </summary>
     [HttpPost("close")]
