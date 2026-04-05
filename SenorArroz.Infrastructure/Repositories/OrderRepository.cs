@@ -42,6 +42,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.DeliveryMan)
             .Include(o => o.OrderDetails)
                 .ThenInclude(od => od.Product)
+                    .ThenInclude(p => p.Category)
             .FirstOrDefaultAsync(o => o.Id == id);
     }
 
@@ -57,6 +58,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.DeliveryRoute)
             .Include(o => o.OrderDetails)
                 .ThenInclude(od => od.Product)
+                    .ThenInclude(p => p.Category)
             .Include(o => o.BankPayments)
                 .ThenInclude(bp => bp.Bank)
                     .ThenInclude(b => b.Branch)
@@ -422,6 +424,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.DeliveryMan)
             .Include(o => o.OrderDetails)
                 .ThenInclude(od => od.Product)
+                    .ThenInclude(p => p.Category)
             .Where(o => o.Status == OrderStatus.InPreparation)
             .AsQueryable();
 
@@ -819,6 +822,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.AppPayments)
             .Include(o => o.OrderDetails)
                 .ThenInclude(od => od.Product)
+                    .ThenInclude(p => p.Category)
             .AsQueryable();
 
         // Aplicar filtros
@@ -953,6 +957,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Address)
             .Include(o => o.OrderDetails)
                 .ThenInclude(od => od.Product)
+                    .ThenInclude(p => p.Category)
             .Include(o => o.BankPayments)
                 .ThenInclude(bp => bp.Bank)
                     .ThenInclude(b => b.Branch)

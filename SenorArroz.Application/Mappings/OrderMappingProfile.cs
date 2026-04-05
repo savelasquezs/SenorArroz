@@ -56,7 +56,13 @@ public class OrderMappingProfile : Profile
         // OrderDetail -> OrderDetailDto
         CreateMap<OrderDetail, OrderDetailDto>()
             .ForMember(dest => dest.ProductName, opt => opt.MapFrom(src => src.Product.Name))
-            .ForMember(dest => dest.ProductDescription, opt => opt.MapFrom(src => src.Product.Name)); // Using Name as description since Product doesn't have Description
+            .ForMember(dest => dest.ProductDescription, opt => opt.MapFrom(src => src.Product.Name)) // Using Name as description since Product doesn't have Description
+            .ForMember(dest => dest.ProductCategoryId, opt => opt.MapFrom(src =>
+                src.Product != null ? (int?)src.Product.CategoryId : null))
+            .ForMember(dest => dest.ProductCategoryName, opt => opt.MapFrom(src =>
+                src.Product != null && src.Product.Category != null
+                    ? src.Product.Category.Name
+                    : null));
 
         // CreateOrderDto -> Order
         CreateMap<CreateOrderDto, Order>()
