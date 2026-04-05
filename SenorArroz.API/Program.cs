@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SenorArroz.API.Extensions;
+using SenorArroz.API.Hosting;
 using SenorArroz.API.Middleware;
 using SenorArroz.Application;
 using SenorArroz.Application.Common.Interfaces;
@@ -12,7 +13,11 @@ using SenorArroz.Infrastructure.Storage;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+GoogleCredentialBootstrap.ApplyFromEnvironment();
+
 var builder = WebApplication.CreateBuilder(args);
+
+GoogleCredentialBootstrap.ApplyFromConfiguration(builder.Configuration);
 
 // Add services to the container
 builder.Services.AddControllers().AddJsonOptions(options =>

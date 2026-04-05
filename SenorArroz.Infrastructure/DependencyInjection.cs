@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.Configure<ApiPublicOptions>(configuration.GetSection(ApiPublicOptions.SectionName));
         services.Configure<BrandingOptions>(configuration.GetSection(BrandingOptions.SectionName));
         services.Configure<DeliveryPayrollOptions>(configuration.GetSection(DeliveryPayrollOptions.SectionName));
+        services.Configure<FirebaseStorageOptions>(configuration.GetSection(FirebaseStorageOptions.SectionName));
 
         // Database
         services.AddDbContext<ApplicationDbContext>(options =>
