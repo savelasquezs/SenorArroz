@@ -264,6 +264,7 @@ public class OrderRepository : IOrderRepository
     public async Task<PagedResult<Order>> GetByStatusAsync(OrderStatus status, OrderType? typeFilter = null, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc")
     {
         var query = _context.Orders
+            .AsSplitQuery()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -271,6 +272,13 @@ public class OrderRepository : IOrderRepository
                 .ThenInclude(a => a.Neighborhood)
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
+            .Include(o => o.BankPayments)
+                .ThenInclude(bp => bp.Bank)
+                    .ThenInclude(b => b.Branch)
+            .Include(o => o.AppPayments)
+                .ThenInclude(ap => ap.App)
+                    .ThenInclude(a => a.Bank)
+                        .ThenInclude(b => b.Branch)
             .Where(o => o.Status == status)
             .AsQueryable();
 
