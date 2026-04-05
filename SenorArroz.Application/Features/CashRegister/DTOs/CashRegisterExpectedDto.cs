@@ -1,3 +1,5 @@
+using SenorArroz.Domain.Enums;
+
 namespace SenorArroz.Application.Features.CashRegister.DTOs;
 
 public class CashRegisterExpectedDto
@@ -20,6 +22,12 @@ public class CashRegisterExpectedDto
     /// </summary>
     public decimal InformalLoansActiveTotal { get; set; }
 
+    /// <summary>Abonos a Caja Mayor Efectivo en el período (efectivo que sale del cajón).</summary>
+    public decimal CashVaultAbonosTotal { get; set; }
+
+    /// <summary>Descargas desde Caja Mayor Efectivo en el período (efectivo que vuelve al cajón).</summary>
+    public decimal CashVaultDescargasTotal { get; set; }
+
     /// <summary>
     /// Pedidos de la sucursal que aún no están entregados ni cancelados (no se puede cerrar caja si hay alguno).
     /// </summary>
@@ -34,6 +42,7 @@ public class BankExpectedBalanceDto
 {
     public int BankId { get; set; }
     public string BankName { get; set; } = string.Empty;
+    public BankType BankType { get; set; }
     public decimal OpeningBalance { get; set; }
     public decimal ExpectedBalance { get; set; }
 }

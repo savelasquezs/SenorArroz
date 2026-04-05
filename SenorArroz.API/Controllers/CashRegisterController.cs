@@ -42,6 +42,19 @@ public class CashRegisterController : ControllerBase
     }
 
     /// <summary>
+    /// Abono o descarga de efectivo contra el banco tipo Caja Mayor Efectivo (sin usar transferencias).
+    /// </summary>
+    [HttpPost("cash-vault-movements")]
+    [Authorize(Roles = "Admin,Superadmin")]
+    public async Task<ActionResult<CashVaultMovementDto>> CreateCashVaultMovement(
+        [FromBody] CreateCashVaultMovementDto dto,
+        [FromQuery] int? branchId = null)
+    {
+        var result = await _mediator.Send(new CreateCashVaultMovementCommand { BranchId = branchId, Dto = dto });
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    /// <summary>
     /// Lista préstamos informales de la sucursal (activos por defecto).
     /// </summary>
     [HttpGet("informal-loans")]

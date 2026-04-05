@@ -57,6 +57,15 @@ namespace SenorArroz.Domain.Enums
         RealVault    // Caja mayor banco real (hidden)
     }
 
+    /// <summary>Movimiento registrado desde efectivo físico hacia/desde el banco tipo Caja Mayor Efectivo (sin transferencia interbancaria).</summary>
+    public enum CashVaultMovementKind
+    {
+        /// <summary>Efectivo que sale del cajón hacia la “caja mayor” representada en el sistema.</summary>
+        AbonoToVault = 0,
+        /// <summary>Efectivo que vuelve desde la caja mayor al cajón.</summary>
+        WithdrawFromVault = 1,
+    }
+
     /// <summary>Abono de domiciliario: cómo impacta caja / banco en el cuadre.</summary>
     public enum DeliverymanAdvancePaymentMethod
     {

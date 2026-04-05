@@ -99,8 +99,22 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             .Where(l => l.BranchId == branchId && l.DeactivatedAt == null)
             .SumAsync(l => l.Amount, cancellationToken);
 
+        var cashVaultAbonos = await _context.CashVaultMovements
+            .Where(m => m.BranchId == branchId
+                && m.CreatedAt > since && m.CreatedAt <= now
+                && m.Kind == CashVaultMovementKind.AbonoToVault)
+            .SumAsync(m => m.Amount, cancellationToken);
+
+        var cashVaultDescargas = await _context.CashVaultMovements
+            .Where(m => m.BranchId == branchId
+                && m.CreatedAt > since && m.CreatedAt <= now
+                && m.Kind == CashVaultMovementKind.WithdrawFromVault)
+            .SumAsync(m => m.Amount, cancellationToken);
+
+        var cashVaultNetToVault = cashVaultAbonos - cashVaultDescargas;
+
         var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses
-            - advancesBankTransfer - informalLoansActiveTotal;
+            - advancesBankTransfer - informalLoansActiveTotal - cashVaultNetToVault;
 
         var undeliveredOrdersCount = await _context.Orders
             .Where(o => o.BranchId == branchId
@@ -169,10 +183,26 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
 
             var expectedBalance = openingBalance + bankPaymentsIn + bankDepositPaymentsIn - bankDepositsAlreadyCounted - expensePaymentsOut + incomingTransfers - outgoingTransfers + deliverymanBankIn;
 
+            if (bank.Type == BankType.CashVault)
+            {
+                var vaultAbonosBank = await _context.CashVaultMovements
+                    .Where(m => m.BranchId == branchId && m.BankId == bank.Id
+                        && m.CreatedAt > since && m.CreatedAt <= now
+                        && m.Kind == CashVaultMovementKind.AbonoToVault)
+                    .SumAsync(m => m.Amount, cancellationToken);
+                var vaultDescargasBank = await _context.CashVaultMovements
+                    .Where(m => m.BranchId == branchId && m.BankId == bank.Id
+                        && m.CreatedAt > since && m.CreatedAt <= now
+                        && m.Kind == CashVaultMovementKind.WithdrawFromVault)
+                    .SumAsync(m => m.Amount, cancellationToken);
+                expectedBalance += vaultAbonosBank - vaultDescargasBank;
+            }
+
             bankExpected.Add(new BankExpectedBalanceDto
             {
                 BankId = bank.Id,
                 BankName = bank.Name,
+                BankType = bank.Type,
                 OpeningBalance = openingBalance,
                 ExpectedBalance = expectedBalance
             });
@@ -187,6 +217,8 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             CashExpenses = cashExpenses,
             AdvancesBankTransfer = advancesBankTransfer,
             InformalLoansActiveTotal = informalLoansActiveTotal,
+            CashVaultAbonosTotal = cashVaultAbonos,
+            CashVaultDescargasTotal = cashVaultDescargas,
             UndeliveredOrdersCount = undeliveredOrdersCount,
             AsOf = now,
             LastClosureAt = lastClosure?.ClosedAt,

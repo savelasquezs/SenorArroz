@@ -22,6 +22,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<CashRegisterClosure> CashRegisterClosures { get; set; }
         DbSet<CashClosureBankReconciliation> CashClosureBankReconciliations { get; set; }
         DbSet<CashClosureInformalLoan> CashClosureInformalLoans { get; set; }
+        DbSet<CashVaultMovement> CashVaultMovements { get; set; }
 
         DbSet<BranchInformalLoan> BranchInformalLoans { get; set; }
 
