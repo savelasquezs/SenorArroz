@@ -1,4 +1,5 @@
 using AutoMapper;
+using SenorArroz.Application.Common.Printing;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Features.BankPayments.DTOs;
 using SenorArroz.Application.Features.AppPayments.DTOs;
@@ -41,7 +42,7 @@ public class OrderMappingProfile : Profile
                     .OrderBy(d => d.Id)
                     .Select(d => new OrderLineSummaryDto
                     {
-                        ProductName = d.Product != null ? d.Product.Name : string.Empty,
+                        ProductName = KitchenProductNameFormatter.Format(d.Product != null ? d.Product.Name : string.Empty),
                         Quantity = d.Quantity
                     })
                     .ToList()));
