@@ -9,6 +9,7 @@ using SenorArroz.Domain.Interfaces.Services;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Repositories;
 using SenorArroz.Infrastructure.Services;
+using SenorArroz.Infrastructure.Storage;
 using Microsoft.Extensions.Hosting;
 
 
@@ -25,6 +26,7 @@ public static class DependencyInjection
         services.Configure<BrandingOptions>(configuration.GetSection(BrandingOptions.SectionName));
         services.Configure<DeliveryPayrollOptions>(configuration.GetSection(DeliveryPayrollOptions.SectionName));
         services.Configure<FirebaseStorageOptions>(configuration.GetSection(FirebaseStorageOptions.SectionName));
+        services.AddSingleton<IFirebaseGcsStorage, FirebaseGcsStorageService>();
 
         // Database
         services.AddDbContext<ApplicationDbContext>(options =>

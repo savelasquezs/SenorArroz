@@ -18,6 +18,11 @@ public class FirebaseStorageOptions
     public string ProfilePrefix { get; set; } = "profile";
 
     /// <summary>
+    /// Si es true, sube con ACL de objeto público. Con acceso uniforme (UBLA) puede fallar; usar false y lectura pública vía IAM del bucket.
+    /// </summary>
+    public bool UploadWithPublicReadAcl { get; set; } = true;
+
+    /// <summary>
     /// Ruta al JSON (absoluta o relativa al directorio de trabajo). Opcional: preferir
     /// <c>GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64</c>, <c>GOOGLE_APPLICATION_CREDENTIALS_JSON</c> o <c>GOOGLE_APPLICATION_CREDENTIALS</c> (ruta).
     /// No commitear rutas aquí; usar User Secrets o variables de entorno.
