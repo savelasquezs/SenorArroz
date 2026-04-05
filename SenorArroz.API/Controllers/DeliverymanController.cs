@@ -25,6 +25,17 @@ public class DeliverymanController : ControllerBase
     }
 
     /// <summary>
+    /// Estado mínimo del día para el domiciliario autenticado (p. ej. día bloqueado tras liquidación total).
+    /// </summary>
+    [HttpGet("me/day-state")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult<MyDeliverymanDayStateDto>> GetMyDayState([FromQuery] string? date = null)
+    {
+        var result = await _mediator.Send(new GetMyDeliverymanDayStateQuery { Date = date });
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Resumen completo del día: domiciliarios con estadísticas + lista de abonos.
     /// </summary>
     /// <param name="date">Fecha en YYYY-MM-DD (por defecto: día actual)</param>
