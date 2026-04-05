@@ -94,6 +94,18 @@ builder.Services.AddScoped<IBranchReceiptLogoStorage>(sp =>
     return new BranchReceiptLogoStorage(root);
 });
 
+builder.Services.AddScoped<IUserProfileImageStorage>(sp =>
+{
+    var opts = sp.GetRequiredService<IOptions<FirebaseStorageOptions>>().Value;
+    if (opts.Enabled && !string.IsNullOrWhiteSpace(opts.Bucket))
+        return new UserProfileImageGcsStorage(
+            sp.GetRequiredService<IFirebaseGcsStorage>(),
+            sp.GetRequiredService<IOptions<FirebaseStorageOptions>>());
+    var env = sp.GetRequiredService<IWebHostEnvironment>();
+    var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+    return new UserProfileImageDiskStorage(root);
+});
+
 // SignalR
 builder.Services.AddSignalR();
 

@@ -2,6 +2,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Users.Commands;
 using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Application.Features.Users.Queries;
@@ -18,12 +19,12 @@ namespace SenorArroz.API.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly IMediator _mediator;
-    private readonly IWebHostEnvironment _env;
+    private readonly IUserProfileImageStorage _profileImageStorage;
 
-    public UsersController(IMediator mediator, IWebHostEnvironment env)
+    public UsersController(IMediator mediator, IUserProfileImageStorage profileImageStorage)
     {
         _mediator = mediator;
-        _env = env;
+        _profileImageStorage = profileImageStorage;
     }
 
     private int GetCurrentUserId() =>
@@ -145,7 +146,7 @@ public class UsersController : ControllerBase
     /// Sube o reemplaza la foto de perfil del usuario
     /// </summary>
     [HttpPost("{id:int}/profile-image")]
-    public async Task<ActionResult<UserDto>> UploadProfileImage(int id, IFormFile file)
+    public async Task<ActionResult<UserDto>> UploadProfileImage(int id, IFormFile file, CancellationToken cancellationToken)
     {
         if (GetCurrentUserId() != id)
             return Forbid();
@@ -158,22 +159,14 @@ public class UsersController : ControllerBase
         if (file.Length > 3 * 1024 * 1024)
             throw new BusinessException("La imagen no puede superar 3 MB.");
 
-        var uploadsDir = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "profile");
-        Directory.CreateDirectory(uploadsDir);
+        await using var readStream = file.OpenReadStream();
+        using var ms = new MemoryStream((int)Math.Min(file.Length, int.MaxValue));
+        await readStream.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
+        var bytes = ms.ToArray();
 
-        // Borrar cualquier foto previa del usuario, independientemente de la extensión/nombre
-        foreach (var old in System.IO.Directory.GetFiles(uploadsDir, $"{id}*.*"))
-            System.IO.File.Delete(old);
-
-        // Nombre único para evitar caché en el navegador
-        var fileName = $"{id}_{Guid.NewGuid():N}{ext}";
-        var filePath = Path.Combine(uploadsDir, fileName);
-        await using (var stream = new FileStream(filePath, FileMode.Create))
-            await file.CopyToAsync(stream);
-
-        var profileImageUrl = $"/uploads/profile/{fileName}";
+        var profileImageUrl = await _profileImageStorage.SaveAndReplaceAsync(id, bytes, ext, cancellationToken).ConfigureAwait(false);
         var command = new UploadProfileImageCommand(id, profileImageUrl);
-        var result = await _mediator.Send(command);
+        var result = await _mediator.Send(command, cancellationToken);
         return Ok(result);
     }
 }

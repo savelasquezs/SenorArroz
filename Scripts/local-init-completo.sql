@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS "user" (
     phone character varying(10) NOT NULL,
     password_hash character varying(255) NOT NULL,
     active boolean NOT NULL DEFAULT TRUE,
-    profile_image_url character varying(300),
+    profile_image_url character varying(2000),
     payroll_expense_id integer,
     created_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     updated_at timestamp with time zone NOT NULL DEFAULT (NOW()),
@@ -1318,6 +1318,9 @@ ALTER TABLE branch_print_settings ADD COLUMN IF NOT EXISTS receipt_logo_path cha
 ALTER TABLE branch_print_settings ADD COLUMN IF NOT EXISTS paper_width_mm_kitchen smallint;
 ALTER TABLE branch_print_settings ADD COLUMN IF NOT EXISTS paper_width_mm_delivery smallint;
 ALTER TABLE branch_print_settings ADD COLUMN IF NOT EXISTS paper_width_mm_cashier smallint;
+
+-- Foto de perfil: URLs de Firebase pueden superar 300 caracteres
+ALTER TABLE "user" ALTER COLUMN profile_image_url TYPE character varying(2000);
 
 UPDATE branch_print_settings SET
     paper_width_mm_kitchen = COALESCE(paper_width_mm_kitchen, paper_width_mm),
