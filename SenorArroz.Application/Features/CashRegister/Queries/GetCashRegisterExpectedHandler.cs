@@ -52,16 +52,23 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         // --- EFECTIVO ---
         decimal openingCash = lastClosure?.ClosingCash ?? 0;
 
-        // Ingresos en efectivo = Total orden - pagos por banco - pagos por app (solo órdenes entregadas)
-        var cashFromOrders = await _context.Orders
+        // Pedidos entregados en el período (mismo filtro para ventas / efectivo / banco / app)
+        var deliveredOrdersQuery = _context.Orders
             .Where(o => o.BranchId == branchId
                 && o.Status == OrderStatus.Delivered
-                && o.CreatedAt > since && o.CreatedAt <= now)
-            .SumAsync(o =>
-                (decimal)o.Total
-                - o.BankPayments.Sum(bp => bp.Amount)
-                - o.AppPayments.Sum(ap => ap.Amount),
-                cancellationToken);
+                && o.CreatedAt > since && o.CreatedAt <= now);
+
+        var deliveredOrdersSalesTotal = await deliveredOrdersQuery
+            .SumAsync(o => (decimal)o.Total, cancellationToken);
+
+        var bankPaymentsFromOrdersTotal = await deliveredOrdersQuery
+            .SumAsync(o => o.BankPayments.Sum(bp => bp.Amount), cancellationToken);
+
+        var appPaymentsFromOrdersTotal = await deliveredOrdersQuery
+            .SumAsync(o => o.AppPayments.Sum(ap => ap.Amount), cancellationToken);
+
+        // Ingresos en efectivo = venta - banco - app
+        var cashFromOrders = deliveredOrdersSalesTotal - bankPaymentsFromOrdersTotal - appPaymentsFromOrdersTotal;
 
         // Gastos en efectivo = gasto total - lo que se pagó por banco
         var cashExpenses = await _context.ExpenseHeaders
@@ -213,6 +220,9 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             OpeningCash = openingCash,
             ExpectedCash = expectedCash,
             CashFromOrders = cashFromOrders,
+            DeliveredOrdersSalesTotal = deliveredOrdersSalesTotal,
+            BankPaymentsFromOrdersTotal = bankPaymentsFromOrdersTotal,
+            AppPaymentsFromOrdersTotal = appPaymentsFromOrdersTotal,
             CashDeposits = cashDeposits,
             CashExpenses = cashExpenses,
             AdvancesBankTransfer = advancesBankTransfer,

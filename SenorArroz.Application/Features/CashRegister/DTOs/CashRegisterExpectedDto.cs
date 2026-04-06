@@ -7,6 +7,16 @@ public class CashRegisterExpectedDto
     public decimal OpeningCash { get; set; }
     public decimal ExpectedCash { get; set; }
     public decimal CashFromOrders { get; set; }
+
+    /// <summary>Suma de totales de pedidos entregados en el período (venta cobrada según el pedido).</summary>
+    public decimal DeliveredOrdersSalesTotal { get; set; }
+
+    /// <summary>Pagos registrados por banco en esos pedidos (dinero que compone el cuadre bancario).</summary>
+    public decimal BankPaymentsFromOrdersTotal { get; set; }
+
+    /// <summary>Pagos por apps en esos pedidos (no en caja ni en banco del negocio de inmediato).</summary>
+    public decimal AppPaymentsFromOrdersTotal { get; set; }
+
     public decimal CashDeposits { get; set; }
     public decimal CashExpenses { get; set; }
 
