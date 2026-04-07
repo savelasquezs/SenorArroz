@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
+using SenorArroz.Application.Features.CashRegister.Helpers;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -29,10 +30,13 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         int branchId = request.BranchId ?? _currentUser.BranchId;
         var dto = request.Dto;
 
+        var exemptIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
+
         var undelivered = await _context.Orders
             .Where(o => o.BranchId == branchId
                 && o.Status != OrderStatus.Delivered
-                && o.Status != OrderStatus.Cancelled)
+                && o.Status != OrderStatus.Cancelled
+                && !exemptIds.Contains(o.Id))
             .CountAsync(cancellationToken);
         if (undelivered > 0)
         {

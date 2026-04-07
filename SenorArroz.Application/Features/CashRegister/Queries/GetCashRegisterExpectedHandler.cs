@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
+using SenorArroz.Application.Features.CashRegister.Helpers;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -123,10 +124,13 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses
             - advancesBankTransfer - informalLoansActiveTotal - cashVaultNetToVault;
 
+        var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
+
         var undeliveredOrdersCount = await _context.Orders
             .Where(o => o.BranchId == branchId
                 && o.Status != OrderStatus.Delivered
-                && o.Status != OrderStatus.Cancelled)
+                && o.Status != OrderStatus.Cancelled
+                && !exemptOrderIds.Contains(o.Id))
             .CountAsync(cancellationToken);
 
         // --- BANCOS ---

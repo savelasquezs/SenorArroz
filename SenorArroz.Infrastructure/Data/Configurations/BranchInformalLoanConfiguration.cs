@@ -15,7 +15,7 @@ public class BranchInformalLoanConfiguration : IEntityTypeConfiguration<BranchIn
         builder.Property(e => e.Id).HasColumnName("id");
 
         builder.Property(e => e.BranchId).HasColumnName("branch_id").IsRequired();
-        builder.Property(e => e.Concept).HasColumnName("concept").HasMaxLength(200).IsRequired();
+        builder.Property(e => e.Concept).HasColumnName("concept").HasMaxLength(500).IsRequired();
         builder.Property(e => e.Amount).HasColumnName("amount").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(e => e.CreatedById).HasColumnName("created_by_id").IsRequired();
 

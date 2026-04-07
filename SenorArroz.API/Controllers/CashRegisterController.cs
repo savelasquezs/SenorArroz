@@ -55,6 +55,26 @@ public class CashRegisterController : ControllerBase
     }
 
     /// <summary>
+    /// Pedidos domicilio listos o en camino (para préstamo anticipado / excepción cuadre).
+    /// </summary>
+    [HttpGet("delivery-advance/orders")]
+    public async Task<ActionResult<List<DeliveryAdvanceOrderRowDto>>> GetDeliveryAdvanceOrders([FromQuery] int? branchId = null)
+    {
+        var result = await _mediator.Send(new GetDeliveryAdvanceOrdersQuery { BranchId = branchId });
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Domiciliarios liquidados hoy (modo total + bloqueado): tienen el dinero fuera de caja esperada.
+    /// </summary>
+    [HttpGet("delivery-advance/liquidated-deliverymen")]
+    public async Task<ActionResult<List<LiquidatedDeliverymanOptionDto>>> GetLiquidatedDeliverymen([FromQuery] int? branchId = null)
+    {
+        var result = await _mediator.Send(new GetLiquidatedFullBlockedDeliverymenQuery { BranchId = branchId });
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Lista préstamos informales de la sucursal (activos por defecto).
     /// </summary>
     [HttpGet("informal-loans")]

@@ -31,6 +31,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<BranchInformalLoan> BranchInformalLoans { get; set; }
 
+        public virtual DbSet<BranchInformalLoanExemptOrder> BranchInformalLoanExemptOrders { get; set; }
+
         public virtual DbSet<Branch> Branches { get; set; }
 
         public virtual DbSet<BranchPrintSettings> BranchPrintSettings { get; set; }
@@ -106,6 +108,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new CashClosureInformalLoanConfiguration());
             modelBuilder.ApplyConfiguration(new CashVaultMovementConfiguration());
             modelBuilder.ApplyConfiguration(new BranchInformalLoanConfiguration());
+            modelBuilder.ApplyConfiguration(new BranchInformalLoanExemptOrderConfiguration());
             modelBuilder.ApplyConfiguration(new DeliverymanAdvanceConfiguration());
             modelBuilder.ApplyConfiguration(new DeliverymanDayStateConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteConfiguration());

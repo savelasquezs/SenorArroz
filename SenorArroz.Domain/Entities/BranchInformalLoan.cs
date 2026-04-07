@@ -21,4 +21,6 @@ public class BranchInformalLoan : BaseEntity
     public virtual Branch Branch { get; set; } = null!;
     public virtual User CreatedBy { get; set; } = null!;
     public virtual User? DeactivatedBy { get; set; }
+
+    public virtual ICollection<BranchInformalLoanExemptOrder> ExemptOrders { get; set; } = new List<BranchInformalLoanExemptOrder>();
 }

@@ -56,6 +56,12 @@ public static class ColombiaTimeHelper
         return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ColombiaTimeZone);
     }
 
+    /// <summary>Fecha calendario de operación en Colombia (día actual local).</summary>
+    public static DateOnly GetTodayDateOnlyColombia()
+    {
+        return DateOnly.FromDateTime(GetNowInColombia().Date);
+    }
+
     /// <summary>
     /// Obtiene el inicio del día actual en Colombia, convertido a UTC
     /// </summary>

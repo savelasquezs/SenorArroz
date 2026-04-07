@@ -26,6 +26,8 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<BranchInformalLoan> BranchInformalLoans { get; set; }
 
+        DbSet<BranchInformalLoanExemptOrder> BranchInformalLoanExemptOrders { get; set; }
+
         DbSet<Branch> Branches { get; set; }
 
         DbSet<BranchPrintSettings> BranchPrintSettings { get; set; }
