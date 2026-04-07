@@ -15,6 +15,8 @@ public class PrintTicketOrderPayloadV1
     /// <summary>Nombre comercial en cabecera; si viene vacío el cliente de impresión puede usar <see cref="BranchName"/>.</summary>
     public string? BusinessName { get; set; }
     public string? BranchNit { get; set; }
+    /// <summary>Teléfono(s) de contacto de la sucursal (cabecera comanda cocina / tickets).</summary>
+    public string? BranchPhone { get; set; }
     public string? BranchAddress { get; set; }
     /// <summary>URL absoluta del logo (misma API pública que sirve estáticos).</summary>
     public string? ReceiptLogoUrl { get; set; }
