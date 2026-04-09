@@ -243,6 +243,34 @@ public class DeliverymanController : ControllerBase
         return NoContent();
     }
 
+    // ─── Device tokens (FCM push) ────────────────────────────────────────────
+
+    /// <summary>
+    /// Registra (o actualiza) el token FCM del dispositivo del domiciliario autenticado.
+    /// </summary>
+    [HttpPost("me/device-token")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult> RegisterDeviceToken([FromBody] RegisterDeviceTokenRequest request)
+    {
+        await _mediator.Send(new RegisterDeviceTokenCommand
+        {
+            Token = request.Token,
+            Platform = request.Platform ?? "android",
+        });
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Elimina el token FCM del dispositivo (al cerrar sesión).
+    /// </summary>
+    [HttpDelete("me/device-token")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult> RemoveDeviceToken([FromBody] RemoveDeviceTokenRequest request)
+    {
+        await _mediator.Send(new RemoveDeviceTokenCommand { Token = request.Token });
+        return NoContent();
+    }
+
     private static (DateTime? from, DateTime? to) ResolveDateRange(DateTime? date, DateTime? fromDate, DateTime? toDate)
     {
         static DateTime ToUtc(DateTime d) =>

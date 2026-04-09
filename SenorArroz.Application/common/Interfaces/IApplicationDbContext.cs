@@ -76,6 +76,8 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<User> Users { get; set; }
 
+        DbSet<UserDeviceToken> UserDeviceTokens { get; set; }
+
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }
 }

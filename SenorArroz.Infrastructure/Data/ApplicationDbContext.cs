@@ -81,6 +81,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<User> Users { get; set; }
 
+        public virtual DbSet<UserDeviceToken> UserDeviceTokens { get; set; }
+
         public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
 
@@ -124,6 +126,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new ReservationDepositConfiguration());
             modelBuilder.ApplyConfiguration(new RefreshTokenConfiguration());
             modelBuilder.ApplyConfiguration(new PasswordResetTokenConfiguration());
+            modelBuilder.ApplyConfiguration(new UserDeviceTokenConfiguration());
 
             base.OnModelCreating(modelBuilder);
         }

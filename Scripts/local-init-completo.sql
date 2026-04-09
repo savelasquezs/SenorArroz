@@ -1445,3 +1445,22 @@ CREATE TRIGGER update_expense_header_total_on_vat
 UPDATE public.expense_header eh
 SET total = COALESCE((SELECT SUM(ed.total) FROM public.expense_detail ed WHERE ed.header_id = eh.id), 0)
     + COALESCE(eh.vat_amount, 0);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- FCM push notifications: tokens de dispositivos de domiciliarios
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.user_device_token (
+    id              SERIAL PRIMARY KEY,
+    user_id         INTEGER NOT NULL REFERENCES public."user"(id) ON DELETE CASCADE,
+    token           VARCHAR(512) NOT NULL,
+    platform        VARCHAR(20) NOT NULL DEFAULT 'android',
+    last_seen_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_user_device_token_token
+    ON public.user_device_token(token);
+
+CREATE INDEX IF NOT EXISTS idx_user_device_token_user
+    ON public.user_device_token(user_id);

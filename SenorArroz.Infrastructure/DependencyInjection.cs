@@ -28,6 +28,10 @@ public static class DependencyInjection
         services.Configure<FirebaseStorageOptions>(configuration.GetSection(FirebaseStorageOptions.SectionName));
         services.AddSingleton<IFirebaseGcsStorage, FirebaseGcsStorageService>();
 
+        // FCM Push Notifications
+        services.AddHttpClient<FcmPushService>();
+        services.AddScoped<IFcmPushService, FcmPushService>();
+
         // Database
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
