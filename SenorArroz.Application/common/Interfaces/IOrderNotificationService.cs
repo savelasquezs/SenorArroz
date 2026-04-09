@@ -19,5 +19,16 @@ public interface IOrderNotificationService
     /// Domiciliarios de la sucursal: pedido en camino fue modificado.
     /// </summary>
     Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind);
+
+    /// <summary>
+    /// Admins de la sucursal: actualización de ubicación GPS del domiciliario.
+    /// </summary>
+    Task NotifyDeliverymanLocation(
+        int branchId,
+        int deliverymanId,
+        int deliveryRouteId,
+        double latitude,
+        double longitude,
+        DateTime recordedAt);
 }
 

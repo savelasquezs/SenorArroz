@@ -69,6 +69,26 @@ public class OrderNotificationService : IOrderNotificationService
             .SendAsync("OrderModified", new { order, modificationKind });
     }
 
+    public async Task NotifyDeliverymanLocation(
+        int branchId,
+        int deliverymanId,
+        int deliveryRouteId,
+        double latitude,
+        double longitude,
+        DateTime recordedAt)
+    {
+        await _hubContext.Clients
+            .Group($"Branch_{branchId}_Admin")
+            .SendAsync("DeliverymanLocationUpdate", new
+            {
+                deliverymanId,
+                deliveryRouteId,
+                latitude,
+                longitude,
+                recordedAt,
+            });
+    }
+
     // ─── Push FCM ────────────────────────────────────────────────────────────
 
     private async Task SendPushToFreeDeliverymenAsync(OrderDto order)

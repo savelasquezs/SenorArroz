@@ -1464,3 +1464,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_user_device_token_token
 
 CREATE INDEX IF NOT EXISTS idx_user_device_token_user
     ON public.user_device_token(user_id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- GPS Tracking: ubicaciones en tiempo real de domiciliarios
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.deliveryman_location (
+    id                bigserial PRIMARY KEY,
+    deliveryman_id    integer    NOT NULL REFERENCES public."user"(id)           ON DELETE CASCADE,
+    delivery_route_id integer             REFERENCES public.delivery_route(id)   ON DELETE SET NULL,
+    latitude          numeric(10,6) NOT NULL,
+    longitude         numeric(10,6) NOT NULL,
+    recorded_at       timestamp with time zone NOT NULL,
+    created_at        timestamp with time zone NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_dloc_deliveryman
+    ON public.deliveryman_location(deliveryman_id);
+
+CREATE INDEX IF NOT EXISTS idx_dloc_route
+    ON public.deliveryman_location(delivery_route_id);
+
+CREATE INDEX IF NOT EXISTS idx_dloc_recorded
+    ON public.deliveryman_location(recorded_at DESC);

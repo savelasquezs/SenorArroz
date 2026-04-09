@@ -271,6 +271,38 @@ public class DeliverymanController : ControllerBase
         return NoContent();
     }
 
+    // ─── GPS Location ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Registra la ubicación GPS del domiciliario autenticado.
+    /// Solo se guarda si tiene una ruta activa con pedidos "on the way".
+    /// </summary>
+    [HttpPost("location")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult> RecordLocation([FromBody] RecordLocationRequest request)
+    {
+        await _mediator.Send(new RecordLocationCommand
+        {
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
+            RecordedAt = request.RecordedAt,
+        });
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Retorna la última ubicación registrada de un domiciliario (para fallback de polling).
+    /// </summary>
+    [HttpGet("{id}/last-location")]
+    [Authorize(Roles = "Admin,Superadmin")]
+    public async Task<ActionResult<DeliverymanLastLocationDto>> GetLastLocation(int id)
+    {
+        var result = await _mediator.Send(new GetDeliverymanLastLocationQuery { DeliverymanId = id });
+        if (result is null)
+            return NotFound();
+        return Ok(result);
+    }
+
     private static (DateTime? from, DateTime? to) ResolveDateRange(DateTime? date, DateTime? fromDate, DateTime? toDate)
     {
         static DateTime ToUtc(DateTime d) =>
