@@ -1,8 +1,6 @@
 using AutoMapper;
 using SenorArroz.Application.Common.Printing;
 using SenorArroz.Application.Features.Orders.DTOs;
-using SenorArroz.Application.Features.BankPayments.DTOs;
-using SenorArroz.Application.Features.AppPayments.DTOs;
 using SenorArroz.Domain.Entities;
 
 namespace SenorArroz.Application.Mappings;
@@ -104,15 +102,6 @@ public class OrderMappingProfile : Profile
         // UpdateOrderDetailDto -> OrderDetail (para actualizaciones)
         CreateMap<UpdateOrderDetailDto, OrderDetail>()
             .ForAllMembers(opt => opt.Condition((src, dest, srcMember) => srcMember != null));
-
-        // BankPayment -> BankPaymentDto
-        CreateMap<BankPayment, BankPaymentDto>()
-            .ForMember(dest => dest.BankName, opt => opt.MapFrom(src => src.Bank.Name));
-
-        // AppPayment -> AppPaymentDto
-        CreateMap<AppPayment, AppPaymentDto>()
-            .ForMember(dest => dest.AppName, opt => opt.MapFrom(src => src.App.Name))
-            .ForMember(dest => dest.BankName, opt => opt.MapFrom(src => src.App.Bank.Name));
     }
 
     private static string GetTypeDisplayName(Domain.Enums.OrderType? type)
