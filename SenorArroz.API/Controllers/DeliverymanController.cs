@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Features.DeliverymanAdvances.Commands;
 using SenorArroz.Application.Features.DeliverymanAdvances.DTOs;
+using SenorArroz.Application.Features.DeliverymanAdvances.Queries;
 using SenorArroz.Application.Features.Deliverymen.Commands;
 using SenorArroz.Application.Features.Deliverymen.DTOs;
 using SenorArroz.Application.Features.Deliverymen.Queries;
@@ -32,6 +34,49 @@ public class DeliverymanController : ControllerBase
     public async Task<ActionResult<MyDeliverymanDayStateDto>> GetMyDayState([FromQuery] string? date = null)
     {
         var result = await _mediator.Send(new GetMyDeliverymanDayStateQuery { Date = date });
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Abonos / préstamos del domiciliario autenticado en el rango indicado.
+    /// </summary>
+    [HttpGet("me/advances")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult<object>> GetMyAdvances(
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
+    {
+        var list = await _mediator.Send(new GetMyDeliverymanAdvancesQuery
+        {
+            FromDate = fromDate,
+            ToDate = toDate
+        });
+        return Ok(new { advances = list });
+    }
+
+    /// <summary>
+    /// Mismo detalle que <c>GET {id}/day-summary</c>, pero solo para el usuario del token.
+    /// </summary>
+    [HttpGet("me/day-summary")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult<object>> GetMyDaySummary(
+        [FromQuery] DateTime? date = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] decimal? baseAmount = null)
+    {
+        if (!int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id))
+            return Unauthorized();
+
+        var query = new GetDeliverymanDaySummaryQuery
+        {
+            DeliverymanId = id,
+            Date = date,
+            FromDate = fromDate,
+            ToDate = toDate,
+            BaseAmount = baseAmount
+        };
+        var result = await _mediator.Send(query);
         return Ok(result);
     }
 

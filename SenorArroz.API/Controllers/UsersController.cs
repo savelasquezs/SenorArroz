@@ -67,16 +67,22 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Resumen de nómina (líneas de gasto vinculadas + delivery para domiciliarios). Solo Admin/Superadmin.
+    /// Resumen de nómina (líneas de gasto vinculadas + delivery para domiciliarios).
+    /// Admin/Superadmin: cualquier id. Domiciliario: solo su propio id.
     /// </summary>
     [HttpGet("{id:int}/payroll-insights")]
-    [Authorize(Roles = "Superadmin,Admin")]
+    [Authorize(Roles = "Superadmin,Admin,Deliveryman")]
     public async Task<ActionResult<UserPayrollInsightsDto>> GetPayrollInsights(
         int id,
         [FromQuery] string from,
         [FromQuery] string to,
         [FromQuery] string seriesGranularity = "day")
     {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase)
+            && id != GetCurrentUserId())
+            return Forbid();
+
         var result = await _mediator.Send(new GetUserPayrollInsightsQuery(id, from, to, seriesGranularity));
         return Ok(result);
     }

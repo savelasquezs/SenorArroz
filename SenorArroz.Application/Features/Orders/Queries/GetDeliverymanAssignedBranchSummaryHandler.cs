@@ -1,8 +1,10 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Application.Options;
 
 namespace SenorArroz.Application.Features.Orders.Queries;
 
@@ -10,10 +12,21 @@ public class GetDeliverymanAssignedBranchSummaryHandler
     : IRequestHandler<GetDeliverymanAssignedBranchSummaryQuery, List<DeliverymanAssignedBranchSummaryDto>>
 {
     private readonly IApplicationDbContext _context;
+    private readonly decimal _deliveryFeePayRate;
 
-    public GetDeliverymanAssignedBranchSummaryHandler(IApplicationDbContext context)
+    public GetDeliverymanAssignedBranchSummaryHandler(
+        IApplicationDbContext context,
+        IOptions<DeliveryPayrollOptions> payrollOptions)
     {
         _context = context;
+        _deliveryFeePayRate = ClampPayRate(payrollOptions.Value.DeliveryFeePayRate);
+    }
+
+    private static decimal ClampPayRate(decimal rate)
+    {
+        if (rate < 0) return 0;
+        if (rate > 1) return 1;
+        return rate;
     }
 
     public async Task<List<DeliverymanAssignedBranchSummaryDto>> Handle(
@@ -42,7 +55,12 @@ public class GetDeliverymanAssignedBranchSummaryHandler
 
         var grouped = await query
             .GroupBy(o => o.BranchId)
-            .Select(g => new { BranchId = g.Key, OrderCount = g.Count() })
+            .Select(g => new
+            {
+                BranchId = g.Key,
+                OrderCount = g.Count(),
+                TotalDeliveryFee = g.Sum(o => (decimal)(o.DeliveryFee ?? 0))
+            })
             .ToListAsync(cancellationToken);
 
         if (grouped.Count == 0)
@@ -54,11 +72,18 @@ public class GetDeliverymanAssignedBranchSummaryHandler
             .ToDictionaryAsync(b => b.Id, b => b.Name, cancellationToken);
 
         return grouped
-            .Select(x => new DeliverymanAssignedBranchSummaryDto
+            .Select(x =>
             {
-                BranchId = x.BranchId,
-                BranchName = names.TryGetValue(x.BranchId, out var n) ? n : $"Sucursal #{x.BranchId}",
-                OrderCount = x.OrderCount
+                var payable = Math.Round(x.TotalDeliveryFee * _deliveryFeePayRate, 2);
+                return new DeliverymanAssignedBranchSummaryDto
+                {
+                    BranchId = x.BranchId,
+                    BranchName = names.TryGetValue(x.BranchId, out var n) ? n : $"Sucursal #{x.BranchId}",
+                    OrderCount = x.OrderCount,
+                    DeliveredCount = x.OrderCount,
+                    TotalDeliveryFee = x.TotalDeliveryFee,
+                    PayableDeliveryFee = payable,
+                };
             })
             .OrderBy(x => x.BranchName)
             .ToList();

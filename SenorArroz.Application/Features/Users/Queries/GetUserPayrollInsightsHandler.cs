@@ -60,6 +60,10 @@ public class GetUserPayrollInsightsHandler : IRequestHandler<GetUserPayrollInsig
         if (user == null)
             throw new NotFoundException($"Usuario con ID {request.UserId} no encontrado");
 
+        if (string.Equals(_currentUser.Role, "deliveryman", StringComparison.OrdinalIgnoreCase)
+            && request.UserId != _currentUser.Id)
+            throw new BusinessException("No tienes permisos para ver la nómina de otro usuario.");
+
         var branchId = _currentUser.Role == "superadmin"
             ? user.BranchId
             : _currentUser.BranchId;
