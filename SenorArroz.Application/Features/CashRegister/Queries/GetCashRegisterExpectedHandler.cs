@@ -126,11 +126,16 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
 
         var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 
+        var todayCol = DateTime.UtcNow.AddHours(-5).Date; // Fecha hoy en Colombia (UTC-5)
+
         var undeliveredOrdersCount = await _context.Orders
             .Where(o => o.BranchId == branchId
                 && o.Status != OrderStatus.Delivered
                 && o.Status != OrderStatus.Cancelled
-                && !exemptOrderIds.Contains(o.Id))
+                && !exemptOrderIds.Contains(o.Id)
+                && !(o.Type == OrderType.Reservation
+                     && o.PrepareAt.HasValue
+                     && o.PrepareAt.Value.ToUniversalTime().AddHours(-5).Date != todayCol))
             .CountAsync(cancellationToken);
 
         // --- BANCOS ---

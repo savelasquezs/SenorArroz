@@ -32,11 +32,16 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
 
         var exemptIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 
+        var today = DateTime.UtcNow.AddHours(-5).Date; // Fecha hoy en Colombia (UTC-5)
+
         var undelivered = await _context.Orders
             .Where(o => o.BranchId == branchId
                 && o.Status != OrderStatus.Delivered
                 && o.Status != OrderStatus.Cancelled
-                && !exemptIds.Contains(o.Id))
+                && !exemptIds.Contains(o.Id)
+                && !(o.Type == OrderType.Reservation
+                     && o.PrepareAt.HasValue
+                     && o.PrepareAt.Value.ToUniversalTime().AddHours(-5).Date != today))
             .CountAsync(cancellationToken);
         if (undelivered > 0)
         {
