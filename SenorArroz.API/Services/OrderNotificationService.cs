@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.API.Hubs;
 using SenorArroz.Application.Common.Interfaces;
@@ -12,15 +13,18 @@ public class OrderNotificationService : IOrderNotificationService
     private readonly IHubContext<OrderHub> _hubContext;
     private readonly IFcmPushService _fcm;
     private readonly IApplicationDbContext _db;
+    private readonly ILogger<OrderNotificationService> _logger;
 
     public OrderNotificationService(
         IHubContext<OrderHub> hubContext,
         IFcmPushService fcm,
-        IApplicationDbContext db)
+        IApplicationDbContext db,
+        ILogger<OrderNotificationService> logger)
     {
         _hubContext = hubContext;
         _fcm = fcm;
         _db = db;
+        _logger = logger;
     }
 
     public async Task NotifyNewOrderToKitchen(OrderDto order)
@@ -114,7 +118,13 @@ public class OrderNotificationService : IOrderNotificationService
                 .Select(t => t.Token)
                 .ToListAsync();
 
-            if (tokens.Count == 0) return;
+            if (tokens.Count == 0)
+            {
+                _logger.LogDebug(
+                    "FCM pedido listo #{OrderId} sucursal {BranchId}: sin tokens (domiciliarios libres con dispositivo registrado). Ocupados: {BusyCount}",
+                    order.Id, order.BranchId, busyDeliverymanIds.Count);
+                return;
+            }
 
             await _fcm.SendToTokensAsync(
                 tokens,
@@ -127,9 +137,12 @@ public class OrderNotificationService : IOrderNotificationService
                     ["type"] = "order_ready",
                 });
         }
-        catch
+        catch (Exception ex)
         {
-            // El push es best-effort: si falla, no bloquea el flujo principal
+            // Best-effort: no bloquea el flujo del pedido
+            _logger.LogWarning(ex,
+                "FCM pedido listo #{OrderId} sucursal {BranchId}: error al enviar push",
+                order.Id, order.BranchId);
         }
     }
 }

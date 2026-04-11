@@ -44,8 +44,16 @@ public class FcmPushService : IFcmPushService
         Dictionary<string, string>? data = null,
         CancellationToken cancellationToken = default)
     {
-        if (tokens.Count == 0 || string.IsNullOrEmpty(_fcmProjectId))
+        if (tokens.Count == 0)
             return;
+
+        if (string.IsNullOrEmpty(_fcmProjectId))
+        {
+            _logger.LogWarning(
+                "FCM: hay {Count} token(s) pero Fcm:ProjectId está vacío; configure el id del proyecto Firebase (misma consola que FCM).",
+                tokens.Count);
+            return;
+        }
 
         string accessToken;
         try
