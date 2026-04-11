@@ -20,6 +20,9 @@ public class CreateOrderDto
     public List<CreateOrderDetailDto> OrderDetails { get; set; } = new();
     public List<CreateOrderBankPaymentDto> BankPayments { get; set; } = new();
     public List<CreateOrderAppPaymentDto> AppPayments { get; set; } = new();
+
+    /// <summary>Efectivo ya cobrado en sucursal al crear el pedido (caja).</summary>
+    public bool PaidInStoreCash { get; set; }
 }
 
 public class CreateOrderDetailDto

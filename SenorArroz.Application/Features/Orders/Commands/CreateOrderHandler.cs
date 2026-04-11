@@ -1,6 +1,8 @@
 using AutoMapper;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
@@ -15,6 +17,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     private readonly IOrderRepository _orderRepository;
     private readonly IBankPaymentRepository _bankPaymentRepository;
     private readonly IAppPaymentRepository _appPaymentRepository;
+    private readonly IApplicationDbContext _db;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<CreateOrderHandler> _logger;
@@ -24,6 +27,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         IOrderRepository orderRepository, 
         IBankPaymentRepository bankPaymentRepository,
         IAppPaymentRepository appPaymentRepository,
+        IApplicationDbContext db,
         IMapper mapper, 
         ICurrentUser currentUser,
         ILogger<CreateOrderHandler> logger,
@@ -32,6 +36,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         _orderRepository = orderRepository;
         _bankPaymentRepository = bankPaymentRepository;
         _appPaymentRepository = appPaymentRepository;
+        _db = db;
         _mapper = mapper;
         _currentUser = currentUser;
         _logger = logger;
@@ -168,12 +173,33 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             }
         }
 
-        var result = _mapper.Map<OrderDto>(createdOrder);
+        if (request.Order.PaidInStoreCash)
+        {
+            var role = _currentUser.Role.ToLowerInvariant();
+            if (role is not ("cashier" or "admin" or "superadmin"))
+                throw new BusinessException("No tienes permisos para marcar cobro en tienda en la creación del pedido");
+
+            var tracked = await _db.Orders
+                .Include(o => o.BankPayments)
+                .Include(o => o.AppPayments)
+                .FirstOrDefaultAsync(o => o.Id == createdOrder.Id, cancellationToken);
+            if (tracked == null)
+                throw new BusinessException("Pedido no encontrado tras crear");
+
+            OrderPaidInStoreCashHelper.Apply(tracked, true, DateTime.UtcNow);
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        var fullOrder = await _orderRepository.GetByIdWithFullDetailsAsync(createdOrder.Id);
+        if (fullOrder == null)
+            throw new BusinessException("Pedido no encontrado");
+
+        var result = _mapper.Map<OrderDto>(fullOrder);
 
         // Notificar a cocina: pedido inmediato (sin reserved_for) o prepare_at ya pasó
         var now = DateTime.UtcNow;
-        var shouldNotifyNow = !createdOrder.ReservedFor.HasValue
-            || (createdOrder.PrepareAt.HasValue && createdOrder.PrepareAt.Value <= now);
+        var shouldNotifyNow = !fullOrder.ReservedFor.HasValue
+            || (fullOrder.PrepareAt.HasValue && fullOrder.PrepareAt.Value <= now);
         if (shouldNotifyNow)
         {
             await _notificationService.NotifyNewOrderToKitchen(result);

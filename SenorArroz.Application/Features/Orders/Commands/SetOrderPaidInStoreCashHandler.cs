@@ -1,6 +1,7 @@
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Enums;
@@ -48,26 +49,7 @@ public class SetOrderPaidInStoreCashHandler : IRequestHandler<SetOrderPaidInStor
         if (role != "superadmin" && order.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
-        if (request.PaidInStoreCash)
-        {
-            if (!order.PaidInStoreCash)
-            {
-                var bank = order.BankPayments?.Sum(bp => bp.Amount) ?? 0m;
-                var app = order.AppPayments?.Sum(ap => ap.Amount) ?? 0m;
-                var raw = (decimal)order.Total - bank - app;
-                var snap = (int)Math.Round(Math.Max(0m, raw), MidpointRounding.AwayFromZero);
-                order.PaidInStoreCashAmount = snap;
-                order.PaidInStoreCashAt = DateTime.UtcNow;
-            }
-
-            order.PaidInStoreCash = true;
-        }
-        else
-        {
-            order.PaidInStoreCash = false;
-            order.PaidInStoreCashAt = null;
-            order.PaidInStoreCashAmount = null;
-        }
+        OrderPaidInStoreCashHelper.Apply(order, request.PaidInStoreCash, DateTime.UtcNow);
 
         await _context.SaveChangesAsync(cancellationToken);
 
