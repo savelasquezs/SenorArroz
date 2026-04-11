@@ -5,6 +5,7 @@ using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Options;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Application.Features.Orders.Queries;
 
@@ -45,7 +46,13 @@ public class GetDeliverymanAssignedBranchSummaryHandler
         var query = _context.Orders.AsNoTracking()
             .Where(o => o.DeliveryManId == request.DeliveryManId);
 
-        if (request.Status.HasValue)
+        if (request.IncludeOnsiteActiveInHistory && request.Status == OrderStatus.Delivered)
+        {
+            query = query.Where(o =>
+                o.Status == OrderStatus.Delivered
+                || (o.Type == OrderType.Onsite && o.Status == OrderStatus.OnTheWay));
+        }
+        else if (request.Status.HasValue)
             query = query.Where(o => o.Status == request.Status.Value);
 
         if (fromUtc.HasValue)

@@ -11,4 +11,9 @@ public class GetDeliverymanAssignedBranchSummaryQuery : IRequest<List<Deliveryma
     public DateTime? ToDate { get; set; }
     /// <summary>Si se indica, solo cuenta pedidos en ese estado (p. ej. entregados para historial).</summary>
     public OrderStatus? Status { get; set; }
+
+    /// <summary>
+    /// Con <see cref="Status"/> = Delivered, incluye también pedidos <c>Onsite</c> en <c>OnTheWay</c> del domiciliario.
+    /// </summary>
+    public bool IncludeOnsiteActiveInHistory { get; set; }
 }

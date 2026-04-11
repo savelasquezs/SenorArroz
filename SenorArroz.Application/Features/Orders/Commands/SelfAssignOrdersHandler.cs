@@ -88,6 +88,10 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             if (order == null)
                 throw new BusinessException($"Pedido {orderId} no encontrado");
 
+            if (order.Type != OrderType.Delivery)
+                throw new BusinessException(
+                    "Solo puedes tomar pedidos de domicilio desde la app. Los pedidos en local los asigna caja o administración.");
+
             // Validate branch access
             if (order.BranchId != _currentUser.BranchId)
                 throw new BusinessException($"No tienes permisos para asignarte pedidos de la sucursal {order.BranchId}");

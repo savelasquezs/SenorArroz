@@ -313,7 +313,8 @@ public class OrdersController : ControllerBase
         int deliveryManId,
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
-        [FromQuery] OrderStatus? status = null)
+        [FromQuery] OrderStatus? status = null,
+        [FromQuery] bool includeOnsiteActiveInHistory = false)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value;
         if (string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase))
@@ -328,7 +329,8 @@ public class OrdersController : ControllerBase
             DeliveryManId = deliveryManId,
             FromDate = fromDate,
             ToDate = toDate,
-            Status = status
+            Status = status,
+            IncludeOnsiteActiveInHistory = includeOnsiteActiveInHistory
         };
 
         var result = await _mediator.Send(query);
@@ -375,6 +377,9 @@ public class OrdersController : ControllerBase
     /// Si no se envían fechas, no se aplica filtro de fechas (útil para pedidos en ruta).
     /// <paramref name="branchId"/> (opcional): para el domiciliario, acota el historial a una sucursal (pestañas).
     /// <paramref name="status"/> (opcional): filtra por estado del pedido (p. ej. entregados en el historial).
+    /// <paramref name="type"/> (opcional): filtra por tipo de pedido (p. ej. solo <c>Delivery</c> para la lista en ruta).
+    /// <paramref name="includeOnsiteActiveInHistory"/> (opcional): con <paramref name="status"/> = <c>Delivered</c> y fechas,
+    /// incluye también pedidos <c>Onsite</c> en <c>OnTheWay</c> del mismo domiciliario (historial unificado en la app).
     /// <paramref name="neighborhoodId"/> (opcional): filtra por barrio de la dirección del pedido.
     /// </summary>
     [HttpGet("delivery/assigned/{deliveryManId}")]
@@ -387,6 +392,8 @@ public class OrdersController : ControllerBase
         [FromQuery] DateTime? toDate = null,
         [FromQuery] int? branchId = null,
         [FromQuery] OrderStatus? status = null,
+        [FromQuery] OrderType? type = null,
+        [FromQuery] bool includeOnsiteActiveInHistory = false,
         [FromQuery] int? neighborhoodId = null)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value;
@@ -411,6 +418,8 @@ public class OrdersController : ControllerBase
             DeliveryManId = deliveryManId,
             BranchId = branchId is > 0 ? branchId : null,
             Status = status,
+            Type = type,
+            IncludeOnsiteActiveInAssignedHistory = includeOnsiteActiveInHistory,
             NeighborhoodId = neighborhoodId is > 0 ? neighborhoodId : null,
             Page = page,
             PageSize = pageSize,

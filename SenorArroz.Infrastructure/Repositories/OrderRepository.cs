@@ -804,7 +804,8 @@ public class OrderRepository : IOrderRepository
         DateTime? reservedToDate = null,
         bool excludeFutureReservations = false,
         int? bankId = null,
-        int? neighborhoodId = null)
+        int? neighborhoodId = null,
+        bool includeOnsiteActiveInAssignedHistory = false)
     {
         // PostgreSQL timestamp with time zone requiere UTC
         if (fromDate.HasValue && fromDate.Value.Kind != DateTimeKind.Utc)
@@ -852,7 +853,15 @@ public class OrderRepository : IOrderRepository
         if (deliveryManId.HasValue)
             query = query.Where(o => o.DeliveryManId == deliveryManId);
 
-        if (status.HasValue)
+        if (includeOnsiteActiveInAssignedHistory
+            && deliveryManId.HasValue
+            && status == OrderStatus.Delivered)
+        {
+            query = query.Where(o =>
+                o.Status == OrderStatus.Delivered
+                || (o.Type == OrderType.Onsite && o.Status == OrderStatus.OnTheWay));
+        }
+        else if (status.HasValue)
             query = query.Where(o => o.Status == status.Value);
 
         if (type.HasValue)

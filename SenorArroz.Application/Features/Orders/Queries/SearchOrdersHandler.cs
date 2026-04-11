@@ -80,7 +80,8 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             request.ReservedToDate,
             request.ExcludeFutureReservations,
             request.BankId,
-            request.NeighborhoodId);
+            request.NeighborhoodId,
+            request.IncludeOnsiteActiveInAssignedHistory);
 
         var dtos = _mapper.Map<List<OrderDto>>(result.Items);
 
