@@ -43,34 +43,49 @@ public class FcmPushService : IFcmPushService
         string title,
         string body,
         Dictionary<string, string>? data = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? correlationId = null)
     {
+        var tag = FormatCorrelation(correlationId);
+
         if (tokens.Count == 0)
+        {
+            _logger.LogInformation("{Tag}STEP skip empty_token_list", tag);
             return;
+        }
 
         if (string.IsNullOrEmpty(_fcmProjectId))
         {
             _logger.LogWarning(
-                "FCM: hay {Count} token(s) pero Fcm:ProjectId está vacío; configure el id del proyecto Firebase (misma consola que FCM).",
-                tokens.Count);
+                "{Tag}STEP fail config Fcm:ProjectId vacío; hay {Count} token(s).",
+                tag, tokens.Count);
             return;
         }
+
+        _logger.LogInformation(
+            "{Tag}STEP oauth_start projectId_set={HasProject} token_targets={Count}",
+            tag, true, tokens.Count);
 
         string accessToken;
         try
         {
             accessToken = await GetAccessTokenAsync(cancellationToken);
+            _logger.LogInformation("{Tag}STEP oauth_ok", tag);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "FCM: no se pudo obtener access token");
+            _logger.LogWarning(ex, "{Tag}STEP fail oauth_exception", tag);
             return;
         }
 
         var invalidTokens = new List<string>();
+        var successCount = 0;
+        var errorCount = 0;
 
+        var i = 0;
         foreach (var token in tokens)
         {
+            i++;
             try
             {
                 var payload = BuildPayload(token, title, body, data);
@@ -84,45 +99,58 @@ public class FcmPushService : IFcmPushService
                 var response = await _http.SendAsync(request, cancellationToken);
                 if (response.IsSuccessStatusCode)
                 {
-                    _logger.LogDebug(
-                        "FCM: envío OK (200) token prefijo {Prefix}",
-                        token[..Math.Min(16, token.Length)]);
+                    successCount++;
+                    _logger.LogInformation(
+                        "{Tag}STEP http_ok idx={Idx}/{Total} prefix={Prefix}",
+                        tag, i, tokens.Count, token[..Math.Min(16, token.Length)]);
                     continue;
                 }
 
+                errorCount++;
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                // Solo quitar de BD cuando FCM indica token inexistente/expirado.
-                // INVALID_ARGUMENT suele ser payload; borrarlo eliminaba tokens válidos por error.
                 if (ShouldRemoveStoredDeviceToken(response.StatusCode, responseBody))
                 {
                     invalidTokens.Add(token);
                     _logger.LogInformation(
-                        "FCM: token dado de baja en FCM, se elimina de BD (prefijo {Prefix}): {Body}",
-                        token[..Math.Min(20, token.Length)],
-                        responseBody.Length > 500 ? responseBody[..500] + "…" : responseBody);
+                        "{Tag}STEP http_token_dead idx={Idx} prefix={Prefix} status={Status} body={Body}",
+                        tag, i, token[..Math.Min(20, token.Length)], response.StatusCode,
+                        Truncate(responseBody, 400));
                 }
                 else
                 {
-                    _logger.LogWarning("FCM: error enviando a token {StatusCode}: {Body}",
-                        response.StatusCode, responseBody);
+                    _logger.LogWarning(
+                        "{Tag}STEP http_error idx={Idx} prefix={Prefix} status={Status} body={Body}",
+                        tag, i, token[..Math.Min(16, token.Length)], response.StatusCode,
+                        Truncate(responseBody, 400));
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "FCM: excepción enviando push a token");
+                errorCount++;
+                _logger.LogWarning(ex,
+                    "{Tag}STEP http_exception idx={Idx}/{Total}",
+                    tag, i, tokens.Count);
             }
         }
 
-        // Eliminar tokens inválidos de la BD
         if (invalidTokens.Count > 0)
         {
-            await RemoveInvalidTokensAsync(invalidTokens, cancellationToken);
+            await RemoveInvalidTokensAsync(invalidTokens, cancellationToken, tag);
         }
+
+        _logger.LogInformation(
+            "{Tag}STEP summary ok={Ok} err={Err} removed_from_db={Removed}",
+            tag, successCount, errorCount, invalidTokens.Count);
     }
 
-    /// <summary>
-    /// True si el error de FCM indica que este registration token ya no debe usarse (sí borrar en BD).
-    /// </summary>
+    private static string FormatCorrelation(string? correlationId) =>
+        string.IsNullOrWhiteSpace(correlationId)
+            ? "FCM "
+            : $"FCM[{correlationId}] ";
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : s[..max] + "…";
+
     private static bool ShouldRemoveStoredDeviceToken(HttpStatusCode statusCode, string responseBody)
     {
         if (string.IsNullOrEmpty(responseBody))
@@ -180,7 +208,7 @@ public class FcmPushService : IFcmPushService
         return token;
     }
 
-    private async Task RemoveInvalidTokensAsync(List<string> tokens, CancellationToken ct)
+    private async Task RemoveInvalidTokensAsync(List<string> tokens, CancellationToken ct, string logTag)
     {
         try
         {
@@ -191,10 +219,11 @@ public class FcmPushService : IFcmPushService
                 .ToListAsync(ct);
             db.UserDeviceTokens.RemoveRange(toRemove);
             await db.SaveChangesAsync(ct);
+            _logger.LogInformation("{Tag}STEP db_removed_invalid count={Count}", logTag, toRemove.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "FCM: no se pudieron eliminar tokens inválidos");
+            _logger.LogWarning(ex, "{Tag}STEP fail db_remove_invalid", logTag);
         }
     }
 }

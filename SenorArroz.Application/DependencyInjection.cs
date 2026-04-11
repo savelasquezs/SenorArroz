@@ -35,6 +35,7 @@ namespace SenorArroz.Application
             // Business Rules Service
             services.AddScoped<IOrderBusinessRulesService, OrderBusinessRulesService>();
             services.AddScoped<ILoyaltyCycleService, LoyaltyCycleService>();
+            services.AddScoped<IFreeDeliverymanFcmTokenResolver, FreeDeliverymanFcmTokenResolver>();
 
             return services;
         }

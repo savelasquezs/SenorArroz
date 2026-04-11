@@ -12,5 +12,6 @@ public interface IFcmPushService
         string title,
         string body,
         Dictionary<string, string>? data = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? correlationId = null);
 }

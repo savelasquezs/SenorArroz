@@ -1,10 +1,8 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
-using Microsoft.EntityFrameworkCore;
 using SenorArroz.API.Hubs;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
-using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.API.Services;
 
@@ -12,18 +10,18 @@ public class OrderNotificationService : IOrderNotificationService
 {
     private readonly IHubContext<OrderHub> _hubContext;
     private readonly IFcmPushService _fcm;
-    private readonly IApplicationDbContext _db;
+    private readonly IFreeDeliverymanFcmTokenResolver _freeDeliverymanTokens;
     private readonly ILogger<OrderNotificationService> _logger;
 
     public OrderNotificationService(
         IHubContext<OrderHub> hubContext,
         IFcmPushService fcm,
-        IApplicationDbContext db,
+        IFreeDeliverymanFcmTokenResolver freeDeliverymanTokens,
         ILogger<OrderNotificationService> logger)
     {
         _hubContext = hubContext;
         _fcm = fcm;
-        _db = db;
+        _freeDeliverymanTokens = freeDeliverymanTokens;
         _logger = logger;
     }
 
@@ -36,12 +34,10 @@ public class OrderNotificationService : IOrderNotificationService
 
     public async Task NotifyOrderReadyToDelivery(OrderDto order)
     {
-        // 1. SignalR (igual que antes — para los que tengan la app abierta)
         await _hubContext.Clients
             .Group($"Branch_{order.BranchId}_Delivery")
             .SendAsync("OrderReady", order);
 
-        // 2. Push FCM → solo domiciliarios LIBRES (sin pedidos onTheWay) de la misma sucursal
         await SendPushToFreeDeliverymenAsync(order);
     }
 
@@ -93,57 +89,47 @@ public class OrderNotificationService : IOrderNotificationService
             });
     }
 
-    // ─── Push FCM ────────────────────────────────────────────────────────────
-
     private async Task SendPushToFreeDeliverymenAsync(OrderDto order)
     {
+        var correlationId = $"order_ready:{order.Id}";
         try
         {
-            // Domiciliarios de la sucursal que NO tengan pedidos "onTheWay" asignados
-            var busyDeliverymanIds = await _db.Orders
-                .Where(o => o.BranchId == order.BranchId &&
-                            o.Status == OrderStatus.OnTheWay &&
-                            o.DeliveryManId != null)
-                .Select(o => o.DeliveryManId!.Value)
-                .Distinct()
-                .ToListAsync();
+            _logger.LogInformation(
+                "FCM_ORDER_READY [{Corr}] STEP resolve branchId={BranchId}",
+                correlationId, order.BranchId);
 
-            // Tokens de domiciliarios activos + libres de esa sucursal
-            var tokens = await _db.UserDeviceTokens
-                .Where(t =>
-                    t.User.BranchId == order.BranchId &&
-                    t.User.Role == UserRole.Deliveryman &&
-                    t.User.Active &&
-                    !busyDeliverymanIds.Contains(t.UserId))
-                .Select(t => t.Token)
-                .ToListAsync();
+            var resolved = await _freeDeliverymanTokens.ResolveAsync(order.BranchId);
 
-            if (tokens.Count == 0)
+            if (resolved.Tokens.Count == 0)
             {
-                _logger.LogDebug(
-                    "FCM pedido listo #{OrderId} sucursal {BranchId}: sin tokens (domiciliarios libres con dispositivo registrado). Ocupados: {BusyCount}",
-                    order.Id, order.BranchId, busyDeliverymanIds.Count);
+                _logger.LogInformation(
+                    "FCM_ORDER_READY [{Corr}] STEP skip no_tokens busyCount={Busy}",
+                    correlationId, resolved.BusyDeliverymanCount);
                 return;
             }
 
+            _logger.LogInformation(
+                "FCM_ORDER_READY [{Corr}] STEP send tokens={Count}",
+                correlationId, resolved.Tokens.Count);
+
             await _fcm.SendToTokensAsync(
-                tokens,
-                title: "🍚 Pedido listo para entrega",
+                resolved.Tokens,
+                title: "\U0001F35A Pedido listo para entrega",
                 body: $"Pedido #{order.Id} — {order.NeighborhoodName ?? order.AddressDescription ?? "Ver detalles"}",
                 data: new Dictionary<string, string>
                 {
                     ["orderId"] = order.Id.ToString(),
                     ["branchId"] = order.BranchId.ToString(),
                     ["type"] = "order_ready",
-                });
+                },
+                cancellationToken: default,
+                correlationId: correlationId);
         }
         catch (Exception ex)
         {
-            // Best-effort: no bloquea el flujo del pedido
             _logger.LogWarning(ex,
-                "FCM pedido listo #{OrderId} sucursal {BranchId}: error al enviar push",
-                order.Id, order.BranchId);
+                "FCM_ORDER_READY [{Corr}] STEP exception branchId={BranchId}",
+                correlationId, order.BranchId);
         }
     }
 }
-
