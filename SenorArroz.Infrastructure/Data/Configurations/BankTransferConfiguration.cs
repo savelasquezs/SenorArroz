@@ -14,8 +14,8 @@ public class BankTransferConfiguration : IEntityTypeConfiguration<BankTransfer>
         builder.HasKey(bt => bt.Id);
         builder.Property(bt => bt.Id).HasColumnName("id");
 
-        builder.Property(bt => bt.FromBankId).HasColumnName("from_bank_id").IsRequired();
-        builder.Property(bt => bt.ToBankId).HasColumnName("to_bank_id").IsRequired();
+        builder.Property(bt => bt.FromBankId).HasColumnName("from_bank_id");
+        builder.Property(bt => bt.ToBankId).HasColumnName("to_bank_id");
         builder.Property(bt => bt.Amount).HasColumnName("amount").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(bt => bt.Note).HasColumnName("note").HasMaxLength(500);
         builder.Property(bt => bt.CreatedById).HasColumnName("created_by_id").IsRequired();
@@ -28,11 +28,13 @@ public class BankTransferConfiguration : IEntityTypeConfiguration<BankTransfer>
         builder.HasOne(bt => bt.FromBank)
             .WithMany()
             .HasForeignKey(bt => bt.FromBankId)
+            .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(bt => bt.ToBank)
             .WithMany()
             .HasForeignKey(bt => bt.ToBankId)
+            .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(bt => bt.CreatedBy)

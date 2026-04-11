@@ -121,8 +121,23 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
 
         var cashVaultNetToVault = cashVaultAbonos - cashVaultDescargas;
 
+        // Efectivo → banco: sale de caja física hacia cuenta (mismo período que el cuadre)
+        var cashOutToBanks = await _context.BankTransfers
+            .Where(bt => bt.FromBankId == null
+                && bt.ToBank != null && bt.ToBank.BranchId == branchId
+                && bt.CreatedAt > since && bt.CreatedAt <= now)
+            .SumAsync(bt => bt.Amount, cancellationToken);
+
+        // Banco → efectivo: entra a caja física desde cuenta
+        var cashInFromBanks = await _context.BankTransfers
+            .Where(bt => bt.ToBankId == null
+                && bt.FromBank != null && bt.FromBank.BranchId == branchId
+                && bt.CreatedAt > since && bt.CreatedAt <= now)
+            .SumAsync(bt => bt.Amount, cancellationToken);
+
         var expectedCash = openingCash + cashFromOrders + cashDeposits - depositsAlreadyCounted - cashExpenses
-            - advancesBankTransfer - informalLoansActiveTotal - cashVaultNetToVault;
+            - advancesBankTransfer - informalLoansActiveTotal - cashVaultNetToVault
+            + cashInFromBanks - cashOutToBanks;
 
         var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 

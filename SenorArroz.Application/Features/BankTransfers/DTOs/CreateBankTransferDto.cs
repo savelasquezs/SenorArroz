@@ -4,11 +4,11 @@ namespace SenorArroz.Application.Features.BankTransfers.DTOs;
 
 public class CreateBankTransferDto
 {
-    [Required(ErrorMessage = "El banco de origen es requerido")]
-    public int FromBankId { get; set; }
+    /// <summary>Null o ausente = origen es efectivo de caja.</summary>
+    public int? FromBankId { get; set; }
 
-    [Required(ErrorMessage = "El banco de destino es requerido")]
-    public int ToBankId { get; set; }
+    /// <summary>Null o ausente = destino es efectivo de caja.</summary>
+    public int? ToBankId { get; set; }
 
     [Required(ErrorMessage = "El monto es requerido")]
     [Range(0.01, double.MaxValue, ErrorMessage = "El monto debe ser mayor a 0")]

@@ -3,9 +3,9 @@ namespace SenorArroz.Application.Features.BankTransfers.DTOs;
 public class BankTransferDto
 {
     public int Id { get; set; }
-    public int FromBankId { get; set; }
+    public int? FromBankId { get; set; }
     public string FromBankName { get; set; } = string.Empty;
-    public int ToBankId { get; set; }
+    public int? ToBankId { get; set; }
     public string ToBankName { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public string? Note { get; set; }

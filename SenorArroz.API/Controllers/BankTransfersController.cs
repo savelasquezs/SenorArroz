@@ -60,8 +60,8 @@ public class BankTransfersController : ControllerBase
     {
         var command = new CreateBankTransferCommand
         {
-            FromBankId = dto.FromBankId,
-            ToBankId = dto.ToBankId,
+            FromBankId = dto.FromBankId is > 0 ? dto.FromBankId : null,
+            ToBankId = dto.ToBankId is > 0 ? dto.ToBankId : null,
             Amount = dto.Amount,
             Note = dto.Note
         };

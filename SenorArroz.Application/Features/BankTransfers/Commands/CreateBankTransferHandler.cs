@@ -32,21 +32,37 @@ public class CreateBankTransferHandler : IRequestHandler<CreateBankTransferComma
         if (request.Amount <= 0)
             throw new BusinessException("El monto debe ser mayor a 0");
 
-        if (request.FromBankId == request.ToBankId)
+        var fromId = request.FromBankId;
+        var toId = request.ToBankId;
+
+        if (!fromId.HasValue && !toId.HasValue)
+            throw new BusinessException("Indica banco origen y/o destino; un extremo puede ser efectivo de caja.");
+
+        if (fromId.HasValue && toId.HasValue && fromId.Value == toId.Value)
             throw new BusinessException("El banco origen y destino no pueden ser el mismo");
 
-        var fromBank = await _bankRepository.GetByIdAsync(request.FromBankId);
-        if (fromBank == null)
-            throw new BusinessException("El banco origen no existe");
+        Bank? fromBank = null;
+        Bank? toBank = null;
 
-        var toBank = await _bankRepository.GetByIdAsync(request.ToBankId);
-        if (toBank == null)
-            throw new BusinessException("El banco destino no existe");
+        if (fromId.HasValue)
+        {
+            fromBank = await _bankRepository.GetByIdAsync(fromId.Value);
+            if (fromBank == null)
+                throw new BusinessException("El banco origen no existe");
+        }
 
-        if (fromBank.BranchId != toBank.BranchId)
+        if (toId.HasValue)
+        {
+            toBank = await _bankRepository.GetByIdAsync(toId.Value);
+            if (toBank == null)
+                throw new BusinessException("El banco destino no existe");
+        }
+
+        if (fromBank != null && toBank != null && fromBank.BranchId != toBank.BranchId)
             throw new BusinessException("Los bancos deben pertenecer a la misma sucursal");
 
-        if (_currentUser.Role != "superadmin" && fromBank.BranchId != _currentUser.BranchId)
+        var branchIdForPerm = fromBank?.BranchId ?? toBank!.BranchId;
+        if (_currentUser.Role != "superadmin" && branchIdForPerm != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para realizar transferencias en esta sucursal");
 
         if (!_currentUser.IsAuthenticated)
@@ -54,8 +70,8 @@ public class CreateBankTransferHandler : IRequestHandler<CreateBankTransferComma
 
         var bankTransfer = new BankTransfer
         {
-            FromBankId = request.FromBankId,
-            ToBankId = request.ToBankId,
+            FromBankId = fromId,
+            ToBankId = toId,
             Amount = request.Amount,
             Note = request.Note,
             CreatedById = _currentUser.Id

@@ -50,7 +50,10 @@ public class BankTransferRepository : IBankTransferRepository
 
         if (branchId.HasValue)
         {
-            query = query.Where(bt => bt.FromBank.BranchId == branchId.Value || bt.ToBank.BranchId == branchId.Value);
+            var bid = branchId.Value;
+            query = query.Where(bt =>
+                (bt.FromBankId != null && bt.FromBank!.BranchId == bid)
+                || (bt.ToBankId != null && bt.ToBank!.BranchId == bid));
         }
         if (fromBankId.HasValue)
             query = query.Where(bt => bt.FromBankId == fromBankId.Value);
@@ -82,8 +85,12 @@ public class BankTransferRepository : IBankTransferRepository
         {
             "amount" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(bt => bt.Amount) : query.OrderBy(bt => bt.Amount),
             "createdat" or "date" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(bt => bt.CreatedAt) : query.OrderBy(bt => bt.CreatedAt),
-            "frombank" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(bt => bt.FromBank.Name) : query.OrderBy(bt => bt.FromBank.Name),
-            "tobank" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(bt => bt.ToBank.Name) : query.OrderBy(bt => bt.ToBank.Name),
+            "frombank" => sortOrder.ToLower() == "desc"
+                ? query.OrderByDescending(bt => bt.FromBank != null ? bt.FromBank.Name : "")
+                : query.OrderBy(bt => bt.FromBank != null ? bt.FromBank.Name : ""),
+            "tobank" => sortOrder.ToLower() == "desc"
+                ? query.OrderByDescending(bt => bt.ToBank != null ? bt.ToBank.Name : "")
+                : query.OrderBy(bt => bt.ToBank != null ? bt.ToBank.Name : ""),
             _ => query.OrderByDescending(bt => bt.CreatedAt)
         };
 
