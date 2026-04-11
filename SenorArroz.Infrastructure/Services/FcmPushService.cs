@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -81,22 +82,29 @@ public class FcmPushService : IFcmPushService
                 request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
                 var response = await _http.SendAsync(request, cancellationToken);
-                if (!response.IsSuccessStatusCode)
+                if (response.IsSuccessStatusCode)
                 {
-                    var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                    // 404 o UNREGISTERED → token inválido → eliminar
-                    if ((int)response.StatusCode == 404 ||
-                        responseBody.Contains("UNREGISTERED") ||
-                        responseBody.Contains("INVALID_ARGUMENT"))
-                    {
-                        invalidTokens.Add(token);
-                        _logger.LogDebug("FCM: token inválido removido: {Token}", token[..Math.Min(20, token.Length)]);
-                    }
-                    else
-                    {
-                        _logger.LogWarning("FCM: error enviando a token {StatusCode}: {Body}",
-                            response.StatusCode, responseBody);
-                    }
+                    _logger.LogDebug(
+                        "FCM: envío OK (200) token prefijo {Prefix}",
+                        token[..Math.Min(16, token.Length)]);
+                    continue;
+                }
+
+                var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                // Solo quitar de BD cuando FCM indica token inexistente/expirado.
+                // INVALID_ARGUMENT suele ser payload; borrarlo eliminaba tokens válidos por error.
+                if (ShouldRemoveStoredDeviceToken(response.StatusCode, responseBody))
+                {
+                    invalidTokens.Add(token);
+                    _logger.LogInformation(
+                        "FCM: token dado de baja en FCM, se elimina de BD (prefijo {Prefix}): {Body}",
+                        token[..Math.Min(20, token.Length)],
+                        responseBody.Length > 500 ? responseBody[..500] + "…" : responseBody);
+                }
+                else
+                {
+                    _logger.LogWarning("FCM: error enviando a token {StatusCode}: {Body}",
+                        response.StatusCode, responseBody);
                 }
             }
             catch (Exception ex)
@@ -110,6 +118,24 @@ public class FcmPushService : IFcmPushService
         {
             await RemoveInvalidTokensAsync(invalidTokens, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// True si el error de FCM indica que este registration token ya no debe usarse (sí borrar en BD).
+    /// </summary>
+    private static bool ShouldRemoveStoredDeviceToken(HttpStatusCode statusCode, string responseBody)
+    {
+        if (string.IsNullOrEmpty(responseBody))
+            return false;
+
+        if (responseBody.Contains("UNREGISTERED", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (statusCode == HttpStatusCode.NotFound &&
+            responseBody.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
     }
 
     private static object BuildPayload(
