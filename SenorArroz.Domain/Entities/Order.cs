@@ -42,6 +42,13 @@ public class Order : BaseEntity
     public string? Notes { get; set; }
     public string? CancelledReason { get; set; }
 
+    /// <summary>Efectivo pendiente ya cobrado en sucursal; el domiciliario no cobra en entrega.</summary>
+    public bool PaidInStoreCash { get; set; }
+    /// <summary>Momento en que se marcó el cobro en tienda (UTC).</summary>
+    public DateTime? PaidInStoreCashAt { get; set; }
+    /// <summary>Snapshot COP del efectivo reconocido al activar (para cuadre de caja).</summary>
+    public int? PaidInStoreCashAmount { get; set; }
+
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;
     public virtual User TakenBy { get; set; } = null!;

@@ -82,7 +82,10 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.DeliveryRoute, opt => opt.Ignore())
             .ForMember(dest => dest.OrderDetails, opt => opt.Ignore())
             .ForMember(dest => dest.BankPayments, opt => opt.Ignore())
-            .ForMember(dest => dest.AppPayments, opt => opt.Ignore());
+            .ForMember(dest => dest.AppPayments, opt => opt.Ignore())
+            .ForMember(dest => dest.PaidInStoreCash, opt => opt.Ignore())
+            .ForMember(dest => dest.PaidInStoreCashAt, opt => opt.Ignore())
+            .ForMember(dest => dest.PaidInStoreCashAmount, opt => opt.Ignore());
 
         // CreateOrderDetailDto -> OrderDetail
         CreateMap<CreateOrderDetailDto, OrderDetail>()

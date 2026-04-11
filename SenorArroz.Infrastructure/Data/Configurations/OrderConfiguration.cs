@@ -61,6 +61,10 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.Notes).HasColumnName("notes").HasMaxLength(200);
         builder.Property(o => o.CancelledReason).HasColumnName("cancelled_reason").HasMaxLength(200);
 
+        builder.Property(o => o.PaidInStoreCash).HasColumnName("paid_in_store_cash").HasDefaultValue(false);
+        builder.Property(o => o.PaidInStoreCashAt).HasColumnName("paid_in_store_cash_at");
+        builder.Property(o => o.PaidInStoreCashAmount).HasColumnName("paid_in_store_cash_amount");
+
         builder.Property(o => o.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
         builder.Property(o => o.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAddOrUpdate()

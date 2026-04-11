@@ -1490,3 +1490,10 @@ CREATE INDEX IF NOT EXISTS idx_dloc_route
 
 CREATE INDEX IF NOT EXISTS idx_dloc_recorded
     ON public.deliveryman_location(recorded_at DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Pedido: pago en efectivo en tienda (snapshot para caja; 0 a cobrar en ruta)
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE public."order" ADD COLUMN IF NOT EXISTS paid_in_store_cash boolean NOT NULL DEFAULT false;
+ALTER TABLE public."order" ADD COLUMN IF NOT EXISTS paid_in_store_cash_at timestamp with time zone NULL;
+ALTER TABLE public."order" ADD COLUMN IF NOT EXISTS paid_in_store_cash_amount integer NULL;

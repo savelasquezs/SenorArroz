@@ -227,6 +227,22 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
+    /// Marca si el efectivo pendiente ya se cobró en la sucursal (domiciliario no cobra en entrega; cuadre de caja usa el snapshot).
+    /// </summary>
+    [HttpPut("{id}/paid-in-store-cash")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
+    public async Task<ActionResult<OrderDto>> SetPaidInStoreCash(int id, [FromBody] SetOrderPaidInStoreCashDto body)
+    {
+        var command = new SetOrderPaidInStoreCashCommand
+        {
+            OrderId = id,
+            PaidInStoreCash = body.PaidInStoreCash
+        };
+        var result = await _mediator.Send(command);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Cancela un pedido (cualquier día salvo reservas con prepare_at y reserved_for: esas solo el día UTC de creación;
     /// requiere razón; elimina pagos asociados no contabilizados vía repositorio).
     /// </summary>

@@ -46,6 +46,10 @@ public class OrderDto
     public int DiscountTotal { get; set; }
     public string? Notes { get; set; }
     public string? CancelledReason { get; set; }
+    /// <summary>Efectivo ya cobrado en sucursal; nada que cobrar en entrega.</summary>
+    public bool PaidInStoreCash { get; set; }
+    public DateTime? PaidInStoreCashAt { get; set; }
+    public int? PaidInStoreCashAmount { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public List<BankPaymentDto> BankPayments { get; set; } = new();

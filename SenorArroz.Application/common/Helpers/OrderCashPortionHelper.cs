@@ -10,9 +10,11 @@ public static class OrderCashPortionHelper
     public static decimal GetCashPortion(Order order)
     {
         ArgumentNullException.ThrowIfNull(order);
+        if (order.PaidInStoreCash)
+            return 0m;
         var bank = order.BankPayments?.Sum(bp => bp.Amount) ?? 0m;
         var app = order.AppPayments?.Sum(ap => ap.Amount) ?? 0m;
-        return order.Total - bank - app;
+        return (decimal)order.Total - bank - app;
     }
 
     /// <summary>Monto a cobrar en entrega (no negativo; alineado con UI / ticket domiciliario).</summary>

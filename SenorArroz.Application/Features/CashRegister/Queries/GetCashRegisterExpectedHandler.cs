@@ -68,8 +68,28 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         var appPaymentsFromOrdersTotal = await deliveredOrdersQuery
             .SumAsync(o => o.AppPayments.Sum(ap => ap.Amount), cancellationToken);
 
-        // Ingresos en efectivo = venta - banco - app
-        var cashFromOrders = deliveredOrdersSalesTotal - bankPaymentsFromOrdersTotal - appPaymentsFromOrdersTotal;
+        // Efectivo: remanente que vuelve con domiciliario al entregar (0 si ya pagó en tienda) + cobros en sucursal marcados en el período
+        var deliveredCashRemanent = await deliveredOrdersQuery
+            .SumAsync(o =>
+                o.PaidInStoreCash
+                    ? 0m
+                    : Math.Max(
+                        0m,
+                        (decimal)o.Total
+                            - o.BankPayments.Sum(bp => bp.Amount)
+                            - o.AppPayments.Sum(ap => ap.Amount)),
+                cancellationToken);
+
+        var cashFromInStoreMarks = await _context.Orders
+            .Where(o => o.BranchId == branchId
+                && o.PaidInStoreCash
+                && o.PaidInStoreCashAt.HasValue
+                && o.PaidInStoreCashAt.Value > since
+                && o.PaidInStoreCashAt.Value <= now
+                && o.PaidInStoreCashAmount.HasValue)
+            .SumAsync(o => (decimal)o.PaidInStoreCashAmount!.Value, cancellationToken);
+
+        var cashFromOrders = deliveredCashRemanent + cashFromInStoreMarks;
 
         // Gastos en efectivo = gasto total - lo que se pagó por banco
         var cashExpenses = await _context.ExpenseHeaders
