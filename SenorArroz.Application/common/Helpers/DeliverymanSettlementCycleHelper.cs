@@ -94,4 +94,10 @@ public static class DeliverymanSettlementCycleHelper
 
         return total;
     }
+
+    /// <summary>
+    /// Une listas de pedidos por Id (un mismo pedido no debería repetirse entre listas).
+    /// </summary>
+    public static List<Order> UnionOrdersById(IEnumerable<Order> first, IEnumerable<Order> second) =>
+        first.Concat(second).GroupBy(o => o.Id).Select(g => g.First()).ToList();
 }

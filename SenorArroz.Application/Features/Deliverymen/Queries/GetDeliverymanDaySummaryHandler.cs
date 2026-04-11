@@ -79,8 +79,8 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
 
         var lastLiquidationAtUtc = useSettlementCycle ? dayState?.LastLiquidationAtUtc : null;
 
-        // 2. Obtener pedidos del domiciliario en el rango
-        var ordersResult = await _orderRepository.SearchOrdersAsync(
+        // 2. Pedidos entregados del domiciliario: delivery + onsite (en el local con domiciliario asignado desde caja)
+        var ordersDelivery = await _orderRepository.SearchOrdersAsync(
             searchTerm: null,
             branchId: branchId,
             customerId: null,
@@ -95,12 +95,29 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
             pageSize: 500,
             sortBy: "CreatedAt",
             sortOrder: "desc");
+        var ordersOnsite = await _orderRepository.SearchOrdersAsync(
+            searchTerm: null,
+            branchId: branchId,
+            customerId: null,
+            deliveryManId: request.DeliverymanId,
+            status: OrderStatus.Delivered,
+            type: OrderType.Onsite,
+            fromDate: fromDate,
+            toDate: toDate,
+            minAmount: null,
+            maxAmount: null,
+            page: 1,
+            pageSize: 500,
+            sortBy: "CreatedAt",
+            sortOrder: "desc");
 
-        var orders = ordersResult.Items.ToList();
+        var orders = DeliverymanSettlementCycleHelper.UnionOrdersById(ordersDelivery.Items, ordersOnsite.Items)
+            .OrderByDescending(o => o.CreatedAt)
+            .ToList();
         var cycleOrders = DeliverymanSettlementCycleHelper.FilterOrdersForCycle(
             orders, fromDate, toDate, lastLiquidationAtUtc, useSettlementCycle);
 
-        var onTheWayResult = await _orderRepository.SearchOrdersAsync(
+        var onTheWayDelivery = await _orderRepository.SearchOrdersAsync(
             searchTerm: null,
             branchId: branchId,
             customerId: null,
@@ -115,6 +132,22 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
             pageSize: 1,
             sortBy: "CreatedAt",
             sortOrder: "desc");
+        var onTheWayOnsite = await _orderRepository.SearchOrdersAsync(
+            searchTerm: null,
+            branchId: branchId,
+            customerId: null,
+            deliveryManId: request.DeliverymanId,
+            status: OrderStatus.OnTheWay,
+            type: OrderType.Onsite,
+            fromDate: null,
+            toDate: null,
+            minAmount: null,
+            maxAmount: null,
+            page: 1,
+            pageSize: 1,
+            sortBy: "CreatedAt",
+            sortOrder: "desc");
+        var onTheWayTotalCount = onTheWayDelivery.TotalCount + onTheWayOnsite.TotalCount;
 
         // 3. Total de abonos del ciclo (o del rango si es multi-día)
         var totalAdvances = await _advanceRepository.GetTotalAdvancesForSettlementCycleAsync(
@@ -147,7 +180,7 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
             AverageDeliveryTimeMinutes = avgTime,
             DayBlocked = dayState?.Blocked ?? false,
             LiquidationMode = dayState?.LiquidationMode ?? DeliverymanDayLiquidationMode.None,
-            OrdersOnTheWayCount = onTheWayResult.TotalCount
+            OrdersOnTheWayCount = onTheWayTotalCount
         };
 
         // 5. Mapear pedidos a DTOs (solo ciclo)
@@ -181,7 +214,7 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
             AverageDeliveryTimeMinutes = fullDayAvgTime,
             DayBlocked = dayState?.Blocked ?? false,
             LiquidationMode = dayState?.LiquidationMode ?? DeliverymanDayLiquidationMode.None,
-            OrdersOnTheWayCount = onTheWayResult.TotalCount
+            OrdersOnTheWayCount = onTheWayTotalCount
         };
 
         var fullDayOrderDtos = fullDayOrdersList.Select(o => _mapper.Map<OrderDto>(o)).ToList();

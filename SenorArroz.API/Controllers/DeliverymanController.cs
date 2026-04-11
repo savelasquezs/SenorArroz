@@ -8,6 +8,7 @@ using SenorArroz.Application.Features.DeliverymanAdvances.Queries;
 using SenorArroz.Application.Features.Deliverymen.Commands;
 using SenorArroz.Application.Features.Deliverymen.DTOs;
 using SenorArroz.Application.Features.Deliverymen.Queries;
+using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Features.Orders.Queries;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Shared.Models;
@@ -161,7 +162,7 @@ public class DeliverymanController : ControllerBase
     /// </summary>
     [HttpGet("{id}/orders")]
     [Authorize(Roles = "Superadmin,Admin,Cashier")]
-    public async Task<ActionResult<PagedResult<object>>> GetOrders(
+    public async Task<ActionResult<PagedResult<OrderDto>>> GetOrders(
         int id,
         [FromQuery] DateTime? date = null,
         [FromQuery] DateTime? fromDate = null,
@@ -170,20 +171,51 @@ public class DeliverymanController : ControllerBase
         [FromQuery] int pageSize = 50)
     {
         var (from, to) = ResolveDateRange(date, fromDate, toDate);
-        var query = new SearchOrdersQuery
+        const int fetchCap = 5000;
+        var qDelivery = new SearchOrdersQuery
         {
             DeliveryManId = id,
             Status = OrderStatus.Delivered,
             Type = OrderType.Delivery,
             FromDate = from,
             ToDate = to,
-            Page = page,
-            PageSize = pageSize,
+            Page = 1,
+            PageSize = fetchCap,
             SortBy = "CreatedAt",
             SortOrder = "desc"
         };
-        var result = await _mediator.Send(query);
-        return Ok(result);
+        var qOnsite = new SearchOrdersQuery
+        {
+            DeliveryManId = id,
+            Status = OrderStatus.Delivered,
+            Type = OrderType.Onsite,
+            FromDate = from,
+            ToDate = to,
+            Page = 1,
+            PageSize = fetchCap,
+            SortBy = "CreatedAt",
+            SortOrder = "desc"
+        };
+        var delivery = await _mediator.Send(qDelivery);
+        var onsite = await _mediator.Send(qOnsite);
+        var combined = delivery.Items
+            .Concat(onsite.Items)
+            .GroupBy(o => o.Id)
+            .Select(g => g.First())
+            .OrderByDescending(o => o.CreatedAt)
+            .ToList();
+        var total = delivery.TotalCount + onsite.TotalCount;
+        var skip = (page - 1) * pageSize;
+        var pageItems = combined.Skip(skip).Take(pageSize).ToList();
+        var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)Math.Max(pageSize, 1)));
+        return Ok(new PagedResult<OrderDto>
+        {
+            Items = pageItems,
+            TotalCount = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages,
+        });
     }
 
     /// <summary>
@@ -206,7 +238,7 @@ public class DeliverymanController : ControllerBase
     }
 
     /// <summary>
-    /// Lista de domiciliarios con pedidos de delivery en el día actual (o rango dado).
+    /// Lista de domiciliarios con pedidos entregados en el día (o rango): delivery y onsite con domiciliario asignado.
     /// Usado, por ejemplo, para registrar abonos desde otros módulos.
     /// </summary>
     [HttpGet("with-orders-today")]

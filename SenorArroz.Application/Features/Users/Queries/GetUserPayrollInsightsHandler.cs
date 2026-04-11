@@ -186,33 +186,40 @@ public class GetUserPayrollInsightsHandler : IRequestHandler<GetUserPayrollInsig
         DateTime fromUtc,
         DateTime toUtc)
     {
-        var all = new List<Order>();
-        var page = 1;
-        while (page < 200)
+        async Task<List<Order>> LoadType(OrderType orderType)
         {
-            var batch = await _orderRepository.SearchOrdersAsync(
-                searchTerm: null,
-                branchId: branchId,
-                customerId: null,
-                deliveryManId: deliverymanId,
-                status: OrderStatus.Delivered,
-                type: OrderType.Delivery,
-                fromDate: fromUtc,
-                toDate: toUtc,
-                minAmount: null,
-                maxAmount: null,
-                page: page,
-                pageSize: OrderPageSize,
-                sortBy: "CreatedAt",
-                sortOrder: "desc");
+            var all = new List<Order>();
+            var page = 1;
+            while (page < 200)
+            {
+                var batch = await _orderRepository.SearchOrdersAsync(
+                    searchTerm: null,
+                    branchId: branchId,
+                    customerId: null,
+                    deliveryManId: deliverymanId,
+                    status: OrderStatus.Delivered,
+                    type: orderType,
+                    fromDate: fromUtc,
+                    toDate: toUtc,
+                    minAmount: null,
+                    maxAmount: null,
+                    page: page,
+                    pageSize: OrderPageSize,
+                    sortBy: "CreatedAt",
+                    sortOrder: "desc");
 
-            all.AddRange(batch.Items);
-            if (batch.Items.Count() < OrderPageSize)
-                break;
-            page++;
+                all.AddRange(batch.Items);
+                if (batch.Items.Count() < OrderPageSize)
+                    break;
+                page++;
+            }
+
+            return all;
         }
 
-        return all;
+        var delivery = await LoadType(OrderType.Delivery);
+        var onsite = await LoadType(OrderType.Onsite);
+        return DeliverymanSettlementCycleHelper.UnionOrdersById(delivery, onsite);
     }
 
     private sealed record BucketDef(string Key, string Label, DateTime RangeFrom, DateTime RangeTo);

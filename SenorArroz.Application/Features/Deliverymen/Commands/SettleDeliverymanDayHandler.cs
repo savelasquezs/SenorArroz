@@ -73,7 +73,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         if (_currentUser.Role != "superadmin" && deliveryman.BranchId != branchId)
             throw new BusinessException("No tienes permisos para liquidar este domiciliario");
 
-        var onTheWayPending = await _orderRepository.SearchOrdersAsync(
+        var onTheWayDelivery = await _orderRepository.SearchOrdersAsync(
             searchTerm: null,
             branchId: branchId,
             customerId: null,
@@ -88,14 +88,29 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
             pageSize: 1,
             sortBy: "CreatedAt",
             sortOrder: "desc");
-        if (onTheWayPending.TotalCount > 0)
+        var onTheWayOnsite = await _orderRepository.SearchOrdersAsync(
+            searchTerm: null,
+            branchId: branchId,
+            customerId: null,
+            deliveryManId: request.DeliverymanId,
+            status: OrderStatus.OnTheWay,
+            type: OrderType.Onsite,
+            fromDate: null,
+            toDate: null,
+            minAmount: null,
+            maxAmount: null,
+            page: 1,
+            pageSize: 1,
+            sortBy: "CreatedAt",
+            sortOrder: "desc");
+        if (onTheWayDelivery.TotalCount + onTheWayOnsite.TotalCount > 0)
             throw new BusinessException(
                 "No puedes liquidar mientras el domiciliario tenga pedidos en camino sin entregar.");
 
         var startColombia = settlementDate.ToDateTime(TimeOnly.MinValue);
         var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(startColombia, startColombia);
 
-        var ordersResult = await _orderRepository.SearchOrdersAsync(
+        var ordersDelivery = await _orderRepository.SearchOrdersAsync(
             searchTerm: null,
             branchId: branchId,
             customerId: null,
@@ -110,8 +125,25 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
             pageSize: 500,
             sortBy: "CreatedAt",
             sortOrder: "desc");
+        var ordersOnsite = await _orderRepository.SearchOrdersAsync(
+            searchTerm: null,
+            branchId: branchId,
+            customerId: null,
+            deliveryManId: request.DeliverymanId,
+            status: OrderStatus.Delivered,
+            type: OrderType.Onsite,
+            fromDate: fromUtc,
+            toDate: toUtc,
+            minAmount: null,
+            maxAmount: null,
+            page: 1,
+            pageSize: 500,
+            sortBy: "CreatedAt",
+            sortOrder: "desc");
 
-        var orders = ordersResult.Items.ToList();
+        var orders = DeliverymanSettlementCycleHelper.UnionOrdersById(ordersDelivery.Items, ordersOnsite.Items)
+            .OrderByDescending(o => o.CreatedAt)
+            .ToList();
 
         var priorState = await _context.DeliverymanDayStates
             .AsNoTracking()

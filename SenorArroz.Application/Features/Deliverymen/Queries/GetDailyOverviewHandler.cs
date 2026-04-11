@@ -66,8 +66,8 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             .OrderBy(u => u.Name)
             .ToList();
 
-        // 2. Una sola consulta de pedidos entregados del día (todos los domiciliarios)
-        var ordersResult = await _orderRepository.SearchOrdersAsync(
+        // 2. Pedidos entregados del día: delivery + onsite con domiciliario asignado
+        var ordersDelivery = await _orderRepository.SearchOrdersAsync(
             searchTerm: null,
             branchId: branchId,
             customerId: null,
@@ -82,13 +82,28 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             pageSize: 500,
             sortBy: "CreatedAt",
             sortOrder: "desc");
+        var ordersOnsite = await _orderRepository.SearchOrdersAsync(
+            searchTerm: null,
+            branchId: branchId,
+            customerId: null,
+            deliveryManId: null,
+            status: OrderStatus.Delivered,
+            type: OrderType.Onsite,
+            fromDate: fromDate,
+            toDate: toDate,
+            minAmount: null,
+            maxAmount: null,
+            page: 1,
+            pageSize: 500,
+            sortBy: "CreatedAt",
+            sortOrder: "desc");
 
-        var ordersByDeliveryman = ordersResult.Items
+        var ordersByDeliveryman = DeliverymanSettlementCycleHelper.UnionOrdersById(ordersDelivery.Items, ordersOnsite.Items)
             .Where(o => o.DeliveryManId.HasValue)
             .GroupBy(o => o.DeliveryManId!.Value)
             .ToDictionary(g => g.Key, g => g.ToList());
 
-        var onTheWayResult = await _orderRepository.SearchOrdersAsync(
+        var onTheWayDelivery = await _orderRepository.SearchOrdersAsync(
             searchTerm: null,
             branchId: branchId,
             customerId: null,
@@ -103,7 +118,22 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             pageSize: 2000,
             sortBy: "CreatedAt",
             sortOrder: "desc");
-        var onTheWayCountByDeliveryman = onTheWayResult.Items
+        var onTheWayOnsite = await _orderRepository.SearchOrdersAsync(
+            searchTerm: null,
+            branchId: branchId,
+            customerId: null,
+            deliveryManId: null,
+            status: OrderStatus.OnTheWay,
+            type: OrderType.Onsite,
+            fromDate: null,
+            toDate: null,
+            minAmount: null,
+            maxAmount: null,
+            page: 1,
+            pageSize: 2000,
+            sortBy: "CreatedAt",
+            sortOrder: "desc");
+        var onTheWayCountByDeliveryman = DeliverymanSettlementCycleHelper.UnionOrdersById(onTheWayDelivery.Items, onTheWayOnsite.Items)
             .Where(o => o.DeliveryManId.HasValue)
             .GroupBy(o => o.DeliveryManId!.Value)
             .ToDictionary(g => g.Key, g => g.Count());
