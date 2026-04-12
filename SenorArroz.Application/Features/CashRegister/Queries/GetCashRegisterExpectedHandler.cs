@@ -53,11 +53,12 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         // --- EFECTIVO ---
         decimal openingCash = lastClosure?.ClosingCash ?? 0;
 
-        // Pedidos entregados en el período (mismo filtro para ventas / efectivo / banco / app)
+        // Pedidos entregados en el período (mismo filtro para ventas / efectivo / banco / app).
+        // Se usa UpdatedAt para capturar reservas creadas en períodos anteriores pero entregadas en este período.
         var deliveredOrdersQuery = _context.Orders
             .Where(o => o.BranchId == branchId
                 && o.Status == OrderStatus.Delivered
-                && o.CreatedAt > since && o.CreatedAt <= now);
+                && o.UpdatedAt > since && o.UpdatedAt <= now);
 
         var deliveredOrdersSalesTotal = await deliveredOrdersQuery
             .SumAsync(o => (decimal)o.Total, cancellationToken);
