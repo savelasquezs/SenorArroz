@@ -114,13 +114,11 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         {
             await _notificationService.NotifyOrderReadyToDelivery(orderDto);
 
-            // Comanda de cocina al pasar a listo: cocina + quienes usan la vista Cocina (admin/superadmin).
-            // No encolar para domiciliario (su flujo es otro) ni roles que no gestionen cocina.
+            // Comanda de cocina al pasar a listo: solo cuando es cocina quien cambia el estado.
+            // Admin/superadmin no imprimen al marcar listo (pueden hacerlo manualmente si es necesario).
             var role = (_currentUser.Role ?? string.Empty).Trim();
             var printsKitchenOnReady =
-                string.Equals(role, "kitchen", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(role, "superadmin", StringComparison.OrdinalIgnoreCase);
+                string.Equals(role, "kitchen", StringComparison.OrdinalIgnoreCase);
 
             if (printsKitchenOnReady)
             {
