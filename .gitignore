@@ -3,6 +3,9 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+# GCP / Firebase — cuenta de servicio solo en tu PC (FCM + Storage en local)
+firebase-adminsdk.local.json
+
 # User-specific files
 *.rsuser
 *.suo

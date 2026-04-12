@@ -20,6 +20,7 @@ public class FcmPushService : IFcmPushService
     private readonly HttpClient _http;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<FcmPushService> _logger;
+    private readonly IConfiguration _configuration;
     private readonly string _fcmProjectId;
 
     // Scope requerido por FCM HTTP v1
@@ -35,6 +36,7 @@ public class FcmPushService : IFcmPushService
         _http = http;
         _serviceProvider = serviceProvider;
         _logger = logger;
+        _configuration = configuration;
         _fcmProjectId = configuration["Fcm:ProjectId"] ?? string.Empty;
     }
 
@@ -75,7 +77,12 @@ public class FcmPushService : IFcmPushService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "{Tag}STEP fail oauth_exception", tag);
-            return;
+            throw new InvalidOperationException(
+                "No se pudo autenticar con Google para FCM. En local: configure la ruta al JSON de cuenta de servicio " +
+                "(User Secrets o env: FirebaseStorage__GoogleApplicationCredentialsPath), o GOOGLE_APPLICATION_CREDENTIALS / " +
+                "GOOGLE_APPLICATION_CREDENTIALS_JSON / GOOGLE_APPLICATION_CREDENTIALS_JSON_BASE64 (ver GoogleCredentialBootstrap). " +
+                "La cuenta debe tener permiso firebase.messaging.",
+                ex);
         }
 
         var invalidTokens = new List<string>();
@@ -166,46 +173,88 @@ public class FcmPushService : IFcmPushService
         return false;
     }
 
+    /// <summary>
+    /// Incluye <c>notification</c> para que en Android/iOS el sistema pueda mostrar la bandeja aunque
+    /// falle el isolate de <c>onBackgroundMessage</c> (p. ej. tras hot restart en desarrollo).
+    /// Mantiene <c>data</c> para la app. No usar <c>priority</c> dentro de <c>android.notification</c> (400 FCM).
+    /// </summary>
     private static object BuildPayload(
         string token, string title, string body,
         Dictionary<string, string>? data)
     {
+        var dataPayload = new Dictionary<string, string>
+        {
+            ["title"] = title,
+            ["body"] = body,
+        };
+
+        if (data != null)
+        {
+            foreach (var kv in data)
+                dataPayload[kv.Key] = kv.Value;
+        }
+
         var message = new Dictionary<string, object>
         {
             ["token"] = token,
             ["notification"] = new { title, body },
+            ["data"] = dataPayload,
             ["android"] = new
             {
+                priority = "HIGH",
                 notification = new
                 {
-                    sound = "default",
+                    title,
+                    body,
                     channel_id = "delivery_orders",
-                    priority = "high"
+                    sound = "default",
                 },
-                priority = "high"
             },
             ["apns"] = new
             {
                 payload = new
                 {
-                    aps = new { sound = "default", badge = 1 }
-                }
-            }
+                    aps = new
+                    {
+                        alert = new { title, body },
+                        sound = "default",
+                        badge = 1,
+                    },
+                },
+            },
         };
-
-        if (data != null)
-            message["data"] = data;
 
         return new { message };
     }
 
     private async Task<string> GetAccessTokenAsync(CancellationToken ct)
     {
-        var credential = GoogleCredential.GetApplicationDefault()
-            .CreateScoped(FcmScopes);
+        var baseCredential = CreateBaseGoogleCredential();
+        var credential = baseCredential.CreateScoped(FcmScopes);
         var token = await credential.UnderlyingCredential.GetAccessTokenForRequestAsync(
             cancellationToken: ct);
         return token;
+    }
+
+    /// <summary>JSON por <c>FirebaseStorage:GoogleApplicationCredentialsPath</c>; si no hay ruta configurada, Application Default Credentials.</summary>
+    private GoogleCredential CreateBaseGoogleCredential()
+    {
+        var path = _configuration["FirebaseStorage:GoogleApplicationCredentialsPath"];
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            var fullPath = Path.IsPathRooted(path)
+                ? path
+                : Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), path));
+            if (File.Exists(fullPath))
+                return GoogleCredential.FromFile(fullPath);
+
+            throw new InvalidOperationException(
+                $"No existe el archivo de credenciales de Google en '{fullPath}'. " +
+                "Copie ahí el JSON de la cuenta de servicio (Firebase / Google Cloud; la misma que usa Railway si aplica) " +
+                "o ajuste FirebaseStorage:GoogleApplicationCredentialsPath / variables GOOGLE_APPLICATION_CREDENTIALS*.");
+        }
+
+        return GoogleCredential.GetApplicationDefault();
     }
 
     private async Task RemoveInvalidTokensAsync(List<string> tokens, CancellationToken ct, string logTag)
