@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
@@ -114,14 +114,14 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             }).ToList() ?? new List<ExpenseBankPayment>()
         };
 
-        var created = await _expenseHeaderRepository.CreateAsync(expenseHeader);
+        var created = await _expenseHeaderRepository.CreateAsync(expenseHeader, cancellationToken);
 
         var supplierExpenseDetails = expenseHeader.ExpenseDetails
             .Select(ed => (ed.ExpenseId, UnitAmount: (decimal)ed.Amount, Quantity: (int)Math.Ceiling(ed.Quantity)))
             .ToList();
         await UpsertSupplierExpensesAsync(expenseHeader.SupplierId, supplierExpenseDetails, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-        var createdWithDetails = await _expenseHeaderRepository.GetByIdWithDetailsAsync(created.Id);
+        var createdWithDetails = await _expenseHeaderRepository.GetByIdWithDetailsAsync(created.Id, cancellationToken);
 
         if (createdWithDetails == null)
         {

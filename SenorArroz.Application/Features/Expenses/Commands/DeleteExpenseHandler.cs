@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Expenses/Commands/DeleteExpenseHandler.cs
+﻿// SenorArroz.Application/Features/Expenses/Commands/DeleteExpenseHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
@@ -27,14 +27,14 @@ public class DeleteExpenseHandler : IRequestHandler<DeleteExpenseCommand, bool>
             throw new BusinessException("No tienes permisos para eliminar gastos");
         }
 
-        var expense = await _expenseRepository.GetByIdAsync(request.Id);
+        var expense = await _expenseRepository.GetByIdAsync(request.Id, cancellationToken);
         if (expense == null)
         {
             throw new NotFoundException($"Gasto con ID {request.Id} no encontrado");
         }
 
         // The repository will check if expense is used in expense details
-        var result = await _expenseRepository.DeleteAsync(request.Id);
+        var result = await _expenseRepository.DeleteAsync(request.Id, cancellationToken);
         
         if (!result)
         {

@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/AppPayments/Commands/SettleMultipleAppPaymentsHandler.cs
+﻿// SenorArroz.Application/Features/AppPayments/Commands/SettleMultipleAppPaymentsHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
@@ -36,7 +36,7 @@ public class SettleMultipleAppPaymentsHandler : IRequestHandler<SettleMultipleAp
         // Validate all app payments exist and user has access
         foreach (var paymentId in request.PaymentIds)
         {
-            var appPayment = await _appPaymentRepository.GetByIdAsync(paymentId);
+            var appPayment = await _appPaymentRepository.GetByIdAsync(paymentId, cancellationToken);
             if (appPayment == null)
                 throw new BusinessException($"El pago con ID {paymentId} no existe");
 
@@ -64,7 +64,7 @@ public class SettleMultipleAppPaymentsHandler : IRequestHandler<SettleMultipleAp
 
         // Mark all app payments as settled
         var settledPaymentIds = appPayments.Select(p => p.Id).ToArray();
-        var settled = await _appPaymentRepository.SettlePaymentsAsync(settledPaymentIds);
+        var settled = await _appPaymentRepository.SettlePaymentsAsync(settledPaymentIds, cancellationToken);
         if (!settled)
             return false;
 
@@ -76,7 +76,7 @@ public class SettleMultipleAppPaymentsHandler : IRequestHandler<SettleMultipleAp
             Amount = totalAmount
         };
 
-        await _bankPaymentRepository.CreateAsync(bankPayment);
+        await _bankPaymentRepository.CreateAsync(bankPayment, cancellationToken);
 
         return true;
     }

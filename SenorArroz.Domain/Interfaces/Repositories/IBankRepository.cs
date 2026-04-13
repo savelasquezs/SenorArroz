@@ -14,38 +14,39 @@ public interface IBankRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc");
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default);
 
-    Task<IEnumerable<Bank>> GetByBranchIdAsync(int branchId, bool excludeHiddenBanks = false);
-    Task<Bank?> GetByIdAsync(int id);
-    Task<Bank?> GetByIdWithAppsAsync(int id);
-    Task<Bank> CreateAsync(Bank bank);
-    Task<Bank> UpdateAsync(Bank bank);
-    Task<bool> DeleteAsync(int id);
-    Task<bool> ExistsAsync(int id);
-    Task<bool> NameExistsInBranchAsync(string name, int branchId, int? excludeId = null);
+    Task<IEnumerable<Bank>> GetByBranchIdAsync(int branchId, bool excludeHiddenBanks = false, CancellationToken cancellationToken = default);
+    Task<Bank?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<Bank?> GetByIdWithAppsAsync(int id, CancellationToken cancellationToken = default);
+    Task<Bank> CreateAsync(Bank bank, CancellationToken cancellationToken = default);
+    Task<Bank> UpdateAsync(Bank bank, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> NameExistsInBranchAsync(string name, int branchId, int? excludeId = null, CancellationToken cancellationToken = default);
 
     // Statistics
-    Task<int> GetTotalAppsAsync(int bankId);
-    Task<int> GetActiveAppsAsync(int bankId);
-    Task<decimal> GetTotalBankPaymentsAsync(int bankId);
-    Task<decimal> GetTotalExpenseBankPaymentsAsync(int bankId);
-    Task<decimal> GetTotalOutgoingTransfersAsync(int bankId, DateTime? asOf = null);
-    Task<decimal> GetTotalIncomingTransfersAsync(int bankId, DateTime? asOf = null);
+    Task<int> GetTotalAppsAsync(int bankId, CancellationToken cancellationToken = default);
+    Task<int> GetActiveAppsAsync(int bankId, CancellationToken cancellationToken = default);
+    Task<decimal> GetTotalBankPaymentsAsync(int bankId, CancellationToken cancellationToken = default);
+    Task<decimal> GetTotalExpenseBankPaymentsAsync(int bankId, CancellationToken cancellationToken = default);
+    Task<decimal> GetTotalOutgoingTransfersAsync(int bankId, DateTime? asOf = null, CancellationToken cancellationToken = default);
+    Task<decimal> GetTotalIncomingTransfersAsync(int bankId, DateTime? asOf = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Ingresos al banco por abonos/liquidaciones de domiciliario vía transferencia (paridad con cuadre de caja).
     /// </summary>
-    Task<decimal> GetTotalDeliverymanBankTransferInAsync(int bankId, DateTime? asOf = null);
+    Task<decimal> GetTotalDeliverymanBankTransferInAsync(int bankId, DateTime? asOf = null, CancellationToken cancellationToken = default);
 
-    Task<decimal> GetCurrentBalanceAsync(int bankId);
-    Task<decimal> GetBalanceAsOfAsync(int bankId, DateTime asOf);
+    Task<decimal> GetCurrentBalanceAsync(int bankId, CancellationToken cancellationToken = default);
+    Task<decimal> GetBalanceAsOfAsync(int bankId, DateTime asOf, CancellationToken cancellationToken = default);
 
     /// <summary>Totales en rango UTC [fromUtc, toUtc] inclusive por CreatedAt.</summary>
-    Task<decimal> GetTotalBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
+    Task<decimal> GetTotalBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default);
 
-    Task<decimal> GetTotalExpenseBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
-    Task<decimal> GetTotalOutgoingTransfersInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
-    Task<decimal> GetTotalIncomingTransfersInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
-    Task<decimal> GetTotalDeliverymanBankTransferInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc);
+    Task<decimal> GetTotalExpenseBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default);
+    Task<decimal> GetTotalOutgoingTransfersInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default);
+    Task<decimal> GetTotalIncomingTransfersInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default);
+    Task<decimal> GetTotalDeliverymanBankTransferInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default);
 }

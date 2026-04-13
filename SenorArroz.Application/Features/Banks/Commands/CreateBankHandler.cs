@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Banks/Commands/CreateBankHandler.cs
+﻿// SenorArroz.Application/Features/Banks/Commands/CreateBankHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -73,7 +73,7 @@ public class CreateBankHandler : IRequestHandler<CreateBankCommand, BankDto>
             Type = request.Type
         };
 
-        var createdBank = await _bankRepository.CreateAsync(bank);
+        var createdBank = await _bankRepository.CreateAsync(bank, cancellationToken);
         var bankDto = _mapper.Map<BankDto>(createdBank);
 
         // Initialize stats for new bank

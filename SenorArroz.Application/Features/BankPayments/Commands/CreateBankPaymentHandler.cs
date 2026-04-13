@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/BankPayments/Commands/CreateBankPaymentHandler.cs
+﻿// SenorArroz.Application/Features/BankPayments/Commands/CreateBankPaymentHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -31,7 +31,7 @@ public class CreateBankPaymentHandler : IRequestHandler<CreateBankPaymentCommand
     public async Task<BankPaymentDto> Handle(CreateBankPaymentCommand request, CancellationToken cancellationToken)
     {
         // Validate bank exists
-        var bank = await _bankRepository.GetByIdAsync(request.BankId);
+        var bank = await _bankRepository.GetByIdAsync(request.BankId, cancellationToken);
         if (bank == null)
             throw new BusinessException("El banco especificado no existe");
 
@@ -46,7 +46,7 @@ public class CreateBankPaymentHandler : IRequestHandler<CreateBankPaymentCommand
             Amount = request.Amount
         };
 
-        var createdBankPayment = await _bankPaymentRepository.CreateAsync(bankPayment);
+        var createdBankPayment = await _bankPaymentRepository.CreateAsync(bankPayment, cancellationToken);
         return _mapper.Map<BankPaymentDto>(createdBankPayment);
     }
 }

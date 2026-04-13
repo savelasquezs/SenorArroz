@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Banks/Queries/GetBankDetailHandler.cs
+﻿// SenorArroz.Application/Features/Banks/Queries/GetBankDetailHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -29,7 +29,7 @@ public class GetBankDetailHandler : IRequestHandler<GetBankDetailQuery, BankDeta
 
     public async Task<BankDetailDto?> Handle(GetBankDetailQuery request, CancellationToken cancellationToken)
     {
-        var bank = await _bankRepository.GetByIdWithAppsAsync(request.Id);
+        var bank = await _bankRepository.GetByIdWithAppsAsync(request.Id, cancellationToken);
         
         if (bank == null)
             return null;
@@ -45,10 +45,10 @@ public class GetBankDetailHandler : IRequestHandler<GetBankDetailQuery, BankDeta
         var bankDetailDto = _mapper.Map<BankDetailDto>(bank);
 
         // Add detailed statistics
-        bankDetailDto.TotalApps = await _bankRepository.GetTotalAppsAsync(bank.Id);
-        bankDetailDto.ActiveApps = await _bankRepository.GetActiveAppsAsync(bank.Id);
-        bankDetailDto.TotalBankPayments = await _bankRepository.GetTotalBankPaymentsAsync(bank.Id);
-        bankDetailDto.TotalExpenseBankPayments = await _bankRepository.GetTotalExpenseBankPaymentsAsync(bank.Id);
+        bankDetailDto.TotalApps = await _bankRepository.GetTotalAppsAsync(bank.Id, cancellationToken);
+        bankDetailDto.ActiveApps = await _bankRepository.GetActiveAppsAsync(bank.Id, cancellationToken);
+        bankDetailDto.TotalBankPayments = await _bankRepository.GetTotalBankPaymentsAsync(bank.Id, cancellationToken);
+        bankDetailDto.TotalExpenseBankPayments = await _bankRepository.GetTotalExpenseBankPaymentsAsync(bank.Id, cancellationToken);
         bankDetailDto.BalanceBreakdown = await _bankLedgerService.GetRunningBalanceBreakdownAsync(bank.Id, cancellationToken);
         bankDetailDto.CurrentBalance = bankDetailDto.BalanceBreakdown.NetBalance;
 

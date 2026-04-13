@@ -14,6 +14,6 @@ public class DeleteNeighborhoodHandler : IRequestHandler<DeleteNeighborhoodComma
 
     public async Task<bool> Handle(DeleteNeighborhoodCommand request, CancellationToken cancellationToken)
     {
-        return await _neighborhoodRepository.DeleteAsync(request.Id);
+        return await _neighborhoodRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }

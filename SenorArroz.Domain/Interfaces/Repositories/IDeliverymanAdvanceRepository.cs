@@ -16,12 +16,13 @@ public interface IDeliverymanAdvanceRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "createdAt",
-        string sortOrder = "desc");
+        string sortOrder = "desc",
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Obtiene un abono por su ID
     /// </summary>
-    Task<DeliverymanAdvance?> GetByIdAsync(int id);
+    Task<DeliverymanAdvance?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Obtiene todos los abonos de un domiciliario en un rango de fechas
@@ -29,32 +30,33 @@ public interface IDeliverymanAdvanceRepository
     Task<IEnumerable<DeliverymanAdvance>> GetByDeliverymanIdAsync(
         int deliverymanId,
         DateTime? fromDate = null,
-        DateTime? toDate = null);
+        DateTime? toDate = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Crea un nuevo abono
     /// </summary>
-    Task<DeliverymanAdvance> CreateAsync(DeliverymanAdvance advance);
+    Task<DeliverymanAdvance> CreateAsync(DeliverymanAdvance advance, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Actualiza un abono existente
     /// </summary>
-    Task<DeliverymanAdvance> UpdateAsync(DeliverymanAdvance advance);
+    Task<DeliverymanAdvance> UpdateAsync(DeliverymanAdvance advance, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Elimina un abono
     /// </summary>
-    Task<bool> DeleteAsync(int id);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Verifica si un abono existe
     /// </summary>
-    Task<bool> ExistsAsync(int id);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Obtiene el total de abonos de un domiciliario en una fecha específica
     /// </summary>
-    Task<decimal> GetTotalAdvancesForDateAsync(int deliverymanId, DateTime date);
+    Task<decimal> GetTotalAdvancesForDateAsync(int deliverymanId, DateTime date, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Obtiene el total de abonos de un domiciliario en un rango de fechas
@@ -62,7 +64,8 @@ public interface IDeliverymanAdvanceRepository
     Task<decimal> GetTotalAdvancesByDeliverymanAsync(
         int deliverymanId,
         DateTime? fromDate = null,
-        DateTime? toDate = null);
+        DateTime? toDate = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Total de abonos del domiciliario en el rango del día, excluyendo ciclos anteriores si <paramref name="lastLiquidationAtUtc"/> está definido.
@@ -72,7 +75,8 @@ public interface IDeliverymanAdvanceRepository
         DateTime dayFromUtc,
         DateTime dayToUtc,
         DateTime? lastLiquidationAtUtc,
-        bool useSettlementCycle);
+        bool useSettlementCycle,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Obtiene la cantidad de abonos de un domiciliario en un rango de fechas
@@ -80,7 +84,8 @@ public interface IDeliverymanAdvanceRepository
     Task<int> GetCountByDeliverymanAsync(
         int deliverymanId,
         DateTime? fromDate = null,
-        DateTime? toDate = null);
+        DateTime? toDate = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Si ya existe abono por gasto (ExpenseOffset) para este gasto y domiciliario.</summary>
     Task<bool> ExistsExpenseOffsetForExpenseHeaderAsync(

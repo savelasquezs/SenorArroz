@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Expenses/Commands/CreateExpenseHandler.cs
+﻿// SenorArroz.Application/Features/Expenses/Commands/CreateExpenseHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -86,7 +86,7 @@ public class CreateExpenseHandler : IRequestHandler<CreateExpenseCommand, Expens
             throw;
         }
 
-        var created = await _expenseRepository.GetByIdAsync(newExpenseId);
+        var created = await _expenseRepository.GetByIdAsync(newExpenseId, cancellationToken);
         if (created == null)
             throw new BusinessException("Error al crear el gasto");
 

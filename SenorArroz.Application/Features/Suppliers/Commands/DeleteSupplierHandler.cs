@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -34,7 +34,7 @@ public class DeleteSupplierHandler : IRequestHandler<DeleteSupplierCommand, bool
             throw new BusinessException("No puedes eliminar proveedores de otra sucursal.");
         }
 
-        return await _supplierRepository.DeleteAsync(request.Id);
+        return await _supplierRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }
 

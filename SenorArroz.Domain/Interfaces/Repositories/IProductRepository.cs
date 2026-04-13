@@ -17,34 +17,34 @@ public interface IProductRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc");
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default);
 
-    Task<IEnumerable<Product>> GetByCategoryIdAsync(int categoryId);
-    Task<IEnumerable<Product>> GetByBranchIdAsync(int branchId);
-    Task<Product?> GetByIdAsync(int id);
-    Task<Product?> GetByIdWithCategoryAsync(int id);
-    Task<Product?> GetByIdWithStatisticsAsync(int id);
-    Task<Product> CreateAsync(Product product);
-    Task<Product> UpdateAsync(Product product);
-    Task<bool> DeleteAsync(int id);
-    Task<bool> ExistsAsync(int id);
-    Task<bool> NameExistsInCategoryAsync(string name, int categoryId, int? excludeId = null);
+    Task<IEnumerable<Product>> GetByCategoryIdAsync(int categoryId, CancellationToken cancellationToken = default);
+    Task<IEnumerable<Product>> GetByBranchIdAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<Product?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<Product?> GetByIdWithCategoryAsync(int id, CancellationToken cancellationToken = default);
+    Task<Product?> GetByIdWithStatisticsAsync(int id, CancellationToken cancellationToken = default);
+    Task<Product> CreateAsync(Product product, CancellationToken cancellationToken = default);
+    Task<Product> UpdateAsync(Product product, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> NameExistsInCategoryAsync(string name, int categoryId, int? excludeId = null, CancellationToken cancellationToken = default);
 
     // Statistics
-    Task<bool> AdjustStockAsync(int productId, int quantityChange);
-    Task<int> GetStockAsync(int productId);
+    Task<bool> AdjustStockAsync(int productId, int quantityChange, CancellationToken cancellationToken = default);
+    Task<int> GetStockAsync(int productId, CancellationToken cancellationToken = default);
 
-    Task<bool> SetStockAsync(int productId, int newStock);
+    Task<bool> SetStockAsync(int productId, int newStock, CancellationToken cancellationToken = default);
 
-    Task<int> GetTotalSalesAsync(int productId);
+    Task<int> GetTotalSalesAsync(int productId, CancellationToken cancellationToken = default);
 
-    Task<decimal> GetTotalRevenueAsync(int productId);
+    Task<decimal> GetTotalRevenueAsync(int productId, CancellationToken cancellationToken = default);
 
+    Task<int> GetTotalOrdersAsync(int productId, CancellationToken cancellationToken = default);
 
-    Task<int> GetTotalOrdersAsync(int productId);
-
-    Task<int> GetTotalCustomersAsync(int productId);
-    Task<DateTime?> GetLastSoldAtAsync(int productId);
+    Task<int> GetTotalCustomersAsync(int productId, CancellationToken cancellationToken = default);
+    Task<DateTime?> GetLastSoldAtAsync(int productId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Serie diaria de unidades vendidas (suma de cantidades en líneas) por día calendario.

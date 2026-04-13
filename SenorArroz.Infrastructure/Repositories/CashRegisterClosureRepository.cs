@@ -16,7 +16,7 @@ public class CashRegisterClosureRepository : ICashRegisterClosureRepository
         _context = context;
     }
 
-    public async Task<CashRegisterClosure?> GetLastByBranchAsync(int branchId)
+    public async Task<CashRegisterClosure?> GetLastByBranchAsync(int branchId, CancellationToken cancellationToken = default)
     {
         return await _context.CashRegisterClosures
             .AsNoTracking()
@@ -27,24 +27,25 @@ public class CashRegisterClosureRepository : ICashRegisterClosureRepository
             .Include(c => c.InformalLoans)
             .Where(c => c.BranchId == branchId)
             .OrderByDescending(c => c.ClosedAt)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public async Task<CashRegisterClosure> CreateAsync(CashRegisterClosure closure)
+    public async Task<CashRegisterClosure> CreateAsync(CashRegisterClosure closure, CancellationToken cancellationToken = default)
     {
         _context.CashRegisterClosures.Add(closure);
-        await _context.SaveChangesAsync();
-        return await GetByIdAsync(closure.Id) ?? closure;
+        await _context.SaveChangesAsync(cancellationToken);
+        return await GetByIdAsync(closure.Id, cancellationToken) ?? closure;
     }
 
     public async Task<PagedResult<CashRegisterClosure>> GetPagedAsync(
         int? branchId,
         DateTime? fromDate,
         DateTime? toDate,
-        int page,
-        int pageSize,
-        string sortBy,
-        string sortOrder)
+        int page = 1,
+        int pageSize = 10,
+        string sortBy = "closedAt",
+        string sortOrder = "desc",
+        CancellationToken cancellationToken = default)
     {
         var query = _context.CashRegisterClosures
             .AsNoTracking()
@@ -80,10 +81,10 @@ public class CashRegisterClosureRepository : ICashRegisterClosureRepository
             _ => query.OrderByDescending(c => c.ClosedAt)
         };
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<CashRegisterClosure?> GetByIdAsync(int id)
+    public async Task<CashRegisterClosure?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.CashRegisterClosures
             .AsNoTracking()
@@ -92,6 +93,6 @@ public class CashRegisterClosureRepository : ICashRegisterClosureRepository
             .Include(c => c.BankReconciliations)
                 .ThenInclude(br => br.Bank)
             .Include(c => c.InformalLoans)
-            .FirstOrDefaultAsync(c => c.Id == id);
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
     }
 }

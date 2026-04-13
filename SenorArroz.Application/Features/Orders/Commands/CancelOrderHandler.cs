@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -42,7 +42,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         if (string.IsNullOrWhiteSpace(request.Cancellation.Reason))
             throw new BusinessException("La razón de cancelación es obligatoria");
 
-        var existingOrder = await _orderRepository.GetByIdAsync(request.Id);
+        var existingOrder = await _orderRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
@@ -67,11 +67,12 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         var routeIdSnapshot = existingOrder.DeliveryRouteId;
         var previousStatus = existingOrder.Status;
 
-        await CancelAssociatedPaymentsAsync(request.Id);
+        await CancelAssociatedPaymentsAsync(request.Id, cancellationToken);
 
         var order = await _orderRepository.CancelOrderAsync(
             request.Id,
-            request.Cancellation.Reason);
+            request.Cancellation.Reason,
+            cancellationToken);
 
         if (previousStatus == OrderStatus.Delivered)
             await _loyaltyCycle.OnOrderLeftDeliveredAsync(order.Id, cancellationToken);
@@ -93,14 +94,14 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         && order.PrepareAt.HasValue
         && order.ReservedFor.HasValue;
 
-    private async Task CancelAssociatedPaymentsAsync(int orderId)
+    private async Task CancelAssociatedPaymentsAsync(int orderId, CancellationToken cancellationToken = default)
     {
-        var appPayments = await _appPaymentRepository.GetByOrderIdAsync(orderId);
+        var appPayments = await _appPaymentRepository.GetByOrderIdAsync(orderId, cancellationToken);
         foreach (var appPayment in appPayments)
-            await _appPaymentRepository.DeleteAsync(appPayment.Id);
+            await _appPaymentRepository.DeleteAsync(appPayment.Id, cancellationToken);
 
-        var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(orderId);
+        var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(orderId, cancellationToken);
         foreach (var bankPayment in bankPayments)
-            await _bankPaymentRepository.DeleteAsync(bankPayment.Id);
+            await _bankPaymentRepository.DeleteAsync(bankPayment.Id, cancellationToken);
     }
 }

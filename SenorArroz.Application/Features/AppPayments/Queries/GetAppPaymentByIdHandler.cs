@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/AppPayments/Queries/GetAppPaymentByIdHandler.cs
+﻿// SenorArroz.Application/Features/AppPayments/Queries/GetAppPaymentByIdHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -22,7 +22,7 @@ public class GetAppPaymentByIdHandler : IRequestHandler<GetAppPaymentByIdQuery, 
 
     public async Task<AppPaymentDto?> Handle(GetAppPaymentByIdQuery request, CancellationToken cancellationToken)
     {
-        var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id);
+        var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         
         if (appPayment == null)
             return null;

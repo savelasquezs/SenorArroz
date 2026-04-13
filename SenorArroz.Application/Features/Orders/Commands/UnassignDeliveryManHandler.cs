@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -29,7 +29,7 @@ public class UnassignDeliveryManHandler : IRequestHandler<UnassignDeliveryManCom
     public async Task<OrderDto> Handle(UnassignDeliveryManCommand request, CancellationToken cancellationToken)
     {
         // Get order first to validate access
-        var existingOrder = await _orderRepository.GetByIdAsync(request.Id);
+        var existingOrder = await _orderRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
@@ -42,7 +42,7 @@ public class UnassignDeliveryManHandler : IRequestHandler<UnassignDeliveryManCom
             throw new BusinessException("No tienes permisos para desasignar domiciliarios");
 
         await _deliveryRouteWorkflow.OnOrderUnassignedAsync(request.Id, cancellationToken);
-        var order = await _orderRepository.UnassignDeliveryManAsync(request.Id);
+        var order = await _orderRepository.UnassignDeliveryManAsync(request.Id, cancellationToken);
         return _mapper.Map<OrderDto>(order);
     }
 }

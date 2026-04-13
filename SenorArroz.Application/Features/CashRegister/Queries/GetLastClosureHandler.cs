@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -19,7 +19,7 @@ public class GetLastClosureHandler : IRequestHandler<GetLastClosureQuery, CashCl
     public async Task<CashClosureDto?> Handle(GetLastClosureQuery request, CancellationToken cancellationToken)
     {
         int branchId = request.BranchId ?? _currentUser.BranchId;
-        var closure = await _closureRepository.GetLastByBranchAsync(branchId);
+        var closure = await _closureRepository.GetLastByBranchAsync(branchId, cancellationToken);
         if (closure == null) return null;
 
         return new CashClosureDto

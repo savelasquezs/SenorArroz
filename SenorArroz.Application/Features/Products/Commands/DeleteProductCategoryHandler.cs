@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Products/Commands/DeleteProductCategoryHandler.cs
+﻿// SenorArroz.Application/Features/Products/Commands/DeleteProductCategoryHandler.cs
 using MediatR;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -17,19 +17,19 @@ public class DeleteProductCategoryHandler : IRequestHandler<DeleteProductCategor
 
     public async Task<bool> Handle(DeleteProductCategoryCommand request, CancellationToken cancellationToken)
     {
-        var category = await _categoryRepository.GetByIdAsync(request.Id);
+        var category = await _categoryRepository.GetByIdAsync(request.Id, cancellationToken);
         if (category == null)
         {
             throw new NotFoundException($"Categoría con ID {request.Id} no encontrada");
         }
 
         // Check if category has products
-        var categoryWithProducts = await _categoryRepository.GetByIdWithProductsAsync(request.Id);
+        var categoryWithProducts = await _categoryRepository.GetByIdWithProductsAsync(request.Id, cancellationToken);
         if (categoryWithProducts != null && categoryWithProducts.Products.Any())
         {
             throw new BusinessException("No se puede eliminar una categoría que tiene productos asociados");
         }
 
-        return await _categoryRepository.DeleteAsync(request.Id);
+        return await _categoryRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }

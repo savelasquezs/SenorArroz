@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Entities;
@@ -35,7 +35,7 @@ public class CreateAddressHandler : IRequestHandler<CreateAddressCommand, Custom
         }
 
         // Validate neighborhood exists
-        var neighborhood = await _neighborhoodRepository.GetByIdAsync(request.NeighborhoodId);
+        var neighborhood = await _neighborhoodRepository.GetByIdAsync(request.NeighborhoodId, cancellationToken);
         if (neighborhood == null)
         {
             throw new NotFoundException($"Barrio con ID {request.NeighborhoodId} no encontrado");
@@ -44,7 +44,7 @@ public class CreateAddressHandler : IRequestHandler<CreateAddressCommand, Custom
         // If this address should be primary, first unset all other primary addresses
         if (request.IsPrimary)
         {
-            await _addressRepository.UnsetPrimaryAddressesAsync(request.CustomerId);
+            await _addressRepository.UnsetPrimaryAddressesAsync(request.CustomerId, cancellationToken);
         }
 
         var address = new Address
@@ -59,7 +59,7 @@ public class CreateAddressHandler : IRequestHandler<CreateAddressCommand, Custom
             IsPrimary = request.IsPrimary
         };
 
-        address = await _addressRepository.CreateAsync(address);
+        address = await _addressRepository.CreateAsync(address, cancellationToken);
 
         return _mapper.Map<CustomerAddressDto>(address);
     }

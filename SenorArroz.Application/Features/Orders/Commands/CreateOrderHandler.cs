@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
@@ -114,7 +114,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             }
         }
 
-        var createdOrder = await _orderRepository.CreateAsync(order);
+        var createdOrder = await _orderRepository.CreateAsync(order, cancellationToken);
 
         // Batch insert de pagos: un único SaveChangesAsync en lugar de N roundtrips individuales
         var bankPayments = request.Order.BankPayments?
@@ -161,7 +161,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             await _db.SaveChangesAsync(cancellationToken);
         }
 
-        var fullOrder = await _orderRepository.GetByIdWithFullDetailsAsync(createdOrder.Id);
+        var fullOrder = await _orderRepository.GetByIdWithFullDetailsAsync(createdOrder.Id, cancellationToken);
         if (fullOrder == null)
             throw new BusinessException("Pedido no encontrado");
 

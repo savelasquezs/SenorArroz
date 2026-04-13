@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.AppPayments.DTOs;
@@ -32,12 +32,12 @@ public class UpdateAppPaymentHandler : IRequestHandler<UpdateAppPaymentCommand, 
     public async Task<AppPaymentDto> Handle(UpdateAppPaymentCommand request, CancellationToken cancellationToken)
     {
         // Validar que el pago existe
-        var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id);
+        var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (appPayment == null)
             throw new BusinessException("Pago por app no encontrado");
 
         // Obtener el pedido asociado
-        var order = await _orderRepository.GetByIdAsync(appPayment.OrderId);
+        var order = await _orderRepository.GetByIdAsync(appPayment.OrderId, cancellationToken);
         if (order == null)
             throw new BusinessException("Pedido asociado no encontrado");
 
@@ -52,7 +52,7 @@ public class UpdateAppPaymentHandler : IRequestHandler<UpdateAppPaymentCommand, 
         // Actualizar el monto
         appPayment.Amount = request.Amount;
         
-        var updatedPayment = await _appPaymentRepository.UpdateAsync(appPayment);
+        var updatedPayment = await _appPaymentRepository.UpdateAsync(appPayment, cancellationToken);
         return _mapper.Map<AppPaymentDto>(updatedPayment);
     }
 }

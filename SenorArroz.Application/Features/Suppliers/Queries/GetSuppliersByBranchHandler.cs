@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Suppliers.DTOs;
@@ -44,7 +44,7 @@ public class GetSuppliersByBranchHandler : IRequestHandler<GetSuppliersByBranchQ
             }
         }
 
-        var suppliers = await _supplierRepository.GetByBranchAsync(branchId);
+        var suppliers = await _supplierRepository.GetByBranchAsync(branchId, cancellationToken);
         return _mapper.Map<List<SupplierDto>>(suppliers);
     }
 }

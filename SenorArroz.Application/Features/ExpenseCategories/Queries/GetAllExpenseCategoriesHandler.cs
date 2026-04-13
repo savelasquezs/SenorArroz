@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/ExpenseCategories/Queries/GetAllExpenseCategoriesHandler.cs
+﻿// SenorArroz.Application/Features/ExpenseCategories/Queries/GetAllExpenseCategoriesHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.ExpenseCategories.DTOs;
@@ -21,7 +21,7 @@ public class GetAllExpenseCategoriesHandler : IRequestHandler<GetAllExpenseCateg
 
     public async Task<IEnumerable<ExpenseCategoryDto>> Handle(GetAllExpenseCategoriesQuery request, CancellationToken cancellationToken)
     {
-        var categories = await _categoryRepository.GetAllAsync();
+        var categories = await _categoryRepository.GetAllAsync(cancellationToken);
         return _mapper.Map<IEnumerable<ExpenseCategoryDto>>(categories);
     }
 }

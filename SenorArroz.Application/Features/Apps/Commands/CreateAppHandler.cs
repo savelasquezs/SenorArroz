@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Apps/Commands/CreateAppHandler.cs
+﻿// SenorArroz.Application/Features/Apps/Commands/CreateAppHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -31,7 +31,7 @@ public class CreateAppHandler : IRequestHandler<CreateAppCommand, AppDto>
     public async Task<AppDto> Handle(CreateAppCommand request, CancellationToken cancellationToken)
     {
         // Validate bank exists
-        var bank = await _bankRepository.GetByIdAsync(request.BankId);
+        var bank = await _bankRepository.GetByIdAsync(request.BankId, cancellationToken);
         if (bank == null)
             throw new BusinessException("El banco especificado no existe");
 
@@ -51,7 +51,7 @@ public class CreateAppHandler : IRequestHandler<CreateAppCommand, AppDto>
             Active = request.Active
         };
 
-        var createdApp = await _appRepository.CreateAsync(app);
+        var createdApp = await _appRepository.CreateAsync(app, cancellationToken);
         var appDto = _mapper.Map<AppDto>(createdApp);
 
         // Initialize stats for new app

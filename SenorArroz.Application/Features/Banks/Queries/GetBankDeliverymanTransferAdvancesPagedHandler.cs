@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
@@ -30,7 +30,7 @@ public class GetBankDeliverymanTransferAdvancesPagedHandler
         GetBankDeliverymanTransferAdvancesPagedQuery request,
         CancellationToken cancellationToken)
     {
-        var bank = await _bankRepository.GetByIdAsync(request.BankId);
+        var bank = await _bankRepository.GetByIdAsync(request.BankId, cancellationToken);
         if (bank == null)
             return null;
 

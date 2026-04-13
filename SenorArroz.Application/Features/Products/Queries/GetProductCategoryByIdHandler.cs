@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Products/Queries/GetProductCategoryByIdHandler.cs
+﻿// SenorArroz.Application/Features/Products/Queries/GetProductCategoryByIdHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Products.DTOs;
@@ -21,15 +21,15 @@ public class GetProductCategoryByIdHandler : IRequestHandler<GetProductCategoryB
 
     public async Task<ProductCategoryDto?> Handle(GetProductCategoryByIdQuery request, CancellationToken cancellationToken)
     {
-        var category = await _categoryRepository.GetByIdAsync(request.Id);
+        var category = await _categoryRepository.GetByIdAsync(request.Id, cancellationToken);
         if (category == null)
             return null;
 
         var categoryDto = _mapper.Map<ProductCategoryDto>(category);
 
         // Add statistics
-        categoryDto.TotalProducts = await _categoryRepository.GetTotalProductsAsync(category.Id);
-        categoryDto.ActiveProducts = await _categoryRepository.GetActiveProductsAsync(category.Id);
+        categoryDto.TotalProducts = await _categoryRepository.GetTotalProductsAsync(category.Id, cancellationToken);
+        categoryDto.ActiveProducts = await _categoryRepository.GetActiveProductsAsync(category.Id, cancellationToken);
 
         return categoryDto;
     }

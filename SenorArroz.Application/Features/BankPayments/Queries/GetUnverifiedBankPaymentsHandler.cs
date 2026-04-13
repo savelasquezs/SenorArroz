@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/BankPayments/Queries/GetUnverifiedBankPaymentsHandler.cs
+﻿// SenorArroz.Application/Features/BankPayments/Queries/GetUnverifiedBankPaymentsHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -22,7 +22,7 @@ public class GetUnverifiedBankPaymentsHandler : IRequestHandler<GetUnverifiedBan
 
     public async Task<IEnumerable<BankPaymentDto>> Handle(GetUnverifiedBankPaymentsQuery request, CancellationToken cancellationToken)
     {
-        var unverifiedPayments = await _bankPaymentRepository.GetUnverifiedAsync();
+        var unverifiedPayments = await _bankPaymentRepository.GetUnverifiedAsync(cancellationToken);
         
         var bankPaymentDtos = new List<BankPaymentDto>();
 

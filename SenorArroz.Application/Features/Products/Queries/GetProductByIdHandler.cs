@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Products/Queries/GetProductByIdHandler.cs
+﻿// SenorArroz.Application/Features/Products/Queries/GetProductByIdHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Products.DTOs;
@@ -19,7 +19,7 @@ public class GetProductByIdHandler : IRequestHandler<GetProductByIdQuery, Produc
 
     public async Task<ProductDto?> Handle(GetProductByIdQuery request, CancellationToken cancellationToken)
     {
-        var product = await _productRepository.GetByIdAsync(request.Id);
+        var product = await _productRepository.GetByIdAsync(request.Id, cancellationToken);
         
         if (product == null)
             return null;

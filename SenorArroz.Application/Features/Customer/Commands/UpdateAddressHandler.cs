@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Exceptions;
@@ -24,14 +24,14 @@ public class UpdateAddressHandler : IRequestHandler<UpdateAddressCommand, Custom
 
     public async Task<CustomerAddressDto> Handle(UpdateAddressCommand request, CancellationToken cancellationToken)
     {
-        var address = await _addressRepository.GetByIdAsync(request.Id);
+        var address = await _addressRepository.GetByIdAsync(request.Id, cancellationToken);
         if (address == null)
         {
             throw new NotFoundException($"Dirección con ID {request.Id} no encontrada");
         }
 
         // Validate neighborhood exists
-        var neighborhood = await _neighborhoodRepository.GetByIdAsync(request.NeighborhoodId);
+        var neighborhood = await _neighborhoodRepository.GetByIdAsync(request.NeighborhoodId, cancellationToken);
         if (neighborhood == null)
         {
             throw new NotFoundException($"Barrio con ID {request.NeighborhoodId} no encontrado");
@@ -40,7 +40,7 @@ public class UpdateAddressHandler : IRequestHandler<UpdateAddressCommand, Custom
         // If this address should be primary, first unset all other primary addresses
         if (request.IsPrimary && !address.IsPrimary)
         {
-            await _addressRepository.UnsetPrimaryAddressesAsync(address.CustomerId);
+            await _addressRepository.UnsetPrimaryAddressesAsync(address.CustomerId, cancellationToken);
         }
 
         // Update address
@@ -52,7 +52,7 @@ public class UpdateAddressHandler : IRequestHandler<UpdateAddressCommand, Custom
         address.IsPrimary = request.IsPrimary;
         address.DeliveryFee = request.DeliveryFee;
 
-        address = await _addressRepository.UpdateAsync(address);
+        address = await _addressRepository.UpdateAsync(address, cancellationToken);
 
         return _mapper.Map<CustomerAddressDto>(address);
     }

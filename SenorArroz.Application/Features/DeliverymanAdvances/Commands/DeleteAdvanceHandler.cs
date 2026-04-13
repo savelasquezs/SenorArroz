@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -21,7 +21,7 @@ public class DeleteAdvanceHandler : IRequestHandler<DeleteAdvanceCommand, bool>
     public async Task<bool> Handle(DeleteAdvanceCommand request, CancellationToken cancellationToken)
     {
         // 1. Validar que existe
-        var advance = await _advanceRepository.GetByIdAsync(request.Id);
+        var advance = await _advanceRepository.GetByIdAsync(request.Id, cancellationToken);
         if (advance == null)
             throw new BusinessException("El abono no existe");
 
@@ -33,7 +33,7 @@ public class DeleteAdvanceHandler : IRequestHandler<DeleteAdvanceCommand, bool>
         if (advance.CreatedAt.Date != DateTime.UtcNow.Date)
             throw new BusinessException("Solo se pueden eliminar abonos del día actual");
 
-        return await _advanceRepository.DeleteAsync(request.Id);
+        return await _advanceRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }
 

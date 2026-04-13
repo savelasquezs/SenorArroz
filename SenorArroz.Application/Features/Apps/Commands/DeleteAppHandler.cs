@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Apps/Commands/DeleteAppHandler.cs
+﻿// SenorArroz.Application/Features/Apps/Commands/DeleteAppHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
@@ -20,7 +20,7 @@ public class DeleteAppHandler : IRequestHandler<DeleteAppCommand, bool>
     public async Task<bool> Handle(DeleteAppCommand request, CancellationToken cancellationToken)
     {
         // Validate app exists
-        var existingApp = await _appRepository.GetByIdAsync(request.Id);
+        var existingApp = await _appRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingApp == null)
             return false;
 
@@ -28,6 +28,6 @@ public class DeleteAppHandler : IRequestHandler<DeleteAppCommand, bool>
         if (_currentUser.Role != "superadmin" && existingApp.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para eliminar esta app");
 
-        return await _appRepository.DeleteAsync(request.Id);
+        return await _appRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }

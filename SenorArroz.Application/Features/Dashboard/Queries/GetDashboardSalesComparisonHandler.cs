@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
@@ -39,7 +39,7 @@ public class GetDashboardSalesComparisonHandler
             to,
             cancellationToken);
 
-        var allBranches = (await _branchRepository.GetAllAsync()).OrderBy(b => b.Name).ToList();
+        var allBranches = (await _branchRepository.GetAllAsync(cancellationToken)).OrderBy(b => b.Name).ToList();
 
         IEnumerable<Branch> branchesToShow;
         if (branchFilter.HasValue)

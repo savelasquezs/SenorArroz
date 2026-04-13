@@ -16,7 +16,7 @@ public class GetBranchStatsHandler : IRequestHandler<GetBranchStatsQuery, Branch
 
     public async Task<BranchStatsDto> Handle(GetBranchStatsQuery request, CancellationToken cancellationToken)
     {
-        var branch = await _branchRepository.GetByIdAsync(request.BranchId);
+        var branch = await _branchRepository.GetByIdAsync(request.BranchId, cancellationToken);
         if (branch == null)
             throw new NotFoundException($"Sucursal con ID {request.BranchId} no encontrada");
 

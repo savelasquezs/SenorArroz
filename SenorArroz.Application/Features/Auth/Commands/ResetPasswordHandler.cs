@@ -30,7 +30,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             {
                 // Validate reset token
            
-                var resetToken = await _passwordResetRepository.GetByTokenAsync(request.Token);
+                var resetToken = await _passwordResetRepository.GetByTokenAsync(request.Token, cancellationToken);
            
 
                 if (resetToken == null )
@@ -53,7 +53,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 }
 
                 // Get user
-                var user = await _authRepository.GetUserByIdWithBranchAsync(resetToken.UserId);
+                var user = await _authRepository.GetUserByIdWithBranchAsync(resetToken.UserId, cancellationToken);
                 if (user == null || !user.Active)
                 {
                     throw new BusinessException("Usuario no encontrado o inactivo");
@@ -72,10 +72,10 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
                 // Mark token as used
                 resetToken.MarkAsUsed(request.IpAddress);
-                await _passwordResetRepository.UpdateAsync(resetToken);
+                await _passwordResetRepository.UpdateAsync(resetToken, cancellationToken);
 
                 // Invalidate all refresh tokens
-                await _refreshTokenRepository.RevokeAllByUserIdAsync(user.Id, "password_reset");
+                await _refreshTokenRepository.RevokeAllByUserIdAsync(user.Id, "password_reset", cancellationToken);
 
                 // Send confirmation email
                 await _emailService.SendPasswordResetConfirmationAsync(user.Email, user.Name);

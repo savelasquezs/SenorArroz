@@ -37,7 +37,8 @@ public class BankPaymentRepository : IBankPaymentRepository
         int pageSize = 10,
         string sortBy = "createdAt",
         string sortOrder = "desc",
-        int? restrictToBankBranchId = null)
+        int? restrictToBankBranchId = null,
+        CancellationToken cancellationToken = default)
     {
         var query = _context.BankPayments
             .AsNoTracking()
@@ -47,36 +48,22 @@ public class BankPaymentRepository : IBankPaymentRepository
             .AsQueryable();
 
         if (restrictToBankBranchId.HasValue)
-        {
             query = query.Where(bp => bp.Bank.BranchId == restrictToBankBranchId.Value);
-        }
 
-        // Order filter
         if (orderId.HasValue)
-        {
             query = query.Where(bp => bp.OrderId == orderId.Value);
-        }
 
-        // Bank filter
         if (bankId.HasValue)
-        {
             query = query.Where(bp => bp.BankId == bankId.Value);
-        }
 
-        // Verification filter
         if (verified.HasValue)
         {
             if (verified.Value)
-            {
                 query = query.Where(bp => bp.VerifiedAt.HasValue);
-            }
             else
-            {
                 query = query.Where(bp => !bp.VerifiedAt.HasValue);
-            }
         }
 
-        // Date range filter (instantes UTC; el handler suele normalizar con ColombiaTimeHelper)
         if (fromDate.HasValue)
         {
             var fromUtc = AsUtcQueryParameter(fromDate.Value);
@@ -89,7 +76,6 @@ public class BankPaymentRepository : IBankPaymentRepository
             query = query.Where(bp => bp.CreatedAt <= toUtc);
         }
 
-        // Sorting
         query = sortBy.ToLower() switch
         {
             "amount" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(bp => bp.Amount) : query.OrderBy(bp => bp.Amount),
@@ -99,10 +85,10 @@ public class BankPaymentRepository : IBankPaymentRepository
             _ => query.OrderByDescending(bp => bp.CreatedAt)
         };
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<IEnumerable<BankPayment>> GetByOrderIdAsync(int orderId)
+    public async Task<IEnumerable<BankPayment>> GetByOrderIdAsync(int orderId, CancellationToken cancellationToken = default)
     {
         return await _context.BankPayments
             .AsNoTracking()
@@ -110,20 +96,20 @@ public class BankPaymentRepository : IBankPaymentRepository
             .ThenInclude(b => b.Branch)
             .Where(bp => bp.OrderId == orderId)
             .OrderBy(bp => bp.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<BankPayment>> GetByBankIdAsync(int bankId)
+    public async Task<IEnumerable<BankPayment>> GetByBankIdAsync(int bankId, CancellationToken cancellationToken = default)
     {
         return await _context.BankPayments
             .AsNoTracking()
             .Include(bp => bp.Order)
             .Where(bp => bp.BankId == bankId)
             .OrderByDescending(bp => bp.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<BankPayment>> GetUnverifiedAsync()
+    public async Task<IEnumerable<BankPayment>> GetUnverifiedAsync(CancellationToken cancellationToken = default)
     {
         return await _context.BankPayments
             .AsNoTracking()
@@ -132,76 +118,74 @@ public class BankPaymentRepository : IBankPaymentRepository
             .Include(bp => bp.Order)
             .Where(bp => !bp.VerifiedAt.HasValue)
             .OrderBy(bp => bp.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<BankPayment?> GetByIdAsync(int id)
+    public async Task<BankPayment?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.BankPayments
             .AsNoTracking()
             .Include(bp => bp.Order)
             .Include(bp => bp.Bank)
             .ThenInclude(b => b.Branch)
-            .FirstOrDefaultAsync(bp => bp.Id == id);
+            .FirstOrDefaultAsync(bp => bp.Id == id, cancellationToken);
     }
 
-    public async Task<BankPayment> CreateAsync(BankPayment bankPayment)
+    public async Task<BankPayment> CreateAsync(BankPayment bankPayment, CancellationToken cancellationToken = default)
     {
         _context.BankPayments.Add(bankPayment);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(bankPayment.Id) ?? bankPayment;
+        return await GetByIdAsync(bankPayment.Id, cancellationToken) ?? bankPayment;
     }
 
-    public async Task<BankPayment> UpdateAsync(BankPayment bankPayment)
+    public async Task<BankPayment> UpdateAsync(BankPayment bankPayment, CancellationToken cancellationToken = default)
     {
         _context.BankPayments.Update(bankPayment);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(bankPayment.Id) ?? bankPayment;
+        return await GetByIdAsync(bankPayment.Id, cancellationToken) ?? bankPayment;
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var bankPayment = await _context.BankPayments.FindAsync(id);
+        var bankPayment = await _context.BankPayments.FindAsync([id], cancellationToken);
         if (bankPayment == null)
             return false;
 
         _context.BankPayments.Remove(bankPayment);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<bool> ExistsAsync(int id)
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await _context.BankPayments.AnyAsync(bp => bp.Id == id);
+        return await _context.BankPayments.AnyAsync(bp => bp.Id == id, cancellationToken);
     }
 
-    // Verification methods
-    public async Task<bool> VerifyPaymentAsync(int id)
+    public async Task<bool> VerifyPaymentAsync(int id, CancellationToken cancellationToken = default)
     {
-        var bankPayment = await _context.BankPayments.FindAsync(id);
+        var bankPayment = await _context.BankPayments.FindAsync([id], cancellationToken);
         if (bankPayment == null)
             return false;
 
-        bankPayment.IsVerified = true;  // El trigger en PostgreSQL establecerá verified_at automáticamente
-        await _context.SaveChangesAsync();
+        bankPayment.IsVerified = true;
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<bool> UnverifyPaymentAsync(int id)
+    public async Task<bool> UnverifyPaymentAsync(int id, CancellationToken cancellationToken = default)
     {
-        var bankPayment = await _context.BankPayments.FindAsync(id);
+        var bankPayment = await _context.BankPayments.FindAsync([id], cancellationToken);
         if (bankPayment == null)
             return false;
 
-        bankPayment.IsVerified = false;  // El trigger en PostgreSQL establecerá verified_at = NULL automáticamente
-        await _context.SaveChangesAsync();
+        bankPayment.IsVerified = false;
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    // Statistics
-    public async Task<decimal> GetTotalAmountByBankAsync(int bankId, DateTime? fromDate = null, DateTime? toDate = null)
+    public async Task<decimal> GetTotalAmountByBankAsync(int bankId, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
         var query = _context.BankPayments.Where(bp => bp.BankId == bankId);
 
@@ -211,17 +195,17 @@ public class BankPaymentRepository : IBankPaymentRepository
         if (toDate.HasValue)
             query = query.Where(bp => bp.CreatedAt <= AsUtcQueryParameter(toDate.Value));
 
-        return await query.SumAsync(bp => bp.Amount);
+        return await query.SumAsync(bp => bp.Amount, cancellationToken);
     }
 
-    public async Task<decimal> GetTotalAmountByOrderAsync(int orderId)
+    public async Task<decimal> GetTotalAmountByOrderAsync(int orderId, CancellationToken cancellationToken = default)
     {
         return await _context.BankPayments
             .Where(bp => bp.OrderId == orderId)
-            .SumAsync(bp => bp.Amount);
+            .SumAsync(bp => bp.Amount, cancellationToken);
     }
 
-    public async Task<int> GetTotalCountByBankAsync(int bankId, DateTime? fromDate = null, DateTime? toDate = null)
+    public async Task<int> GetTotalCountByBankAsync(int bankId, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
         var query = _context.BankPayments.Where(bp => bp.BankId == bankId);
 
@@ -231,12 +215,12 @@ public class BankPaymentRepository : IBankPaymentRepository
         if (toDate.HasValue)
             query = query.Where(bp => bp.CreatedAt <= AsUtcQueryParameter(toDate.Value));
 
-        return await query.CountAsync();
+        return await query.CountAsync(cancellationToken);
     }
 
-    public async Task<int> GetUnverifiedCountByBankAsync(int bankId)
+    public async Task<int> GetUnverifiedCountByBankAsync(int bankId, CancellationToken cancellationToken = default)
     {
         return await _context.BankPayments
-            .CountAsync(bp => bp.BankId == bankId && !bp.VerifiedAt.HasValue);
+            .CountAsync(bp => bp.BankId == bankId && !bp.VerifiedAt.HasValue, cancellationToken);
     }
 }

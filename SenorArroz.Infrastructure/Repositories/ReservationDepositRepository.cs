@@ -16,14 +16,14 @@ public class ReservationDepositRepository : IReservationDepositRepository
         _context = context;
     }
 
-    public async Task<ReservationDeposit> CreateAsync(ReservationDeposit deposit)
+    public async Task<ReservationDeposit> CreateAsync(ReservationDeposit deposit, CancellationToken cancellationToken = default)
     {
         _context.ReservationDeposits.Add(deposit);
-        await _context.SaveChangesAsync();
-        return await GetByIdAsync(deposit.Id) ?? deposit;
+        await _context.SaveChangesAsync(cancellationToken);
+        return await GetByIdAsync(deposit.Id, cancellationToken) ?? deposit;
     }
 
-    public async Task<ReservationDeposit?> GetByIdAsync(int id)
+    public async Task<ReservationDeposit?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.ReservationDeposits
             .AsNoTracking()
@@ -32,10 +32,10 @@ public class ReservationDepositRepository : IReservationDepositRepository
             .Include(d => d.Bank)
             .Include(d => d.App)
             .Include(d => d.ReceivedBy)
-            .FirstOrDefaultAsync(d => d.Id == id);
+            .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
     }
 
-    public async Task<List<ReservationDeposit>> GetByOrderIdAsync(int orderId)
+    public async Task<List<ReservationDeposit>> GetByOrderIdAsync(int orderId, CancellationToken cancellationToken = default)
     {
         return await _context.ReservationDeposits
             .AsNoTracking()
@@ -44,14 +44,14 @@ public class ReservationDepositRepository : IReservationDepositRepository
             .Include(d => d.ReceivedBy)
             .Where(d => d.OrderId == orderId)
             .OrderByDescending(d => d.ReceivedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<decimal> GetTotalDepositedByOrderAsync(int orderId)
+    public async Task<decimal> GetTotalDepositedByOrderAsync(int orderId, CancellationToken cancellationToken = default)
     {
         return await _context.ReservationDeposits
             .Where(d => d.OrderId == orderId)
-            .SumAsync(d => d.Amount);
+            .SumAsync(d => d.Amount, cancellationToken);
     }
 
     public async Task<PagedResult<ReservationDeposit>> GetPagedAsync(
@@ -60,7 +60,8 @@ public class ReservationDepositRepository : IReservationDepositRepository
         DateTime? toDate = null,
         int? orderId = null,
         int page = 1,
-        int pageSize = 20)
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
     {
         var query = _context.ReservationDeposits
             .AsNoTracking()
@@ -88,6 +89,6 @@ public class ReservationDepositRepository : IReservationDepositRepository
 
         query = query.OrderByDescending(d => d.ReceivedAt);
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 }

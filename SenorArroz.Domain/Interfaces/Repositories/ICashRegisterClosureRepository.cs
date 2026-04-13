@@ -5,8 +5,8 @@ namespace SenorArroz.Domain.Interfaces.Repositories;
 
 public interface ICashRegisterClosureRepository
 {
-    Task<CashRegisterClosure?> GetLastByBranchAsync(int branchId);
-    Task<CashRegisterClosure?> GetByIdAsync(int id);
+    Task<CashRegisterClosure?> GetLastByBranchAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<CashRegisterClosure?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
     Task<PagedResult<CashRegisterClosure>> GetPagedAsync(
         int? branchId,
         DateTime? fromDate,
@@ -14,6 +14,7 @@ public interface ICashRegisterClosureRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "closedAt",
-        string sortOrder = "desc");
-    Task<CashRegisterClosure> CreateAsync(CashRegisterClosure closure);
+        string sortOrder = "desc",
+        CancellationToken cancellationToken = default);
+    Task<CashRegisterClosure> CreateAsync(CashRegisterClosure closure, CancellationToken cancellationToken = default);
 }

@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BankTransfers.DTOs;
@@ -46,14 +46,14 @@ public class CreateBankTransferHandler : IRequestHandler<CreateBankTransferComma
 
         if (fromId.HasValue)
         {
-            fromBank = await _bankRepository.GetByIdAsync(fromId.Value);
+            fromBank = await _bankRepository.GetByIdAsync(fromId.Value, cancellationToken);
             if (fromBank == null)
                 throw new BusinessException("El banco origen no existe");
         }
 
         if (toId.HasValue)
         {
-            toBank = await _bankRepository.GetByIdAsync(toId.Value);
+            toBank = await _bankRepository.GetByIdAsync(toId.Value, cancellationToken);
             if (toBank == null)
                 throw new BusinessException("El banco destino no existe");
         }
@@ -77,7 +77,7 @@ public class CreateBankTransferHandler : IRequestHandler<CreateBankTransferComma
             CreatedById = _currentUser.Id
         };
 
-        var created = await _bankTransferRepository.CreateAsync(bankTransfer);
+        var created = await _bankTransferRepository.CreateAsync(bankTransfer, cancellationToken);
         return _mapper.Map<BankTransferDto>(created);
     }
 }

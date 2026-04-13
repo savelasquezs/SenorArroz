@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/AppPayments/Commands/UnsettleAppPaymentHandler.cs
+﻿// SenorArroz.Application/Features/AppPayments/Commands/UnsettleAppPaymentHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
@@ -25,7 +25,7 @@ public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentComma
     public async Task<bool> Handle(UnsettleAppPaymentCommand request, CancellationToken cancellationToken)
     {
         // Validate app payment exists
-        var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id);
+        var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (appPayment == null)
             return false;
 
@@ -39,7 +39,7 @@ public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentComma
 
         // Find and delete the corresponding bank payment
         // We need to find the bank payment that was created when this app payment was settled
-        var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(appPayment.OrderId);
+        var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(appPayment.OrderId, cancellationToken);
         var correspondingBankPayment = bankPayments
             .FirstOrDefault(bp => bp.BankId == appPayment.App.BankId && 
                                  bp.Amount == appPayment.Amount &&
@@ -48,10 +48,10 @@ public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentComma
         if (correspondingBankPayment != null)
         {
             // Delete the corresponding bank payment
-            await _bankPaymentRepository.DeleteAsync(correspondingBankPayment.Id);
+            await _bankPaymentRepository.DeleteAsync(correspondingBankPayment.Id, cancellationToken);
         }
 
         // Mark app payment as unsettled
-        return await _appPaymentRepository.UnsettlePaymentsAsync(new[] { request.Id });
+        return await _appPaymentRepository.UnsettlePaymentsAsync(new[] { request.Id }, cancellationToken);
     }
 }

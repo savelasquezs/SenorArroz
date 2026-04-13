@@ -24,7 +24,8 @@ public class AppRepository : IAppRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc")
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default)
     {
         var query = _context.Apps
             .AsNoTracking()
@@ -32,25 +33,15 @@ public class AppRepository : IAppRepository
             .ThenInclude(b => b.Branch)
             .AsQueryable();
 
-        // Bank filter
         if (bankId.HasValue)
-        {
             query = query.Where(a => a.BankId == bankId.Value);
-        }
 
-        // Name filter
         if (!string.IsNullOrWhiteSpace(name))
-        {
             query = query.Where(a => EF.Functions.ILike(a.Name, $"%{name}%"));
-        }
 
-        // Active filter
         if (active.HasValue)
-        {
             query = query.Where(a => a.Active == active.Value);
-        }
 
-        // Sorting
         query = sortBy.ToLower() switch
         {
             "name" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(a => a.Name) : query.OrderBy(a => a.Name),
@@ -59,10 +50,10 @@ public class AppRepository : IAppRepository
             _ => query.OrderBy(a => a.Name)
         };
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<IEnumerable<App>> GetByBankIdAsync(int bankId)
+    public async Task<IEnumerable<App>> GetByBankIdAsync(int bankId, CancellationToken cancellationToken = default)
     {
         return await _context.Apps
             .AsNoTracking()
@@ -70,10 +61,10 @@ public class AppRepository : IAppRepository
             .ThenInclude(b => b.Branch)
             .Where(a => a.BankId == bankId)
             .OrderBy(a => a.Name)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<App>> GetByBranchIdAsync(int branchId)
+    public async Task<IEnumerable<App>> GetByBranchIdAsync(int branchId, CancellationToken cancellationToken = default)
     {
         return await _context.Apps
             .AsNoTracking()
@@ -81,97 +72,94 @@ public class AppRepository : IAppRepository
             .ThenInclude(b => b.Branch)
             .Where(a => a.Bank.BranchId == branchId)
             .OrderBy(a => a.Name)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<App?> GetByIdAsync(int id)
+    public async Task<App?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Apps
             .AsNoTracking()
             .Include(a => a.Bank)
             .ThenInclude(b => b.Branch)
-            .FirstOrDefaultAsync(a => a.Id == id);
+            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
     }
 
-    public async Task<App?> GetByIdWithBankAsync(int id)
+    public async Task<App?> GetByIdWithBankAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await GetByIdAsync(id); // Same implementation since we always include bank
+        return await GetByIdAsync(id, cancellationToken);
     }
 
-    public async Task<App> CreateAsync(App app)
+    public async Task<App> CreateAsync(App app, CancellationToken cancellationToken = default)
     {
         _context.Apps.Add(app);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(app.Id) ?? app;
+        return await GetByIdAsync(app.Id, cancellationToken) ?? app;
     }
 
-    public async Task<App> UpdateAsync(App app)
+    public async Task<App> UpdateAsync(App app, CancellationToken cancellationToken = default)
     {
         _context.Apps.Update(app);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(app.Id) ?? app;
+        return await GetByIdAsync(app.Id, cancellationToken) ?? app;
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var app = await _context.Apps.FindAsync(id);
+        var app = await _context.Apps.FindAsync([id], cancellationToken);
         if (app == null)
             return false;
 
-        // Check if app has payments
-        var hasPayments = await _context.AppPayments.AnyAsync(ap => ap.AppId == id);
+        var hasPayments = await _context.AppPayments.AnyAsync(ap => ap.AppId == id, cancellationToken);
         if (hasPayments)
         {
-            // Soft delete: just deactivate
             app.Active = false;
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(cancellationToken);
             return true;
         }
 
         _context.Apps.Remove(app);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<bool> ExistsAsync(int id)
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await _context.Apps.AnyAsync(a => a.Id == id);
+        return await _context.Apps.AnyAsync(a => a.Id == id, cancellationToken);
     }
 
-    public async Task<bool> NameExistsInBankAsync(string name, int bankId, int? excludeId = null)
+    public async Task<bool> NameExistsInBankAsync(string name, int bankId, int? excludeId = null, CancellationToken cancellationToken = default)
     {
         return await _context.Apps.AnyAsync(a =>
             a.Name.ToLower() == name.ToLower() &&
             a.BankId == bankId &&
-            (!excludeId.HasValue || a.Id != excludeId.Value));
+            (!excludeId.HasValue || a.Id != excludeId.Value), cancellationToken);
     }
 
-    // Statistics
-    public async Task<decimal> GetTotalAppPaymentsAsync(int appId)
+    public async Task<decimal> GetTotalAppPaymentsAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
             .Where(ap => ap.AppId == appId)
-            .SumAsync(ap => ap.Amount);
+            .SumAsync(ap => ap.Amount, cancellationToken);
     }
 
-    public async Task<decimal> GetUnsettledAppPaymentsAsync(int appId)
+    public async Task<decimal> GetUnsettledAppPaymentsAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
             .Where(ap => ap.AppId == appId && !ap.IsSetted)
-            .SumAsync(ap => ap.Amount);
+            .SumAsync(ap => ap.Amount, cancellationToken);
     }
 
-    public async Task<int> GetTotalAppPaymentsCountAsync(int appId)
+    public async Task<int> GetTotalAppPaymentsCountAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
-            .CountAsync(ap => ap.AppId == appId);
+            .CountAsync(ap => ap.AppId == appId, cancellationToken);
     }
 
-    public async Task<int> GetUnsettledAppPaymentsCountAsync(int appId)
+    public async Task<int> GetUnsettledAppPaymentsCountAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
-            .CountAsync(ap => ap.AppId == appId && !ap.IsSetted);
+            .CountAsync(ap => ap.AppId == appId && !ap.IsSetted, cancellationToken);
     }
 }

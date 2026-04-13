@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Products/Commands/CreateProductCategoryHandler.cs
+﻿// SenorArroz.Application/Features/Products/Commands/CreateProductCategoryHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -73,7 +73,7 @@ public class CreateProductCategoryHandler : IRequestHandler<CreateProductCategor
             Name = request.Name.Trim()
         };
 
-        category = await _categoryRepository.CreateAsync(category);
+        category = await _categoryRepository.CreateAsync(category, cancellationToken);
 
         var categoryDto = _mapper.Map<ProductCategoryDto>(category);
 

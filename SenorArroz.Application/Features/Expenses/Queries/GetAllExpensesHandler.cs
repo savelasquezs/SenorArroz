@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Expenses/Queries/GetAllExpensesHandler.cs
+﻿// SenorArroz.Application/Features/Expenses/Queries/GetAllExpensesHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Expenses.DTOs;
@@ -21,7 +21,7 @@ public class GetAllExpensesHandler : IRequestHandler<GetAllExpensesQuery, IEnume
 
     public async Task<IEnumerable<ExpenseDto>> Handle(GetAllExpensesQuery request, CancellationToken cancellationToken)
     {
-        var expenses = await _expenseRepository.GetAllAsync();
+        var expenses = await _expenseRepository.GetAllAsync(cancellationToken);
         return _mapper.Map<IEnumerable<ExpenseDto>>(expenses);
     }
 }

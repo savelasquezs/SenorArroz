@@ -19,7 +19,7 @@ public class UpdateNeighborhoodHandler : IRequestHandler<UpdateNeighborhoodComma
 
     public async Task<BranchNeighborhoodDto> Handle(UpdateNeighborhoodCommand request, CancellationToken cancellationToken)
     {
-        var neighborhood = await _neighborhoodRepository.GetByIdAsync(request.Id);
+        var neighborhood = await _neighborhoodRepository.GetByIdAsync(request.Id, cancellationToken);
         if (neighborhood == null)
         {
             throw new NotFoundException($"Barrio con ID {request.Id} no encontrado");
@@ -35,13 +35,13 @@ public class UpdateNeighborhoodHandler : IRequestHandler<UpdateNeighborhoodComma
         neighborhood.Name = request.Name.Trim();
         neighborhood.DeliveryFee = request.DeliveryFee;
 
-        neighborhood = await _neighborhoodRepository.UpdateAsync(neighborhood);
+        neighborhood = await _neighborhoodRepository.UpdateAsync(neighborhood, cancellationToken);
 
         var neighborhoodDto = _mapper.Map<BranchNeighborhoodDto>(neighborhood);
 
         // Add current statistics
-        neighborhoodDto.TotalCustomers = await _neighborhoodRepository.GetTotalCustomersAsync(neighborhood.Id);
-        neighborhoodDto.TotalAddresses = await _neighborhoodRepository.GetTotalAddressesAsync(neighborhood.Id);
+        neighborhoodDto.TotalCustomers = await _neighborhoodRepository.GetTotalCustomersAsync(neighborhood.Id, cancellationToken);
+        neighborhoodDto.TotalAddresses = await _neighborhoodRepository.GetTotalAddressesAsync(neighborhood.Id, cancellationToken);
 
         return neighborhoodDto;
     }

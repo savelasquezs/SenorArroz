@@ -25,7 +25,8 @@ public class CustomerRepository : ICustomerRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc")
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default)
     {
         var query = _context.Customers
             .AsNoTracking()
@@ -34,30 +35,19 @@ public class CustomerRepository : ICustomerRepository
             .ThenInclude(a => a.Neighborhood)
             .AsQueryable();
 
-        // Apply branch filter only if specified
         if (branchId.HasValue)
-        {
             query = query.Where(c => c.BranchId == branchId.Value);
-        }
 
-        // Filters
         if (!string.IsNullOrWhiteSpace(name))
-        {
             query = query.Where(c => EF.Functions.ILike(c.Name, $"%{name}%"));
-        }
 
         if (!string.IsNullOrWhiteSpace(phone))
-        {
             query = query.Where(c => c.Phone1.Contains(phone) ||
                                    (c.Phone2 != null && c.Phone2.Contains(phone)));
-        }
 
         if (active.HasValue)
-        {
             query = query.Where(c => c.Active == active.Value);
-        }
 
-        // Sorting
         query = sortBy.ToLower() switch
         {
             "name" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
@@ -66,101 +56,98 @@ public class CustomerRepository : ICustomerRepository
             _ => query.OrderBy(c => c.Name)
         };
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<Customer?> GetByIdAsync(int id)
+    public async Task<Customer?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Customers
             .AsNoTracking()
             .Include(c => c.Branch)
-            .FirstOrDefaultAsync(c => c.Id == id);
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
     }
 
-    public async Task<Customer?> GetByIdWithAddressesAsync(int id)
+    public async Task<Customer?> GetByIdWithAddressesAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Customers
             .AsNoTracking()
             .Include(c => c.Branch)
             .Include(c => c.Addresses)
             .ThenInclude(a => a.Neighborhood)
-            .FirstOrDefaultAsync(c => c.Id == id);
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
     }
 
-    public async Task<Customer?> GetByPhoneAsync(string phone, int branchId)
+    public async Task<Customer?> GetByPhoneAsync(string phone, int branchId, CancellationToken cancellationToken = default)
     {
         return await _context.Customers
             .AsNoTracking()
             .Include(c => c.Branch)
-            .FirstOrDefaultAsync(c => (c.Phone1 == phone || c.Phone2 == phone) && c.BranchId == branchId && c.Active);
+            .FirstOrDefaultAsync(c => (c.Phone1 == phone || c.Phone2 == phone) && c.BranchId == branchId && c.Active, cancellationToken);
     }
 
-    public async Task<IEnumerable<Customer>> GetByBranchIdAsync(int branchId)
+    public async Task<IEnumerable<Customer>> GetByBranchIdAsync(int branchId, CancellationToken cancellationToken = default)
     {
         return await _context.Customers
             .AsNoTracking()
             .Include(c => c.Branch)
             .Where(c => c.BranchId == branchId && c.Active)
             .OrderBy(c => c.Name)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<Customer> CreateAsync(Customer customer)
+    public async Task<Customer> CreateAsync(Customer customer, CancellationToken cancellationToken = default)
     {
         _context.Customers.Add(customer);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdWithAddressesAsync(customer.Id) ?? customer;
+        return await GetByIdWithAddressesAsync(customer.Id, cancellationToken) ?? customer;
     }
 
-    public async Task<Customer> UpdateAsync(Customer customer)
+    public async Task<Customer> UpdateAsync(Customer customer, CancellationToken cancellationToken = default)
     {
         _context.Customers.Update(customer);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdWithAddressesAsync(customer.Id) ?? customer;
+        return await GetByIdWithAddressesAsync(customer.Id, cancellationToken) ?? customer;
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var customer = await _context.Customers.FindAsync(id);
+        var customer = await _context.Customers.FindAsync([id], cancellationToken);
         if (customer == null)
             return false;
 
-        // Soft delete
         customer.Active = false;
 
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<bool> ExistsAsync(int id)
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await _context.Customers.AnyAsync(c => c.Id == id);
+        return await _context.Customers.AnyAsync(c => c.Id == id, cancellationToken);
     }
 
-    public async Task<bool> PhoneExistsAsync(string phone, int branchId, int? excludeId = null)
+    public async Task<bool> PhoneExistsAsync(string phone, int branchId, int? excludeId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Customers
             .Where(c => (c.Phone1 == phone || c.Phone2 == phone) && c.BranchId == branchId && c.Active);
 
         if (excludeId.HasValue)
-        {
             query = query.Where(c => c.Id != excludeId.Value);
-        }
 
-        return await query.AnyAsync();
+        return await query.AnyAsync(cancellationToken);
     }
 
-    public async Task<int> GetTotalOrdersAsync(int customerId)
+    public async Task<int> GetTotalOrdersAsync(int customerId, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
             .CountAsync(o =>
                 o.CustomerId == customerId &&
-                o.Status != OrderStatus.Cancelled);
+                o.Status != OrderStatus.Cancelled, cancellationToken);
     }
 
-    public async Task<(DateTime? First, DateTime? Last)> GetOrderDateRangeAsync(int customerId)
+    public async Task<(DateTime? First, DateTime? Last)> GetOrderDateRangeAsync(int customerId, CancellationToken cancellationToken = default)
     {
         var result = await _context.Orders
             .AsNoTracking()
@@ -171,17 +158,17 @@ public class CustomerRepository : ICustomerRepository
                 First = (DateTime?)g.Min(o => o.CreatedAt),
                 Last  = (DateTime?)g.Max(o => o.CreatedAt)
             })
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(cancellationToken);
 
         return (result?.First, result?.Last);
     }
 
-    public async Task<int> GetTotalOrderRevenueAsync(int customerId)
+    public async Task<int> GetTotalOrderRevenueAsync(int customerId, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
             .Where(o =>
                 o.CustomerId == customerId &&
                 o.Status != OrderStatus.Cancelled)
-            .SumAsync(o => o.Total);
+            .SumAsync(o => o.Total, cancellationToken);
     }
 }

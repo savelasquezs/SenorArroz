@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BankPayments.DTOs;
@@ -32,12 +32,12 @@ public class UpdateBankPaymentHandler : IRequestHandler<UpdateBankPaymentCommand
     public async Task<BankPaymentDto> Handle(UpdateBankPaymentCommand request, CancellationToken cancellationToken)
     {
         // Validar que el pago existe
-        var bankPayment = await _bankPaymentRepository.GetByIdAsync(request.Id);
+        var bankPayment = await _bankPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (bankPayment == null)
             throw new BusinessException("Pago bancario no encontrado");
 
         // Obtener el pedido asociado
-        var order = await _orderRepository.GetByIdAsync(bankPayment.OrderId);
+        var order = await _orderRepository.GetByIdAsync(bankPayment.OrderId, cancellationToken);
         if (order == null)
             throw new BusinessException("Pedido asociado no encontrado");
 
@@ -52,7 +52,7 @@ public class UpdateBankPaymentHandler : IRequestHandler<UpdateBankPaymentCommand
         // Actualizar el monto
         bankPayment.Amount = request.Amount;
         
-        var updatedPayment = await _bankPaymentRepository.UpdateAsync(bankPayment);
+        var updatedPayment = await _bankPaymentRepository.UpdateAsync(bankPayment, cancellationToken);
         return _mapper.Map<BankPaymentDto>(updatedPayment);
     }
 }

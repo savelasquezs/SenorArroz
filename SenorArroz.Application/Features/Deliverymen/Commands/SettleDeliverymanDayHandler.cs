@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
@@ -181,7 +181,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         {
             if (line.Amount <= 0)
                 throw new BusinessException("Los montos bancarios deben ser mayores a cero");
-            var bank = await _bankRepository.GetByIdAsync(line.BankId);
+            var bank = await _bankRepository.GetByIdAsync(line.BankId, cancellationToken);
             if (bank == null || bank.BranchId != branchId)
                 throw new BusinessException($"Banco inválido: {line.BankId}");
         }
@@ -190,7 +190,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         {
             if (line.Amount <= 0)
                 throw new BusinessException("Los montos de gasto deben ser mayores a cero");
-            var expense = await _expenseHeaderRepository.GetByIdWithDetailsAsync(line.ExpenseHeaderId);
+            var expense = await _expenseHeaderRepository.GetByIdWithDetailsAsync(line.ExpenseHeaderId, cancellationToken);
             if (expense == null || expense.BranchId != branchId)
                 throw new BusinessException($"Gasto no encontrado: {line.ExpenseHeaderId}");
             if (expense.DeliverymanId != request.DeliverymanId)
@@ -323,7 +323,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         var dtos = new List<DeliverymanAdvanceDto>();
         foreach (var id in createdIds)
         {
-            var entity = await _advanceRepository.GetByIdAsync(id);
+            var entity = await _advanceRepository.GetByIdAsync(id, cancellationToken);
             if (entity != null)
                 dtos.Add(_mapper.Map<DeliverymanAdvanceDto>(entity));
         }

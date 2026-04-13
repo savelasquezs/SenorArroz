@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/AppPayments/Commands/CreateAppPaymentHandler.cs
+﻿// SenorArroz.Application/Features/AppPayments/Commands/CreateAppPaymentHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -31,7 +31,7 @@ public class CreateAppPaymentHandler : IRequestHandler<CreateAppPaymentCommand, 
     public async Task<AppPaymentDto> Handle(CreateAppPaymentCommand request, CancellationToken cancellationToken)
     {
         // Validate app exists
-        var app = await _appRepository.GetByIdAsync(request.AppId);
+        var app = await _appRepository.GetByIdAsync(request.AppId, cancellationToken);
         if (app == null)
             throw new BusinessException("La app especificada no existe");
 
@@ -46,7 +46,7 @@ public class CreateAppPaymentHandler : IRequestHandler<CreateAppPaymentCommand, 
             Amount = request.Amount
         };
 
-        var createdAppPayment = await _appPaymentRepository.CreateAsync(appPayment);
+        var createdAppPayment = await _appPaymentRepository.CreateAsync(appPayment, cancellationToken);
         return _mapper.Map<AppPaymentDto>(createdAppPayment);
     }
 }

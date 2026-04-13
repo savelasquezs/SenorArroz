@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Branches.DTOs;
@@ -20,7 +20,7 @@ public class GetBranchByIdHandler(
 
     public async Task<BranchDto?> Handle(GetBranchByIdQuery request, CancellationToken cancellationToken)
     {
-        var branch = await _branchRepository.GetByIdWithDetailsAsync(request.Id);
+        var branch = await _branchRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken);
         if (branch == null)
             return null;
 
@@ -34,11 +34,11 @@ public class GetBranchByIdHandler(
         var branchDto = _mapper.Map<BranchDto>(branch);
 
         // Add statistics
-        branchDto.TotalUsers = await _branchRepository.GetTotalUsersAsync(branch.Id);
-        branchDto.ActiveUsers = await _branchRepository.GetActiveUsersAsync(branch.Id);
-        branchDto.TotalCustomers = await _branchRepository.GetTotalCustomersAsync(branch.Id);
-        branchDto.ActiveCustomers = await _branchRepository.GetActiveCustomersAsync(branch.Id);
-        branchDto.TotalNeighborhoods = await _branchRepository.GetTotalNeighborhoodsAsync(branch.Id);
+        branchDto.TotalUsers = await _branchRepository.GetTotalUsersAsync(branch.Id, cancellationToken);
+        branchDto.ActiveUsers = await _branchRepository.GetActiveUsersAsync(branch.Id, cancellationToken);
+        branchDto.TotalCustomers = await _branchRepository.GetTotalCustomersAsync(branch.Id, cancellationToken);
+        branchDto.ActiveCustomers = await _branchRepository.GetActiveCustomersAsync(branch.Id, cancellationToken);
+        branchDto.TotalNeighborhoods = await _branchRepository.GetTotalNeighborhoodsAsync(branch.Id, cancellationToken);
 
         var hoodIds = branchDto.Neighborhoods.Select(n => n.Id).ToList();
         var hoodStats = await _neighborhoodRepository.GetNeighborhoodStatsBulkAsync(hoodIds, cancellationToken);

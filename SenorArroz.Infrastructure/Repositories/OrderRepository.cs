@@ -20,7 +20,7 @@ public class OrderRepository : IOrderRepository
         _context = context;
     }
 
-    public async Task<Order?> GetByIdAsync(int id)
+    public async Task<Order?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
             .AsNoTracking()
@@ -31,10 +31,10 @@ public class OrderRepository : IOrderRepository
                 .ThenInclude(a => a!.Neighborhood)
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
-            .FirstOrDefaultAsync(o => o.Id == id);
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
     }
 
-    public async Task<Order?> GetByIdWithDetailsAsync(int id)
+    public async Task<Order?> GetByIdWithDetailsAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
             .AsNoTracking()
@@ -48,10 +48,10 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.OrderDetails)
                 .ThenInclude(od => od.Product)
                     .ThenInclude(p => p.Category)
-            .FirstOrDefaultAsync(o => o.Id == id);
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
     }
 
-    public async Task<Order?> GetByIdWithFullDetailsAsync(int id)
+    public async Task<Order?> GetByIdWithFullDetailsAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
             .AsNoTracking()
@@ -73,13 +73,13 @@ public class OrderRepository : IOrderRepository
                 .ThenInclude(ap => ap.App)
                     .ThenInclude(a => a.Bank)
                         .ThenInclude(b => b.Branch)
-            .FirstOrDefaultAsync(o => o.Id == id);
+            .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
     }
 
     /// <summary>
     /// Lista paginada de pedidos. Con rango de fechas completo, filtra por día operativo (creado o <see cref="Order.ReservedFor"/> en el rango UTC).
     /// </summary>
-    public async Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null, bool forKitchen = false)
+    public async Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null, bool forKitchen = false, CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -169,36 +169,35 @@ public class OrderRepository : IOrderRepository
         // Aplicar ordenamiento
         query = ApplySorting(query, sortBy, sortOrder);
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<Order> CreateAsync(Order order)
+    public async Task<Order> CreateAsync(Order order, CancellationToken cancellationToken = default)
     {
         _context.Orders.Add(order);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return order;
     }
 
-    public async Task<Order> UpdateAsync(Order order)
+    public async Task<Order> UpdateAsync(Order order, CancellationToken cancellationToken = default)
     {
         _context.Orders.Update(order);
-        await _context.SaveChangesAsync();
-        
-        // Recargar la orden con todas las navegaciones para devolver datos completos
-        return await GetByIdAsync(order.Id) ?? order;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await GetByIdAsync(order.Id, cancellationToken) ?? order;
     }
 
-    public async Task DeleteAsync(int id)
+    public async Task DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var order = await _context.Orders.FindAsync(id);
+        var order = await _context.Orders.FindAsync([id], cancellationToken);
         if (order != null)
         {
             _context.Orders.Remove(order);
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(cancellationToken);
         }
     }
 
-    public async Task<PagedResult<Order>> GetByBranchAsync(int branchId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc")
+    public async Task<PagedResult<Order>> GetByBranchAsync(int branchId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -213,10 +212,10 @@ public class OrderRepository : IOrderRepository
 
         query = ApplySorting(query, sortBy, sortOrder);
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<PagedResult<Order>> GetByCustomerAsync(int customerId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc")
+    public async Task<PagedResult<Order>> GetByCustomerAsync(int customerId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -231,10 +230,10 @@ public class OrderRepository : IOrderRepository
 
         query = ApplySorting(query, sortBy, sortOrder);
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<PagedResult<Order>> GetByStatusAsync(OrderStatus status, OrderType? typeFilter = null, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc")
+    public async Task<PagedResult<Order>> GetByStatusAsync(OrderStatus status, OrderType? typeFilter = null, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -264,10 +263,10 @@ public class OrderRepository : IOrderRepository
 
         query = ApplySorting(query, sortBy, sortOrder);
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<PagedResult<Order>> GetByTypeAsync(OrderType type, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc")
+    public async Task<PagedResult<Order>> GetByTypeAsync(OrderType type, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -288,7 +287,7 @@ public class OrderRepository : IOrderRepository
         return await query.ToPagedResultAsync(page, pageSize);
     }
 
-    public async Task<PagedResult<Order>> GetByDeliveryManAsync(int deliveryManId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc")
+    public async Task<PagedResult<Order>> GetByDeliveryManAsync(int deliveryManId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -303,10 +302,10 @@ public class OrderRepository : IOrderRepository
 
         query = ApplySorting(query, sortBy, sortOrder);
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<PagedResult<Order>> GetByDateRangeAsync(DateTime fromDate, DateTime toDate, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc")
+    public async Task<PagedResult<Order>> GetByDateRangeAsync(DateTime fromDate, DateTime toDate, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -328,15 +327,15 @@ public class OrderRepository : IOrderRepository
 
         query = ApplySorting(query, sortBy, sortOrder);
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<PagedResult<Order>> GetByDateAsync(DateTime date, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc")
+    public async Task<PagedResult<Order>> GetByDateAsync(DateTime date, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default)
     {
-        return await GetByDateRangeAsync(date.Date, date.Date.AddDays(1).AddTicks(-1), branchId, page, pageSize, sortBy, sortOrder);
+        return await GetByDateRangeAsync(date.Date, date.Date.AddDays(1).AddTicks(-1), branchId, page, pageSize, sortBy, sortOrder, cancellationToken);
     }
 
-    public async Task<List<Order>> GetOrdersInPreparationAsync(int? branchId = null)
+    public async Task<List<Order>> GetOrdersInPreparationAsync(int? branchId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -357,10 +356,10 @@ public class OrderRepository : IOrderRepository
 
         return await query
             .OrderBy(o => o.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<Order>> GetReadyOrdersAsync(int? branchId = null)
+    public async Task<List<Order>> GetReadyOrdersAsync(int? branchId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -378,10 +377,10 @@ public class OrderRepository : IOrderRepository
 
         return await query
             .OrderBy(o => o.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<Order>> GetOrdersOnTheWayAsync(int? branchId = null)
+    public async Task<List<Order>> GetOrdersOnTheWayAsync(int? branchId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -400,10 +399,10 @@ public class OrderRepository : IOrderRepository
 
         return await query
             .OrderBy(o => o.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<Order>> GetOrdersForDeliveryManAsync(int deliveryManId)
+    public async Task<List<Order>> GetOrdersForDeliveryManAsync(int deliveryManId, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
             .AsNoTracking()
@@ -415,14 +414,14 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
             .Include(o => o.DeliveryRoute)
-            .Where(o => o.DeliveryManId == deliveryManId && 
+            .Where(o => o.DeliveryManId == deliveryManId &&
                       (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready) &&
                       o.Type == OrderType.Delivery)
             .OrderBy(o => o.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<Order>> GetAvailableOrdersForDeliveryAsync(int? branchId = null)
+    public async Task<List<Order>> GetAvailableOrdersForDeliveryAsync(int? branchId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -434,8 +433,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
             .Include(o => o.DeliveryRoute)
-            .Where(o => o.Status == OrderStatus.Ready && 
-                       o.DeliveryManId == null && 
+            .Where(o => o.Status == OrderStatus.Ready &&
+                       o.DeliveryManId == null &&
                        o.Type == OrderType.Delivery)
             .AsQueryable();
 
@@ -444,10 +443,10 @@ public class OrderRepository : IOrderRepository
 
         return await query
             .OrderBy(o => o.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<Order>> GetReservationsForDateAsync(DateTime date, int? branchId = null)
+    public async Task<List<Order>> GetReservationsForDateAsync(DateTime date, int? branchId = null, CancellationToken cancellationToken = default)
     {
         var day = date.Date;
         var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(day, day);
@@ -468,10 +467,10 @@ public class OrderRepository : IOrderRepository
 
         return await query
             .OrderBy(o => o.ReservedFor)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<Order>> GetUpcomingReservationsAsync(int? branchId = null, int hours = 24)
+    public async Task<List<Order>> GetUpcomingReservationsAsync(int? branchId = null, int hours = 24, CancellationToken cancellationToken = default)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -479,8 +478,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
             .Include(o => o.Address)
-            .Where(o => o.Type == OrderType.Reservation && 
-                      o.ReservedFor.HasValue && 
+            .Where(o => o.Type == OrderType.Reservation &&
+                      o.ReservedFor.HasValue &&
                       o.ReservedFor.Value <= DateTime.UtcNow.AddHours(hours))
             .AsQueryable();
 
@@ -489,48 +488,48 @@ public class OrderRepository : IOrderRepository
 
         return await query
             .OrderBy(o => o.ReservedFor)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<int> GetTotalOrdersCountAsync(int? branchId = null)
+    public async Task<int> GetTotalOrdersCountAsync(int? branchId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Orders.AsQueryable();
-        
+
         if (branchId.HasValue)
             query = query.Where(o => o.BranchId == branchId);
 
-        return await query.CountAsync();
+        return await query.CountAsync(cancellationToken);
     }
 
-    public async Task<int> GetOrdersCountByStatusAsync(OrderStatus status, int? branchId = null)
+    public async Task<int> GetOrdersCountByStatusAsync(OrderStatus status, int? branchId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Orders.Where(o => o.Status == status);
-        
+
         if (branchId.HasValue)
             query = query.Where(o => o.BranchId == branchId);
 
-        return await query.CountAsync();
+        return await query.CountAsync(cancellationToken);
     }
 
-    public async Task<int> GetOrdersCountByTypeAsync(OrderType type, int? branchId = null)
+    public async Task<int> GetOrdersCountByTypeAsync(OrderType type, int? branchId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Orders.Where(o => o.Type == type);
-        
+
         if (branchId.HasValue)
             query = query.Where(o => o.BranchId == branchId);
 
-        return await query.CountAsync();
+        return await query.CountAsync(cancellationToken);
     }
 
-    public async Task<int> GetActiveOrdersCountForDeliveryManAsync(int deliveryManId)
+    public async Task<int> GetActiveOrdersCountForDeliveryManAsync(int deliveryManId, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
-            .Where(o => o.DeliveryManId == deliveryManId && 
+            .Where(o => o.DeliveryManId == deliveryManId &&
                       (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready))
-            .CountAsync();
+            .CountAsync(cancellationToken);
     }
 
-    public async Task<decimal> GetTotalSalesAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null)
+    public async Task<decimal> GetTotalSalesAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Orders.Where(o => o.Status != OrderStatus.Cancelled);
         
@@ -547,13 +546,13 @@ public class OrderRepository : IOrderRepository
                 query = query.Where(o => o.CreatedAt <= toDate.Value);
         }
 
-        return await query.SumAsync(o => o.Total);
+        return await query.SumAsync(o => o.Total, cancellationToken);
     }
 
-    public async Task<decimal> GetAverageOrderValueAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null)
+    public async Task<decimal> GetAverageOrderValueAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Orders.Where(o => o.Status != OrderStatus.Cancelled);
-        
+
         if (branchId.HasValue)
             query = query.Where(o => o.BranchId == branchId);
 
@@ -567,10 +566,10 @@ public class OrderRepository : IOrderRepository
                 query = query.Where(o => o.CreatedAt <= toDate.Value);
         }
 
-        return await query.AverageAsync(o => (decimal?)o.Total) ?? 0;
+        return await query.AverageAsync(o => (decimal?)o.Total, cancellationToken) ?? 0;
     }
 
-    public async Task<List<Order>> GetTopSellingProductsAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, int limit = 10)
+    public async Task<List<Order>> GetTopSellingProductsAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, int limit = 10, CancellationToken cancellationToken = default)
     {
         var query = _context.OrderDetails
             .AsNoTracking()
@@ -598,38 +597,36 @@ public class OrderRepository : IOrderRepository
             .OrderByDescending(x => x.TotalQuantity)
             .Take(limit)
             .Join(_context.Products, x => x.ProductId, p => p.Id, (x, p) => new Order { Id = x.ProductId })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<bool> CanAssignDeliveryManAsync(int orderId, int deliveryManId)
+    public async Task<bool> CanAssignDeliveryManAsync(int orderId, int deliveryManId, CancellationToken cancellationToken = default)
     {
-        var order = await _context.Orders.FindAsync(orderId);
-        if (order == null || 
-            (order.Status != OrderStatus.Ready && 
-             order.Status != OrderStatus.OnTheWay && 
+        var order = await _context.Orders.FindAsync([orderId], cancellationToken);
+        if (order == null ||
+            (order.Status != OrderStatus.Ready &&
+             order.Status != OrderStatus.OnTheWay &&
              order.Status != OrderStatus.Delivered))
             return false;
 
-        // No hay límite de pedidos activos por domiciliario
         return true;
     }
 
-    public async Task<bool> CanCancelOrderAsync(int orderId)
+    public async Task<bool> CanCancelOrderAsync(int orderId, CancellationToken cancellationToken = default)
     {
-        var order = await _context.Orders.FindAsync(orderId);
+        var order = await _context.Orders.FindAsync([orderId], cancellationToken);
         return order != null && order.Status != OrderStatus.Cancelled;
     }
 
-    public async Task<bool> CanChangeStatusAsync(int orderId, OrderStatus newStatus)
+    public async Task<bool> CanChangeStatusAsync(int orderId, OrderStatus newStatus, CancellationToken cancellationToken = default)
     {
-        var order = await _context.Orders.FindAsync(orderId);
+        var order = await _context.Orders.FindAsync([orderId], cancellationToken);
         if (order == null)
             return false;
 
         if (newStatus == OrderStatus.Cancelled)
             return order.Status != OrderStatus.Cancelled;
 
-        // Transiciones no destructivas (hacia Cancelled arriba)
         return order.Status switch
         {
             OrderStatus.Taken => newStatus == OrderStatus.InPreparation || newStatus == OrderStatus.Cancelled,
@@ -644,28 +641,28 @@ public class OrderRepository : IOrderRepository
         };
     }
 
-    public async Task<bool> HasActiveOrdersAsync(int customerId)
+    public async Task<bool> HasActiveOrdersAsync(int customerId, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
-            .AnyAsync(o => o.CustomerId == customerId && 
-                         o.Status != OrderStatus.Delivered && 
-                         o.Status != OrderStatus.Cancelled);
+            .AnyAsync(o => o.CustomerId == customerId &&
+                         o.Status != OrderStatus.Delivered &&
+                         o.Status != OrderStatus.Cancelled, cancellationToken);
     }
 
-    public async Task<bool> HasOrdersInProgressAsync(int deliveryManId)
+    public async Task<bool> HasOrdersInProgressAsync(int deliveryManId, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
-            .AnyAsync(o => o.DeliveryManId == deliveryManId && 
-                         (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready));
+            .AnyAsync(o => o.DeliveryManId == deliveryManId &&
+                         (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready), cancellationToken);
     }
 
-    public async Task<Order> ChangeStatusAsync(int orderId, OrderStatus newStatus, string? reason = null)
+    public async Task<Order> ChangeStatusAsync(int orderId, OrderStatus newStatus, string? reason = null, CancellationToken cancellationToken = default)
     {
-        var order = await _context.Orders.FindAsync(orderId);
+        var order = await _context.Orders.FindAsync([orderId], cancellationToken);
         if (order == null)
             throw new ArgumentException("Order not found");
 
-        if (!await CanChangeStatusAsync(orderId, newStatus))
+        if (!await CanChangeStatusAsync(orderId, newStatus, cancellationToken))
             throw new InvalidOperationException($"Cannot change status from {order.Status} to {newStatus}");
 
         order.Status = newStatus;
@@ -674,43 +671,41 @@ public class OrderRepository : IOrderRepository
         if (newStatus == OrderStatus.Cancelled && !string.IsNullOrEmpty(reason))
             order.CancelledReason = reason;
 
-        await _context.SaveChangesAsync();
-        
-        // Recargar la orden con todas las relaciones para devolver datos completos
-        return await GetByIdAsync(orderId) ?? order;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await GetByIdAsync(orderId, cancellationToken) ?? order;
     }
 
-    public async Task<Order> AssignDeliveryManAsync(int orderId, int deliveryManId)
+    public async Task<Order> AssignDeliveryManAsync(int orderId, int deliveryManId, CancellationToken cancellationToken = default)
     {
-        var order = await _context.Orders.FindAsync(orderId);
+        var order = await _context.Orders.FindAsync([orderId], cancellationToken);
         if (order == null)
             throw new NotFoundException("Pedido no encontrado");
 
-        // Validar que el pedido esté en estado Ready, OnTheWay o Delivered
-        if (order.Status != OrderStatus.Ready && 
-            order.Status != OrderStatus.OnTheWay && 
+        if (order.Status != OrderStatus.Ready &&
+            order.Status != OrderStatus.OnTheWay &&
             order.Status != OrderStatus.Delivered)
             throw new BusinessException($"El pedido debe estar en estado 'Ready', 'OnTheWay' o 'Delivered' para asignar/cambiar domiciliario. Estado actual: {order.Status}");
 
         order.DeliveryManId = deliveryManId;
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return order;
     }
 
-    public async Task<Order> UnassignDeliveryManAsync(int orderId)
+    public async Task<Order> UnassignDeliveryManAsync(int orderId, CancellationToken cancellationToken = default)
     {
-        var order = await _context.Orders.FindAsync(orderId);
+        var order = await _context.Orders.FindAsync([orderId], cancellationToken);
         if (order == null)
             throw new ArgumentException("Order not found");
 
         order.DeliveryManId = null;
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return order;
     }
 
-    public async Task<Order> CancelOrderAsync(int orderId, string reason)
+    public async Task<Order> CancelOrderAsync(int orderId, string reason, CancellationToken cancellationToken = default)
     {
-        return await ChangeStatusAsync(orderId, OrderStatus.Cancelled, reason);
+        return await ChangeStatusAsync(orderId, OrderStatus.Cancelled, reason, cancellationToken);
     }
 
     public async Task<PagedResult<Order>> SearchOrdersAsync(
@@ -733,7 +728,8 @@ public class OrderRepository : IOrderRepository
         bool excludeFutureReservations = false,
         int? bankId = null,
         int? neighborhoodId = null,
-        bool includeOnsiteActiveInAssignedHistory = false)
+        bool includeOnsiteActiveInAssignedHistory = false,
+        CancellationToken cancellationToken = default)
     {
         // PostgreSQL timestamp with time zone requiere UTC
         if (fromDate.HasValue && fromDate.Value.Kind != DateTimeKind.Utc)
@@ -852,7 +848,7 @@ public class OrderRepository : IOrderRepository
         // Aplicar ordenamiento
         query = ApplySorting(query, sortBy, sortOrder);
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
     private IQueryable<Order> ApplySorting(IQueryable<Order> query, string? sortBy, string? sortOrder)
@@ -877,12 +873,11 @@ public class OrderRepository : IOrderRepository
     }
 
     public async Task<IEnumerable<Order>> GetReservationsDueForPreparation(
-        DateTime fromTime, 
-        DateTime toTime, 
-        OrderStatus status)
+        DateTime fromTime,
+        DateTime toTime,
+        OrderStatus status,
+        CancellationToken cancellationToken = default)
     {
-        // Usa prepare_at (fallback: reserved_for - 1h). Notificar cuando prepare_at <= now.
-        // Excluir ya notificados (prepared_notified_at).
         var now = DateTime.UtcNow;
         return await _context.Orders
             .AsNoTracking()
@@ -907,7 +902,7 @@ public class OrderRepository : IOrderRepository
                          (o.PrepareAt.HasValue && o.PrepareAt.Value <= now)
                          || (!o.PrepareAt.HasValue && o.ReservedFor.HasValue && o.ReservedFor.Value.AddHours(-1) <= now)
                      ))
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<PrincipalKpiSnapshot> GetPrincipalKpiSnapshotAsync(

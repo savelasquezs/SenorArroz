@@ -22,7 +22,8 @@ public class SupplierRepository : ISupplierRepository
         int page,
         int pageSize,
         string? sortBy,
-        string sortOrder)
+        string sortOrder,
+        CancellationToken cancellationToken = default)
     {
         var query = _context.Suppliers
             .AsNoTracking()
@@ -30,9 +31,7 @@ public class SupplierRepository : ISupplierRepository
             .AsQueryable();
 
         if (branchId.HasValue)
-        {
             query = query.Where(s => s.BranchId == branchId.Value);
-        }
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -45,59 +44,57 @@ public class SupplierRepository : ISupplierRepository
 
         query = ApplySorting(query, sortBy, sortOrder);
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<List<Supplier>> GetByBranchAsync(int branchId)
+    public async Task<List<Supplier>> GetByBranchAsync(int branchId, CancellationToken cancellationToken = default)
     {
         return await _context.Suppliers
             .AsNoTracking()
             .Where(s => s.BranchId == branchId)
             .OrderBy(s => s.Name)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<Supplier?> GetByIdAsync(int id)
+    public async Task<Supplier?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Suppliers
             .AsNoTracking()
             .Include(s => s.Branch)
-            .FirstOrDefaultAsync(s => s.Id == id);
+            .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
     }
 
-    public async Task<Supplier> CreateAsync(Supplier supplier)
+    public async Task<Supplier> CreateAsync(Supplier supplier, CancellationToken cancellationToken = default)
     {
         _context.Suppliers.Add(supplier);
-        await _context.SaveChangesAsync();
-        return await GetByIdAsync(supplier.Id) ?? supplier;
+        await _context.SaveChangesAsync(cancellationToken);
+        return await GetByIdAsync(supplier.Id, cancellationToken) ?? supplier;
     }
 
-    public async Task<Supplier> UpdateAsync(Supplier supplier)
+    public async Task<Supplier> UpdateAsync(Supplier supplier, CancellationToken cancellationToken = default)
     {
         _context.Suppliers.Update(supplier);
-        await _context.SaveChangesAsync();
-        return await GetByIdAsync(supplier.Id) ?? supplier;
+        await _context.SaveChangesAsync(cancellationToken);
+        return await GetByIdAsync(supplier.Id, cancellationToken) ?? supplier;
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var supplier = await _context.Suppliers.FindAsync(id);
+        var supplier = await _context.Suppliers.FindAsync([id], cancellationToken);
         if (supplier == null)
-        {
             return false;
-        }
 
         _context.Suppliers.Remove(supplier);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public Task<bool> ExistsAsync(int id)
+    public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
-        return _context.Suppliers.AnyAsync(s => s.Id == id);
+        return _context.Suppliers.AnyAsync(s => s.Id == id, cancellationToken);
     }
 
-    public Task<bool> NameExistsAsync(string name, int branchId, int? excludeId = null)
+    public Task<bool> NameExistsAsync(string name, int branchId, int? excludeId = null, CancellationToken cancellationToken = default)
     {
         var normalized = name.Trim().ToLower();
         var query = _context.Suppliers.Where(s =>
@@ -105,14 +102,12 @@ public class SupplierRepository : ISupplierRepository
             s.Name.ToLower() == normalized);
 
         if (excludeId.HasValue)
-        {
             query = query.Where(s => s.Id != excludeId.Value);
-        }
 
-        return query.AnyAsync();
+        return query.AnyAsync(cancellationToken);
     }
 
-    public Task<bool> PhoneExistsAsync(string phone, int branchId, int? excludeId = null)
+    public Task<bool> PhoneExistsAsync(string phone, int branchId, int? excludeId = null, CancellationToken cancellationToken = default)
     {
         var normalized = phone.Trim();
         var query = _context.Suppliers.Where(s =>
@@ -120,11 +115,9 @@ public class SupplierRepository : ISupplierRepository
             s.Phone == normalized);
 
         if (excludeId.HasValue)
-        {
             query = query.Where(s => s.Id != excludeId.Value);
-        }
 
-        return query.AnyAsync();
+        return query.AnyAsync(cancellationToken);
     }
 
     private static IQueryable<Supplier> ApplySorting(
@@ -142,5 +135,3 @@ public class SupplierRepository : ISupplierRepository
         };
     }
 }
-
-

@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
@@ -26,7 +26,7 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
 
     public async Task<BranchDto> Handle(UpdateBranchCommand request, CancellationToken cancellationToken)
     {
-        var branch = await _branchRepository.GetByIdAsync(request.Id);
+        var branch = await _branchRepository.GetByIdAsync(request.Id, cancellationToken);
         if (branch == null)
         {
             throw new NotFoundException($"Sucursal con ID {request.Id} no encontrada");
@@ -74,16 +74,16 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
         branch.Latitude = request.Latitude;
         branch.Longitude = request.Longitude;
 
-        branch = await _branchRepository.UpdateAsync(branch);
+        branch = await _branchRepository.UpdateAsync(branch, cancellationToken);
 
         var branchDto = _mapper.Map<BranchDto>(branch);
 
         // Add current statistics
-        branchDto.TotalUsers = await _branchRepository.GetTotalUsersAsync(branch.Id);
-        branchDto.ActiveUsers = await _branchRepository.GetActiveUsersAsync(branch.Id);
-        branchDto.TotalCustomers = await _branchRepository.GetTotalCustomersAsync(branch.Id);
-        branchDto.ActiveCustomers = await _branchRepository.GetActiveCustomersAsync(branch.Id);
-        branchDto.TotalNeighborhoods = await _branchRepository.GetTotalNeighborhoodsAsync(branch.Id);
+        branchDto.TotalUsers = await _branchRepository.GetTotalUsersAsync(branch.Id, cancellationToken);
+        branchDto.ActiveUsers = await _branchRepository.GetActiveUsersAsync(branch.Id, cancellationToken);
+        branchDto.TotalCustomers = await _branchRepository.GetTotalCustomersAsync(branch.Id, cancellationToken);
+        branchDto.ActiveCustomers = await _branchRepository.GetActiveCustomersAsync(branch.Id, cancellationToken);
+        branchDto.TotalNeighborhoods = await _branchRepository.GetTotalNeighborhoodsAsync(branch.Id, cancellationToken);
 
         var ps = await _db.BranchPrintSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.BranchId == branch.Id, cancellationToken);

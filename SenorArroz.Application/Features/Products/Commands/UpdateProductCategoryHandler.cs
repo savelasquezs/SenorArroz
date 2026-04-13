@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Products/Commands/UpdateProductCategoryHandler.cs
+﻿// SenorArroz.Application/Features/Products/Commands/UpdateProductCategoryHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Products.DTOs;
@@ -22,7 +22,7 @@ public class UpdateProductCategoryHandler : IRequestHandler<UpdateProductCategor
 
     public async Task<ProductCategoryDto> Handle(UpdateProductCategoryCommand request, CancellationToken cancellationToken)
     {
-        var category = await _categoryRepository.GetByIdAsync(request.Id);
+        var category = await _categoryRepository.GetByIdAsync(request.Id, cancellationToken);
         if (category == null)
         {
             throw new NotFoundException($"Categoría con ID {request.Id} no encontrada");
@@ -37,13 +37,13 @@ public class UpdateProductCategoryHandler : IRequestHandler<UpdateProductCategor
         // Update category
         category.Name = request.Name.Trim();
 
-        category = await _categoryRepository.UpdateAsync(category);
+        category = await _categoryRepository.UpdateAsync(category, cancellationToken);
 
         var categoryDto = _mapper.Map<ProductCategoryDto>(category);
 
         // Add current statistics
-        categoryDto.TotalProducts = await _categoryRepository.GetTotalProductsAsync(category.Id);
-        categoryDto.ActiveProducts = await _categoryRepository.GetActiveProductsAsync(category.Id);
+        categoryDto.TotalProducts = await _categoryRepository.GetTotalProductsAsync(category.Id, cancellationToken);
+        categoryDto.ActiveProducts = await _categoryRepository.GetActiveProductsAsync(category.Id, cancellationToken);
 
         return categoryDto;
     }

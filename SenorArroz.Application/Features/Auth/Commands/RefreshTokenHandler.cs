@@ -33,16 +33,16 @@ namespace SenorArroz.Application.Features.Auth.Commands
             var userId = _jwtService.GetUserIdFromExpiredToken(request.Token) ?? throw new BusinessException("Token inválido");
 
             // Validar refresh token
-            var refreshToken = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken);
+            var refreshToken = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken, cancellationToken);
             if (refreshToken == null || !refreshToken.IsActive || refreshToken.UserId != userId)
                 throw new BusinessException("Refresh token inválido");
 
             // Obtener usuario actualizado
-            var user = await _authRepository.GetUserByIdWithBranchAsync(userId) ?? throw new BusinessException("Usuario no encontrado");
+            var user = await _authRepository.GetUserByIdWithBranchAsync(userId, cancellationToken) ?? throw new BusinessException("Usuario no encontrado");
 
             // Revocar el refresh token usado
             refreshToken.Revoke(request.IpAddress);
-            await _refreshTokenRepository.UpdateAsync(refreshToken);
+            await _refreshTokenRepository.UpdateAsync(refreshToken, cancellationToken);
 
             // Generar nuevos tokens
             var newAccessToken = _jwtService.GenerateAccessToken(user);
@@ -56,7 +56,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 ExpiresAt = DateTime.UtcNow.AddDays(7)
             };
 
-            await _refreshTokenRepository.AddAsync(newRefreshTokenEntity);
+            await _refreshTokenRepository.AddAsync(newRefreshTokenEntity, cancellationToken);
 
             // Mapear respuesta
             var userInfo = _mapper.Map<UserInfoDto>(user);

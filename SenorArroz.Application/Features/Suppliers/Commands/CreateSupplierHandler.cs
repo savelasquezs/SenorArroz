@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Suppliers.DTOs;
@@ -57,7 +57,7 @@ public class CreateSupplierHandler : IRequestHandler<CreateSupplierCommand, Supp
             Email = request.Supplier.Email
         };
 
-        var created = await _supplierRepository.CreateAsync(supplier);
+        var created = await _supplierRepository.CreateAsync(supplier, cancellationToken);
         return _mapper.Map<SupplierDto>(created);
     }
 

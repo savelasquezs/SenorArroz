@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
@@ -56,7 +56,7 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
             Longitude = request.Longitude
         };
 
-        branch = await _branchRepository.CreateAsync(branch);
+        branch = await _branchRepository.CreateAsync(branch, cancellationToken);
 
         _db.BranchPrintSettings.Add(new SenorArroz.Domain.Entities.BranchPrintSettings { BranchId = branch.Id });
         await _db.SaveChangesAsync(cancellationToken);

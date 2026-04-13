@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/BankPayments/Queries/GetBankPaymentByIdHandler.cs
+﻿// SenorArroz.Application/Features/BankPayments/Queries/GetBankPaymentByIdHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -22,7 +22,7 @@ public class GetBankPaymentByIdHandler : IRequestHandler<GetBankPaymentByIdQuery
 
     public async Task<BankPaymentDto?> Handle(GetBankPaymentByIdQuery request, CancellationToken cancellationToken)
     {
-        var bankPayment = await _bankPaymentRepository.GetByIdAsync(request.Id);
+        var bankPayment = await _bankPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         
         if (bankPayment == null)
             return null;

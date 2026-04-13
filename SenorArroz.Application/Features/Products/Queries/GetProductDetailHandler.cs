@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Products/Queries/GetProductDetailHandler.cs
+﻿// SenorArroz.Application/Features/Products/Queries/GetProductDetailHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Products.DTOs;
@@ -19,7 +19,7 @@ public class GetProductDetailHandler : IRequestHandler<GetProductDetailQuery, Pr
 
     public async Task<ProductDetailDto?> Handle(GetProductDetailQuery request, CancellationToken cancellationToken)
     {
-        var product = await _productRepository.GetByIdWithStatisticsAsync(request.Id);
+        var product = await _productRepository.GetByIdWithStatisticsAsync(request.Id, cancellationToken);
         
         if (product == null)
             return null;
@@ -27,11 +27,11 @@ public class GetProductDetailHandler : IRequestHandler<GetProductDetailQuery, Pr
         var productDetailDto = _mapper.Map<ProductDetailDto>(product);
 
         // Add statistical data
-        productDetailDto.TotalSales = await _productRepository.GetTotalSalesAsync(product.Id);
-        productDetailDto.TotalRevenue = await _productRepository.GetTotalRevenueAsync(product.Id);
-        productDetailDto.TotalOrders = await _productRepository.GetTotalOrdersAsync(product.Id);
-        productDetailDto.TotalCustomers = await _productRepository.GetTotalCustomersAsync(product.Id);
-        productDetailDto.LastSoldAt = await _productRepository.GetLastSoldAtAsync(product.Id);
+        productDetailDto.TotalSales = await _productRepository.GetTotalSalesAsync(product.Id, cancellationToken);
+        productDetailDto.TotalRevenue = await _productRepository.GetTotalRevenueAsync(product.Id, cancellationToken);
+        productDetailDto.TotalOrders = await _productRepository.GetTotalOrdersAsync(product.Id, cancellationToken);
+        productDetailDto.TotalCustomers = await _productRepository.GetTotalCustomersAsync(product.Id, cancellationToken);
+        productDetailDto.LastSoldAt = await _productRepository.GetLastSoldAtAsync(product.Id, cancellationToken);
 
         const int salesChartDays = 90;
         var evolution = await _productRepository.GetSalesUnitsEvolutionByProductAsync(

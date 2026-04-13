@@ -11,16 +11,15 @@ public interface ISupplierRepository
         int page,
         int pageSize,
         string? sortBy,
-        string sortOrder);
+        string sortOrder,
+        CancellationToken cancellationToken = default);
 
-    Task<List<Supplier>> GetByBranchAsync(int branchId);
-    Task<Supplier?> GetByIdAsync(int id);
-    Task<Supplier> CreateAsync(Supplier supplier);
-    Task<Supplier> UpdateAsync(Supplier supplier);
-    Task<bool> DeleteAsync(int id);
-    Task<bool> ExistsAsync(int id);
-    Task<bool> NameExistsAsync(string name, int branchId, int? excludeId = null);
-    Task<bool> PhoneExistsAsync(string phone, int branchId, int? excludeId = null);
+    Task<List<Supplier>> GetByBranchAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<Supplier?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<Supplier> CreateAsync(Supplier supplier, CancellationToken cancellationToken = default);
+    Task<Supplier> UpdateAsync(Supplier supplier, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> NameExistsAsync(string name, int branchId, int? excludeId = null, CancellationToken cancellationToken = default);
+    Task<bool> PhoneExistsAsync(string phone, int branchId, int? excludeId = null, CancellationToken cancellationToken = default);
 }
-
-

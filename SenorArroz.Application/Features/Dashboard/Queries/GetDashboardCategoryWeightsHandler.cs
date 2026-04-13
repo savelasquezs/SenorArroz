@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
@@ -54,7 +54,7 @@ public class GetDashboardCategoryWeightsHandler
         List<CategoryWeightEvolutionSeriesDto> evolutionsByCategory = new();
         if (request.CategoryId is { } cid)
         {
-            await ValidateCategoryAsync(cid);
+            await ValidateCategoryAsync(cid, cancellationToken);
             var points = await _orderRepository.GetSalesCategoryWeightEvolutionAsync(
                 branchFilter,
                 from,
@@ -118,9 +118,9 @@ public class GetDashboardCategoryWeightsHandler
         return CategoryWeightEvolutionGranularity.Day;
     }
 
-    private async Task ValidateCategoryAsync(int categoryId)
+    private async Task ValidateCategoryAsync(int categoryId, CancellationToken cancellationToken = default)
     {
-        var category = await _categoryRepository.GetByIdAsync(categoryId);
+        var category = await _categoryRepository.GetByIdAsync(categoryId, cancellationToken);
         if (category == null)
             throw new BusinessException("La categoría especificada no existe");
     }

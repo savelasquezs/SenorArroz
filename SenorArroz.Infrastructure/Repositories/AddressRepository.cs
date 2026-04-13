@@ -14,7 +14,7 @@ public class AddressRepository : IAddressRepository
         _context = context;
     }
 
-    public async Task<IEnumerable<Address>> GetByCustomerIdAsync(int customerId)
+    public async Task<IEnumerable<Address>> GetByCustomerIdAsync(int customerId, CancellationToken cancellationToken = default)
     {
         return await _context.Addresses
             .AsNoTracking()
@@ -22,34 +22,33 @@ public class AddressRepository : IAddressRepository
             .Include(a => a.Customer)
             .Where(a => a.CustomerId == customerId)
             .OrderByDescending(a => a.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<Address?> GetByIdAsync(int id)
+    public async Task<Address?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Addresses
             .AsNoTracking()
             .Include(a => a.Neighborhood)
             .Include(a => a.Customer)
-            .FirstOrDefaultAsync(a => a.Id == id);
+            .FirstOrDefaultAsync(a => a.Id == id, cancellationToken);
     }
 
-    public async Task<Address?> GetPrimaryByCustomerIdAsync(int customerId)
+    public async Task<Address?> GetPrimaryByCustomerIdAsync(int customerId, CancellationToken cancellationToken = default)
     {
         return await _context.Addresses
             .AsNoTracking()
             .Include(a => a.Neighborhood)
             .Include(a => a.Customer)
             .Where(a => a.CustomerId == customerId && a.IsPrimary)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public async Task<Address> CreateAsync(Address address)
+    public async Task<Address> CreateAsync(Address address, CancellationToken cancellationToken = default)
     {
-        // Get delivery fee from neighborhood if not set
         if (address.DeliveryFee == 0)
         {
-            var neighborhood = await _context.Neighborhoods.FindAsync(address.NeighborhoodId);
+            var neighborhood = await _context.Neighborhoods.FindAsync([address.NeighborhoodId], cancellationToken);
             if (neighborhood != null)
             {
                 address.DeliveryFee = neighborhood.DeliveryFee;
@@ -57,77 +56,70 @@ public class AddressRepository : IAddressRepository
         }
 
         _context.Addresses.Add(address);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(address.Id) ?? address;
+        return await GetByIdAsync(address.Id, cancellationToken) ?? address;
     }
 
-    public async Task<Address> UpdateAsync(Address address)
+    public async Task<Address> UpdateAsync(Address address, CancellationToken cancellationToken = default)
     {
-        // El DeliveryFee ya viene actualizado desde el handler; no sobrescribir con el valor del barrio.
         _context.Addresses.Update(address);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(address.Id) ?? address;
+        return await GetByIdAsync(address.Id, cancellationToken) ?? address;
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var address = await _context.Addresses.FindAsync(id);
+        var address = await _context.Addresses.FindAsync([id], cancellationToken);
         if (address == null)
             return false;
 
-        // Check if address is being used in orders
-        var hasOrders = await _context.Orders.AnyAsync(o => o.AddressId == id);
+        var hasOrders = await _context.Orders.AnyAsync(o => o.AddressId == id, cancellationToken);
         if (hasOrders)
-        {
-            // Don't delete if used in orders, just mark as inactive if you add that field
             return false;
-        }
 
         _context.Addresses.Remove(address);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<bool> ExistsAsync(int id)
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await _context.Addresses.AnyAsync(a => a.Id == id);
+        return await _context.Addresses.AnyAsync(a => a.Id == id, cancellationToken);
     }
 
-    public async Task<bool> SetPrimaryAddressAsync(int customerId, int addressId)
+    public async Task<bool> SetPrimaryAddressAsync(int customerId, int addressId, CancellationToken cancellationToken = default)
     {
-        // First unset all primary addresses for the customer
-        await UnsetPrimaryAddressesAsync(customerId);
-        
-        // Then set the specified address as primary
+        await UnsetPrimaryAddressesAsync(customerId, cancellationToken);
+
         var address = await _context.Addresses
-            .FirstOrDefaultAsync(a => a.Id == addressId && a.CustomerId == customerId);
-        
+            .FirstOrDefaultAsync(a => a.Id == addressId && a.CustomerId == customerId, cancellationToken);
+
         if (address == null)
             return false;
-        
+
         address.IsPrimary = true;
-        await _context.SaveChangesAsync();
-        
+        await _context.SaveChangesAsync(cancellationToken);
+
         return true;
     }
 
-    public async Task<bool> UnsetPrimaryAddressesAsync(int customerId)
+    public async Task<bool> UnsetPrimaryAddressesAsync(int customerId, CancellationToken cancellationToken = default)
     {
         var addresses = await _context.Addresses
             .Where(a => a.CustomerId == customerId && a.IsPrimary)
-            .ToListAsync();
-        
+            .ToListAsync(cancellationToken);
+
         if (!addresses.Any())
             return true;
-        
+
         foreach (var address in addresses)
         {
             address.IsPrimary = false;
         }
-        
-        await _context.SaveChangesAsync();
+
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 }

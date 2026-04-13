@@ -26,7 +26,8 @@ public class AppPaymentRepository : IAppPaymentRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "createdAt",
-        string sortOrder = "desc")
+        string sortOrder = "desc",
+        CancellationToken cancellationToken = default)
     {
         var query = _context.AppPayments
             .AsNoTracking()
@@ -36,36 +37,21 @@ public class AppPaymentRepository : IAppPaymentRepository
             .ThenInclude(b => b.Branch)
             .AsQueryable();
 
-        // Order filter
         if (orderId.HasValue)
-        {
             query = query.Where(ap => ap.OrderId == orderId.Value);
-        }
 
-        // App filter
         if (appId.HasValue)
-        {
             query = query.Where(ap => ap.AppId == appId.Value);
-        }
 
-        // Settlement filter
         if (settled.HasValue)
-        {
             query = query.Where(ap => ap.IsSetted == settled.Value);
-        }
 
-        // Date range filter
         if (fromDate.HasValue)
-        {
             query = query.Where(ap => ap.CreatedAt >= fromDate.Value);
-        }
 
         if (toDate.HasValue)
-        {
             query = query.Where(ap => ap.CreatedAt <= toDate.Value);
-        }
 
-        // Sorting
         query = sortBy.ToLower() switch
         {
             "amount" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(ap => ap.Amount) : query.OrderBy(ap => ap.Amount),
@@ -76,10 +62,10 @@ public class AppPaymentRepository : IAppPaymentRepository
             _ => query.OrderByDescending(ap => ap.CreatedAt)
         };
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<IEnumerable<AppPayment>> GetByOrderIdAsync(int orderId)
+    public async Task<IEnumerable<AppPayment>> GetByOrderIdAsync(int orderId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
             .AsNoTracking()
@@ -88,20 +74,20 @@ public class AppPaymentRepository : IAppPaymentRepository
             .ThenInclude(b => b.Branch)
             .Where(ap => ap.OrderId == orderId)
             .OrderBy(ap => ap.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<AppPayment>> GetByAppIdAsync(int appId)
+    public async Task<IEnumerable<AppPayment>> GetByAppIdAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
             .AsNoTracking()
             .Include(ap => ap.Order)
             .Where(ap => ap.AppId == appId)
             .OrderByDescending(ap => ap.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<AppPayment>> GetUnsettledAsync()
+    public async Task<IEnumerable<AppPayment>> GetUnsettledAsync(CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
             .AsNoTracking()
@@ -111,10 +97,10 @@ public class AppPaymentRepository : IAppPaymentRepository
             .Include(ap => ap.Order)
             .Where(ap => !ap.IsSetted)
             .OrderBy(ap => ap.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<AppPayment>> GetUnsettledByAppIdAsync(int appId)
+    public async Task<IEnumerable<AppPayment>> GetUnsettledByAppIdAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
             .AsNoTracking()
@@ -124,10 +110,10 @@ public class AppPaymentRepository : IAppPaymentRepository
             .Include(ap => ap.Order)
             .Where(ap => ap.AppId == appId && !ap.IsSetted)
             .OrderBy(ap => ap.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<AppPayment>> GetUnsettledByDateRangeAsync(DateTime fromDate, DateTime toDate)
+    public async Task<IEnumerable<AppPayment>> GetUnsettledByDateRangeAsync(DateTime fromDate, DateTime toDate, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
             .AsNoTracking()
@@ -137,10 +123,10 @@ public class AppPaymentRepository : IAppPaymentRepository
             .Include(ap => ap.Order)
             .Where(ap => !ap.IsSetted && ap.CreatedAt >= fromDate && ap.CreatedAt <= toDate)
             .OrderBy(ap => ap.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<AppPayment?> GetByIdAsync(int id)
+    public async Task<AppPayment?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
             .AsNoTracking()
@@ -148,80 +134,74 @@ public class AppPaymentRepository : IAppPaymentRepository
             .Include(ap => ap.App)
             .ThenInclude(a => a.Bank)
             .ThenInclude(b => b.Branch)
-            .FirstOrDefaultAsync(ap => ap.Id == id);
+            .FirstOrDefaultAsync(ap => ap.Id == id, cancellationToken);
     }
 
-    public async Task<AppPayment> CreateAsync(AppPayment appPayment)
+    public async Task<AppPayment> CreateAsync(AppPayment appPayment, CancellationToken cancellationToken = default)
     {
         _context.AppPayments.Add(appPayment);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(appPayment.Id) ?? appPayment;
+        return await GetByIdAsync(appPayment.Id, cancellationToken) ?? appPayment;
     }
 
-    public async Task<AppPayment> UpdateAsync(AppPayment appPayment)
+    public async Task<AppPayment> UpdateAsync(AppPayment appPayment, CancellationToken cancellationToken = default)
     {
         _context.AppPayments.Update(appPayment);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(appPayment.Id) ?? appPayment;
+        return await GetByIdAsync(appPayment.Id, cancellationToken) ?? appPayment;
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var appPayment = await _context.AppPayments.FindAsync(id);
+        var appPayment = await _context.AppPayments.FindAsync([id], cancellationToken);
         if (appPayment == null)
             return false;
 
         _context.AppPayments.Remove(appPayment);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<bool> ExistsAsync(int id)
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await _context.AppPayments.AnyAsync(ap => ap.Id == id);
+        return await _context.AppPayments.AnyAsync(ap => ap.Id == id, cancellationToken);
     }
 
-    // Settlement methods
-    public async Task<bool> SettlePaymentsAsync(IEnumerable<int> paymentIds)
+    public async Task<bool> SettlePaymentsAsync(IEnumerable<int> paymentIds, CancellationToken cancellationToken = default)
     {
         var payments = await _context.AppPayments
             .Where(ap => paymentIds.Contains(ap.Id))
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         if (!payments.Any())
             return false;
 
         foreach (var payment in payments)
-        {
             payment.IsSetted = true;
-        }
 
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<bool> UnsettlePaymentsAsync(IEnumerable<int> paymentIds)
+    public async Task<bool> UnsettlePaymentsAsync(IEnumerable<int> paymentIds, CancellationToken cancellationToken = default)
     {
         var payments = await _context.AppPayments
             .Where(ap => paymentIds.Contains(ap.Id))
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         if (!payments.Any())
             return false;
 
         foreach (var payment in payments)
-        {
             payment.IsSetted = false;
-        }
 
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    // Statistics
-    public async Task<decimal> GetTotalAmountByAppAsync(int appId, DateTime? fromDate = null, DateTime? toDate = null)
+    public async Task<decimal> GetTotalAmountByAppAsync(int appId, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
         var query = _context.AppPayments.Where(ap => ap.AppId == appId);
 
@@ -231,24 +211,24 @@ public class AppPaymentRepository : IAppPaymentRepository
         if (toDate.HasValue)
             query = query.Where(ap => ap.CreatedAt <= toDate.Value);
 
-        return await query.SumAsync(ap => ap.Amount);
+        return await query.SumAsync(ap => ap.Amount, cancellationToken);
     }
 
-    public async Task<decimal> GetTotalAmountByOrderAsync(int orderId)
+    public async Task<decimal> GetTotalAmountByOrderAsync(int orderId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
             .Where(ap => ap.OrderId == orderId)
-            .SumAsync(ap => ap.Amount);
+            .SumAsync(ap => ap.Amount, cancellationToken);
     }
 
-    public async Task<decimal> GetUnsettledAmountByAppAsync(int appId)
+    public async Task<decimal> GetUnsettledAmountByAppAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
             .Where(ap => ap.AppId == appId && !ap.IsSetted)
-            .SumAsync(ap => ap.Amount);
+            .SumAsync(ap => ap.Amount, cancellationToken);
     }
 
-    public async Task<int> GetTotalCountByAppAsync(int appId, DateTime? fromDate = null, DateTime? toDate = null)
+    public async Task<int> GetTotalCountByAppAsync(int appId, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
         var query = _context.AppPayments.Where(ap => ap.AppId == appId);
 
@@ -258,12 +238,12 @@ public class AppPaymentRepository : IAppPaymentRepository
         if (toDate.HasValue)
             query = query.Where(ap => ap.CreatedAt <= toDate.Value);
 
-        return await query.CountAsync();
+        return await query.CountAsync(cancellationToken);
     }
 
-    public async Task<int> GetUnsettledCountByAppAsync(int appId)
+    public async Task<int> GetUnsettledCountByAppAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
-            .CountAsync(ap => ap.AppId == appId && !ap.IsSetted);
+            .CountAsync(ap => ap.AppId == appId && !ap.IsSetted, cancellationToken);
     }
 }

@@ -12,17 +12,16 @@ public interface IExpenseRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc");
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default);
 
-    Task<IEnumerable<Expense>> GetAllAsync();
-    Task<IEnumerable<Expense>> GetByCategoryIdAsync(int categoryId);
-    Task<Expense?> GetByIdAsync(int id);
-    Task<Expense?> GetByIdWithCategoryAsync(int id);
-    Task<Expense> CreateAsync(Expense expense);
-    Task<Expense> UpdateAsync(Expense expense);
-    Task<bool> DeleteAsync(int id);
-    Task<bool> ExistsAsync(int id);
-    Task<bool> NameExistsInCategoryAsync(string name, int categoryId, int? excludeId = null);
+    Task<IEnumerable<Expense>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<IEnumerable<Expense>> GetByCategoryIdAsync(int categoryId, CancellationToken cancellationToken = default);
+    Task<Expense?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<Expense?> GetByIdWithCategoryAsync(int id, CancellationToken cancellationToken = default);
+    Task<Expense> CreateAsync(Expense expense, CancellationToken cancellationToken = default);
+    Task<Expense> UpdateAsync(Expense expense, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> NameExistsInCategoryAsync(string name, int categoryId, int? excludeId = null, CancellationToken cancellationToken = default);
 }
-
-

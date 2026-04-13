@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Expenses/Commands/UpdateExpenseHandler.cs
+﻿// SenorArroz.Application/Features/Expenses/Commands/UpdateExpenseHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -42,7 +42,7 @@ public class UpdateExpenseHandler : IRequestHandler<UpdateExpenseCommand, Expens
         if (_currentUser.Role != "admin" && _currentUser.Role != "superadmin")
             throw new BusinessException("No tienes permisos para modificar gastos");
 
-        var expense = await _expenseRepository.GetByIdAsync(request.Id);
+        var expense = await _expenseRepository.GetByIdAsync(request.Id, cancellationToken);
         if (expense == null)
             throw new NotFoundException($"Gasto con ID {request.Id} no encontrado");
 
@@ -67,7 +67,7 @@ public class UpdateExpenseHandler : IRequestHandler<UpdateExpenseCommand, Expens
             expense.CategoryId = request.CategoryId;
             expense.Unit = request.Unit;
 
-            await _expenseRepository.UpdateAsync(expense);
+            await _expenseRepository.UpdateAsync(expense, cancellationToken);
 
             await ExpenseMenuTargetCommandsHelper.ReplaceMenuTargetsAsync(
                 request.Id,
@@ -83,7 +83,7 @@ public class UpdateExpenseHandler : IRequestHandler<UpdateExpenseCommand, Expens
             throw;
         }
 
-        var updated = await _expenseRepository.GetByIdAsync(request.Id);
+        var updated = await _expenseRepository.GetByIdAsync(request.Id, cancellationToken);
         if (updated == null)
             throw new BusinessException("Error al actualizar el gasto");
 

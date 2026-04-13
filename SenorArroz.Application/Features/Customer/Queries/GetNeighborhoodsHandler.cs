@@ -28,6 +28,6 @@ public class GetNeighborhoodsHandler : IRequestHandler<GetNeighborhoodsQuery, IE
             throw new BusinessException("No tienes permisos para acceder a barrios de otras sucursales");
         }
 
-        return await _neighborhoodRepository.GetByBranchIdAsync(branchFilter);
+        return await _neighborhoodRepository.GetByBranchIdAsync(branchFilter, cancellationToken);
     }
 }

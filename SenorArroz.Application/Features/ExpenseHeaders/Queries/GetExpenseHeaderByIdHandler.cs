@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
@@ -28,7 +28,7 @@ public class GetExpenseHeaderByIdHandler : IRequestHandler<GetExpenseHeaderByIdQ
 
     public async Task<ExpenseHeaderDto?> Handle(GetExpenseHeaderByIdQuery request, CancellationToken cancellationToken)
     {
-        var expenseHeader = await _expenseHeaderRepository.GetByIdWithDetailsAsync(request.Id);
+        var expenseHeader = await _expenseHeaderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken);
 
         if (expenseHeader == null)
         {

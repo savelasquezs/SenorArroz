@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.DeliverymanAdvances.DTOs;
@@ -66,7 +66,7 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
             if (request.Advance.ExpenseHeaderId.HasValue)
                 throw new BusinessException("La transferencia no debe incluir gasto vinculado");
 
-            var bank = await _bankRepository.GetByIdAsync(request.Advance.BankId.Value);
+            var bank = await _bankRepository.GetByIdAsync(request.Advance.BankId.Value, cancellationToken);
             if (bank == null || bank.BranchId != deliveryman.BranchId)
                 throw new BusinessException("Banco inválido para esta sucursal");
         }
@@ -77,7 +77,7 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
             if (request.Advance.BankId.HasValue)
                 throw new BusinessException("El abono por gasto no debe incluir banco");
 
-            var expense = await _expenseHeaderRepository.GetByIdWithDetailsAsync(request.Advance.ExpenseHeaderId.Value);
+            var expense = await _expenseHeaderRepository.GetByIdWithDetailsAsync(request.Advance.ExpenseHeaderId.Value, cancellationToken);
             if (expense == null || expense.BranchId != deliveryman.BranchId)
                 throw new BusinessException("Gasto no encontrado en esta sucursal");
             if (expense.DeliverymanId != deliveryman.Id)
@@ -105,7 +105,7 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
             BranchId = deliveryman.BranchId
         };
 
-        var created = await _advanceRepository.CreateAsync(advance);
+        var created = await _advanceRepository.CreateAsync(advance, cancellationToken);
         return _mapper.Map<DeliverymanAdvanceDto>(created);
     }
 }

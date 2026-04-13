@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -18,7 +18,7 @@ public class DeleteExpenseHeaderHandler : IRequestHandler<DeleteExpenseHeaderCom
 
     public async Task<bool> Handle(DeleteExpenseHeaderCommand request, CancellationToken cancellationToken)
     {
-        var expenseHeader = await _expenseHeaderRepository.GetByIdAsync(request.Id);
+        var expenseHeader = await _expenseHeaderRepository.GetByIdAsync(request.Id, cancellationToken);
 
         if (expenseHeader == null)
         {
@@ -39,7 +39,7 @@ public class DeleteExpenseHeaderHandler : IRequestHandler<DeleteExpenseHeaderCom
             }
         }
 
-        return await _expenseHeaderRepository.DeleteAsync(request.Id);
+        return await _expenseHeaderRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }
 

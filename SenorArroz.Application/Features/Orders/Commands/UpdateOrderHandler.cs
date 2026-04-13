@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -39,7 +39,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
     public async Task<OrderDto> Handle(UpdateOrderCommand request, CancellationToken cancellationToken)
     {
-        var existingOrder = await _orderRepository.GetByIdWithDetailsAsync(request.Id);
+        var existingOrder = await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken);
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
@@ -166,7 +166,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         // Handle address changes - update delivery fee from address if not provided
         if (request.Order.AddressId.HasValue && !request.Order.DeliveryFee.HasValue)
         {
-            var address = await _addressRepository.GetByIdAsync(request.Order.AddressId.Value);
+            var address = await _addressRepository.GetByIdAsync(request.Order.AddressId.Value, cancellationToken);
             if (address != null)
             {
                 existingOrder.DeliveryFee = address.DeliveryFee;
@@ -186,7 +186,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
         RecalculateOrderTotals(existingOrder);
 
-        var updatedOrder = await _orderRepository.UpdateAsync(existingOrder);
+        var updatedOrder = await _orderRepository.UpdateAsync(existingOrder, cancellationToken);
         var result = _mapper.Map<OrderDto>(updatedOrder);
 
         var notesChanged = request.Order.Notes != null

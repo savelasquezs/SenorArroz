@@ -14,6 +14,6 @@ public class DeleteBranchHandler : IRequestHandler<DeleteBranchCommand, bool>
 
     public async Task<bool> Handle(DeleteBranchCommand request, CancellationToken cancellationToken)
     {
-        return await _branchRepository.DeleteAsync(request.Id);
+        return await _branchRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }

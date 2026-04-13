@@ -13,21 +13,22 @@ public interface IAppRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc");
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default);
 
-    Task<IEnumerable<App>> GetByBankIdAsync(int bankId);
-    Task<IEnumerable<App>> GetByBranchIdAsync(int branchId);
-    Task<App?> GetByIdAsync(int id);
-    Task<App?> GetByIdWithBankAsync(int id);
-    Task<App> CreateAsync(App app);
-    Task<App> UpdateAsync(App app);
-    Task<bool> DeleteAsync(int id);
-    Task<bool> ExistsAsync(int id);
-    Task<bool> NameExistsInBankAsync(string name, int bankId, int? excludeId = null);
+    Task<IEnumerable<App>> GetByBankIdAsync(int bankId, CancellationToken cancellationToken = default);
+    Task<IEnumerable<App>> GetByBranchIdAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<App?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<App?> GetByIdWithBankAsync(int id, CancellationToken cancellationToken = default);
+    Task<App> CreateAsync(App app, CancellationToken cancellationToken = default);
+    Task<App> UpdateAsync(App app, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> NameExistsInBankAsync(string name, int bankId, int? excludeId = null, CancellationToken cancellationToken = default);
 
     // Statistics
-    Task<decimal> GetTotalAppPaymentsAsync(int appId);
-    Task<decimal> GetUnsettledAppPaymentsAsync(int appId);
-    Task<int> GetTotalAppPaymentsCountAsync(int appId);
-    Task<int> GetUnsettledAppPaymentsCountAsync(int appId);
+    Task<decimal> GetTotalAppPaymentsAsync(int appId, CancellationToken cancellationToken = default);
+    Task<decimal> GetUnsettledAppPaymentsAsync(int appId, CancellationToken cancellationToken = default);
+    Task<int> GetTotalAppPaymentsCountAsync(int appId, CancellationToken cancellationToken = default);
+    Task<int> GetUnsettledAppPaymentsCountAsync(int appId, CancellationToken cancellationToken = default);
 }

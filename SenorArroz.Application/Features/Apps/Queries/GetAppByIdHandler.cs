@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Apps/Queries/GetAppByIdHandler.cs
+﻿// SenorArroz.Application/Features/Apps/Queries/GetAppByIdHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -22,7 +22,7 @@ public class GetAppByIdHandler : IRequestHandler<GetAppByIdQuery, AppDto?>
 
     public async Task<AppDto?> Handle(GetAppByIdQuery request, CancellationToken cancellationToken)
     {
-        var app = await _appRepository.GetByIdAsync(request.Id);
+        var app = await _appRepository.GetByIdAsync(request.Id, cancellationToken);
         
         if (app == null)
             return null;
@@ -34,10 +34,10 @@ public class GetAppByIdHandler : IRequestHandler<GetAppByIdQuery, AppDto?>
         var appDto = _mapper.Map<AppDto>(app);
 
         // Add additional data
-        appDto.TotalPayments = await _appRepository.GetTotalAppPaymentsAsync(app.Id);
-        appDto.UnsettledPayments = await _appRepository.GetUnsettledAppPaymentsAsync(app.Id);
-        appDto.TotalPaymentsCount = await _appRepository.GetTotalAppPaymentsCountAsync(app.Id);
-        appDto.UnsettledPaymentsCount = await _appRepository.GetUnsettledAppPaymentsCountAsync(app.Id);
+        appDto.TotalPayments = await _appRepository.GetTotalAppPaymentsAsync(app.Id, cancellationToken);
+        appDto.UnsettledPayments = await _appRepository.GetUnsettledAppPaymentsAsync(app.Id, cancellationToken);
+        appDto.TotalPaymentsCount = await _appRepository.GetTotalAppPaymentsCountAsync(app.Id, cancellationToken);
+        appDto.UnsettledPaymentsCount = await _appRepository.GetUnsettledAppPaymentsCountAsync(app.Id, cancellationToken);
 
         return appDto;
     }

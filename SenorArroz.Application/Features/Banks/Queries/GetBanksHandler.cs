@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Banks/Queries/GetBanksHandler.cs
+﻿// SenorArroz.Application/Features/Banks/Queries/GetBanksHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -56,9 +56,9 @@ public class GetBanksHandler : IRequestHandler<GetBanksQuery, PagedResult<BankDt
             var bankDto = _mapper.Map<BankDto>(bank);
 
             // Add additional data
-            bankDto.TotalApps = await _bankRepository.GetTotalAppsAsync(bank.Id);
-            bankDto.ActiveApps = await _bankRepository.GetActiveAppsAsync(bank.Id);
-            bankDto.CurrentBalance = await _bankRepository.GetCurrentBalanceAsync(bank.Id);
+            bankDto.TotalApps = await _bankRepository.GetTotalAppsAsync(bank.Id, cancellationToken);
+            bankDto.ActiveApps = await _bankRepository.GetActiveAppsAsync(bank.Id, cancellationToken);
+            bankDto.CurrentBalance = await _bankRepository.GetCurrentBalanceAsync(bank.Id, cancellationToken);
 
             bankDtos.Add(bankDto);
         }

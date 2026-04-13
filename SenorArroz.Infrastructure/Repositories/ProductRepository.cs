@@ -29,7 +29,8 @@ public class ProductRepository : IProductRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc")
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default)
     {
         var query = _context.Products
             .AsNoTracking()
@@ -37,42 +38,24 @@ public class ProductRepository : IProductRepository
             .ThenInclude(c => c.Branch)
             .AsQueryable();
 
-        // Branch filter (via category)
         if (branchId.HasValue)
-        {
             query = query.Where(p => p.Category.BranchId == branchId.Value);
-        }
 
-        // Name filter
         if (!string.IsNullOrWhiteSpace(name))
-        {
             query = query.Where(p => EF.Functions.ILike(p.Name, $"%{name}%"));
-        }
 
-        // Category filter
         if (categoryId.HasValue)
-        {
             query = query.Where(p => p.CategoryId == categoryId.Value);
-        }
 
-        // Active filter
         if (active.HasValue)
-        {
             query = query.Where(p => p.Active == active.Value);
-        }
 
-        // Price range filter
         if (minPrice.HasValue)
-        {
             query = query.Where(p => p.Price >= minPrice.Value);
-        }
 
         if (maxPrice.HasValue)
-        {
             query = query.Where(p => p.Price <= maxPrice.Value);
-        }
 
-        // Sorting
         query = sortBy.ToLower() switch
         {
             "name" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(p => p.Name) : query.OrderBy(p => p.Name),
@@ -83,10 +66,10 @@ public class ProductRepository : IProductRepository
             _ => query.OrderBy(p => p.Name)
         };
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<IEnumerable<Product>> GetByCategoryIdAsync(int categoryId)
+    public async Task<IEnumerable<Product>> GetByCategoryIdAsync(int categoryId, CancellationToken cancellationToken = default)
     {
         return await _context.Products
             .AsNoTracking()
@@ -94,10 +77,10 @@ public class ProductRepository : IProductRepository
             .ThenInclude(c => c.Branch)
             .Where(p => p.CategoryId == categoryId)
             .OrderBy(p => p.Name)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<IEnumerable<Product>> GetByBranchIdAsync(int branchId)
+    public async Task<IEnumerable<Product>> GetByBranchIdAsync(int branchId, CancellationToken cancellationToken = default)
     {
         return await _context.Products
             .AsNoTracking()
@@ -105,138 +88,144 @@ public class ProductRepository : IProductRepository
             .ThenInclude(c => c.Branch)
             .Where(p => p.Category.BranchId == branchId)
             .OrderBy(p => p.Name)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<Product?> GetByIdAsync(int id)
+    public async Task<Product?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Products
             .AsNoTracking()
             .Include(p => p.Category)
             .ThenInclude(c => c.Branch)
-            .FirstOrDefaultAsync(p => p.Id == id);
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
     }
 
-    public async Task<Product?> GetByIdWithCategoryAsync(int id)
+    public async Task<Product?> GetByIdWithCategoryAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await GetByIdAsync(id); // Same implementation since we always include category
+        return await GetByIdAsync(id, cancellationToken);
     }
 
-    public async Task<Product?> GetByIdWithStatisticsAsync(int id)
+    public async Task<Product?> GetByIdWithStatisticsAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await GetByIdAsync(id); // Same implementation since we always include category
+        return await GetByIdAsync(id, cancellationToken);
     }
 
-    public async Task<Product> CreateAsync(Product product)
+    public async Task<Product> CreateAsync(Product product, CancellationToken cancellationToken = default)
     {
         _context.Products.Add(product);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(product.Id) ?? product;
+        return await GetByIdAsync(product.Id, cancellationToken) ?? product;
     }
 
-    public async Task<Product> UpdateAsync(Product product)
+    public async Task<Product> UpdateAsync(Product product, CancellationToken cancellationToken = default)
     {
         _context.Products.Update(product);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(product.Id) ?? product;
+        return await GetByIdAsync(product.Id, cancellationToken) ?? product;
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var product = await _context.Products.FindAsync(id);
+        var product = await _context.Products.FindAsync([id], cancellationToken);
         if (product == null)
             return false;
 
-        // Check if product is used in orders
-        var hasOrders = await _context.OrderDetails.AnyAsync(od => od.ProductId == id);
+        var hasOrders = await _context.OrderDetails.AnyAsync(od => od.ProductId == id, cancellationToken);
         if (hasOrders)
         {
-            // Soft delete: just deactivate
             product.Active = false;
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(cancellationToken);
             return true;
         }
+
         _context.Products.Remove(product);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
-        }
-    public async Task<bool> ExistsAsync(int id)
-    {
-                return await _context.Products.AnyAsync(p => p.Id == id);   
     }
-    public async Task<bool> NameExistsInCategoryAsync(string name, int categoryId, int? excludeId = null)
+
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
+    {
+        return await _context.Products.AnyAsync(p => p.Id == id, cancellationToken);
+    }
+
+    public async Task<bool> NameExistsInCategoryAsync(string name, int categoryId, int? excludeId = null, CancellationToken cancellationToken = default)
     {
         return await _context.Products.AnyAsync(p =>
             p.Name.ToLower() == name.ToLower() &&
             p.CategoryId == categoryId &&
-            (!excludeId.HasValue || p.Id != excludeId.Value));
+            (!excludeId.HasValue || p.Id != excludeId.Value), cancellationToken);
+    }
 
-        }
-    // Stock management
-    public async Task<bool> AdjustStockAsync(int productId, int quantityChange)
+    public async Task<bool> AdjustStockAsync(int productId, int quantityChange, CancellationToken cancellationToken = default)
     {
-        var product = await _context.Products.FindAsync(productId);
+        var product = await _context.Products.FindAsync([productId], cancellationToken);
         if (product == null)
             return false;
         product.Stock += quantityChange;
         if (product.Stock < 0)
-            product.Stock = 0; // Prevent negative stock
-        await _context.SaveChangesAsync();
+            product.Stock = 0;
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
-    public async Task<int> GetStockAsync(int productId)
+
+    public async Task<int> GetStockAsync(int productId, CancellationToken cancellationToken = default)
     {
-        var product = await _context.Products.FindAsync(productId);
+        var product = await _context.Products.FindAsync([productId], cancellationToken);
         return product?.Stock ?? 0;
     }
-    public async Task<bool> SetStockAsync(int productId, int newStock)
+
+    public async Task<bool> SetStockAsync(int productId, int newStock, CancellationToken cancellationToken = default)
     {
-        var product = await _context.Products.FindAsync(productId);
+        var product = await _context.Products.FindAsync([productId], cancellationToken);
         if (product == null)
             return false;
-        product.Stock = newStock < 0 ? 0 : newStock; // Prevent negative stock
-        await _context.SaveChangesAsync();
+        product.Stock = newStock < 0 ? 0 : newStock;
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
-    // Statistics
-    public async Task<int> GetTotalSalesAsync(int productId)
+
+    public async Task<int> GetTotalSalesAsync(int productId, CancellationToken cancellationToken = default)
     {
         return await _context.OrderDetails
             .Where(od => od.ProductId == productId)
-            .SumAsync(od => od.Quantity);
+            .SumAsync(od => od.Quantity, cancellationToken);
     }
-    public async Task<decimal> GetTotalRevenueAsync(int productId)
+
+    public async Task<decimal> GetTotalRevenueAsync(int productId, CancellationToken cancellationToken = default)
     {
         return await _context.OrderDetails
             .Where(od => od.ProductId == productId)
-            .SumAsync(od => od.Quantity * od.UnitPrice);
+            .SumAsync(od => od.Quantity * od.UnitPrice, cancellationToken);
     }
-    public async Task<int> GetTotalOrdersAsync(int productId)
+
+    public async Task<int> GetTotalOrdersAsync(int productId, CancellationToken cancellationToken = default)
     {
         return await _context.OrderDetails
             .Where(od => od.ProductId == productId)
             .Select(od => od.OrderId)
             .Distinct()
-            .CountAsync();
+            .CountAsync(cancellationToken);
     }
-    public async Task<int> GetTotalCustomersAsync(int productId)
+
+    public async Task<int> GetTotalCustomersAsync(int productId, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
             .Where(o => o.OrderDetails.Any(od => od.ProductId == productId))
             .Select(o => o.CustomerId)
             .Distinct()
-            .CountAsync();
+            .CountAsync(cancellationToken);
     }
-    public async Task<DateTime?> GetLastSoldAtAsync(int productId)
+
+    public async Task<DateTime?> GetLastSoldAtAsync(int productId, CancellationToken cancellationToken = default)
     {
         return await _context.OrderDetails
             .AsNoTracking()
             .Where(od => od.ProductId == productId)
             .OrderByDescending(od => od.Order.CreatedAt)
             .Select(od => (DateTime?)od.Order.CreatedAt)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<ProductSalesUnitsEvolutionPoint>> GetSalesUnitsEvolutionByProductAsync(

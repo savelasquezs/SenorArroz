@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Banks/Commands/UpdateBankHandler.cs
+﻿// SenorArroz.Application/Features/Banks/Commands/UpdateBankHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -28,7 +28,7 @@ public class UpdateBankHandler : IRequestHandler<UpdateBankCommand, BankDto>
     public async Task<BankDto> Handle(UpdateBankCommand request, CancellationToken cancellationToken)
     {
         // Validate bank exists
-        var existingBank = await _bankRepository.GetByIdAsync(request.Id);
+        var existingBank = await _bankRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingBank == null)
             throw new BusinessException("El banco especificado no existe");
 
@@ -47,13 +47,13 @@ public class UpdateBankHandler : IRequestHandler<UpdateBankCommand, BankDto>
         if (request.Type.HasValue)
             existingBank.Type = request.Type.Value;
 
-        var updatedBank = await _bankRepository.UpdateAsync(existingBank);
+        var updatedBank = await _bankRepository.UpdateAsync(existingBank, cancellationToken);
         var bankDto = _mapper.Map<BankDto>(updatedBank);
 
         // Add current statistics
-        bankDto.TotalApps = await _bankRepository.GetTotalAppsAsync(updatedBank.Id);
-        bankDto.ActiveApps = await _bankRepository.GetActiveAppsAsync(updatedBank.Id);
-        bankDto.CurrentBalance = await _bankRepository.GetCurrentBalanceAsync(updatedBank.Id);
+        bankDto.TotalApps = await _bankRepository.GetTotalAppsAsync(updatedBank.Id, cancellationToken);
+        bankDto.ActiveApps = await _bankRepository.GetActiveAppsAsync(updatedBank.Id, cancellationToken);
+        bankDto.CurrentBalance = await _bankRepository.GetCurrentBalanceAsync(updatedBank.Id, cancellationToken);
 
         return bankDto;
     }

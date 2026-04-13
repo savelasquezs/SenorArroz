@@ -23,26 +23,20 @@ public class ProductCategoryRepository : IProductCategoryRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc")
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default)
     {
         var query = _context.ProductCategories
             .AsNoTracking()
             .Include(pc => pc.Branch)
             .AsQueryable();
 
-        // Branch filter
         if (branchId.HasValue)
-        {
             query = query.Where(pc => pc.BranchId == branchId.Value);
-        }
 
-        // Name filter
         if (!string.IsNullOrWhiteSpace(name))
-        {
             query = query.Where(pc => EF.Functions.ILike(pc.Name, $"%{name}%"));
-        }
 
-        // Sorting
         query = sortBy.ToLower() switch
         {
             "name" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(pc => pc.Name) : query.OrderBy(pc => pc.Name),
@@ -51,96 +45,90 @@ public class ProductCategoryRepository : IProductCategoryRepository
             _ => query.OrderBy(pc => pc.Name)
         };
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<IEnumerable<ProductCategory>> GetByBranchIdAsync(int branchId)
+    public async Task<IEnumerable<ProductCategory>> GetByBranchIdAsync(int branchId, CancellationToken cancellationToken = default)
     {
         return await _context.ProductCategories
             .AsNoTracking()
             .Include(pc => pc.Branch)
             .Where(pc => pc.BranchId == branchId)
             .OrderBy(pc => pc.Name)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<ProductCategory?> GetByIdAsync(int id)
+    public async Task<ProductCategory?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.ProductCategories
             .AsNoTracking()
             .Include(pc => pc.Branch)
-            .FirstOrDefaultAsync(pc => pc.Id == id);
+            .FirstOrDefaultAsync(pc => pc.Id == id, cancellationToken);
     }
 
-    public async Task<ProductCategory?> GetByIdWithProductsAsync(int id)
+    public async Task<ProductCategory?> GetByIdWithProductsAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.ProductCategories
             .AsNoTracking()
             .Include(pc => pc.Branch)
             .Include(pc => pc.Products.Where(p => p.Active))
-            .FirstOrDefaultAsync(pc => pc.Id == id);
+            .FirstOrDefaultAsync(pc => pc.Id == id, cancellationToken);
     }
 
-    public async Task<ProductCategory> CreateAsync(ProductCategory category)
+    public async Task<ProductCategory> CreateAsync(ProductCategory category, CancellationToken cancellationToken = default)
     {
         _context.ProductCategories.Add(category);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(category.Id) ?? category;
+        return await GetByIdAsync(category.Id, cancellationToken) ?? category;
     }
 
-    public async Task<ProductCategory> UpdateAsync(ProductCategory category)
+    public async Task<ProductCategory> UpdateAsync(ProductCategory category, CancellationToken cancellationToken = default)
     {
         _context.ProductCategories.Update(category);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(category.Id) ?? category;
+        return await GetByIdAsync(category.Id, cancellationToken) ?? category;
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var category = await _context.ProductCategories.FindAsync(id);
+        var category = await _context.ProductCategories.FindAsync([id], cancellationToken);
         if (category == null)
             return false;
 
-        // Check if category has products
-        var hasProducts = await _context.Products.AnyAsync(p => p.CategoryId == id);
+        var hasProducts = await _context.Products.AnyAsync(p => p.CategoryId == id, cancellationToken);
         if (hasProducts)
-            return false; // Cannot delete category with products
+            return false;
 
         _context.ProductCategories.Remove(category);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<bool> ExistsAsync(int id)
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await _context.ProductCategories.AnyAsync(pc => pc.Id == id);
+        return await _context.ProductCategories.AnyAsync(pc => pc.Id == id, cancellationToken);
     }
 
-    public async Task<bool> NameExistsInBranchAsync(string name, int branchId, int? excludeId = null)
+    public async Task<bool> NameExistsInBranchAsync(string name, int branchId, int? excludeId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.ProductCategories
             .Where(pc => pc.Name.ToLower() == name.ToLower() && pc.BranchId == branchId);
 
         if (excludeId.HasValue)
-        {
             query = query.Where(pc => pc.Id != excludeId.Value);
-        }
 
-        return await query.AnyAsync();
+        return await query.AnyAsync(cancellationToken);
     }
 
-    // Statistics
-    public async Task<int> GetTotalProductsAsync(int categoryId)
+    public async Task<int> GetTotalProductsAsync(int categoryId, CancellationToken cancellationToken = default)
     {
-        return await _context.Products
-            .CountAsync(p => p.CategoryId == categoryId);
+        return await _context.Products.CountAsync(p => p.CategoryId == categoryId, cancellationToken);
     }
 
-    public async Task<int> GetActiveProductsAsync(int categoryId)
+    public async Task<int> GetActiveProductsAsync(int categoryId, CancellationToken cancellationToken = default)
     {
-        return await _context.Products
-            .CountAsync(p => p.CategoryId == categoryId && p.Active);
+        return await _context.Products.CountAsync(p => p.CategoryId == categoryId && p.Active, cancellationToken);
     }
 }

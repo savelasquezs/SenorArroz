@@ -12,18 +12,19 @@ public interface IProductCategoryRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc");
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default);
 
-    Task<IEnumerable<ProductCategory>> GetByBranchIdAsync(int branchId);
-    Task<ProductCategory?> GetByIdAsync(int id);
-    Task<ProductCategory?> GetByIdWithProductsAsync(int id);
-    Task<ProductCategory> CreateAsync(ProductCategory category);
-    Task<ProductCategory> UpdateAsync(ProductCategory category);
-    Task<bool> DeleteAsync(int id);
-    Task<bool> ExistsAsync(int id);
-    Task<bool> NameExistsInBranchAsync(string name, int branchId, int? excludeId = null);
+    Task<IEnumerable<ProductCategory>> GetByBranchIdAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<ProductCategory?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<ProductCategory?> GetByIdWithProductsAsync(int id, CancellationToken cancellationToken = default);
+    Task<ProductCategory> CreateAsync(ProductCategory category, CancellationToken cancellationToken = default);
+    Task<ProductCategory> UpdateAsync(ProductCategory category, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> NameExistsInBranchAsync(string name, int branchId, int? excludeId = null, CancellationToken cancellationToken = default);
 
     // Statistics
-    Task<int> GetTotalProductsAsync(int categoryId);
-    Task<int> GetActiveProductsAsync(int categoryId);
+    Task<int> GetTotalProductsAsync(int categoryId, CancellationToken cancellationToken = default);
+    Task<int> GetActiveProductsAsync(int categoryId, CancellationToken cancellationToken = default);
 }

@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Features.ReservationDeposits.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -15,7 +15,7 @@ public class GetDepositsByOrderHandler : IRequestHandler<GetDepositsByOrderQuery
 
     public async Task<List<ReservationDepositDto>> Handle(GetDepositsByOrderQuery request, CancellationToken cancellationToken)
     {
-        var deposits = await _depositRepository.GetByOrderIdAsync(request.OrderId);
+        var deposits = await _depositRepository.GetByOrderIdAsync(request.OrderId, cancellationToken);
 
         return deposits.Select(d => new ReservationDepositDto
         {

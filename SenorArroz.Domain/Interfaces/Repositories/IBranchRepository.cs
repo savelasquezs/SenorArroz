@@ -12,32 +12,33 @@ public interface IBranchRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc");
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default);
 
-    Task<IEnumerable<Branch>> GetAllAsync();
-    Task<Branch?> GetByIdAsync(int id);
-    Task<Branch?> GetByIdWithDetailsAsync(int id);
-    Task<Branch?> GetByNameAsync(string name);
-    Task<Branch> CreateAsync(Branch branch);
-    Task<Branch> UpdateAsync(Branch branch);
-    Task<bool> DeleteAsync(int id);
-    Task<bool> ExistsAsync(int id);
-    Task<bool> NameExistsAsync(string name, int? excludeId = null);
-    Task<bool> PhoneExistsAsync(string phone, int? excludeId = null);
+    Task<IEnumerable<Branch>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<Branch?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<Branch?> GetByIdWithDetailsAsync(int id, CancellationToken cancellationToken = default);
+    Task<Branch?> GetByNameAsync(string name, CancellationToken cancellationToken = default);
+    Task<Branch> CreateAsync(Branch branch, CancellationToken cancellationToken = default);
+    Task<Branch> UpdateAsync(Branch branch, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> NameExistsAsync(string name, int? excludeId = null, CancellationToken cancellationToken = default);
+    Task<bool> PhoneExistsAsync(string phone, int? excludeId = null, CancellationToken cancellationToken = default);
 
     // Statistics methods
-    Task<int> GetTotalUsersAsync(int branchId);
-    Task<int> GetActiveUsersAsync(int branchId);
-    Task<int> GetTotalCustomersAsync(int branchId);
-    Task<int> GetActiveCustomersAsync(int branchId);
-    Task<int> GetTotalNeighborhoodsAsync(int branchId);
-    Task<int> GetTotalOrdersAsync(int branchId);
-    Task<int> GetOrdersThisMonthAsync(int branchId);
-    Task<int> GetCustomersThisMonthAsync(int branchId);
+    Task<int> GetTotalUsersAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<int> GetActiveUsersAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<int> GetTotalCustomersAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<int> GetActiveCustomersAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<int> GetTotalNeighborhoodsAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<int> GetTotalOrdersAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<int> GetOrdersThisMonthAsync(int branchId, CancellationToken cancellationToken = default);
+    Task<int> GetCustomersThisMonthAsync(int branchId, CancellationToken cancellationToken = default);
 
     // User role statistics
-    Task<Dictionary<string, int>> GetUserRoleStatsAsync(int branchId);
+    Task<Dictionary<string, int>> GetUserRoleStatsAsync(int branchId, CancellationToken cancellationToken = default);
 
     // Delivery fee statistics
-    Task<(int min, int max, decimal average)> GetDeliveryFeeStatsAsync(int branchId);
+    Task<(int min, int max, decimal average)> GetDeliveryFeeStatsAsync(int branchId, CancellationToken cancellationToken = default);
 }

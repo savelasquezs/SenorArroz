@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Features.CashRegister.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -15,7 +15,7 @@ public class GetClosureByIdHandler : IRequestHandler<GetClosureByIdQuery, CashCl
 
     public async Task<CashClosureDto?> Handle(GetClosureByIdQuery request, CancellationToken cancellationToken)
     {
-        var c = await _closureRepository.GetByIdAsync(request.Id);
+        var c = await _closureRepository.GetByIdAsync(request.Id, cancellationToken);
         if (c == null) return null;
 
         return new CashClosureDto

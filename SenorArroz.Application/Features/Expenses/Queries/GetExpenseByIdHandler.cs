@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Expenses/Queries/GetExpenseByIdHandler.cs
+﻿// SenorArroz.Application/Features/Expenses/Queries/GetExpenseByIdHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -26,7 +26,7 @@ public class GetExpenseByIdHandler : IRequestHandler<GetExpenseByIdQuery, Expens
 
     public async Task<ExpenseDto?> Handle(GetExpenseByIdQuery request, CancellationToken cancellationToken)
     {
-        var expense = await _expenseRepository.GetByIdAsync(request.Id);
+        var expense = await _expenseRepository.GetByIdAsync(request.Id, cancellationToken);
         if (expense == null)
             return null;
 

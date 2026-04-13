@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Banks.DTOs;
@@ -25,7 +25,7 @@ public class GetBankLedgerPeriodHandler : IRequestHandler<GetBankLedgerPeriodQue
 
     public async Task<BankBalanceBreakdownDto?> Handle(GetBankLedgerPeriodQuery request, CancellationToken cancellationToken)
     {
-        var bank = await _bankRepository.GetByIdAsync(request.BankId);
+        var bank = await _bankRepository.GetByIdAsync(request.BankId, cancellationToken);
         if (bank == null)
             return null;
 

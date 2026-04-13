@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Products/Commands/DeleteProductHandler.cs
+﻿// SenorArroz.Application/Features/Products/Commands/DeleteProductHandler.cs
 using MediatR;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -16,10 +16,10 @@ public class DeleteProductHandler : IRequestHandler<DeleteProductCommand, bool>
     public async Task<bool> Handle(DeleteProductCommand request, CancellationToken cancellationToken)
     {
         // Validate product exists
-        var existingProduct = await _productRepository.GetByIdAsync(request.Id);
+        var existingProduct = await _productRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingProduct == null)
             return false;
 
-        return await _productRepository.DeleteAsync(request.Id);
+        return await _productRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }

@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -22,7 +22,7 @@ public class GetOrderWithDetailsHandler : IRequestHandler<GetOrderWithDetailsQue
 
     public async Task<OrderWithDetailsDto?> Handle(GetOrderWithDetailsQuery request, CancellationToken cancellationToken)
     {
-        var order = await _orderRepository.GetByIdWithFullDetailsAsync(request.Id);
+        var order = await _orderRepository.GetByIdWithFullDetailsAsync(request.Id, cancellationToken);
         if (order == null)
             return null;
 

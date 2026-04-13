@@ -25,7 +25,7 @@ public class GetCustomerAddressesHandler : IRequestHandler<GetCustomerAddressesQ
     public async Task<IEnumerable<CustomerAddressDto>> Handle(GetCustomerAddressesQuery request, CancellationToken cancellationToken)
     {
         // First, verify the customer exists and user has access to it
-        var customer = await _customerRepository.GetByIdAsync(request.CustomerId);
+        var customer = await _customerRepository.GetByIdAsync(request.CustomerId, cancellationToken);
         if (customer == null)
         {
             throw new BusinessException("Cliente no encontrado");
@@ -37,7 +37,7 @@ public class GetCustomerAddressesHandler : IRequestHandler<GetCustomerAddressesQ
             throw new BusinessException("No tienes permisos para acceder a las direcciones de este cliente");
         }
 
-        var addresses = await _addressRepository.GetByCustomerIdAsync(request.CustomerId);
+        var addresses = await _addressRepository.GetByCustomerIdAsync(request.CustomerId, cancellationToken);
         return _mapper.Map<IEnumerable<CustomerAddressDto>>(addresses);
     }
 }

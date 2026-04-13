@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
@@ -53,7 +53,7 @@ public class SetOrderPaidInStoreCashHandler : IRequestHandler<SetOrderPaidInStor
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        var full = await _orderRepository.GetByIdWithFullDetailsAsync(request.OrderId);
+        var full = await _orderRepository.GetByIdWithFullDetailsAsync(request.OrderId, cancellationToken);
         if (full == null)
             throw new BusinessException("Pedido no encontrado");
 

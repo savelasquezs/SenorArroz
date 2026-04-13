@@ -11,19 +11,18 @@ public interface IExpenseCategoryRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc");
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default);
 
-    Task<IEnumerable<ExpenseCategory>> GetAllAsync();
-    Task<ExpenseCategory?> GetByIdAsync(int id);
-    Task<ExpenseCategory?> GetByIdWithExpensesAsync(int id);
-    Task<ExpenseCategory> CreateAsync(ExpenseCategory category);
-    Task<ExpenseCategory> UpdateAsync(ExpenseCategory category);
-    Task<bool> DeleteAsync(int id);
-    Task<bool> ExistsAsync(int id);
-    Task<bool> NameExistsAsync(string name, int? excludeId = null);
+    Task<IEnumerable<ExpenseCategory>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<ExpenseCategory?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<ExpenseCategory?> GetByIdWithExpensesAsync(int id, CancellationToken cancellationToken = default);
+    Task<ExpenseCategory> CreateAsync(ExpenseCategory category, CancellationToken cancellationToken = default);
+    Task<ExpenseCategory> UpdateAsync(ExpenseCategory category, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> NameExistsAsync(string name, int? excludeId = null, CancellationToken cancellationToken = default);
 
     // Statistics
-    Task<int> GetTotalExpensesAsync(int categoryId);
+    Task<int> GetTotalExpensesAsync(int categoryId, CancellationToken cancellationToken = default);
 }
-
-

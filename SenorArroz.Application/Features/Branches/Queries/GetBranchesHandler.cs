@@ -35,11 +35,11 @@ public class GetBranchesHandler : IRequestHandler<GetBranchesQuery, PagedResult<
             var branchDto = _mapper.Map<BranchDto>(branch);
 
             // Add statistics
-            branchDto.TotalUsers = await _branchRepository.GetTotalUsersAsync(branch.Id);
-            branchDto.ActiveUsers = await _branchRepository.GetActiveUsersAsync(branch.Id);
-            branchDto.TotalCustomers = await _branchRepository.GetTotalCustomersAsync(branch.Id);
-            branchDto.ActiveCustomers = await _branchRepository.GetActiveCustomersAsync(branch.Id);
-            branchDto.TotalNeighborhoods = await _branchRepository.GetTotalNeighborhoodsAsync(branch.Id);
+            branchDto.TotalUsers = await _branchRepository.GetTotalUsersAsync(branch.Id, cancellationToken);
+            branchDto.ActiveUsers = await _branchRepository.GetActiveUsersAsync(branch.Id, cancellationToken);
+            branchDto.TotalCustomers = await _branchRepository.GetTotalCustomersAsync(branch.Id, cancellationToken);
+            branchDto.ActiveCustomers = await _branchRepository.GetActiveCustomersAsync(branch.Id, cancellationToken);
+            branchDto.TotalNeighborhoods = await _branchRepository.GetTotalNeighborhoodsAsync(branch.Id, cancellationToken);
 
             branchDtos.Add(branchDto);
         }

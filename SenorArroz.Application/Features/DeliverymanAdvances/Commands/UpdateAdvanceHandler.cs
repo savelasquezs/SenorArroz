@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.DeliverymanAdvances.DTOs;
@@ -26,7 +26,7 @@ public class UpdateAdvanceHandler : IRequestHandler<UpdateAdvanceCommand, Delive
     public async Task<DeliverymanAdvanceDto> Handle(UpdateAdvanceCommand request, CancellationToken cancellationToken)
     {
         // 1. Validar que el advance existe
-        var advance = await _advanceRepository.GetByIdAsync(request.Id);
+        var advance = await _advanceRepository.GetByIdAsync(request.Id, cancellationToken);
         if (advance == null)
             throw new BusinessException("El abono no existe");
 
@@ -46,7 +46,7 @@ public class UpdateAdvanceHandler : IRequestHandler<UpdateAdvanceCommand, Delive
         advance.Amount = request.Advance.Amount;
         advance.Notes = request.Advance.Notes;
 
-        var updated = await _advanceRepository.UpdateAsync(advance);
+        var updated = await _advanceRepository.UpdateAsync(advance, cancellationToken);
         return _mapper.Map<DeliverymanAdvanceDto>(updated);
     }
 }

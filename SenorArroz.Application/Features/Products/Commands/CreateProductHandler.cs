@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Products/Commands/CreateProductHandler.cs
+﻿// SenorArroz.Application/Features/Products/Commands/CreateProductHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Products.DTOs;
@@ -27,7 +27,7 @@ public class CreateProductHandler : IRequestHandler<CreateProductCommand, Produc
     public async Task<ProductDto> Handle(CreateProductCommand request, CancellationToken cancellationToken)
     {
         // Validate category exists
-        var category = await _categoryRepository.GetByIdAsync(request.CategoryId);
+        var category = await _categoryRepository.GetByIdAsync(request.CategoryId, cancellationToken);
         if (category == null)
             throw new BusinessException("La categoría especificada no existe");
 
@@ -45,7 +45,7 @@ public class CreateProductHandler : IRequestHandler<CreateProductCommand, Produc
             Active = request.Active
         };
 
-        var createdProduct = await _productRepository.CreateAsync(product);
+        var createdProduct = await _productRepository.CreateAsync(product, cancellationToken);
         return _mapper.Map<ProductDto>(createdProduct);
     }
 }

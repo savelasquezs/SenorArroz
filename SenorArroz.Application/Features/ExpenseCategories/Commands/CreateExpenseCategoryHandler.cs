@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/ExpenseCategories/Commands/CreateExpenseCategoryHandler.cs
+﻿// SenorArroz.Application/Features/ExpenseCategories/Commands/CreateExpenseCategoryHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -44,7 +44,7 @@ public class CreateExpenseCategoryHandler : IRequestHandler<CreateExpenseCategor
             Name = request.Name.Trim()
         };
 
-        category = await _categoryRepository.CreateAsync(category);
+        category = await _categoryRepository.CreateAsync(category, cancellationToken);
 
         var categoryDto = _mapper.Map<ExpenseCategoryDto>(category);
 

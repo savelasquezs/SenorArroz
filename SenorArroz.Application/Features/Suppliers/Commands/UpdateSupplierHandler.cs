@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Suppliers.DTOs;
@@ -73,7 +73,7 @@ public class UpdateSupplierHandler : IRequestHandler<UpdateSupplierCommand, Supp
                 : request.Supplier.Email;
         }
 
-        var updated = await _supplierRepository.UpdateAsync(supplier);
+        var updated = await _supplierRepository.UpdateAsync(supplier, cancellationToken);
         return _mapper.Map<SupplierDto>(updated);
     }
 }

@@ -14,6 +14,6 @@ public class DeleteAddressHandler : IRequestHandler<DeleteAddressCommand, bool>
 
     public async Task<bool> Handle(DeleteAddressCommand request, CancellationToken cancellationToken)
     {
-        return await _addressRepository.DeleteAsync(request.Id);
+        return await _addressRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }

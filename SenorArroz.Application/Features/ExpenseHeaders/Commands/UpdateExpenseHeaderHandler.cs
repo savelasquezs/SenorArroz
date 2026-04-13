@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
@@ -35,7 +35,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
 
     public async Task<ExpenseHeaderDto> Handle(UpdateExpenseHeaderCommand request, CancellationToken cancellationToken)
     {
-        var expenseHeader = await _expenseHeaderRepository.GetByIdWithDetailsAsync(request.Id);
+        var expenseHeader = await _expenseHeaderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken);
 
         if (expenseHeader == null)
         {
@@ -191,7 +191,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
 
         expenseHeader.Total = grossTotal;
 
-        var updated = await _expenseHeaderRepository.UpdateAsync(expenseHeader);
+        var updated = await _expenseHeaderRepository.UpdateAsync(expenseHeader, cancellationToken);
 
         await SyncLinkedDeliverymanAdvanceAmountAsync(updated.Id, updated.Total ?? 0, cancellationToken);
 
@@ -200,7 +200,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             await UpsertSupplierExpensesAsync(expenseHeader.SupplierId, newDetailInfos, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
         }
-        var updatedWithDetails = await _expenseHeaderRepository.GetByIdWithDetailsAsync(updated.Id);
+        var updatedWithDetails = await _expenseHeaderRepository.GetByIdWithDetailsAsync(updated.Id, cancellationToken);
 
         if (updatedWithDetails == null)
         {

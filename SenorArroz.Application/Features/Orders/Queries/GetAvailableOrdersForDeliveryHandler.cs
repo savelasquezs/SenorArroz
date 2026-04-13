@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -42,7 +42,7 @@ public class GetAvailableOrdersForDeliveryHandler : IRequestHandler<GetAvailable
         }
 
         // Get available orders (Ready status, no deliveryman assigned)
-        var availableOrders = await _orderRepository.GetAvailableOrdersForDeliveryAsync(branchId);
+        var availableOrders = await _orderRepository.GetAvailableOrdersForDeliveryAsync(branchId, cancellationToken);
 
         return _mapper.Map<List<OrderDto>>(availableOrders);
     }

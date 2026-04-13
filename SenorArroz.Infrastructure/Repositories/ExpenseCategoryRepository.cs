@@ -22,20 +22,17 @@ public class ExpenseCategoryRepository : IExpenseCategoryRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "name",
-        string sortOrder = "asc")
+        string sortOrder = "asc",
+        CancellationToken cancellationToken = default)
     {
         var query = _context.ExpenseCategories
             .AsNoTracking()
             .Include(ec => ec.Expenses)
             .AsQueryable();
 
-        // Name filter
         if (!string.IsNullOrWhiteSpace(name))
-        {
             query = query.Where(ec => EF.Functions.ILike(ec.Name, $"%{name}%"));
-        }
 
-        // Sorting
         query = sortBy.ToLower() switch
         {
             "name" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(ec => ec.Name) : query.OrderBy(ec => ec.Name),
@@ -43,90 +40,83 @@ public class ExpenseCategoryRepository : IExpenseCategoryRepository
             _ => query.OrderBy(ec => ec.Name)
         };
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<IEnumerable<ExpenseCategory>> GetAllAsync()
+    public async Task<IEnumerable<ExpenseCategory>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         return await _context.ExpenseCategories
             .AsNoTracking()
             .Include(ec => ec.Expenses)
             .OrderBy(ec => ec.Name)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<ExpenseCategory?> GetByIdAsync(int id)
+    public async Task<ExpenseCategory?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.ExpenseCategories
             .AsNoTracking()
             .Include(ec => ec.Expenses)
-            .FirstOrDefaultAsync(ec => ec.Id == id);
+            .FirstOrDefaultAsync(ec => ec.Id == id, cancellationToken);
     }
 
-    public async Task<ExpenseCategory?> GetByIdWithExpensesAsync(int id)
+    public async Task<ExpenseCategory?> GetByIdWithExpensesAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.ExpenseCategories
             .AsNoTracking()
             .Include(ec => ec.Expenses)
-            .FirstOrDefaultAsync(ec => ec.Id == id);
+            .FirstOrDefaultAsync(ec => ec.Id == id, cancellationToken);
     }
 
-    public async Task<ExpenseCategory> CreateAsync(ExpenseCategory category)
+    public async Task<ExpenseCategory> CreateAsync(ExpenseCategory category, CancellationToken cancellationToken = default)
     {
         _context.ExpenseCategories.Add(category);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(category.Id) ?? category;
+        return await GetByIdAsync(category.Id, cancellationToken) ?? category;
     }
 
-    public async Task<ExpenseCategory> UpdateAsync(ExpenseCategory category)
+    public async Task<ExpenseCategory> UpdateAsync(ExpenseCategory category, CancellationToken cancellationToken = default)
     {
         _context.ExpenseCategories.Update(category);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(category.Id) ?? category;
+        return await GetByIdAsync(category.Id, cancellationToken) ?? category;
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var category = await _context.ExpenseCategories.FindAsync(id);
+        var category = await _context.ExpenseCategories.FindAsync([id], cancellationToken);
         if (category == null)
             return false;
 
-        // Check if category has expenses
-        var hasExpenses = await _context.Expenses.AnyAsync(e => e.CategoryId == id);
+        var hasExpenses = await _context.Expenses.AnyAsync(e => e.CategoryId == id, cancellationToken);
         if (hasExpenses)
-            return false; // Cannot delete category with expenses
+            return false;
 
         _context.ExpenseCategories.Remove(category);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<bool> ExistsAsync(int id)
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await _context.ExpenseCategories.AnyAsync(ec => ec.Id == id);
+        return await _context.ExpenseCategories.AnyAsync(ec => ec.Id == id, cancellationToken);
     }
 
-    public async Task<bool> NameExistsAsync(string name, int? excludeId = null)
+    public async Task<bool> NameExistsAsync(string name, int? excludeId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.ExpenseCategories
             .Where(ec => ec.Name.ToLower() == name.ToLower());
 
         if (excludeId.HasValue)
-        {
             query = query.Where(ec => ec.Id != excludeId.Value);
-        }
 
-        return await query.AnyAsync();
+        return await query.AnyAsync(cancellationToken);
     }
 
-    // Statistics
-    public async Task<int> GetTotalExpensesAsync(int categoryId)
+    public async Task<int> GetTotalExpensesAsync(int categoryId, CancellationToken cancellationToken = default)
     {
-        return await _context.Expenses
-            .CountAsync(e => e.CategoryId == categoryId);
+        return await _context.Expenses.CountAsync(e => e.CategoryId == categoryId, cancellationToken);
     }
 }
-
-

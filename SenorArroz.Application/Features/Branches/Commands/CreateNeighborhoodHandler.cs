@@ -44,7 +44,7 @@ public class CreateNeighborhoodHandler : IRequestHandler<CreateNeighborhoodComma
             DeliveryFee = request.DeliveryFee
         };
 
-        neighborhood = await _neighborhoodRepository.CreateAsync(neighborhood);
+        neighborhood = await _neighborhoodRepository.CreateAsync(neighborhood, cancellationToken);
 
         var neighborhoodDto = _mapper.Map<BranchNeighborhoodDto>(neighborhood);
 

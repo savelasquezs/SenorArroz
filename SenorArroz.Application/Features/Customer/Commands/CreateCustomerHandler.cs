@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
@@ -55,13 +55,13 @@ namespace SenorArroz.Application.Features.Customers.Commands
                 Active = true
             };
 
-            customer = await _customerRepository.CreateAsync(customer);
+            customer = await _customerRepository.CreateAsync(customer, cancellationToken);
 
             // Create initial address if provided
             if (request.InitialAddress != null)
             {
                 // Validate neighborhood exists
-                var neighborhood = await _neighborhoodRepository.GetByIdAsync(request.InitialAddress.NeighborhoodId);
+                var neighborhood = await _neighborhoodRepository.GetByIdAsync(request.InitialAddress.NeighborhoodId, cancellationToken);
                 if (neighborhood == null)
                 {
                     throw new NotFoundException($"Barrio con ID {request.InitialAddress.NeighborhoodId} no encontrado");
@@ -79,11 +79,11 @@ namespace SenorArroz.Application.Features.Customers.Commands
                     DeliveryFee = request.InitialAddress.DeliveryFee
                 };
 
-                await _addressRepository.CreateAsync(address);
+                await _addressRepository.CreateAsync(address, cancellationToken);
             }
 
             // Return complete customer with addresses
-            var createdCustomer = await _customerRepository.GetByIdWithAddressesAsync(customer.Id);
+            var createdCustomer = await _customerRepository.GetByIdWithAddressesAsync(customer.Id, cancellationToken);
             var customerDto = _mapper.Map<CustomerDto>(createdCustomer);
 
             // Add additional data

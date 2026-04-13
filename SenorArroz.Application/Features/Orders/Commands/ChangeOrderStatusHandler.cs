@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
@@ -46,7 +46,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     public async Task<OrderDto> Handle(ChangeOrderStatusCommand request, CancellationToken cancellationToken)
     {
         // Get order first to validate access
-        var existingOrder = await _orderRepository.GetByIdAsync(request.Id);
+        var existingOrder = await _orderRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
@@ -86,7 +86,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             existingOrder.Type = existingOrder.AddressId.HasValue
                 ? OrderType.Delivery
                 : OrderType.Onsite;
-            await _orderRepository.UpdateAsync(existingOrder);
+            await _orderRepository.UpdateAsync(existingOrder, cancellationToken);
         }
 
         var routeIdSnapshot = existingOrder.DeliveryRouteId;

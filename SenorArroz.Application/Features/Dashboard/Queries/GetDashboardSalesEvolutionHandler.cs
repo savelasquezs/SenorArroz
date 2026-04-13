@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
@@ -35,7 +35,7 @@ public class GetDashboardSalesEvolutionHandler
 
         var (hourDayStart, hourDayEnd) = ColombiaTimeHelper.GetLastColombiaDayBoundsInRangeUtc(from, to);
 
-        var allBranches = (await _branchRepository.GetAllAsync()).OrderBy(b => b.Name).ToList();
+        var allBranches = (await _branchRepository.GetAllAsync(cancellationToken)).OrderBy(b => b.Name).ToList();
         var branchesInOrder = (branchFilter.HasValue
                 ? allBranches.Where(b => b.Id == branchFilter.Value)
                 : allBranches)

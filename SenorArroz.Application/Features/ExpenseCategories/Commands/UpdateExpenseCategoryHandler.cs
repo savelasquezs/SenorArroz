@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/ExpenseCategories/Commands/UpdateExpenseCategoryHandler.cs
+﻿// SenorArroz.Application/Features/ExpenseCategories/Commands/UpdateExpenseCategoryHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -32,7 +32,7 @@ public class UpdateExpenseCategoryHandler : IRequestHandler<UpdateExpenseCategor
             throw new BusinessException("No tienes permisos para modificar categorías de gastos");
         }
 
-        var category = await _categoryRepository.GetByIdAsync(request.Id);
+        var category = await _categoryRepository.GetByIdAsync(request.Id, cancellationToken);
         if (category == null)
         {
             throw new NotFoundException($"Categoría con ID {request.Id} no encontrada");
@@ -47,12 +47,12 @@ public class UpdateExpenseCategoryHandler : IRequestHandler<UpdateExpenseCategor
         // Update category
         category.Name = request.Name.Trim();
 
-        category = await _categoryRepository.UpdateAsync(category);
+        category = await _categoryRepository.UpdateAsync(category, cancellationToken);
 
         var categoryDto = _mapper.Map<ExpenseCategoryDto>(category);
 
         // Add current statistics
-        categoryDto.TotalExpenses = await _categoryRepository.GetTotalExpensesAsync(category.Id);
+        categoryDto.TotalExpenses = await _categoryRepository.GetTotalExpensesAsync(category.Id, cancellationToken);
 
         return categoryDto;
     }

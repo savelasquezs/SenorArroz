@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -30,7 +30,7 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
     public async Task<OrderDto> Handle(AssignDeliveryManCommand request, CancellationToken cancellationToken)
     {
         // Get order first to validate access
-        var existingOrder = await _orderRepository.GetByIdAsync(request.Id);
+        var existingOrder = await _orderRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
@@ -55,7 +55,7 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
                 null);
         }
 
-        order = await _orderRepository.GetByIdAsync(request.Id);
+        order = await _orderRepository.GetByIdAsync(request.Id, cancellationToken);
         if (order != null)
             await _deliveryRouteWorkflow.OnOrderAssignedToDeliverymanAsync(order, cancellationToken);
 

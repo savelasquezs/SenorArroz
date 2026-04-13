@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/BankPayments/Commands/VerifyBankPaymentHandler.cs
+﻿// SenorArroz.Application/Features/BankPayments/Commands/VerifyBankPaymentHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
@@ -20,7 +20,7 @@ public class VerifyBankPaymentHandler : IRequestHandler<VerifyBankPaymentCommand
     public async Task<bool> Handle(VerifyBankPaymentCommand request, CancellationToken cancellationToken)
     {
         // Validate bank payment exists
-        var bankPayment = await _bankPaymentRepository.GetByIdAsync(request.Id);
+        var bankPayment = await _bankPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (bankPayment == null)
             return false;
 
@@ -28,6 +28,6 @@ public class VerifyBankPaymentHandler : IRequestHandler<VerifyBankPaymentCommand
         if (_currentUser.Role != "superadmin" && bankPayment.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para verificar este pago");
 
-        return await _bankPaymentRepository.VerifyPaymentAsync(request.Id);
+        return await _bankPaymentRepository.VerifyPaymentAsync(request.Id, cancellationToken);
     }
 }

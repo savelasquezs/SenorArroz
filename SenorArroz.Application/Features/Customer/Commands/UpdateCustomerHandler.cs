@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
@@ -25,7 +25,7 @@ namespace SenorArroz.Application.Features.Customers.Commands
 
         public async Task<CustomerDto> Handle(UpdateCustomerCommand request, CancellationToken cancellationToken)
         {
-            var customer = await _customerRepository.GetByIdAsync(request.Id);
+            var customer = await _customerRepository.GetByIdAsync(request.Id, cancellationToken);
             if (customer == null)
             {
                 throw new NotFoundException($"Cliente con ID {request.Id} no encontrado");
@@ -49,18 +49,18 @@ namespace SenorArroz.Application.Features.Customers.Commands
             customer.Phone2 = request.Phone2;
             customer.Active = request.Active;
 
-            customer = await _customerRepository.UpdateAsync(customer);
+            customer = await _customerRepository.UpdateAsync(customer, cancellationToken);
 
             // Return complete customer with addresses
-            var updatedCustomer = await _customerRepository.GetByIdWithAddressesAsync(customer.Id);
+            var updatedCustomer = await _customerRepository.GetByIdWithAddressesAsync(customer.Id, cancellationToken);
             var customerDto = _mapper.Map<CustomerDto>(updatedCustomer);
 
             // Add additional data
-            customerDto.TotalOrders = await _customerRepository.GetTotalOrdersAsync(customer.Id);
-            var (first, last) = await _customerRepository.GetOrderDateRangeAsync(customer.Id);
+            customerDto.TotalOrders = await _customerRepository.GetTotalOrdersAsync(customer.Id, cancellationToken);
+            var (first, last) = await _customerRepository.GetOrderDateRangeAsync(customer.Id, cancellationToken);
             customerDto.FirstOrderDate = first;
             customerDto.LastOrderDate = last;
-            customerDto.TotalAccumulated = await _customerRepository.GetTotalOrderRevenueAsync(customer.Id);
+            customerDto.TotalAccumulated = await _customerRepository.GetTotalOrderRevenueAsync(customer.Id, cancellationToken);
             await _loyaltyCycle.ApplyLoyaltyPreviewToCustomerDtoAsync(customerDto, cancellationToken);
 
             return customerDto;

@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Exceptions;
@@ -31,7 +31,7 @@ public class SetPrimaryAddressHandler : IRequestHandler<SetPrimaryAddressCommand
         }
 
         // Validate address exists and belongs to the customer
-        var address = await _addressRepository.GetByIdAsync(request.AddressId);
+        var address = await _addressRepository.GetByIdAsync(request.AddressId, cancellationToken);
         if (address == null)
         {
             throw new NotFoundException($"Dirección con ID {request.AddressId} no encontrada");
@@ -43,10 +43,10 @@ public class SetPrimaryAddressHandler : IRequestHandler<SetPrimaryAddressCommand
         }
 
         // First, unset all primary addresses for the customer
-        await _addressRepository.UnsetPrimaryAddressesAsync(request.CustomerId);
+        await _addressRepository.UnsetPrimaryAddressesAsync(request.CustomerId, cancellationToken);
 
         // Then set the specified address as primary
-        var success = await _addressRepository.SetPrimaryAddressAsync(request.CustomerId, request.AddressId);
+        var success = await _addressRepository.SetPrimaryAddressAsync(request.CustomerId, request.AddressId, cancellationToken);
         
         if (!success)
         {
@@ -54,7 +54,7 @@ public class SetPrimaryAddressHandler : IRequestHandler<SetPrimaryAddressCommand
         }
 
         // Get the updated address to return
-        var updatedAddress = await _addressRepository.GetByIdAsync(request.AddressId);
+        var updatedAddress = await _addressRepository.GetByIdAsync(request.AddressId, cancellationToken);
         
         return _mapper.Map<CustomerAddressDto>(updatedAddress);
     }

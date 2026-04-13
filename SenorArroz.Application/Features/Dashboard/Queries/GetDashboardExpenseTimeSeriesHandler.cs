@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
@@ -50,7 +50,7 @@ public class GetDashboardExpenseTimeSeriesHandler
 
         if (expenseId.HasValue)
         {
-            var exp = await _expenseRepository.GetByIdWithCategoryAsync(expenseId.Value);
+            var exp = await _expenseRepository.GetByIdWithCategoryAsync(expenseId.Value, cancellationToken);
             if (exp == null)
                 return EmptySeries("Gasto no encontrado", from, to, monthly);
 
@@ -121,7 +121,7 @@ public class GetDashboardExpenseTimeSeriesHandler
     {
         if (expenseId.HasValue)
         {
-            var exp = await _expenseRepository.GetByIdWithCategoryAsync(expenseId.Value);
+            var exp = await _expenseRepository.GetByIdWithCategoryAsync(expenseId.Value, cancellationToken);
             if (exp != null)
                 return $"Gasto · {exp.Name}";
             return "Gasto";
@@ -129,7 +129,7 @@ public class GetDashboardExpenseTimeSeriesHandler
 
         if (categoryId.HasValue)
         {
-            var cat = await _categoryRepository.GetByIdAsync(categoryId.Value);
+            var cat = await _categoryRepository.GetByIdAsync(categoryId.Value, cancellationToken);
             if (cat != null)
                 return $"Categoría · {cat.Name}";
             return "Categoría";

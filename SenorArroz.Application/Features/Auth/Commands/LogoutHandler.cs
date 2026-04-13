@@ -14,12 +14,12 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
         public async Task<bool> Handle(LogoutCommand request, CancellationToken cancellationToken)
         {
-            var refreshToken = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken);
+            var refreshToken = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken, cancellationToken);
             if (refreshToken == null || !refreshToken.IsActive)
                 return false;
 
             refreshToken.Revoke(request.IpAddress);
-            await _refreshTokenRepository.UpdateAsync(refreshToken);
+            await _refreshTokenRepository.UpdateAsync(refreshToken, cancellationToken);
 
             return true;
         }

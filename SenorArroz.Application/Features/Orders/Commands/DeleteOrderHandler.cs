@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -19,7 +19,7 @@ public class DeleteOrderHandler : IRequestHandler<DeleteOrderCommand, Unit>
     public async Task<Unit> Handle(DeleteOrderCommand request, CancellationToken cancellationToken)
     {
         // Get order first to validate access
-        var existingOrder = await _orderRepository.GetByIdAsync(request.Id);
+        var existingOrder = await _orderRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
@@ -31,7 +31,7 @@ public class DeleteOrderHandler : IRequestHandler<DeleteOrderCommand, Unit>
         if (!new[] { "superadmin", "admin" }.Contains(_currentUser.Role.ToLower()))
             throw new BusinessException("Solo administradores pueden eliminar pedidos");
 
-        await _orderRepository.DeleteAsync(request.Id);
+        await _orderRepository.DeleteAsync(request.Id, cancellationToken);
         return Unit.Value;
     }
 }

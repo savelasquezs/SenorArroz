@@ -20,7 +20,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             if (success)
             {
                 // Revocar todos los refresh tokens al cambiar contraseña
-                await _refreshTokenRepository.RevokeAllByUserIdAsync(request.UserId, "password_change");
+                await _refreshTokenRepository.RevokeAllByUserIdAsync(request.UserId, "password_change", cancellationToken);
             }
 
             return success;

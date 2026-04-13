@@ -15,17 +15,16 @@ public class CustomerBusinessRules
         _userRepository = userRepository;
     }
 
-    public async Task ValidateBranchAccessAsync(int userId, int customerId)
+    public async Task ValidateBranchAccessAsync(int userId, int customerId, CancellationToken cancellationToken = default)
     {
-        var user = await _userRepository.GetByIdAsync(userId);
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user == null)
             throw new NotFoundException("Usuario no encontrado");
 
-        // Superadmin can access all branches
         if (user.Role == UserRole.Superadmin)
             return;
 
-        var customer = await _customerRepository.GetByIdAsync(customerId);
+        var customer = await _customerRepository.GetByIdAsync(customerId, cancellationToken);
         if (customer == null)
             throw new NotFoundException("Cliente no encontrado");
 
@@ -33,9 +32,9 @@ public class CustomerBusinessRules
             throw new BusinessException("No tienes permisos para acceder a este cliente");
     }
 
-    public async Task ValidateCustomerCanBeDeletedAsync(int customerId)
+    public async Task ValidateCustomerCanBeDeletedAsync(int customerId, CancellationToken cancellationToken = default)
     {
-        var totalOrders = await _customerRepository.GetTotalOrdersAsync(customerId);
+        var totalOrders = await _customerRepository.GetTotalOrdersAsync(customerId, cancellationToken);
         if (totalOrders > 0)
         {
             throw new BusinessException("No se puede eliminar un cliente que tiene órdenes registradas. Use desactivar en su lugar.");
@@ -58,20 +57,18 @@ public class CustomerBusinessRules
         }
     }
 
-    public async Task<bool> CanUserManageCustomerAsync(int userId, int customerId)
+    public async Task<bool> CanUserManageCustomerAsync(int userId, int customerId, CancellationToken cancellationToken = default)
     {
-        var user = await _userRepository.GetByIdAsync(userId);
+        var user = await _userRepository.GetByIdAsync(userId, cancellationToken);
         if (user == null)
             return false;
 
-        // Superadmin can manage all customers
-        if (user.Role ==UserRole.Superadmin)
+        if (user.Role == UserRole.Superadmin)
             return true;
 
-        // Admin, cajero can manage customers in their branch
         if (user.Role is UserRole.Admin or UserRole.Cashier)
         {
-            var customer = await _customerRepository.GetByIdAsync(customerId);
+            var customer = await _customerRepository.GetByIdAsync(customerId, cancellationToken);
             return customer?.BranchId == user.BranchId;
         }
 

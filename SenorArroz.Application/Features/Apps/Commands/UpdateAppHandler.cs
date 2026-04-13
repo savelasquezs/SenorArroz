@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Apps/Commands/UpdateAppHandler.cs
+﻿// SenorArroz.Application/Features/Apps/Commands/UpdateAppHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -30,7 +30,7 @@ public class UpdateAppHandler : IRequestHandler<UpdateAppCommand, AppDto>
     public async Task<AppDto> Handle(UpdateAppCommand request, CancellationToken cancellationToken)
     {
         // Validate app exists
-        var existingApp = await _appRepository.GetByIdAsync(request.Id);
+        var existingApp = await _appRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingApp == null)
             throw new BusinessException("La app especificada no existe");
 
@@ -39,7 +39,7 @@ public class UpdateAppHandler : IRequestHandler<UpdateAppCommand, AppDto>
             throw new BusinessException("No tienes permisos para modificar esta app");
 
         // Validate bank exists
-        var bank = await _bankRepository.GetByIdAsync(request.BankId);
+        var bank = await _bankRepository.GetByIdAsync(request.BankId, cancellationToken);
         if (bank == null)
             throw new BusinessException("El banco especificado no existe");
 
@@ -57,14 +57,14 @@ public class UpdateAppHandler : IRequestHandler<UpdateAppCommand, AppDto>
         existingApp.ImageUrl = request.ImageUrl;
         existingApp.Active = request.Active;
 
-        var updatedApp = await _appRepository.UpdateAsync(existingApp);
+        var updatedApp = await _appRepository.UpdateAsync(existingApp, cancellationToken);
         var appDto = _mapper.Map<AppDto>(updatedApp);
 
         // Add current statistics
-        appDto.TotalPayments = await _appRepository.GetTotalAppPaymentsAsync(updatedApp.Id);
-        appDto.UnsettledPayments = await _appRepository.GetUnsettledAppPaymentsAsync(updatedApp.Id);
-        appDto.TotalPaymentsCount = await _appRepository.GetTotalAppPaymentsCountAsync(updatedApp.Id);
-        appDto.UnsettledPaymentsCount = await _appRepository.GetUnsettledAppPaymentsCountAsync(updatedApp.Id);
+        appDto.TotalPayments = await _appRepository.GetTotalAppPaymentsAsync(updatedApp.Id, cancellationToken);
+        appDto.UnsettledPayments = await _appRepository.GetUnsettledAppPaymentsAsync(updatedApp.Id, cancellationToken);
+        appDto.TotalPaymentsCount = await _appRepository.GetTotalAppPaymentsCountAsync(updatedApp.Id, cancellationToken);
+        appDto.UnsettledPaymentsCount = await _appRepository.GetUnsettledAppPaymentsCountAsync(updatedApp.Id, cancellationToken);
 
         return appDto;
     }

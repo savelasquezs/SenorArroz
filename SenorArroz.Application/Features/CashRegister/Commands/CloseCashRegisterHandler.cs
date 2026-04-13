@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
@@ -76,7 +76,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 "Revisa efectivo, saldos reales por banco y préstamos informales activos.");
         }
 
-        var lastClosure = await _closureRepository.GetLastByBranchAsync(branchId);
+        var lastClosure = await _closureRepository.GetLastByBranchAsync(branchId, cancellationToken);
         decimal openingCash = lastClosure?.ClosingCash ?? 0;
 
         var closure = new CashRegisterClosure
@@ -100,7 +100,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 .ToList()
         };
 
-        var saved = await _closureRepository.CreateAsync(closure);
+        var saved = await _closureRepository.CreateAsync(closure, cancellationToken);
 
         return new CashClosureDto
         {

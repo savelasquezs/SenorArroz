@@ -15,27 +15,28 @@ public interface IAppPaymentRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "createdAt",
-        string sortOrder = "desc");
+        string sortOrder = "desc",
+        CancellationToken cancellationToken = default);
 
-    Task<IEnumerable<AppPayment>> GetByOrderIdAsync(int orderId);
-    Task<IEnumerable<AppPayment>> GetByAppIdAsync(int appId);
-    Task<IEnumerable<AppPayment>> GetUnsettledAsync();
-    Task<IEnumerable<AppPayment>> GetUnsettledByAppIdAsync(int appId);
-    Task<IEnumerable<AppPayment>> GetUnsettledByDateRangeAsync(DateTime fromDate, DateTime toDate);
-    Task<AppPayment?> GetByIdAsync(int id);
-    Task<AppPayment> CreateAsync(AppPayment appPayment);
-    Task<AppPayment> UpdateAsync(AppPayment appPayment);
-    Task<bool> DeleteAsync(int id);
-    Task<bool> ExistsAsync(int id);
+    Task<IEnumerable<AppPayment>> GetByOrderIdAsync(int orderId, CancellationToken cancellationToken = default);
+    Task<IEnumerable<AppPayment>> GetByAppIdAsync(int appId, CancellationToken cancellationToken = default);
+    Task<IEnumerable<AppPayment>> GetUnsettledAsync(CancellationToken cancellationToken = default);
+    Task<IEnumerable<AppPayment>> GetUnsettledByAppIdAsync(int appId, CancellationToken cancellationToken = default);
+    Task<IEnumerable<AppPayment>> GetUnsettledByDateRangeAsync(DateTime fromDate, DateTime toDate, CancellationToken cancellationToken = default);
+    Task<AppPayment?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<AppPayment> CreateAsync(AppPayment appPayment, CancellationToken cancellationToken = default);
+    Task<AppPayment> UpdateAsync(AppPayment appPayment, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
 
     // Settlement methods
-    Task<bool> SettlePaymentsAsync(IEnumerable<int> paymentIds);
-    Task<bool> UnsettlePaymentsAsync(IEnumerable<int> paymentIds);
+    Task<bool> SettlePaymentsAsync(IEnumerable<int> paymentIds, CancellationToken cancellationToken = default);
+    Task<bool> UnsettlePaymentsAsync(IEnumerable<int> paymentIds, CancellationToken cancellationToken = default);
 
     // Statistics
-    Task<decimal> GetTotalAmountByAppAsync(int appId, DateTime? fromDate = null, DateTime? toDate = null);
-    Task<decimal> GetTotalAmountByOrderAsync(int orderId);
-    Task<decimal> GetUnsettledAmountByAppAsync(int appId);
-    Task<int> GetTotalCountByAppAsync(int appId, DateTime? fromDate = null, DateTime? toDate = null);
-    Task<int> GetUnsettledCountByAppAsync(int appId);
+    Task<decimal> GetTotalAmountByAppAsync(int appId, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default);
+    Task<decimal> GetTotalAmountByOrderAsync(int orderId, CancellationToken cancellationToken = default);
+    Task<decimal> GetUnsettledAmountByAppAsync(int appId, CancellationToken cancellationToken = default);
+    Task<int> GetTotalCountByAppAsync(int appId, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default);
+    Task<int> GetUnsettledCountByAppAsync(int appId, CancellationToken cancellationToken = default);
 }

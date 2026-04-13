@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Suppliers.DTOs;
@@ -24,7 +24,7 @@ public class GetSupplierByIdHandler : IRequestHandler<GetSupplierByIdQuery, Supp
 
     public async Task<SupplierDto?> Handle(GetSupplierByIdQuery request, CancellationToken cancellationToken)
     {
-        var supplier = await _supplierRepository.GetByIdAsync(request.Id);
+        var supplier = await _supplierRepository.GetByIdAsync(request.Id, cancellationToken);
         if (supplier == null)
         {
             return null;

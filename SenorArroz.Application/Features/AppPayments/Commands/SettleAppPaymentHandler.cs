@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/AppPayments/Commands/SettleAppPaymentHandler.cs
+﻿// SenorArroz.Application/Features/AppPayments/Commands/SettleAppPaymentHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
@@ -26,7 +26,7 @@ public class SettleAppPaymentHandler : IRequestHandler<SettleAppPaymentCommand, 
     public async Task<bool> Handle(SettleAppPaymentCommand request, CancellationToken cancellationToken)
     {
         // Validate app payment exists
-        var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id);
+        var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (appPayment == null)
             return false;
 
@@ -39,7 +39,7 @@ public class SettleAppPaymentHandler : IRequestHandler<SettleAppPaymentCommand, 
             return true; // Already settled
 
         // Mark app payment as settled
-        var settled = await _appPaymentRepository.SettlePaymentsAsync(new[] { request.Id });
+        var settled = await _appPaymentRepository.SettlePaymentsAsync(new[] { request.Id }, cancellationToken);
         if (!settled)
             return false;
 
@@ -51,7 +51,7 @@ public class SettleAppPaymentHandler : IRequestHandler<SettleAppPaymentCommand, 
             Amount = appPayment.Amount
         };
 
-        await _bankPaymentRepository.CreateAsync(bankPayment);
+        await _bankPaymentRepository.CreateAsync(bankPayment, cancellationToken);
 
         return true;
     }

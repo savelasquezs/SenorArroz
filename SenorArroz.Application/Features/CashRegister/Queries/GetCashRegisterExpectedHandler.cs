@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
@@ -32,7 +32,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
     {
         int branchId = request.BranchId ?? _currentUser.BranchId;
 
-        var lastClosure = await _closureRepository.GetLastByBranchAsync(branchId);
+        var lastClosure = await _closureRepository.GetLastByBranchAsync(branchId, cancellationToken);
 
         DateTime since;
         DateTime now;
@@ -117,7 +117,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             .CountAsync(cancellationToken);
 
         bool isAdmin = _currentUser.Role == "superadmin" || _currentUser.Role == "admin";
-        var banks = await _bankRepository.GetByBranchIdAsync(branchId, excludeHiddenBanks: !isAdmin);
+        var banks = await _bankRepository.GetByBranchIdAsync(branchId, excludeHiddenBanks: !isAdmin, cancellationToken);
 
         var bankExpected = new List<BankExpectedBalanceDto>();
         foreach (var bank in banks)

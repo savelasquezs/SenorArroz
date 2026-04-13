@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ReservationDeposits.DTOs;
@@ -45,7 +45,7 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
         if (order.Status == OrderStatus.Delivered || order.Status == OrderStatus.Cancelled)
             throw new BusinessException("No se puede abonar a un pedido ya finalizado");
 
-        var totalDeposited = await _depositRepository.GetTotalDepositedByOrderAsync(request.OrderId);
+        var totalDeposited = await _depositRepository.GetTotalDepositedByOrderAsync(request.OrderId, cancellationToken);
         if (totalDeposited + request.Amount > order.Total)
             throw new BusinessException($"El total abonado ({totalDeposited + request.Amount:C}) supera el valor del pedido ({order.Total:C})");
 
@@ -62,7 +62,7 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
             Notes = request.Notes
         };
 
-        var created = await _depositRepository.CreateAsync(deposit);
+        var created = await _depositRepository.CreateAsync(deposit, cancellationToken);
 
         return new ReservationDepositDto
         {

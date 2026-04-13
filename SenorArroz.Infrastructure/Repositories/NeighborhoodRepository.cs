@@ -14,84 +14,82 @@ public class NeighborhoodRepository : INeighborhoodRepository
         _context = context;
     }
 
-    public async Task<IEnumerable<Neighborhood>> GetByBranchIdAsync(int branchId)
+    public async Task<IEnumerable<Neighborhood>> GetByBranchIdAsync(int branchId, CancellationToken cancellationToken = default)
     {
         return await _context.Neighborhoods
             .AsNoTracking()
             .Include(n => n.Branch)
             .Where(n => n.BranchId == branchId)
             .OrderBy(n => n.Name)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<Neighborhood?> GetByIdAsync(int id)
+    public async Task<Neighborhood?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Neighborhoods
             .AsNoTracking()
             .Include(n => n.Branch)
-            .FirstOrDefaultAsync(n => n.Id == id);
+            .FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
     }
 
-    public async Task<Neighborhood> CreateAsync(Neighborhood neighborhood)
+    public async Task<Neighborhood> CreateAsync(Neighborhood neighborhood, CancellationToken cancellationToken = default)
     {
         _context.Neighborhoods.Add(neighborhood);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(neighborhood.Id) ?? neighborhood;
+        return await GetByIdAsync(neighborhood.Id, cancellationToken) ?? neighborhood;
     }
 
-    public async Task<Neighborhood> UpdateAsync(Neighborhood neighborhood)
+    public async Task<Neighborhood> UpdateAsync(Neighborhood neighborhood, CancellationToken cancellationToken = default)
     {
         _context.Neighborhoods.Update(neighborhood);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(neighborhood.Id) ?? neighborhood;
+        return await GetByIdAsync(neighborhood.Id, cancellationToken) ?? neighborhood;
     }
 
-    public async Task<bool> DeleteAsync(int id)
+    public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var neighborhood = await _context.Neighborhoods.FindAsync(id);
+        var neighborhood = await _context.Neighborhoods.FindAsync([id], cancellationToken);
         if (neighborhood == null)
             return false;
 
-        // Check if neighborhood has addresses
-        var hasAddresses = await _context.Addresses.AnyAsync(a => a.NeighborhoodId == id);
+        var hasAddresses = await _context.Addresses.AnyAsync(a => a.NeighborhoodId == id, cancellationToken);
         if (hasAddresses)
-            return false; // Can't delete if has addresses
+            return false;
 
         _context.Neighborhoods.Remove(neighborhood);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<bool> ExistsAsync(int id)
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await _context.Neighborhoods.AnyAsync(n => n.Id == id);
+        return await _context.Neighborhoods.AnyAsync(n => n.Id == id, cancellationToken);
     }
 
-    public async Task<bool> NameExistsAsync(string name, int branchId, int? excludeId = null)
+    public async Task<bool> NameExistsAsync(string name, int branchId, int? excludeId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.Neighborhoods
             .Where(n => n.Name.ToLower() == name.ToLower() && n.BranchId == branchId);
 
         if (excludeId.HasValue)
-        {
             query = query.Where(n => n.Id != excludeId.Value);
-        }
 
-        return await query.AnyAsync();
+        return await query.AnyAsync(cancellationToken);
     }
-    public async Task<int> GetTotalCustomersAsync(int neighborhoodId)
+
+    public async Task<int> GetTotalCustomersAsync(int neighborhoodId, CancellationToken cancellationToken = default)
     {
         return await _context.Customers
             .CountAsync(c => _context.Addresses
-                .Any(a => a.CustomerId == c.Id && a.NeighborhoodId == neighborhoodId));
+                .Any(a => a.CustomerId == c.Id && a.NeighborhoodId == neighborhoodId), cancellationToken);
     }
 
-    public async Task<int> GetTotalAddressesAsync(int neighborhoodId)
+    public async Task<int> GetTotalAddressesAsync(int neighborhoodId, CancellationToken cancellationToken = default)
     {
         return await _context.Addresses
-            .CountAsync(a => a.NeighborhoodId == neighborhoodId);
+            .CountAsync(a => a.NeighborhoodId == neighborhoodId, cancellationToken);
     }
 
     public async Task<IReadOnlyDictionary<int, (int TotalCustomers, int TotalAddresses)>> GetNeighborhoodStatsBulkAsync(

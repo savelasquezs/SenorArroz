@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Apps/Queries/GetAppsByBankHandler.cs
+﻿// SenorArroz.Application/Features/Apps/Queries/GetAppsByBankHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -22,7 +22,7 @@ public class GetAppsByBankHandler : IRequestHandler<GetAppsByBankQuery, IEnumera
 
     public async Task<IEnumerable<AppDto>> Handle(GetAppsByBankQuery request, CancellationToken cancellationToken)
     {
-        var apps = await _appRepository.GetByBankIdAsync(request.BankId);
+        var apps = await _appRepository.GetByBankIdAsync(request.BankId, cancellationToken);
         
         var appDtos = new List<AppDto>();
 

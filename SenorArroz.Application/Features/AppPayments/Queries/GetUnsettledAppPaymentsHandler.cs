@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/AppPayments/Queries/GetUnsettledAppPaymentsHandler.cs
+﻿// SenorArroz.Application/Features/AppPayments/Queries/GetUnsettledAppPaymentsHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -28,14 +28,14 @@ public class GetUnsettledAppPaymentsHandler : IRequestHandler<GetUnsettledAppPay
         if (request.AppId.HasValue && request.FromDate.HasValue && request.ToDate.HasValue)
         {
             // Get all unsettled payments and filter by app and date range
-            var allUnsettled = await _appPaymentRepository.GetUnsettledAsync();
+            var allUnsettled = await _appPaymentRepository.GetUnsettledAsync(cancellationToken);
             unsettledPayments = allUnsettled.Where(ap => ap.AppId == request.AppId.Value &&
                                                          ap.CreatedAt >= request.FromDate.Value &&
                                                          ap.CreatedAt <= request.ToDate.Value);
         }
         else if (request.AppId.HasValue)
         {
-            unsettledPayments = await _appPaymentRepository.GetUnsettledByAppIdAsync(request.AppId.Value);
+            unsettledPayments = await _appPaymentRepository.GetUnsettledByAppIdAsync(request.AppId.Value, cancellationToken);
         }
         else if (request.FromDate.HasValue && request.ToDate.HasValue)
         {
@@ -44,7 +44,7 @@ public class GetUnsettledAppPaymentsHandler : IRequestHandler<GetUnsettledAppPay
         }
         else
         {
-            unsettledPayments = await _appPaymentRepository.GetUnsettledAsync();
+            unsettledPayments = await _appPaymentRepository.GetUnsettledAsync(cancellationToken);
         }
         
         var appPaymentDtos = new List<AppPaymentDto>();

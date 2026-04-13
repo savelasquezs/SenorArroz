@@ -22,14 +22,14 @@ namespace SenorArroz.Application.Features.Auth.Commands
         public async Task<AuthResponseDto> Handle(LoginCommand request, CancellationToken cancellationToken)
         {
             // Validar usuario
-            var user = await _authRepository.GetUserByEmailAsync(request.Email) ?? throw new BusinessException("Credenciales inválidas");
+            var user = await _authRepository.GetUserByEmailAsync(request.Email, cancellationToken) ?? throw new BusinessException("Credenciales inválidas");
 
             // Validar contraseña
             if (!await _authRepository.ValidatePasswordAsync(user, request.Password))
                 throw new BusinessException("Credenciales inválidas");
 
             // Revocar tokens activos anteriores
-            await _refreshTokenRepository.RevokeAllByUserIdAsync(user.Id, request.IpAddress);
+            await _refreshTokenRepository.RevokeAllByUserIdAsync(user.Id, request.IpAddress, cancellationToken);
 
             // Generar tokens
             var accessToken = _jwtService.GenerateAccessToken(user);
@@ -43,7 +43,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 ExpiresAt = DateTime.UtcNow.AddDays(7) // 7 días de validez
             };
 
-            await _refreshTokenRepository.AddAsync(refreshTokenEntity);
+            await _refreshTokenRepository.AddAsync(refreshTokenEntity, cancellationToken);
 
             // Mapear respuesta
             var userInfo = _mapper.Map<UserInfoDto>(user);

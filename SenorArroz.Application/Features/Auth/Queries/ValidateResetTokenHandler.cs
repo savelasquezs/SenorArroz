@@ -15,7 +15,7 @@ namespace SenorArroz.Application.Features.Auth.Queries
 
         public async Task<ResetTokenValidationResult> Handle(ValidateResetTokenQuery request, CancellationToken cancellationToken)
         {
-            var resetToken = await _passwordResetRepository.GetByTokenAsync(request.Token);
+            var resetToken = await _passwordResetRepository.GetByTokenAsync(request.Token, cancellationToken);
 
             if (resetToken == null)
             {

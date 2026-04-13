@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Products/Commands/UpdateProductHandler.cs
+﻿// SenorArroz.Application/Features/Products/Commands/UpdateProductHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.Products.DTOs;
@@ -26,7 +26,7 @@ public class UpdateProductHandler : IRequestHandler<UpdateProductCommand, Produc
     public async Task<ProductDto> Handle(UpdateProductCommand request, CancellationToken cancellationToken)
     {
         // Validate product exists
-        var existingProduct = await _productRepository.GetByIdAsync(request.Id);
+        var existingProduct = await _productRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingProduct == null)
             throw new BusinessException("El producto especificado no existe");
 
@@ -47,7 +47,7 @@ public class UpdateProductHandler : IRequestHandler<UpdateProductCommand, Produc
         existingProduct.WeightGrams = request.WeightGrams;
         existingProduct.Active = request.Active;
 
-        var updatedProduct = await _productRepository.UpdateAsync(existingProduct);
+        var updatedProduct = await _productRepository.UpdateAsync(existingProduct, cancellationToken);
         return _mapper.Map<ProductDto>(updatedProduct);
     }
 }

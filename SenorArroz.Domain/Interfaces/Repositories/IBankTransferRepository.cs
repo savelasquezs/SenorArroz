@@ -5,7 +5,7 @@ namespace SenorArroz.Domain.Interfaces.Repositories;
 
 public interface IBankTransferRepository
 {
-    Task<BankTransfer> CreateAsync(BankTransfer transfer);
+    Task<BankTransfer> CreateAsync(BankTransfer transfer, CancellationToken cancellationToken = default);
     Task<PagedResult<BankTransfer>> GetPagedAsync(
         int? branchId = null,
         int? fromBankId = null,
@@ -15,5 +15,6 @@ public interface IBankTransferRepository
         int page = 1,
         int pageSize = 10,
         string sortBy = "createdAt",
-        string sortOrder = "desc");
+        string sortOrder = "desc",
+        CancellationToken cancellationToken = default);
 }

@@ -44,16 +44,15 @@ public class BatchPaymentsRegressionTests
     /// </summary>
     private sealed class StubOrderRepository(ApplicationDbContext db) : IOrderRepository
     {
-        public async Task<Order> CreateAsync(Order order)
+        public async Task<Order> CreateAsync(Order order, CancellationToken cancellationToken = default)
         {
             db.Orders.Add(order);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(cancellationToken);
             return order;
         }
 
-        public Task<Order?> GetByIdWithFullDetailsAsync(int id)
+        public Task<Order?> GetByIdWithFullDetailsAsync(int id, CancellationToken cancellationToken = default)
         {
-            // Devuelve una orden mínima con Branch y TakenBy para que AutoMapper no lance NRE.
             var order = new Order
             {
                 Id = id,
@@ -70,43 +69,43 @@ public class BatchPaymentsRegressionTests
         }
 
         // Los métodos restantes no son invocados por el handler en estos tests:
-        public Task<Order?> GetByIdAsync(int id) => throw new NotImplementedException();
-        public Task<Order?> GetByIdWithDetailsAsync(int id) => throw new NotImplementedException();
-        public Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null, bool forKitchen = false) => throw new NotImplementedException();
-        public Task<Order> UpdateAsync(Order order) => throw new NotImplementedException();
-        public Task DeleteAsync(int id) => throw new NotImplementedException();
-        public Task<PagedResult<Order>> GetByBranchAsync(int branchId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc") => throw new NotImplementedException();
-        public Task<PagedResult<Order>> GetByCustomerAsync(int customerId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc") => throw new NotImplementedException();
-        public Task<PagedResult<Order>> GetByStatusAsync(OrderStatus status, OrderType? typeFilter = null, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc") => throw new NotImplementedException();
-        public Task<PagedResult<Order>> GetByTypeAsync(OrderType type, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc") => throw new NotImplementedException();
-        public Task<PagedResult<Order>> GetByDeliveryManAsync(int deliveryManId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc") => throw new NotImplementedException();
-        public Task<PagedResult<Order>> GetByDateRangeAsync(DateTime fromDate, DateTime toDate, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc") => throw new NotImplementedException();
-        public Task<PagedResult<Order>> GetByDateAsync(DateTime date, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc") => throw new NotImplementedException();
-        public Task<PagedResult<Order>> SearchOrdersAsync(string? searchTerm = null, int? branchId = null, int? customerId = null, int? deliveryManId = null, OrderStatus? status = null, OrderType? type = null, DateTime? fromDate = null, DateTime? toDate = null, decimal? minAmount = null, decimal? maxAmount = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", DateTime? reservedFromDate = null, DateTime? reservedToDate = null, bool excludeFutureReservations = false, int? bankId = null, int? neighborhoodId = null, bool includeOnsiteActiveInAssignedHistory = false) => throw new NotImplementedException();
-        public Task<List<Order>> GetOrdersInPreparationAsync(int? branchId = null) => throw new NotImplementedException();
-        public Task<List<Order>> GetReadyOrdersAsync(int? branchId = null) => throw new NotImplementedException();
-        public Task<List<Order>> GetOrdersOnTheWayAsync(int? branchId = null) => throw new NotImplementedException();
-        public Task<List<Order>> GetOrdersForDeliveryManAsync(int deliveryManId) => throw new NotImplementedException();
-        public Task<List<Order>> GetAvailableOrdersForDeliveryAsync(int? branchId = null) => throw new NotImplementedException();
-        public Task<List<Order>> GetReservationsForDateAsync(DateTime date, int? branchId = null) => throw new NotImplementedException();
-        public Task<List<Order>> GetUpcomingReservationsAsync(int? branchId = null, int hours = 24) => throw new NotImplementedException();
-        public Task<int> GetTotalOrdersCountAsync(int? branchId = null) => throw new NotImplementedException();
-        public Task<int> GetOrdersCountByStatusAsync(OrderStatus status, int? branchId = null) => throw new NotImplementedException();
-        public Task<int> GetOrdersCountByTypeAsync(OrderType type, int? branchId = null) => throw new NotImplementedException();
-        public Task<int> GetActiveOrdersCountForDeliveryManAsync(int deliveryManId) => throw new NotImplementedException();
-        public Task<decimal> GetTotalSalesAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null) => throw new NotImplementedException();
-        public Task<decimal> GetAverageOrderValueAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null) => throw new NotImplementedException();
-        public Task<List<Order>> GetTopSellingProductsAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, int limit = 10) => throw new NotImplementedException();
-        public Task<bool> CanAssignDeliveryManAsync(int orderId, int deliveryManId) => throw new NotImplementedException();
-        public Task<bool> CanCancelOrderAsync(int orderId) => throw new NotImplementedException();
-        public Task<bool> CanChangeStatusAsync(int orderId, OrderStatus newStatus) => throw new NotImplementedException();
-        public Task<bool> HasActiveOrdersAsync(int customerId) => throw new NotImplementedException();
-        public Task<bool> HasOrdersInProgressAsync(int deliveryManId) => throw new NotImplementedException();
-        public Task<Order> ChangeStatusAsync(int orderId, OrderStatus newStatus, string? reason = null) => throw new NotImplementedException();
-        public Task<Order> AssignDeliveryManAsync(int orderId, int deliveryManId) => throw new NotImplementedException();
-        public Task<Order> UnassignDeliveryManAsync(int orderId) => throw new NotImplementedException();
-        public Task<Order> CancelOrderAsync(int orderId, string reason) => throw new NotImplementedException();
-        public Task<IEnumerable<Order>> GetReservationsDueForPreparation(DateTime fromTime, DateTime toTime, OrderStatus status) => throw new NotImplementedException();
+        public Task<Order?> GetByIdAsync(int id, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<Order?> GetByIdWithDetailsAsync(int id, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null, bool forKitchen = false, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<Order> UpdateAsync(Order order, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task DeleteAsync(int id, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<PagedResult<Order>> GetByBranchAsync(int branchId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<PagedResult<Order>> GetByCustomerAsync(int customerId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<PagedResult<Order>> GetByStatusAsync(OrderStatus status, OrderType? typeFilter = null, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<PagedResult<Order>> GetByTypeAsync(OrderType type, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<PagedResult<Order>> GetByDeliveryManAsync(int deliveryManId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<PagedResult<Order>> GetByDateRangeAsync(DateTime fromDate, DateTime toDate, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<PagedResult<Order>> GetByDateAsync(DateTime date, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<PagedResult<Order>> SearchOrdersAsync(string? searchTerm = null, int? branchId = null, int? customerId = null, int? deliveryManId = null, OrderStatus? status = null, OrderType? type = null, DateTime? fromDate = null, DateTime? toDate = null, decimal? minAmount = null, decimal? maxAmount = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", DateTime? reservedFromDate = null, DateTime? reservedToDate = null, bool excludeFutureReservations = false, int? bankId = null, int? neighborhoodId = null, bool includeOnsiteActiveInAssignedHistory = false, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<List<Order>> GetOrdersInPreparationAsync(int? branchId = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<List<Order>> GetReadyOrdersAsync(int? branchId = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<List<Order>> GetOrdersOnTheWayAsync(int? branchId = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<List<Order>> GetOrdersForDeliveryManAsync(int deliveryManId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<List<Order>> GetAvailableOrdersForDeliveryAsync(int? branchId = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<List<Order>> GetReservationsForDateAsync(DateTime date, int? branchId = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<List<Order>> GetUpcomingReservationsAsync(int? branchId = null, int hours = 24, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<int> GetTotalOrdersCountAsync(int? branchId = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<int> GetOrdersCountByStatusAsync(OrderStatus status, int? branchId = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<int> GetOrdersCountByTypeAsync(OrderType type, int? branchId = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<int> GetActiveOrdersCountForDeliveryManAsync(int deliveryManId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<decimal> GetTotalSalesAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<decimal> GetAverageOrderValueAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<List<Order>> GetTopSellingProductsAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, int limit = 10, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<bool> CanAssignDeliveryManAsync(int orderId, int deliveryManId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<bool> CanCancelOrderAsync(int orderId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<bool> CanChangeStatusAsync(int orderId, OrderStatus newStatus, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<bool> HasActiveOrdersAsync(int customerId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<bool> HasOrdersInProgressAsync(int deliveryManId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<Order> ChangeStatusAsync(int orderId, OrderStatus newStatus, string? reason = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<Order> AssignDeliveryManAsync(int orderId, int deliveryManId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<Order> UnassignDeliveryManAsync(int orderId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<Order> CancelOrderAsync(int orderId, string reason, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<IEnumerable<Order>> GetReservationsDueForPreparation(DateTime fromTime, DateTime toTime, OrderStatus status, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<Domain.Models.PrincipalKpiSnapshot> GetPrincipalKpiSnapshotAsync(int? branchId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<Domain.Models.PrincipalPipelineCounts> GetPrincipalPipelineCountsAsync(int? branchId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
         public Task<List<Order>> GetRecentOrdersForDashboardAsync(int? branchId, int take, CancellationToken cancellationToken = default) => throw new NotImplementedException();

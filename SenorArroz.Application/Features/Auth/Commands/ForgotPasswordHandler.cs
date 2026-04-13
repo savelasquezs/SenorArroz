@@ -22,7 +22,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             try
             {
                 // Find user by email
-                var user = await _authRepository.GetUserByEmailAsync(request.Email);
+                var user = await _authRepository.GetUserByEmailAsync(request.Email, cancellationToken);
                 if (user == null || !user.Active)
                 {
                     // Don't reveal if user exists for security
@@ -31,11 +31,11 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 }
 
                 // Invalidate existing tokens
-                await _passwordResetRepository.InvalidateAllUserTokensAsync(user.Id);
+                await _passwordResetRepository.InvalidateAllUserTokensAsync(user.Id, cancellationToken);
 
                 // Create new reset token
                 var resetToken = PasswordResetToken.Create(user.Id, request.Email, expirationMinutes: 60);
-                await _passwordResetRepository.CreateAsync(resetToken);
+                await _passwordResetRepository.CreateAsync(resetToken, cancellationToken);
 
                 // Send email
                 var emailSent = await _emailService.SendPasswordResetEmailAsync(

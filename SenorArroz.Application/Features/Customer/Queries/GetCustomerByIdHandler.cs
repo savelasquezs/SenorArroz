@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
@@ -33,7 +33,7 @@ namespace SenorArroz.Application.Features.Customers.Queries
 
         public async Task<CustomerDto?> Handle(GetCustomerByIdQuery request, CancellationToken cancellationToken)
         {
-            var customer = await _customerRepository.GetByIdWithAddressesAsync(request.Id);
+            var customer = await _customerRepository.GetByIdWithAddressesAsync(request.Id, cancellationToken);
             if (customer == null)
                 return null;
 
@@ -46,11 +46,11 @@ namespace SenorArroz.Application.Features.Customers.Queries
             var customerDto = _mapper.Map<CustomerDto>(customer);
 
             // Add additional data
-            customerDto.TotalOrders = await _customerRepository.GetTotalOrdersAsync(customer.Id);
-            var (first, last) = await _customerRepository.GetOrderDateRangeAsync(customer.Id);
+            customerDto.TotalOrders = await _customerRepository.GetTotalOrdersAsync(customer.Id, cancellationToken);
+            var (first, last) = await _customerRepository.GetOrderDateRangeAsync(customer.Id, cancellationToken);
             customerDto.FirstOrderDate = first;
             customerDto.LastOrderDate = last;
-            customerDto.TotalAccumulated = await _customerRepository.GetTotalOrderRevenueAsync(customer.Id);
+            customerDto.TotalAccumulated = await _customerRepository.GetTotalOrderRevenueAsync(customer.Id, cancellationToken);
             await _loyaltyCycle.ApplyLoyaltyPreviewToCustomerDtoAsync(customerDto, cancellationToken);
 
             return customerDto;

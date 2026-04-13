@@ -14,13 +14,12 @@ public interface IExpenseHeaderRepository
         int page,
         int pageSize,
         string? sortBy,
-        string sortOrder);
-    
-    Task<ExpenseHeader?> GetByIdAsync(int id);
-    Task<ExpenseHeader?> GetByIdWithDetailsAsync(int id);
-    Task<ExpenseHeader> CreateAsync(ExpenseHeader expenseHeader);
-    Task<ExpenseHeader> UpdateAsync(ExpenseHeader expenseHeader);
-    Task<bool> DeleteAsync(int id);
+        string sortOrder,
+        CancellationToken cancellationToken = default);
+
+    Task<ExpenseHeader?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<ExpenseHeader?> GetByIdWithDetailsAsync(int id, CancellationToken cancellationToken = default);
+    Task<ExpenseHeader> CreateAsync(ExpenseHeader expenseHeader, CancellationToken cancellationToken = default);
+    Task<ExpenseHeader> UpdateAsync(ExpenseHeader expenseHeader, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
 }
-
-

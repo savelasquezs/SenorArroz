@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/ExpenseCategories/Queries/GetExpenseCategoriesHandler.cs
+﻿// SenorArroz.Application/Features/ExpenseCategories/Queries/GetExpenseCategoriesHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Features.ExpenseCategories.DTOs;
@@ -36,7 +36,7 @@ public class GetExpenseCategoriesHandler : IRequestHandler<GetExpenseCategoriesQ
             var categoryDto = _mapper.Map<ExpenseCategoryDto>(category);
 
             // Add statistics
-            categoryDto.TotalExpenses = await _categoryRepository.GetTotalExpensesAsync(category.Id);
+            categoryDto.TotalExpenses = await _categoryRepository.GetTotalExpensesAsync(category.Id, cancellationToken);
 
             categoryDtos.Add(categoryDto);
         }

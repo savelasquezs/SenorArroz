@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/Banks/Queries/GetBankByIdHandler.cs
+﻿// SenorArroz.Application/Features/Banks/Queries/GetBankByIdHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -23,7 +23,7 @@ public class GetBankByIdHandler : IRequestHandler<GetBankByIdQuery, BankDto?>
 
     public async Task<BankDto?> Handle(GetBankByIdQuery request, CancellationToken cancellationToken)
     {
-        var bank = await _bankRepository.GetByIdAsync(request.Id);
+        var bank = await _bankRepository.GetByIdAsync(request.Id, cancellationToken);
         
         if (bank == null)
             return null;
@@ -39,9 +39,9 @@ public class GetBankByIdHandler : IRequestHandler<GetBankByIdQuery, BankDto?>
         var bankDto = _mapper.Map<BankDto>(bank);
 
         // Add additional data
-        bankDto.TotalApps = await _bankRepository.GetTotalAppsAsync(bank.Id);
-        bankDto.ActiveApps = await _bankRepository.GetActiveAppsAsync(bank.Id);
-        bankDto.CurrentBalance = await _bankRepository.GetCurrentBalanceAsync(bank.Id);
+        bankDto.TotalApps = await _bankRepository.GetTotalAppsAsync(bank.Id, cancellationToken);
+        bankDto.ActiveApps = await _bankRepository.GetActiveAppsAsync(bank.Id, cancellationToken);
+        bankDto.CurrentBalance = await _bankRepository.GetCurrentBalanceAsync(bank.Id, cancellationToken);
 
         return bankDto;
     }

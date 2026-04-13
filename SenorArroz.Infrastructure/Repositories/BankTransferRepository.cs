@@ -16,33 +16,34 @@ public class BankTransferRepository : IBankTransferRepository
         _context = context;
     }
 
-    public async Task<BankTransfer> CreateAsync(BankTransfer transfer)
+    public async Task<BankTransfer> CreateAsync(BankTransfer transfer, CancellationToken cancellationToken = default)
     {
         _context.BankTransfers.Add(transfer);
-        await _context.SaveChangesAsync();
-        return await GetByIdAsync(transfer.Id) ?? transfer;
+        await _context.SaveChangesAsync(cancellationToken);
+        return await GetByIdAsync(transfer.Id, cancellationToken) ?? transfer;
     }
 
-    public async Task<BankTransfer?> GetByIdAsync(int id)
+    private async Task<BankTransfer?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.BankTransfers
             .AsNoTracking()
             .Include(bt => bt.FromBank)
             .Include(bt => bt.ToBank)
             .Include(bt => bt.CreatedBy)
-            .FirstOrDefaultAsync(bt => bt.Id == id);
+            .FirstOrDefaultAsync(bt => bt.Id == id, cancellationToken);
     }
 
     public async Task<PagedResult<BankTransfer>> GetPagedAsync(
-        int? branchId,
-        int? fromBankId,
-        int? toBankId,
-        DateTime? fromDate,
-        DateTime? toDate,
-        int page,
-        int pageSize,
-        string sortBy,
-        string sortOrder)
+        int? branchId = null,
+        int? fromBankId = null,
+        int? toBankId = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
+        int page = 1,
+        int pageSize = 10,
+        string sortBy = "createdAt",
+        string sortOrder = "desc",
+        CancellationToken cancellationToken = default)
     {
         var query = _context.BankTransfers
             .AsNoTracking()
@@ -95,6 +96,6 @@ public class BankTransferRepository : IBankTransferRepository
             _ => query.OrderByDescending(bt => bt.CreatedAt)
         };
 
-        return await query.ToPagedResultAsync(page, pageSize);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 }

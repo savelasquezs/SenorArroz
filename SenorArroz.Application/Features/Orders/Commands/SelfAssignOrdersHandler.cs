@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
@@ -68,7 +68,7 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
 
         if (request.OrderIds.Count > 0)
         {
-            var probe = await _orderRepository.GetByIdAsync(request.OrderIds[0]);
+            var probe = await _orderRepository.GetByIdAsync(request.OrderIds[0], cancellationToken);
             if (probe != null
                 && await _deliveryRouteWorkflow.DeliverymanHasPendingOrdersOnActiveRouteAsync(
                     userId,
@@ -84,7 +84,7 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
         foreach (var orderId in request.OrderIds)
         {
             // Get order to validate
-            var order = await _orderRepository.GetByIdAsync(orderId);
+            var order = await _orderRepository.GetByIdAsync(orderId, cancellationToken);
             if (order == null)
                 throw new BusinessException($"Pedido {orderId} no encontrado");
 
@@ -107,12 +107,12 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             // Ya no existe límite de pedidos activos por domiciliario
 
             // Assign order to current user
-            var assignedOrder = await _orderRepository.AssignDeliveryManAsync(orderId, userId);
+            var assignedOrder = await _orderRepository.AssignDeliveryManAsync(orderId, userId, cancellationToken);
             
             // Cambiar estado a OnTheWay automáticamente después de asignar
-            assignedOrder = await _orderRepository.ChangeStatusAsync(orderId, Domain.Enums.OrderStatus.OnTheWay, null);
+            assignedOrder = await _orderRepository.ChangeStatusAsync(orderId, Domain.Enums.OrderStatus.OnTheWay, null, cancellationToken);
 
-            var fullOrder = await _orderRepository.GetByIdAsync(orderId);
+            var fullOrder = await _orderRepository.GetByIdAsync(orderId, cancellationToken);
             if (fullOrder != null)
                 await _deliveryRouteWorkflow.OnOrderAssignedToDeliverymanAsync(fullOrder, cancellationToken);
 

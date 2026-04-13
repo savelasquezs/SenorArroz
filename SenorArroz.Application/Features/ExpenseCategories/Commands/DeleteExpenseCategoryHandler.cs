@@ -1,4 +1,4 @@
-// SenorArroz.Application/Features/ExpenseCategories/Commands/DeleteExpenseCategoryHandler.cs
+﻿// SenorArroz.Application/Features/ExpenseCategories/Commands/DeleteExpenseCategoryHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
@@ -27,20 +27,20 @@ public class DeleteExpenseCategoryHandler : IRequestHandler<DeleteExpenseCategor
             throw new BusinessException("No tienes permisos para eliminar categorías de gastos");
         }
 
-        var category = await _categoryRepository.GetByIdAsync(request.Id);
+        var category = await _categoryRepository.GetByIdAsync(request.Id, cancellationToken);
         if (category == null)
         {
             throw new NotFoundException($"Categoría con ID {request.Id} no encontrada");
         }
 
         // Check if category has expenses
-        var categoryWithExpenses = await _categoryRepository.GetByIdWithExpensesAsync(request.Id);
+        var categoryWithExpenses = await _categoryRepository.GetByIdWithExpensesAsync(request.Id, cancellationToken);
         if (categoryWithExpenses != null && categoryWithExpenses.Expenses.Any())
         {
             throw new BusinessException("No se puede eliminar una categoría que tiene gastos asociados");
         }
 
-        return await _categoryRepository.DeleteAsync(request.Id);
+        return await _categoryRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }
 

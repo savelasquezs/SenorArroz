@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
@@ -29,14 +29,14 @@ public class GetCustomerAddressByIdHandler : IRequestHandler<GetCustomerAddressB
     public async Task<CustomerAddressDto?> Handle(GetCustomerAddressByIdQuery request, CancellationToken cancellationToken)
     {
         // Get the address
-        var address = await _addressRepository.GetByIdAsync(request.AddressId);
+        var address = await _addressRepository.GetByIdAsync(request.AddressId, cancellationToken);
         if (address == null)
         {
             return null;
         }
 
         // Verify customer exists and get branch info for security check
-        var customer = await _customerRepository.GetByIdAsync(address.CustomerId);
+        var customer = await _customerRepository.GetByIdAsync(address.CustomerId, cancellationToken);
         if (customer == null)
         {
             throw new BusinessException("El cliente asociado a esta dirección no existe");
