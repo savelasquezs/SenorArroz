@@ -5,32 +5,74 @@ using SenorArroz.Application.Features.Orders.Commands;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
-using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.Tests;
 
-public class CreateOrderHandlerTests
+/// <summary>
+/// Verifica que CreateOrderHandler persiste todos los pagos en un único batch
+/// (AddRange + SaveChangesAsync) en lugar de N roundtrips individuales.
+/// </summary>
+public class BatchPaymentsRegressionTests
 {
-    // ── Fakes ────────────────────────────────────────────────────────────────
+    // ── Fakes ─────────────────────────────────────────────────────────────────
 
-    private sealed class FakeCurrentUser(string role, int branchId = 1) : ICurrentUser
+    private sealed class BatchFakeCurrentUser(string role = "cashier", int branchId = 1) : ICurrentUser
     {
-        public int Id => 99;
+        public int Id => 1;
         public string Role => role;
         public int BranchId => branchId;
         public bool IsAuthenticated => true;
     }
 
-    private sealed class NullOrderRepository : IOrderRepository
+    private sealed class BatchSilentNotificationService : IOrderNotificationService
     {
+        public Task NotifyNewOrderToKitchen(OrderDto order) => Task.CompletedTask;
+        public Task NotifyOrderReadyToDelivery(OrderDto order) => Task.CompletedTask;
+        public Task NotifyReservationToKitchen(OrderDto order) => Task.CompletedTask;
+        public Task NotifyOrderAssignedToDelivery(OrderDto order) => Task.CompletedTask;
+        public Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind) => Task.CompletedTask;
+        public Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind) => Task.CompletedTask;
+        public Task NotifyDeliverymanLocation(int branchId, int deliverymanId, int deliveryRouteId, double latitude, double longitude, DateTime recordedAt) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Implementa únicamente CreateAsync y GetByIdWithFullDetailsAsync.
+    /// El resto lanza NotImplementedException porque el handler no los invoca.
+    /// </summary>
+    private sealed class StubOrderRepository(ApplicationDbContext db) : IOrderRepository
+    {
+        public async Task<Order> CreateAsync(Order order)
+        {
+            db.Orders.Add(order);
+            await db.SaveChangesAsync();
+            return order;
+        }
+
+        public Task<Order?> GetByIdWithFullDetailsAsync(int id)
+        {
+            // Devuelve una orden mínima con Branch y TakenBy para que AutoMapper no lance NRE.
+            var order = new Order
+            {
+                Id = id,
+                BranchId = 1,
+                TakenById = 1,
+                Status = OrderStatus.Taken,
+                Branch = new Branch { Name = "Stub", Address = "-", Phone1 = "-" },
+                TakenBy = new User { Name = "Stub", Email = "stub@test.com" },
+                OrderDetails = [],
+                BankPayments = [],
+                AppPayments = []
+            };
+            return Task.FromResult<Order?>(order);
+        }
+
+        // Los métodos restantes no son invocados por el handler en estos tests:
         public Task<Order?> GetByIdAsync(int id) => throw new NotImplementedException();
         public Task<Order?> GetByIdWithDetailsAsync(int id) => throw new NotImplementedException();
-        public Task<Order?> GetByIdWithFullDetailsAsync(int id) => throw new NotImplementedException();
         public Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null, bool forKitchen = false) => throw new NotImplementedException();
-        public Task<Order> CreateAsync(Order order) => throw new NotImplementedException();
         public Task<Order> UpdateAsync(Order order) => throw new NotImplementedException();
         public Task DeleteAsync(int id) => throw new NotImplementedException();
         public Task<PagedResult<Order>> GetByBranchAsync(int branchId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc") => throw new NotImplementedException();
@@ -90,165 +132,113 @@ public class CreateOrderHandlerTests
         public Task UpdateOrderLoyaltyCycleAsync(int orderId, int? loyaltyCycleStepId, string? loyaltyRewardSnapshot, CancellationToken cancellationToken = default) => throw new NotImplementedException();
     }
 
-    private sealed class NullNotificationService : IOrderNotificationService
-    {
-        public Task NotifyNewOrderToKitchen(OrderDto order) => Task.CompletedTask;
-        public Task NotifyOrderReadyToDelivery(OrderDto order) => Task.CompletedTask;
-        public Task NotifyReservationToKitchen(OrderDto order) => Task.CompletedTask;
-        public Task NotifyOrderAssignedToDelivery(OrderDto order) => Task.CompletedTask;
-        public Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind) => Task.CompletedTask;
-        public Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind) => Task.CompletedTask;
-        public Task NotifyDeliverymanLocation(int branchId, int deliverymanId, int deliveryRouteId, double latitude, double longitude, DateTime recordedAt) => Task.CompletedTask;
-    }
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static ApplicationDbContext CreateInMemoryContext(string name)
+    private static ApplicationDbContext CreateCtx(string dbName)
     {
         var opts = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(name)
+            .UseInMemoryDatabase(dbName)
             .Options;
         return new ApplicationDbContext(opts);
     }
 
-    private static CreateOrderHandler BuildHandler(ICurrentUser currentUser, ApplicationDbContext db)
+    private static CreateOrderHandler BuildHandler(ApplicationDbContext db, string role = "cashier", int branchId = 1)
     {
         var mapper = new MapperConfiguration(cfg =>
         {
-            cfg.AddMaps(typeof(SenorArroz.Application.Features.Orders.Commands.CreateOrderCommand).Assembly);
-        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance)
-            .CreateMapper();
+            cfg.AddMaps(typeof(CreateOrderCommand).Assembly);
+        }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance).CreateMapper();
 
         return new CreateOrderHandler(
-            new NullOrderRepository(),
+            new StubOrderRepository(db),
             db,
             mapper,
-            currentUser,
-            new NullNotificationService());
+            new BatchFakeCurrentUser(role, branchId),
+            new BatchSilentNotificationService());
     }
 
-    private static CreateOrderDto MinimalDeliveryOrder() => new()
+    private static CreateOrderDto OnsiteOrderWith(
+        List<CreateOrderBankPaymentDto>? bank = null,
+        List<CreateOrderAppPaymentDto>? app = null) => new()
     {
-        Type = OrderType.Delivery,
+        Type = OrderType.Onsite,
         BranchId = 1,
-        CustomerId = 1,
-        AddressId = 1,
-        GuestName = "Test",
-        OrderDetails = [new CreateOrderDetailDto { ProductId = 1, Quantity = 1, UnitPrice = 5000 }]
+        OrderDetails = [new CreateOrderDetailDto { ProductId = 1, Quantity = 1, UnitPrice = 5000 }],
+        BankPayments = bank ?? [],
+        AppPayments = app ?? []
     };
 
-    // ── Tests ────────────────────────────────────────────────────────────────
+    // ── Tests ─────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Superadmin_without_branchId_throws_BusinessException()
+    public async Task BatchPayments_TwoBankPayments_BothAreSaved()
     {
-        using var db = CreateInMemoryContext(nameof(Superadmin_without_branchId_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("superadmin"), db);
+        using var db = CreateCtx(nameof(BatchPayments_TwoBankPayments_BothAreSaved));
+        var handler = BuildHandler(db);
 
-        var command = new CreateOrderCommand { Order = new CreateOrderDto { BranchId = 0, OrderDetails = [] } };
+        var dto = OnsiteOrderWith(bank:
+        [
+            new CreateOrderBankPaymentDto { BankId = 1, Amount = 10000 },
+            new CreateOrderBankPaymentDto { BankId = 2, Amount = 5000 }
+        ]);
 
-        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
-            handler.Handle(command, CancellationToken.None));
-        Assert.Contains("sucursal", ex.Message, StringComparison.OrdinalIgnoreCase);
+        await handler.Handle(new CreateOrderCommand { Order = dto }, CancellationToken.None);
+
+        Assert.Equal(2, db.BankPayments.Count());
+        Assert.Equal(0, db.AppPayments.Count());
+        Assert.All(db.BankPayments.ToList(), bp => Assert.False(bp.IsVerified));
     }
 
     [Fact]
-    public async Task Unknown_role_throws_BusinessException()
+    public async Task BatchPayments_TwoAppPayments_BothAreSaved()
     {
-        using var db = CreateInMemoryContext(nameof(Unknown_role_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("deliveryman"), db);
+        using var db = CreateCtx(nameof(BatchPayments_TwoAppPayments_BothAreSaved));
+        var handler = BuildHandler(db);
 
-        var command = new CreateOrderCommand { Order = new CreateOrderDto { BranchId = 1, OrderDetails = [] } };
+        var dto = OnsiteOrderWith(app:
+        [
+            new CreateOrderAppPaymentDto { AppId = 1, Amount = 15000 },
+            new CreateOrderAppPaymentDto { AppId = 2, Amount = 8000 }
+        ]);
 
-        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
-            handler.Handle(command, CancellationToken.None));
-        Assert.Contains("permisos", ex.Message, StringComparison.OrdinalIgnoreCase);
+        await handler.Handle(new CreateOrderCommand { Order = dto }, CancellationToken.None);
+
+        Assert.Equal(0, db.BankPayments.Count());
+        Assert.Equal(2, db.AppPayments.Count());
+        Assert.All(db.AppPayments.ToList(), ap => Assert.False(ap.IsSetted));
     }
 
     [Fact]
-    public async Task Order_without_details_throws_BusinessException()
+    public async Task BatchPayments_Mixed_AllAreSavedWithCorrectOrderId()
     {
-        using var db = CreateInMemoryContext(nameof(Order_without_details_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("cashier", branchId: 1), db);
+        using var db = CreateCtx(nameof(BatchPayments_Mixed_AllAreSavedWithCorrectOrderId));
+        var handler = BuildHandler(db);
 
-        var command = new CreateOrderCommand { Order = new CreateOrderDto { Type = OrderType.Onsite, OrderDetails = [] } };
+        var dto = OnsiteOrderWith(
+            bank: [new CreateOrderBankPaymentDto { BankId = 1, Amount = 20000 }],
+            app: [new CreateOrderAppPaymentDto { AppId = 1, Amount = 12000 }]
+        );
 
-        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
-            handler.Handle(command, CancellationToken.None));
-        Assert.Contains("producto", ex.Message, StringComparison.OrdinalIgnoreCase);
+        await handler.Handle(new CreateOrderCommand { Order = dto }, CancellationToken.None);
+
+        var orderId = db.Orders.Single().Id;
+        Assert.Equal(1, db.BankPayments.Count());
+        Assert.Equal(1, db.AppPayments.Count());
+        Assert.Equal(orderId, db.BankPayments.Single().OrderId);
+        Assert.Equal(orderId, db.AppPayments.Single().OrderId);
     }
 
     [Fact]
-    public async Task Delivery_order_without_customer_throws_BusinessException()
+    public async Task BatchPayments_NoPayments_NothingIsSaved()
     {
-        using var db = CreateInMemoryContext(nameof(Delivery_order_without_customer_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("cashier", branchId: 1), db);
+        using var db = CreateCtx(nameof(BatchPayments_NoPayments_NothingIsSaved));
+        var handler = BuildHandler(db);
 
-        var dto = MinimalDeliveryOrder();
-        dto.CustomerId = null;
-        var command = new CreateOrderCommand { Order = dto };
+        await handler.Handle(
+            new CreateOrderCommand { Order = OnsiteOrderWith() },
+            CancellationToken.None);
 
-        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
-            handler.Handle(command, CancellationToken.None));
-        Assert.Contains("cliente", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task Delivery_order_without_address_throws_BusinessException()
-    {
-        using var db = CreateInMemoryContext(nameof(Delivery_order_without_address_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("cashier", branchId: 1), db);
-
-        var dto = MinimalDeliveryOrder();
-        dto.AddressId = null;
-        var command = new CreateOrderCommand { Order = dto };
-
-        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
-            handler.Handle(command, CancellationToken.None));
-        Assert.Contains("direcci", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task Reservation_order_without_reservedFor_throws_BusinessException()
-    {
-        using var db = CreateInMemoryContext(nameof(Reservation_order_without_reservedFor_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("cashier", branchId: 1), db);
-
-        var command = new CreateOrderCommand
-        {
-            Order = new CreateOrderDto
-            {
-                Type = OrderType.Reservation,
-                GuestName = "Test",
-                ReservedFor = null,
-                OrderDetails = [new CreateOrderDetailDto { ProductId = 1, Quantity = 1, UnitPrice = 5000 }]
-            }
-        };
-
-        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
-            handler.Handle(command, CancellationToken.None));
-        Assert.Contains("reserva", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task PrepareAt_after_reservedFor_throws_BusinessException()
-    {
-        using var db = CreateInMemoryContext(nameof(PrepareAt_after_reservedFor_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("cashier", branchId: 1), db);
-
-        var reservedFor = DateTime.UtcNow.AddHours(2);
-        var command = new CreateOrderCommand
-        {
-            Order = new CreateOrderDto
-            {
-                Type = OrderType.Reservation,
-                GuestName = "Test",
-                ReservedFor = reservedFor,
-                PrepareAt = reservedFor.AddHours(1),
-                OrderDetails = [new CreateOrderDetailDto { ProductId = 1, Quantity = 1, UnitPrice = 5000 }]
-            }
-        };
-
-        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
-            handler.Handle(command, CancellationToken.None));
-        Assert.Contains("preparaci", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, db.BankPayments.Count());
+        Assert.Equal(0, db.AppPayments.Count());
     }
 }

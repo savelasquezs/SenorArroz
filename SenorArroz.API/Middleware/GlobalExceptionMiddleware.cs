@@ -9,6 +9,11 @@ namespace SenorArroz.API.Middleware;
 
 public class GlobalExceptionMiddleware
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     private readonly RequestDelegate _next;
     private readonly ILogger<GlobalExceptionMiddleware> _logger;
     private readonly IHostEnvironment _environment;
@@ -34,7 +39,7 @@ public class GlobalExceptionMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "OcurriÛ una excepciÛn no controlada: {Message}", ex.Message);
+            _logger.LogError(ex, "Ocurriù una excepciùn no controlada: {Message}", ex.Message);
             await HandleExceptionAsync(context, ex);
         }
     }
@@ -67,7 +72,7 @@ public class GlobalExceptionMiddleware
 
             case ValidationException validationEx:
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
-                errorResponse.Message = "Errores de validaciÛn";
+                errorResponse.Message = "Errores de validaciùn";
                 errorResponse.Errors = validationEx.Errors;
                 break;
 
@@ -86,10 +91,7 @@ public class GlobalExceptionMiddleware
                 break;
         }
 
-        var jsonResponse = JsonSerializer.Serialize(errorResponse, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
+        var jsonResponse = JsonSerializer.Serialize(errorResponse, JsonOptions);
 
         await response.WriteAsync(jsonResponse);
     }

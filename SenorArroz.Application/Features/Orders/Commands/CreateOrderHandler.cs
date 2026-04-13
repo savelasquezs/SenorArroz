@@ -14,25 +14,19 @@ namespace SenorArroz.Application.Features.Orders.Commands;
 public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
 {
     private readonly IOrderRepository _orderRepository;
-    private readonly IBankPaymentRepository _bankPaymentRepository;
-    private readonly IAppPaymentRepository _appPaymentRepository;
     private readonly IApplicationDbContext _db;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly IOrderNotificationService _notificationService;
 
     public CreateOrderHandler(
-        IOrderRepository orderRepository, 
-        IBankPaymentRepository bankPaymentRepository,
-        IAppPaymentRepository appPaymentRepository,
+        IOrderRepository orderRepository,
         IApplicationDbContext db,
-        IMapper mapper, 
+        IMapper mapper,
         ICurrentUser currentUser,
         IOrderNotificationService notificationService)
     {
         _orderRepository = orderRepository;
-        _bankPaymentRepository = bankPaymentRepository;
-        _appPaymentRepository = appPaymentRepository;
         _db = db;
         _mapper = mapper;
         _currentUser = currentUser;
@@ -122,37 +116,33 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
 
         var createdOrder = await _orderRepository.CreateAsync(order);
 
-        // Crear BankPayments
-        if (request.Order.BankPayments != null && request.Order.BankPayments.Any())
-        {
-            foreach (var bankPaymentDto in request.Order.BankPayments)
+        // Batch insert de pagos: un único SaveChangesAsync en lugar de N roundtrips individuales
+        var bankPayments = request.Order.BankPayments?
+            .Select(bp => new Domain.Entities.BankPayment
             {
-                var bankPayment = new Domain.Entities.BankPayment
-                {
-                    OrderId = createdOrder.Id,
-                    BankId = bankPaymentDto.BankId,
-                    Amount = bankPaymentDto.Amount,
-                    IsVerified = false  // Los pagos bancarios empiezan como no verificados
-                };
-                await _bankPaymentRepository.CreateAsync(bankPayment);
-            }
-        }
+                OrderId = createdOrder.Id,
+                BankId = bp.BankId,
+                Amount = bp.Amount,
+                IsVerified = false
+            }).ToList() ?? [];
 
-        // Crear AppPayments
-        if (request.Order.AppPayments != null && request.Order.AppPayments.Any())
-        {
-            foreach (var appPaymentDto in request.Order.AppPayments)
+        var appPayments = request.Order.AppPayments?
+            .Select(ap => new Domain.Entities.AppPayment
             {
-                var appPayment = new Domain.Entities.AppPayment
-                {
-                    OrderId = createdOrder.Id,
-                    AppId = appPaymentDto.AppId,
-                    Amount = appPaymentDto.Amount,
-                    IsSetted = false // Los pagos de app empiezan como no liquidados
-                };
-                await _appPaymentRepository.CreateAsync(appPayment);
-            }
-        }
+                OrderId = createdOrder.Id,
+                AppId = ap.AppId,
+                Amount = ap.Amount,
+                IsSetted = false
+            }).ToList() ?? [];
+
+        if (bankPayments.Count > 0)
+            _db.BankPayments.AddRange(bankPayments);
+
+        if (appPayments.Count > 0)
+            _db.AppPayments.AddRange(appPayments);
+
+        if (bankPayments.Count > 0 || appPayments.Count > 0)
+            await _db.SaveChangesAsync(cancellationToken);
 
         if (request.Order.PaidInStoreCash)
         {

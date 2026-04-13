@@ -160,24 +160,20 @@ public class CustomerRepository : ICustomerRepository
                 o.Status != OrderStatus.Cancelled);
     }
 
-    public async Task<DateTime?> GetLastOrderDateAsync(int customerId)
+    public async Task<(DateTime? First, DateTime? Last)> GetOrderDateRangeAsync(int customerId)
     {
-        var q = _context.Orders.Where(o =>
-            o.CustomerId == customerId &&
-            o.Status != OrderStatus.Cancelled);
-        if (!await q.AnyAsync())
-            return null;
-        return await q.MaxAsync(o => o.CreatedAt);
-    }
+        var result = await _context.Orders
+            .AsNoTracking()
+            .Where(o => o.CustomerId == customerId && o.Status != OrderStatus.Cancelled)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                First = (DateTime?)g.Min(o => o.CreatedAt),
+                Last  = (DateTime?)g.Max(o => o.CreatedAt)
+            })
+            .FirstOrDefaultAsync();
 
-    public async Task<DateTime?> GetFirstOrderDateAsync(int customerId)
-    {
-        var q = _context.Orders.Where(o =>
-            o.CustomerId == customerId &&
-            o.Status != OrderStatus.Cancelled);
-        if (!await q.AnyAsync())
-            return null;
-        return await q.MinAsync(o => o.CreatedAt);
+        return (result?.First, result?.Last);
     }
 
     public async Task<int> GetTotalOrderRevenueAsync(int customerId)

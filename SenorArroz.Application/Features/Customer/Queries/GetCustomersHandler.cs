@@ -64,8 +64,9 @@ namespace SenorArroz.Application.Features.Customers.Queries
 
                 // Add additional data
                 customerDto.TotalOrders = await _customerRepository.GetTotalOrdersAsync(customer.Id);
-                customerDto.FirstOrderDate = await _customerRepository.GetFirstOrderDateAsync(customer.Id);
-                customerDto.LastOrderDate = await _customerRepository.GetLastOrderDateAsync(customer.Id);
+                var (first, last) = await _customerRepository.GetOrderDateRangeAsync(customer.Id);
+                customerDto.FirstOrderDate = first;
+                customerDto.LastOrderDate = last;
                 customerDto.TotalAccumulated = await _customerRepository.GetTotalOrderRevenueAsync(customer.Id);
                 await _loyaltyCycle.ApplyLoyaltyPreviewToCustomerDtoAsync(customerDto, cancellationToken);
 
