@@ -32,12 +32,12 @@ public class BranchRepository : IBranchRepository
         // Filters
         if (!string.IsNullOrWhiteSpace(name))
         {
-            query = query.Where(b => b.Name.ToLower().Contains(name.ToLower()));
+            query = query.Where(b => EF.Functions.ILike(b.Name, $"%{name}%"));
         }
 
         if (!string.IsNullOrWhiteSpace(address))
         {
-            query = query.Where(b => b.Address.ToLower().Contains(address.ToLower()));
+            query = query.Where(b => EF.Functions.ILike(b.Address, $"%{address}%"));
         }
 
         if (!string.IsNullOrWhiteSpace(phone))

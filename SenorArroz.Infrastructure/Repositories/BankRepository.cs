@@ -48,7 +48,7 @@ public class BankRepository : IBankRepository
         // Name filter
         if (!string.IsNullOrWhiteSpace(name))
         {
-            query = query.Where(b => b.Name.ToLower().Contains(name.ToLower()));
+            query = query.Where(b => EF.Functions.ILike(b.Name, $"%{name}%"));
         }
 
         // Active filter

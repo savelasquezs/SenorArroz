@@ -36,11 +36,11 @@ public class SupplierRepository : ISupplierRepository
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var text = search.Trim().ToLower();
+            var pattern = $"%{search.Trim()}%";
             query = query.Where(s =>
-                s.Name.ToLower().Contains(text) ||
+                EF.Functions.ILike(s.Name, pattern) ||
                 s.Phone.Contains(search) ||
-                (s.Email != null && s.Email.ToLower().Contains(text)));
+                (s.Email != null && EF.Functions.ILike(s.Email, pattern)));
         }
 
         query = ApplySorting(query, sortBy, sortOrder);

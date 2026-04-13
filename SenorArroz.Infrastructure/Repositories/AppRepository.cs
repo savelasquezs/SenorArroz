@@ -41,7 +41,7 @@ public class AppRepository : IAppRepository
         // Name filter
         if (!string.IsNullOrWhiteSpace(name))
         {
-            query = query.Where(a => a.Name.ToLower().Contains(name.ToLower()));
+            query = query.Where(a => EF.Functions.ILike(a.Name, $"%{name}%"));
         }
 
         // Active filter

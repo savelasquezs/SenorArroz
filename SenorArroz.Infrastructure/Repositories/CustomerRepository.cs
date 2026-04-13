@@ -43,7 +43,7 @@ public class CustomerRepository : ICustomerRepository
         // Filters
         if (!string.IsNullOrWhiteSpace(name))
         {
-            query = query.Where(c => c.Name.ToLower().Contains(name.ToLower()));
+            query = query.Where(c => EF.Functions.ILike(c.Name, $"%{name}%"));
         }
 
         if (!string.IsNullOrWhiteSpace(phone))

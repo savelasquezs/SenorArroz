@@ -46,7 +46,7 @@ public class ProductRepository : IProductRepository
         // Name filter
         if (!string.IsNullOrWhiteSpace(name))
         {
-            query = query.Where(p => p.Name.ToLower().Contains(name.ToLower()));
+            query = query.Where(p => EF.Functions.ILike(p.Name, $"%{name}%"));
         }
 
         // Category filter

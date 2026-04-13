@@ -32,7 +32,7 @@ public class ExpenseCategoryRepository : IExpenseCategoryRepository
         // Name filter
         if (!string.IsNullOrWhiteSpace(name))
         {
-            query = query.Where(ec => ec.Name.ToLower().Contains(name.ToLower()));
+            query = query.Where(ec => EF.Functions.ILike(ec.Name, $"%{name}%"));
         }
 
         // Sorting

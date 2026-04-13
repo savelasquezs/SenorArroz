@@ -39,7 +39,7 @@ public class ProductCategoryRepository : IProductCategoryRepository
         // Name filter
         if (!string.IsNullOrWhiteSpace(name))
         {
-            query = query.Where(pc => pc.Name.ToLower().Contains(name.ToLower()));
+            query = query.Where(pc => EF.Functions.ILike(pc.Name, $"%{name}%"));
         }
 
         // Sorting
