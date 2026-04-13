@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Users/Queries/GetUsersHandler.cs
+// SenorArroz.Application/Features/Users/Queries/GetUsersHandler.cs
 using AutoMapper;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -29,7 +29,7 @@ namespace SenorArroz.Application.Features.Users.Queries
         {
             // Determinar filtro de sucursal según rol del usuario actual
             int? branchFilter = null;
-            if (_currentUser.Role != "superadmin")
+            if (!Roles.IsSuperadmin(_currentUser.Role))
             {
                 // Usuarios normales solo ven usuarios de su sucursal
                 branchFilter = _currentUser.BranchId;

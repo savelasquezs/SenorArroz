@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -23,7 +23,7 @@ public class GetAvailableOrdersForDeliveryHandler : IRequestHandler<GetAvailable
     public async Task<List<OrderDto>> Handle(GetAvailableOrdersForDeliveryQuery request, CancellationToken cancellationToken)
     {
         // Validate that user is a deliveryman
-        if (_currentUser.Role.ToLower() != "deliveryman")
+        if (!Roles.IsDeliveryman(_currentUser.Role))
             throw new BusinessException("Solo los domiciliarios pueden ver pedidos disponibles para entrega");
 
         // Determine branch filter
@@ -31,7 +31,7 @@ public class GetAvailableOrdersForDeliveryHandler : IRequestHandler<GetAvailable
         if (request.BranchId.HasValue && request.BranchId.Value > 0)
         {
             // Validate branch access
-            if (_currentUser.Role != "superadmin" && request.BranchId.Value != _currentUser.BranchId)
+            if (!Roles.IsSuperadmin(_currentUser.Role) && request.BranchId.Value != _currentUser.BranchId)
                 throw new BusinessException("No tienes permisos para ver pedidos de esta sucursal");
             branchId = request.BranchId.Value;
         }

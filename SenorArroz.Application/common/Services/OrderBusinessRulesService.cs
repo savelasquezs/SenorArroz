@@ -8,67 +8,42 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
 {
     public bool CanUpdateOrder(Order order, string userRole)
     {
-        var role = userRole.ToLower();
-
-        // Pedidos cancelados: solo superadmin
         if (order.Status == OrderStatus.Cancelled)
-        {
-            return role == "superadmin";
-        }
+            return Roles.IsSuperadmin(userRole);
 
-        // Pedidos entregados
         if (order.Status == OrderStatus.Delivered)
         {
-            // Solo admin y superadmin pueden modificar pedidos entregados
-            if (role != "admin" && role != "superadmin")
+            if (!Roles.IsAdminOrSuperadmin(userRole))
                 return false;
 
-            // Solo si es el mismo día
             return IsSameDay(order.CreatedAt);
         }
 
-        // Pedidos no entregados: admin, superadmin y cashier pueden modificar
-        return role == "admin" || role == "superadmin" || role == "cashier";
+        return Roles.IsSuperadminOrAdminOrCashier(userRole);
     }
 
     public bool CanUpdateOrderProducts(Order order, string userRole)
     {
-        var role = userRole.ToLower();
-
-        // Pedidos cancelados: solo superadmin
         if (order.Status == OrderStatus.Cancelled)
-        {
-            return role == "superadmin";
-        }
+            return Roles.IsSuperadmin(userRole);
 
-        // Pedidos entregados
         if (order.Status == OrderStatus.Delivered)
         {
-            // Solo admin y superadmin pueden modificar productos de pedidos entregados
-            // Cashier NO puede modificar productos de pedidos entregados
-            if (role != "admin" && role != "superadmin")
+            if (!Roles.IsAdminOrSuperadmin(userRole))
                 return false;
 
-            // Solo si es el mismo día
             return IsSameDay(order.CreatedAt);
         }
 
-        // Pedidos no entregados: admin, superadmin y cashier pueden modificar
-        return role == "admin" || role == "superadmin" || role == "cashier";
+        return Roles.IsSuperadminOrAdminOrCashier(userRole);
     }
 
     public bool CanModifyPayments(Order order, string userRole)
     {
-        var role = userRole.ToLower();
-
-        // Mismo día: admin, superadmin y cashier pueden modificar
         if (IsSameDay(order.CreatedAt))
-        {
-            return role == "admin" || role == "superadmin" || role == "cashier";
-        }
+            return Roles.IsSuperadminOrAdminOrCashier(userRole);
 
-        // Días posteriores: solo superadmin
-        return role == "superadmin";
+        return Roles.IsSuperadmin(userRole);
     }
 
     public bool CanChangeStatus(Order order, OrderStatus newStatus, string userRole)
@@ -78,40 +53,26 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
 
     public bool IsStatusTransitionValid(Order order, OrderStatus newStatus, string userRole)
     {
-        var role = userRole.ToLower();
-
-        // Mismo estado, no hay cambio
         if (order.Status == newStatus)
             return true;
 
-        // Admin y Superadmin tienen control total
-        if (role == "admin" || role == "superadmin")
+        if (Roles.IsAdminOrSuperadmin(userRole))
             return true;
 
-        // Desde Cancelled: solo superadmin puede sacar de cancelado
         if (order.Status == OrderStatus.Cancelled)
             return false;
 
-        // A Cancelled: solo admin y superadmin
         if (newStatus == OrderStatus.Cancelled)
             return false;
 
-        // Validaciones por rol
-        switch (role)
+        var role = userRole.ToLowerInvariant();
+        return role switch
         {
-            case "cashier":
-                return IsValidCashierTransition(order, newStatus);
-
-            case "kitchen":
-                return IsValidKitchenTransition(order.Status, newStatus);
-
-            case "deliveryman":
-                // Los domiciliarios solo pueden cambiar entre OnTheWay ↔ Delivered
-                return IsValidDeliverymanTransition(order.Status, newStatus);
-
-            default:
-                return false;
-        }
+            Roles.Cashier => IsValidCashierTransition(order, newStatus),
+            Roles.Kitchen => IsValidKitchenTransition(order.Status, newStatus),
+            Roles.Deliveryman => IsValidDeliverymanTransition(order.Status, newStatus),
+            _ => false,
+        };
     }
 
     public bool IsSameDay(DateTime orderCreatedAt)
@@ -121,31 +82,23 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
 
     #region Private Helper Methods
 
-    /// <summary>
-    /// Valida transiciones permitidas para cajeros (solo hacia adelante)
-    /// </summary>
     private bool IsValidCashierTransition(Order order, OrderStatus next)
     {
         var current = order.Status;
-        
-        // Cajero solo puede mover hacia adelante en el flujo
+
         return (current, next) switch
         {
             (OrderStatus.Taken, OrderStatus.InPreparation) => true,
             (OrderStatus.InPreparation, OrderStatus.Ready) => true,
             (OrderStatus.Ready, OrderStatus.OnTheWay) => true,
-            (OrderStatus.Ready, OrderStatus.Delivered) => order.Type == OrderType.Onsite, // Solo OnSite puede ir directo a Delivered
+            (OrderStatus.Ready, OrderStatus.Delivered) => order.Type == OrderType.Onsite,
             (OrderStatus.OnTheWay, OrderStatus.Delivered) => true,
-            _ => false // No puede retroceder ni saltar estados
+            _ => false
         };
     }
 
-    /// <summary>
-    /// Valida transiciones permitidas para cocina
-    /// </summary>
     private bool IsValidKitchenTransition(OrderStatus current, OrderStatus next)
     {
-        // Cocina solo puede cambiar estados de preparación
         return (current, next) switch
         {
             (OrderStatus.Taken, OrderStatus.InPreparation) => true,
@@ -154,12 +107,8 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
         };
     }
 
-    /// <summary>
-    /// Valida transiciones permitidas para domiciliarios
-    /// </summary>
     private bool IsValidDeliverymanTransition(OrderStatus current, OrderStatus next)
     {
-        // Domiciliarios solo pueden cambiar entre OnTheWay ↔ Delivered
         return (current, next) switch
         {
             (OrderStatus.OnTheWay, OrderStatus.Delivered) => true,
@@ -170,4 +119,3 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
 
     #endregion
 }
-

@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Expenses/Commands/UpdateExpenseHandler.cs
+// SenorArroz.Application/Features/Expenses/Commands/UpdateExpenseHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -39,7 +39,7 @@ public class UpdateExpenseHandler : IRequestHandler<UpdateExpenseCommand, Expens
 
     public async Task<ExpenseDto> Handle(UpdateExpenseCommand request, CancellationToken cancellationToken)
     {
-        if (_currentUser.Role != "admin" && _currentUser.Role != "superadmin")
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
             throw new BusinessException("No tienes permisos para modificar gastos");
 
         var expense = await _expenseRepository.GetByIdAsync(request.Id, cancellationToken);

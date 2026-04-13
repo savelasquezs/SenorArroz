@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
@@ -20,10 +20,10 @@ public class GetNeighborhoodsHandler : IRequestHandler<GetNeighborhoodsQuery, IE
     public async Task<IEnumerable<Neighborhood>> Handle(GetNeighborhoodsQuery request, CancellationToken cancellationToken)
     {
         // Determine branch filter based on user role
-        int branchFilter = _currentUser.Role == "superadmin" ? request.BranchId : _currentUser.BranchId;
+        int branchFilter = Roles.IsSuperadmin(_currentUser.Role) ? request.BranchId : _currentUser.BranchId;
 
         // Additional validation for non-superadmin users
-        if (_currentUser.Role != "superadmin" && request.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && request.BranchId != _currentUser.BranchId)
         {
             throw new BusinessException("No tienes permisos para acceder a barrios de otras sucursales");
         }

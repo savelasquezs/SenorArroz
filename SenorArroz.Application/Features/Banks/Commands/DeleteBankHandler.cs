@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Banks/Commands/DeleteBankHandler.cs
+// SenorArroz.Application/Features/Banks/Commands/DeleteBankHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
@@ -25,7 +25,7 @@ public class DeleteBankHandler : IRequestHandler<DeleteBankCommand, bool>
             return false;
 
         // Check if user has access to this bank's branch
-        if (_currentUser.Role != "superadmin" && existingBank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && existingBank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para eliminar este banco");
 
         return await _bankRepository.DeleteAsync(request.Id, cancellationToken);

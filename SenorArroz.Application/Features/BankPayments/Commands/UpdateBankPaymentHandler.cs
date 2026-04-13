@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BankPayments.DTOs;
@@ -46,7 +46,7 @@ public class UpdateBankPaymentHandler : IRequestHandler<UpdateBankPaymentCommand
             throw new BusinessException("No tienes permisos para modificar pagos de este pedido");
 
         // Validar acceso a sucursal
-        if (_currentUser.Role != "superadmin" && bankPayment.Bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && bankPayment.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pagos de esta sucursal");
 
         // Actualizar el monto

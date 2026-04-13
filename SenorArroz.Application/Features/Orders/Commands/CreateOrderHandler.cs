@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
@@ -38,7 +38,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         // Determine branch based on user role
         int branchId;
 
-        if (_currentUser.Role == "superadmin")
+        if (Roles.IsSuperadmin(_currentUser.Role))
         {
             // Superadmin can specify branch or needs to provide it
             if (request.Order.BranchId <= 0)
@@ -47,7 +47,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             }
             branchId = request.Order.BranchId;
         }
-        else if (_currentUser.Role == "admin" || _currentUser.Role == "cashier")
+        else if (Roles.IsAdminOrCashier(_currentUser.Role))
         {
             // Admin and Cashier use their branch
             branchId = _currentUser.BranchId;
@@ -147,7 +147,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         if (request.Order.PaidInStoreCash)
         {
             var role = _currentUser.Role.ToLowerInvariant();
-            if (role is not ("cashier" or "admin" or "superadmin"))
+            if (!Roles.IsSuperadminOrAdminOrCashier(role))
                 throw new BusinessException("No tienes permisos para marcar cobro en tienda en la creación del pedido");
 
             var tracked = await _db.Orders

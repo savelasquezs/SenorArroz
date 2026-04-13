@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Suppliers.DTOs;
@@ -27,7 +27,7 @@ public class GetSuppliersByBranchHandler : IRequestHandler<GetSuppliersByBranchQ
     {
         int branchId;
 
-        if (_currentUser.Role == "superadmin")
+        if (Roles.IsSuperadmin(_currentUser.Role))
         {
             if (!request.BranchId.HasValue || request.BranchId <= 0)
             {

@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Banks/Commands/CreateBankHandler.cs
+// SenorArroz.Application/Features/Banks/Commands/CreateBankHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -33,7 +33,7 @@ public class CreateBankHandler : IRequestHandler<CreateBankCommand, BankDto>
         // Determine branch
         int branchId;
 
-        if (_currentUser.Role == "superadmin")
+        if (Roles.IsSuperadmin(_currentUser.Role))
         {
             // Superadmin can specify branch or needs to provide it
             if (request.BranchId <= 0)
@@ -42,7 +42,7 @@ public class CreateBankHandler : IRequestHandler<CreateBankCommand, BankDto>
             }
             branchId = request.BranchId;
         }
-        else if (_currentUser.Role == "admin")
+        else if (Roles.IsAdmin(_currentUser.Role))
         {
             // Admin uses their branch
             branchId = _currentUser.BranchId;

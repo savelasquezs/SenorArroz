@@ -32,7 +32,7 @@ public class BranchPrintJobsController : ControllerBase
     {
         // Domiciliario: la sucursal en la URL debe coincidir con la del pedido, no con user.branch_id
         // (puede trabajar rutas de otra sucursal; antes Forbid() bloqueaba toda la reimpresión desde el celular).
-        if (string.Equals(_currentUser.Role, "deliveryman", StringComparison.OrdinalIgnoreCase))
+        if (Roles.IsDeliveryman(_currentUser.Role))
         {
             if (request.Kind != PrintJobKind.Delivery)
                 return Forbid();
@@ -55,7 +55,7 @@ public class BranchPrintJobsController : ControllerBase
                 return Forbid();
         }
 
-        if (string.Equals(_currentUser.Role, "kitchen", StringComparison.OrdinalIgnoreCase)
+        if (Roles.IsKitchen(_currentUser.Role)
             && request.Kind != PrintJobKind.Kitchen)
             return Forbid();
 
@@ -161,7 +161,7 @@ public class BranchPrintJobsController : ControllerBase
 
     private bool CanAccessBranch(int branchId)
     {
-        if (string.Equals(_currentUser.Role, "superadmin", StringComparison.OrdinalIgnoreCase))
+        if (Roles.IsSuperadmin(_currentUser.Role))
             return true;
         return _currentUser.BranchId == branchId;
     }
@@ -186,9 +186,9 @@ public class BranchPrintJobsController : ControllerBase
     {
         return part.ToLowerInvariant() switch
         {
-            "kitchen" => PrintJobKind.Kitchen,
+            Roles.Kitchen => PrintJobKind.Kitchen,
             "delivery" => PrintJobKind.Delivery,
-            "cashier" => PrintJobKind.Cashier,
+            Roles.Cashier => PrintJobKind.Cashier,
             _ => null,
         };
     }

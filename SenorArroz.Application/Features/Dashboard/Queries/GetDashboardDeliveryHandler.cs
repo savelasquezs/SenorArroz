@@ -163,9 +163,9 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
 
     private int? ResolveBranchFilter(int? requestedBranchId)
     {
-        if (_currentUser.Role == "superadmin")
+        if (Roles.IsSuperadmin(_currentUser.Role))
             return requestedBranchId;
-        if (string.Equals(_currentUser.Role, "deliveryman", StringComparison.OrdinalIgnoreCase))
+        if (Roles.IsDeliveryman(_currentUser.Role))
             return requestedBranchId;
         return _currentUser.BranchId > 0 ? _currentUser.BranchId : null;
     }
@@ -175,7 +175,7 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
         int? branchFilter,
         CancellationToken cancellationToken)
     {
-        if (string.Equals(_currentUser.Role, "deliveryman", StringComparison.OrdinalIgnoreCase))
+        if (Roles.IsDeliveryman(_currentUser.Role))
         {
             if (deliveryManId != _currentUser.Id)
                 throw new UnauthorizedAccessException("No puedes consultar métricas de otro domiciliario.");
@@ -186,14 +186,14 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
         if (user is not { Active: true } || user.Role != UserRole.Deliveryman)
             throw new UnauthorizedAccessException("Domiciliario no encontrado o inactivo.");
 
-        if (_currentUser.Role == "admin")
+        if (Roles.IsAdmin(_currentUser.Role))
         {
             if (user.BranchId != _currentUser.BranchId)
                 throw new UnauthorizedAccessException("Domiciliario no pertenece a tu sucursal.");
             return;
         }
 
-        if (_currentUser.Role == "superadmin")
+        if (Roles.IsSuperadmin(_currentUser.Role))
         {
             if (branchFilter.HasValue && user.BranchId != branchFilter.Value)
                 throw new UnauthorizedAccessException("Domiciliario no pertenece a la sucursal seleccionada.");

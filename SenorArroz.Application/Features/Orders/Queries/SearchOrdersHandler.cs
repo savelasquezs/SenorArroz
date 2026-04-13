@@ -34,10 +34,10 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
         // Filtro de sucursal según rol
         int? branchFilter;
         var isOwnDeliveryHistory =
-            string.Equals(_currentUser.Role, "deliveryman", StringComparison.OrdinalIgnoreCase)
+            Roles.IsDeliveryman(_currentUser.Role)
             && request.DeliveryManId == _currentUser.Id;
 
-        if (string.Equals(_currentUser.Role, "superadmin", StringComparison.OrdinalIgnoreCase))
+        if (Roles.IsSuperadmin(_currentUser.Role))
         {
             branchFilter = request.BranchId is > 0 ? request.BranchId : null;
         }

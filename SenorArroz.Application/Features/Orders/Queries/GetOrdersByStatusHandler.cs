@@ -24,7 +24,7 @@ public class GetOrdersByStatusHandler : IRequestHandler<GetOrdersByStatusQuery, 
     {
         // Determine branch filter based on user role
         int? branchFilter = null;
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
         {
             branchFilter = _currentUser.BranchId;
         }

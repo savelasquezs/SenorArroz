@@ -24,7 +24,7 @@ public class GetBankPaymentsHandler : IRequestHandler<GetBankPaymentsQuery, Page
 
     public async Task<PagedResult<BankPaymentDto>> Handle(GetBankPaymentsQuery request, CancellationToken cancellationToken)
     {
-        int? restrictBranch = _currentUser.Role != "superadmin"
+        int? restrictBranch = !Roles.IsSuperadmin(_currentUser.Role)
             ? _currentUser.BranchId
             : request.BranchId;
 

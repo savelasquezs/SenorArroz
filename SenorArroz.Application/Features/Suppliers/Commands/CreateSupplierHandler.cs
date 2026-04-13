@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Suppliers.DTOs;
@@ -30,7 +30,7 @@ public class CreateSupplierHandler : IRequestHandler<CreateSupplierCommand, Supp
     public async Task<SupplierDto> Handle(CreateSupplierCommand request, CancellationToken cancellationToken)
     {
         // Permissions: Superadmin/Admin/Cashier pueden crear proveedores
-        if (_currentUser.Role is not ("superadmin" or "admin" or "cashier"))
+        if (!Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para crear proveedores.");
         }
@@ -63,7 +63,7 @@ public class CreateSupplierHandler : IRequestHandler<CreateSupplierCommand, Supp
 
     private async Task<int> ResolveBranchIdAsync(int? requestedBranchId)
     {
-        if (_currentUser.Role == "superadmin")
+        if (Roles.IsSuperadmin(_currentUser.Role))
         {
             if (!requestedBranchId.HasValue || requestedBranchId <= 0)
             {

@@ -29,7 +29,7 @@ public class GetMyDeliverymanAdvancesHandler
         GetMyDeliverymanAdvancesQuery request,
         CancellationToken cancellationToken)
     {
-        if (!string.Equals(_currentUser.Role, "deliveryman", StringComparison.OrdinalIgnoreCase))
+        if (!Roles.IsDeliveryman(_currentUser.Role))
             throw new UnauthorizedAccessException("Solo domiciliarios pueden consultar sus abonos.");
 
         var paged = await _advanceRepository.GetPagedAsync(

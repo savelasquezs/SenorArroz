@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/AppPayments/Commands/CreateAppPaymentHandler.cs
+// SenorArroz.Application/Features/AppPayments/Commands/CreateAppPaymentHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -36,7 +36,7 @@ public class CreateAppPaymentHandler : IRequestHandler<CreateAppPaymentCommand, 
             throw new BusinessException("La app especificada no existe");
 
         // Check if user has access to this app's branch
-        if (_currentUser.Role != "superadmin" && app.Bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && app.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para crear pagos en esta app");
 
         var appPayment = new AppPayment

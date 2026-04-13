@@ -27,7 +27,7 @@ public class GetAdvancesHandler : IRequestHandler<GetAdvancesQuery, PagedResult<
     {
         // Determinar branch según rol
         int? branchId = request.BranchId;
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
         {
             branchId = _currentUser.BranchId;
         }

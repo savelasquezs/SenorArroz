@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
@@ -33,8 +33,8 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
         }
 
         var role = _currentUser.Role ?? string.Empty;
-        var isSuperadmin = string.Equals(role, "superadmin", StringComparison.OrdinalIgnoreCase);
-        var isAdmin = string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase);
+        var isSuperadmin = Roles.IsSuperadmin(role);
+        var isAdmin = Roles.IsAdmin(role);
 
         if (!isSuperadmin && isAdmin)
         {

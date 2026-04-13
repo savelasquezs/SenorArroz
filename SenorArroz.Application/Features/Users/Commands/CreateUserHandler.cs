@@ -46,7 +46,7 @@ namespace SenorArroz.Application.Features.Users.Commands
                 throw new BusinessException($"Ya existe un usuario con el email '{request.UserData.Email}'");
             }
 
-            if (creatorRole == "admin")
+            if (Roles.IsAdmin(creatorRole))
             {
                 // Solo puede crear usuarios de su sucursal
                 if (creatorBranchId == 0)
@@ -73,7 +73,7 @@ namespace SenorArroz.Application.Features.Users.Commands
                     }
                 }
             }
-            else if (creatorRole == "superadmin")
+            else if (Roles.IsSuperadmin(creatorRole))
             {
                 // Validar restricciones de rol
                 if (request.UserData.Role == UserRole.Superadmin)

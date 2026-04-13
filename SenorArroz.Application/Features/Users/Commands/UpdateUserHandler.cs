@@ -56,7 +56,7 @@ namespace SenorArroz.Application.Features.Users.Commands
             // 4. Cambio de sucursal: solo superadmin
             if (request.UserData.BranchId.HasValue)
             {
-                if (!string.Equals(_currentUser.Role, "superadmin", StringComparison.OrdinalIgnoreCase))
+                if (!Roles.IsSuperadmin(_currentUser.Role))
                     throw new BusinessException("Solo el superadministrador puede cambiar la sucursal de un usuario");
 
                 var newBranchId = request.UserData.BranchId.Value;

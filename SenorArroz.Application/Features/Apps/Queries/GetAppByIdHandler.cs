@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Apps/Queries/GetAppByIdHandler.cs
+// SenorArroz.Application/Features/Apps/Queries/GetAppByIdHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -28,7 +28,7 @@ public class GetAppByIdHandler : IRequestHandler<GetAppByIdQuery, AppDto?>
             return null;
 
         // Check if user has access to this app's branch
-        if (_currentUser.Role != "superadmin" && app.Bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && app.Bank.BranchId != _currentUser.BranchId)
             return null;
 
         var appDto = _mapper.Map<AppDto>(app);

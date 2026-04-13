@@ -56,21 +56,21 @@ public class GetDashboardDeliveryRouteStopsHandler
     {
         var role = _currentUser.Role ?? string.Empty;
 
-        if (string.Equals(role, "superadmin", StringComparison.OrdinalIgnoreCase))
+        if (Roles.IsSuperadmin(role))
         {
             if (requestedBranchId.HasValue && routeBranchId != requestedBranchId.Value)
                 throw new BusinessException("La ruta no pertenece a la sucursal seleccionada.");
             return;
         }
 
-        if (string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase))
+        if (Roles.IsAdmin(role))
         {
             if (_currentUser.BranchId <= 0 || routeBranchId != _currentUser.BranchId)
                 throw new BusinessException("No tienes permiso para ver esta ruta.");
             return;
         }
 
-        if (string.Equals(role, "deliveryman", StringComparison.OrdinalIgnoreCase))
+        if (Roles.IsDeliveryman(role))
         {
             if (routeDeliverymanId != _currentUser.Id)
                 throw new BusinessException("No tienes permiso para ver esta ruta.");

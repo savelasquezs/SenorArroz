@@ -34,12 +34,12 @@ public class GetExpenseHeadersHandler : IRequestHandler<GetExpenseHeadersQuery, 
         int? branchFilter = null;
         int? createdByIdFilter = null;
 
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
         {
             branchFilter = _currentUser.BranchId;
 
             // Si es cashier, solo ve sus propios gastos
-            if (_currentUser.Role == "cashier")
+            if (Roles.IsCashier(_currentUser.Role))
             {
                 createdByIdFilter = _currentUser.Id;
             }

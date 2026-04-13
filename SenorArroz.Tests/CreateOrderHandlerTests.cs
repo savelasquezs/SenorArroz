@@ -141,7 +141,7 @@ public class CreateOrderHandlerTests
     public async Task Superadmin_without_branchId_throws_BusinessException()
     {
         using var db = CreateInMemoryContext(nameof(Superadmin_without_branchId_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("superadmin"), db);
+        var handler = BuildHandler(new FakeCurrentUser(Roles.Superadmin), db);
 
         var command = new CreateOrderCommand { Order = new CreateOrderDto { BranchId = 0, OrderDetails = [] } };
 
@@ -154,7 +154,7 @@ public class CreateOrderHandlerTests
     public async Task Unknown_role_throws_BusinessException()
     {
         using var db = CreateInMemoryContext(nameof(Unknown_role_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("deliveryman"), db);
+        var handler = BuildHandler(new FakeCurrentUser(Roles.Deliveryman), db);
 
         var command = new CreateOrderCommand { Order = new CreateOrderDto { BranchId = 1, OrderDetails = [] } };
 
@@ -167,7 +167,7 @@ public class CreateOrderHandlerTests
     public async Task Order_without_details_throws_BusinessException()
     {
         using var db = CreateInMemoryContext(nameof(Order_without_details_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("cashier", branchId: 1), db);
+        var handler = BuildHandler(new FakeCurrentUser(Roles.Cashier, branchId: 1), db);
 
         var command = new CreateOrderCommand { Order = new CreateOrderDto { Type = OrderType.Onsite, OrderDetails = [] } };
 
@@ -180,7 +180,7 @@ public class CreateOrderHandlerTests
     public async Task Delivery_order_without_customer_throws_BusinessException()
     {
         using var db = CreateInMemoryContext(nameof(Delivery_order_without_customer_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("cashier", branchId: 1), db);
+        var handler = BuildHandler(new FakeCurrentUser(Roles.Cashier, branchId: 1), db);
 
         var dto = MinimalDeliveryOrder();
         dto.CustomerId = null;
@@ -195,7 +195,7 @@ public class CreateOrderHandlerTests
     public async Task Delivery_order_without_address_throws_BusinessException()
     {
         using var db = CreateInMemoryContext(nameof(Delivery_order_without_address_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("cashier", branchId: 1), db);
+        var handler = BuildHandler(new FakeCurrentUser(Roles.Cashier, branchId: 1), db);
 
         var dto = MinimalDeliveryOrder();
         dto.AddressId = null;
@@ -210,7 +210,7 @@ public class CreateOrderHandlerTests
     public async Task Reservation_order_without_reservedFor_throws_BusinessException()
     {
         using var db = CreateInMemoryContext(nameof(Reservation_order_without_reservedFor_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("cashier", branchId: 1), db);
+        var handler = BuildHandler(new FakeCurrentUser(Roles.Cashier, branchId: 1), db);
 
         var command = new CreateOrderCommand
         {
@@ -232,7 +232,7 @@ public class CreateOrderHandlerTests
     public async Task PrepareAt_after_reservedFor_throws_BusinessException()
     {
         using var db = CreateInMemoryContext(nameof(PrepareAt_after_reservedFor_throws_BusinessException));
-        var handler = BuildHandler(new FakeCurrentUser("cashier", branchId: 1), db);
+        var handler = BuildHandler(new FakeCurrentUser(Roles.Cashier, branchId: 1), db);
 
         var reservedFor = DateTime.UtcNow.AddHours(2);
         var command = new CreateOrderCommand

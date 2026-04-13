@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
@@ -36,7 +36,7 @@ public class GetExpenseHeaderByIdHandler : IRequestHandler<GetExpenseHeaderByIdQ
         }
 
         // Validar acceso
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
         {
             // Debe ser de la misma sucursal
             if (expenseHeader.BranchId != _currentUser.BranchId)
@@ -45,7 +45,7 @@ public class GetExpenseHeaderByIdHandler : IRequestHandler<GetExpenseHeaderByIdQ
             }
 
             // Si es cashier, solo puede ver sus propios gastos
-            if (_currentUser.Role == "cashier" && expenseHeader.CreatedById != _currentUser.Id)
+            if (Roles.IsCashier(_currentUser.Role) && expenseHeader.CreatedById != _currentUser.Id)
             {
                 return null; // No tiene acceso
             }

@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
@@ -116,7 +116,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                      && o.PrepareAt.Value.ToUniversalTime().AddHours(-5).Date != todayCol))
             .CountAsync(cancellationToken);
 
-        bool isAdmin = _currentUser.Role == "superadmin" || _currentUser.Role == "admin";
+        bool isAdmin = Roles.IsAdminOrSuperadmin(_currentUser.Role);
         var banks = await _bankRepository.GetByBranchIdAsync(branchId, excludeHiddenBanks: !isAdmin, cancellationToken);
 
         var bankExpected = new List<BankExpectedBalanceDto>();

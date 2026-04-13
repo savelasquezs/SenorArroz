@@ -35,7 +35,7 @@ public class GetMenuCategoryCostingDashboardHandler
         GetMenuCategoryCostingDashboardQuery request,
         CancellationToken cancellationToken)
     {
-        if (_currentUser.Role != "admin" && _currentUser.Role != "superadmin")
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
             throw new BusinessException("No tienes permisos para ver el costeo por categoría de menú");
 
         var (from, to) = NormalizeRange(request.FromUtc, request.ToUtc);
@@ -330,7 +330,7 @@ public class GetMenuCategoryCostingDashboardHandler
 
     private int? ResolveBranchFilter(int? requestedBranchId)
     {
-        if (_currentUser.Role == "superadmin")
+        if (Roles.IsSuperadmin(_currentUser.Role))
             return requestedBranchId;
         return _currentUser.BranchId > 0 ? _currentUser.BranchId : null;
     }

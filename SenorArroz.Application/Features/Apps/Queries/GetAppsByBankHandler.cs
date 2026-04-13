@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Apps/Queries/GetAppsByBankHandler.cs
+// SenorArroz.Application/Features/Apps/Queries/GetAppsByBankHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -29,7 +29,7 @@ public class GetAppsByBankHandler : IRequestHandler<GetAppsByBankQuery, IEnumera
         foreach (var app in apps)
         {
             // Check if user has access to this app's branch
-            if (_currentUser.Role != "superadmin" && app.Bank.BranchId != _currentUser.BranchId)
+            if (!Roles.IsSuperadmin(_currentUser.Role) && app.Bank.BranchId != _currentUser.BranchId)
                 continue;
 
             var appDto = _mapper.Map<AppDto>(app);

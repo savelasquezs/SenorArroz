@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/BankPayments/Queries/GetBankPaymentByIdHandler.cs
+// SenorArroz.Application/Features/BankPayments/Queries/GetBankPaymentByIdHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -28,7 +28,7 @@ public class GetBankPaymentByIdHandler : IRequestHandler<GetBankPaymentByIdQuery
             return null;
 
         // Check if user has access to this bank payment's branch
-        if (_currentUser.Role != "superadmin" && bankPayment.Bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && bankPayment.Bank.BranchId != _currentUser.BranchId)
             return null;
 
         return _mapper.Map<BankPaymentDto>(bankPayment);

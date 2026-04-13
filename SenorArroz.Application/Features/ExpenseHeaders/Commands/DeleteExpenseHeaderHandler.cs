@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -26,14 +26,14 @@ public class DeleteExpenseHeaderHandler : IRequestHandler<DeleteExpenseHeaderCom
         }
 
         // Validar acceso
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
         {
             if (expenseHeader.BranchId != _currentUser.BranchId)
             {
                 throw new BusinessException("No tienes acceso a este gasto");
             }
 
-            if (_currentUser.Role == "cashier" && expenseHeader.CreatedById != _currentUser.Id)
+            if (Roles.IsCashier(_currentUser.Role) && expenseHeader.CreatedById != _currentUser.Id)
             {
                 throw new BusinessException("Solo puedes eliminar tus propios gastos");
             }

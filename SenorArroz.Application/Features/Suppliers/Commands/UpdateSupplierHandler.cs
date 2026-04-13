@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Suppliers.DTOs;
@@ -26,7 +26,7 @@ public class UpdateSupplierHandler : IRequestHandler<UpdateSupplierCommand, Supp
     public async Task<SupplierDto> Handle(UpdateSupplierCommand request, CancellationToken cancellationToken)
     {
         // Solo Admin y Superadmin pueden editar proveedores
-        if (_currentUser.Role is not ("admin" or "superadmin"))
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para actualizar proveedores.");
         }
@@ -34,7 +34,7 @@ public class UpdateSupplierHandler : IRequestHandler<UpdateSupplierCommand, Supp
         var supplier = await _supplierRepository.GetByIdAsync(request.Id)
             ?? throw new NotFoundException("Proveedor no encontrado.");
 
-        if (_currentUser.Role != "superadmin" && supplier.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && supplier.BranchId != _currentUser.BranchId)
         {
             throw new BusinessException("No puedes editar proveedores de otra sucursal.");
         }

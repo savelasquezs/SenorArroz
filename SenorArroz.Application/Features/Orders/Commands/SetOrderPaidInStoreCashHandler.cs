@@ -32,7 +32,7 @@ public class SetOrderPaidInStoreCashHandler : IRequestHandler<SetOrderPaidInStor
     public async Task<OrderDto> Handle(SetOrderPaidInStoreCashCommand request, CancellationToken cancellationToken)
     {
         var role = _currentUser.Role.ToLowerInvariant();
-        if (role is not ("cashier" or "admin" or "superadmin"))
+        if (!Roles.IsSuperadminOrAdminOrCashier(role))
             throw new BusinessException("No tienes permisos para marcar cobro en tienda");
 
         var order = await _context.Orders
@@ -46,7 +46,7 @@ public class SetOrderPaidInStoreCashHandler : IRequestHandler<SetOrderPaidInStor
         if (order.Status == OrderStatus.Cancelled)
             throw new BusinessException("No se puede modificar un pedido cancelado");
 
-        if (role != "superadmin" && order.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(role) && order.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
         OrderPaidInStoreCashHelper.Apply(order, request.PaidInStoreCash, DateTime.UtcNow);

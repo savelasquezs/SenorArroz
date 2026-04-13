@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BankTransfers.DTOs;
@@ -62,7 +62,7 @@ public class CreateBankTransferHandler : IRequestHandler<CreateBankTransferComma
             throw new BusinessException("Los bancos deben pertenecer a la misma sucursal");
 
         var branchIdForPerm = fromBank?.BranchId ?? toBank!.BranchId;
-        if (_currentUser.Role != "superadmin" && branchIdForPerm != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && branchIdForPerm != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para realizar transferencias en esta sucursal");
 
         if (!_currentUser.IsAuthenticated)

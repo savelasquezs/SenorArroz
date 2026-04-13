@@ -44,17 +44,17 @@ public class PrintJobConfiguration : IEntityTypeConfiguration<PrintJob>
 
     private static string KindToDb(PrintJobKind k) => k switch
     {
-        PrintJobKind.Kitchen => "kitchen",
+        PrintJobKind.Kitchen => Roles.Kitchen,
         PrintJobKind.Delivery => "delivery",
-        PrintJobKind.Cashier => "cashier",
+        PrintJobKind.Cashier => Roles.Cashier,
         _ => throw new ArgumentOutOfRangeException(nameof(k)),
     };
 
     private static PrintJobKind KindFromDb(string v) => v?.ToLowerInvariant() switch
     {
-        "kitchen" => PrintJobKind.Kitchen,
+        Roles.Kitchen => PrintJobKind.Kitchen,
         "delivery" => PrintJobKind.Delivery,
-        "cashier" => PrintJobKind.Cashier,
+        Roles.Cashier => PrintJobKind.Cashier,
         _ => throw new ArgumentOutOfRangeException(nameof(v)),
     };
 

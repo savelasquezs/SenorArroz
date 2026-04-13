@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Expenses/Commands/DeleteExpenseHandler.cs
+// SenorArroz.Application/Features/Expenses/Commands/DeleteExpenseHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
@@ -22,7 +22,7 @@ public class DeleteExpenseHandler : IRequestHandler<DeleteExpenseCommand, bool>
     public async Task<bool> Handle(DeleteExpenseCommand request, CancellationToken cancellationToken)
     {
         // Validate permissions
-        if (_currentUser.Role != "admin" && _currentUser.Role != "superadmin")
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para eliminar gastos");
         }

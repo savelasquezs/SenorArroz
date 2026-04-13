@@ -52,10 +52,10 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
         if (!deliveryman.Active)
             throw new BusinessException("El domiciliario no está activo");
 
-        var branchId = _currentUser.Role == "superadmin"
+        var branchId = Roles.IsSuperadmin(_currentUser.Role)
             ? deliveryman.BranchId
             : _currentUser.BranchId;
-        if (_currentUser.Role != "superadmin" && deliveryman.BranchId != branchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && deliveryman.BranchId != branchId)
             throw new BusinessException("No tienes permisos para ver los datos de este domiciliario");
 
         var multiDay = IsMultiDaySummaryRequest(request);

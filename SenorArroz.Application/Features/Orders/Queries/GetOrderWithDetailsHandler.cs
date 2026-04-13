@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -27,7 +27,7 @@ public class GetOrderWithDetailsHandler : IRequestHandler<GetOrderWithDetailsQue
             return null;
 
         // Validate branch access
-        if (_currentUser.Role != "superadmin" && order.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && order.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para ver pedidos de esta sucursal");
 
         return _mapper.Map<OrderWithDetailsDto>(order);

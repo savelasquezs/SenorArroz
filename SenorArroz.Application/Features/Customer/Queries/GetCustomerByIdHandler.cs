@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
@@ -38,7 +38,7 @@ namespace SenorArroz.Application.Features.Customers.Queries
                 return null;
 
             // Check if user has access to this customer's branch
-            if (_currentUser.Role != "superadmin" && customer.BranchId != _currentUser.BranchId)
+            if (!Roles.IsSuperadmin(_currentUser.Role) && customer.BranchId != _currentUser.BranchId)
             {
                 throw new BusinessException("No tienes permisos para acceder a este cliente");
             }

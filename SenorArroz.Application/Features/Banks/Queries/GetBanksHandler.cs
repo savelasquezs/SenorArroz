@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Banks/Queries/GetBanksHandler.cs
+// SenorArroz.Application/Features/Banks/Queries/GetBanksHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -25,7 +25,7 @@ public class GetBanksHandler : IRequestHandler<GetBanksQuery, PagedResult<BankDt
     {
         // Determine branch filter based on user role
         int? branchFilter = null;
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
         {
             branchFilter = _currentUser.BranchId;
         }
@@ -37,7 +37,7 @@ public class GetBanksHandler : IRequestHandler<GetBanksQuery, PagedResult<BankDt
         // If branchFilter is null, superadmin gets all banks from all branches
 
         // Cashier cannot see hidden banks (CashVault, RealVault)
-        var excludeHidden = _currentUser.Role != "superadmin" && _currentUser.Role != "admin";
+        var excludeHidden = !Roles.IsAdminOrSuperadmin(_currentUser.Role);
 
         var pagedBanks = await _bankRepository.GetPagedAsync(
             branchFilter,

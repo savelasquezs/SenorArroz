@@ -27,7 +27,7 @@ public class GetBankTransfersHandler : IRequestHandler<GetBankTransfersQuery, Pa
     public async Task<PagedResult<BankTransferDto>> Handle(GetBankTransfersQuery request, CancellationToken cancellationToken)
     {
         int? branchFilter = null;
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
         {
             branchFilter = _currentUser.BranchId;
         }

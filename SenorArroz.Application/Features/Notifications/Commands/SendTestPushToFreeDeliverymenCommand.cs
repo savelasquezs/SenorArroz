@@ -43,7 +43,7 @@ public class SendTestPushToFreeDeliverymenHandler : IRequestHandler<SendTestPush
     {
         var correlationId = Guid.NewGuid().ToString("N")[..12];
         var role = _currentUser.Role?.Trim() ?? string.Empty;
-        var isSuperadmin = role.Equals("superadmin", StringComparison.OrdinalIgnoreCase);
+        var isSuperadmin = Roles.IsSuperadmin(role);
 
         _logger.LogInformation(
             "{Prefix} [{Corr}] STEP auth_ok userId={UserId} role={Role} requestBranchId={RequestBranch}",

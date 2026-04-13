@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Banks/Commands/UpdateBankHandler.cs
+// SenorArroz.Application/Features/Banks/Commands/UpdateBankHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -33,7 +33,7 @@ public class UpdateBankHandler : IRequestHandler<UpdateBankCommand, BankDto>
             throw new BusinessException("El banco especificado no existe");
 
         // Check if user has access to this bank's branch
-        if (_currentUser.Role != "superadmin" && existingBank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && existingBank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar este banco");
 
         // Check if bank name already exists in this branch (excluding current bank)

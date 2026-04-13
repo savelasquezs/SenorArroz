@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Branches.DTOs;
@@ -25,7 +25,7 @@ public class GetBranchByIdHandler(
             return null;
 
         var users = branch.Users ?? [];
-        if (_currentUser.Role == "admin")
+        if (Roles.IsAdmin(_currentUser.Role))
         {
             users = [.. users.Where(u => u.Role != UserRole.Superadmin)];
         }

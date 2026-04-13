@@ -277,9 +277,9 @@ public static class PrintTicketPayloadBuilder
 
     private static string KindToApiString(PrintJobKind k) => k switch
     {
-        PrintJobKind.Kitchen => "kitchen",
+        PrintJobKind.Kitchen => Roles.Kitchen,
         PrintJobKind.Delivery => "delivery",
-        PrintJobKind.Cashier => "cashier",
+        PrintJobKind.Cashier => Roles.Cashier,
         _ => throw new ArgumentOutOfRangeException(nameof(k)),
     };
 

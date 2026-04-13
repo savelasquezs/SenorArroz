@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/ExpenseCategories/Commands/CreateExpenseCategoryHandler.cs
+// SenorArroz.Application/Features/ExpenseCategories/Commands/CreateExpenseCategoryHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -28,7 +28,7 @@ public class CreateExpenseCategoryHandler : IRequestHandler<CreateExpenseCategor
     public async Task<ExpenseCategoryDto> Handle(CreateExpenseCategoryCommand request, CancellationToken cancellationToken)
     {
         // Validate permissions: only Admin and Superadmin can create categories
-        if (_currentUser.Role != "admin" && _currentUser.Role != "superadmin")
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para crear categorías de gastos");
         }

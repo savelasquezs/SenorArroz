@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -46,10 +46,10 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
-        if (_currentUser.Role != "superadmin" && existingOrder.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
-        if (!new[] { "superadmin", "admin" }.Contains(_currentUser.Role.ToLower()))
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
             throw new BusinessException("Solo administradores pueden cancelar pedidos");
 
         if (existingOrder.Status == OrderStatus.Cancelled)

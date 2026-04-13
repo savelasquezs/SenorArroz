@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -21,7 +21,7 @@ public class DeleteSupplierHandler : IRequestHandler<DeleteSupplierCommand, bool
     public async Task<bool> Handle(DeleteSupplierCommand request, CancellationToken cancellationToken)
     {
         // Solo Admin y Superadmin pueden eliminar proveedores
-        if (_currentUser.Role is not ("admin" or "superadmin"))
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para eliminar proveedores.");
         }
@@ -29,7 +29,7 @@ public class DeleteSupplierHandler : IRequestHandler<DeleteSupplierCommand, bool
         var supplier = await _supplierRepository.GetByIdAsync(request.Id)
             ?? throw new NotFoundException("Proveedor no encontrado.");
 
-        if (_currentUser.Role != "superadmin" && supplier.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && supplier.BranchId != _currentUser.BranchId)
         {
             throw new BusinessException("No puedes eliminar proveedores de otra sucursal.");
         }

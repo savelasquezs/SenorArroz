@@ -102,7 +102,7 @@ public class CustomersController : ControllerBase
             return Unauthorized();
 
         var command = _mapper.Map<CreateCustomerCommand>(createDto);
-        if(currentUserRole!="superadmin")
+        if (!Roles.IsSuperadmin(currentUserRole))
             command.BranchId = branchId.Value;
         
         var result = await _mediator.Send(command);

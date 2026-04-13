@@ -52,7 +52,7 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
             "amount" => sortOrder.ToLower() == "desc"
                 ? query.OrderByDescending(da => da.Amount)
                 : query.OrderBy(da => da.Amount),
-            "deliveryman" => sortOrder.ToLower() == "desc"
+            Roles.Deliveryman => sortOrder.ToLower() == "desc"
                 ? query.OrderByDescending(da => da.Deliveryman.Name)
                 : query.OrderBy(da => da.Deliveryman.Name),
             "createdat" => sortOrder.ToLower() == "desc"

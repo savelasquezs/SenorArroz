@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
@@ -43,14 +43,14 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         }
 
         // Validar acceso
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
         {
             if (expenseHeader.BranchId != _currentUser.BranchId)
             {
                 throw new BusinessException("No tienes acceso a este gasto");
             }
 
-            if (_currentUser.Role == "cashier" && expenseHeader.CreatedById != _currentUser.Id)
+            if (Roles.IsCashier(_currentUser.Role) && expenseHeader.CreatedById != _currentUser.Id)
             {
                 throw new BusinessException("Solo puedes editar tus propios gastos");
             }

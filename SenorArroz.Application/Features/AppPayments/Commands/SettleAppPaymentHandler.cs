@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/AppPayments/Commands/SettleAppPaymentHandler.cs
+// SenorArroz.Application/Features/AppPayments/Commands/SettleAppPaymentHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
@@ -31,7 +31,7 @@ public class SettleAppPaymentHandler : IRequestHandler<SettleAppPaymentCommand, 
             return false;
 
         // Check if user has access to this app payment's branch
-        if (_currentUser.Role != "superadmin" && appPayment.App.Bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para liquidar este pago");
 
         // Check if already settled

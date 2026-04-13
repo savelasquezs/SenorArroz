@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/ExpenseCategories/Commands/DeleteExpenseCategoryHandler.cs
+// SenorArroz.Application/Features/ExpenseCategories/Commands/DeleteExpenseCategoryHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
@@ -22,7 +22,7 @@ public class DeleteExpenseCategoryHandler : IRequestHandler<DeleteExpenseCategor
     public async Task<bool> Handle(DeleteExpenseCategoryCommand request, CancellationToken cancellationToken)
     {
         // Validate permissions
-        if (_currentUser.Role != "admin" && _currentUser.Role != "superadmin")
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para eliminar categorías de gastos");
         }

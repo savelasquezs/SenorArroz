@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
@@ -32,7 +32,7 @@ public class GetCustomerAddressesHandler : IRequestHandler<GetCustomerAddressesQ
         }
 
         // Check if user has access to this customer's branch
-        if (_currentUser.Role != "superadmin" && customer.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && customer.BranchId != _currentUser.BranchId)
         {
             throw new BusinessException("No tienes permisos para acceder a las direcciones de este cliente");
         }

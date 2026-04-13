@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Expenses/Commands/CreateExpenseHandler.cs
+// SenorArroz.Application/Features/Expenses/Commands/CreateExpenseHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -40,7 +40,7 @@ public class CreateExpenseHandler : IRequestHandler<CreateExpenseCommand, Expens
 
     public async Task<ExpenseDto> Handle(CreateExpenseCommand request, CancellationToken cancellationToken)
     {
-        if (_currentUser.Role != "admin" && _currentUser.Role != "superadmin")
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
             throw new BusinessException("No tienes permisos para crear gastos");
 
         if (!await _categoryRepository.ExistsAsync(request.CategoryId))

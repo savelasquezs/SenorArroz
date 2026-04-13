@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
@@ -35,7 +35,7 @@ namespace SenorArroz.Application.Features.Customers.Queries
         {
             // Determine branch filter based on user role
             int? branchFilter = null;
-            if (_currentUser.Role != "superadmin")
+            if (!Roles.IsSuperadmin(_currentUser.Role))
             {
                 branchFilter = _currentUser.BranchId;
             }

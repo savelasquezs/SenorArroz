@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Apps/Queries/GetAppsHandler.cs
+// SenorArroz.Application/Features/Apps/Queries/GetAppsHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -25,7 +25,7 @@ public class GetAppsHandler : IRequestHandler<GetAppsQuery, PagedResult<AppDto>>
     {
         // Determine branch filter based on user role
         int? branchFilter = null;
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
         {
             branchFilter = _currentUser.BranchId;
         }
@@ -52,7 +52,7 @@ public class GetAppsHandler : IRequestHandler<GetAppsQuery, PagedResult<AppDto>>
             var appDto = _mapper.Map<AppDto>(app);
 
             // Check if user has access to this app's branch
-            if (_currentUser.Role != "superadmin" && app.Bank.BranchId != _currentUser.BranchId)
+            if (!Roles.IsSuperadmin(_currentUser.Role) && app.Bank.BranchId != _currentUser.BranchId)
                 continue;
 
             // Add additional data

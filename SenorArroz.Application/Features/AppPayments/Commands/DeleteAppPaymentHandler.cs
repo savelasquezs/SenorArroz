@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/AppPayments/Commands/DeleteAppPaymentHandler.cs
+// SenorArroz.Application/Features/AppPayments/Commands/DeleteAppPaymentHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
@@ -25,7 +25,7 @@ public class DeleteAppPaymentHandler : IRequestHandler<DeleteAppPaymentCommand, 
             return false;
 
         // Check if user has access to this app payment's branch
-        if (_currentUser.Role != "superadmin" && appPayment.App.Bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para eliminar este pago");
 
         return await _appPaymentRepository.DeleteAsync(request.Id, cancellationToken);

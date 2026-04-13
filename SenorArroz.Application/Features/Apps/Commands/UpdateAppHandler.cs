@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Apps/Commands/UpdateAppHandler.cs
+// SenorArroz.Application/Features/Apps/Commands/UpdateAppHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -35,7 +35,7 @@ public class UpdateAppHandler : IRequestHandler<UpdateAppCommand, AppDto>
             throw new BusinessException("La app especificada no existe");
 
         // Check if user has access to this app's branch
-        if (_currentUser.Role != "superadmin" && existingApp.Bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && existingApp.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar esta app");
 
         // Validate bank exists
@@ -44,7 +44,7 @@ public class UpdateAppHandler : IRequestHandler<UpdateAppCommand, AppDto>
             throw new BusinessException("El banco especificado no existe");
 
         // Check if user has access to the new bank's branch
-        if (_currentUser.Role != "superadmin" && bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para asignar apps a este banco");
 
         // Check if app name already exists in this bank (excluding current app)

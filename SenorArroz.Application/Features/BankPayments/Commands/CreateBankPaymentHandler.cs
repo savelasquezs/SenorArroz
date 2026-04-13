@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/BankPayments/Commands/CreateBankPaymentHandler.cs
+// SenorArroz.Application/Features/BankPayments/Commands/CreateBankPaymentHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -36,7 +36,7 @@ public class CreateBankPaymentHandler : IRequestHandler<CreateBankPaymentCommand
             throw new BusinessException("El banco especificado no existe");
 
         // Check if user has access to this bank's branch
-        if (_currentUser.Role != "superadmin" && bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para crear pagos en este banco");
 
         var bankPayment = new BankPayment

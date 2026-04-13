@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
@@ -51,11 +51,11 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             throw new BusinessException("Pedido no encontrado");
 
         // Validate branch access
-        if (_currentUser.Role != "superadmin" && existingOrder.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
         // Validación especial para domiciliarios
-        if (_currentUser.Role.ToLower() == "deliveryman")
+        if (Roles.IsDeliveryman(_currentUser.Role))
         {
             // Verificar que el pedido esté asignado a este domiciliario
             if (!existingOrder.DeliveryManId.HasValue || existingOrder.DeliveryManId.Value != _currentUser.Id)
@@ -118,7 +118,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             // Admin/superadmin no imprimen al marcar listo (pueden hacerlo manualmente si es necesario).
             var role = (_currentUser.Role ?? string.Empty).Trim();
             var printsKitchenOnReady =
-                string.Equals(role, "kitchen", StringComparison.OrdinalIgnoreCase);
+                Roles.IsKitchen(role);
 
             if (printsKitchenOnReady)
             {

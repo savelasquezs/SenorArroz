@@ -109,7 +109,7 @@ public class UserRepository : IUserRepository
 public async Task<bool> ExistsActiveSuperAdmin(CancellationToken cancellationToken)
 {
         return await _context.Users.AnyAsync(u =>
-            u.Active && string.Equals(u.Role.ToString(), "superadmin", StringComparison.OrdinalIgnoreCase));
+            u.Active && u.Role == UserRole.Superadmin, cancellationToken);
         
 }
 

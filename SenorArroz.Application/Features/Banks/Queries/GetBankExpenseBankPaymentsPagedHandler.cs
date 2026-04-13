@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
@@ -34,10 +34,10 @@ public class GetBankExpenseBankPaymentsPagedHandler
         if (bank == null)
             return null;
 
-        if (_currentUser.Role != "superadmin" && bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)
             return null;
 
-        if (_currentUser.Role == "cashier" && (bank.Type == BankType.CashVault || bank.Type == BankType.RealVault))
+        if (Roles.IsCashier(_currentUser.Role) && (bank.Type == BankType.CashVault || bank.Type == BankType.RealVault))
             return null;
 
         var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(request.FromDate, request.ToDate);
@@ -47,7 +47,7 @@ public class GetBankExpenseBankPaymentsPagedHandler
             .Where(ebp => ebp.BankId == request.BankId
                 && ebp.CreatedAt >= fromUtc && ebp.CreatedAt <= toUtc);
 
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
             query = query.Where(ebp => ebp.ExpenseHeader.BranchId == _currentUser.BranchId);
         else if (request.BranchId.HasValue && request.BranchId.Value > 0)
             query = query.Where(ebp => ebp.ExpenseHeader.BranchId == request.BranchId.Value);

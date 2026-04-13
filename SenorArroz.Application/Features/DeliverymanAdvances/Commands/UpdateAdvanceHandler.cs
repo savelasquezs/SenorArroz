@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.DeliverymanAdvances.DTOs;
@@ -31,7 +31,7 @@ public class UpdateAdvanceHandler : IRequestHandler<UpdateAdvanceCommand, Delive
             throw new BusinessException("El abono no existe");
 
         // 2. Validar acceso a sucursal
-        if (_currentUser.Role != "superadmin" && advance.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && advance.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para editar abonos de esta sucursal");
 
         // 3. Validar que solo se puede editar el día de creación

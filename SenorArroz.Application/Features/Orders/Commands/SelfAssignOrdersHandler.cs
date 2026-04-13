@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
@@ -47,7 +47,7 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
     public async Task<List<OrderDto>> Handle(SelfAssignOrdersCommand request, CancellationToken cancellationToken)
     {
         // Validate that user is a deliveryman
-        if (_currentUser.Role.ToLower() != "deliveryman")
+        if (!Roles.IsDeliveryman(_currentUser.Role))
             throw new BusinessException("Solo los domiciliarios pueden autoasignarse pedidos");
 
         // Get current user ID and validate password

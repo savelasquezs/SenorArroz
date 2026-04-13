@@ -34,10 +34,10 @@ public class UnlockDeliverymanDayHandler : IRequestHandler<UnlockDeliverymanDayC
         if (deliveryman.Role != UserRole.Deliveryman)
             throw new BusinessException("El usuario no es un domiciliario");
 
-        var branchId = _currentUser.Role == "superadmin"
+        var branchId = Roles.IsSuperadmin(_currentUser.Role)
             ? deliveryman.BranchId
             : _currentUser.BranchId;
-        if (_currentUser.Role != "superadmin" && deliveryman.BranchId != branchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && deliveryman.BranchId != branchId)
             throw new BusinessException("No tienes permisos");
 
         var state = await _context.DeliverymanDayStates

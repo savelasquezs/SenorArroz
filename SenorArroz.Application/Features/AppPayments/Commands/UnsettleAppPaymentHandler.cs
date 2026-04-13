@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/AppPayments/Commands/UnsettleAppPaymentHandler.cs
+// SenorArroz.Application/Features/AppPayments/Commands/UnsettleAppPaymentHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
@@ -30,7 +30,7 @@ public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentComma
             return false;
 
         // Check if user has access to this app payment's branch
-        if (_currentUser.Role != "superadmin" && appPayment.App.Bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para desliquidar este pago");
 
         // Check if not settled

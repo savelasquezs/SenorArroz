@@ -19,7 +19,7 @@ public class GetDashboardDeliveryMeHandler : IRequestHandler<GetDashboardDeliver
         GetDashboardDeliveryMeQuery request,
         CancellationToken cancellationToken)
     {
-        if (!string.Equals(_currentUser.Role, "deliveryman", StringComparison.OrdinalIgnoreCase))
+        if (!Roles.IsDeliveryman(_currentUser.Role))
             throw new UnauthorizedAccessException("Solo domiciliarios pueden consultar estas métricas.");
 
         return _mediator.Send(

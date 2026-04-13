@@ -27,7 +27,7 @@ public class GetSuppliersHandler : IRequestHandler<GetSuppliersQuery, PagedResul
     {
         int? branchFilter = null;
 
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
         {
             branchFilter = _currentUser.BranchId;
         }

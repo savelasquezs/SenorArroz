@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -26,7 +26,7 @@ public class DeleteAdvanceHandler : IRequestHandler<DeleteAdvanceCommand, bool>
             throw new BusinessException("El abono no existe");
 
         // 2. Validar acceso a sucursal
-        if (_currentUser.Role != "superadmin" && advance.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && advance.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para eliminar abonos de esta sucursal");
 
         // 3. Validar que solo se puede eliminar el día de creación

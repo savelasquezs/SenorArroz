@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/AppPayments/Commands/SettleMultipleAppPaymentsHandler.cs
+// SenorArroz.Application/Features/AppPayments/Commands/SettleMultipleAppPaymentsHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
@@ -41,7 +41,7 @@ public class SettleMultipleAppPaymentsHandler : IRequestHandler<SettleMultipleAp
                 throw new BusinessException($"El pago con ID {paymentId} no existe");
 
             // Check if user has access to this app payment's branch
-            if (_currentUser.Role != "superadmin" && appPayment.App.Bank.BranchId != _currentUser.BranchId)
+            if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
                 throw new BusinessException($"No tienes permisos para liquidar el pago con ID {paymentId}");
 
             // Check if already settled

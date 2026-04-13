@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
@@ -67,10 +67,10 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         if (!deliveryman.Active)
             throw new BusinessException("El domiciliario no está activo");
 
-        var branchId = _currentUser.Role == "superadmin"
+        var branchId = Roles.IsSuperadmin(_currentUser.Role)
             ? deliveryman.BranchId
             : _currentUser.BranchId;
-        if (_currentUser.Role != "superadmin" && deliveryman.BranchId != branchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && deliveryman.BranchId != branchId)
             throw new BusinessException("No tienes permisos para liquidar este domiciliario");
 
         var onTheWayDelivery = await _orderRepository.SearchOrdersAsync(

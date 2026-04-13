@@ -19,7 +19,7 @@ public class BatchPaymentsRegressionTests
 {
     // ── Fakes ─────────────────────────────────────────────────────────────────
 
-    private sealed class BatchFakeCurrentUser(string role = "cashier", int branchId = 1) : ICurrentUser
+    private sealed class BatchFakeCurrentUser(string role = Roles.Cashier, int branchId = 1) : ICurrentUser
     {
         public int Id => 1;
         public string Role => role;
@@ -141,7 +141,7 @@ public class BatchPaymentsRegressionTests
         return new ApplicationDbContext(opts);
     }
 
-    private static CreateOrderHandler BuildHandler(ApplicationDbContext db, string role = "cashier", int branchId = 1)
+    private static CreateOrderHandler BuildHandler(ApplicationDbContext db, string role = Roles.Cashier, int branchId = 1)
     {
         var mapper = new MapperConfiguration(cfg =>
         {

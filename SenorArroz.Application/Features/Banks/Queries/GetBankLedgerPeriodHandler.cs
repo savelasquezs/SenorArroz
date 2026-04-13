@@ -1,4 +1,4 @@
-﻿using MediatR;
+using MediatR;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Banks.DTOs;
@@ -29,10 +29,10 @@ public class GetBankLedgerPeriodHandler : IRequestHandler<GetBankLedgerPeriodQue
         if (bank == null)
             return null;
 
-        if (_currentUser.Role != "superadmin" && bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)
             return null;
 
-        if (_currentUser.Role == "cashier" && (bank.Type == BankType.CashVault || bank.Type == BankType.RealVault))
+        if (Roles.IsCashier(_currentUser.Role) && (bank.Type == BankType.CashVault || bank.Type == BankType.RealVault))
             return null;
 
         var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(request.FromDate, request.ToDate);

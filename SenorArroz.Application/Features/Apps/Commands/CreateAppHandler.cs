@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Apps/Commands/CreateAppHandler.cs
+// SenorArroz.Application/Features/Apps/Commands/CreateAppHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -36,7 +36,7 @@ public class CreateAppHandler : IRequestHandler<CreateAppCommand, AppDto>
             throw new BusinessException("El banco especificado no existe");
 
         // Check if user has access to this bank's branch
-        if (_currentUser.Role != "superadmin" && bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para crear apps en este banco");
 
         // Check if app name already exists in this bank

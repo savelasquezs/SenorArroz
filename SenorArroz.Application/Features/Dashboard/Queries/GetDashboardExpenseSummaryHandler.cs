@@ -63,7 +63,7 @@ public class GetDashboardExpenseSummaryHandler
 
     private int? ResolveBranchFilter(int? requestedBranchId)
     {
-        if (_currentUser.Role == "superadmin")
+        if (Roles.IsSuperadmin(_currentUser.Role))
             return requestedBranchId;
         return _currentUser.BranchId > 0 ? _currentUser.BranchId : null;
     }

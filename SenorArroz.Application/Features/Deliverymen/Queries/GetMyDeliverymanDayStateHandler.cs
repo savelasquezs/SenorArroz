@@ -30,7 +30,7 @@ public class GetMyDeliverymanDayStateHandler : IRequestHandler<GetMyDeliverymanD
         if (!_currentUser.IsAuthenticated)
             throw new BusinessException("Usuario no autenticado");
 
-        if (!string.Equals(_currentUser.Role, "deliveryman", StringComparison.OrdinalIgnoreCase))
+        if (!Roles.IsDeliveryman(_currentUser.Role))
             throw new BusinessException("Solo los domiciliarios pueden consultar este recurso");
 
         var user = await _userRepository.GetByIdAsync(_currentUser.Id, cancellationToken);

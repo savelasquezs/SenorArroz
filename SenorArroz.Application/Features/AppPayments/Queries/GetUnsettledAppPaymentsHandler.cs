@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/AppPayments/Queries/GetUnsettledAppPaymentsHandler.cs
+// SenorArroz.Application/Features/AppPayments/Queries/GetUnsettledAppPaymentsHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -52,7 +52,7 @@ public class GetUnsettledAppPaymentsHandler : IRequestHandler<GetUnsettledAppPay
         foreach (var appPayment in unsettledPayments)
         {
             // Check if user has access to this app payment's branch
-            if (_currentUser.Role != "superadmin" && appPayment.App.Bank.BranchId != _currentUser.BranchId)
+            if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
                 continue;
 
             var appPaymentDto = _mapper.Map<AppPaymentDto>(appPayment);

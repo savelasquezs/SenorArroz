@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.DeliverymanAdvances.DTOs;
@@ -46,7 +46,7 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
         if (!deliveryman.Active)
             throw new BusinessException("El domiciliario no está activo");
 
-        if (_currentUser.Role != "superadmin" && deliveryman.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && deliveryman.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para crear abonos en esta sucursal");
 
         if (request.Advance.Amount <= 0)

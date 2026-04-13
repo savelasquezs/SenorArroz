@@ -245,7 +245,7 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
 
     private int? ResolveBranchId(GetDailyOverviewQuery request)
     {
-        if (_currentUser.Role != "superadmin")
+        if (!Roles.IsSuperadmin(_currentUser.Role))
             return _currentUser.BranchId;
         return request.BranchId;
     }

@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/ExpenseCategories/Commands/UpdateExpenseCategoryHandler.cs
+// SenorArroz.Application/Features/ExpenseCategories/Commands/UpdateExpenseCategoryHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -27,7 +27,7 @@ public class UpdateExpenseCategoryHandler : IRequestHandler<UpdateExpenseCategor
     public async Task<ExpenseCategoryDto> Handle(UpdateExpenseCategoryCommand request, CancellationToken cancellationToken)
     {
         // Validate permissions
-        if (_currentUser.Role != "admin" && _currentUser.Role != "superadmin")
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para modificar categorías de gastos");
         }

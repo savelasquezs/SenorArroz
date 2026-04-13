@@ -43,10 +43,10 @@ public class CreateCashVaultMovementHandler : IRequestHandler<CreateCashVaultMov
         if (vaultBank == null)
             throw new BusinessException("No hay banco «Caja Mayor Efectivo» activo en esta sucursal");
 
-        if (_currentUser.Role != "superadmin" && _currentUser.Role != "admin")
+        if (!Roles.IsSuperadmin(_currentUser.Role) && !Roles.IsAdmin(_currentUser.Role))
             throw new BusinessException("Solo administradores pueden registrar abonos o descargas de caja mayor");
 
-        if (_currentUser.Role != "superadmin" && vaultBank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && vaultBank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permiso para esta sucursal");
 
         decimal amount;

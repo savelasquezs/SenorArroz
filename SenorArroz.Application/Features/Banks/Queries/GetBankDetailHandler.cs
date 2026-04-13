@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Banks/Queries/GetBankDetailHandler.cs
+// SenorArroz.Application/Features/Banks/Queries/GetBankDetailHandler.cs
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -35,11 +35,11 @@ public class GetBankDetailHandler : IRequestHandler<GetBankDetailQuery, BankDeta
             return null;
 
         // Check if user has access to this bank's branch
-        if (_currentUser.Role != "superadmin" && bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)
             return null;
 
         // Cashier cannot access hidden banks (CashVault, RealVault)
-        if (_currentUser.Role == "cashier" && (bank.Type == BankType.CashVault || bank.Type == BankType.RealVault))
+        if (Roles.IsCashier(_currentUser.Role) && (bank.Type == BankType.CashVault || bank.Type == BankType.RealVault))
             return null;
 
         var bankDetailDto = _mapper.Map<BankDetailDto>(bank);

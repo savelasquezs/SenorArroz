@@ -176,7 +176,7 @@ public class BranchPrintSettingsController : ControllerBase
 
     private bool CanAccessBranch(int branchId)
     {
-        if (string.Equals(_currentUser.Role, "superadmin", StringComparison.OrdinalIgnoreCase))
+        if (Roles.IsSuperadmin(_currentUser.Role))
             return true;
         return _currentUser.BranchId == branchId;
     }

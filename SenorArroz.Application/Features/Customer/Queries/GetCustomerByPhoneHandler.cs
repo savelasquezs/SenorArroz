@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
@@ -34,14 +34,14 @@ namespace SenorArroz.Application.Features.Customers.Queries
         public async Task<CustomerDto?> Handle(GetCustomerByPhoneQuery request, CancellationToken cancellationToken)
         {
             // Determine branch filter based on user role
-            int branchFilter = _currentUser.Role == "superadmin" ? request.BranchId : _currentUser.BranchId;
+            int branchFilter = Roles.IsSuperadmin(_currentUser.Role) ? request.BranchId : _currentUser.BranchId;
 
             var customer = await _customerRepository.GetByPhoneAsync(request.Phone, branchFilter, cancellationToken);
             if (customer == null)
                 return null;
 
             // Additional check for non-superadmin users
-            if (_currentUser.Role != "superadmin" && customer.BranchId != _currentUser.BranchId)
+            if (!Roles.IsSuperadmin(_currentUser.Role) && customer.BranchId != _currentUser.BranchId)
             {
                 throw new BusinessException("No tienes permisos para acceder a este cliente");
             }
