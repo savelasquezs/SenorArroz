@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -53,9 +54,6 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
             query = query.Where(da => da.CreatedAt <= toDate.Value);
         }
 
-        // Total count
-        var totalCount = await query.CountAsync();
-
         // Ordenamiento
         query = sortBy.ToLower() switch
         {
@@ -71,20 +69,7 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
             _ => query.OrderByDescending(da => da.CreatedAt)
         };
 
-        // Paginación
-        var advances = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new PagedResult<DeliverymanAdvance>
-        {
-            Items = advances,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-        };
+        return await query.ToPagedResultAsync(page, pageSize);
     }
 
     public async Task<DeliverymanAdvance?> GetByIdAsync(int id)

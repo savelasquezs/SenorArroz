@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -40,9 +41,6 @@ public class ProductCategoryRepository : IProductCategoryRepository
             query = query.Where(pc => pc.Name.ToLower().Contains(name.ToLower()));
         }
 
-        // Total count
-        var totalCount = await query.CountAsync();
-
         // Sorting
         query = sortBy.ToLower() switch
         {
@@ -52,20 +50,7 @@ public class ProductCategoryRepository : IProductCategoryRepository
             _ => query.OrderBy(pc => pc.Name)
         };
 
-        // Pagination
-        var categories = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new PagedResult<ProductCategory>
-        {
-            Items = categories,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-        };
+        return await query.ToPagedResultAsync(page, pageSize);
     }
 
     public async Task<IEnumerable<ProductCategory>> GetByBranchIdAsync(int branchId)

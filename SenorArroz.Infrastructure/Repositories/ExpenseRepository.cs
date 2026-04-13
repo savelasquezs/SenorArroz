@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -41,9 +42,6 @@ public class ExpenseRepository : IExpenseRepository
             query = query.Where(e => e.Name.ToLower().Contains(name.ToLower()));
         }
 
-        // Total count
-        var totalCount = await query.CountAsync();
-
         // Sorting
         query = sortBy.ToLower() switch
         {
@@ -54,20 +52,7 @@ public class ExpenseRepository : IExpenseRepository
             _ => query.OrderBy(e => e.Name)
         };
 
-        // Pagination
-        var expenses = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new PagedResult<Expense>
-        {
-            Items = expenses,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-        };
+        return await query.ToPagedResultAsync(page, pageSize);
     }
 
     public async Task<IEnumerable<Expense>> GetAllAsync()

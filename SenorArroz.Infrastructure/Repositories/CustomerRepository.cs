@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -55,9 +56,6 @@ public class CustomerRepository : ICustomerRepository
             query = query.Where(c => c.Active == active.Value);
         }
 
-        // Total count
-        var totalCount = await query.CountAsync();
-
         // Sorting
         query = sortBy.ToLower() switch
         {
@@ -67,20 +65,7 @@ public class CustomerRepository : ICustomerRepository
             _ => query.OrderBy(c => c.Name)
         };
 
-        // Pagination
-        var customers = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new PagedResult<Customer>
-        {
-            Items = customers,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-        };
+        return await query.ToPagedResultAsync(page, pageSize);
     }
 
     public async Task<Customer?> GetByIdAsync(int id)

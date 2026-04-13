@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -41,23 +42,9 @@ public class SupplierRepository : ISupplierRepository
                 (s.Email != null && s.Email.ToLower().Contains(text)));
         }
 
-        var totalCount = await query.CountAsync();
-
         query = ApplySorting(query, sortBy, sortOrder);
 
-        var suppliers = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new PagedResult<Supplier>
-        {
-            Items = suppliers,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-        };
+        return await query.ToPagedResultAsync(page, pageSize);
     }
 
     public async Task<List<Supplier>> GetByBranchAsync(int branchId)

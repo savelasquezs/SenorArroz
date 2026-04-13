@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -55,9 +56,6 @@ public class BankRepository : IBankRepository
             query = query.Where(b => b.Active == active.Value);
         }
 
-        // Total count
-        var totalCount = await query.CountAsync();
-
         // Sorting
         query = sortBy.ToLower() switch
         {
@@ -67,20 +65,7 @@ public class BankRepository : IBankRepository
             _ => query.OrderBy(b => b.Name)
         };
 
-        // Pagination
-        var banks = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new PagedResult<Bank>
-        {
-            Items = banks,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-        };
+        return await query.ToPagedResultAsync(page, pageSize);
     }
 
     public async Task<IEnumerable<Bank>> GetByBranchIdAsync(int branchId, bool excludeHiddenBanks = false)

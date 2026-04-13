@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -87,9 +88,6 @@ public class BankPaymentRepository : IBankPaymentRepository
             query = query.Where(bp => bp.CreatedAt <= toUtc);
         }
 
-        // Total count
-        var totalCount = await query.CountAsync();
-
         // Sorting
         query = sortBy.ToLower() switch
         {
@@ -100,20 +98,7 @@ public class BankPaymentRepository : IBankPaymentRepository
             _ => query.OrderByDescending(bp => bp.CreatedAt)
         };
 
-        // Pagination
-        var bankPayments = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new PagedResult<BankPayment>
-        {
-            Items = bankPayments,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-        };
+        return await query.ToPagedResultAsync(page, pageSize);
     }
 
     public async Task<IEnumerable<BankPayment>> GetByOrderIdAsync(int orderId)

@@ -1,7 +1,6 @@
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -20,7 +19,6 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     private readonly IApplicationDbContext _db;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
-    private readonly ILogger<CreateOrderHandler> _logger;
     private readonly IOrderNotificationService _notificationService;
 
     public CreateOrderHandler(
@@ -30,7 +28,6 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         IApplicationDbContext db,
         IMapper mapper, 
         ICurrentUser currentUser,
-        ILogger<CreateOrderHandler> logger,
         IOrderNotificationService notificationService)
     {
         _orderRepository = orderRepository;
@@ -39,7 +36,6 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         _db = db;
         _mapper = mapper;
         _currentUser = currentUser;
-        _logger = logger;
         _notificationService = notificationService;
     }
 
@@ -113,17 +109,6 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         order.Status = Domain.Enums.OrderStatus.Taken;
         order.AddStatusTime(Domain.Enums.OrderStatus.Taken, DateTime.UtcNow);
 
-        _logger.LogInformation("=== DEBUG: Orden antes de agregar detalles ===");
-        _logger.LogInformation("BranchId: {BranchId}", order.BranchId);
-        _logger.LogInformation("TakenById: {TakenById}", order.TakenById);
-        _logger.LogInformation("CustomerId: {CustomerId}", order.CustomerId);
-        _logger.LogInformation("GuestName: {GuestName}", order.GuestName ?? "NULL");
-        _logger.LogInformation("Type: {Type}", order.Type);
-        _logger.LogInformation("Status: {Status} (Valor: {StatusValue})", order.Status, (int)order.Status);
-        _logger.LogInformation("Subtotal: {Subtotal}", order.Subtotal);
-        _logger.LogInformation("Total: {Total}", order.Total);
-        _logger.LogInformation("DiscountTotal: {DiscountTotal}", order.DiscountTotal);
-
         // Mapear y agregar OrderDetails
         if (request.Order.OrderDetails != null && request.Order.OrderDetails.Any())
         {
@@ -134,10 +119,6 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
                 order.OrderDetails.Add(detail);
             }
         }
-
-        _logger.LogInformation("=== DEBUG: Orden justo antes de guardar en BD ===");
-        _logger.LogInformation("Status final: {Status} (Valor: {StatusValue})", order.Status, (int)order.Status);
-        _logger.LogInformation("OrderDetails count: {Count}", order.OrderDetails.Count);
 
         var createdOrder = await _orderRepository.CreateAsync(order);
 

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -79,8 +80,6 @@ public class BankTransferRepository : IBankTransferRepository
             query = query.Where(bt => bt.CreatedAt <= toUtc);
         }
 
-        var totalCount = await query.CountAsync();
-
         query = sortBy.ToLower() switch
         {
             "amount" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(bt => bt.Amount) : query.OrderBy(bt => bt.Amount),
@@ -94,18 +93,6 @@ public class BankTransferRepository : IBankTransferRepository
             _ => query.OrderByDescending(bt => bt.CreatedAt)
         };
 
-        var items = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new PagedResult<BankTransfer>
-        {
-            Items = items,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-        };
+        return await query.ToPagedResultAsync(page, pageSize);
     }
 }

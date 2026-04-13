@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -66,8 +67,6 @@ public class CashRegisterClosureRepository : ICashRegisterClosureRepository
             query = query.Where(c => c.ClosedAt <= toUtc);
         }
 
-        var totalCount = await query.CountAsync();
-
         query = sortBy.ToLower() switch
         {
             "closedat" or "date" => sortOrder.ToLower() == "desc"
@@ -79,19 +78,7 @@ public class CashRegisterClosureRepository : ICashRegisterClosureRepository
             _ => query.OrderByDescending(c => c.ClosedAt)
         };
 
-        var items = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new PagedResult<CashRegisterClosure>
-        {
-            Items = items,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-        };
+        return await query.ToPagedResultAsync(page, pageSize);
     }
 
     public async Task<CashRegisterClosure?> GetByIdAsync(int id)

@@ -2,13 +2,10 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Users.Commands;
 using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Application.Features.Users.Queries;
-using SenorArroz.Domain.Exceptions;
 using SenorArroz.Shared.Models;
-using System;
 using System.Security.Claims;
 
 namespace SenorArroz.API.Controllers;
@@ -19,12 +16,10 @@ namespace SenorArroz.API.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly IMediator _mediator;
-    private readonly IUserProfileImageStorage _profileImageStorage;
 
-    public UsersController(IMediator mediator, IUserProfileImageStorage profileImageStorage)
+    public UsersController(IMediator mediator)
     {
         _mediator = mediator;
-        _profileImageStorage = profileImageStorage;
     }
 
     private int GetCurrentUserId() =>
@@ -157,21 +152,12 @@ public class UsersController : ControllerBase
         if (GetCurrentUserId() != id)
             return Forbid();
 
-        var allowed = new[] { ".jpg", ".jpeg", ".png", ".webp" };
-        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (!allowed.Contains(ext))
-            throw new BusinessException("Formato no permitido. Use jpg, png o webp.");
-
-        if (file.Length > 3 * 1024 * 1024)
-            throw new BusinessException("La imagen no puede superar 3 MB.");
-
-        await using var readStream = file.OpenReadStream();
         using var ms = new MemoryStream((int)Math.Min(file.Length, int.MaxValue));
-        await readStream.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
-        var bytes = ms.ToArray();
+        await using var readStream = file.OpenReadStream();
+        await readStream.CopyToAsync(ms, cancellationToken);
 
-        var profileImageUrl = await _profileImageStorage.SaveAndReplaceAsync(id, bytes, ext, cancellationToken).ConfigureAwait(false);
-        var command = new UploadProfileImageCommand(id, profileImageUrl);
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var command = new UploadUserProfileImageCommand(id, ms.ToArray(), ext);
         var result = await _mediator.Send(command, cancellationToken);
         return Ok(result);
     }

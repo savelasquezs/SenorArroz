@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -82,21 +83,8 @@ public class ReservationDepositRepository : IReservationDepositRepository
             query = query.Where(d => d.ReceivedAt <= toUtc);
         }
 
-        var totalCount = await query.CountAsync();
+        query = query.OrderByDescending(d => d.ReceivedAt);
 
-        var items = await query
-            .OrderByDescending(d => d.ReceivedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new PagedResult<ReservationDeposit>
-        {
-            Items = items,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-        };
+        return await query.ToPagedResultAsync(page, pageSize);
     }
 }

@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -63,9 +64,6 @@ public class AppPaymentRepository : IAppPaymentRepository
             query = query.Where(ap => ap.CreatedAt <= toDate.Value);
         }
 
-        // Total count
-        var totalCount = await query.CountAsync();
-
         // Sorting
         query = sortBy.ToLower() switch
         {
@@ -77,20 +75,7 @@ public class AppPaymentRepository : IAppPaymentRepository
             _ => query.OrderByDescending(ap => ap.CreatedAt)
         };
 
-        // Pagination
-        var appPayments = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return new PagedResult<AppPayment>
-        {
-            Items = appPayments,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-            TotalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-        };
+        return await query.ToPagedResultAsync(page, pageSize);
     }
 
     public async Task<IEnumerable<AppPayment>> GetByOrderIdAsync(int orderId)
