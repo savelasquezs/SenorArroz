@@ -4,39 +4,31 @@ namespace SenorArroz.Application.Features.CashRegister.DTOs;
 
 public class CashRegisterExpectedDto
 {
+    /// <summary>Efectivo físico al cierre del último cuadre (solo referencia de apertura de cajón).</summary>
     public decimal OpeningCash { get; set; }
-    public decimal ExpectedCash { get; set; }
-    public decimal CashFromOrders { get; set; }
-
-    /// <summary>Suma de totales de pedidos entregados en el período (venta cobrada según el pedido).</summary>
-    public decimal DeliveredOrdersSalesTotal { get; set; }
-
-    /// <summary>Pagos registrados por banco en esos pedidos (dinero que compone el cuadre bancario).</summary>
-    public decimal BankPaymentsFromOrdersTotal { get; set; }
-
-    /// <summary>Pagos por apps en esos pedidos (no en caja ni en banco del negocio de inmediato).</summary>
-    public decimal AppPaymentsFromOrdersTotal { get; set; }
-
-    public decimal CashDeposits { get; set; }
-    public decimal CashExpenses { get; set; }
 
     /// <summary>
-    /// Abonos a domiciliarios por transferencia en el período: se restan del efectivo esperado
-    /// porque ese monto ya computa en el cuadre bancario.
+    /// Total global al inicio del período: último cierre (efectivo + saldos reales por banco) + snapshot de préstamos informales en ese cierre.
+    /// Si el cierre anterior no tenía snapshot de préstamos, solo caja + bancos.
     /// </summary>
-    public decimal AdvancesBankTransfer { get; set; }
+    public decimal OpeningGlobalTotal { get; set; }
 
     /// <summary>
-    /// Suma de montos de préstamos informales activos en la sucursal. Se resta del efectivo esperado
-    /// (ExpectedCash ya incluye esta resta).
+    /// Suma de totales de pedidos entregados cuyo instante contable (PrepareAt o CreatedAt) cae en el período.
     /// </summary>
+    public decimal SalesInPeriodTotal { get; set; }
+
+    /// <summary>Suma de totales de gastos (ExpenseHeader.Total) en el período.</summary>
+    public decimal ExpensesInPeriodTotal { get; set; }
+
+    /// <summary>
+    /// Efectivo y bancos al último cierre + ventas del período − gastos del período + préstamos informales activos ahora
+    /// (= apertura caja+banco + L0 + ventas − gastos + (L1−L0)).
+    /// </summary>
+    public decimal ExpectedGlobalTotal { get; set; }
+
+    /// <summary>Suma de préstamos informales activos (entran en el total global contado).</summary>
     public decimal InformalLoansActiveTotal { get; set; }
-
-    /// <summary>Abonos a Caja Mayor Efectivo en el período (efectivo que sale del cajón).</summary>
-    public decimal CashVaultAbonosTotal { get; set; }
-
-    /// <summary>Descargas desde Caja Mayor Efectivo en el período (efectivo que vuelve al cajón).</summary>
-    public decimal CashVaultDescargasTotal { get; set; }
 
     /// <summary>
     /// Pedidos de la sucursal que aún no están entregados ni cancelados (no se puede cerrar caja si hay alguno).

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
 using SenorArroz.Application.Features.CashRegister.Helpers;
+using SenorArroz.Application.Features.CashRegister.Queries;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -14,15 +15,18 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
     private readonly ICashRegisterClosureRepository _closureRepository;
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUser _currentUser;
+    private readonly IMediator _mediator;
 
     public CloseCashRegisterHandler(
         ICashRegisterClosureRepository closureRepository,
         IApplicationDbContext context,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IMediator mediator)
     {
         _closureRepository = closureRepository;
         _context = context;
         _currentUser = currentUser;
+        _mediator = mediator;
     }
 
     public async Task<CashClosureDto> Handle(CloseCashRegisterCommand request, CancellationToken cancellationToken)
@@ -32,7 +36,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
 
         var exemptIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 
-        var today = DateTime.UtcNow.AddHours(-5).Date; // Fecha hoy en Colombia (UTC-5)
+        var today = DateTime.UtcNow.AddHours(-5).Date;
 
         var undelivered = await _context.Orders
             .Where(o => o.BranchId == branchId
@@ -49,13 +53,27 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 $"No se puede cerrar caja: hay {undelivered} pedido(s) sin entregar. Entrega o cancela esos pedidos antes de cuadrar.");
         }
 
-        // Validar que la diferencia de todos los bancos es 0
         foreach (var recon in dto.BankReconciliations)
         {
             var diff = recon.ActualBalance - recon.ExpectedBalance;
             if (diff != 0)
                 throw new InvalidOperationException(
                     $"El banco ID {recon.BankId} tiene una diferencia de {diff}. Todos los bancos deben cuadrar a 0.");
+        }
+
+        var activeLoans = await _context.BranchInformalLoans
+            .Where(l => l.BranchId == branchId && l.DeactivatedAt == null)
+            .ToListAsync(cancellationToken);
+        var informalActiveSum = activeLoans.Sum(l => l.Amount);
+
+        var countedGlobalTotal = dto.ClosingCash + dto.BankReconciliations.Sum(r => r.ActualBalance) + informalActiveSum;
+
+        var expectedSnapshot = await _mediator.Send(new GetCashRegisterExpectedQuery { BranchId = branchId }, cancellationToken);
+        if (countedGlobalTotal != expectedSnapshot.ExpectedGlobalTotal)
+        {
+            throw new InvalidOperationException(
+                $"El total global contado ({countedGlobalTotal:N0}) no coincide con el esperado ({expectedSnapshot.ExpectedGlobalTotal:N0}). " +
+                "Revisa efectivo, saldos reales por banco y préstamos informales activos.");
         }
 
         var lastClosure = await _closureRepository.GetLastByBranchAsync(branchId);
@@ -76,7 +94,10 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 ActualBalance = r.ActualBalance,
                 Adjustments = r.Adjustments,
                 Difference = r.ActualBalance - r.ExpectedBalance
-            }).ToList()
+            }).ToList(),
+            InformalLoans = activeLoans
+                .Select(l => new CashClosureInformalLoan { Concept = l.Concept, Amount = l.Amount })
+                .ToList()
         };
 
         var saved = await _closureRepository.CreateAsync(closure);

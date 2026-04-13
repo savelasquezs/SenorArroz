@@ -24,7 +24,7 @@ public class BranchPrintJobsController : ControllerBase
 
     /// <summary>Encola un trabajo de impresión con snapshot del ticket (usuarios de sucursal).</summary>
     [HttpPost]
-    [Authorize(Roles = "Superadmin, Admin, Kitchen, Deliveryman")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier, Kitchen, Deliveryman")]
     public async Task<ActionResult<ApiResponse<EnqueuePrintJobResponse>>> Enqueue(
         int branchId,
         [FromBody] EnqueuePrintJobsRequest request,
