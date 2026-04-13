@@ -27,7 +27,7 @@ public class BranchRepository : IBranchRepository
         string sortBy = "name",
         string sortOrder = "asc")
     {
-        var query = _context.Branches.AsQueryable();
+        var query = _context.Branches.AsNoTracking().AsQueryable();
 
         // Filters
         if (!string.IsNullOrWhiteSpace(name))
@@ -61,6 +61,7 @@ public class BranchRepository : IBranchRepository
     public async Task<IEnumerable<Branch>> GetAllAsync()
     {
         return await _context.Branches
+            .AsNoTracking()
             .OrderBy(b => b.Name)
             .ToListAsync();
     }
@@ -75,6 +76,7 @@ public class BranchRepository : IBranchRepository
         // Sin Customers: el DTO no los serializa y GetBranchByIdHandler asigna totales vía consultas agregadas.
         // Incluirlos cargaba miles de filas y provocaba timeouts (p. ej. junto al prefetch del layout).
         return await _context.Branches
+            .AsNoTracking()
             .Include(b => b.Users).ThenInclude(u => u.PayrollExpense)
             .Include(b => b.Neighborhoods)
             .Include(b => b.PrintSettings)
@@ -84,6 +86,7 @@ public class BranchRepository : IBranchRepository
     public async Task<Branch?> GetByNameAsync(string name)
     {
         return await _context.Branches
+            .AsNoTracking()
             .FirstOrDefaultAsync(b => b.Name.ToLower() == name.ToLower());
     }
 
@@ -215,6 +218,7 @@ public class BranchRepository : IBranchRepository
     public async Task<Dictionary<string, int>> GetUserRoleStatsAsync(int branchId)
     {
         return await _context.Users
+            .AsNoTracking()
             .Where(u => u.BranchId == branchId && u.Active)
             .GroupBy(u => u.Role)
             .ToDictionaryAsync(g => g.Key.ToString()??"Sin rol", g => g.Count());
@@ -223,6 +227,7 @@ public class BranchRepository : IBranchRepository
     public async Task<(int min, int max, decimal average)> GetDeliveryFeeStatsAsync(int branchId)
     {
         var fees = await _context.Neighborhoods
+            .AsNoTracking()
             .Where(n => n.BranchId == branchId)
             .Select(n => n.DeliveryFee)
             .ToListAsync();

@@ -40,6 +40,7 @@ public class BankPaymentRepository : IBankPaymentRepository
         int? restrictToBankBranchId = null)
     {
         var query = _context.BankPayments
+            .AsNoTracking()
             .Include(bp => bp.Order)
             .Include(bp => bp.Bank)
             .ThenInclude(b => b.Branch)
@@ -104,6 +105,7 @@ public class BankPaymentRepository : IBankPaymentRepository
     public async Task<IEnumerable<BankPayment>> GetByOrderIdAsync(int orderId)
     {
         return await _context.BankPayments
+            .AsNoTracking()
             .Include(bp => bp.Bank)
             .ThenInclude(b => b.Branch)
             .Where(bp => bp.OrderId == orderId)
@@ -114,6 +116,7 @@ public class BankPaymentRepository : IBankPaymentRepository
     public async Task<IEnumerable<BankPayment>> GetByBankIdAsync(int bankId)
     {
         return await _context.BankPayments
+            .AsNoTracking()
             .Include(bp => bp.Order)
             .Where(bp => bp.BankId == bankId)
             .OrderByDescending(bp => bp.CreatedAt)
@@ -123,6 +126,7 @@ public class BankPaymentRepository : IBankPaymentRepository
     public async Task<IEnumerable<BankPayment>> GetUnverifiedAsync()
     {
         return await _context.BankPayments
+            .AsNoTracking()
             .Include(bp => bp.Bank)
             .ThenInclude(b => b.Branch)
             .Include(bp => bp.Order)
@@ -134,6 +138,7 @@ public class BankPaymentRepository : IBankPaymentRepository
     public async Task<BankPayment?> GetByIdAsync(int id)
     {
         return await _context.BankPayments
+            .AsNoTracking()
             .Include(bp => bp.Order)
             .Include(bp => bp.Bank)
             .ThenInclude(b => b.Branch)

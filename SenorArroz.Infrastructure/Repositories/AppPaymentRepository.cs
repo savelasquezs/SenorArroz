@@ -29,6 +29,7 @@ public class AppPaymentRepository : IAppPaymentRepository
         string sortOrder = "desc")
     {
         var query = _context.AppPayments
+            .AsNoTracking()
             .Include(ap => ap.Order)
             .Include(ap => ap.App)
             .ThenInclude(a => a.Bank)
@@ -81,6 +82,7 @@ public class AppPaymentRepository : IAppPaymentRepository
     public async Task<IEnumerable<AppPayment>> GetByOrderIdAsync(int orderId)
     {
         return await _context.AppPayments
+            .AsNoTracking()
             .Include(ap => ap.App)
             .ThenInclude(a => a.Bank)
             .ThenInclude(b => b.Branch)
@@ -92,6 +94,7 @@ public class AppPaymentRepository : IAppPaymentRepository
     public async Task<IEnumerable<AppPayment>> GetByAppIdAsync(int appId)
     {
         return await _context.AppPayments
+            .AsNoTracking()
             .Include(ap => ap.Order)
             .Where(ap => ap.AppId == appId)
             .OrderByDescending(ap => ap.CreatedAt)
@@ -101,6 +104,7 @@ public class AppPaymentRepository : IAppPaymentRepository
     public async Task<IEnumerable<AppPayment>> GetUnsettledAsync()
     {
         return await _context.AppPayments
+            .AsNoTracking()
             .Include(ap => ap.App)
             .ThenInclude(a => a.Bank)
             .ThenInclude(b => b.Branch)
@@ -113,6 +117,7 @@ public class AppPaymentRepository : IAppPaymentRepository
     public async Task<IEnumerable<AppPayment>> GetUnsettledByAppIdAsync(int appId)
     {
         return await _context.AppPayments
+            .AsNoTracking()
             .Include(ap => ap.App)
             .ThenInclude(a => a.Bank)
             .ThenInclude(b => b.Branch)
@@ -125,6 +130,7 @@ public class AppPaymentRepository : IAppPaymentRepository
     public async Task<IEnumerable<AppPayment>> GetUnsettledByDateRangeAsync(DateTime fromDate, DateTime toDate)
     {
         return await _context.AppPayments
+            .AsNoTracking()
             .Include(ap => ap.App)
             .ThenInclude(a => a.Bank)
             .ThenInclude(b => b.Branch)
@@ -137,6 +143,7 @@ public class AppPaymentRepository : IAppPaymentRepository
     public async Task<AppPayment?> GetByIdAsync(int id)
     {
         return await _context.AppPayments
+            .AsNoTracking()
             .Include(ap => ap.Order)
             .Include(ap => ap.App)
             .ThenInclude(a => a.Bank)

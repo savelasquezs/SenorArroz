@@ -23,6 +23,7 @@ public class OrderRepository : IOrderRepository
     public async Task<Order?> GetByIdAsync(int id)
     {
         return await _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -36,6 +37,7 @@ public class OrderRepository : IOrderRepository
     public async Task<Order?> GetByIdWithDetailsAsync(int id)
     {
         return await _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -52,6 +54,7 @@ public class OrderRepository : IOrderRepository
     public async Task<Order?> GetByIdWithFullDetailsAsync(int id)
     {
         return await _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -79,6 +82,7 @@ public class OrderRepository : IOrderRepository
     public async Task<PagedResult<Order>> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = "asc", DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null, bool forKitchen = false)
     {
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -197,6 +201,7 @@ public class OrderRepository : IOrderRepository
     public async Task<PagedResult<Order>> GetByBranchAsync(int branchId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc")
     {
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -214,6 +219,7 @@ public class OrderRepository : IOrderRepository
     public async Task<PagedResult<Order>> GetByCustomerAsync(int customerId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc")
     {
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -231,6 +237,7 @@ public class OrderRepository : IOrderRepository
     public async Task<PagedResult<Order>> GetByStatusAsync(OrderStatus status, OrderType? typeFilter = null, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc")
     {
         var query = _context.Orders
+            .AsNoTracking()
             .AsSplitQuery()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
@@ -263,6 +270,7 @@ public class OrderRepository : IOrderRepository
     public async Task<PagedResult<Order>> GetByTypeAsync(OrderType type, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc")
     {
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -283,6 +291,7 @@ public class OrderRepository : IOrderRepository
     public async Task<PagedResult<Order>> GetByDeliveryManAsync(int deliveryManId, int page, int pageSize, string? sortBy = null, string? sortOrder = "asc")
     {
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -300,6 +309,7 @@ public class OrderRepository : IOrderRepository
     public async Task<PagedResult<Order>> GetByDateRangeAsync(DateTime fromDate, DateTime toDate, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc")
     {
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -329,6 +339,7 @@ public class OrderRepository : IOrderRepository
     public async Task<List<Order>> GetOrdersInPreparationAsync(int? branchId = null)
     {
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -352,6 +363,7 @@ public class OrderRepository : IOrderRepository
     public async Task<List<Order>> GetReadyOrdersAsync(int? branchId = null)
     {
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -372,6 +384,7 @@ public class OrderRepository : IOrderRepository
     public async Task<List<Order>> GetOrdersOnTheWayAsync(int? branchId = null)
     {
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -393,6 +406,7 @@ public class OrderRepository : IOrderRepository
     public async Task<List<Order>> GetOrdersForDeliveryManAsync(int deliveryManId)
     {
         return await _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -411,6 +425,7 @@ public class OrderRepository : IOrderRepository
     public async Task<List<Order>> GetAvailableOrdersForDeliveryAsync(int? branchId = null)
     {
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -437,6 +452,7 @@ public class OrderRepository : IOrderRepository
         var day = date.Date;
         var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(day, day);
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -458,6 +474,7 @@ public class OrderRepository : IOrderRepository
     public async Task<List<Order>> GetUpcomingReservationsAsync(int? branchId = null, int hours = 24)
     {
         var query = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -556,6 +573,7 @@ public class OrderRepository : IOrderRepository
     public async Task<List<Order>> GetTopSellingProductsAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, int limit = 10)
     {
         var query = _context.OrderDetails
+            .AsNoTracking()
             .Include(od => od.Product)
             .Include(od => od.Order)
             .Where(od => od.Order.Status != OrderStatus.Cancelled)
@@ -724,6 +742,7 @@ public class OrderRepository : IOrderRepository
             toDate = DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
 
         var query = _context.Orders
+            .AsNoTracking()
             .AsSplitQuery()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
@@ -866,6 +885,7 @@ public class OrderRepository : IOrderRepository
         // Excluir ya notificados (prepared_notified_at).
         var now = DateTime.UtcNow;
         return await _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -896,7 +916,7 @@ public class OrderRepository : IOrderRepository
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var q = WhereOperationalDateRangeUtc(_context.Orders, fromUtc, toUtc);
+        var q = WhereOperationalDateRangeUtc(_context.Orders.AsNoTracking(), fromUtc, toUtc);
         if (branchId.HasValue)
             q = q.Where(o => o.BranchId == branchId.Value);
 
@@ -932,7 +952,7 @@ public class OrderRepository : IOrderRepository
             OrderStatus.OnTheWay,
         };
 
-        var q = _context.Orders.Where(o => statuses.Contains(o.Status));
+        var q = _context.Orders.AsNoTracking().Where(o => statuses.Contains(o.Status));
         if (branchId.HasValue)
             q = q.Where(o => o.BranchId == branchId.Value);
 
@@ -958,6 +978,7 @@ public class OrderRepository : IOrderRepository
         CancellationToken cancellationToken = default)
     {
         var q = _context.Orders
+            .AsNoTracking()
             .Include(o => o.Branch)
             .Include(o => o.Customer)
             .AsQueryable();

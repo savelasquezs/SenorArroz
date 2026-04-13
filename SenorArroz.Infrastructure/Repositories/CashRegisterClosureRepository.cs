@@ -19,6 +19,7 @@ public class CashRegisterClosureRepository : ICashRegisterClosureRepository
     public async Task<CashRegisterClosure?> GetLastByBranchAsync(int branchId)
     {
         return await _context.CashRegisterClosures
+            .AsNoTracking()
             .Include(c => c.Branch)
             .Include(c => c.CreatedBy)
             .Include(c => c.BankReconciliations)
@@ -46,6 +47,7 @@ public class CashRegisterClosureRepository : ICashRegisterClosureRepository
         string sortOrder)
     {
         var query = _context.CashRegisterClosures
+            .AsNoTracking()
             .Include(c => c.Branch)
             .Include(c => c.CreatedBy)
             .Include(c => c.BankReconciliations)
@@ -84,6 +86,7 @@ public class CashRegisterClosureRepository : ICashRegisterClosureRepository
     public async Task<CashRegisterClosure?> GetByIdAsync(int id)
     {
         return await _context.CashRegisterClosures
+            .AsNoTracking()
             .Include(c => c.Branch)
             .Include(c => c.CreatedBy)
             .Include(c => c.BankReconciliations)

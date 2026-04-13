@@ -27,6 +27,7 @@ public class AppRepository : IAppRepository
         string sortOrder = "asc")
     {
         var query = _context.Apps
+            .AsNoTracking()
             .Include(a => a.Bank)
             .ThenInclude(b => b.Branch)
             .AsQueryable();
@@ -64,6 +65,7 @@ public class AppRepository : IAppRepository
     public async Task<IEnumerable<App>> GetByBankIdAsync(int bankId)
     {
         return await _context.Apps
+            .AsNoTracking()
             .Include(a => a.Bank)
             .ThenInclude(b => b.Branch)
             .Where(a => a.BankId == bankId)
@@ -74,6 +76,7 @@ public class AppRepository : IAppRepository
     public async Task<IEnumerable<App>> GetByBranchIdAsync(int branchId)
     {
         return await _context.Apps
+            .AsNoTracking()
             .Include(a => a.Bank)
             .ThenInclude(b => b.Branch)
             .Where(a => a.Bank.BranchId == branchId)
@@ -84,6 +87,7 @@ public class AppRepository : IAppRepository
     public async Task<App?> GetByIdAsync(int id)
     {
         return await _context.Apps
+            .AsNoTracking()
             .Include(a => a.Bank)
             .ThenInclude(b => b.Branch)
             .FirstOrDefaultAsync(a => a.Id == id);

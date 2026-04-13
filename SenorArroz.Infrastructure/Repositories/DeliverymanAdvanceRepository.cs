@@ -27,6 +27,7 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
         string sortOrder = "desc")
     {
         var query = _context.DeliverymanAdvances
+            .AsNoTracking()
             .Include(da => da.Deliveryman)
             .Include(da => da.Creator)
             .Include(da => da.Branch)
@@ -75,6 +76,7 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
     public async Task<DeliverymanAdvance?> GetByIdAsync(int id)
     {
         return await _context.DeliverymanAdvances
+            .AsNoTracking()
             .Include(da => da.Deliveryman)
             .Include(da => da.Creator)
             .Include(da => da.Branch)
@@ -88,6 +90,7 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
         DateTime? toDate = null)
     {
         var query = _context.DeliverymanAdvances
+            .AsNoTracking()
             .Include(da => da.Creator)
             .Include(da => da.Branch)
             .Where(da => da.DeliverymanId == deliverymanId);

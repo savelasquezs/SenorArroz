@@ -32,6 +32,7 @@ public class ProductRepository : IProductRepository
         string sortOrder = "asc")
     {
         var query = _context.Products
+            .AsNoTracking()
             .Include(p => p.Category)
             .ThenInclude(c => c.Branch)
             .AsQueryable();
@@ -88,6 +89,7 @@ public class ProductRepository : IProductRepository
     public async Task<IEnumerable<Product>> GetByCategoryIdAsync(int categoryId)
     {
         return await _context.Products
+            .AsNoTracking()
             .Include(p => p.Category)
             .ThenInclude(c => c.Branch)
             .Where(p => p.CategoryId == categoryId)
@@ -98,6 +100,7 @@ public class ProductRepository : IProductRepository
     public async Task<IEnumerable<Product>> GetByBranchIdAsync(int branchId)
     {
         return await _context.Products
+            .AsNoTracking()
             .Include(p => p.Category)
             .ThenInclude(c => c.Branch)
             .Where(p => p.Category.BranchId == branchId)
@@ -108,6 +111,7 @@ public class ProductRepository : IProductRepository
     public async Task<Product?> GetByIdAsync(int id)
     {
         return await _context.Products
+            .AsNoTracking()
             .Include(p => p.Category)
             .ThenInclude(c => c.Branch)
             .FirstOrDefaultAsync(p => p.Id == id);
@@ -228,6 +232,7 @@ public class ProductRepository : IProductRepository
     public async Task<DateTime?> GetLastSoldAtAsync(int productId)
     {
         return await _context.OrderDetails
+            .AsNoTracking()
             .Where(od => od.ProductId == productId)
             .OrderByDescending(od => od.Order.CreatedAt)
             .Select(od => (DateTime?)od.Order.CreatedAt)

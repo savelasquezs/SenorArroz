@@ -28,6 +28,7 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
         string sortOrder)
     {
         var query = _context.ExpenseHeaders
+            .AsNoTracking()
             .Include(eh => eh.Branch)
             .Include(eh => eh.Supplier)
             .Include(eh => eh.CreatedBy)
@@ -76,6 +77,7 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
     public async Task<ExpenseHeader?> GetByIdAsync(int id)
     {
         return await _context.ExpenseHeaders
+            .AsNoTracking()
             .Include(eh => eh.Branch)
             .Include(eh => eh.Supplier)
             .Include(eh => eh.CreatedBy)
@@ -86,6 +88,7 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
     public async Task<ExpenseHeader?> GetByIdWithDetailsAsync(int id)
     {
         return await _context.ExpenseHeaders
+            .AsNoTracking()
             .Include(eh => eh.Branch)
             .Include(eh => eh.Supplier)
             .Include(eh => eh.CreatedBy)

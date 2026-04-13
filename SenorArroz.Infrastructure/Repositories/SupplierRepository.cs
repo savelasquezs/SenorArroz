@@ -25,6 +25,7 @@ public class SupplierRepository : ISupplierRepository
         string sortOrder)
     {
         var query = _context.Suppliers
+            .AsNoTracking()
             .Include(s => s.Branch)
             .AsQueryable();
 
@@ -50,6 +51,7 @@ public class SupplierRepository : ISupplierRepository
     public async Task<List<Supplier>> GetByBranchAsync(int branchId)
     {
         return await _context.Suppliers
+            .AsNoTracking()
             .Where(s => s.BranchId == branchId)
             .OrderBy(s => s.Name)
             .ToListAsync();
@@ -58,6 +60,7 @@ public class SupplierRepository : ISupplierRepository
     public async Task<Supplier?> GetByIdAsync(int id)
     {
         return await _context.Suppliers
+            .AsNoTracking()
             .Include(s => s.Branch)
             .FirstOrDefaultAsync(s => s.Id == id);
     }

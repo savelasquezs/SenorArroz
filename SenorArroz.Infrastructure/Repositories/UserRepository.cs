@@ -20,6 +20,7 @@ public class UserRepository : IUserRepository
     public async Task<User?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Users
+            .AsNoTracking()
             .Include(u => u.Branch)
             .Include(u => u.PayrollExpense)
             .FirstOrDefaultAsync(u => u.Id == id , cancellationToken);
@@ -28,16 +29,15 @@ public class UserRepository : IUserRepository
     public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
         return await _context.Users
+            .AsNoTracking()
             .Include(u => u.Branch)
             .FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower() , cancellationToken);
     }
 
     public async Task<IEnumerable<User>> GetAllAsync(int? branchId = null, CancellationToken cancellationToken = default)
     {
-        // 👇 Aquí forzamos el tipo a IQueryable<User> antes de aplicar Include
-        IQueryable<User> query = _context.Users.AsQueryable();
+        IQueryable<User> query = _context.Users.AsNoTracking().AsQueryable();
 
-        // 👇 Ahora sí aplicamos el Include sobre IQueryable<User>
         query = query.Include(u => u.Branch).Include(u => u.PayrollExpense);
 
         if (branchId.HasValue)

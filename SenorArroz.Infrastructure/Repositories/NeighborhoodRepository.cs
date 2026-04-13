@@ -17,6 +17,7 @@ public class NeighborhoodRepository : INeighborhoodRepository
     public async Task<IEnumerable<Neighborhood>> GetByBranchIdAsync(int branchId)
     {
         return await _context.Neighborhoods
+            .AsNoTracking()
             .Include(n => n.Branch)
             .Where(n => n.BranchId == branchId)
             .OrderBy(n => n.Name)
@@ -26,6 +27,7 @@ public class NeighborhoodRepository : INeighborhoodRepository
     public async Task<Neighborhood?> GetByIdAsync(int id)
     {
         return await _context.Neighborhoods
+            .AsNoTracking()
             .Include(n => n.Branch)
             .FirstOrDefaultAsync(n => n.Id == id);
     }

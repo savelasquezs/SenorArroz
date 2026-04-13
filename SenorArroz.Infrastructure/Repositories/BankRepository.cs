@@ -29,6 +29,7 @@ public class BankRepository : IBankRepository
         string sortOrder = "asc")
     {
         var query = _context.Banks
+            .AsNoTracking()
             .Include(b => b.Branch)
             .AsQueryable();
 
@@ -71,6 +72,7 @@ public class BankRepository : IBankRepository
     public async Task<IEnumerable<Bank>> GetByBranchIdAsync(int branchId, bool excludeHiddenBanks = false)
     {
         var query = _context.Banks
+            .AsNoTracking()
             .Include(b => b.Branch)
             .Where(b => b.BranchId == branchId);
 
@@ -85,6 +87,7 @@ public class BankRepository : IBankRepository
     public async Task<Bank?> GetByIdAsync(int id)
     {
         return await _context.Banks
+            .AsNoTracking()
             .Include(b => b.Branch)
             .FirstOrDefaultAsync(b => b.Id == id);
     }
@@ -92,6 +95,7 @@ public class BankRepository : IBankRepository
     public async Task<Bank?> GetByIdWithAppsAsync(int id)
     {
         return await _context.Banks
+            .AsNoTracking()
             .Include(b => b.Branch)
             .Include(b => b.Apps.Where(a => a.Active))
             .FirstOrDefaultAsync(b => b.Id == id);

@@ -28,6 +28,7 @@ public class CustomerRepository : ICustomerRepository
         string sortOrder = "asc")
     {
         var query = _context.Customers
+            .AsNoTracking()
             .Include(c => c.Branch)
             .Include(c => c.Addresses)
             .ThenInclude(a => a.Neighborhood)
@@ -71,6 +72,7 @@ public class CustomerRepository : ICustomerRepository
     public async Task<Customer?> GetByIdAsync(int id)
     {
         return await _context.Customers
+            .AsNoTracking()
             .Include(c => c.Branch)
             .FirstOrDefaultAsync(c => c.Id == id);
     }
@@ -78,6 +80,7 @@ public class CustomerRepository : ICustomerRepository
     public async Task<Customer?> GetByIdWithAddressesAsync(int id)
     {
         return await _context.Customers
+            .AsNoTracking()
             .Include(c => c.Branch)
             .Include(c => c.Addresses)
             .ThenInclude(a => a.Neighborhood)
@@ -87,6 +90,7 @@ public class CustomerRepository : ICustomerRepository
     public async Task<Customer?> GetByPhoneAsync(string phone, int branchId)
     {
         return await _context.Customers
+            .AsNoTracking()
             .Include(c => c.Branch)
             .FirstOrDefaultAsync(c => (c.Phone1 == phone || c.Phone2 == phone) && c.BranchId == branchId && c.Active);
     }
@@ -94,6 +98,7 @@ public class CustomerRepository : ICustomerRepository
     public async Task<IEnumerable<Customer>> GetByBranchIdAsync(int branchId)
     {
         return await _context.Customers
+            .AsNoTracking()
             .Include(c => c.Branch)
             .Where(c => c.BranchId == branchId && c.Active)
             .OrderBy(c => c.Name)

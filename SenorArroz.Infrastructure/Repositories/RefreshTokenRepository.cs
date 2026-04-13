@@ -35,6 +35,7 @@ public class RefreshTokenRepository : IRefreshTokenRepository
     public async Task<IEnumerable<RefreshToken>> GetAllByUserIdAsync(int userId)
     {
         return await _context.RefreshTokens
+            .AsNoTracking()
             .Where(rt => rt.UserId == userId)
             .OrderByDescending(rt => rt.CreatedAt)
             .ToListAsync();

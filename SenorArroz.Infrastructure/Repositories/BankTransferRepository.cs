@@ -26,6 +26,7 @@ public class BankTransferRepository : IBankTransferRepository
     public async Task<BankTransfer?> GetByIdAsync(int id)
     {
         return await _context.BankTransfers
+            .AsNoTracking()
             .Include(bt => bt.FromBank)
             .Include(bt => bt.ToBank)
             .Include(bt => bt.CreatedBy)
@@ -44,6 +45,7 @@ public class BankTransferRepository : IBankTransferRepository
         string sortOrder)
     {
         var query = _context.BankTransfers
+            .AsNoTracking()
             .Include(bt => bt.FromBank)
             .Include(bt => bt.ToBank)
             .Include(bt => bt.CreatedBy)

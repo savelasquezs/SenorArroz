@@ -17,6 +17,7 @@ public class PasswordResetRepository : IPasswordResetRepository
     public async Task<PasswordResetToken?> GetByTokenAsync(string token)
     {
         return await _context.PasswordResetTokens
+            .AsNoTracking()
             .Include(prt => prt.User)
             .FirstOrDefaultAsync(prt => prt.Token == token);
     }
@@ -24,6 +25,7 @@ public class PasswordResetRepository : IPasswordResetRepository
     public async Task<PasswordResetToken?> GetValidTokenByUserIdAsync(int userId)
     {
         return await _context.PasswordResetTokens
+            .AsNoTracking()
             .Include(prt => prt.User)
             .FirstOrDefaultAsync(prt => prt.UserId == userId &&
                                       !prt.IsUsed &&
@@ -33,6 +35,7 @@ public class PasswordResetRepository : IPasswordResetRepository
     public async Task<IEnumerable<PasswordResetToken>> GetByUserIdAsync(int userId)
     {
         return await _context.PasswordResetTokens
+            .AsNoTracking()
             .Include(prt => prt.User)
             .Where(prt => prt.UserId == userId)
             .OrderByDescending(prt => prt.CreatedAt)

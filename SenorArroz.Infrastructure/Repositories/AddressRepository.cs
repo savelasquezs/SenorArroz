@@ -17,6 +17,7 @@ public class AddressRepository : IAddressRepository
     public async Task<IEnumerable<Address>> GetByCustomerIdAsync(int customerId)
     {
         return await _context.Addresses
+            .AsNoTracking()
             .Include(a => a.Neighborhood)
             .Include(a => a.Customer)
             .Where(a => a.CustomerId == customerId)
@@ -27,6 +28,7 @@ public class AddressRepository : IAddressRepository
     public async Task<Address?> GetByIdAsync(int id)
     {
         return await _context.Addresses
+            .AsNoTracking()
             .Include(a => a.Neighborhood)
             .Include(a => a.Customer)
             .FirstOrDefaultAsync(a => a.Id == id);
@@ -35,6 +37,7 @@ public class AddressRepository : IAddressRepository
     public async Task<Address?> GetPrimaryByCustomerIdAsync(int customerId)
     {
         return await _context.Addresses
+            .AsNoTracking()
             .Include(a => a.Neighborhood)
             .Include(a => a.Customer)
             .Where(a => a.CustomerId == customerId && a.IsPrimary)

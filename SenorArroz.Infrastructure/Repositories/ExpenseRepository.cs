@@ -26,6 +26,7 @@ public class ExpenseRepository : IExpenseRepository
         string sortOrder = "asc")
     {
         var query = _context.Expenses
+            .AsNoTracking()
             .Include(e => e.Category)
             .Include(e => e.MenuTargets)
             .AsQueryable();
@@ -58,6 +59,7 @@ public class ExpenseRepository : IExpenseRepository
     public async Task<IEnumerable<Expense>> GetAllAsync()
     {
         return await _context.Expenses
+            .AsNoTracking()
             .Include(e => e.Category)
             .Include(e => e.MenuTargets)
             .OrderBy(e => e.Name)
@@ -67,6 +69,7 @@ public class ExpenseRepository : IExpenseRepository
     public async Task<IEnumerable<Expense>> GetByCategoryIdAsync(int categoryId)
     {
         return await _context.Expenses
+            .AsNoTracking()
             .Include(e => e.Category)
             .Include(e => e.MenuTargets)
             .Where(e => e.CategoryId == categoryId)
@@ -77,6 +80,7 @@ public class ExpenseRepository : IExpenseRepository
     public async Task<Expense?> GetByIdAsync(int id)
     {
         return await _context.Expenses
+            .AsNoTracking()
             .Include(e => e.Category)
             .Include(e => e.MenuTargets)
             .FirstOrDefaultAsync(e => e.Id == id);

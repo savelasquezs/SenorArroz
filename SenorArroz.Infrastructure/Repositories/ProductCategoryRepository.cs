@@ -26,6 +26,7 @@ public class ProductCategoryRepository : IProductCategoryRepository
         string sortOrder = "asc")
     {
         var query = _context.ProductCategories
+            .AsNoTracking()
             .Include(pc => pc.Branch)
             .AsQueryable();
 
@@ -56,6 +57,7 @@ public class ProductCategoryRepository : IProductCategoryRepository
     public async Task<IEnumerable<ProductCategory>> GetByBranchIdAsync(int branchId)
     {
         return await _context.ProductCategories
+            .AsNoTracking()
             .Include(pc => pc.Branch)
             .Where(pc => pc.BranchId == branchId)
             .OrderBy(pc => pc.Name)
@@ -65,6 +67,7 @@ public class ProductCategoryRepository : IProductCategoryRepository
     public async Task<ProductCategory?> GetByIdAsync(int id)
     {
         return await _context.ProductCategories
+            .AsNoTracking()
             .Include(pc => pc.Branch)
             .FirstOrDefaultAsync(pc => pc.Id == id);
     }
@@ -72,6 +75,7 @@ public class ProductCategoryRepository : IProductCategoryRepository
     public async Task<ProductCategory?> GetByIdWithProductsAsync(int id)
     {
         return await _context.ProductCategories
+            .AsNoTracking()
             .Include(pc => pc.Branch)
             .Include(pc => pc.Products.Where(p => p.Active))
             .FirstOrDefaultAsync(pc => pc.Id == id);

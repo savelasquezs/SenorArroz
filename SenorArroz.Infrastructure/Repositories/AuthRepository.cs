@@ -20,6 +20,7 @@ public class AuthRepository : IAuthRepository
     public async Task<User?> GetUserByEmailAsync(string email)
     {
         return await _context.Users
+            .AsNoTracking()
             .Include(u => u.Branch)
             .FirstOrDefaultAsync(u => u.Email == email && u.Active);
     }
@@ -27,6 +28,7 @@ public class AuthRepository : IAuthRepository
     public async Task<User?> GetUserByIdWithBranchAsync(int userId)
     {
         return await _context.Users
+            .AsNoTracking()
             .Include(u => u.Branch)
             .FirstOrDefaultAsync(u => u.Id == userId && u.Active);
     }

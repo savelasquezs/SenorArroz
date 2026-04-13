@@ -26,6 +26,7 @@ public class ReservationDepositRepository : IReservationDepositRepository
     public async Task<ReservationDeposit?> GetByIdAsync(int id)
     {
         return await _context.ReservationDeposits
+            .AsNoTracking()
             .Include(d => d.Order)
             .Include(d => d.Branch)
             .Include(d => d.Bank)
@@ -37,6 +38,7 @@ public class ReservationDepositRepository : IReservationDepositRepository
     public async Task<List<ReservationDeposit>> GetByOrderIdAsync(int orderId)
     {
         return await _context.ReservationDeposits
+            .AsNoTracking()
             .Include(d => d.Bank)
             .Include(d => d.App)
             .Include(d => d.ReceivedBy)
@@ -61,6 +63,7 @@ public class ReservationDepositRepository : IReservationDepositRepository
         int pageSize = 20)
     {
         var query = _context.ReservationDeposits
+            .AsNoTracking()
             .Include(d => d.Order)
             .Include(d => d.Bank)
             .Include(d => d.App)
