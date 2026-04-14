@@ -49,6 +49,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
         // Validar que los expenses existen
         var expenseIds = request.ExpenseHeader.ExpenseDetails.Select(ed => ed.ExpenseId).Distinct().ToList();
         var expenses = await _context.Expenses
+            .AsNoTracking()
             .Where(e => expenseIds.Contains(e.Id))
             .ToListAsync(cancellationToken);
 
