@@ -85,7 +85,7 @@ public class BankPaymentsController : ControllerBase
     /// Crea un nuevo pago bancario
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Admin,Superadmin")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult<BankPaymentDto>> CreateBankPayment([FromBody] CreateBankPaymentDto createBankPaymentDto)
     {
         var command = new CreateBankPaymentCommand
@@ -156,7 +156,7 @@ public class BankPaymentsController : ControllerBase
     /// Elimina un pago bancario
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin,Superadmin")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult> DeleteBankPayment(int id)
     {
         var command = new DeleteBankPaymentCommand { Id = id };

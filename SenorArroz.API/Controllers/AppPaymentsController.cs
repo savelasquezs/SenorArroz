@@ -100,7 +100,7 @@ public class AppPaymentsController : ControllerBase
     /// Crea un nuevo pago de app
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Admin,Superadmin")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult<AppPaymentDto>> CreateAppPayment([FromBody] CreateAppPaymentDto createAppPaymentDto)
     {
         var command = new CreateAppPaymentCommand
@@ -187,7 +187,7 @@ public class AppPaymentsController : ControllerBase
     /// Elimina un pago de app
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin,Superadmin")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult> DeleteAppPayment(int id)
     {
         var command = new DeleteAppPaymentCommand { Id = id };

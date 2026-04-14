@@ -9,24 +9,43 @@ namespace SenorArroz.Application.Features.AppPayments.Commands;
 public class DeleteAppPaymentHandler : IRequestHandler<DeleteAppPaymentCommand, bool>
 {
     private readonly IAppPaymentRepository _appPaymentRepository;
+    private readonly IOrderRepository _orderRepository;
+    private readonly IOrderBusinessRulesService _businessRules;
     private readonly ICurrentUser _currentUser;
 
-    public DeleteAppPaymentHandler(IAppPaymentRepository appPaymentRepository, ICurrentUser currentUser)
+    public DeleteAppPaymentHandler(
+        IAppPaymentRepository appPaymentRepository,
+        IOrderRepository orderRepository,
+        IOrderBusinessRulesService businessRules,
+        ICurrentUser currentUser)
     {
         _appPaymentRepository = appPaymentRepository;
+        _orderRepository = orderRepository;
+        _businessRules = businessRules;
         _currentUser = currentUser;
     }
 
     public async Task<bool> Handle(DeleteAppPaymentCommand request, CancellationToken cancellationToken)
     {
-        // Validate app payment exists
         var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (appPayment == null)
             return false;
 
-        // Check if user has access to this app payment's branch
+        var order = await _orderRepository.GetByIdAsync(appPayment.OrderId, cancellationToken);
+        if (order == null)
+            throw new BusinessException("Pedido asociado no encontrado");
+
+        if (!_businessRules.CanModifyPayments(order, _currentUser.Role))
+            throw new BusinessException("No tienes permisos para eliminar pagos de este pedido");
+
+        if (!Roles.IsSuperadmin(_currentUser.Role) && order.BranchId != _currentUser.BranchId)
+            throw new BusinessException("No tienes permisos para eliminar este pago");
+
         if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para eliminar este pago");
+
+        if (appPayment.App.Bank.BranchId != order.BranchId)
+            throw new BusinessException("Inconsistencia entre pedido y app");
 
         return await _appPaymentRepository.DeleteAsync(request.Id, cancellationToken);
     }

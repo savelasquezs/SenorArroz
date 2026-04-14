@@ -540,13 +540,13 @@ Resultado: false ❌ (día diferente en UTC)
 **Permisos**:
 - ✅ Ver/modificar pedidos de su sucursal
 - ✅ Cambiar estados (solo hacia adelante)
-- ✅ Modificar montos de pagos (mismo día)
+- ✅ Crear, editar montos y eliminar pagos bancarios y por app del pedido (mismo día que el pedido; sucursal del pedido)
 - ✅ Crear pedidos
 
 **Restricciones**:
 - ❌ No puede retroceder estados
 - ❌ No puede modificar productos de pedidos entregados
-- ❌ No puede crear/eliminar pagos (solo modificar montos)
+- ❌ No puede crear/editar/eliminar pagos en pedidos que no sean del día de creación del pedido (misma regla temporal que admin; v. `CanModifyPayments`)
 - ❌ No puede cancelar pedidos
 - ❌ No puede verificar pagos bancarios
 - ❌ No puede liquidar app payments
