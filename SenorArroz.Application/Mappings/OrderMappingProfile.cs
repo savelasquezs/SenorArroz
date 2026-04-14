@@ -52,10 +52,12 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.BankPayments, opt => opt.MapFrom(src => src.BankPayments))
             .ForMember(dest => dest.AppPayments, opt => opt.MapFrom(src => src.AppPayments));
 
-        // OrderDetail -> OrderDetailDto
+        // OrderDetail -> OrderDetailDto (Product puede ser null si Include no cargó o FK huérfano)
         CreateMap<OrderDetail, OrderDetailDto>()
-            .ForMember(dest => dest.ProductName, opt => opt.MapFrom(src => src.Product.Name))
-            .ForMember(dest => dest.ProductDescription, opt => opt.MapFrom(src => src.Product.Name)) // Using Name as description since Product doesn't have Description
+            .ForMember(dest => dest.ProductName, opt => opt.MapFrom(src =>
+                src.Product != null ? src.Product.Name : $"Producto #{src.ProductId}"))
+            .ForMember(dest => dest.ProductDescription, opt => opt.MapFrom(src =>
+                src.Product != null ? src.Product.Name : null))
             .ForMember(dest => dest.ProductCategoryId, opt => opt.MapFrom(src =>
                 src.Product != null ? (int?)src.Product.CategoryId : null))
             .ForMember(dest => dest.ProductCategoryName, opt => opt.MapFrom(src =>

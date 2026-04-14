@@ -184,10 +184,29 @@ public class OrderRepository : IOrderRepository
 
     public async Task<Order> UpdateAsync(Order order, CancellationToken cancellationToken = default)
     {
-        _context.Orders.Update(order);
-        await _context.SaveChangesAsync(cancellationToken);
+        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            // Pedido cargado con AsNoTracking y mutado en memoria: DbSet.Update() no emite DELETE para líneas
+            // quitadas del ICollection (dejan de ser alcanzables en el grafo). Borrar en BD las que ya no estén en el payload.
+            if (order.OrderDetails != null)
+            {
+                var keepIds = order.OrderDetails.Where(d => d.Id > 0).Select(d => d.Id).ToHashSet();
+                await _context.OrderDetails
+                    .Where(od => od.OrderId == order.Id && !keepIds.Contains(od.Id))
+                    .ExecuteDeleteAsync(cancellationToken);
+            }
 
-        return await GetByIdAsync(order.Id, cancellationToken) ?? order;
+            _context.Orders.Update(order);
+            await _context.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+            return await GetByIdAsync(order.Id, cancellationToken) ?? order;
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task DeleteAsync(int id, CancellationToken cancellationToken = default)
