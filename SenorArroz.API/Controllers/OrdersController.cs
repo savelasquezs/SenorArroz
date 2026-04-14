@@ -8,6 +8,8 @@ using SenorArroz.Application.Features.Orders.Commands;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Features.Orders.Queries;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Shared.Constants;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
@@ -19,11 +21,19 @@ public class OrdersController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IClock _clock;
+    private readonly IUserRepository _userRepository;
+    private readonly ICurrentUser _currentUser;
 
-    public OrdersController(IMediator mediator, IClock clock)
+    public OrdersController(
+        IMediator mediator,
+        IClock clock,
+        IUserRepository userRepository,
+        ICurrentUser currentUser)
     {
         _mediator = mediator;
         _clock = clock;
+        _userRepository = userRepository;
+        _currentUser = currentUser;
     }
 
     /// <summary>
@@ -327,7 +337,7 @@ public class OrdersController : ControllerBase
     /// <paramref name="status"/> opcional (p. ej. Delivered) para contar solo entregas.
     /// </summary>
     [HttpGet("delivery/assigned/{deliveryManId:int}/branch-summary")]
-    [Authorize(Roles = "Admin,Superadmin,Deliveryman")]
+    [Authorize(Roles = "Admin,Superadmin,Deliveryman,Cashier")]
     public async Task<ActionResult<List<DeliverymanAssignedBranchSummaryDto>>> GetAssignedOrdersBranchSummary(
         int deliveryManId,
         [FromQuery] DateTime? fromDate = null,
@@ -341,6 +351,11 @@ public class OrdersController : ControllerBase
             var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(userIdClaim, out var userId) || userId != deliveryManId)
                 return Forbid();
+        }
+        else
+        {
+            var gate = await EnsureMayQueryDeliverymanStaffAsync(deliveryManId, branchQueryFilter: null, HttpContext.RequestAborted);
+            if (gate != null) return gate;
         }
 
         var query = new GetDeliverymanAssignedBranchSummaryQuery
@@ -361,7 +376,7 @@ public class OrdersController : ControllerBase
     /// (opcionalmente filtrado por sucursal y estado).
     /// </summary>
     [HttpGet("delivery/assigned/{deliveryManId:int}/neighborhoods")]
-    [Authorize(Roles = "Admin,Superadmin,Deliveryman")]
+    [Authorize(Roles = "Admin,Superadmin,Deliveryman,Cashier")]
     public async Task<ActionResult<List<DeliverymanHistoryNeighborhoodDto>>> GetDeliverymanHistoryNeighborhoods(
         int deliveryManId,
         [FromQuery] DateTime? fromDate = null,
@@ -375,6 +390,11 @@ public class OrdersController : ControllerBase
             var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(userIdClaim, out var userId) || userId != deliveryManId)
                 return Forbid();
+        }
+        else
+        {
+            var gate = await EnsureMayQueryDeliverymanStaffAsync(deliveryManId, branchId, HttpContext.RequestAborted);
+            if (gate != null) return gate;
         }
 
         var query = new GetDeliverymanHistoryNeighborhoodsQuery
@@ -402,7 +422,7 @@ public class OrdersController : ControllerBase
     /// <paramref name="neighborhoodId"/> (opcional): filtra por barrio de la dirección del pedido.
     /// </summary>
     [HttpGet("delivery/assigned/{deliveryManId}")]
-    [Authorize(Roles = "Admin,Superadmin,Deliveryman")]
+    [Authorize(Roles = "Admin,Superadmin,Deliveryman,Cashier")]
     public async Task<ActionResult<PagedResult<OrderDto>>> GetAssignedOrders(
         int deliveryManId,
         [FromQuery] int page = 1,
@@ -421,6 +441,11 @@ public class OrdersController : ControllerBase
             var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!int.TryParse(userIdClaim, out var userId) || userId != deliveryManId)
                 return Forbid();
+        }
+        else
+        {
+            var gate = await EnsureMayQueryDeliverymanStaffAsync(deliveryManId, branchId, HttpContext.RequestAborted);
+            if (gate != null) return gate;
         }
 
         DateTime? fromUtc = null;
@@ -536,5 +561,35 @@ public class OrdersController : ControllerBase
 
         var result = await _mediator.Send(command);
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Admin/cajero consultando datos de un domiciliario por id de usuario: debe ser rol domiciliario y de la misma sucursal.
+    /// Superadmin sin restricción. No usar cuando el caller es domiciliario (validación propia).
+    /// </summary>
+    /// <param name="branchQueryFilter">Si viene &gt; 0, debe coincidir con la sucursal del usuario autenticado.</param>
+    private async Task<ActionResult?> EnsureMayQueryDeliverymanStaffAsync(
+        int deliveryManUserId,
+        int? branchQueryFilter,
+        CancellationToken cancellationToken)
+    {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (Roles.IsSuperadmin(role))
+            return null;
+
+        if (Roles.IsDeliveryman(role))
+            return null;
+
+        var dm = await _userRepository.GetByIdAsync(deliveryManUserId, cancellationToken);
+        if (dm == null)
+            return NotFound();
+        if (dm.Role != UserRole.Deliveryman)
+            return Forbid();
+        if (dm.BranchId != _currentUser.BranchId)
+            return Forbid();
+        if (branchQueryFilter is > 0 && branchQueryFilter.Value != _currentUser.BranchId)
+            return Forbid();
+
+        return null;
     }
 }

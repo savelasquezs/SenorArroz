@@ -12,6 +12,8 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Features.Orders.Queries;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Shared.Constants;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
@@ -23,11 +25,19 @@ public class DeliverymanController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IClock _clock;
+    private readonly IUserRepository _userRepository;
+    private readonly ICurrentUser _currentUser;
 
-    public DeliverymanController(IMediator mediator, IClock clock)
+    public DeliverymanController(
+        IMediator mediator,
+        IClock clock,
+        IUserRepository userRepository,
+        ICurrentUser currentUser)
     {
         _mediator = mediator;
         _clock = clock;
+        _userRepository = userRepository;
+        _currentUser = currentUser;
     }
 
     /// <summary>
@@ -374,9 +384,21 @@ public class DeliverymanController : ControllerBase
     /// Retorna la última ubicación registrada de un domiciliario (para fallback de polling).
     /// </summary>
     [HttpGet("{id}/last-location")]
-    [Authorize(Roles = "Admin,Superadmin")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult<DeliverymanLastLocationDto>> GetLastLocation(int id)
     {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        if (!Roles.IsSuperadmin(role))
+        {
+            var dm = await _userRepository.GetByIdAsync(id, HttpContext.RequestAborted);
+            if (dm == null)
+                return NotFound();
+            if (dm.Role != UserRole.Deliveryman)
+                return Forbid();
+            if (dm.BranchId != _currentUser.BranchId)
+                return Forbid();
+        }
+
         var result = await _mediator.Send(new GetDeliverymanLastLocationQuery { DeliverymanId = id });
         if (result is null)
             return NotFound();
