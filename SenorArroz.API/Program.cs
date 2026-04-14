@@ -1,6 +1,9 @@
 // SenorArroz.API/Program.cs - Updated with Authentication
+using System.Globalization;
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SenorArroz.API.Extensions;
@@ -206,6 +209,73 @@ builder.Services.AddCors(options =>
     });
 });
 
+var globalPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Global:PermitLimit", 200));
+var globalWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Global:WindowSeconds", 60));
+var authPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Auth:PermitLimit", 10));
+var authWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Auth:WindowSeconds", 60));
+var globalWindow = TimeSpan.FromSeconds(globalWindowSec);
+var authWindow = TimeSpan.FromSeconds(authWindowSec);
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (ctx, cancellationToken) =>
+    {
+        ctx.HttpContext.Response.ContentType = "application/json";
+        if (ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            var sec = (int)Math.Ceiling(retryAfter.TotalSeconds);
+            if (sec > 0)
+                ctx.HttpContext.Response.Headers.RetryAfter = sec.ToString(NumberFormatInfo.InvariantInfo);
+        }
+
+        await ctx.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            error = "TooManyRequests",
+            message = "Demasiadas solicitudes. Intente más tarde."
+        }, cancellationToken);
+    };
+
+    options.AddPolicy("auth-sensitive", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            ip,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = authPermit,
+                Window = authWindow,
+                QueueLimit = 0
+            });
+    });
+
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        var path = httpContext.Request.Path;
+        var pv = path.Value ?? string.Empty;
+        if (path.StartsWithSegments("/swagger")
+            || path.StartsWithSegments("/swagger-ui")
+            || path.StartsWithSegments("/hubs")
+            || string.Equals(pv, "/", StringComparison.Ordinal)
+            || string.Equals(pv, "/index.html", StringComparison.OrdinalIgnoreCase))
+        {
+            return RateLimitPartition.GetNoLimiter<string>("exempt");
+        }
+
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            ip,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = globalPermit,
+                Window = globalWindow,
+                QueueLimit = 0
+            });
+    });
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
@@ -229,6 +299,8 @@ app.UseCors("AllowAll");
 // Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseRateLimiter();
 
 // Custom JWT middleware for additional user context
 app.UseMiddleware<JwtMiddleware>();

@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Features.Auth.Commands;
@@ -30,6 +31,7 @@ public class AuthController : ControllerBase
     /// <param name="loginDto">Credenciales de login</param>
     /// <returns>Token de acceso y refresh token</returns>
     [HttpPost("login")]
+    [EnableRateLimiting("auth-sensitive")]
     [Produces("application/json")]
     public async Task<ActionResult<AuthResponseDto>> Login([FromBody] LoginDto loginDto)
     {
@@ -46,6 +48,7 @@ public class AuthController : ControllerBase
     /// <param name="refreshTokenDto">Refresh token</param>
     /// <returns>Nuevo token de acceso y refresh token</returns>
     [HttpPost("refresh")]
+    [EnableRateLimiting("auth-sensitive")]
     public async Task<ActionResult<AuthResponseDto>> RefreshToken([FromBody] RefreshTokenDto refreshTokenDto)
     {
         var authHeader = Request.Headers.Authorization.FirstOrDefault();
@@ -183,6 +186,7 @@ public class AuthController : ControllerBase
     /// <returns>Confirmación de envío</returns>
     [HttpPost("forgot-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("auth-sensitive")]
     public async Task<ActionResult> ForgotPassword([FromBody] ForgotPasswordDto forgotPasswordDto, IConfiguration _configuration)
     { 
 
@@ -215,6 +219,7 @@ public class AuthController : ControllerBase
     /// <returns>Estado del token</returns>
     [HttpPost("validate-reset-token")]
     [AllowAnonymous]
+    [EnableRateLimiting("auth-sensitive")]
     public async Task<ActionResult> ValidateResetToken([FromBody] ValidateResetTokenDto validateTokenDto)
     {
         var query = new ValidateResetTokenQuery
@@ -245,6 +250,7 @@ public class AuthController : ControllerBase
     /// <returns>Confirmación del restablecimiento</returns>
     [HttpPost("reset-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("auth-sensitive")]
     public async Task<ActionResult> ResetPassword([FromBody] ResetPasswordDto resetPasswordDto)
     {
         var command = new ResetPasswordCommand

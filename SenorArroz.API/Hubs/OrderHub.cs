@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
 
 namespace SenorArroz.API.Hubs;
 
 [Authorize]
+[DisableRateLimiting]
 public class OrderHub : Hub
 {
     public override async Task OnConnectedAsync()
