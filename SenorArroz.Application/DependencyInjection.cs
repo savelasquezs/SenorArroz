@@ -1,6 +1,9 @@
 using AutoMapper;
+using FluentValidation;
+using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SenorArroz.Application.Common.Behaviors;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
 using System.Reflection;
@@ -23,14 +26,14 @@ namespace SenorArroz.Application
             IMapper mapper = new Mapper(mapperConfig);
             services.AddSingleton(mapper);
 
+            services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+
             // MediatR - Registra automáticamente todos los handlers del ensamblado
             services.AddMediatR(cfg =>
             {
                 cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
+                cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
             });
-
-            // FluentValidation - Para validaciones de DTOs
-            // services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
 
             // Business Rules Service
             services.AddScoped<IOrderBusinessRulesService, OrderBusinessRulesService>();
