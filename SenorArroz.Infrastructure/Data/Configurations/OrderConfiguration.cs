@@ -41,23 +41,20 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.PreparedNotifiedAt).HasColumnName("prepared_notified_at");
         builder.Property(o => o.StatusTimes).HasColumnName("status_times").HasColumnType("jsonb");
 
+        // Totales: la aplicación los calcula (p. ej. OrderTotalsHelper) y deben persistirse/leerse en el grafo EF.
+        // ValueGeneratedOnAddOrUpdate + Ignore hacía que, tras crear el pedido, Order.Total quedara 0 en memoria al
+        // consultar de nuevo — cap de efectivo en tienda = 0 y Apply fallaba con "no hay remanente".
         builder.Property(o => o.Subtotal)
             .HasColumnName("subtotal")
-            .HasDefaultValue(0)
-            .ValueGeneratedOnAddOrUpdate()
-            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+            .HasDefaultValue(0);
 
         builder.Property(o => o.Total)
             .HasColumnName("total")
-            .HasDefaultValue(0)
-            .ValueGeneratedOnAddOrUpdate()
-            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+            .HasDefaultValue(0);
 
         builder.Property(o => o.DiscountTotal)
             .HasColumnName("discount_total")
-            .HasDefaultValue(0)
-            .ValueGeneratedOnAddOrUpdate()
-            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+            .HasDefaultValue(0);
         builder.Property(o => o.Notes).HasColumnName("notes").HasMaxLength(200);
         builder.Property(o => o.CancelledReason).HasColumnName("cancelled_reason").HasMaxLength(200);
 
