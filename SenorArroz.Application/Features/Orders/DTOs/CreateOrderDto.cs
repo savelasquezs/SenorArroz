@@ -23,6 +23,9 @@ public class CreateOrderDto
 
     /// <summary>Efectivo ya cobrado en sucursal al crear el pedido (caja).</summary>
     public bool PaidInStoreCash { get; set; }
+
+    /// <summary>Opcional. Si <see cref="PaidInStoreCash"/> es true, monto COP (validado contra el remanente).</summary>
+    public int? PaidInStoreCashAmount { get; set; }
 }
 
 public class CreateOrderDetailDto

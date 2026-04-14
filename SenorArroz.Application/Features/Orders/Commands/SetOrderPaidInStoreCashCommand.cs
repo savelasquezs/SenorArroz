@@ -7,4 +7,5 @@ public class SetOrderPaidInStoreCashCommand : IRequest<OrderDto>
 {
     public int OrderId { get; set; }
     public bool PaidInStoreCash { get; set; }
+    public int? PaidInStoreCashAmount { get; set; }
 }

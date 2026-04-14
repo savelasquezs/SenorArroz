@@ -52,7 +52,11 @@ public class SetOrderPaidInStoreCashHandler : IRequestHandler<SetOrderPaidInStor
         if (!Roles.IsSuperadmin(role) && order.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
-        OrderPaidInStoreCashHelper.Apply(order, request.PaidInStoreCash, _clock.UtcNow);
+        OrderPaidInStoreCashHelper.Apply(
+            order,
+            request.PaidInStoreCash,
+            _clock.UtcNow,
+            request.PaidInStoreCashAmount);
 
         await _context.SaveChangesAsync(cancellationToken);
 

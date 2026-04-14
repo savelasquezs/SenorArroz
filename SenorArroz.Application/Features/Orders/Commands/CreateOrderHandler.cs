@@ -160,7 +160,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             if (tracked == null)
                 throw new BusinessException("Pedido no encontrado tras crear");
 
-            OrderPaidInStoreCashHelper.Apply(tracked, true, _clock.UtcNow);
+            OrderPaidInStoreCashHelper.Apply(tracked, true, _clock.UtcNow, request.Order.PaidInStoreCashAmount);
             await _db.SaveChangesAsync(cancellationToken);
         }
 

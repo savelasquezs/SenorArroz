@@ -249,7 +249,8 @@ public class OrdersController : ControllerBase
         var command = new SetOrderPaidInStoreCashCommand
         {
             OrderId = id,
-            PaidInStoreCash = body.PaidInStoreCash
+            PaidInStoreCash = body.PaidInStoreCash,
+            PaidInStoreCashAmount = body.PaidInStoreCashAmount
         };
         var result = await _mediator.Send(command);
         return Ok(result);
