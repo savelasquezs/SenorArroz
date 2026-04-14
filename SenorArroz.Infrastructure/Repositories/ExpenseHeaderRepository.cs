@@ -97,6 +97,14 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
 
     public async Task<ExpenseHeader> UpdateAsync(ExpenseHeader expenseHeader, CancellationToken cancellationToken = default)
     {
+        // AsNoTracking() en la carga no resuelve identidad: varias líneas con el mismo ExpenseId traen instancias distintas de Expense → Update() choca.
+        // Supplier puede estar rastreado por FindAsync mientras el header trae otra instancia desde Include.
+        foreach (var d in expenseHeader.ExpenseDetails)
+            d.Expense = null!;
+        expenseHeader.Supplier = null!;
+        foreach (var p in expenseHeader.ExpenseBankPayments)
+            p.Bank = null!;
+
         _context.ExpenseHeaders.Update(expenseHeader);
         await _context.SaveChangesAsync(cancellationToken);
 
