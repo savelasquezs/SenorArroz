@@ -1,6 +1,7 @@
 ﻿// SenorArroz.Application/Features/Products/Queries/GetProductDetailHandler.cs
 using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Products.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -10,11 +11,13 @@ public class GetProductDetailHandler : IRequestHandler<GetProductDetailQuery, Pr
 {
     private readonly IProductRepository _productRepository;
     private readonly IMapper _mapper;
+    private readonly IClock _clock;
 
-    public GetProductDetailHandler(IProductRepository productRepository, IMapper mapper)
+    public GetProductDetailHandler(IProductRepository productRepository, IMapper mapper, IClock clock)
     {
         _productRepository = productRepository;
         _mapper = mapper;
+        _clock = clock;
     }
 
     public async Task<ProductDetailDto?> Handle(GetProductDetailQuery request, CancellationToken cancellationToken)
@@ -36,7 +39,7 @@ public class GetProductDetailHandler : IRequestHandler<GetProductDetailQuery, Pr
         const int salesChartDays = 90;
         var evolution = await _productRepository.GetSalesUnitsEvolutionByProductAsync(
             product.Id,
-            DateTime.UtcNow.Date,
+            _clock.UtcNow.Date,
             salesChartDays,
             cancellationToken);
         productDetailDto.SalesUnitsEvolution = evolution

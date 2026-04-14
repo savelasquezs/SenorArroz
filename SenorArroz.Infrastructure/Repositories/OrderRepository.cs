@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
@@ -14,10 +15,12 @@ namespace SenorArroz.Infrastructure.Repositories;
 public class OrderRepository : IOrderRepository
 {
     private readonly ApplicationDbContext _context;
+    private readonly IClock _clock;
 
-    public OrderRepository(ApplicationDbContext context)
+    public OrderRepository(ApplicationDbContext context, IClock clock)
     {
         _context = context;
+        _clock = clock;
     }
 
     public async Task<Order?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
@@ -140,8 +143,8 @@ public class OrderRepository : IOrderRepository
 
         if (forKitchen)
         {
-            var now = DateTime.UtcNow;
-            var colombiaToday = ColombiaTimeHelper.GetNowInColombia().Date;
+            var now = _clock.UtcNow;
+            var colombiaToday = ColombiaTimeHelper.GetNowInColombiaFromUtc(now).Date;
             var (colombiaTodayStartUtc, colombiaTodayEndUtc) =
                 ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(colombiaToday, colombiaToday);
 
@@ -480,7 +483,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Address)
             .Where(o => o.Type == OrderType.Reservation &&
                       o.ReservedFor.HasValue &&
-                      o.ReservedFor.Value <= DateTime.UtcNow.AddHours(hours))
+                      o.ReservedFor.Value <= _clock.UtcNow.AddHours(hours))
             .AsQueryable();
 
         if (branchId.HasValue)
@@ -666,7 +669,7 @@ public class OrderRepository : IOrderRepository
             throw new InvalidOperationException($"Cannot change status from {order.Status} to {newStatus}");
 
         order.Status = newStatus;
-        order.AddStatusTime(newStatus, DateTime.UtcNow);
+        order.AddStatusTime(newStatus, _clock.UtcNow);
 
         if (newStatus == OrderStatus.Cancelled && !string.IsNullOrEmpty(reason))
             order.CancelledReason = reason;
@@ -826,7 +829,7 @@ public class OrderRepository : IOrderRepository
 
         if (excludeFutureReservations)
         {
-            var startOfTomorrowColombiaUtc = ColombiaTimeHelper.GetColombiaStartOfTomorrowUtc();
+            var startOfTomorrowColombiaUtc = ColombiaTimeHelper.GetColombiaStartOfTomorrowUtcFromUtc(_clock.UtcNow);
             query = query.Where(o =>
                 o.Type != OrderType.Reservation ||
                 o.ReservedFor == null ||
@@ -878,7 +881,7 @@ public class OrderRepository : IOrderRepository
         OrderStatus status,
         CancellationToken cancellationToken = default)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         return await _context.Orders
             .AsNoTracking()
             .Include(o => o.Branch)

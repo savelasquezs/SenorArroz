@@ -26,6 +26,8 @@ namespace SenorArroz.Application
             IMapper mapper = new Mapper(mapperConfig);
             services.AddSingleton(mapper);
 
+            services.AddSingleton<IClock, SystemUtcClock>();
+
             services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
 
             // MediatR - Registra automáticamente todos los handlers del ensamblado

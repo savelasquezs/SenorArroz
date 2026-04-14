@@ -24,15 +24,18 @@ public class PrintQueueService : IPrintQueueService
     private readonly BrandingOptions _branding;
     private readonly IOrderRepository _orderRepository;
     private readonly ILoyaltyCycleStepRepository _loyaltyCycleStepRepository;
+    private readonly IClock _clock;
 
     public PrintQueueService(
         ApplicationDbContext db,
         IOptions<ApiPublicOptions> apiPublic,
         IOptions<BrandingOptions> branding,
         IOrderRepository orderRepository,
-        ILoyaltyCycleStepRepository loyaltyCycleStepRepository)
+        ILoyaltyCycleStepRepository loyaltyCycleStepRepository,
+        IClock clock)
     {
         _db = db;
+        _clock = clock;
         var b = apiPublic.Value.BaseUrl?.Trim();
         _publicApiBaseUrl = string.IsNullOrEmpty(b) ? null : b.TrimEnd('/');
         _branding = branding.Value;
@@ -90,7 +93,7 @@ public class PrintQueueService : IPrintQueueService
         foreach (var order in orders)
             loyaltyByOrder[order.Id] = await BuildLoyaltyKitchenSnapshotAsync(order, cancellationToken).ConfigureAwait(false);
 
-        var printedAt = DateTime.UtcNow;
+        var printedAt = _clock.UtcNow;
         var restaurantName = string.IsNullOrWhiteSpace(_branding.RestaurantDisplayName)
             ? "El señor arroz"
             : _branding.RestaurantDisplayName.Trim();
@@ -146,7 +149,7 @@ public class PrintQueueService : IPrintQueueService
         if (!enabled)
             throw new InvalidOperationException("Este tipo de comanda está deshabilitado para la sucursal.");
 
-        var printedAt = DateTime.UtcNow;
+        var printedAt = _clock.UtcNow;
         var restaurantName = string.IsNullOrWhiteSpace(_branding.RestaurantDisplayName)
             ? "El señor arroz"
             : _branding.RestaurantDisplayName.Trim();
@@ -321,7 +324,7 @@ public class PrintQueueService : IPrintQueueService
             return false;
 
         job.Status = PrintJobStatus.Done;
-        job.CompletedAt = DateTime.UtcNow;
+        job.CompletedAt = _clock.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
         return true;
     }
@@ -335,7 +338,7 @@ public class PrintQueueService : IPrintQueueService
             return false;
 
         job.Status = PrintJobStatus.Failed;
-        job.CompletedAt = DateTime.UtcNow;
+        job.CompletedAt = _clock.UtcNow;
         job.ErrorMessage = message.Length > 500 ? message[..500] : message;
         await _db.SaveChangesAsync(cancellationToken);
         return true;

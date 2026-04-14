@@ -1,5 +1,6 @@
 // SenorArroz.Infrastructure/Repositories/BranchRepository.cs
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -12,10 +13,12 @@ namespace SenorArroz.Infrastructure.Repositories;
 public class BranchRepository : IBranchRepository
 {
     private readonly ApplicationDbContext _context;
+    private readonly IClock _clock;
 
-    public BranchRepository(ApplicationDbContext context)
+    public BranchRepository(ApplicationDbContext context, IClock clock)
     {
         _context = context;
+        _clock = clock;
     }
 
     public async Task<PagedResult<Branch>> GetPagedAsync(
@@ -93,7 +96,7 @@ public class BranchRepository : IBranchRepository
 
     public async Task<Branch> UpdateAsync(Branch branch, CancellationToken cancellationToken = default)
     {
-        var utcNow = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Utc);
+        var utcNow = DateTime.SpecifyKind(_clock.UtcNow, DateTimeKind.Utc);
         branch.UpdatedAt = utcNow;
         _context.Branches.Update(branch);
         await _context.SaveChangesAsync(cancellationToken);
@@ -181,13 +184,15 @@ public class BranchRepository : IBranchRepository
 
     public async Task<int> GetOrdersThisMonthAsync(int branchId, CancellationToken cancellationToken = default)
     {
-        var startOfMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        var n = _clock.UtcNow;
+        var startOfMonth = new DateTime(n.Year, n.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         return await _context.Orders.CountAsync(o => o.BranchId == branchId && o.CreatedAt >= startOfMonth, cancellationToken);
     }
 
     public async Task<int> GetCustomersThisMonthAsync(int branchId, CancellationToken cancellationToken = default)
     {
-        var startOfMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        var n = _clock.UtcNow;
+        var startOfMonth = new DateTime(n.Year, n.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         return await _context.Customers.CountAsync(c => c.BranchId == branchId && c.CreatedAt >= startOfMonth, cancellationToken);
     }
 

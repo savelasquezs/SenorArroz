@@ -15,14 +15,14 @@ public class RefreshToken : BaseEntity
     // Navigation properties
     public virtual User User { get; set; } = null!;
 
-    // Methods
-    public bool IsActive => !IsRevoked && !IsExpired;
-    public bool IsExpired => DateTime.UtcNow >= ExpiresAt;
+    public bool IsExpiredAt(DateTime utcNow) => utcNow >= ExpiresAt;
 
-    public void Revoke(string ipAddress, string? replacedByToken = null)
+    public bool IsActiveAt(DateTime utcNow) => !IsRevoked && !IsExpiredAt(utcNow);
+
+    public void Revoke(string ipAddress, DateTime utcNow, string? replacedByToken = null)
     {
         IsRevoked = true;
-        RevokedAt = DateTime.UtcNow;
+        RevokedAt = utcNow;
         RevokedByIp = ipAddress;
         ReplacedByToken = replacedByToken;
     }

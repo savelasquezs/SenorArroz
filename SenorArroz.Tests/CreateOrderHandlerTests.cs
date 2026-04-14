@@ -1,6 +1,7 @@
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Orders.Commands;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
@@ -122,7 +123,8 @@ public class CreateOrderHandlerTests
             db,
             mapper,
             currentUser,
-            new NullNotificationService());
+            new NullNotificationService(),
+            new SystemUtcClock());
     }
 
     private static CreateOrderDto MinimalDeliveryOrder() => new()

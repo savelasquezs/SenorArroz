@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MediatR;
 using SenorArroz.Application.Common.Helpers;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.Commands;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Features.Orders.Queries;
@@ -17,10 +18,12 @@ namespace SenorArroz.API.Controllers;
 public class OrdersController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly IClock _clock;
 
-    public OrdersController(IMediator mediator)
+    public OrdersController(IMediator mediator, IClock clock)
     {
         _mediator = mediator;
+        _clock = clock;
     }
 
     /// <summary>
@@ -489,8 +492,8 @@ public class OrdersController : ControllerBase
         var query = new SearchOrdersQuery
         {
             Type = OrderType.Reservation,
-            FromDate = DateTime.UtcNow,
-            ToDate = DateTime.UtcNow.AddHours(hours),
+            FromDate = _clock.UtcNow,
+            ToDate = _clock.UtcNow.AddHours(hours),
             BranchId = branchId,
             Page = page,
             PageSize = pageSize

@@ -19,19 +19,22 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
     private readonly IApplicationDbContext _context;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IClock _clock;
 
     public CreateExpenseHeaderHandler(
         IExpenseHeaderRepository expenseHeaderRepository,
         IBankRepository bankRepository,
         IApplicationDbContext context,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IClock clock)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
         _bankRepository = bankRepository;
         _context = context;
         _mapper = mapper;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task<ExpenseHeaderDto> Handle(CreateExpenseHeaderCommand request, CancellationToken cancellationToken)
@@ -167,7 +170,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             .Where(se => se.SupplierId == supplierId && expenseIds.Contains(se.ExpenseId))
             .ToListAsync(cancellationToken);
 
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
 
         foreach (var item in items)
         {

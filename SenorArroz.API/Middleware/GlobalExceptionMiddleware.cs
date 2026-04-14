@@ -1,6 +1,7 @@
 // SenorArroz.API/Middleware/GlobalExceptionMiddleware.cs
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
 using System.Net;
 using System.Text.Json;
@@ -18,17 +19,20 @@ public class GlobalExceptionMiddleware
     private readonly ILogger<GlobalExceptionMiddleware> _logger;
     private readonly IHostEnvironment _environment;
     private readonly IConfiguration _configuration;
+    private readonly IClock _clock;
 
     public GlobalExceptionMiddleware(
         RequestDelegate next,
         ILogger<GlobalExceptionMiddleware> logger,
         IHostEnvironment environment,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IClock clock)
     {
         _next = next;
         _logger = logger;
         _environment = environment;
         _configuration = configuration;
+        _clock = clock;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -39,7 +43,7 @@ public class GlobalExceptionMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Ocurriù una excepciùn no controlada: {Message}", ex.Message);
+            _logger.LogError(ex, "Ocurri? una excepci?n no controlada: {Message}", ex.Message);
             await HandleExceptionAsync(context, ex);
         }
     }
@@ -53,7 +57,7 @@ public class GlobalExceptionMiddleware
         {
             Success = false,
             Message = exception.Message,
-            Timestamp = DateTime.UtcNow
+            Timestamp = _clock.UtcNow
         };
 
         var exposeInternal =
@@ -72,7 +76,7 @@ public class GlobalExceptionMiddleware
 
             case ValidationException validationEx:
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
-                errorResponse.Message = "Errores de validaciùn";
+                errorResponse.Message = "Errores de validaci?n";
                 errorResponse.Errors = validationEx.Errors;
                 break;
 

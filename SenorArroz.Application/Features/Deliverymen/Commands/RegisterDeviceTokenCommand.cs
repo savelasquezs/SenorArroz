@@ -15,11 +15,13 @@ public class RegisterDeviceTokenHandler : IRequestHandler<RegisterDeviceTokenCom
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
+    private readonly IClock _clock;
 
-    public RegisterDeviceTokenHandler(IApplicationDbContext db, ICurrentUser currentUser)
+    public RegisterDeviceTokenHandler(IApplicationDbContext db, ICurrentUser currentUser, IClock clock)
     {
         _db = db;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task Handle(RegisterDeviceTokenCommand request, CancellationToken cancellationToken)
@@ -36,7 +38,7 @@ public class RegisterDeviceTokenHandler : IRequestHandler<RegisterDeviceTokenCom
             // Actualiza el usuario asociado (puede cambiar de dispositivo) y timestamp
             existing.UserId = userId;
             existing.Platform = request.Platform;
-            existing.LastSeenAt = DateTime.UtcNow;
+            existing.LastSeenAt = _clock.UtcNow;
         }
         else
         {
@@ -45,7 +47,7 @@ public class RegisterDeviceTokenHandler : IRequestHandler<RegisterDeviceTokenCom
                 UserId = userId,
                 Token = request.Token,
                 Platform = request.Platform,
-                LastSeenAt = DateTime.UtcNow,
+                LastSeenAt = _clock.UtcNow,
             });
         }
 

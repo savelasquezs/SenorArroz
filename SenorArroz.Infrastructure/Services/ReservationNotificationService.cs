@@ -50,8 +50,9 @@ public class ReservationNotificationService : BackgroundService
         var orderRepository = scope.ServiceProvider.GetRequiredService<IOrderRepository>();
         var notificationService = scope.ServiceProvider.GetRequiredService<IOrderNotificationService>();
         var mapper = scope.ServiceProvider.GetRequiredService<IMapper>();
+        var clock = scope.ServiceProvider.GetRequiredService<IClock>();
 
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow;
         var twoHoursFromNow = now.AddHours(2);
 
         // Buscar pedidos donde prepare_at <= now (o fallback reserved_for-1h) y aún no notificados
@@ -66,7 +67,7 @@ public class ReservationNotificationService : BackgroundService
             await notificationService.NotifyReservationToKitchen(orderDto);
 
             // Marcar como notificado para evitar duplicados
-            reservation.PreparedNotifiedAt = DateTime.UtcNow;
+            reservation.PreparedNotifiedAt = clock.UtcNow;
             await orderRepository.UpdateAsync(reservation);
 
             _logger.LogInformation(

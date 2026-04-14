@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
@@ -8,10 +9,12 @@ namespace SenorArroz.Infrastructure.Repositories;
 public class RefreshTokenRepository : IRefreshTokenRepository
 {
     private readonly ApplicationDbContext _context;
+    private readonly IClock _clock;
 
-    public RefreshTokenRepository(ApplicationDbContext context)
+    public RefreshTokenRepository(ApplicationDbContext context, IClock clock)
     {
         _context = context;
+        _clock = clock;
     }
 
     public async Task<RefreshToken?> GetByTokenAsync(string token, CancellationToken cancellationToken = default)
@@ -24,12 +27,13 @@ public class RefreshTokenRepository : IRefreshTokenRepository
 
     public async Task<RefreshToken?> GetActiveByUserIdAsync(int userId, CancellationToken cancellationToken = default)
     {
+        var now = _clock.UtcNow;
         return await _context.RefreshTokens
             .Include(rt => rt.User)
             .ThenInclude(u => u.Branch)
             .FirstOrDefaultAsync(rt => rt.UserId == userId &&
                                       !rt.IsRevoked &&
-                                      rt.ExpiresAt > DateTime.UtcNow, cancellationToken);
+                                      rt.ExpiresAt > now, cancellationToken);
     }
 
     public async Task<IEnumerable<RefreshToken>> GetAllByUserIdAsync(int userId, CancellationToken cancellationToken = default)
@@ -61,7 +65,7 @@ public class RefreshTokenRepository : IRefreshTokenRepository
 
         foreach (var token in activeTokens)
         {
-            token.Revoke(ipAddress);
+            token.Revoke(ipAddress, _clock.UtcNow);
         }
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -69,9 +73,10 @@ public class RefreshTokenRepository : IRefreshTokenRepository
 
     public async Task DeleteExpiredTokensAsync(CancellationToken cancellationToken = default)
     {
+        var now = _clock.UtcNow;
         var expiredTokens = await _context.RefreshTokens
-            .Where(rt => rt.ExpiresAt < DateTime.UtcNow || rt.IsRevoked)
-            .Where(rt => rt.CreatedAt < DateTime.UtcNow.AddDays(-30))
+            .Where(rt => rt.ExpiresAt < now || rt.IsRevoked)
+            .Where(rt => rt.CreatedAt < now.AddDays(-30))
             .ToListAsync(cancellationToken);
 
         _context.RefreshTokens.RemoveRange(expiredTokens);

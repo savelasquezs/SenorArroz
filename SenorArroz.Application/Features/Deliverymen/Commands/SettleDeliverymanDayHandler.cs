@@ -25,6 +25,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
     private readonly IExpenseHeaderRepository _expenseHeaderRepository;
     private readonly ICurrentUser _currentUser;
     private readonly IMapper _mapper;
+    private readonly IClock _clock;
 
     public SettleDeliverymanDayHandler(
         IApplicationDbContext context,
@@ -34,7 +35,8 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         IBankRepository bankRepository,
         IExpenseHeaderRepository expenseHeaderRepository,
         ICurrentUser currentUser,
-        IMapper mapper)
+        IMapper mapper,
+        IClock clock)
     {
         _context = context;
         _userRepository = userRepository;
@@ -44,6 +46,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         _expenseHeaderRepository = expenseHeaderRepository;
         _currentUser = currentUser;
         _mapper = mapper;
+        _clock = clock;
     }
 
     public async Task<SettleDeliverymanDayResultDto> Handle(SettleDeliverymanDayCommand request, CancellationToken cancellationToken)
@@ -314,7 +317,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
             ? await _context.DeliverymanAdvances
                 .Where(a => createdIds.Contains(a.Id))
                 .MaxAsync(a => a.CreatedAt, cancellationToken)
-            : DateTime.UtcNow;
+            : _clock.UtcNow;
         state.LastLiquidationAtUtc = DateTime.SpecifyKind(liquidationMarkerUtc, DateTimeKind.Utc).AddTicks(10);
 
         await _context.SaveChangesAsync(cancellationToken);

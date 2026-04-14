@@ -14,15 +14,18 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
     private readonly IReservationDepositRepository _depositRepository;
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUser _currentUser;
+    private readonly IClock _clock;
 
     public CreateReservationDepositHandler(
         IReservationDepositRepository depositRepository,
         IApplicationDbContext context,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IClock clock)
     {
         _depositRepository = depositRepository;
         _context = context;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task<ReservationDepositDto> Handle(CreateReservationDepositCommand request, CancellationToken cancellationToken)
@@ -57,7 +60,7 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
             IsEffective = request.IsEffective,
             BankId = request.BankId,
             AppId = request.AppId,
-            ReceivedAt = DateTime.UtcNow,
+            ReceivedAt = _clock.UtcNow,
             ReceivedById = _currentUser.Id,
             Notes = request.Notes
         };

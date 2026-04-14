@@ -1,5 +1,6 @@
 ﻿using MediatR;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
 using SenorArroz.Application.Features.CashRegister.Helpers;
@@ -16,17 +17,20 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUser _currentUser;
     private readonly IMediator _mediator;
+    private readonly IClock _clock;
 
     public CloseCashRegisterHandler(
         ICashRegisterClosureRepository closureRepository,
         IApplicationDbContext context,
         ICurrentUser currentUser,
-        IMediator mediator)
+        IMediator mediator,
+        IClock clock)
     {
         _closureRepository = closureRepository;
         _context = context;
         _currentUser = currentUser;
         _mediator = mediator;
+        _clock = clock;
     }
 
     public async Task<CashClosureDto> Handle(CloseCashRegisterCommand request, CancellationToken cancellationToken)
@@ -36,7 +40,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
 
         var exemptIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 
-        var today = DateTime.UtcNow.AddHours(-5).Date;
+        var today = ColombiaTimeHelper.GetNowInColombiaFromUtc(_clock.UtcNow).Date;
 
         var undelivered = await _context.Orders
             .Where(o => o.BranchId == branchId

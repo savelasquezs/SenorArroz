@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
@@ -72,7 +73,7 @@ public class CancellationTokenRegressionTests
         var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        var repo = new BranchRepository(ctx);
+        var repo = new BranchRepository(ctx, new SystemUtcClock());
         var newBranch = MakeBranch("Cancelled Branch");
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
@@ -122,7 +123,7 @@ public class CancellationTokenRegressionTests
         );
         await ctx.SaveChangesAsync();
 
-        var repo = new OrderRepository(ctx);
+        var repo = new OrderRepository(ctx, new SystemUtcClock());
         var result = await repo.SearchOrdersAsync(
             branchId: branch.Id,
             page: 1,

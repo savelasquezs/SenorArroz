@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
@@ -202,7 +203,7 @@ public class AsNoTrackingRegressionTests
         // Simula nueva request: limpiar tracker
         ctx.ChangeTracker.Clear();
 
-        var repo = new OrderRepository(ctx);
+        var repo = new OrderRepository(ctx, new SystemUtcClock());
         var fetched = await repo.GetByIdAsync(order.Id);
 
         Assert.NotNull(fetched);
@@ -251,7 +252,7 @@ public class AsNoTrackingRegressionTests
         // Limpiar tracker para simular una nueva request
         ctx.ChangeTracker.Clear();
 
-        var repo = new RefreshTokenRepository(ctx);
+        var repo = new RefreshTokenRepository(ctx, new SystemUtcClock());
 
         // GetAllByUserIdAsync tiene AsNoTracking: devuelve datos pero no rastrea
         var tokens = await repo.GetAllByUserIdAsync(user.Id);

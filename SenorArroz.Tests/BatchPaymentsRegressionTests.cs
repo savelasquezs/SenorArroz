@@ -1,6 +1,7 @@
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Orders.Commands;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
@@ -153,7 +154,8 @@ public class BatchPaymentsRegressionTests
             db,
             mapper,
             new BatchFakeCurrentUser(role, branchId),
-            new BatchSilentNotificationService());
+            new BatchSilentNotificationService(),
+            new SystemUtcClock());
     }
 
     private static CreateOrderDto OnsiteOrderWith(

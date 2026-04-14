@@ -12,15 +12,18 @@ public class UpdateAdvanceHandler : IRequestHandler<UpdateAdvanceCommand, Delive
     private readonly IDeliverymanAdvanceRepository _advanceRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IClock _clock;
 
     public UpdateAdvanceHandler(
         IDeliverymanAdvanceRepository advanceRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IClock clock)
     {
         _advanceRepository = advanceRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task<DeliverymanAdvanceDto> Handle(UpdateAdvanceCommand request, CancellationToken cancellationToken)
@@ -35,7 +38,7 @@ public class UpdateAdvanceHandler : IRequestHandler<UpdateAdvanceCommand, Delive
             throw new BusinessException("No tienes permisos para editar abonos de esta sucursal");
 
         // 3. Validar que solo se puede editar el día de creación
-        if (advance.CreatedAt.Date != DateTime.UtcNow.Date)
+        if (advance.CreatedAt.Date != _clock.UtcNow.Date)
             throw new BusinessException("Solo se pueden editar abonos del día actual");
 
         // 4. Validar monto > 0

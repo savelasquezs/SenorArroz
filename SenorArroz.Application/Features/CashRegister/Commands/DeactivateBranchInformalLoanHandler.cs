@@ -9,11 +9,13 @@ public class DeactivateBranchInformalLoanHandler : IRequestHandler<DeactivateBra
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUser _currentUser;
+    private readonly IClock _clock;
 
-    public DeactivateBranchInformalLoanHandler(IApplicationDbContext context, ICurrentUser currentUser)
+    public DeactivateBranchInformalLoanHandler(IApplicationDbContext context, ICurrentUser currentUser, IClock clock)
     {
         _context = context;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task<BranchInformalLoanDto> Handle(DeactivateBranchInformalLoanCommand request, CancellationToken cancellationToken)
@@ -29,7 +31,7 @@ public class DeactivateBranchInformalLoanHandler : IRequestHandler<DeactivateBra
         if (entity.DeactivatedAt != null)
             throw new InvalidOperationException("Este préstamo ya fue dado de baja.");
 
-        entity.DeactivatedAt = DateTime.UtcNow;
+        entity.DeactivatedAt = _clock.UtcNow;
         entity.DeactivatedById = _currentUser.Id;
         entity.DeactivationNotes = string.IsNullOrWhiteSpace(request.Dto.Notes)
             ? null

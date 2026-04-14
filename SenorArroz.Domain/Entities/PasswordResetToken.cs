@@ -15,25 +15,25 @@ public class PasswordResetToken : BaseEntity
     // Navigation properties
     public virtual User User { get; set; } = null!;
 
-    // Methods
-    public bool IsValid => !IsUsed && !IsExpired;
-    public bool IsExpired => DateTime.UtcNow >= ExpiresAt;
+    public bool IsExpiredAt(DateTime utcNow) => utcNow >= ExpiresAt;
 
-    public void MarkAsUsed(string ipAddress)
+    public bool IsValidAt(DateTime utcNow) => !IsUsed && !IsExpiredAt(utcNow);
+
+    public void MarkAsUsed(string ipAddress, DateTime utcNow)
     {
         IsUsed = true;
-        UsedAt = DateTime.UtcNow;
+        UsedAt = utcNow;
         UsedByIp = ipAddress;
     }
 
-    public static PasswordResetToken Create(int userId, string email, int expirationMinutes = 60)
+    public static PasswordResetToken Create(int userId, string email, int expirationMinutes, DateTime utcNow)
     {
         return new PasswordResetToken
         {
             UserId = userId,
             Email = email,
             Token = GenerateSecureToken(),
-            ExpiresAt = DateTime.UtcNow.AddMinutes(expirationMinutes)
+            ExpiresAt = utcNow.AddMinutes(expirationMinutes)
         };
     }
 

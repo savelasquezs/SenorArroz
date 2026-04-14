@@ -12,15 +12,18 @@ public class UnlockDeliverymanDayHandler : IRequestHandler<UnlockDeliverymanDayC
     private readonly IApplicationDbContext _context;
     private readonly IUserRepository _userRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IClock _clock;
 
     public UnlockDeliverymanDayHandler(
         IApplicationDbContext context,
         IUserRepository userRepository,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IClock clock)
     {
         _context = context;
         _userRepository = userRepository;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task<Unit> Handle(UnlockDeliverymanDayCommand request, CancellationToken cancellationToken)
@@ -51,7 +54,7 @@ public class UnlockDeliverymanDayHandler : IRequestHandler<UnlockDeliverymanDayC
             throw new BusinessException("No hay liquidación registrada para este día");
 
         state.Blocked = false;
-        state.UnlockedAt = DateTime.UtcNow;
+        state.UnlockedAt = _clock.UtcNow;
         state.UnlockedById = _currentUser.Id;
 
         await _context.SaveChangesAsync(cancellationToken);

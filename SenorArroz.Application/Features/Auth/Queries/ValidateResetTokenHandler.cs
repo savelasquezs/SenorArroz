@@ -1,4 +1,5 @@
 ﻿using MediatR;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Auth.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -7,10 +8,12 @@ namespace SenorArroz.Application.Features.Auth.Queries
     public class ValidateResetTokenHandler : IRequestHandler<ValidateResetTokenQuery, ResetTokenValidationResult>
     {
         private readonly IPasswordResetRepository _passwordResetRepository;
+        private readonly IClock _clock;
 
-        public ValidateResetTokenHandler(IPasswordResetRepository passwordResetRepository)
+        public ValidateResetTokenHandler(IPasswordResetRepository passwordResetRepository, IClock clock)
         {
             _passwordResetRepository = passwordResetRepository;
+            _clock = clock;
         }
 
         public async Task<ResetTokenValidationResult> Handle(ValidateResetTokenQuery request, CancellationToken cancellationToken)
@@ -44,7 +47,7 @@ namespace SenorArroz.Application.Features.Auth.Queries
                 };
             }
 
-            if (resetToken.IsExpired)
+            if (resetToken.IsExpiredAt(_clock.UtcNow))
             {
                 return new ResetTokenValidationResult
                 {

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
+using SenorArroz.Application.Common.Interfaces;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using SenorArroz.Domain.Entities;
@@ -17,10 +18,12 @@ public class JwtService : IJwtService
     private readonly string _issuer;
     private readonly string _audience;
     private readonly int _accessTokenExpirationMinutes;
+    private readonly IClock _clock;
 
-    public JwtService(IConfiguration configuration)
+    public JwtService(IConfiguration configuration, IClock clock)
     {
         _configuration = configuration;
+        _clock = clock;
         _secretKey = _configuration["JwtSettings:SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey not configured");
         _issuer = _configuration["JwtSettings:Issuer"] ?? throw new InvalidOperationException("JWT Issuer not configured");
         _audience = _configuration["JwtSettings:Audience"] ?? throw new InvalidOperationException("JWT Audience not configured");
@@ -46,7 +49,7 @@ public class JwtService : IJwtService
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
-            Expires = DateTime.UtcNow.AddMinutes(_accessTokenExpirationMinutes),
+            Expires = _clock.UtcNow.AddMinutes(_accessTokenExpirationMinutes),
             Issuer = _issuer,
             Audience = _audience,
             SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -107,7 +110,7 @@ public class JwtService : IJwtService
         try
         {
             var jsonToken = tokenHandler.ReadJwtToken(token);
-            return jsonToken.ValidTo < DateTime.UtcNow;
+            return jsonToken.ValidTo < _clock.UtcNow;
         }
         catch
         {

@@ -18,19 +18,22 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly IOrderNotificationService _notificationService;
+    private readonly IClock _clock;
 
     public CreateOrderHandler(
         IOrderRepository orderRepository,
         IApplicationDbContext db,
         IMapper mapper,
         ICurrentUser currentUser,
-        IOrderNotificationService notificationService)
+        IOrderNotificationService notificationService,
+        IClock clock)
     {
         _orderRepository = orderRepository;
         _db = db;
         _mapper = mapper;
         _currentUser = currentUser;
         _notificationService = notificationService;
+        _clock = clock;
     }
 
     public async Task<OrderDto> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
@@ -101,7 +104,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         // Configurar valores obligatorios inmediatamente después del mapeo
         order.BranchId = branchId;
         order.Status = Domain.Enums.OrderStatus.Taken;
-        order.AddStatusTime(Domain.Enums.OrderStatus.Taken, DateTime.UtcNow);
+        order.AddStatusTime(Domain.Enums.OrderStatus.Taken, _clock.UtcNow);
 
         // Mapear y agregar OrderDetails
         if (request.Order.OrderDetails != null && request.Order.OrderDetails.Any())
@@ -157,7 +160,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             if (tracked == null)
                 throw new BusinessException("Pedido no encontrado tras crear");
 
-            OrderPaidInStoreCashHelper.Apply(tracked, true, DateTime.UtcNow);
+            OrderPaidInStoreCashHelper.Apply(tracked, true, _clock.UtcNow);
             await _db.SaveChangesAsync(cancellationToken);
         }
 
@@ -168,7 +171,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         var result = _mapper.Map<OrderDto>(fullOrder);
 
         // Notificar a cocina: pedido inmediato (sin reserved_for) o prepare_at ya pasó
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         var shouldNotifyNow = !fullOrder.ReservedFor.HasValue
             || (fullOrder.PrepareAt.HasValue && fullOrder.PrepareAt.Value <= now);
         if (shouldNotifyNow)

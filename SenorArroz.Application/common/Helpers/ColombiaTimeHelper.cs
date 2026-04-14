@@ -49,49 +49,62 @@ public static class ColombiaTimeHelper
     }
 
     /// <summary>
-    /// Obtiene la fecha/hora actual en Colombia
+    /// Convierte un instante UTC a hora local Colombia (útil con <see cref="SenorArroz.Application.Common.Interfaces.IClock"/>).
     /// </summary>
-    public static DateTime GetNowInColombia()
+    public static DateTime GetNowInColombiaFromUtc(DateTime utcNow)
     {
-        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ColombiaTimeZone);
+        var utc = EnsureUtc(utcNow);
+        return TimeZoneInfo.ConvertTimeFromUtc(utc, ColombiaTimeZone);
     }
 
+    /// <summary>
+    /// Obtiene la fecha/hora actual en Colombia
+    /// </summary>
+    public static DateTime GetNowInColombia() => GetNowInColombiaFromUtc(DateTime.UtcNow);
+
     /// <summary>Fecha calendario de operación en Colombia (día actual local).</summary>
-    public static DateOnly GetTodayDateOnlyColombia()
-    {
-        return DateOnly.FromDateTime(GetNowInColombia().Date);
-    }
+    public static DateOnly GetTodayDateOnlyColombiaFromUtc(DateTime utcNow) =>
+        DateOnly.FromDateTime(GetNowInColombiaFromUtc(utcNow).Date);
+
+    /// <summary>Fecha calendario de operación en Colombia (día actual local).</summary>
+    public static DateOnly GetTodayDateOnlyColombia() => GetTodayDateOnlyColombiaFromUtc(DateTime.UtcNow);
 
     /// <summary>
     /// Obtiene el inicio del día actual en Colombia, convertido a UTC
     /// </summary>
-    public static DateTime GetTodayStartInUtc()
+    public static DateTime GetTodayStartInUtcFromUtc(DateTime utcNow)
     {
-        var colombiaToday = GetNowInColombia().Date;
+        var colombiaToday = GetNowInColombiaFromUtc(utcNow).Date;
         var utcStart = ConvertColombiaToUtc(colombiaToday);
         return DateTime.SpecifyKind(utcStart, DateTimeKind.Utc);
     }
 
+    public static DateTime GetTodayStartInUtc() => GetTodayStartInUtcFromUtc(DateTime.UtcNow);
+
     /// <summary>
     /// Obtiene el fin del día actual en Colombia, convertido a UTC
     /// </summary>
-    public static DateTime GetTodayEndInUtc()
+    public static DateTime GetTodayEndInUtcFromUtc(DateTime utcNow)
     {
-        var colombiaTodayEnd = GetNowInColombia().Date.AddDays(1).AddTicks(-1);
+        var colombiaTodayEnd = GetNowInColombiaFromUtc(utcNow).Date.AddDays(1).AddTicks(-1);
         var utcEnd = ConvertColombiaToUtc(colombiaTodayEnd);
         return DateTime.SpecifyKind(utcEnd, DateTimeKind.Utc);
     }
 
+    public static DateTime GetTodayEndInUtc() => GetTodayEndInUtcFromUtc(DateTime.UtcNow);
+
     /// <summary>
     /// Inicio del día calendario siguiente en Colombia, en UTC (p. ej. para excluir reservas “futuras” respecto a hoy en Bogotá).
     /// </summary>
-    public static DateTime GetColombiaStartOfTomorrowUtc()
+    public static DateTime GetColombiaStartOfTomorrowUtcFromUtc(DateTime utcNow)
     {
-        var nextColombiaDay = GetNowInColombia().Date.AddDays(1);
+        var nextColombiaDay = GetNowInColombiaFromUtc(utcNow).Date.AddDays(1);
         var unspecified = DateTime.SpecifyKind(nextColombiaDay, DateTimeKind.Unspecified);
         var utc = ConvertColombiaToUtc(unspecified);
         return DateTime.SpecifyKind(utc, DateTimeKind.Utc);
     }
+
+    public static DateTime GetColombiaStartOfTomorrowUtc() => GetColombiaStartOfTomorrowUtcFromUtc(DateTime.UtcNow);
 
     /// <summary>
     /// Fecha de calendario en Colombia (medianoche local interpretada como fecha-only, Kind Unspecified).

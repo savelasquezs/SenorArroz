@@ -10,10 +10,12 @@ namespace SenorArroz.Application.Features.BranchPrintSettings.Commands;
 public class RotateBranchAgentTokenHandler : IRequestHandler<RotateBranchAgentTokenCommand, RotateBranchAgentTokenResponseDto>
 {
     private readonly IApplicationDbContext _db;
+    private readonly IClock _clock;
 
-    public RotateBranchAgentTokenHandler(IApplicationDbContext db)
+    public RotateBranchAgentTokenHandler(IApplicationDbContext db, IClock clock)
     {
         _db = db;
+        _clock = clock;
     }
 
     public async Task<RotateBranchAgentTokenResponseDto> Handle(RotateBranchAgentTokenCommand request, CancellationToken cancellationToken)
@@ -27,7 +29,7 @@ public class RotateBranchAgentTokenHandler : IRequestHandler<RotateBranchAgentTo
         var salt = PrintAgentTokenCrypto.NewSalt();
         entity.AgentTokenSalt = salt;
         entity.AgentTokenHash = PrintAgentTokenCrypto.ComputeHash(salt, plainToken);
-        entity.AgentTokenUpdatedAt = DateTime.UtcNow;
+        entity.AgentTokenUpdatedAt = _clock.UtcNow;
 
         await _db.SaveChangesAsync(cancellationToken);
 

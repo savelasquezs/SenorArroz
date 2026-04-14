@@ -8,6 +8,7 @@ using SenorArroz.Application.Features.DeliverymanAdvances.Queries;
 using SenorArroz.Application.Features.Deliverymen.Commands;
 using SenorArroz.Application.Features.Deliverymen.DTOs;
 using SenorArroz.Application.Features.Deliverymen.Queries;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Features.Orders.Queries;
 using SenorArroz.Domain.Enums;
@@ -21,10 +22,12 @@ namespace SenorArroz.API.Controllers;
 public class DeliverymanController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly IClock _clock;
 
-    public DeliverymanController(IMediator mediator)
+    public DeliverymanController(IMediator mediator, IClock clock)
     {
         _mediator = mediator;
+        _clock = clock;
     }
 
     /// <summary>
@@ -380,7 +383,7 @@ public class DeliverymanController : ControllerBase
         return Ok(result);
     }
 
-    private static (DateTime? from, DateTime? to) ResolveDateRange(DateTime? date, DateTime? fromDate, DateTime? toDate)
+    private (DateTime? from, DateTime? to) ResolveDateRange(DateTime? date, DateTime? fromDate, DateTime? toDate)
     {
         static DateTime ToUtc(DateTime d) =>
             d.Kind == DateTimeKind.Utc ? d : DateTime.SpecifyKind(d, DateTimeKind.Utc);
@@ -393,7 +396,7 @@ public class DeliverymanController : ControllerBase
                 to = to.Date.AddDays(1).AddTicks(-1);
             return (from, to);
         }
-        var d = date?.Date ?? DateTime.UtcNow.Date;
+        var d = date?.Date ?? _clock.UtcNow.Date;
         return (ToUtc(d), ToUtc(d.AddDays(1).AddTicks(-1)));
     }
 }

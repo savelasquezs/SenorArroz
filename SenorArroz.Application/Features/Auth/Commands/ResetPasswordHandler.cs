@@ -1,5 +1,6 @@
 ﻿using MediatR;
 using Microsoft.Extensions.Logging;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Auth.DTOs;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -14,7 +15,8 @@ namespace SenorArroz.Application.Features.Auth.Commands
         IPasswordService passwordService,
         IEmailService emailService,
         IUserRepository userRepository,
-        ILogger<ResetPasswordHandler> logger) : IRequestHandler<ResetPasswordCommand, bool>
+        ILogger<ResetPasswordHandler> logger,
+        IClock clock) : IRequestHandler<ResetPasswordCommand, bool>
     {
         private readonly IPasswordResetRepository _passwordResetRepository = passwordResetRepository;
         private readonly IAuthRepository _authRepository = authRepository;
@@ -23,6 +25,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
         private readonly IPasswordService _passwordService = passwordService;
         private readonly IEmailService _emailService = emailService;
         private readonly ILogger<ResetPasswordHandler> _logger = logger;
+        private readonly IClock _clock = clock;
 
         public async Task<bool> Handle(ResetPasswordCommand request, CancellationToken cancellationToken)
         {
@@ -41,9 +44,9 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 {
                     throw new BusinessException("El token de recuperación ya ha sido utilizado");
                 }
-                if (resetToken.IsExpired)
+                if (resetToken.IsExpiredAt(_clock.UtcNow))
                 {
-                    throw new BusinessException($"El token de recuperación ha expirado,expira en : {resetToken.ExpiresAt} y hora actual {DateTime.UtcNow}");
+                    throw new BusinessException($"El token de recuperación ha expirado,expira en : {resetToken.ExpiresAt} y hora actual {_clock.UtcNow}");
                 }
 
                 // Verify email matches
@@ -71,7 +74,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 }
 
                 // Mark token as used
-                resetToken.MarkAsUsed(request.IpAddress);
+                resetToken.MarkAsUsed(request.IpAddress, _clock.UtcNow);
                 await _passwordResetRepository.UpdateAsync(resetToken, cancellationToken);
 
                 // Invalidate all refresh tokens

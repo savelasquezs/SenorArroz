@@ -29,7 +29,8 @@ public class GlobalExceptionMiddlewareTests
         var logger = NullLogger<GlobalExceptionMiddleware>.Instance;
         var env = new FakeHostEnvironment(isDevelopment);
         var config = new ConfigurationBuilder().Build();
-        return new GlobalExceptionMiddleware(next, logger, env, config);
+        var clock = new FakeClock(new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc));
+        return new GlobalExceptionMiddleware(next, logger, env, config, clock);
     }
 
     private static async Task<(int StatusCode, JsonDocument Body)> InvokeAsync(

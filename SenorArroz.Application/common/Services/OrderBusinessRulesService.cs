@@ -6,6 +6,13 @@ namespace SenorArroz.Application.Common.Services;
 
 public class OrderBusinessRulesService : IOrderBusinessRulesService
 {
+    private readonly IClock _clock;
+
+    public OrderBusinessRulesService(IClock clock)
+    {
+        _clock = clock;
+    }
+
     public bool CanUpdateOrder(Order order, string userRole)
     {
         if (order.Status == OrderStatus.Cancelled)
@@ -77,7 +84,7 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
 
     public bool IsSameDay(DateTime orderCreatedAt)
     {
-        return orderCreatedAt.Date == DateTime.UtcNow.Date;
+        return orderCreatedAt.Date == _clock.UtcNow.Date;
     }
 
     #region Private Helper Methods

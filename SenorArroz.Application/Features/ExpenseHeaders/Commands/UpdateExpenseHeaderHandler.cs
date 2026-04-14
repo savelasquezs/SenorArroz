@@ -18,19 +18,22 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
     private readonly IApplicationDbContext _context;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IClock _clock;
 
     public UpdateExpenseHeaderHandler(
         IExpenseHeaderRepository expenseHeaderRepository,
         IBankRepository bankRepository,
         IApplicationDbContext context,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IClock clock)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
         _bankRepository = bankRepository;
         _context = context;
         _mapper = mapper;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task<ExpenseHeaderDto> Handle(UpdateExpenseHeaderCommand request, CancellationToken cancellationToken)
@@ -240,7 +243,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         if (linkedAdvance == null || linkedAdvance.Amount == newTotal)
             return;
 
-        if (linkedAdvance.CreatedAt.Date != DateTime.UtcNow.Date)
+        if (linkedAdvance.CreatedAt.Date != _clock.UtcNow.Date)
         {
             throw new BusinessException(
                 "El abono vinculado a este gasto solo puede ajustarse automáticamente el mismo día de su registro. " +
@@ -267,7 +270,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             .Where(se => se.SupplierId == supplierId && expenseIds.Contains(se.ExpenseId))
             .ToListAsync(cancellationToken);
 
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
 
         foreach (var item in items)
         {

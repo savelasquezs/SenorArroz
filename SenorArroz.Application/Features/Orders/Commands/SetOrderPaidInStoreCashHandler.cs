@@ -16,17 +16,20 @@ public class SetOrderPaidInStoreCashHandler : IRequestHandler<SetOrderPaidInStor
     private readonly IOrderRepository _orderRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IClock _clock;
 
     public SetOrderPaidInStoreCashHandler(
         IApplicationDbContext context,
         IOrderRepository orderRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IClock clock)
     {
         _context = context;
         _orderRepository = orderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task<OrderDto> Handle(SetOrderPaidInStoreCashCommand request, CancellationToken cancellationToken)
@@ -49,7 +52,7 @@ public class SetOrderPaidInStoreCashHandler : IRequestHandler<SetOrderPaidInStor
         if (!Roles.IsSuperadmin(role) && order.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
-        OrderPaidInStoreCashHelper.Apply(order, request.PaidInStoreCash, DateTime.UtcNow);
+        OrderPaidInStoreCashHelper.Apply(order, request.PaidInStoreCash, _clock.UtcNow);
 
         await _context.SaveChangesAsync(cancellationToken);
 

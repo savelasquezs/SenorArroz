@@ -1,5 +1,6 @@
 ﻿using MediatR;
 using Microsoft.Extensions.Logging;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Domain.Interfaces.Services;
@@ -10,12 +11,14 @@ namespace SenorArroz.Application.Features.Auth.Commands
         IAuthRepository authRepository,
         IPasswordResetRepository passwordResetRepository,
         IEmailService emailService,
-        ILogger<ForgotPasswordHandler> logger) : IRequestHandler<ForgotPasswordCommand, bool>
+        ILogger<ForgotPasswordHandler> logger,
+        IClock clock) : IRequestHandler<ForgotPasswordCommand, bool>
     {
         private readonly IAuthRepository _authRepository = authRepository;
         private readonly IPasswordResetRepository _passwordResetRepository = passwordResetRepository;
         private readonly IEmailService _emailService = emailService;
         private readonly ILogger<ForgotPasswordHandler> _logger = logger;
+        private readonly IClock _clock = clock;
 
         public async Task<bool> Handle(ForgotPasswordCommand request, CancellationToken cancellationToken)
         {
@@ -34,7 +37,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 await _passwordResetRepository.InvalidateAllUserTokensAsync(user.Id, cancellationToken);
 
                 // Create new reset token
-                var resetToken = PasswordResetToken.Create(user.Id, request.Email, expirationMinutes: 60);
+                var resetToken = PasswordResetToken.Create(user.Id, request.Email, expirationMinutes: 60, _clock.UtcNow);
                 await _passwordResetRepository.CreateAsync(resetToken, cancellationToken);
 
                 // Send email

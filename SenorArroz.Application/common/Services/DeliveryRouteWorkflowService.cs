@@ -15,17 +15,20 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
     private readonly IGoogleRoutesDrivingMetricsService _routesMetrics;
     private readonly DeliveryRouteOptions _opt;
     private readonly ILogger<DeliveryRouteWorkflowService> _logger;
+    private readonly IClock _clock;
 
     public DeliveryRouteWorkflowService(
         IApplicationDbContext db,
         IGoogleRoutesDrivingMetricsService routesMetrics,
         IOptions<DeliveryRouteOptions> options,
-        ILogger<DeliveryRouteWorkflowService> logger)
+        ILogger<DeliveryRouteWorkflowService> logger,
+        IClock clock)
     {
         _db = db;
         _routesMetrics = routesMetrics;
         _opt = options.Value;
         _logger = logger;
+        _clock = clock;
     }
 
     public async Task OnOrderAssignedToDeliverymanAsync(Order order, CancellationToken cancellationToken = default)
@@ -66,7 +69,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
                 DeliverymanId = tracked.DeliveryManId.Value,
                 BranchId = tracked.BranchId,
                 Status = DeliveryRouteStatus.Open,
-                LastAssignmentAtUtc = DateTime.UtcNow,
+                LastAssignmentAtUtc = _clock.UtcNow,
                 PerOrderBufferSeconds = _opt.PerOrderBufferSeconds,
                 ComplexAccessBufferSeconds = _opt.ComplexAccessBufferSeconds,
             };
@@ -88,7 +91,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
             AddressSnapshotText = snapshot,
         });
         tracked.DeliveryRouteId = route.Id;
-        route.LastAssignmentAtUtc = DateTime.UtcNow;
+        route.LastAssignmentAtUtc = _clock.UtcNow;
         route.PerOrderBufferSeconds = _opt.PerOrderBufferSeconds;
         route.ComplexAccessBufferSeconds = _opt.ComplexAccessBufferSeconds;
 
@@ -167,14 +170,14 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         if (route.RouteStartedAtUtc is null || route.MetaDurationSeconds is null)
         {
             _logger.LogWarning("Ruta {RouteId} InProgress sin route_started_at o meta; se cierra sin SLA.", route.Id);
-            route.CompletedAtUtc = DateTime.UtcNow;
+            route.CompletedAtUtc = _clock.UtcNow;
             route.Status = DeliveryRouteStatus.Completed;
             await TrySetReturnToBranchMetersAsync(route, orders, cancellationToken);
             await _db.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        var completedAt = DateTime.UtcNow;
+        var completedAt = _clock.UtcNow;
         route.CompletedAtUtc = completedAt;
         var actual = (int)Math.Max(0, (completedAt - route.RouteStartedAtUtc.Value).TotalSeconds);
         route.ActualDurationSeconds = actual;
@@ -280,7 +283,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
     public async Task<int> ConsolidatePendingRoutesAsync(CancellationToken cancellationToken = default)
     {
         var delay = TimeSpan.FromSeconds(Math.Max(0, _opt.ConsolidationDelaySeconds));
-        var cutoff = DateTime.UtcNow - delay;
+        var cutoff = _clock.UtcNow - delay;
 
         var routes = await _db.DeliveryRoutes
             .Include(r => r.Stops)
@@ -441,7 +444,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
 
         await ApplyRoutePlanningCoreAsync(route, stopList, dict, cancellationToken);
 
-        var now = DateTime.UtcNow;
+        var now = _clock.UtcNow;
         route.ConsolidatedAtUtc = now;
         route.CompletedAtUtc = now;
         route.ActualDurationSeconds = route.MetaDurationSeconds;
@@ -515,7 +518,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         }
 
         await ApplyRoutePlanningCoreAsync(route, eligibleStops, dict, cancellationToken);
-        route.ConsolidatedAtUtc = DateTime.UtcNow;
+        route.ConsolidatedAtUtc = _clock.UtcNow;
         route.Status = DeliveryRouteStatus.InProgress;
 
         await _db.SaveChangesAsync(cancellationToken);

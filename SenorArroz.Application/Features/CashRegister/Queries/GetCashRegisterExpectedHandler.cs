@@ -15,17 +15,20 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
     private readonly IBankRepository _bankRepository;
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUser _currentUser;
+    private readonly IClock _clock;
 
     public GetCashRegisterExpectedHandler(
         ICashRegisterClosureRepository closureRepository,
         IBankRepository bankRepository,
         IApplicationDbContext context,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IClock clock)
     {
         _closureRepository = closureRepository;
         _bankRepository = bankRepository;
         _context = context;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task<CashRegisterExpectedDto> Handle(GetCashRegisterExpectedQuery request, CancellationToken cancellationToken)
@@ -39,13 +42,13 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
 
         if (lastClosure is null)
         {
-            since = ColombiaTimeHelper.GetTodayStartInUtc();
-            now = ColombiaTimeHelper.GetTodayEndInUtc();
+            since = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(_clock.UtcNow);
+            now = ColombiaTimeHelper.GetTodayEndInUtcFromUtc(_clock.UtcNow);
         }
         else
         {
             since = lastClosure.ClosedAt;
-            now = DateTime.UtcNow;
+            now = _clock.UtcNow;
         }
 
         decimal openingCash = lastClosure?.ClosingCash ?? 0;
@@ -104,7 +107,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
 
         var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 
-        var todayCol = DateTime.UtcNow.AddHours(-5).Date;
+        var todayCol = ColombiaTimeHelper.GetNowInColombiaFromUtc(_clock.UtcNow).Date;
 
         var undeliveredOrdersCount = await _context.Orders
             .Where(o => o.BranchId == branchId

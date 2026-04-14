@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Auth.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
@@ -14,17 +15,20 @@ namespace SenorArroz.Application.Features.Auth.Commands
         private readonly IRefreshTokenRepository _refreshTokenRepository;
         private readonly IJwtService _jwtService;
         private readonly IMapper _mapper;
+        private readonly IClock _clock;
 
         public RefreshTokenHandler(
             IAuthRepository authRepository,
             IRefreshTokenRepository refreshTokenRepository,
             IJwtService jwtService,
-            IMapper mapper)
+            IMapper mapper,
+            IClock clock)
         {
             _authRepository = authRepository;
             _refreshTokenRepository = refreshTokenRepository;
             _jwtService = jwtService;
             _mapper = mapper;
+            _clock = clock;
         }
 
         public async Task<AuthResponseDto> Handle(RefreshTokenCommand request, CancellationToken cancellationToken)
@@ -34,14 +38,14 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
             // Validar refresh token
             var refreshToken = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken, cancellationToken);
-            if (refreshToken == null || !refreshToken.IsActive || refreshToken.UserId != userId)
+            if (refreshToken == null || !refreshToken.IsActiveAt(_clock.UtcNow) || refreshToken.UserId != userId)
                 throw new BusinessException("Refresh token inválido");
 
             // Obtener usuario actualizado
             var user = await _authRepository.GetUserByIdWithBranchAsync(userId, cancellationToken) ?? throw new BusinessException("Usuario no encontrado");
 
             // Revocar el refresh token usado
-            refreshToken.Revoke(request.IpAddress);
+            refreshToken.Revoke(request.IpAddress, _clock.UtcNow);
             await _refreshTokenRepository.UpdateAsync(refreshToken, cancellationToken);
 
             // Generar nuevos tokens
@@ -53,7 +57,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             {
                 UserId = user.Id,
                 Token = newRefreshToken,
-                ExpiresAt = DateTime.UtcNow.AddDays(7)
+                ExpiresAt = _clock.UtcNow.AddDays(7)
             };
 
             await _refreshTokenRepository.AddAsync(newRefreshTokenEntity, cancellationToken);
@@ -65,7 +69,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             {
                 Token = newAccessToken,
                 RefreshToken = newRefreshToken,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(60),
+                ExpiresAt = _clock.UtcNow.AddMinutes(60),
                 User = userInfo
             };
         }

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Repositories;
@@ -73,7 +74,7 @@ public class ILikeRegressionTests
         );
         await ctx.SaveChangesAsync();
 
-        var repo = new BranchRepository(ctx);
+        var repo = new BranchRepository(ctx, new SystemUtcClock());
         // Sin filtros de name ni address → no invoca ILike, funciona en InMemory
         var result = await repo.GetPagedAsync(page: 1, pageSize: 10);
 

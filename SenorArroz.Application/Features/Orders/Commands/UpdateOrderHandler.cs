@@ -20,6 +20,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
     private readonly ICurrentUser _currentUser;
     private readonly IOrderBusinessRulesService _businessRules;
     private readonly IOrderNotificationService _notificationService;
+    private readonly IClock _clock;
 
     public UpdateOrderHandler(
         IOrderRepository orderRepository,
@@ -27,7 +28,8 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         IMapper mapper,
         ICurrentUser currentUser,
         IOrderBusinessRulesService businessRules,
-        IOrderNotificationService notificationService)
+        IOrderNotificationService notificationService,
+        IClock clock)
     {
         _orderRepository = orderRepository;
         _addressRepository = addressRepository;
@@ -35,6 +37,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         _currentUser = currentUser;
         _businessRules = businessRules;
         _notificationService = notificationService;
+        _clock = clock;
     }
 
     public async Task<OrderDto> Handle(UpdateOrderCommand request, CancellationToken cancellationToken)
@@ -77,7 +80,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         }
 
         // Cambio automático a Reservation: si se pone reserved_for con valor futuro
-        if (request.Order.ReservedFor.HasValue && request.Order.ReservedFor.Value > DateTime.UtcNow)
+        if (request.Order.ReservedFor.HasValue && request.Order.ReservedFor.Value > _clock.UtcNow)
         {
             existingOrder.Type = OrderType.Reservation;
         }
@@ -178,8 +181,8 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
         if (scheduleChanged && existingOrder.Status == OrderStatus.Taken)
         {
-            if (existingOrder.PrepareAt.HasValue && existingOrder.PrepareAt.Value <= DateTime.UtcNow)
-                existingOrder.PreparedNotifiedAt = DateTime.UtcNow;
+            if (existingOrder.PrepareAt.HasValue && existingOrder.PrepareAt.Value <= _clock.UtcNow)
+                existingOrder.PreparedNotifiedAt = _clock.UtcNow;
             else
                 existingOrder.PreparedNotifiedAt = null;
         }

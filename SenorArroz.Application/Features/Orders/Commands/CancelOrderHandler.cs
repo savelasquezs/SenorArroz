@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -18,6 +18,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
     private readonly ICurrentUser _currentUser;
     private readonly ILoyaltyCycleService _loyaltyCycle;
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
+    private readonly IClock _clock;
 
     public CancelOrderHandler(
         IOrderRepository orderRepository,
@@ -26,7 +27,8 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         IMapper mapper,
         ICurrentUser currentUser,
         ILoyaltyCycleService loyaltyCycle,
-        IDeliveryRouteWorkflowService deliveryRouteWorkflow)
+        IDeliveryRouteWorkflowService deliveryRouteWorkflow,
+        IClock clock)
     {
         _orderRepository = orderRepository;
         _bankPaymentRepository = bankPaymentRepository;
@@ -35,6 +37,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         _currentUser = currentUser;
         _loyaltyCycle = loyaltyCycle;
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
+        _clock = clock;
     }
 
     public async Task<OrderDto> Handle(CancelOrderCommand request, CancellationToken cancellationToken)
@@ -58,7 +61,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         // Reserva con horario de preparación y entrega: se mantiene la regla de mismo día (fecha UTC de creación).
         if (IsScheduledReservation(existingOrder))
         {
-            var todayUtc = DateTime.UtcNow.Date;
+            var todayUtc = _clock.UtcNow.Date;
             if (existingOrder.CreatedAt.Date != todayUtc)
                 throw new BusinessException(
                     "Las reservas con horario de preparación y entrega solo se pueden cancelar el mismo día en que se registró el pedido.");
