@@ -62,6 +62,14 @@ public static class ColombiaTimeHelper
     /// </summary>
     public static DateTime GetNowInColombia() => GetNowInColombiaFromUtc(DateTime.UtcNow);
 
+    /// <summary>
+    /// Medianoche UTC del día UTC de <c>utcNow - 5 horas</c>, alineada con
+    /// <c>date_trunc('day', prepare_at::timestamptz + INTERVAL '-5 hours', 'UTC')</c> en PostgreSQL/EF.
+    /// El resultado tiene <see cref="DateTimeKind.Utc"/> (Npgsql no admite <c>Unspecified</c> en <c>timestamptz</c>).
+    /// </summary>
+    public static DateTime GetPrepareAtSqlTruncDayUtc(DateTime utcNow) =>
+        EnsureUtc(utcNow).AddHours(-5).Date;
+
     /// <summary>Fecha calendario de operación en Colombia (día actual local).</summary>
     public static DateOnly GetTodayDateOnlyColombiaFromUtc(DateTime utcNow) =>
         DateOnly.FromDateTime(GetNowInColombiaFromUtc(utcNow).Date);

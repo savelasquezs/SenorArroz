@@ -40,7 +40,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
 
         var exemptIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 
-        var today = ColombiaTimeHelper.GetNowInColombiaFromUtc(_clock.UtcNow).Date;
+        var today = ColombiaTimeHelper.GetPrepareAtSqlTruncDayUtc(_clock.UtcNow);
 
         var undelivered = await _context.Orders
             .Where(o => o.BranchId == branchId

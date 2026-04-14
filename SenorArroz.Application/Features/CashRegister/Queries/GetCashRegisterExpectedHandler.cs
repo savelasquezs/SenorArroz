@@ -107,7 +107,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
 
         var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 
-        var todayCol = ColombiaTimeHelper.GetNowInColombiaFromUtc(_clock.UtcNow).Date;
+        var todayCol = ColombiaTimeHelper.GetPrepareAtSqlTruncDayUtc(_clock.UtcNow);
 
         var undeliveredOrdersCount = await _context.Orders
             .Where(o => o.BranchId == branchId
