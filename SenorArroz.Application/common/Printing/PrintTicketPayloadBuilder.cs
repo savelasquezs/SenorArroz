@@ -152,6 +152,7 @@ public static class PrintTicketPayloadBuilder
             OrderStatus = OrderStatusToString(order.Status),
             ReservedFor = order.ReservedFor,
             PrepareAt = order.PrepareAt,
+            CreatedAt = order.CreatedAt,
         };
     }
 
@@ -270,6 +271,7 @@ public static class PrintTicketPayloadBuilder
             OrderType = kind == PrintJobKind.Delivery ? "delivery" : "onsite",
             OrderStatus = kind == PrintJobKind.Delivery ? "on_the_way" : "in_preparation",
             PrepareAt = printedAtUtc,
+            CreatedAt = printedAtUtc,
         };
 
         return new PrintTicketPayloadBatchV1 { Version = 1, Orders = new List<PrintTicketOrderPayloadV1> { orderPayload } };

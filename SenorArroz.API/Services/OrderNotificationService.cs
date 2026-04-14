@@ -55,18 +55,25 @@ public class OrderNotificationService : IOrderNotificationService
             .SendAsync("OrderAssigned", order);
     }
 
-    public async Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind)
+    public async Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null)
     {
         await _hubContext.Clients
             .Group($"Branch_{order.BranchId}_Kitchen")
-            .SendAsync("OrderModified", new { order, modificationKind });
+            .SendAsync("OrderModified", new { order, modificationKind, kitchenChanges });
     }
 
-    public async Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind)
+    public async Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null)
     {
         await _hubContext.Clients
             .Group($"Branch_{order.BranchId}_Delivery")
-            .SendAsync("OrderModified", new { order, modificationKind });
+            .SendAsync("OrderModified", new { order, modificationKind, kitchenChanges });
+    }
+
+    public async Task NotifyOrderCancelledToKitchen(int branchId, int orderId, string? reasonPreview = null)
+    {
+        await _hubContext.Clients
+            .Group($"Branch_{branchId}_Kitchen")
+            .SendAsync("OrderCancelled", new { orderId, reasonPreview });
     }
 
     public async Task NotifyDeliverymanLocation(

@@ -1,6 +1,8 @@
 using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Kitchen;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
@@ -61,6 +63,10 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         var beforeReservedFor = existingOrder.ReservedFor;
         var beforePrepareAt = existingOrder.PrepareAt;
         var beforeNotes = existingOrder.Notes;
+
+        IReadOnlyList<DetailSnap>? lineSnapshotBefore = null;
+        if (request.Order.OrderDetails != null)
+            lineSnapshotBefore = KitchenOrderModificationDiff.SnapshotFromOrder(existingOrder);
 
         // Validar prepare_at <= reserved_for cuando ambos tienen valor
         if (request.Order.PrepareAt.HasValue && request.Order.ReservedFor.HasValue
@@ -189,11 +195,13 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
         RecalculateOrderTotals(existingOrder);
 
-        var updatedOrder = await _orderRepository.UpdateAsync(existingOrder, cancellationToken);
-        var result = _mapper.Map<OrderDto>(updatedOrder);
+        await _orderRepository.UpdateAsync(existingOrder, cancellationToken);
+        var persisted = await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken)
+            ?? throw new InvalidOperationException("No se pudo recargar el pedido tras actualizar.");
+        var result = _mapper.Map<OrderDto>(persisted);
 
         var notesChanged = request.Order.Notes != null
-            && !string.Equals(beforeNotes ?? "", updatedOrder.Notes ?? "", StringComparison.Ordinal);
+            && !string.Equals(beforeNotes ?? "", persisted.Notes ?? "", StringComparison.Ordinal);
         var productsChanged = request.Order.OrderDetails != null;
 
         string? modificationKind = (scheduleChanged, notesChanged, productsChanged) switch
@@ -206,11 +214,29 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
         if (modificationKind != null)
         {
-            if (updatedOrder.Status is OrderStatus.Taken or OrderStatus.InPreparation)
-                await _notificationService.NotifyOrderModifiedToKitchen(result, modificationKind);
+            KitchenOrderModificationSummary kitchenChanges;
+            if (lineSnapshotBefore != null)
+            {
+                var afterSnap = KitchenOrderModificationDiff.SnapshotFromOrder(persisted);
+                kitchenChanges = KitchenOrderModificationDiff.Build(lineSnapshotBefore, afterSnap);
+            }
+            else
+            {
+                kitchenChanges = new KitchenOrderModificationSummary();
+            }
 
-            if (updatedOrder.Status == OrderStatus.OnTheWay)
-                await _notificationService.NotifyOrderModifiedToDelivery(result, modificationKind);
+            kitchenChanges.ScheduleChanged = scheduleChanged;
+            kitchenChanges.NotesChanged = notesChanged;
+
+            var utc = _clock.UtcNow;
+            if (KitchenOrderNotificationEligibility.IsVisibleToActiveKitchen(persisted, utc)
+                && persisted.Status is OrderStatus.Taken or OrderStatus.InPreparation)
+            {
+                await _notificationService.NotifyOrderModifiedToKitchen(result, modificationKind, kitchenChanges);
+            }
+
+            if (persisted.Status == OrderStatus.OnTheWay)
+                await _notificationService.NotifyOrderModifiedToDelivery(result, modificationKind, kitchenChanges);
         }
 
         return result;

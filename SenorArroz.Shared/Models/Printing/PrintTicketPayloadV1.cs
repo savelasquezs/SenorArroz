@@ -48,6 +48,8 @@ public class PrintTicketOrderPayloadV1
     public string? OrderStatus { get; set; }
     public DateTime? ReservedFor { get; set; }
     public DateTime? PrepareAt { get; set; }
+    /// <summary>Creación del pedido en UTC (fallback en comanda si no hay <see cref="PrepareAt"/>).</summary>
+    public DateTime? CreatedAt { get; set; }
 }
 
 public class PrintTicketLineV1

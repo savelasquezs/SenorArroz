@@ -13,12 +13,15 @@ public interface IOrderNotificationService
     /// Cocina: pedido modificado (horario, notas, productos) en taken o in_preparation.
     /// <paramref name="modificationKind"/>: schedule | content | multiple
     /// </summary>
-    Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind);
+    Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null);
 
     /// <summary>
     /// Domiciliarios de la sucursal: pedido en camino fue modificado.
     /// </summary>
-    Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind);
+    Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null);
+
+    /// <summary>Cocina: pedido cancelado mientras estaba en flujo activo.</summary>
+    Task NotifyOrderCancelledToKitchen(int branchId, int orderId, string? reasonPreview = null);
 
     /// <summary>
     /// Admins de la sucursal: actualización de ubicación GPS del domiciliario.

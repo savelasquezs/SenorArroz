@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
@@ -19,6 +20,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
     private readonly ILoyaltyCycleService _loyaltyCycle;
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
     private readonly IClock _clock;
+    private readonly IOrderNotificationService _notificationService;
 
     public CancelOrderHandler(
         IOrderRepository orderRepository,
@@ -28,7 +30,8 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         ICurrentUser currentUser,
         ILoyaltyCycleService loyaltyCycle,
         IDeliveryRouteWorkflowService deliveryRouteWorkflow,
-        IClock clock)
+        IClock clock,
+        IOrderNotificationService notificationService)
     {
         _orderRepository = orderRepository;
         _bankPaymentRepository = bankPaymentRepository;
@@ -38,6 +41,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         _loyaltyCycle = loyaltyCycle;
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
         _clock = clock;
+        _notificationService = notificationService;
     }
 
     public async Task<OrderDto> Handle(CancelOrderCommand request, CancellationToken cancellationToken)
@@ -76,6 +80,14 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
             request.Id,
             request.Cancellation.Reason,
             cancellationToken);
+
+        if (KitchenOrderNotificationEligibility.IsVisibleToActiveKitchen(existingOrder, _clock.UtcNow))
+        {
+            var preview = request.Cancellation.Reason.Trim();
+            if (preview.Length > 120)
+                preview = preview[..120];
+            await _notificationService.NotifyOrderCancelledToKitchen(existingOrder.BranchId, request.Id, preview);
+        }
 
         if (previousStatus == OrderStatus.Delivered)
             await _loyaltyCycle.OnOrderLeftDeliveredAsync(order.Id, cancellationToken);

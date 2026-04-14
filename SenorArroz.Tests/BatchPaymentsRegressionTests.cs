@@ -34,8 +34,9 @@ public class BatchPaymentsRegressionTests
         public Task NotifyOrderReadyToDelivery(OrderDto order) => Task.CompletedTask;
         public Task NotifyReservationToKitchen(OrderDto order) => Task.CompletedTask;
         public Task NotifyOrderAssignedToDelivery(OrderDto order) => Task.CompletedTask;
-        public Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind) => Task.CompletedTask;
-        public Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind) => Task.CompletedTask;
+        public Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null) => Task.CompletedTask;
+        public Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null) => Task.CompletedTask;
+        public Task NotifyOrderCancelledToKitchen(int branchId, int orderId, string? reasonPreview = null) => Task.CompletedTask;
         public Task NotifyDeliverymanLocation(int branchId, int deliverymanId, int deliveryRouteId, double latitude, double longitude, DateTime recordedAt) => Task.CompletedTask;
     }
 
