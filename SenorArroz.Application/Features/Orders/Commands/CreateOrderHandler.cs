@@ -115,6 +115,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
                
                 order.OrderDetails.Add(detail);
             }
+
+            OrderTotalsHelper.RecalculateFromOrderDetails(order);
         }
 
         var createdOrder = await _orderRepository.CreateAsync(order, cancellationToken);

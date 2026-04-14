@@ -193,7 +193,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
                 existingOrder.PreparedNotifiedAt = null;
         }
 
-        RecalculateOrderTotals(existingOrder);
+        OrderTotalsHelper.RecalculateFromOrderDetails(existingOrder);
 
         await _orderRepository.UpdateAsync(existingOrder, cancellationToken);
         var persisted = await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken)
@@ -240,14 +240,6 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         }
 
         return result;
-    }
-
-    private static void RecalculateOrderTotals(Domain.Entities.Order order)
-    {
-        order.Subtotal = order.OrderDetails.Sum(d => d.Quantity * d.UnitPrice);
-        order.DiscountTotal = order.OrderDetails.Sum(d => d.Discount);
-        order.Total = order.OrderDetails.Sum(d => (d.Subtotal ?? (d.Quantity * d.UnitPrice - d.Discount)))
-            + (order.DeliveryFee ?? 0);
     }
 
     private static bool NullableUtcInstantEquals(DateTime? a, DateTime? b)
