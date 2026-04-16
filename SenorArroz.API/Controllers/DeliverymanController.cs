@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Features.DeliverymanAdvances.Commands;
 using SenorArroz.Application.Features.DeliverymanAdvances.DTOs;
@@ -383,10 +384,12 @@ public class DeliverymanController : ControllerBase
 
     /// <summary>
     /// Retorna la última ubicación registrada de un domiciliario (para fallback de polling).
+    /// 200 con cuerpo <c>null</c> si aún no hay puntos GPS guardados (no usar 404 para ese caso).
     /// </summary>
     [HttpGet("{id}/last-location")]
     [Authorize(Roles = "Admin,Superadmin,Cashier")]
-    public async Task<ActionResult<DeliverymanLastLocationDto>> GetLastLocation(int id)
+    [ProducesResponseType(typeof(DeliverymanLastLocationDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DeliverymanLastLocationDto?>> GetLastLocation(int id)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
         if (!Roles.IsSuperadmin(role))
@@ -401,8 +404,6 @@ public class DeliverymanController : ControllerBase
         }
 
         var result = await _mediator.Send(new GetDeliverymanLastLocationQuery { DeliverymanId = id });
-        if (result is null)
-            return NotFound();
         return Ok(result);
     }
 
