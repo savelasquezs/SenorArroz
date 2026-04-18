@@ -83,10 +83,15 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         if (existingOrder.Type == OrderType.Reservation
             && request.StatusChange.Status == OrderStatus.InPreparation)
         {
-            existingOrder.Type = existingOrder.AddressId.HasValue
+            // Cargar con líneas: OrderRepository.UpdateAsync elimina en BD las líneas no listadas en memoria.
+            // GetByIdAsync no incluye OrderDetails; una colección vacía borraba todos los productos del pedido.
+            var orderForTypeUpdate = await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken)
+                ?? throw new BusinessException("Pedido no encontrado");
+            orderForTypeUpdate.Type = orderForTypeUpdate.AddressId.HasValue
                 ? OrderType.Delivery
                 : OrderType.Onsite;
-            await _orderRepository.UpdateAsync(existingOrder, cancellationToken);
+            await _orderRepository.UpdateAsync(orderForTypeUpdate, cancellationToken);
+            existingOrder.Type = orderForTypeUpdate.Type;
         }
 
         var routeIdSnapshot = existingOrder.DeliveryRouteId;
