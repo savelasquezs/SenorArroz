@@ -1,5 +1,6 @@
 // SenorArroz.Infrastructure/Repositories/ProductRepository.cs
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -230,39 +231,47 @@ public class ProductRepository : IProductRepository
 
     public async Task<IReadOnlyList<ProductSalesUnitsEvolutionPoint>> GetSalesUnitsEvolutionByProductAsync(
         int productId,
-        DateTime rangeEndInclusiveUtc,
+        DateTime rangeEndColombiaCalendar,
         int numberOfDays,
         CancellationToken cancellationToken = default)
     {
         if (numberOfDays < 1)
             numberOfDays = 1;
 
-        var end = rangeEndInclusiveUtc.Date;
+        var end = rangeEndColombiaCalendar.Date;
         var start = end.AddDays(-(numberOfDays - 1));
 
-        var grouped = await _context.OrderDetails
+        var (wideFrom, _) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(start.AddDays(-1), start.AddDays(-1));
+        var (_, wideTo) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(end.AddDays(1), end.AddDays(1));
+
+        var rows = await _context.OrderDetails
             .AsNoTracking()
             .Where(od =>
                 od.ProductId == productId &&
                 od.Order.Status != OrderStatus.Cancelled)
+            .Where(od =>
+                (od.Order.ReservedFor ?? od.Order.CreatedAt) >= wideFrom &&
+                (od.Order.ReservedFor ?? od.Order.CreatedAt) <= wideTo)
             .Select(od => new
             {
-                Bucket = od.Order.ReservedFor.HasValue
-                    ? od.Order.ReservedFor!.Value.Date
-                    : od.Order.CreatedAt.Date,
+                od.Order.CreatedAt,
+                od.Order.ReservedFor,
                 od.Quantity
             })
-            .Where(x => x.Bucket >= start && x.Bucket <= end)
-            .GroupBy(x => x.Bucket)
-            .Select(g => new { Bucket = g.Key, Units = g.Sum(x => x.Quantity) })
             .ToListAsync(cancellationToken);
 
-        var map = grouped.ToDictionary(x => x.Bucket, x => x.Units);
+        var map = new Dictionary<DateTime, int>();
+        foreach (var row in rows)
+        {
+            var bucket = ColombiaTimeHelper.OrderOperationalColombiaCalendarDate(row.CreatedAt, row.ReservedFor);
+            if (bucket < start || bucket > end)
+                continue;
+            map[bucket] = map.GetValueOrDefault(bucket, 0) + row.Quantity;
+        }
+
         var list = new List<ProductSalesUnitsEvolutionPoint>(numberOfDays);
         for (var d = start; d <= end; d = d.AddDays(1))
-        {
             list.Add(new ProductSalesUnitsEvolutionPoint(d, map.GetValueOrDefault(d, 0)));
-        }
 
         return list;
     }

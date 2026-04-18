@@ -1,6 +1,7 @@
 ﻿// SenorArroz.Application/Features/Products/Queries/GetProductDetailHandler.cs
 using AutoMapper;
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Products.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -37,9 +38,10 @@ public class GetProductDetailHandler : IRequestHandler<GetProductDetailQuery, Pr
         productDetailDto.LastSoldAt = await _productRepository.GetLastSoldAtAsync(product.Id, cancellationToken);
 
         const int salesChartDays = 90;
+        var endDayColombia = ColombiaTimeHelper.GetNowInColombiaFromUtc(_clock.UtcNow).Date;
         var evolution = await _productRepository.GetSalesUnitsEvolutionByProductAsync(
             product.Id,
-            _clock.UtcNow.Date,
+            endDayColombia,
             salesChartDays,
             cancellationToken);
         productDetailDto.SalesUnitsEvolution = evolution

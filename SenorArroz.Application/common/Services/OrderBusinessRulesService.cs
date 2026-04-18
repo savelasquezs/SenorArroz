@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -82,10 +83,8 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
         };
     }
 
-    public bool IsSameDay(DateTime orderCreatedAt)
-    {
-        return orderCreatedAt.Date == _clock.UtcNow.Date;
-    }
+    public bool IsSameDay(DateTime orderCreatedAt) =>
+        ColombiaTimeHelper.IsColombiaTodayFromUtc(orderCreatedAt, _clock.UtcNow);
 
     #region Private Helper Methods
 

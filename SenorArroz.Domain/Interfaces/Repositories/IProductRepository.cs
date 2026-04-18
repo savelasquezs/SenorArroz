@@ -47,12 +47,13 @@ public interface IProductRepository
     Task<DateTime?> GetLastSoldAtAsync(int productId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Serie diaria de unidades vendidas (suma de cantidades en líneas) por día calendario.
-    /// Día = <c>ReservedFor</c> si existe, si no <c>Order.CreatedAt</c>. Incluye días sin ventas con 0.
+    /// Serie diaria de unidades vendidas (suma de cantidades en líneas) por día calendario Colombia.
+    /// Día operativo = <c>ReservedFor</c> si existe, si no <c>Order.CreatedAt</c>. Incluye días sin ventas con 0.
     /// </summary>
+    /// <param name="rangeEndColombiaCalendar">Último día de la serie (componente fecha = día en America/Bogotá).</param>
     Task<IReadOnlyList<ProductSalesUnitsEvolutionPoint>> GetSalesUnitsEvolutionByProductAsync(
         int productId,
-        DateTime rangeEndInclusiveUtc,
+        DateTime rangeEndColombiaCalendar,
         int numberOfDays,
         CancellationToken cancellationToken = default);
 }

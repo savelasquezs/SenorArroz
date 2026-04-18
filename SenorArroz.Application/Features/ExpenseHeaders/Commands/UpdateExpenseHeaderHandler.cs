@@ -244,10 +244,10 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         if (linkedAdvance == null || linkedAdvance.Amount == newTotal)
             return;
 
-        if (linkedAdvance.CreatedAt.Date != _clock.UtcNow.Date)
+        if (!ColombiaTimeHelper.IsColombiaTodayFromUtc(linkedAdvance.CreatedAt, _clock.UtcNow))
         {
             throw new BusinessException(
-                "El abono vinculado a este gasto solo puede ajustarse automáticamente el mismo día de su registro. " +
+                "El abono vinculado a este gasto solo puede ajustarse automáticamente el mismo día de su registro (hora Colombia). " +
                 "Para otro día, actualiza el abono en el módulo de domiciliarios.");
         }
 

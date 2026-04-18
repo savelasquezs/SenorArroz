@@ -8,6 +8,7 @@ using SenorArroz.Application.Features.DeliverymanAdvances.Queries;
 using SenorArroz.Application.Features.Deliverymen.Commands;
 using SenorArroz.Application.Features.Deliverymen.DTOs;
 using SenorArroz.Application.Features.Deliverymen.Queries;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Features.Orders.Queries;
@@ -418,7 +419,8 @@ public class DeliverymanController : ControllerBase
                 to = to.Date.AddDays(1).AddTicks(-1);
             return (from, to);
         }
-        var d = date?.Date ?? _clock.UtcNow.Date;
-        return (ToUtc(d), ToUtc(d.AddDays(1).AddTicks(-1)));
+        var calDay = date?.Date ?? ColombiaTimeHelper.GetNowInColombiaFromUtc(_clock.UtcNow).Date;
+        var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(calDay, calDay);
+        return (fromUtc, toUtc);
     }
 }

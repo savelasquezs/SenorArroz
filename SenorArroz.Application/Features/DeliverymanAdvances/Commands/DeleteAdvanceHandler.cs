@@ -1,4 +1,5 @@
 using MediatR;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -32,9 +33,9 @@ public class DeleteAdvanceHandler : IRequestHandler<DeleteAdvanceCommand, bool>
         if (!Roles.IsSuperadmin(_currentUser.Role) && advance.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para eliminar abonos de esta sucursal");
 
-        // 3. Validar que solo se puede eliminar el día de creación
-        if (advance.CreatedAt.Date != _clock.UtcNow.Date)
-            throw new BusinessException("Solo se pueden eliminar abonos del día actual");
+        // 3. Validar que solo se puede eliminar el día de creación (calendario Colombia)
+        if (!ColombiaTimeHelper.IsColombiaTodayFromUtc(advance.CreatedAt, _clock.UtcNow))
+            throw new BusinessException("Solo se pueden eliminar abonos del día actual (hora Colombia)");
 
         return await _advanceRepository.DeleteAsync(request.Id, cancellationToken);
     }

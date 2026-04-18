@@ -329,6 +329,9 @@ public class OrderRepository : IOrderRepository
 
     public async Task<PagedResult<Order>> GetByDateRangeAsync(DateTime fromDate, DateTime toDate, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default)
     {
+        var (rangeFromUtc, rangeToUtc) =
+            ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(fromDate.Date, toDate.Date);
+
         var query = _context.Orders
             .AsNoTracking()
             .Include(o => o.Branch)
@@ -338,10 +341,10 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
             .Where(o =>
-                (o.CreatedAt.Date >= fromDate.Date && o.CreatedAt.Date <= toDate.Date)
+                (o.CreatedAt >= rangeFromUtc && o.CreatedAt <= rangeToUtc)
                 || (o.ReservedFor.HasValue
-                    && o.ReservedFor.Value.Date >= fromDate.Date
-                    && o.ReservedFor.Value.Date <= toDate.Date))
+                    && o.ReservedFor.Value >= rangeFromUtc
+                    && o.ReservedFor.Value <= rangeToUtc))
             .AsQueryable();
 
         if (branchId.HasValue)
@@ -354,7 +357,7 @@ public class OrderRepository : IOrderRepository
 
     public async Task<PagedResult<Order>> GetByDateAsync(DateTime date, int? branchId = null, int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = "asc", CancellationToken cancellationToken = default)
     {
-        return await GetByDateRangeAsync(date.Date, date.Date.AddDays(1).AddTicks(-1), branchId, page, pageSize, sortBy, sortOrder, cancellationToken);
+        return await GetByDateRangeAsync(date.Date, date.Date, branchId, page, pageSize, sortBy, sortOrder, cancellationToken);
     }
 
     public async Task<List<Order>> GetOrdersInPreparationAsync(int? branchId = null, CancellationToken cancellationToken = default)

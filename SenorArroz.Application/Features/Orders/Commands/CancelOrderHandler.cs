@@ -62,13 +62,12 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         if (existingOrder.Status == OrderStatus.Cancelled)
             throw new BusinessException("El pedido ya está cancelado");
 
-        // Reserva con horario de preparación y entrega: se mantiene la regla de mismo día (fecha UTC de creación).
+        // Reserva con horario de preparación y entrega: mismo día calendario en Colombia que la creación.
         if (IsScheduledReservation(existingOrder))
         {
-            var todayUtc = _clock.UtcNow.Date;
-            if (existingOrder.CreatedAt.Date != todayUtc)
+            if (!ColombiaTimeHelper.IsColombiaTodayFromUtc(existingOrder.CreatedAt, _clock.UtcNow))
                 throw new BusinessException(
-                    "Las reservas con horario de preparación y entrega solo se pueden cancelar el mismo día en que se registró el pedido.");
+                    "Las reservas con horario de preparación y entrega solo se pueden cancelar el mismo día en que se registró el pedido (hora Colombia).");
         }
 
         var routeIdSnapshot = existingOrder.DeliveryRouteId;

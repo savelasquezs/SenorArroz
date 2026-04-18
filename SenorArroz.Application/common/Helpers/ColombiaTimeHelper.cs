@@ -124,6 +124,18 @@ public static class ColombiaTimeHelper
         return DateTime.SpecifyKind(local.Date, DateTimeKind.Unspecified);
     }
 
+    /// <summary>True si ambos instantes UTC caen en el mismo día calendario en Colombia.</summary>
+    public static bool IsSameColombiaCalendarDay(DateTime utcA, DateTime utcB) =>
+        DateOnly.FromDateTime(ConvertUtcToColombiaCalendarDate(utcA)) ==
+        DateOnly.FromDateTime(ConvertUtcToColombiaCalendarDate(utcB));
+
+    /// <summary>
+    /// True si <paramref name="utcInstant"/> es el día calendario actual en Colombia respecto a <paramref name="utcNow"/>.
+    /// </summary>
+    public static bool IsColombiaTodayFromUtc(DateTime utcInstant, DateTime utcNow) =>
+        DateOnly.FromDateTime(ConvertUtcToColombiaCalendarDate(utcInstant)) ==
+        GetTodayDateOnlyColombiaFromUtc(utcNow);
+
     /// <summary>Día operativo del pedido (ReservedFor o CreatedAt) en calendario Colombia.</summary>
     public static DateTime OrderOperationalColombiaCalendarDate(DateTime createdAtUtc, DateTime? reservedForUtc)
     {

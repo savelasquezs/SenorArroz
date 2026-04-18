@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Common;
@@ -132,10 +133,14 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
 
     public async Task<decimal> GetTotalAdvancesForDateAsync(int deliverymanId, DateTime date, CancellationToken cancellationToken = default)
     {
+        var day = date.Date;
+        var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(day, day);
+
         var total = await _context.DeliverymanAdvances
             .Where(da =>
                 da.DeliverymanId == deliverymanId &&
-                da.CreatedAt.Date == date.Date)
+                da.CreatedAt >= fromUtc &&
+                da.CreatedAt <= toUtc)
             .SumAsync(da => (decimal?)da.Amount, cancellationToken);
 
         return total ?? 0;
