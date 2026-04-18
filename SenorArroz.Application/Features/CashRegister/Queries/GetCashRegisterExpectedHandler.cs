@@ -101,9 +101,8 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 salesInPeriodTotal += (decimal)row.Total;
         }
 
-        // Contado del período = C1+B1+L1. Identidad: C0+B0+L0 + ventas − gastos + (L1−L0) = C0+B0+ventas−gastos+L1.
-        var expectedGlobalTotal = openingCash + openingBanksActual + salesInPeriodTotal - expensesInPeriodTotal
-            + informalLoansActiveTotal;
+        // Total esperado = apertura global (C0+B0+L0) + ventas − gastos. L1 no se suma aquí: L0 ya está en OpeningGlobalTotal.
+        var expectedGlobalTotal = openingGlobalTotal + salesInPeriodTotal - expensesInPeriodTotal;
 
         var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 

@@ -22,12 +22,11 @@ public class CashRegisterExpectedDto
     public decimal ExpensesInPeriodTotal { get; set; }
 
     /// <summary>
-    /// Efectivo y bancos al último cierre + ventas del período − gastos del período + préstamos informales activos ahora
-    /// (= apertura caja+banco + L0 + ventas − gastos + (L1−L0)).
+    /// <see cref="OpeningGlobalTotal"/> + ventas del período − gastos del período (= C0+B0+L0 + ventas − gastos).
     /// </summary>
     public decimal ExpectedGlobalTotal { get; set; }
 
-    /// <summary>Suma de préstamos informales activos (entran en el total global contado).</summary>
+    /// <summary>Suma de préstamos informales activos (referencia para el conteo al cerrar; no se suma de nuevo al esperado).</summary>
     public decimal InformalLoansActiveTotal { get; set; }
 
     /// <summary>
