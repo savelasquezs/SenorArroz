@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Features.DeliverymanAdvances.Commands;
 using SenorArroz.Application.Features.DeliverymanAdvances.DTOs;
@@ -97,6 +98,7 @@ public class DeliverymanController : ControllerBase
 
     /// <summary>
     /// Resumen completo del día: domiciliarios con estadísticas + lista de abonos.
+    /// Solo incluye domiciliarios con al menos un pedido adjudicado (entregas en el período o en camino) y sus abonos en el mismo rango.
     /// </summary>
     /// <param name="date">Fecha en YYYY-MM-DD (por defecto: día actual)</param>
     /// <param name="fromDate">Inicio del rango (prioridad sobre date)</param>
@@ -233,7 +235,7 @@ public class DeliverymanController : ControllerBase
     }
 
     /// <summary>
-    /// Lista de abonos del período (opcional, si se prefiere separado de daily-overview).
+    /// Lista de abonos del período (mismo agregado que daily-overview: solo abonos de domiciliarios con pedido adjudicado en el período).
     /// </summary>
     [HttpGet("advances")]
     [Authorize(Roles = "Superadmin,Admin,Cashier")]
@@ -252,7 +254,7 @@ public class DeliverymanController : ControllerBase
     }
 
     /// <summary>
-    /// Lista de domiciliarios con pedidos entregados en el día (o rango): delivery y onsite con domiciliario asignado.
+    /// Lista de domiciliarios con pedido adjudicado en el día (o rango): entregas en el ciclo o pedidos en camino (mismo criterio que daily-overview).
     /// Usado, por ejemplo, para registrar abonos desde otros módulos.
     /// </summary>
     [HttpGet("with-orders-today")]
@@ -271,8 +273,8 @@ public class DeliverymanController : ControllerBase
             BranchId = branchId
         });
 
+        // Mismo subconjunto que daily-overview (ya excluye quienes no tienen entregas ni pedidos en ruta).
         var deliverymenWithOrders = overview.Deliverymen
-            .Where(d => d.OrdersCount > 0)
             .Select(d => new
             {
                 id = d.DeliverymanId,
@@ -383,10 +385,12 @@ public class DeliverymanController : ControllerBase
 
     /// <summary>
     /// Retorna la última ubicación registrada de un domiciliario (para fallback de polling).
+    /// 200 con cuerpo <c>null</c> si aún no hay puntos GPS guardados (no usar 404 para ese caso).
     /// </summary>
     [HttpGet("{id}/last-location")]
     [Authorize(Roles = "Admin,Superadmin,Cashier")]
-    public async Task<ActionResult<DeliverymanLastLocationDto>> GetLastLocation(int id)
+    [ProducesResponseType(typeof(DeliverymanLastLocationDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DeliverymanLastLocationDto?>> GetLastLocation(int id)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
         if (!Roles.IsSuperadmin(role))
@@ -401,8 +405,6 @@ public class DeliverymanController : ControllerBase
         }
 
         var result = await _mediator.Send(new GetDeliverymanLastLocationQuery { DeliverymanId = id });
-        if (result is null)
-            return NotFound();
         return Ok(result);
     }
 

@@ -50,34 +50,21 @@ public class GetExpenseHeadersHandler : IRequestHandler<GetExpenseHeadersQuery, 
             branchFilter = request.BranchId;
         }
 
-        // Manejar fechas: día actual por defecto si no se envían
-        DateTime? fromDateUtc = null;
-        DateTime? toDateUtc = null;
+        // Fechas: por defecto hoy (Colombia) completo. Si se envían From/To como yyyy-MM-dd,
+        // deben ser días calendario inclusivos (hasta fin del día ToDate en Colombia), no solo medianoche de ToDate.
+        DateTime fromDateUtc;
+        DateTime toDateUtc;
 
-        if (request.FromDate.HasValue)
+        if (!request.FromDate.HasValue && !request.ToDate.HasValue)
         {
-            fromDateUtc = ColombiaTimeHelper.ConvertColombiaToUtc(request.FromDate.Value);
-        }
-        else
-        {
-            // Si no se envía fecha, usar inicio del día actual en Colombia
             fromDateUtc = ColombiaTimeHelper.GetTodayStartInUtc();
-        }
-
-        if (request.ToDate.HasValue)
-        {
-            toDateUtc = ColombiaTimeHelper.ConvertColombiaToUtc(request.ToDate.Value);
-        }
-        else if (request.FromDate.HasValue)
-        {
-            // Frontend envió FromDate pero no ToDate: usar el fin del mismo día de FromDate
-            var endOfFromDate = request.FromDate.Value.Date.AddDays(1).AddTicks(-1);
-            toDateUtc = ColombiaTimeHelper.ConvertColombiaToUtc(endOfFromDate);
+            toDateUtc = ColombiaTimeHelper.GetTodayEndInUtc();
         }
         else
         {
-            // Si no se envía fecha, usar fin del día actual en Colombia
-            toDateUtc = ColombiaTimeHelper.GetTodayEndInUtc();
+            var fromCal = request.FromDate ?? request.ToDate!.Value;
+            var toCal = request.ToDate ?? request.FromDate!.Value;
+            (fromDateUtc, toDateUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(fromCal, toCal);
         }
 
         var result = await _expenseHeaderRepository.GetPagedAsync(

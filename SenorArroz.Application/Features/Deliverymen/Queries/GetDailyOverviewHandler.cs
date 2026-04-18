@@ -154,7 +154,7 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             .Select(a => _mapper.Map<DeliverymanAdvanceDto>(a))
             .ToList();
 
-        // 5. Construir stats por domiciliario (todos los activos)
+        // 5. Construir stats por domiciliario (activos de sucursal; al final se expone solo quienes tienen pedido adjudicado)
         var deliverymenStats = new List<DeliverymanDayStatsDto>();
         foreach (var dm in deliverymen)
         {
@@ -214,10 +214,17 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             }
         }
 
+        // Vista gestión: solo domiciliarios con al menos un pedido adjudicado (entregas en el ciclo del período o pedidos en camino).
+        var deliverymenVisible = deliverymenStats
+            .Where(s => s.OrdersCount > 0 || s.OrdersOnTheWayCount > 0)
+            .ToList();
+        var visibleIds = deliverymenVisible.Select(s => s.DeliverymanId).ToHashSet();
+        var advancesVisible = advanceDtos.Where(a => visibleIds.Contains(a.DeliverymanId)).ToList();
+
         return new DailyOverviewDto
         {
-            Deliverymen = deliverymenStats,
-            Advances = advanceDtos
+            Deliverymen = deliverymenVisible,
+            Advances = advancesVisible
         };
     }
 
