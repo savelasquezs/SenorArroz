@@ -936,11 +936,9 @@ public class OrderRepository : IOrderRepository
         }
 
         var whereSql = string.Join("\n  AND ", conditions);
-        var sqlCount = $"""
-            SELECT count(*)::bigint AS "Total"
-            FROM "order" o
-            WHERE {whereSql}
-            """;
+        var sqlCount = $@"SELECT count(*)::bigint AS ""Total""
+FROM ""order"" o
+WHERE {whereSql}";
 
         var countRow = await _context.Database
             .SqlQueryRaw<DeliveredAtRangeCountRow>(sqlCount, sqlParams.ToArray())
@@ -950,13 +948,11 @@ public class OrderRepository : IOrderRepository
         var total = (int)Math.Min(totalLong, int.MaxValue);
 
         var sqlParamsIds = new List<object>(sqlParams) { offset, safePageSize };
-        var sqlIds = $"""
-            SELECT o.id AS "Id"
-            FROM "order" o
-            WHERE {whereSql}
-            ORDER BY (o.status_times ->> 'delivered')::timestamptz DESC
-            OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}
-            """;
+        var sqlIds = $@"SELECT o.id AS ""Id""
+FROM ""order"" o
+WHERE {whereSql}
+ORDER BY (o.status_times ->> 'delivered')::timestamptz DESC
+OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
         var idRows = await _context.Database
             .SqlQueryRaw<DeliveredAtRangeIdRow>(sqlIds, sqlParamsIds.ToArray())
