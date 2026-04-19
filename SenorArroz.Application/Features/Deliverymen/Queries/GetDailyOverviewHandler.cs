@@ -66,39 +66,16 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             .OrderBy(u => u.Name)
             .ToList();
 
-        // 2. Pedidos entregados del día: delivery + onsite con domiciliario asignado
-        var ordersDelivery = await _orderRepository.SearchOrdersAsync(
-            searchTerm: null,
-            branchId: branchId,
-            customerId: null,
+        // 2. Pedidos entregados en el rango por instante real de entrega (status_times.delivered)
+        var deliveredInRange = await DeliverymanDeliveredOrdersQuery.LoadAllDeliveredInRangeAsync(
+            _orderRepository,
+            branchId,
             deliveryManId: null,
-            status: OrderStatus.Delivered,
-            type: OrderType.Delivery,
-            fromDate: fromDate,
-            toDate: toDate,
-            minAmount: null,
-            maxAmount: null,
-            page: 1,
-            pageSize: 500,
-            sortBy: "CreatedAt",
-            sortOrder: "desc");
-        var ordersOnsite = await _orderRepository.SearchOrdersAsync(
-            searchTerm: null,
-            branchId: branchId,
-            customerId: null,
-            deliveryManId: null,
-            status: OrderStatus.Delivered,
-            type: OrderType.Onsite,
-            fromDate: fromDate,
-            toDate: toDate,
-            minAmount: null,
-            maxAmount: null,
-            page: 1,
-            pageSize: 500,
-            sortBy: "CreatedAt",
-            sortOrder: "desc");
+            fromDate,
+            toDate,
+            cancellationToken);
 
-        var ordersByDeliveryman = DeliverymanSettlementCycleHelper.UnionOrdersById(ordersDelivery.Items, ordersOnsite.Items)
+        var ordersByDeliveryman = deliveredInRange
             .Where(o => o.DeliveryManId.HasValue)
             .GroupBy(o => o.DeliveryManId!.Value)
             .ToDictionary(g => g.Key, g => g.ToList());

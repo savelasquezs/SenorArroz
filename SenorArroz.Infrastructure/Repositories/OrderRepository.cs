@@ -1,4 +1,9 @@
+using System.Data;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
+using NpgsqlTypes;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
@@ -875,6 +880,168 @@ public class OrderRepository : IOrderRepository
 
         return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
+
+    /// <inheritdoc />
+    public async Task<PagedResult<Order>> SearchDeliveredOrdersByDeliveredAtRangeAsync(
+        int? branchId,
+        int? deliveryManId,
+        OrderType type,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int page = 1,
+        int pageSize = 500,
+        CancellationToken cancellationToken = default)
+    {
+        if (type != OrderType.Delivery && type != OrderType.Onsite)
+            throw new ArgumentOutOfRangeException(nameof(type), type, "Solo delivery u onsite.");
+
+        if (fromUtc.Kind != DateTimeKind.Utc)
+            fromUtc = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        if (toUtc.Kind != DateTimeKind.Utc)
+            toUtc = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+
+        var typeDb = type == OrderType.Delivery ? "delivery" : "onsite";
+        var branchClause = branchId.HasValue ? "AND o.branch_id = @branchId" : "";
+        var dmClause = deliveryManId.HasValue ? "AND o.delivery_man_id = @dmId" : "";
+        var safePageSize = Math.Max(1, pageSize);
+        var offset = Math.Max(0, (Math.Max(1, page) - 1) * safePageSize);
+
+        var sqlBase = $"""
+            FROM "order" o
+            WHERE o.status = 'delivered'
+              AND o.delivery_man_id IS NOT NULL
+              AND o.type = @type
+              AND (o.status_times ->> 'delivered') IS NOT NULL
+              AND (o.status_times ->> 'delivered')::timestamptz >= @fromUtc
+              AND (o.status_times ->> 'delivered')::timestamptz <= @toUtc
+              {branchClause}
+              {dmClause}
+            """;
+
+        var openedHere = false;
+        if (_context.Database.GetDbConnection().State != ConnectionState.Open)
+        {
+            await _context.Database.OpenConnectionAsync(cancellationToken);
+            openedHere = true;
+        }
+
+        try
+        {
+            var conn = _context.Database.GetDbConnection();
+            DbTransaction? tx = _context.Database.CurrentTransaction is RelationalTransaction rt
+                ? rt.GetDbTransaction()
+                : null;
+
+            long totalLong;
+            await using (var countCmd = conn.CreateCommand())
+            {
+                countCmd.Transaction = tx;
+                countCmd.CommandText = "SELECT COUNT(*)::bigint " + sqlBase;
+                AddDeliveredAtSearchParameters(countCmd, typeDb, fromUtc, toUtc, branchId, deliveryManId);
+                var scalar = await countCmd.ExecuteScalarAsync(cancellationToken);
+                totalLong = scalar is long l ? l : Convert.ToInt64(scalar ?? 0L);
+            }
+
+            var total = (int)Math.Min(totalLong, int.MaxValue);
+            var ids = new List<int>();
+            await using (var idCmd = conn.CreateCommand())
+            {
+                idCmd.Transaction = tx;
+                idCmd.CommandText = """
+                    SELECT o.id
+                    """ + sqlBase + """
+                    ORDER BY (o.status_times ->> 'delivered')::timestamptz DESC
+                    OFFSET @offset LIMIT @limit
+                    """;
+                AddDeliveredAtSearchParameters(idCmd, typeDb, fromUtc, toUtc, branchId, deliveryManId);
+                idCmd.Parameters.Add(new NpgsqlParameter("offset", offset));
+                idCmd.Parameters.Add(new NpgsqlParameter("limit", safePageSize));
+
+                await using var reader = await idCmd.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                    ids.Add(reader.GetInt32(0));
+            }
+
+            if (ids.Count == 0)
+            {
+                return new PagedResult<Order>
+                {
+                    Items = [],
+                    TotalCount = total,
+                    Page = page,
+                    PageSize = safePageSize,
+                    TotalPages = (int)Math.Ceiling(total / (double)safePageSize),
+                };
+            }
+
+            var orders = await OrdersWithDeliverymanSettlementIncludes()
+                .Where(o => ids.Contains(o.Id))
+                .AsSplitQuery()
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+            var byId = orders.ToDictionary(o => o.Id);
+            var ordered = new List<Order>(ids.Count);
+            foreach (var id in ids)
+            {
+                if (byId.TryGetValue(id, out var o))
+                    ordered.Add(o);
+            }
+
+            return new PagedResult<Order>
+            {
+                Items = ordered,
+                TotalCount = total,
+                Page = page,
+                PageSize = safePageSize,
+                TotalPages = (int)Math.Ceiling(total / (double)safePageSize),
+            };
+        }
+        finally
+        {
+            if (openedHere)
+                await _context.Database.CloseConnectionAsync();
+        }
+    }
+
+    private static void AddDeliveredAtSearchParameters(
+        DbCommand cmd,
+        string typeDb,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int? branchId,
+        int? deliveryManId)
+    {
+        cmd.Parameters.Add(new NpgsqlParameter("type", NpgsqlDbType.Text) { Value = typeDb });
+        cmd.Parameters.Add(new NpgsqlParameter("fromUtc", NpgsqlDbType.TimestampTz) { Value = fromUtc });
+        cmd.Parameters.Add(new NpgsqlParameter("toUtc", NpgsqlDbType.TimestampTz) { Value = toUtc });
+        if (branchId.HasValue)
+            cmd.Parameters.Add(new NpgsqlParameter("branchId", NpgsqlDbType.Integer) { Value = branchId.Value });
+        if (deliveryManId.HasValue)
+            cmd.Parameters.Add(new NpgsqlParameter("dmId", NpgsqlDbType.Integer) { Value = deliveryManId.Value });
+    }
+
+    /// <summary>Misma carga relacionada que <see cref="SearchOrdersAsync"/> para cuadre de domiciliarios.</summary>
+    private IQueryable<Order> OrdersWithDeliverymanSettlementIncludes() =>
+        _context.Orders
+            .Include(o => o.Branch)
+            .Include(o => o.TakenBy)
+            .Include(o => o.Customer)
+            .Include(o => o.Address)
+                .ThenInclude(a => a!.Neighborhood)
+            .Include(o => o.LoyaltyCycleStep)
+            .Include(o => o.DeliveryMan)
+            .Include(o => o.DeliveryRoute)
+            .Include(o => o.BankPayments)
+                .ThenInclude(bp => bp.Bank)
+                    .ThenInclude(b => b.Branch)
+            .Include(o => o.AppPayments)
+                .ThenInclude(ap => ap.App)
+                    .ThenInclude(a => a.Bank)
+                        .ThenInclude(b => b.Branch)
+            .Include(o => o.OrderDetails)
+                .ThenInclude(od => od.Product)
+                    .ThenInclude(p => p.Category);
 
     private IQueryable<Order> ApplySorting(IQueryable<Order> query, string? sortBy, string? sortOrder)
     {

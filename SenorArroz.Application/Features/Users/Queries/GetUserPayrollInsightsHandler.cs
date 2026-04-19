@@ -17,7 +17,6 @@ namespace SenorArroz.Application.Features.Users.Queries;
 public class GetUserPayrollInsightsHandler : IRequestHandler<GetUserPayrollInsightsQuery, UserPayrollInsightsDto>
 {
     private const int MaxRangeDays = 800;
-    private const int OrderPageSize = 500;
 
     private readonly IUserRepository _userRepository;
     private readonly IOrderRepository _orderRepository;
@@ -79,7 +78,7 @@ public class GetUserPayrollInsightsHandler : IRequestHandler<GetUserPayrollInsig
 
         var details = await LoadExpenseDetailsAsync(user, fromUtc, toUtc, cancellationToken);
         var orders = isDm
-            ? await LoadDeliveredOrdersAsync(user.Id, branchId, fromUtc, toUtc)
+            ? await LoadDeliveredOrdersAsync(user.Id, branchId, fromUtc, toUtc, cancellationToken)
             : new List<Order>();
 
         var filteredOrders = DeliverymanSettlementCycleHelper.FilterOrdersForCycle(
@@ -180,47 +179,19 @@ public class GetUserPayrollInsightsHandler : IRequestHandler<GetUserPayrollInsig
             .ToListAsync(cancellationToken);
     }
 
-    private async Task<List<Order>> LoadDeliveredOrdersAsync(
+    private Task<List<Order>> LoadDeliveredOrdersAsync(
         int deliverymanId,
         int branchId,
         DateTime fromUtc,
-        DateTime toUtc)
-    {
-        async Task<List<Order>> LoadType(OrderType orderType)
-        {
-            var all = new List<Order>();
-            var page = 1;
-            while (page < 200)
-            {
-                var batch = await _orderRepository.SearchOrdersAsync(
-                    searchTerm: null,
-                    branchId: branchId,
-                    customerId: null,
-                    deliveryManId: deliverymanId,
-                    status: OrderStatus.Delivered,
-                    type: orderType,
-                    fromDate: fromUtc,
-                    toDate: toUtc,
-                    minAmount: null,
-                    maxAmount: null,
-                    page: page,
-                    pageSize: OrderPageSize,
-                    sortBy: "CreatedAt",
-                    sortOrder: "desc");
-
-                all.AddRange(batch.Items);
-                if (batch.Items.Count() < OrderPageSize)
-                    break;
-                page++;
-            }
-
-            return all;
-        }
-
-        var delivery = await LoadType(OrderType.Delivery);
-        var onsite = await LoadType(OrderType.Onsite);
-        return DeliverymanSettlementCycleHelper.UnionOrdersById(delivery, onsite);
-    }
+        DateTime toUtc,
+        CancellationToken cancellationToken) =>
+        DeliverymanDeliveredOrdersQuery.LoadAllDeliveredInRangeAsync(
+            _orderRepository,
+            branchId,
+            deliverymanId,
+            fromUtc,
+            toUtc,
+            cancellationToken);
 
     private sealed record BucketDef(string Key, string Label, DateTime RangeFrom, DateTime RangeTo);
 

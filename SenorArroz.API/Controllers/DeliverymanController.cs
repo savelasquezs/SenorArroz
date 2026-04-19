@@ -9,10 +9,8 @@ using SenorArroz.Application.Features.DeliverymanAdvances.Queries;
 using SenorArroz.Application.Features.Deliverymen.Commands;
 using SenorArroz.Application.Features.Deliverymen.DTOs;
 using SenorArroz.Application.Features.Deliverymen.Queries;
-using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
-using SenorArroz.Application.Features.Orders.Queries;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Shared.Constants;
@@ -26,18 +24,15 @@ namespace SenorArroz.API.Controllers;
 public class DeliverymanController : ControllerBase
 {
     private readonly IMediator _mediator;
-    private readonly IClock _clock;
     private readonly IUserRepository _userRepository;
     private readonly ICurrentUser _currentUser;
 
     public DeliverymanController(
         IMediator mediator,
-        IClock clock,
         IUserRepository userRepository,
         ICurrentUser currentUser)
     {
         _mediator = mediator;
-        _clock = clock;
         _userRepository = userRepository;
         _currentUser = currentUser;
     }
@@ -186,52 +181,16 @@ public class DeliverymanController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
-        var (from, to) = ResolveDateRange(date, fromDate, toDate);
-        const int fetchCap = 5000;
-        var qDelivery = new SearchOrdersQuery
+        var result = await _mediator.Send(new GetDeliverymanOrdersQuery
         {
-            DeliveryManId = id,
-            Status = OrderStatus.Delivered,
-            Type = OrderType.Delivery,
-            FromDate = from,
-            ToDate = to,
-            Page = 1,
-            PageSize = fetchCap,
-            SortBy = "CreatedAt",
-            SortOrder = "desc"
-        };
-        var qOnsite = new SearchOrdersQuery
-        {
-            DeliveryManId = id,
-            Status = OrderStatus.Delivered,
-            Type = OrderType.Onsite,
-            FromDate = from,
-            ToDate = to,
-            Page = 1,
-            PageSize = fetchCap,
-            SortBy = "CreatedAt",
-            SortOrder = "desc"
-        };
-        var delivery = await _mediator.Send(qDelivery);
-        var onsite = await _mediator.Send(qOnsite);
-        var combined = delivery.Items
-            .Concat(onsite.Items)
-            .GroupBy(o => o.Id)
-            .Select(g => g.First())
-            .OrderByDescending(o => o.CreatedAt)
-            .ToList();
-        var total = delivery.TotalCount + onsite.TotalCount;
-        var skip = (page - 1) * pageSize;
-        var pageItems = combined.Skip(skip).Take(pageSize).ToList();
-        var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)Math.Max(pageSize, 1)));
-        return Ok(new PagedResult<OrderDto>
-        {
-            Items = pageItems,
-            TotalCount = total,
+            DeliverymanId = id,
+            Date = date,
+            FromDate = fromDate,
+            ToDate = toDate,
             Page = page,
             PageSize = pageSize,
-            TotalPages = totalPages,
         });
+        return Ok(result);
     }
 
     /// <summary>
@@ -408,21 +367,4 @@ public class DeliverymanController : ControllerBase
         return Ok(result);
     }
 
-    private (DateTime? from, DateTime? to) ResolveDateRange(DateTime? date, DateTime? fromDate, DateTime? toDate)
-    {
-        static DateTime ToUtc(DateTime d) =>
-            d.Kind == DateTimeKind.Utc ? d : DateTime.SpecifyKind(d, DateTimeKind.Utc);
-
-        if (fromDate.HasValue && toDate.HasValue)
-        {
-            var from = ToUtc(fromDate.Value);
-            var to = ToUtc(toDate.Value);
-            if (to.TimeOfDay == TimeSpan.Zero)
-                to = to.Date.AddDays(1).AddTicks(-1);
-            return (from, to);
-        }
-        var calDay = date?.Date ?? ColombiaTimeHelper.GetNowInColombiaFromUtc(_clock.UtcNow).Date;
-        var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(calDay, calDay);
-        return (fromUtc, toUtc);
-    }
 }

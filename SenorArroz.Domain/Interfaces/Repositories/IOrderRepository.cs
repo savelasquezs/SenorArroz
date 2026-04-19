@@ -81,6 +81,21 @@ public interface IOrderRepository
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Pedidos en estado entregado cuyo instante en <c>status_times.delivered</c> (JSON) cae en
+    /// <paramref name="fromUtc"/>..<paramref name="toUtc"/> (UTC). Solo <see cref="OrderType.Delivery"/> y
+    /// <see cref="OrderType.Onsite"/>; requiere <c>delivery_man_id</c> no nulo.
+    /// </summary>
+    Task<PagedResult<Order>> SearchDeliveredOrdersByDeliveredAtRangeAsync(
+        int? branchId,
+        int? deliveryManId,
+        OrderType type,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int page = 1,
+        int pageSize = 500,
+        CancellationToken cancellationToken = default);
+
     // Reservas
     Task<IEnumerable<Order>> GetReservationsDueForPreparation(
         DateTime fromTime,

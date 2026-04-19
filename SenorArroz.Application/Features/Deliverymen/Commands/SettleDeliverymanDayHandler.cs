@@ -113,38 +113,13 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         var startColombia = settlementDate.ToDateTime(TimeOnly.MinValue);
         var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(startColombia, startColombia);
 
-        var ordersDelivery = await _orderRepository.SearchOrdersAsync(
-            searchTerm: null,
-            branchId: branchId,
-            customerId: null,
-            deliveryManId: request.DeliverymanId,
-            status: OrderStatus.Delivered,
-            type: OrderType.Delivery,
-            fromDate: fromUtc,
-            toDate: toUtc,
-            minAmount: null,
-            maxAmount: null,
-            page: 1,
-            pageSize: 500,
-            sortBy: "CreatedAt",
-            sortOrder: "desc");
-        var ordersOnsite = await _orderRepository.SearchOrdersAsync(
-            searchTerm: null,
-            branchId: branchId,
-            customerId: null,
-            deliveryManId: request.DeliverymanId,
-            status: OrderStatus.Delivered,
-            type: OrderType.Onsite,
-            fromDate: fromUtc,
-            toDate: toUtc,
-            minAmount: null,
-            maxAmount: null,
-            page: 1,
-            pageSize: 500,
-            sortBy: "CreatedAt",
-            sortOrder: "desc");
-
-        var orders = DeliverymanSettlementCycleHelper.UnionOrdersById(ordersDelivery.Items, ordersOnsite.Items)
+        var orders = (await DeliverymanDeliveredOrdersQuery.LoadAllDeliveredInRangeAsync(
+                _orderRepository,
+                branchId,
+                request.DeliverymanId,
+                fromUtc,
+                toUtc,
+                cancellationToken))
             .OrderByDescending(o => o.CreatedAt)
             .ToList();
 

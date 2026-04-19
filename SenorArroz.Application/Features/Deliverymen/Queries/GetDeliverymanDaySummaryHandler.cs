@@ -79,39 +79,14 @@ public class GetDeliverymanDaySummaryHandler : IRequestHandler<GetDeliverymanDay
 
         var lastLiquidationAtUtc = useSettlementCycle ? dayState?.LastLiquidationAtUtc : null;
 
-        // 2. Pedidos entregados del domiciliario: delivery + onsite (en el local con domiciliario asignado desde caja)
-        var ordersDelivery = await _orderRepository.SearchOrdersAsync(
-            searchTerm: null,
-            branchId: branchId,
-            customerId: null,
-            deliveryManId: request.DeliverymanId,
-            status: OrderStatus.Delivered,
-            type: OrderType.Delivery,
-            fromDate: fromDate,
-            toDate: toDate,
-            minAmount: null,
-            maxAmount: null,
-            page: 1,
-            pageSize: 500,
-            sortBy: "CreatedAt",
-            sortOrder: "desc");
-        var ordersOnsite = await _orderRepository.SearchOrdersAsync(
-            searchTerm: null,
-            branchId: branchId,
-            customerId: null,
-            deliveryManId: request.DeliverymanId,
-            status: OrderStatus.Delivered,
-            type: OrderType.Onsite,
-            fromDate: fromDate,
-            toDate: toDate,
-            minAmount: null,
-            maxAmount: null,
-            page: 1,
-            pageSize: 500,
-            sortBy: "CreatedAt",
-            sortOrder: "desc");
-
-        var orders = DeliverymanSettlementCycleHelper.UnionOrdersById(ordersDelivery.Items, ordersOnsite.Items)
+        // 2. Pedidos entregados del domiciliario por instante real de entrega (status_times.delivered)
+        var orders = (await DeliverymanDeliveredOrdersQuery.LoadAllDeliveredInRangeAsync(
+                _orderRepository,
+                branchId,
+                request.DeliverymanId,
+                fromDate,
+                toDate,
+                cancellationToken))
             .OrderByDescending(o => o.CreatedAt)
             .ToList();
         var cycleOrders = DeliverymanSettlementCycleHelper.FilterOrdersForCycle(
