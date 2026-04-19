@@ -918,7 +918,8 @@ public class OrderRepository : IOrderRepository
             "o.type = {0}",
             "(o.status_times ->> 'delivered') IS NOT NULL",
             "trim(coalesce(o.status_times ->> 'delivered', '')) <> ''",
-            "(o.status_times ->> 'delivered') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}'",
+            // Llaves duplicadas: SqlQueryRaw usa string.Format; {{n}} llega como {n} en el regex de PostgreSQL.
+            "(o.status_times ->> 'delivered') ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}[Tt ][0-9]{{2}}:[0-9]{{2}}'",
             "(o.status_times ->> 'delivered')::timestamptz >= {1}",
             "(o.status_times ->> 'delivered')::timestamptz <= {2}",
         };
