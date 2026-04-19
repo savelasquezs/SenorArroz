@@ -1,9 +1,4 @@
-using System.Data;
-using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
-using Npgsql;
-using NpgsqlTypes;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
@@ -19,6 +14,16 @@ namespace SenorArroz.Infrastructure.Repositories;
 
 public class OrderRepository : IOrderRepository
 {
+    private sealed class DeliveredAtRangeCountRow
+    {
+        public long Total { get; set; }
+    }
+
+    private sealed class DeliveredAtRangeIdRow
+    {
+        public int Id { get; set; }
+    }
+
     private readonly ApplicationDbContext _context;
     private readonly IClock _clock;
 
@@ -901,124 +906,97 @@ public class OrderRepository : IOrderRepository
             toUtc = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
 
         var typeDb = type == OrderType.Delivery ? "delivery" : "onsite";
-        var branchClause = branchId.HasValue ? "AND o.branch_id = @branchId" : "";
-        var dmClause = deliveryManId.HasValue ? "AND o.delivery_man_id = @dmId" : "";
         var safePageSize = Math.Max(1, pageSize);
         var offset = Math.Max(0, (Math.Max(1, page) - 1) * safePageSize);
 
-        var sqlBase = $"""
-            FROM "order" o
-            WHERE o.status = 'delivered'
-              AND o.delivery_man_id IS NOT NULL
-              AND o.type = @type
-              AND (o.status_times ->> 'delivered') IS NOT NULL
-              AND (o.status_times ->> 'delivered')::timestamptz >= @fromUtc
-              AND (o.status_times ->> 'delivered')::timestamptz <= @toUtc
-              {branchClause}
-              {dmClause}
-            """;
-
-        var openedHere = false;
-        if (_context.Database.GetDbConnection().State != ConnectionState.Open)
+        // Placeholders {0},{1},… para SqlQueryRaw (parametrizado por EF/Npgsql).
+        // Excluir cadenas vacías y no-ISO antes del cast para evitar error 500 en datos legacy/corruptos.
+        var conditions = new List<string>
         {
-            await _context.Database.OpenConnectionAsync(cancellationToken);
-            openedHere = true;
+            "o.status = 'delivered'",
+            "o.delivery_man_id IS NOT NULL",
+            "o.type = {0}",
+            "(o.status_times ->> 'delivered') IS NOT NULL",
+            "trim(coalesce(o.status_times ->> 'delivered', '')) <> ''",
+            "(o.status_times ->> 'delivered') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}'",
+            "(o.status_times ->> 'delivered')::timestamptz >= {1}",
+            "(o.status_times ->> 'delivered')::timestamptz <= {2}",
+        };
+        var sqlParams = new List<object> { typeDb, fromUtc, toUtc };
+        if (branchId.HasValue)
+        {
+            conditions.Add($"o.branch_id = {{{sqlParams.Count}}}");
+            sqlParams.Add(branchId.Value);
         }
 
-        try
+        if (deliveryManId.HasValue)
         {
-            var conn = _context.Database.GetDbConnection();
-            DbTransaction? tx = _context.Database.CurrentTransaction is RelationalTransaction rt
-                ? rt.GetDbTransaction()
-                : null;
+            conditions.Add($"o.delivery_man_id = {{{sqlParams.Count}}}");
+            sqlParams.Add(deliveryManId.Value);
+        }
 
-            long totalLong;
-            await using (var countCmd = conn.CreateCommand())
-            {
-                countCmd.Transaction = tx;
-                countCmd.CommandText = "SELECT COUNT(*)::bigint " + sqlBase;
-                AddDeliveredAtSearchParameters(countCmd, typeDb, fromUtc, toUtc, branchId, deliveryManId);
-                var scalar = await countCmd.ExecuteScalarAsync(cancellationToken);
-                totalLong = scalar is long l ? l : Convert.ToInt64(scalar ?? 0L);
-            }
+        var whereSql = string.Join("\n  AND ", conditions);
+        var sqlCount = $"""
+            SELECT count(*)::bigint AS "Total"
+            FROM "order" o
+            WHERE {whereSql}
+            """;
 
-            var total = (int)Math.Min(totalLong, int.MaxValue);
-            var ids = new List<int>();
-            await using (var idCmd = conn.CreateCommand())
-            {
-                idCmd.Transaction = tx;
-                idCmd.CommandText = """
-                    SELECT o.id
-                    """ + sqlBase + """
-                    ORDER BY (o.status_times ->> 'delivered')::timestamptz DESC
-                    OFFSET @offset LIMIT @limit
-                    """;
-                AddDeliveredAtSearchParameters(idCmd, typeDb, fromUtc, toUtc, branchId, deliveryManId);
-                idCmd.Parameters.Add(new NpgsqlParameter("offset", offset));
-                idCmd.Parameters.Add(new NpgsqlParameter("limit", safePageSize));
+        var countRow = await _context.Database
+            .SqlQueryRaw<DeliveredAtRangeCountRow>(sqlCount, sqlParams.ToArray())
+            .SingleAsync(cancellationToken);
 
-                await using var reader = await idCmd.ExecuteReaderAsync(cancellationToken);
-                while (await reader.ReadAsync(cancellationToken))
-                    ids.Add(reader.GetInt32(0));
-            }
+        var totalLong = countRow.Total;
+        var total = (int)Math.Min(totalLong, int.MaxValue);
 
-            if (ids.Count == 0)
-            {
-                return new PagedResult<Order>
-                {
-                    Items = [],
-                    TotalCount = total,
-                    Page = page,
-                    PageSize = safePageSize,
-                    TotalPages = (int)Math.Ceiling(total / (double)safePageSize),
-                };
-            }
+        var sqlParamsIds = new List<object>(sqlParams) { offset, safePageSize };
+        var sqlIds = $"""
+            SELECT o.id AS "Id"
+            FROM "order" o
+            WHERE {whereSql}
+            ORDER BY (o.status_times ->> 'delivered')::timestamptz DESC
+            OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}
+            """;
 
-            var orders = await OrdersWithDeliverymanSettlementIncludes()
-                .Where(o => ids.Contains(o.Id))
-                .AsSplitQuery()
-                .AsNoTracking()
-                .ToListAsync(cancellationToken);
+        var idRows = await _context.Database
+            .SqlQueryRaw<DeliveredAtRangeIdRow>(sqlIds, sqlParamsIds.ToArray())
+            .ToListAsync(cancellationToken);
+        var ids = idRows.Select(r => r.Id).ToList();
 
-            var byId = orders.ToDictionary(o => o.Id);
-            var ordered = new List<Order>(ids.Count);
-            foreach (var id in ids)
-            {
-                if (byId.TryGetValue(id, out var o))
-                    ordered.Add(o);
-            }
-
+        if (ids.Count == 0)
+        {
             return new PagedResult<Order>
             {
-                Items = ordered,
+                Items = [],
                 TotalCount = total,
                 Page = page,
                 PageSize = safePageSize,
                 TotalPages = (int)Math.Ceiling(total / (double)safePageSize),
             };
         }
-        finally
-        {
-            if (openedHere)
-                await _context.Database.CloseConnectionAsync();
-        }
-    }
 
-    private static void AddDeliveredAtSearchParameters(
-        DbCommand cmd,
-        string typeDb,
-        DateTime fromUtc,
-        DateTime toUtc,
-        int? branchId,
-        int? deliveryManId)
-    {
-        cmd.Parameters.Add(new NpgsqlParameter("type", NpgsqlDbType.Text) { Value = typeDb });
-        cmd.Parameters.Add(new NpgsqlParameter("fromUtc", NpgsqlDbType.TimestampTz) { Value = fromUtc });
-        cmd.Parameters.Add(new NpgsqlParameter("toUtc", NpgsqlDbType.TimestampTz) { Value = toUtc });
-        if (branchId.HasValue)
-            cmd.Parameters.Add(new NpgsqlParameter("branchId", NpgsqlDbType.Integer) { Value = branchId.Value });
-        if (deliveryManId.HasValue)
-            cmd.Parameters.Add(new NpgsqlParameter("dmId", NpgsqlDbType.Integer) { Value = deliveryManId.Value });
+        var orders = await OrdersWithDeliverymanSettlementIncludes()
+            .Where(o => ids.Contains(o.Id))
+            .AsSplitQuery()
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var byId = orders.ToDictionary(o => o.Id);
+        var ordered = new List<Order>(ids.Count);
+        foreach (var id in ids)
+        {
+            if (byId.TryGetValue(id, out var o))
+                ordered.Add(o);
+        }
+
+        return new PagedResult<Order>
+        {
+            Items = ordered,
+            TotalCount = total,
+            Page = page,
+            PageSize = safePageSize,
+            TotalPages = (int)Math.Ceiling(total / (double)safePageSize),
+        };
     }
 
     /// <summary>Misma carga relacionada que <see cref="SearchOrdersAsync"/> para cuadre de domiciliarios.</summary>
