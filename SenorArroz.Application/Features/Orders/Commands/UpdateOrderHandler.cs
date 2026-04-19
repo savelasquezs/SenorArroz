@@ -147,10 +147,10 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             }
         }
 
-        // Recalcular prepare_at si reserved_for cambió y prepare_at no se envió explícitamente
-        if (existingOrder.ReservedFor.HasValue && !request.Order.PrepareAt.HasValue)
+        // Recalcular prepare_at solo si en esta petición se envió reserved_for y no prepare_at (evita pisar horarios al cambiar solo el tipo)
+        if (request.Order.ReservedFor is { } rfFromRequest && !request.Order.PrepareAt.HasValue)
         {
-            existingOrder.PrepareAt = existingOrder.ReservedFor.Value.AddHours(-1);
+            existingOrder.PrepareAt = rfFromRequest.AddHours(-1);
         }
 
         // Handle order type changes - clear delivery fields when changing to Onsite
@@ -162,14 +162,6 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
                 existingOrder.DeliveryFee = null;
                 existingOrder.DeliveryManId = null;
             }
-        }
-
-        // Si cambia a Onsite/Delivery (no Reservation), limpiar reserved_for; prepare_at solo si no se envió explícito (p. ej. "preparar ya")
-        if (request.Order.Type.HasValue && request.Order.Type != OrderType.Reservation)
-        {
-            existingOrder.ReservedFor = null;
-            if (!request.Order.PrepareAt.HasValue)
-                existingOrder.PrepareAt = null;
         }
 
         // Handle address changes - update delivery fee from address if not provided
