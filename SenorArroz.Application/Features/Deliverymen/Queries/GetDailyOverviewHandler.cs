@@ -131,7 +131,7 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             .Select(a => _mapper.Map<DeliverymanAdvanceDto>(a))
             .ToList();
 
-        // 5. Construir stats por domiciliario (activos de sucursal; al final se expone solo quienes tienen pedido adjudicado)
+        // 5. Construir stats por domiciliario activo; la lista visible filtra por Delivered en período u OnTheWay (ver más abajo).
         var deliverymenStats = new List<DeliverymanDayStatsDto>();
         foreach (var dm in deliverymen)
         {
@@ -191,9 +191,13 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             }
         }
 
-        // Vista gestión: solo domiciliarios con al menos un pedido adjudicado (entregas en el ciclo del período o pedidos en camino).
+        // Vista gestión: domiciliarios con al menos un pedido Delivered en el período (fecha real de entrega) o al menos un OnTheWay.
+        // Las cifras de la tarjeta siguen usando el ciclo de liquidación (OrdersCount, efectivo, etc.).
+        var visibleDeliverymanIds = ordersByDeliveryman.Keys
+            .Concat(onTheWayCountByDeliveryman.Where(kv => kv.Value > 0).Select(kv => kv.Key))
+            .ToHashSet();
         var deliverymenVisible = deliverymenStats
-            .Where(s => s.OrdersCount > 0 || s.OrdersOnTheWayCount > 0)
+            .Where(s => visibleDeliverymanIds.Contains(s.DeliverymanId))
             .ToList();
         var visibleIds = deliverymenVisible.Select(s => s.DeliverymanId).ToHashSet();
         var advancesVisible = advanceDtos.Where(a => visibleIds.Contains(a.DeliverymanId)).ToList();

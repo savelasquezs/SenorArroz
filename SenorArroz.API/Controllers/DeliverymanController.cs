@@ -93,7 +93,7 @@ public class DeliverymanController : ControllerBase
 
     /// <summary>
     /// Resumen completo del día: domiciliarios con estadísticas + lista de abonos.
-    /// Solo incluye domiciliarios con al menos un pedido adjudicado (entregas en el período o en camino) y sus abonos en el mismo rango.
+    /// Solo incluye domiciliarios con al menos un pedido Delivered en el período (por entrega real) o OnTheWay; abonos filtrados a ese subconjunto.
     /// </summary>
     /// <param name="date">Fecha en YYYY-MM-DD (por defecto: día actual)</param>
     /// <param name="fromDate">Inicio del rango (prioridad sobre date)</param>
@@ -194,7 +194,7 @@ public class DeliverymanController : ControllerBase
     }
 
     /// <summary>
-    /// Lista de abonos del período (mismo agregado que daily-overview: solo abonos de domiciliarios con pedido adjudicado en el período).
+    /// Lista de abonos del período (mismo agregado que daily-overview: solo abonos de domiciliarios visibles allí — Delivered en período u OnTheWay).
     /// </summary>
     [HttpGet("advances")]
     [Authorize(Roles = "Superadmin,Admin,Cashier")]
@@ -213,7 +213,7 @@ public class DeliverymanController : ControllerBase
     }
 
     /// <summary>
-    /// Lista de domiciliarios con pedido adjudicado en el día (o rango): entregas en el ciclo o pedidos en camino (mismo criterio que daily-overview).
+    /// Lista de domiciliarios con pedido Delivered en el período (por entrega) u OnTheWay (misma visibilidad que daily-overview).
     /// Usado, por ejemplo, para registrar abonos desde otros módulos.
     /// </summary>
     [HttpGet("with-orders-today")]
@@ -232,7 +232,7 @@ public class DeliverymanController : ControllerBase
             BranchId = branchId
         });
 
-        // Mismo subconjunto que daily-overview (ya excluye quienes no tienen entregas ni pedidos en ruta).
+        // Mismo subconjunto que daily-overview (Delivered en período u OnTheWay).
         var deliverymenWithOrders = overview.Deliverymen
             .Select(d => new
             {
