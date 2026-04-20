@@ -8,10 +8,13 @@ public class CashRegisterExpectedDto
     public decimal OpeningCash { get; set; }
 
     /// <summary>
-    /// Total global al inicio del período: último cierre (efectivo + saldos reales por banco) + snapshot de préstamos informales en ese cierre.
-    /// Si el cierre anterior no tenía snapshot de préstamos, solo caja + bancos.
+    /// Total global al inicio del período: último cierre (efectivo + saldos reales por banco) + snapshot de préstamos informales
+    /// + suma del snapshot de apps pendientes por liquidar guardado en ese cierre.
     /// </summary>
     public decimal OpeningGlobalTotal { get; set; }
+
+    /// <summary>Suma del snapshot de apps pendientes incluida en <see cref="OpeningGlobalTotal"/> (0 si el cierre anterior no tenía snapshot).</summary>
+    public decimal OpeningUnsettledAppsTotal { get; set; }
 
     /// <summary>
     /// Suma de totales de pedidos entregados cuyo instante contable (PrepareAt o CreatedAt) cae en el período.
@@ -22,7 +25,7 @@ public class CashRegisterExpectedDto
     public decimal ExpensesInPeriodTotal { get; set; }
 
     /// <summary>
-    /// <see cref="OpeningGlobalTotal"/> + ventas del período − gastos del período (= C0+B0+L0 + ventas − gastos).
+    /// <see cref="OpeningGlobalTotal"/> + ventas del período − gastos del período (incluye en apertura el snapshot de apps pendientes del último cierre).
     /// </summary>
     public decimal ExpectedGlobalTotal { get; set; }
 
@@ -37,6 +40,19 @@ public class CashRegisterExpectedDto
     public DateTime AsOf { get; set; }
     public DateTime? LastClosureAt { get; set; }
     public List<BankExpectedBalanceDto> Banks { get; set; } = new();
+
+    /// <summary>Pagos vía app no liquidados ahora (pedidos entregados), desglosado por app.</summary>
+    public List<UnsettledAppLineDto> UnsettledAppLines { get; set; } = new();
+
+    /// <summary>Suma de <see cref="UnsettledAppLines"/>; entra en el total global contado al cerrar.</summary>
+    public decimal UnsettledAppsTotal { get; set; }
+}
+
+public class UnsettledAppLineDto
+{
+    public int AppId { get; set; }
+    public string AppName { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
 }
 
 public class BankExpectedBalanceDto

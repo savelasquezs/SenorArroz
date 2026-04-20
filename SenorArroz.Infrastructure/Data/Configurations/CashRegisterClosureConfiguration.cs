@@ -20,6 +20,7 @@ public class CashRegisterClosureConfiguration : IEntityTypeConfiguration<CashReg
         builder.Property(crc => crc.OpeningCash).HasColumnName("opening_cash").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(crc => crc.ClosingCash).HasColumnName("closing_cash").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(crc => crc.DenominationCounts).HasColumnName("denomination_counts").HasMaxLength(500).HasDefaultValue("{}");
+        builder.Property(crc => crc.PendingAppPaymentsSnapshot).HasColumnName("pending_app_payments_snapshot").HasMaxLength(8000).HasDefaultValue("[]");
 
         builder.Property(crc => crc.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

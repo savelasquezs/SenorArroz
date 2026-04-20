@@ -17,6 +17,11 @@ public class CashRegisterClosure : BaseEntity
     /// </summary>
     public string DenominationCounts { get; set; } = "{}";
 
+    /// <summary>
+    /// JSON: [{"appId":1,"appName":"Rappi","amount":50000},...] — saldo pendiente por liquidar en apps al cerrar (base siguiente período).
+    /// </summary>
+    public string PendingAppPaymentsSnapshot { get; set; } = "[]";
+
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;
     public virtual User CreatedBy { get; set; } = null!;

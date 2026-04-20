@@ -33,6 +33,7 @@ public class GetLastClosureHandler : IRequestHandler<GetLastClosureQuery, CashCl
             OpeningCash = closure.OpeningCash,
             ClosingCash = closure.ClosingCash,
             DenominationCounts = closure.DenominationCounts,
+            PendingAppPaymentsSnapshot = closure.PendingAppPaymentsSnapshot,
             CreatedAt = closure.CreatedAt,
             BankReconciliations = closure.BankReconciliations.Select(br => new CashClosureBankReconciliationDto
             {

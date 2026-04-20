@@ -70,14 +70,17 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
             .ToListAsync(cancellationToken);
         var informalActiveSum = activeLoans.Sum(l => l.Amount);
 
-        var countedGlobalTotal = dto.ClosingCash + dto.BankReconciliations.Sum(r => r.ActualBalance) + informalActiveSum;
+        var (unsettledAppLines, unsettledAppsTotal) =
+            await CashRegisterUnsettledAppsHelper.LoadUnsettledForBranchAsync(_context, branchId, cancellationToken);
+
+        var countedGlobalTotal = dto.ClosingCash + dto.BankReconciliations.Sum(r => r.ActualBalance) + informalActiveSum + unsettledAppsTotal;
 
         var expectedSnapshot = await _mediator.Send(new GetCashRegisterExpectedQuery { BranchId = branchId }, cancellationToken);
         if (countedGlobalTotal != expectedSnapshot.ExpectedGlobalTotal)
         {
             throw new InvalidOperationException(
                 $"El total global contado ({countedGlobalTotal:N0}) no coincide con el esperado ({expectedSnapshot.ExpectedGlobalTotal:N0}). " +
-                "Revisa efectivo, saldos reales por banco y préstamos informales activos.");
+                "Revisa efectivo, saldos reales por banco, préstamos informales activos y pendiente por liquidar en apps.");
         }
 
         var lastClosure = await _closureRepository.GetLastByBranchAsync(branchId, cancellationToken);
@@ -91,6 +94,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
             OpeningCash = openingCash,
             ClosingCash = dto.ClosingCash,
             DenominationCounts = dto.DenominationCounts,
+            PendingAppPaymentsSnapshot = CashRegisterUnsettledAppsHelper.SerializeSnapshot(unsettledAppLines),
             BankReconciliations = dto.BankReconciliations.Select(r => new CashClosureBankReconciliation
             {
                 BankId = r.BankId,
@@ -117,6 +121,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
             OpeningCash = saved.OpeningCash,
             ClosingCash = saved.ClosingCash,
             DenominationCounts = saved.DenominationCounts,
+            PendingAppPaymentsSnapshot = saved.PendingAppPaymentsSnapshot,
             CreatedAt = saved.CreatedAt,
             BankReconciliations = saved.BankReconciliations.Select(br => new CashClosureBankReconciliationDto
             {

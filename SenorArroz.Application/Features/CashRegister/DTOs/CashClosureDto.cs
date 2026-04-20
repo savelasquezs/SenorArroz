@@ -11,6 +11,8 @@ public class CashClosureDto
     public decimal OpeningCash { get; set; }
     public decimal ClosingCash { get; set; }
     public string DenominationCounts { get; set; } = "{}";
+    /// <summary>JSON: apps pendientes por liquidar al cierre (base para el siguiente período).</summary>
+    public string PendingAppPaymentsSnapshot { get; set; } = "[]";
     public List<CashClosureBankReconciliationDto> BankReconciliations { get; set; } = new();
     public List<CashClosureInformalLoanDto> InformalLoans { get; set; } = new();
     public DateTime CreatedAt { get; set; }

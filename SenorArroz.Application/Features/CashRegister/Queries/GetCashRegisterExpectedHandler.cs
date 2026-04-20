@@ -65,7 +65,9 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         if (lastClosure?.InformalLoans is { Count: > 0 })
             openingInformalFromLastClosure = lastClosure.InformalLoans.Sum(x => x.Amount);
 
-        var openingGlobalTotal = openingCash + openingBanksActual + openingInformalFromLastClosure;
+        var openingUnsettledAppsTotal = CashRegisterUnsettledAppsHelper.SumSnapshot(lastClosure?.PendingAppPaymentsSnapshot);
+
+        var openingGlobalTotal = openingCash + openingBanksActual + openingInformalFromLastClosure + openingUnsettledAppsTotal;
 
         var informalLoansActiveTotal = await _context.BranchInformalLoans
             .Where(l => l.BranchId == branchId && l.DeactivatedAt == null)
@@ -101,7 +103,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 salesInPeriodTotal += (decimal)row.Total;
         }
 
-        // Total esperado = apertura global (C0+B0+L0) + ventas − gastos. L1 no se suma aquí: L0 ya está en OpeningGlobalTotal.
+        // Total esperado = apertura global (C0+B0+L0+apps snapshot) + ventas − gastos. L1 activo no se suma aparte en el esperado.
         var expectedGlobalTotal = openingGlobalTotal + salesInPeriodTotal - expensesInPeriodTotal;
 
         var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
@@ -197,10 +199,14 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             });
         }
 
+        var (unsettledAppLines, unsettledAppsTotal) =
+            await CashRegisterUnsettledAppsHelper.LoadUnsettledForBranchAsync(_context, branchId, cancellationToken);
+
         return new CashRegisterExpectedDto
         {
             OpeningCash = openingCash,
             OpeningGlobalTotal = openingGlobalTotal,
+            OpeningUnsettledAppsTotal = openingUnsettledAppsTotal,
             SalesInPeriodTotal = salesInPeriodTotal,
             ExpensesInPeriodTotal = expensesInPeriodTotal,
             ExpectedGlobalTotal = expectedGlobalTotal,
@@ -208,7 +214,9 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             UndeliveredOrdersCount = undeliveredOrdersCount,
             AsOf = now,
             LastClosureAt = lastClosure?.ClosedAt,
-            Banks = bankExpected
+            Banks = bankExpected,
+            UnsettledAppLines = unsettledAppLines,
+            UnsettledAppsTotal = unsettledAppsTotal
         };
     }
 }

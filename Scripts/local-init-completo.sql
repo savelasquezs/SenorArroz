@@ -559,6 +559,7 @@ CREATE TABLE IF NOT EXISTS cash_register_closure (
     opening_cash numeric(12,2) NOT NULL DEFAULT 0,
     closing_cash numeric(12,2) NOT NULL DEFAULT 0,
     denomination_counts character varying(500) NOT NULL DEFAULT '{}',
+    pending_app_payments_snapshot character varying(8000) NOT NULL DEFAULT '[]',
     created_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     updated_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     CONSTRAINT "PK_cash_register_closure" PRIMARY KEY (id),
