@@ -31,6 +31,7 @@ public class UpdateBranchDto
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
 
+    /// <summary>Omitir en el JSON para no modificar el valor guardado en sucursal.</summary>
     [Range(0, 999_999_999, ErrorMessage = "El tope de domicilio gratis debe ser un valor no negativo")]
-    public int MaxFreeDeliveryDiscount { get; set; } = 3000;
+    public int? MaxFreeDeliveryDiscount { get; set; }
 }

@@ -73,7 +73,8 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
         branch.Phone2 = request.Phone2;
         branch.Latitude = request.Latitude;
         branch.Longitude = request.Longitude;
-        branch.MaxFreeDeliveryDiscount = Math.Max(0, request.MaxFreeDeliveryDiscount);
+        if (request.MaxFreeDeliveryDiscount.HasValue)
+            branch.MaxFreeDeliveryDiscount = Math.Max(0, request.MaxFreeDeliveryDiscount.Value);
 
         branch = await _branchRepository.UpdateAsync(branch, cancellationToken);
 
