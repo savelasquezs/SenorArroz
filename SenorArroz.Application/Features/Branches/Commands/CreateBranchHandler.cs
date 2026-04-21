@@ -53,7 +53,8 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
             Phone1 = request.Phone1,
             Phone2 = request.Phone2,
             Latitude = request.Latitude,
-            Longitude = request.Longitude
+            Longitude = request.Longitude,
+            MaxFreeDeliveryDiscount = Math.Max(0, request.MaxFreeDeliveryDiscount),
         };
 
         branch = await _branchRepository.CreateAsync(branch, cancellationToken);

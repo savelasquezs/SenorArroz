@@ -19,6 +19,9 @@ public class Branch : BaseEntity
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
 
+    /// <summary>Tope COP del descuento “domicilio gratis” repartido en líneas del pedido (POS).</summary>
+    public int MaxFreeDeliveryDiscount { get; set; } = 3000;
+
     // Navigation Properties
     public virtual ICollection<User> Users { get; set; } = new List<User>();
     public virtual ICollection<Customer> Customers { get; set; } = new List<Customer>();

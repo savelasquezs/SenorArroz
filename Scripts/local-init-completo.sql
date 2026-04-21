@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS branch (
     phone2 character varying(10),
     latitude numeric(10,6),
     longitude numeric(10,6),
+    max_free_delivery_discount integer NOT NULL DEFAULT 3000,
     created_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     updated_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     CONSTRAINT "PK_branch" PRIMARY KEY (id)

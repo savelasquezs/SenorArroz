@@ -30,4 +30,7 @@ public class CreateBranchDto
 
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
+
+    [Range(0, 999_999_999, ErrorMessage = "El tope de domicilio gratis debe ser un valor no negativo")]
+    public int MaxFreeDeliveryDiscount { get; set; } = 3000;
 }

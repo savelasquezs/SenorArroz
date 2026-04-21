@@ -24,6 +24,8 @@ public class BranchConfiguration : IEntityTypeConfiguration<Branch>
         builder.Property(b => b.Latitude).HasColumnName("latitude").HasColumnType("numeric(10,6)");
         builder.Property(b => b.Longitude).HasColumnName("longitude").HasColumnType("numeric(10,6)");
 
+        builder.Property(b => b.MaxFreeDeliveryDiscount).HasColumnName("max_free_delivery_discount").HasDefaultValue(3000);
+
         builder.Property(b => b.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
