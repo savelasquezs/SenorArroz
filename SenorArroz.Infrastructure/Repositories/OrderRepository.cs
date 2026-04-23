@@ -49,8 +49,9 @@ public class OrderRepository : IOrderRepository
 
     public async Task<Order?> GetByIdWithDetailsAsync(int id, CancellationToken cancellationToken = default)
     {
+        // IdentityResolution: varias líneas pueden compartir Product/Category; sin esto Update() falla al rastrear duplicados.
         return await _context.Orders
-            .AsNoTracking()
+            .AsNoTrackingWithIdentityResolution()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
@@ -67,7 +68,7 @@ public class OrderRepository : IOrderRepository
     public async Task<Order?> GetByIdWithFullDetailsAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
-            .AsNoTracking()
+            .AsNoTrackingWithIdentityResolution()
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)
             .Include(o => o.Customer)
