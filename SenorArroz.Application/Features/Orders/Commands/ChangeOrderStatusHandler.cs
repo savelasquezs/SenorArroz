@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -87,10 +88,29 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             // GetByIdAsync no incluye OrderDetails; una colección vacía borraba todos los productos del pedido.
             var orderForTypeUpdate = await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken)
                 ?? throw new BusinessException("Pedido no encontrado");
-            orderForTypeUpdate.Type = orderForTypeUpdate.AddressId.HasValue
-                ? OrderType.Delivery
-                : OrderType.Onsite;
-            await _orderRepository.UpdateAsync(orderForTypeUpdate, cancellationToken);
+            var detailCount = orderForTypeUpdate.OrderDetails?.Count ?? 0;
+            if (detailCount < 1)
+            {
+                _logger.LogWarning(
+                    "Reserva a preparación: pedido {OrderId} sin líneas al cargar detalle; se aborta para no vaciar el pedido en BD",
+                    request.Id);
+                throw new BusinessException(
+                    "No se pudo preparar el pedido: faltan los productos en el sistema. Vuelva a abrir el pedido o pida a administración verificarlo.");
+            }
+
+            try
+            {
+                orderForTypeUpdate.Type = orderForTypeUpdate.AddressId.HasValue
+                    ? OrderType.Delivery
+                    : OrderType.Onsite;
+                await _orderRepository.UpdateAsync(orderForTypeUpdate, cancellationToken);
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "Error de base de datos al actualizar tipo (reserva→preparación) pedido {OrderId}", request.Id);
+                throw new BusinessException("No se pudo guardar al pasar a preparación. Reintente o contacte su administrador.");
+            }
+
             existingOrder.Type = orderForTypeUpdate.Type;
         }
 

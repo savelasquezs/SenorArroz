@@ -695,10 +695,10 @@ public class OrderRepository : IOrderRepository
     {
         var order = await _context.Orders.FindAsync([orderId], cancellationToken);
         if (order == null)
-            throw new ArgumentException("Order not found");
+            throw new BusinessException("Pedido no encontrado");
 
         if (!await CanChangeStatusAsync(orderId, newStatus, cancellationToken))
-            throw new InvalidOperationException($"Cannot change status from {order.Status} to {newStatus}");
+            throw new BusinessException($"No se puede cambiar el estado de {order.Status} a {newStatus}.");
 
         order.Status = newStatus;
         order.AddStatusTime(newStatus, _clock.UtcNow);
