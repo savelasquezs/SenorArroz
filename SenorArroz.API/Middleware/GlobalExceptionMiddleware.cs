@@ -63,6 +63,8 @@ public class GlobalExceptionMiddleware
         var exposeInternal =
             _environment.IsDevelopment()
             || _configuration.GetValue<bool>("ExposeInternalApiErrors");
+        // Resumen tecnico (tipo + mensaje) sin pila; produccion sin ExposeInternalApiErrors.
+        var exposeExceptionSummary = _configuration.GetValue("Diagnostics:ExposeExceptionSummary", true);
 
         switch (exception)
         {
@@ -92,12 +94,38 @@ public class GlobalExceptionMiddleware
                 {
                     errorResponse.Detail = exception.ToString();
                 }
+                else if (exposeExceptionSummary)
+                {
+                    var summary = ExceptionSummary(exception);
+                    errorResponse.Detail = summary;
+                }
                 break;
         }
 
         var jsonResponse = JsonSerializer.Serialize(errorResponse, JsonOptions);
 
         await response.WriteAsync(jsonResponse);
+    }
+
+    /// <summary>Texto acotado (sin pila) para diagnosticar 500 en producción.</summary>
+    private static string ExceptionSummary(Exception exception)
+    {
+        var t = exception.GetType().Name;
+        var m = (exception.Message ?? string.Empty).Trim();
+        if (m.Length > 500)
+            m = m[..500] + "...";
+        var inner = exception.InnerException;
+        if (inner is not null)
+        {
+            var im = (inner.Message ?? string.Empty).Trim();
+            if (im.Length > 300)
+                im = im[..300] + "...";
+            if (im.Length > 0)
+                m = string.IsNullOrEmpty(m)
+                    ? $"{inner.GetType().Name}: {im}"
+                    : $"{m} | Inner: {inner.GetType().Name}: {im}";
+        }
+        return string.IsNullOrEmpty(m) ? t : $"{t}: {m}";
     }
 
     // Clase interna para la respuesta de error
