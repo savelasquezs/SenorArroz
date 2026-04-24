@@ -21,6 +21,10 @@ public class AsNoTrackingRegressionTests
         return new ApplicationDbContext(options);
     }
 
+    /// <summary>
+    /// <see cref="OrderRepository.UpdateAsync"/> usa transacción; InMemory no la soporta
+    /// y por defecto lanza si no se ignora la advertencia.
+    /// </summary>
     private static Branch MakeBranch(string name = "Sucursal Test") => new()
     {
         Name = name,

@@ -198,6 +198,8 @@ public class OrderRepository : IOrderRepository
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            OrderUpdateGraphForPersistence.DetachReadOnlyNavigations(order);
+
             // Pedido cargado con AsNoTracking y mutado en memoria: DbSet.Update() no emite DELETE para líneas
             // quitadas del ICollection (dejan de ser alcanzables en el grafo). Borrar en BD las que ya no estén en el payload.
             if (order.OrderDetails != null)
