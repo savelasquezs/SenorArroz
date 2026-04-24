@@ -95,6 +95,11 @@ public class ExpenseRepository : IExpenseRepository
 
     public async Task<Expense> UpdateAsync(Expense expense, CancellationToken cancellationToken = default)
     {
+        // AsNoTracking en la carga: Category y MenuTargets vienen con Include; si solo se
+        // actualizan escalares, Update() re-adjunta otra instancia de ExpenseCategory y
+        // colisiona con el seguimiento. Los destinos de menú se reemplazan aparte.
+        expense.Category = null!;
+        expense.MenuTargets = [];
         _context.Expenses.Update(expense);
         await _context.SaveChangesAsync(cancellationToken);
 

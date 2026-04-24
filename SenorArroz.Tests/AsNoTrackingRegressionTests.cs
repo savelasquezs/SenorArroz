@@ -265,4 +265,62 @@ public class AsNoTrackingRegressionTests
         Assert.NotNull(token);
         Assert.Single(ctx.ChangeTracker.Entries<RefreshToken>());
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 6. ExpenseRepository: GetById con Include y cambio de CategoryId no debe
+    //    provocar conflicto de seguimiento de ExpenseCategory al actualizar.
+    // ─────────────────────────────────────────────────────────────────────────
+    [Fact]
+    public async Task ExpenseRepository_UpdateAfterGetWithCategory_ChangeCategoryId_Persists()
+    {
+        const string db = nameof(ExpenseRepository_UpdateAfterGetWithCategory_ChangeCategoryId_Persists);
+        await using var ctx = CreateContext(db);
+
+        var ec1 = new ExpenseCategory { Name = "Fijos", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+        var ec2 = new ExpenseCategory { Name = "Variables", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+        ctx.ExpenseCategories.AddRange(ec1, ec2);
+        await ctx.SaveChangesAsync();
+
+        var expense = new Expense
+        {
+            Name = "Luz",
+            CategoryId = ec1.Id,
+            Unit = ExpenseUnit.Unit,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        ctx.Expenses.Add(expense);
+        await ctx.SaveChangesAsync();
+
+        ctx.ExpenseMenuTargets.Add(new ExpenseMenuTarget
+        {
+            ExpenseId = expense.Id,
+            TargetType = ExpenseMenuTargetType.Product,
+            TargetId = 1,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await ctx.SaveChangesAsync();
+
+        ctx.ChangeTracker.Clear();
+
+        var repo = new ExpenseRepository(ctx);
+        var fetched = await repo.GetByIdAsync(expense.Id);
+        Assert.NotNull(fetched);
+        Assert.Equal(ec1.Id, fetched.CategoryId);
+        Assert.Equal(ec1.Id, fetched.Category.Id);
+        Assert.NotEmpty(fetched.MenuTargets);
+
+        fetched.Name = "Luz (edit)";
+        fetched.CategoryId = ec2.Id;
+
+        await repo.UpdateAsync(fetched);
+
+        ctx.ChangeTracker.Clear();
+        var after = await repo.GetByIdAsync(expense.Id);
+        Assert.NotNull(after);
+        Assert.Equal("Luz (edit)", after.Name);
+        Assert.Equal(ec2.Id, after.CategoryId);
+        Assert.Equal(ec2.Name, after.Category.Name);
+    }
 }
