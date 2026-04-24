@@ -477,6 +477,8 @@ POST /api/app-payments/{id}/unsettle
 1. Marca el app payment como `IsSetted = false`
 2. Elimina el bank payment asociado
 
+**Atajo en listado de pedidos (frontend)**: La tabla de pedidos puede invocar los mismos `POST` de liquidar/desliquidar para Admin/Superadmin, con la misma regla de negocio que desde el detalle del pedido; no hay endpoint adicional.
+
 ---
 
 ## Reglas Temporales
