@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Infrastructure.Data;
 
 namespace SenorArroz.Infrastructure.Common;
 
@@ -8,7 +9,16 @@ namespace SenorArroz.Infrastructure.Common;
 /// </summary>
 public static class OrderSearchFilterExtensions
 {
-    public static IQueryable<Order> ApplyOrderSearchTermFilter(this IQueryable<Order> query, string? searchTerm)
+    /// <summary>
+    /// Exige <paramref name="context"/> para correlacionar búsqueda de cliente vía
+    /// <c>EXISTS</c> a <see cref="ApplicationDbContext.Customers"/>, patrón que EF+Npgsql
+    /// traduce bien; evita joins implícitos por navegación + <c>ILike</c> en un único
+    /// <c>OR</c> (fallaba con InvalidOperationException en traducción SQL).
+    /// </summary>
+    public static IQueryable<Order> ApplyOrderSearchTermFilter(
+        this IQueryable<Order> query,
+        ApplicationDbContext context,
+        string? searchTerm)
     {
         if (string.IsNullOrWhiteSpace(searchTerm))
             return query;
@@ -16,13 +26,16 @@ public static class OrderSearchFilterExtensions
         var term = searchTerm.Trim();
         var pattern = SqlSearchPattern.ILikeContains(term);
 
+        // Cliente: un EXISTS; equivalente a los tres ORs anteriores (nombre, phone1, phone2).
         return query.Where(o =>
             (o.Notes != null && EF.Functions.ILike(o.Notes, pattern))
             || (o.GuestName != null && EF.Functions.ILike(o.GuestName, pattern))
-            || (o.Customer != null && EF.Functions.ILike(o.Customer.Name, pattern))
-            || (o.Customer != null && EF.Functions.ILike(o.Customer.Phone1, pattern))
-            || (o.Customer != null && o.Customer.Phone2 != null && EF.Functions.ILike(o.Customer.Phone2, pattern))
-            || EF.Functions.ILike(string.Concat(string.Empty, o.Id), pattern));
+            || (o.CustomerId != null && context.Customers.Any(c => c.Id == o.CustomerId && (
+                EF.Functions.ILike(c.Name, pattern)
+                || EF.Functions.ILike(c.Phone1, pattern)
+                || (c.Phone2 != null && EF.Functions.ILike(c.Phone2, pattern)))))
+            // Npgsql: Id.ToString() en LINQ se traduce a cast a texto en la consulta.
+            || EF.Functions.ILike(o.Id.ToString(), pattern));
     }
 
     public static IQueryable<Order> ApplyOrderTotalDigitsPrefix(this IQueryable<Order> query, string? digitsOnly)

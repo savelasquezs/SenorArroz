@@ -781,7 +781,7 @@ public class OrderRepository : IOrderRepository
         // Fase 1: consulta ligera (sin includes) — filtros + orden + ids paginados
         var query = _context.Orders.AsNoTracking().AsQueryable();
 
-        query = query.ApplyOrderSearchTermFilter(searchTerm);
+        query = query.ApplyOrderSearchTermFilter(_context, searchTerm);
         query = query.ApplyOrderTotalDigitsPrefix(totalDigitsPrefix);
         query = query.ApplyOrderAppPaymentFilters(appId, appPaymentsUnsettledOnly);
 
