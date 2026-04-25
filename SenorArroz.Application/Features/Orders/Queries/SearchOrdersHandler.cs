@@ -81,7 +81,10 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             request.ExcludeFutureReservations,
             request.BankId,
             request.NeighborhoodId,
-            request.IncludeOnsiteActiveInAssignedHistory);
+            request.IncludeOnsiteActiveInAssignedHistory,
+            request.TotalDigitsPrefix,
+            request.AppId,
+            request.AppPaymentsUnsettledOnly);
 
         var dtos = _mapper.Map<List<OrderDto>>(result.Items);
 

@@ -681,6 +681,7 @@ CREATE INDEX IF NOT EXISTS idx_address_neighborhood ON address (neighborhood_id)
 CREATE INDEX IF NOT EXISTS "IX_app_bank_id" ON app (bank_id);
 CREATE INDEX IF NOT EXISTS "IX_app_payment_app_id" ON app_payment (app_id);
 CREATE INDEX IF NOT EXISTS "IX_app_payment_order_id" ON app_payment (order_id);
+CREATE INDEX IF NOT EXISTS idx_app_payment_app_settled_order ON app_payment (app_id, is_setted) INCLUDE (order_id);
 CREATE INDEX IF NOT EXISTS "IX_bank_branch_id" ON bank (branch_id);
 CREATE INDEX IF NOT EXISTS idx_supplier_branch_name ON supplier (branch_id, name);
 CREATE INDEX IF NOT EXISTS "IX_bank_payment_bank_id" ON bank_payment (bank_id);

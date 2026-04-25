@@ -144,6 +144,9 @@ public class OrdersController : ControllerBase
             CustomerId = searchDto.CustomerId,
             DeliveryManId = searchDto.DeliveryManId,
             BankId = searchDto.BankId,
+            AppId = searchDto.AppId,
+            AppPaymentsUnsettledOnly = searchDto.AppPaymentsUnsettledOnly,
+            TotalDigitsPrefix = searchDto.TotalDigitsPrefix,
             Status = searchDto.Status,
             Type = searchDto.Type,
             FromDate = searchDto.FromDate,
@@ -156,7 +159,9 @@ public class OrdersController : ControllerBase
             PageSize = searchDto.PageSize,
             SortBy = searchDto.SortBy,
             SortOrder = searchDto.SortOrder,
-            ExcludeFutureReservations = searchDto.ExcludeFutureReservations
+            ExcludeFutureReservations = searchDto.ExcludeFutureReservations,
+            NeighborhoodId = searchDto.NeighborhoodId,
+            IncludeOnsiteActiveInAssignedHistory = searchDto.IncludeOnsiteActiveInAssignedHistory
         };
 
         var result = await _mediator.Send(query);

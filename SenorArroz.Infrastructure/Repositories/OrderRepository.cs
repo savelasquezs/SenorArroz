@@ -767,6 +767,9 @@ public class OrderRepository : IOrderRepository
         int? bankId = null,
         int? neighborhoodId = null,
         bool includeOnsiteActiveInAssignedHistory = false,
+        string? totalDigitsPrefix = null,
+        int? appId = null,
+        bool appPaymentsUnsettledOnly = false,
         CancellationToken cancellationToken = default)
     {
         // PostgreSQL timestamp with time zone requiere UTC
@@ -775,37 +778,12 @@ public class OrderRepository : IOrderRepository
         if (toDate.HasValue && toDate.Value.Kind != DateTimeKind.Utc)
             toDate = DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
 
-        var query = _context.Orders
-            .AsNoTracking()
-            .AsSplitQuery()
-            .Include(o => o.Branch)
-            .Include(o => o.TakenBy)
-            .Include(o => o.Customer)
-            .Include(o => o.Address)
-                .ThenInclude(a => a!.Neighborhood)
-            .Include(o => o.LoyaltyCycleStep)
-            .Include(o => o.DeliveryMan)
-            .Include(o => o.DeliveryRoute)
-            .Include(o => o.BankPayments)
-                .ThenInclude(bp => bp.Bank)
-                    .ThenInclude(b => b.Branch)
-            .Include(o => o.AppPayments)
-                .ThenInclude(ap => ap.App)
-                    .ThenInclude(a => a.Bank)
-                        .ThenInclude(b => b.Branch)
-            .Include(o => o.OrderDetails)
-                .ThenInclude(od => od.Product)
-                    .ThenInclude(p => p.Category)
-            .AsQueryable();
+        // Fase 1: consulta ligera (sin includes) — filtros + orden + ids paginados
+        var query = _context.Orders.AsNoTracking().AsQueryable();
 
-        // Aplicar filtros
-        if (!string.IsNullOrEmpty(searchTerm))
-        {
-            query = query.Where(o => 
-                o.Notes!.Contains(searchTerm) ||
-                (o.Customer != null && o.Customer.Name.Contains(searchTerm)) ||
-                o.Id.ToString().Contains(searchTerm));
-        }
+        query = query.ApplyOrderSearchTermFilter(searchTerm);
+        query = query.ApplyOrderTotalDigitsPrefix(totalDigitsPrefix);
+        query = query.ApplyOrderAppPaymentFilters(appId, appPaymentsUnsettledOnly);
 
         if (branchId.HasValue)
             query = query.Where(o => o.BranchId == branchId);
@@ -830,7 +808,6 @@ public class OrderRepository : IOrderRepository
         if (type.HasValue)
             query = query.Where(o => o.Type == type.Value);
 
-        // Rango calendario (UTC): pedidos creados en el rango o con ReservedFor en el mismo rango (día operativo)
         if (fromDate.HasValue && toDate.HasValue)
         {
             var fromUtc = fromDate.Value.Kind == DateTimeKind.Utc ? fromDate.Value : DateTime.SpecifyKind(fromDate.Value, DateTimeKind.Utc);
@@ -883,10 +860,51 @@ public class OrderRepository : IOrderRepository
         if (neighborhoodId.HasValue)
             query = query.Where(o => o.Address != null && o.Address.NeighborhoodId == neighborhoodId.Value);
 
-        // Aplicar ordenamiento
         query = ApplySorting(query, sortBy, sortOrder);
 
-        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
+        var safePage = Math.Max(1, page);
+        var safePageSize = Math.Max(1, pageSize);
+        var total = await query.CountAsync(cancellationToken);
+        var ids = await query
+            .Skip((safePage - 1) * safePageSize)
+            .Take(safePageSize)
+            .Select(o => o.Id)
+            .ToListAsync(cancellationToken);
+
+        if (ids.Count == 0)
+        {
+            return new PagedResult<Order>
+            {
+                Items = [],
+                TotalCount = total,
+                Page = safePage,
+                PageSize = safePageSize,
+                TotalPages = (int)Math.Ceiling(total / (double)safePageSize),
+            };
+        }
+
+        var orders = await OrdersWithListDetailIncludes()
+            .Where(o => ids.Contains(o.Id))
+            .AsSplitQuery()
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var byId = orders.ToDictionary(o => o.Id);
+        var ordered = new List<Order>(ids.Count);
+        foreach (var id in ids)
+        {
+            if (byId.TryGetValue(id, out var o))
+                ordered.Add(o);
+        }
+
+        return new PagedResult<Order>
+        {
+            Items = ordered,
+            TotalCount = total,
+            Page = safePage,
+            PageSize = safePageSize,
+            TotalPages = (int)Math.Ceiling(total / (double)safePageSize),
+        };
     }
 
     /// <inheritdoc />
@@ -975,7 +993,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             };
         }
 
-        var orders = await OrdersWithDeliverymanSettlementIncludes()
+        var orders = await OrdersWithListDetailIncludes()
             .Where(o => ids.Contains(o.Id))
             .AsSplitQuery()
             .AsNoTracking()
@@ -999,8 +1017,8 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         };
     }
 
-    /// <summary>Misma carga relacionada que <see cref="SearchOrdersAsync"/> para cuadre de domiciliarios.</summary>
-    private IQueryable<Order> OrdersWithDeliverymanSettlementIncludes() =>
+    /// <summary>Incluye el grafo usado en listados de pedido (búsqueda, cuadre domiciliarios, etc.).</summary>
+    private IQueryable<Order> OrdersWithListDetailIncludes() =>
         _context.Orders
             .Include(o => o.Branch)
             .Include(o => o.TakenBy)

@@ -10,6 +10,21 @@ public class OrderSearchDto
     public int? DeliveryManId { get; set; }
     /// <summary>Solo pedidos que tengan al menos un pago bancario asociado a este banco.</summary>
     public int? BankId { get; set; }
+
+    /// <summary>Solo pedidos con al menos un pago por app para esta app (comportamiento análogo a <see cref="BankId"/>).</summary>
+    public int? AppId { get; set; }
+
+    /// <summary>Si true, exige al menos un <c>AppPayment</c> no liquidado; si <see cref="AppId"/> está definido, solo líneas de esa app.</summary>
+    public bool AppPaymentsUnsettledOnly { get; set; }
+
+    /// <summary>Solo dígitos: el total del pedido como entero, en texto, debe empezar por este prefijo.</summary>
+    public string? TotalDigitsPrefix { get; set; }
+
+    /// <summary>Filtro por barrio de la dirección del pedido.</summary>
+    public int? NeighborhoodId { get; set; }
+
+    /// <summary>Historial domiciliario: junto con estado entregado incluye onsite en camino.</summary>
+    public bool IncludeOnsiteActiveInAssignedHistory { get; set; }
     public OrderStatus? Status { get; set; }
     public OrderType? Type { get; set; }
     public DateTime? FromDate { get; set; }

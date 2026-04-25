@@ -78,6 +78,9 @@ public interface IOrderRepository
         int? bankId = null,
         int? neighborhoodId = null,
         bool includeOnsiteActiveInAssignedHistory = false,
+        string? totalDigitsPrefix = null,
+        int? appId = null,
+        bool appPaymentsUnsettledOnly = false,
         CancellationToken cancellationToken = default
     );
 

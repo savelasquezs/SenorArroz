@@ -12,6 +12,16 @@ public class SearchOrdersQuery : IRequest<PagedResult<OrderDto>>
     public int? CustomerId { get; set; }
     public int? DeliveryManId { get; set; }
     public int? BankId { get; set; }
+
+    /// <summary>Solo pedidos con al menos un pago por app para esta app.</summary>
+    public int? AppId { get; set; }
+
+    /// <summary>Si true, exige al menos un pago por app no liquidado (opcionalmente filtrado por <see cref="AppId"/>).</summary>
+    public bool AppPaymentsUnsettledOnly { get; set; }
+
+    /// <summary>Solo dígitos: prefijo del total del pedido como texto decimal.</summary>
+    public string? TotalDigitsPrefix { get; set; }
+
     /// <summary>Filtro por barrio de la dirección del pedido (Address.NeighborhoodId).</summary>
     public int? NeighborhoodId { get; set; }
     public OrderStatus? Status { get; set; }
