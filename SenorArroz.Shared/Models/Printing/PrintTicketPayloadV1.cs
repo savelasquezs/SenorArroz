@@ -55,6 +55,10 @@ public class PrintTicketOrderPayloadV1
     /// <summary>Notas generales del pedido (no confundir con <see cref="PrintTicketLineV1.Notes"/> por línea).</summary>
     [JsonPropertyName("orderNotes")]
     public string? OrderNotes { get; set; }
+
+    /// <summary>Igual que <see cref="OrderNotes"/>; clave JSON <c>notes</c> como en el DTO/GET del pedido (inspección y agentes que lean solo esta clave).</summary>
+    [JsonPropertyName("notes")]
+    public string? OrderLevelNotes { get; set; }
 }
 
 public class PrintTicketLineV1

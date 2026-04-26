@@ -89,6 +89,18 @@ public class PrintQueueService : IPrintQueueService
         if (orders.Any(o => o.BranchId != branchId))
             throw new InvalidOperationException("Los pedidos deben pertenecer a la sucursal.");
 
+        {
+            var noteById = await _db.Orders
+                .AsNoTracking()
+                .Where(o => ids.Contains(o.Id))
+                .ToDictionaryAsync(o => o.Id, o => o.Notes, cancellationToken);
+            foreach (var o in orders)
+            {
+                if (noteById.TryGetValue(o.Id, out var n))
+                    o.Notes = n;
+            }
+        }
+
         var loyaltyByOrder = new Dictionary<int, LoyaltyKitchenSnapshot?>();
         foreach (var order in orders)
             loyaltyByOrder[order.Id] = await BuildLoyaltyKitchenSnapshotAsync(order, cancellationToken).ConfigureAwait(false);

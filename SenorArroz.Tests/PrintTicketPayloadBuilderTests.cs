@@ -38,6 +38,7 @@ public class PrintTicketPayloadBuilderTests
             loyalty: null);
 
         Assert.Equal("Sin cebolla en el arroz", payload.OrderNotes);
+        Assert.Equal(payload.OrderNotes, payload.OrderLevelNotes);
     }
 
     [Fact]
@@ -102,9 +103,11 @@ public class PrintTicketPayloadBuilderTests
         var batch = new PrintTicketPayloadBatchV1 { Version = 1, Orders = [one] };
         var json = PrintTicketPayloadJson.SerializeBatch(batch);
         Assert.Contains("orderNotes", json, StringComparison.Ordinal);
+        Assert.Contains("\"notes\":", json, StringComparison.Ordinal);
         Assert.Contains("cubiertos", json, StringComparison.Ordinal);
         var agentLikeOpts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var back = JsonSerializer.Deserialize<PrintTicketPayloadBatchV1>(json, agentLikeOpts);
         Assert.Equal("Entregar con cubiertos", back?.Orders[0].OrderNotes);
+        Assert.Equal("Entregar con cubiertos", back?.Orders[0].OrderLevelNotes);
     }
 }

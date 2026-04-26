@@ -116,6 +116,8 @@ public static class PrintTicketPayloadBuilder
             loyGift = NullIfWhiteSpace(loyalty.ThisOrderGiftLabel);
         }
 
+        var orderNoteText = NullIfWhiteSpace(order.Notes);
+
         return new PrintTicketOrderPayloadV1
         {
             OrderId = order.Id,
@@ -153,7 +155,8 @@ public static class PrintTicketPayloadBuilder
             ReservedFor = order.ReservedFor,
             PrepareAt = order.PrepareAt,
             CreatedAt = order.CreatedAt,
-            OrderNotes = NullIfWhiteSpace(order.Notes),
+            OrderNotes = orderNoteText,
+            OrderLevelNotes = orderNoteText,
         };
     }
 
@@ -274,6 +277,7 @@ public static class PrintTicketPayloadBuilder
             PrepareAt = printedAtUtc,
             CreatedAt = printedAtUtc,
             OrderNotes = kind == PrintJobKind.Delivery ? null : "Nota de prueba (pedido en local).",
+            OrderLevelNotes = kind == PrintJobKind.Delivery ? null : "Nota de prueba (pedido en local).",
         };
 
         return new PrintTicketPayloadBatchV1 { Version = 1, Orders = new List<PrintTicketOrderPayloadV1> { orderPayload } };
