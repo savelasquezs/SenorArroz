@@ -1,6 +1,8 @@
+using System.Text.Json;
 using SenorArroz.Application.Common.Printing;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Shared.Models.Printing;
 
 namespace SenorArroz.Tests;
 
@@ -68,5 +70,41 @@ public class PrintTicketPayloadBuilderTests
             null);
 
         Assert.Null(payload.OrderNotes);
+    }
+
+    [Fact]
+    public void Print_payload_JSON_includes_orderNotes_and_roundtrips_like_print_agent()
+    {
+        var order = new Order
+        {
+            Id = 99,
+            BranchId = 1,
+            TakenById = 1,
+            Status = OrderStatus.InPreparation,
+            Type = OrderType.Onsite,
+            Notes = "Entregar con cubiertos",
+            Subtotal = 1000,
+            Total = 1000,
+            CreatedAt = DateTime.UtcNow,
+            Branch = new Branch { Id = 1, Name = "B" },
+            OrderDetails = new List<OrderDetail>(),
+            BankPayments = new List<BankPayment>(),
+            AppPayments = new List<AppPayment>(),
+        };
+        var one = PrintTicketPayloadBuilder.BuildOrder(
+            order,
+            PrintJobKind.Kitchen,
+            DateTime.UtcNow,
+            null,
+            "Marca",
+            "Pie",
+            null);
+        var batch = new PrintTicketPayloadBatchV1 { Version = 1, Orders = [one] };
+        var json = PrintTicketPayloadJson.SerializeBatch(batch);
+        Assert.Contains("orderNotes", json, StringComparison.Ordinal);
+        Assert.Contains("cubiertos", json, StringComparison.Ordinal);
+        var agentLikeOpts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var back = JsonSerializer.Deserialize<PrintTicketPayloadBatchV1>(json, agentLikeOpts);
+        Assert.Equal("Entregar con cubiertos", back?.Orders[0].OrderNotes);
     }
 }

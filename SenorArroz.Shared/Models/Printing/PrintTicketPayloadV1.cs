@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace SenorArroz.Shared.Models.Printing;
 
 /// <summary>Raíz del snapshot en <c>payload_json</c> (versión 1). Serializar con nombres camelCase.</summary>
@@ -51,6 +53,7 @@ public class PrintTicketOrderPayloadV1
     /// <summary>Creación del pedido en UTC (fallback en comanda si no hay <see cref="PrepareAt"/>).</summary>
     public DateTime? CreatedAt { get; set; }
     /// <summary>Notas generales del pedido (no confundir con <see cref="PrintTicketLineV1.Notes"/> por línea).</summary>
+    [JsonPropertyName("orderNotes")]
     public string? OrderNotes { get; set; }
 }
 
