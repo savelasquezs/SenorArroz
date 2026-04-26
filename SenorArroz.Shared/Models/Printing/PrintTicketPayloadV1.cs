@@ -50,6 +50,8 @@ public class PrintTicketOrderPayloadV1
     public DateTime? PrepareAt { get; set; }
     /// <summary>Creación del pedido en UTC (fallback en comanda si no hay <see cref="PrepareAt"/>).</summary>
     public DateTime? CreatedAt { get; set; }
+    /// <summary>Notas generales del pedido (no confundir con <see cref="PrintTicketLineV1.Notes"/> por línea).</summary>
+    public string? OrderNotes { get; set; }
 }
 
 public class PrintTicketLineV1

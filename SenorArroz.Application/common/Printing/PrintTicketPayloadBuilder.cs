@@ -153,6 +153,7 @@ public static class PrintTicketPayloadBuilder
             ReservedFor = order.ReservedFor,
             PrepareAt = order.PrepareAt,
             CreatedAt = order.CreatedAt,
+            OrderNotes = NullIfWhiteSpace(order.Notes),
         };
     }
 
@@ -272,6 +273,7 @@ public static class PrintTicketPayloadBuilder
             OrderStatus = kind == PrintJobKind.Delivery ? "on_the_way" : "in_preparation",
             PrepareAt = printedAtUtc,
             CreatedAt = printedAtUtc,
+            OrderNotes = kind == PrintJobKind.Delivery ? null : "Nota de prueba (pedido en local).",
         };
 
         return new PrintTicketPayloadBatchV1 { Version = 1, Orders = new List<PrintTicketOrderPayloadV1> { orderPayload } };
