@@ -55,6 +55,8 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
             Latitude = request.Latitude,
             Longitude = request.Longitude,
             MaxFreeDeliveryDiscount = Math.Max(0, request.MaxFreeDeliveryDiscount),
+            PosCopyEtaMinMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaMinMinutes, 30),
+            PosCopyEtaRangeMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaRangeMinutes, 15),
         };
 
         branch = await _branchRepository.CreateAsync(branch, cancellationToken);
@@ -80,4 +82,16 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
 
     private static string? NullIfWhiteSpace(string? s) =>
         string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+}
+
+internal static class BranchEtaLimits
+{
+    public const int MaxMinutes = 10_080;
+
+    public static int ClampMinutes(int value, int fallback)
+    {
+        if (value < 0) return fallback;
+        if (value > MaxMinutes) return MaxMinutes;
+        return value;
+    }
 }

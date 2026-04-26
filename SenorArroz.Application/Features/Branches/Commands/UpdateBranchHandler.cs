@@ -75,6 +75,8 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
         branch.Longitude = request.Longitude;
         if (request.MaxFreeDeliveryDiscount.HasValue)
             branch.MaxFreeDeliveryDiscount = Math.Max(0, request.MaxFreeDeliveryDiscount.Value);
+        branch.PosCopyEtaMinMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaMinMinutes, 30);
+        branch.PosCopyEtaRangeMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaRangeMinutes, 15);
 
         branch = await _branchRepository.UpdateAsync(branch, cancellationToken);
 

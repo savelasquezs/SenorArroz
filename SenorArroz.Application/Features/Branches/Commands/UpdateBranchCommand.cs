@@ -16,4 +16,7 @@ public class UpdateBranchCommand : IRequest<BranchDto>
     public decimal? Longitude { get; set; }
     /// <summary>Si es null, no se modifica el tope en base de datos.</summary>
     public int? MaxFreeDeliveryDiscount { get; set; }
+
+    public int PosCopyEtaMinMinutes { get; set; } = 30;
+    public int PosCopyEtaRangeMinutes { get; set; } = 15;
 }

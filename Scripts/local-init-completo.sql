@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS branch (
     latitude numeric(10,6),
     longitude numeric(10,6),
     max_free_delivery_discount integer NOT NULL DEFAULT 3000,
+    pos_copy_eta_minutes integer NOT NULL DEFAULT 30,
+    pos_copy_eta_range_minutes integer NOT NULL DEFAULT 15,
     created_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     updated_at timestamp with time zone NOT NULL DEFAULT (NOW()),
     CONSTRAINT "PK_branch" PRIMARY KEY (id)

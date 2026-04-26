@@ -17,6 +17,12 @@ public class BranchDto
     /// <summary>Tope COP del descuento “domicilio gratis” en borrador POS.</summary>
     public int MaxFreeDeliveryDiscount { get; set; }
 
+    /// <summary>Minutos mínimos en la ventana de «Copiar mensaje» del POS.</summary>
+    public int PosCopyEtaMinMinutes { get; set; } = 30;
+
+    /// <summary>Minutos adicionales al mínimo para el tope (p. ej. 30+15 → 30-45 min).</summary>
+    public int PosCopyEtaRangeMinutes { get; set; } = 15;
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

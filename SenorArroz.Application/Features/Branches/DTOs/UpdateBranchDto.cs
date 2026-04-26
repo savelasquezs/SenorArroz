@@ -34,4 +34,10 @@ public class UpdateBranchDto
     /// <summary>Omitir en el JSON para no modificar el valor guardado en sucursal.</summary>
     [Range(0, 999_999_999, ErrorMessage = "El tope de domicilio gratis debe ser un valor no negativo")]
     public int? MaxFreeDeliveryDiscount { get; set; }
+
+    [Range(0, 10_080, ErrorMessage = "Los minutos deben estar entre 0 y 10080")]
+    public int PosCopyEtaMinMinutes { get; set; } = 30;
+
+    [Range(0, 10_080, ErrorMessage = "El rango de minutos debe estar entre 0 y 10080")]
+    public int PosCopyEtaRangeMinutes { get; set; } = 15;
 }

@@ -22,6 +22,12 @@ public class Branch : BaseEntity
     /// <summary>Tope COP del descuento “domicilio gratis” repartido en líneas del pedido (POS).</summary>
     public int MaxFreeDeliveryDiscount { get; set; } = 3000;
 
+    /// <summary>Minutos mínimos de entrega/recogida en el mensaje copiable del POS.</summary>
+    public int PosCopyEtaMinMinutes { get; set; } = 30;
+
+    /// <summary>Minutos adicionales al mínimo para el tope de la ventana (p. ej. 30 + 15 → «30-45 min»).</summary>
+    public int PosCopyEtaRangeMinutes { get; set; } = 15;
+
     // Navigation Properties
     public virtual ICollection<User> Users { get; set; } = new List<User>();
     public virtual ICollection<Customer> Customers { get; set; } = new List<Customer>();
