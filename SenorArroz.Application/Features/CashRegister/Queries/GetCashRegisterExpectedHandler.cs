@@ -106,15 +106,25 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         var reservationDepositsInPeriod = await _context.ReservationDeposits
             .AsNoTracking()
             .Where(d => d.BranchId == branchId && d.ReceivedAt > since && d.ReceivedAt <= now)
-            .Select(d => new { d.ReceivedAt, d.Amount })
+            .Select(d => new
+            {
+                d.Amount,
+                PrepareAt = d.Order.PrepareAt,
+                CreatedAt = d.Order.CreatedAt,
+            })
             .ToListAsync(cancellationToken);
 
-        var reservationDepositsNotColombiaTodayTotal = reservationDepositsInPeriod
-            .Where(d => !ColombiaTimeHelper.IsColombiaTodayFromUtc(d.ReceivedAt, _clock.UtcNow))
+        var reservationDepositsOrderDeliveryNotColombiaTodayTotal = reservationDepositsInPeriod
+            .Where(d =>
+            {
+                var deliveryInstant = d.PrepareAt ?? d.CreatedAt;
+                var utc = ColombiaTimeHelper.EnsureUtc(deliveryInstant);
+                return !ColombiaTimeHelper.IsColombiaTodayFromUtc(utc, _clock.UtcNow);
+            })
             .Sum(d => d.Amount);
 
-        // Total esperado = apertura global (C0+B0+L0+apps snapshot) + ventas − gastos − abonos de reserva del período con día de recepción distinto a hoy (CO). L1 activo no se suma aparte en el esperado.
-        var expectedGlobalTotal = openingGlobalTotal + salesInPeriodTotal - expensesInPeriodTotal - reservationDepositsNotColombiaTodayTotal;
+        // Total esperado = apertura global (C0+B0+L0+apps snapshot) + ventas − gastos − abonos de reserva del período cuyo pedido tiene fecha de entrega/programación (PrepareAt o CreatedAt) distinta a hoy (CO). L1 activo no se suma aparte en el esperado.
+        var expectedGlobalTotal = openingGlobalTotal + salesInPeriodTotal - expensesInPeriodTotal - reservationDepositsOrderDeliveryNotColombiaTodayTotal;
 
         var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 
