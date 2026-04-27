@@ -30,3 +30,18 @@ public class ExpenseCategoryTimeBucketRow
     public string CategoryName { get; set; } = string.Empty;
     public long TotalCop { get; set; }
 }
+
+/// <summary>
+/// Línea de detalle de gasto rankeada por importe (dashboard: mayores líneas por categoría).
+/// </summary>
+public class ExpenseTopDetailLineRow
+{
+    public int DetailId { get; set; }
+    public int HeaderId { get; set; }
+    public DateTime HeaderCreatedAtUtc { get; set; }
+    public long LineCop { get; set; }
+    public string ExpenseName { get; set; } = string.Empty;
+    public string CategoryName { get; set; } = string.Empty;
+    public string SupplierName { get; set; } = string.Empty;
+    public string BranchName { get; set; } = string.Empty;
+}

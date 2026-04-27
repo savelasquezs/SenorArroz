@@ -213,4 +213,41 @@ public class ExpenseDashboardRepository : IExpenseDashboardRepository
                 g => g.Sum(ed => (long)(ed.Total ?? ed.Quantity * ed.Amount)),
                 cancellationToken);
     }
+
+    public async Task<List<ExpenseTopDetailLineRow>> GetTopExpenseDetailLinesAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int categoryId,
+        int? expenseId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        if (take < 1)
+            take = 1;
+        if (take > 500)
+            take = 500;
+
+        var q = BaseDetailsInRange(branchId, fromUtc, toUtc)
+            .Where(ed => ed.Expense.CategoryId == categoryId);
+
+        if (expenseId.HasValue)
+            q = q.Where(ed => ed.ExpenseId == expenseId.Value);
+
+        return await q
+            .OrderByDescending(ed => (long)(ed.Total ?? ed.Quantity * ed.Amount))
+            .Take(take)
+            .Select(ed => new ExpenseTopDetailLineRow
+            {
+                DetailId = ed.Id,
+                HeaderId = ed.HeaderId,
+                HeaderCreatedAtUtc = ed.Header.CreatedAt,
+                LineCop = (long)(ed.Total ?? ed.Quantity * ed.Amount),
+                ExpenseName = ed.Expense.Name ?? string.Empty,
+                CategoryName = ed.Expense.Category.Name ?? string.Empty,
+                SupplierName = ed.Header.Supplier.Name ?? string.Empty,
+                BranchName = ed.Header.Branch.Name ?? string.Empty,
+            })
+            .ToListAsync(cancellationToken);
+    }
 }

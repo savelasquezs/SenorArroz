@@ -265,4 +265,31 @@ public class DashboardController : ControllerBase
 
         return Ok(result);
     }
+
+    /// <summary>Gastos — mayores líneas de detalle en el rango, por categoría (y opcionalmente ítem de catálogo).</summary>
+    [HttpGet("expenses/top-lines")]
+    [ProducesResponseType(typeof(DashboardExpenseTopLinesResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DashboardExpenseTopLinesResponseDto>> GetExpenseTopLines(
+        [FromQuery(Name = "from")] DateTime fromUtc,
+        [FromQuery(Name = "to")] DateTime toUtc,
+        [FromQuery] int categoryId,
+        [FromQuery] int? branchId = null,
+        [FromQuery(Name = "expenseId")] int? expenseId = null,
+        [FromQuery] int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetDashboardExpenseTopLinesQuery
+            {
+                FromUtc = fromUtc,
+                ToUtc = toUtc,
+                BranchId = branchId,
+                CategoryId = categoryId,
+                ExpenseId = expenseId,
+                Limit = limit,
+            },
+            cancellationToken);
+
+        return Ok(result);
+    }
 }

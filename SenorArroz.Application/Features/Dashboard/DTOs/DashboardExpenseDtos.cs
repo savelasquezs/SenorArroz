@@ -35,3 +35,23 @@ public class DashboardExpenseTimeSeriesResponseDto
     /// <summary>Texto para leyenda (Total, categoría o gasto).</summary>
     public string SeriesLabel { get; set; } = string.Empty;
 }
+
+/// <summary>Mayores líneas de detalle de gasto en el rango (por categoría / ítem de catálogo).</summary>
+public class DashboardExpenseTopLinesResponseDto
+{
+    public List<ExpenseTopLineItemDto> Items { get; set; } = new();
+    /// <summary>Límite efectivo usado (1–500).</summary>
+    public int LimitApplied { get; set; }
+}
+
+public class ExpenseTopLineItemDto
+{
+    public int DetailId { get; set; }
+    public int HeaderId { get; set; }
+    public DateTime HeaderCreatedAtUtc { get; set; }
+    public long LineCop { get; set; }
+    public string ExpenseName { get; set; } = string.Empty;
+    public string CategoryName { get; set; } = string.Empty;
+    public string SupplierName { get; set; } = string.Empty;
+    public string BranchName { get; set; } = string.Empty;
+}
