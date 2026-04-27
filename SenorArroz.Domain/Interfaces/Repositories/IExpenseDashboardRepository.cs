@@ -49,10 +49,10 @@ public interface IExpenseDashboardRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Líneas de <c>ExpenseDetail</c> con mayor importe en el rango, filtradas por categoría (y opcionalmente por ítem de catálogo).
+    /// Top N ítems de catálogo por suma de importes de línea en el rango (agrupa varias compras del mismo ítem).
     /// Misma base temporal y sucursal que el resto del dashboard de gastos.
     /// </summary>
-    Task<List<ExpenseTopDetailLineRow>> GetTopExpenseDetailLinesAsync(
+    Task<List<ExpenseCatalogAggregateRow>> GetTopExpenseCatalogAggregatesAsync(
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,

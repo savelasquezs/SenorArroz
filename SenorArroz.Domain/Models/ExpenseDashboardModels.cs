@@ -32,16 +32,13 @@ public class ExpenseCategoryTimeBucketRow
 }
 
 /// <summary>
-/// Línea de detalle de gasto rankeada por importe (dashboard: mayores líneas por categoría).
+/// Suma de líneas de detalle agrupadas por ítem de catálogo (<c>ExpenseId</c>) en el rango (dashboard gastos).
 /// </summary>
-public class ExpenseTopDetailLineRow
+public class ExpenseCatalogAggregateRow
 {
-    public int DetailId { get; set; }
-    public int HeaderId { get; set; }
-    public DateTime HeaderCreatedAtUtc { get; set; }
-    public long LineCop { get; set; }
+    public int ExpenseId { get; set; }
     public string ExpenseName { get; set; } = string.Empty;
     public string CategoryName { get; set; } = string.Empty;
-    public string SupplierName { get; set; } = string.Empty;
-    public string BranchName { get; set; } = string.Empty;
+    public long TotalCop { get; set; }
+    public int LineCount { get; set; }
 }

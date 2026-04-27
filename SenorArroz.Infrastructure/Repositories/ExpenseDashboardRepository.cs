@@ -214,7 +214,7 @@ public class ExpenseDashboardRepository : IExpenseDashboardRepository
                 cancellationToken);
     }
 
-    public async Task<List<ExpenseTopDetailLineRow>> GetTopExpenseDetailLinesAsync(
+    public async Task<List<ExpenseCatalogAggregateRow>> GetTopExpenseCatalogAggregatesAsync(
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
@@ -235,19 +235,17 @@ public class ExpenseDashboardRepository : IExpenseDashboardRepository
             q = q.Where(ed => ed.ExpenseId == expenseId.Value);
 
         return await q
-            .OrderByDescending(ed => (long)(ed.Total ?? ed.Quantity * ed.Amount))
-            .Take(take)
-            .Select(ed => new ExpenseTopDetailLineRow
+            .GroupBy(ed => ed.ExpenseId)
+            .Select(g => new ExpenseCatalogAggregateRow
             {
-                DetailId = ed.Id,
-                HeaderId = ed.HeaderId,
-                HeaderCreatedAtUtc = ed.Header.CreatedAt,
-                LineCop = (long)(ed.Total ?? ed.Quantity * ed.Amount),
-                ExpenseName = ed.Expense.Name ?? string.Empty,
-                CategoryName = ed.Expense.Category.Name ?? string.Empty,
-                SupplierName = ed.Header.Supplier.Name ?? string.Empty,
-                BranchName = ed.Header.Branch.Name ?? string.Empty,
+                ExpenseId = g.Key,
+                ExpenseName = g.Max(x => x.Expense.Name) ?? string.Empty,
+                CategoryName = g.Max(x => x.Expense.Category.Name) ?? string.Empty,
+                TotalCop = g.Sum(ed => (long)(ed.Total ?? ed.Quantity * ed.Amount)),
+                LineCount = g.Count(),
             })
+            .OrderByDescending(x => x.TotalCop)
+            .Take(take)
             .ToListAsync(cancellationToken);
     }
 }

@@ -36,22 +36,20 @@ public class DashboardExpenseTimeSeriesResponseDto
     public string SeriesLabel { get; set; } = string.Empty;
 }
 
-/// <summary>Mayores líneas de detalle de gasto en el rango (por categoría / ítem de catálogo).</summary>
+/// <summary>Top de ítems de catálogo por suma de importes de línea en el rango.</summary>
 public class DashboardExpenseTopLinesResponseDto
 {
-    public List<ExpenseTopLineItemDto> Items { get; set; } = new();
+    public List<ExpenseCatalogAggregateItemDto> Items { get; set; } = new();
     /// <summary>Límite efectivo usado (1–500).</summary>
     public int LimitApplied { get; set; }
 }
 
-public class ExpenseTopLineItemDto
+/// <summary>Suma de líneas en el rango, agrupada por ítem de catálogo de gasto.</summary>
+public class ExpenseCatalogAggregateItemDto
 {
-    public int DetailId { get; set; }
-    public int HeaderId { get; set; }
-    public DateTime HeaderCreatedAtUtc { get; set; }
-    public long LineCop { get; set; }
+    public int ExpenseId { get; set; }
     public string ExpenseName { get; set; } = string.Empty;
     public string CategoryName { get; set; } = string.Empty;
-    public string SupplierName { get; set; } = string.Empty;
-    public string BranchName { get; set; } = string.Empty;
+    public long TotalCop { get; set; }
+    public int LineCount { get; set; }
 }

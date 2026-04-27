@@ -266,7 +266,7 @@ public class DashboardController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Gastos — mayores líneas de detalle en el rango, por categoría (y opcionalmente ítem de catálogo).</summary>
+    /// <summary>Gastos — top ítems de catálogo por suma de líneas en el rango (agrupa varias compras del mismo ítem).</summary>
     [HttpGet("expenses/top-lines")]
     [ProducesResponseType(typeof(DashboardExpenseTopLinesResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<DashboardExpenseTopLinesResponseDto>> GetExpenseTopLines(

@@ -33,7 +33,7 @@ public class GetDashboardExpenseTopLinesHandlerTests
         int? passedTake = null;
         var repo = new Mock<IExpenseDashboardRepository>();
         repo
-            .Setup(x => x.GetTopExpenseDetailLinesAsync(
+            .Setup(x => x.GetTopExpenseCatalogAggregatesAsync(
                 It.IsAny<int?>(),
                 It.IsAny<DateTime>(),
                 It.IsAny<DateTime>(),
@@ -43,7 +43,7 @@ public class GetDashboardExpenseTopLinesHandlerTests
                 It.IsAny<CancellationToken>()))
             .Callback<int?, DateTime, DateTime, int, int?, int, CancellationToken>(
                 (_, _, _, _, _, take, _) => passedTake = take)
-            .ReturnsAsync(new List<ExpenseTopDetailLineRow>());
+            .ReturnsAsync(new List<ExpenseCatalogAggregateRow>());
 
         var currentUser = new Mock<ICurrentUser>();
         currentUser.Setup(x => x.Role).Returns("Admin");

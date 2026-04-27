@@ -37,7 +37,7 @@ public class GetDashboardExpenseTopLinesHandler
         var branchFilter = ResolveBranchFilter(request.BranchId);
         var take = ResolveLimit(request.Limit);
 
-        var rows = await _repository.GetTopExpenseDetailLinesAsync(
+        var rows = await _repository.GetTopExpenseCatalogAggregatesAsync(
             branchFilter,
             from,
             to,
@@ -46,16 +46,13 @@ public class GetDashboardExpenseTopLinesHandler
             take,
             cancellationToken);
 
-        var items = rows.Select(r => new ExpenseTopLineItemDto
+        var items = rows.Select(r => new ExpenseCatalogAggregateItemDto
         {
-            DetailId = r.DetailId,
-            HeaderId = r.HeaderId,
-            HeaderCreatedAtUtc = r.HeaderCreatedAtUtc,
-            LineCop = r.LineCop,
+            ExpenseId = r.ExpenseId,
             ExpenseName = r.ExpenseName,
             CategoryName = r.CategoryName,
-            SupplierName = r.SupplierName,
-            BranchName = r.BranchName,
+            TotalCop = r.TotalCop,
+            LineCount = r.LineCount,
         }).ToList();
 
         return new DashboardExpenseTopLinesResponseDto
