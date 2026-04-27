@@ -25,9 +25,14 @@ public class CashRegisterExpectedDto
     public decimal ExpensesInPeriodTotal { get; set; }
 
     /// <summary>
-    /// <see cref="OpeningGlobalTotal"/> + ventas del período − gastos del período (incluye en apertura el snapshot de apps pendientes del último cierre).
+    /// <see cref="OpeningGlobalTotal"/> + ventas del período − gastos del período + <see cref="ReservationDepositsAddedToGlobalTotal"/>.
     /// </summary>
     public decimal ExpectedGlobalTotal { get; set; }
+
+    /// <summary>
+    /// Abonos de reserva recibidos en el período (por <c>ReceivedAt</c>) cuya fecha de entrega/programación del pedido en calendario Colombia no es hoy (<c>PrepareAt</c> o <c>CreatedAt</c>); se suman al total esperado global.
+    /// </summary>
+    public decimal ReservationDepositsAddedToGlobalTotal { get; set; }
 
     /// <summary>Suma de préstamos informales activos (referencia para el conteo al cerrar; no se suma de nuevo al esperado).</summary>
     public decimal InformalLoansActiveTotal { get; set; }

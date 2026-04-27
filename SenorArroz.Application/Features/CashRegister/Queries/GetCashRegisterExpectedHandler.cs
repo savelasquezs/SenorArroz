@@ -123,8 +123,8 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             })
             .Sum(d => d.Amount);
 
-        // Total esperado = apertura global (C0+B0+L0+apps snapshot) + ventas − gastos − abonos de reserva del período cuyo pedido tiene fecha de entrega/programación (PrepareAt o CreatedAt) distinta a hoy (CO). L1 activo no se suma aparte en el esperado.
-        var expectedGlobalTotal = openingGlobalTotal + salesInPeriodTotal - expensesInPeriodTotal - reservationDepositsOrderDeliveryNotColombiaTodayTotal;
+        // Total esperado = apertura global (C0+B0+L0+apps snapshot) + ventas − gastos + abonos de reserva del período cuyo pedido tiene fecha de entrega/programación (PrepareAt o CreatedAt) distinta a hoy (CO). L1 activo no se suma aparte en el esperado.
+        var expectedGlobalTotal = openingGlobalTotal + salesInPeriodTotal - expensesInPeriodTotal + reservationDepositsOrderDeliveryNotColombiaTodayTotal;
 
         var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 
@@ -230,6 +230,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             SalesInPeriodTotal = salesInPeriodTotal,
             ExpensesInPeriodTotal = expensesInPeriodTotal,
             ExpectedGlobalTotal = expectedGlobalTotal,
+            ReservationDepositsAddedToGlobalTotal = reservationDepositsOrderDeliveryNotColombiaTodayTotal,
             InformalLoansActiveTotal = informalLoansActiveTotal,
             UndeliveredOrdersCount = undeliveredOrdersCount,
             AsOf = now,
