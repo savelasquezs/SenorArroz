@@ -1,6 +1,7 @@
 using SenorArroz.Domain.Enums;
 using SenorArroz.Application.Features.BankPayments.DTOs;
 using SenorArroz.Application.Features.AppPayments.DTOs;
+using SenorArroz.Application.Features.ReservationDeposits.DTOs;
 
 namespace SenorArroz.Application.Features.Orders.DTOs;
 
@@ -55,6 +56,8 @@ public class OrderDto
     public List<BankPaymentDto> BankPayments { get; set; } = new();
     public List<AppPaymentDto> AppPayments { get; set; } = new();
     public decimal TotalDeposited { get; set; }
+    /// <summary>Abonos de anticipo (solo pedidos tipo reserva; listado enriquecido).</summary>
+    public List<ReservationDepositDto> ReservationDeposits { get; set; } = new();
     /// <summary>Líneas resumidas (p. ej. búsqueda/listado con detalles cargados).</summary>
     public List<OrderLineSummaryDto> SummaryLines { get; set; } = new();
 }

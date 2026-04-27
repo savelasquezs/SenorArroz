@@ -41,6 +41,30 @@ public class ReservationDepositsController : ControllerBase
     }
 
     /// <summary>
+    /// Actualiza el monto de un abono existente
+    /// </summary>
+    [HttpPut("{id:int}")]
+    public async Task<ActionResult<ReservationDepositDto>> Update(int id, [FromBody] UpdateReservationDepositDto dto)
+    {
+        var result = await _mediator.Send(new UpdateReservationDepositCommand
+        {
+            Id = id,
+            Amount = dto.Amount
+        });
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Elimina un abono registrado
+    /// </summary>
+    [HttpDelete("{id:int}")]
+    public async Task<ActionResult> Delete(int id)
+    {
+        await _mediator.Send(new DeleteReservationDepositCommand { Id = id });
+        return NoContent();
+    }
+
+    /// <summary>
     /// Obtiene todos los abonos de un pedido/reserva
     /// </summary>
     [HttpGet("by-order/{orderId:int}")]

@@ -35,6 +35,8 @@ public class OrderMappingProfile : Profile
                 src.DeliveryRoute != null ? src.DeliveryRoute.PlanningWarnings : null))
             .ForMember(dest => dest.BankPayments, opt => opt.MapFrom(src => src.BankPayments))
             .ForMember(dest => dest.AppPayments, opt => opt.MapFrom(src => src.AppPayments))
+            .ForMember(dest => dest.TotalDeposited, opt => opt.Ignore())
+            .ForMember(dest => dest.ReservationDeposits, opt => opt.Ignore())
             .ForMember(dest => dest.SummaryLines, opt => opt.MapFrom(src =>
                 src.OrderDetails
                     .OrderBy(d => d.Id)

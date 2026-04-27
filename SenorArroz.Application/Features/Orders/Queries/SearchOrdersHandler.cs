@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Application.Features.ReservationDeposits.DTOs;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Shared.Models;
@@ -96,15 +98,30 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
 
         if (reservationIds.Count > 0)
         {
-            var depositTotals = await _context.ReservationDeposits
+            var depositRows = await _context.ReservationDeposits
+                .AsNoTracking()
+                .Include(rd => rd.Bank)
+                .Include(rd => rd.App)
+                .Include(rd => rd.ReceivedBy)
                 .Where(rd => reservationIds.Contains(rd.OrderId))
-                .GroupBy(rd => rd.OrderId)
-                .Select(g => new { OrderId = g.Key, Total = g.Sum(rd => rd.Amount) })
-                .ToDictionaryAsync(x => x.OrderId, x => x.Total, cancellationToken);
+                .OrderByDescending(rd => rd.ReceivedAt)
+                .ToListAsync(cancellationToken);
+
+            var byOrder = depositRows
+                .GroupBy(d => d.OrderId)
+                .ToDictionary(g => g.Key, g => g.ToList());
 
             foreach (var dto in dtos.Where(d => d.Type == OrderType.Reservation))
             {
-                dto.TotalDeposited = depositTotals.TryGetValue(dto.Id, out var total) ? total : 0;
+                if (!byOrder.TryGetValue(dto.Id, out var list))
+                {
+                    dto.TotalDeposited = 0;
+                    dto.ReservationDeposits = new List<ReservationDepositDto>();
+                    continue;
+                }
+
+                dto.TotalDeposited = list.Sum(x => x.Amount);
+                dto.ReservationDeposits = list.Select(MapReservationDeposit).ToList();
             }
         }
 
@@ -117,4 +134,22 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             TotalPages = result.TotalPages
         };
     }
+
+    private static ReservationDepositDto MapReservationDeposit(ReservationDeposit d) => new()
+    {
+        Id = d.Id,
+        OrderId = d.OrderId,
+        BranchId = d.BranchId,
+        Amount = d.Amount,
+        IsEffective = d.IsEffective,
+        BankId = d.BankId,
+        BankName = d.Bank?.Name,
+        AppId = d.AppId,
+        AppName = d.App?.Name,
+        ReceivedAt = d.ReceivedAt,
+        ReceivedById = d.ReceivedById,
+        ReceivedByName = d.ReceivedBy?.Name ?? string.Empty,
+        Notes = d.Notes,
+        CreatedAt = d.CreatedAt
+    };
 }
