@@ -1,8 +1,9 @@
 namespace SenorArroz.Application.Common.Interfaces;
 
 /// <summary>
-/// Tokens FCM de domiciliarios activos y "libres" (sin pedido OnTheWay) en una sucursal.
-/// Misma regla que el push de pedido listo.
+/// Tokens FCM para push tipo pedido listo: domiciliarios activos de la sucursal que hoy (calendario Colombia)
+/// tienen al menos una asignación registrada, no están bloqueados por liquidación total del día,
+/// y no tienen pedido en OnTheWay (ocupados en ruta).
 /// </summary>
 public interface IFreeDeliverymanFcmTokenResolver
 {

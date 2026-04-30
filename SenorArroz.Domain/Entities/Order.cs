@@ -6,6 +6,9 @@ namespace SenorArroz.Domain.Entities;
 
 public class Order : BaseEntity
 {
+    /// <summary>Clave en <see cref="StatusTimes"/> para el instante UTC en que se asignó o reasignó el domiciliario.</summary>
+    public const string DeliveryManAssignedStatusTimeKey = "delivery_man_assigned";
+
     public int BranchId { get; set; }
     public int TakenById { get; set; }
     public int? CustomerId { get; set; }
@@ -85,6 +88,17 @@ public class Order : BaseEntity
     {
         var statusTimes = GetStatusTimes();
         statusTimes[status.ToString().ToLowerInvariant()] = timestamp;
+        SetStatusTimes(statusTimes);
+    }
+
+    /// <summary>Registra el momento UTC de asignación/reasignación de domiciliario en <see cref="StatusTimes"/>.</summary>
+    public void TouchDeliveryManAssignedAtUtc(DateTime utcTimestamp)
+    {
+        var utc = utcTimestamp.Kind == DateTimeKind.Utc
+            ? utcTimestamp
+            : DateTime.SpecifyKind(utcTimestamp.ToUniversalTime(), DateTimeKind.Utc);
+        var statusTimes = GetStatusTimes();
+        statusTimes[DeliveryManAssignedStatusTimeKey] = utc;
         SetStatusTimes(statusTimes);
     }
 }
