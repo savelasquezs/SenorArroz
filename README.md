@@ -50,7 +50,7 @@ Sistema de gestión para restaurantes construido con ASP.NET Core 8, Entity Fram
 
 ### Para Agentes IA
 
-- **[.cursorrules](.cursorrules)** - Reglas para Cursor AI y otros agentes
+- **[AGENTS.md](AGENTS.md)** - Reglas para Codex y otros agentes
 
 ---
 
@@ -352,7 +352,7 @@ Propietario: SenorArroz Restaurant Management System
 
 ### Para Agentes IA
 
-1. ✅ Leer [.cursorrules](.cursorrules)
+1. ✅ Leer [AGENTS.md](AGENTS.md)
 2. ✅ Entender las convenciones de naming
 3. ✅ Seguir los patrones CQRS establecidos
 4. ✅ Usar excepciones personalizadas
@@ -362,4 +362,3 @@ Propietario: SenorArroz Restaurant Management System
 
 **Última actualización**: Octubre 2024  
 **Versión API**: 2.0
-
