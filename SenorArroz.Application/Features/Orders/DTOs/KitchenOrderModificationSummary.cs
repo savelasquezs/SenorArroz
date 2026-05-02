@@ -8,6 +8,7 @@ public class KitchenOrderModificationSummary
     public List<KitchenOrderProductReplacementDto> ProductReplacements { get; set; } = new();
     public bool ScheduleChanged { get; set; }
     public bool NotesChanged { get; set; }
+    public string? ScheduleChangeKind { get; set; }
 }
 
 public class KitchenOrderAddedLineDto

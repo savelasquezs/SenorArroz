@@ -4,6 +4,7 @@ using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Kitchen;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -15,6 +16,9 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
     private const string ModSchedule = "schedule";
     private const string ModContent = "content";
     private const string ModMultiple = "multiple";
+    private const string ScheduleKindReservation = "reservation";
+    private const string ScheduleKindPrepareNow = "prepare_now";
+    private const string ScheduleKindUpdated = "updated";
 
     private readonly IOrderRepository _orderRepository;
     private readonly IAddressRepository _addressRepository;
@@ -72,6 +76,8 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         var beforeReservedFor = existingOrder.ReservedFor;
         var beforePrepareAt = existingOrder.PrepareAt;
         var beforeNotes = existingOrder.Notes;
+        var beforeType = existingOrder.Type;
+        var beforeStatus = existingOrder.Status;
 
         IReadOnlyList<DetailSnap>? lineSnapshotBefore = null;
         if (request.Order.OrderDetails != null)
@@ -228,10 +234,27 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
             kitchenChanges.ScheduleChanged = scheduleChanged;
             kitchenChanges.NotesChanged = notesChanged;
+            kitchenChanges.ScheduleChangeKind = scheduleChanged
+                ? GetScheduleChangeKind(request.Order, persisted, _clock.UtcNow)
+                : null;
 
             var utc = _clock.UtcNow;
-            if (KitchenOrderNotificationEligibility.IsVisibleToActiveKitchen(persisted, utc)
-                && persisted.Status is OrderStatus.Taken or OrderStatus.InPreparation)
+            var wasVisibleToKitchen = IsVisibleToKitchen(
+                beforeStatus,
+                beforeType,
+                beforeReservedFor,
+                beforePrepareAt,
+                utc);
+            var isVisibleToKitchen = KitchenOrderNotificationEligibility.IsVisibleToActiveKitchen(persisted, utc);
+            var shouldNotifyKitchen =
+                persisted.Status is OrderStatus.Taken or OrderStatus.InPreparation
+                && (
+                    isVisibleToKitchen
+                    || (scheduleChanged && persisted.Type == OrderType.Reservation)
+                    || (scheduleChanged && wasVisibleToKitchen)
+                );
+
+            if (shouldNotifyKitchen)
             {
                 await _notificationService.NotifyOrderModifiedToKitchen(result, modificationKind, kitchenChanges);
             }
@@ -261,6 +284,46 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             DateTimeKind.Local => dt.ToUniversalTime(),
             _ => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
         };
+
+    private static bool IsVisibleToKitchen(
+        OrderStatus status,
+        OrderType? type,
+        DateTime? reservedFor,
+        DateTime? prepareAt,
+        DateTime utcNow)
+    {
+        if (status is not OrderStatus.Taken and not OrderStatus.InPreparation)
+            return false;
+
+        if (type != OrderType.Reservation)
+            return true;
+
+        var kitchenEntry = prepareAt
+            ?? (reservedFor.HasValue ? reservedFor.Value.AddHours(-1) : (DateTime?)null);
+
+        if (!kitchenEntry.HasValue)
+            return false;
+
+        return NormalizeToUtc(kitchenEntry.Value) <= NormalizeToUtc(utcNow);
+    }
+
+    private static string GetScheduleChangeKind(UpdateOrderDto request, Order order, DateTime utcNow)
+    {
+        if (request.Type is OrderType.Onsite or OrderType.Delivery
+            && request.PrepareAt.HasValue
+            && !request.ReservedFor.HasValue)
+            return ScheduleKindPrepareNow;
+
+        if (order.Type == OrderType.Reservation && order.ReservedFor.HasValue)
+            return ScheduleKindReservation;
+
+        if (!order.ReservedFor.HasValue
+            && order.PrepareAt.HasValue
+            && NormalizeToUtc(order.PrepareAt.Value) <= NormalizeToUtc(utcNow))
+            return ScheduleKindPrepareNow;
+
+        return ScheduleKindUpdated;
+    }
 
     private async Task DeleteReservationAssociatedPaymentsAsync(int orderId, CancellationToken cancellationToken)
     {
