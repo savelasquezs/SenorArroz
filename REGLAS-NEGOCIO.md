@@ -373,6 +373,13 @@ public async Task<Order> CancelOrderAsync(int orderId, string reason)
 - ✅ Solo pedidos del mismo día
 - ✅ Razón de cancelación obligatoria
 - ✅ Cancela automáticamente todos los pagos asociados
+- ✅ Si es una reserva, también elimina todos los abonos asociados
+
+---
+
+## Reglas de Modificación de Reservas con Abonos o Transferencias
+
+Cuando una reserva tiene abonos (`reservation_deposit`) y/o transferencias (`bank_payment`), el cliente debe pedir confirmación antes de guardar una modificación que implique borrar esos registros. Si la petición de actualización envía `DeleteReservationAssociatedPayments = true`, el backend elimina todos los abonos de reserva y transferencias bancarias asociados antes de persistir el cambio del pedido.
 
 ---
 

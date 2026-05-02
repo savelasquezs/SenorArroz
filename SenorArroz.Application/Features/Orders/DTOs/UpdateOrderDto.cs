@@ -16,6 +16,7 @@ public class UpdateOrderDto
     public int? DiscountTotal { get; set; }
     public string? Notes { get; set; }
     public List<UpdateOrderDetailDto>? OrderDetails { get; set; }
+    public bool DeleteReservationAssociatedPayments { get; set; }
 }
 
 public class UpdateOrderDetailDto

@@ -53,9 +53,13 @@ public class UpdateOrderHandlerSchedulePreserveTests
             cfg.AddMaps(typeof(UpdateOrderCommand).Assembly);
         }, NullLoggerFactory.Instance).CreateMapper();
         var clock = new FixedClock(utcNow);
+        var bankPaymentRepo = new Mock<IBankPaymentRepository>();
+        var reservationDepositRepo = new Mock<IReservationDepositRepository>();
         return new UpdateOrderHandler(
             repo,
             addressRepo,
+            bankPaymentRepo.Object,
+            reservationDepositRepo.Object,
             mapper,
             new TestCurrentUser(),
             new OrderBusinessRulesService(clock),

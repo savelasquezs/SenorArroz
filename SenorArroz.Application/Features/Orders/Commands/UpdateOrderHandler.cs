@@ -18,6 +18,8 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
     private readonly IOrderRepository _orderRepository;
     private readonly IAddressRepository _addressRepository;
+    private readonly IBankPaymentRepository _bankPaymentRepository;
+    private readonly IReservationDepositRepository _reservationDepositRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly IOrderBusinessRulesService _businessRules;
@@ -27,6 +29,8 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
     public UpdateOrderHandler(
         IOrderRepository orderRepository,
         IAddressRepository addressRepository,
+        IBankPaymentRepository bankPaymentRepository,
+        IReservationDepositRepository reservationDepositRepository,
         IMapper mapper,
         ICurrentUser currentUser,
         IOrderBusinessRulesService businessRules,
@@ -35,6 +39,8 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
     {
         _orderRepository = orderRepository;
         _addressRepository = addressRepository;
+        _bankPaymentRepository = bankPaymentRepository;
+        _reservationDepositRepository = reservationDepositRepository;
         _mapper = mapper;
         _currentUser = currentUser;
         _businessRules = businessRules;
@@ -59,6 +65,9 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         // Validar si puede modificar productos
         if (request.Order.OrderDetails != null && !_businessRules.CanUpdateOrderProducts(existingOrder, _currentUser.Role))
             throw new BusinessException("No tienes permisos para modificar los productos de este pedido");
+
+        if (request.Order.DeleteReservationAssociatedPayments && existingOrder.Type == OrderType.Reservation)
+            await DeleteReservationAssociatedPaymentsAsync(existingOrder.Id, cancellationToken);
 
         var beforeReservedFor = existingOrder.ReservedFor;
         var beforePrepareAt = existingOrder.PrepareAt;
@@ -252,4 +261,13 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             DateTimeKind.Local => dt.ToUniversalTime(),
             _ => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
         };
+
+    private async Task DeleteReservationAssociatedPaymentsAsync(int orderId, CancellationToken cancellationToken)
+    {
+        var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(orderId, cancellationToken);
+        foreach (var bankPayment in bankPayments)
+            await _bankPaymentRepository.DeleteAsync(bankPayment.Id, cancellationToken);
+
+        await _reservationDepositRepository.DeleteByOrderIdAsync(orderId, cancellationToken);
+    }
 }

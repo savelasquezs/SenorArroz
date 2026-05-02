@@ -9,6 +9,7 @@ public interface IReservationDepositRepository
     Task<ReservationDeposit?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
     Task<List<ReservationDeposit>> GetByOrderIdAsync(int orderId, CancellationToken cancellationToken = default);
     Task<decimal> GetTotalDepositedByOrderAsync(int orderId, CancellationToken cancellationToken = default);
+    Task<int> DeleteByOrderIdAsync(int orderId, CancellationToken cancellationToken = default);
     Task<PagedResult<ReservationDeposit>> GetPagedAsync(
         int branchId,
         DateTime? fromDate = null,
