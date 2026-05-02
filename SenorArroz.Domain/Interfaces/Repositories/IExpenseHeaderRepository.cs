@@ -7,10 +7,13 @@ public interface IExpenseHeaderRepository
 {
     Task<PagedResult<ExpenseHeader>> GetPagedAsync(
         int? branchId,
-        int? supplierId,
+        IReadOnlyCollection<int>? supplierIds,
         int? createdById,
         DateTime? fromDate,
         DateTime? toDate,
+        IReadOnlyCollection<string>? bankNames,
+        IReadOnlyCollection<string>? categoryNames,
+        string? expenseName,
         int page,
         int pageSize,
         string? sortBy,

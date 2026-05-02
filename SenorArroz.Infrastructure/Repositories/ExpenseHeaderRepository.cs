@@ -18,16 +18,25 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
 
     public async Task<PagedResult<ExpenseHeader>> GetPagedAsync(
         int? branchId,
-        int? supplierId,
+        IReadOnlyCollection<int>? supplierIds,
         int? createdById,
         DateTime? fromDate,
         DateTime? toDate,
+        IReadOnlyCollection<string>? bankNames,
+        IReadOnlyCollection<string>? categoryNames,
+        string? expenseName,
         int page,
         int pageSize,
         string? sortBy,
         string sortOrder,
         CancellationToken cancellationToken = default)
     {
+        var normalizedBankNames = NormalizeStringFilters(bankNames);
+        var normalizedCategoryNames = NormalizeStringFilters(categoryNames);
+        var normalizedExpenseName = string.IsNullOrWhiteSpace(expenseName)
+            ? null
+            : expenseName.Trim().ToLower();
+
         var query = _context.ExpenseHeaders
             .AsNoTracking()
             .Include(eh => eh.Branch)
@@ -44,8 +53,8 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
         if (branchId.HasValue)
             query = query.Where(eh => eh.BranchId == branchId.Value);
 
-        if (supplierId.HasValue)
-            query = query.Where(eh => eh.SupplierId == supplierId.Value);
+        if (supplierIds is { Count: > 0 })
+            query = query.Where(eh => supplierIds.Contains(eh.SupplierId));
 
         if (createdById.HasValue)
             query = query.Where(eh => eh.CreatedById == createdById.Value);
@@ -55,6 +64,27 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
 
         if (toDate.HasValue)
             query = query.Where(eh => eh.CreatedAt <= toDate.Value);
+
+        if (normalizedBankNames.Count > 0)
+        {
+            query = query.Where(eh =>
+                eh.ExpenseBankPayments.Any(ebp =>
+                    normalizedBankNames.Contains(ebp.Bank.Name.ToLower())));
+        }
+
+        if (normalizedCategoryNames.Count > 0)
+        {
+            query = query.Where(eh =>
+                eh.ExpenseDetails.Any(ed =>
+                    normalizedCategoryNames.Contains(ed.Expense.Category.Name.ToLower())));
+        }
+
+        if (!string.IsNullOrWhiteSpace(normalizedExpenseName))
+        {
+            query = query.Where(eh =>
+                eh.ExpenseDetails.Any(ed =>
+                    ed.Expense.Name.ToLower().Contains(normalizedExpenseName)));
+        }
 
         query = ApplySorting(query, sortBy, sortOrder);
 
@@ -97,8 +127,6 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
 
     public async Task<ExpenseHeader> UpdateAsync(ExpenseHeader expenseHeader, CancellationToken cancellationToken = default)
     {
-        // AsNoTracking() en la carga no resuelve identidad: varias líneas con el mismo ExpenseId traen instancias distintas de Expense → Update() choca.
-        // Supplier puede estar rastreado por FindAsync mientras el header trae otra instancia desde Include.
         foreach (var d in expenseHeader.ExpenseDetails)
             d.Expense = null!;
         expenseHeader.Supplier = null!;
@@ -120,6 +148,17 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
         _context.ExpenseHeaders.Remove(expenseHeader);
         await _context.SaveChangesAsync(cancellationToken);
         return true;
+    }
+
+    private static List<string> NormalizeStringFilters(IReadOnlyCollection<string>? values)
+    {
+        if (values is null || values.Count == 0) return new List<string>();
+
+        return values
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v.Trim().ToLower())
+            .Distinct()
+            .ToList();
     }
 
     private static IQueryable<ExpenseHeader> ApplySorting(IQueryable<ExpenseHeader> query, string? sortBy, string sortOrder)
