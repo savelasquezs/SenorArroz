@@ -65,12 +65,20 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         if (existingOrder.Status == OrderStatus.Cancelled)
             throw new BusinessException("El pedido ya está cancelado");
 
-        // Reserva con horario de preparación y entrega: mismo día calendario en Colombia que la creación.
+        // Reserva con horario: mismo día calendario en Colombia que creación, prepareAt o entrega (reservedFor).
         if (IsScheduledReservation(existingOrder))
         {
-            if (!ColombiaTimeHelper.IsColombiaTodayFromUtc(existingOrder.CreatedAt, _clock.UtcNow))
+            var now = _clock.UtcNow;
+            var canCancelThisColombiaDay =
+                ColombiaTimeHelper.IsColombiaTodayFromUtc(existingOrder.CreatedAt, now)
+                || (existingOrder.PrepareAt.HasValue
+                    && ColombiaTimeHelper.IsColombiaTodayFromUtc(existingOrder.PrepareAt.Value, now))
+                || (existingOrder.ReservedFor.HasValue
+                    && ColombiaTimeHelper.IsColombiaTodayFromUtc(existingOrder.ReservedFor.Value, now));
+
+            if (!canCancelThisColombiaDay)
                 throw new BusinessException(
-                    "Las reservas con horario de preparación y entrega solo se pueden cancelar el mismo día en que se registró el pedido (hora Colombia).");
+                    "Las reservas con horario solo se pueden cancelar si hoy (Colombia) coincide con la fecha de registro del pedido, con la de inicio en cocina (prepareAt) o con la de entrega (reservedFor).");
         }
 
         var routeIdSnapshot = existingOrder.DeliveryRouteId;
@@ -104,7 +112,8 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
     }
 
     /// <summary>
-    /// Reserva con ambas fechas definidas (cocina y entrega); a este caso le aplica la restricción de cancelación por día.
+    /// Reserva con ambas fechas definidas (cocina y entrega); la ventana de cancelación es el día Colombia de la creación,
+    /// de <c>PrepareAt</c> o de <c>ReservedFor</c>.
     /// </summary>
     private static bool IsScheduledReservation(Order order) =>
         order.Type == OrderType.Reservation
