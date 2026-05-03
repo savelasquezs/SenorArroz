@@ -726,6 +726,7 @@ public class OrderRepository : IOrderRepository
             throw new BusinessException($"El pedido debe estar en estado 'Ready', 'OnTheWay' o 'Delivered' para asignar/cambiar domiciliario. Estado actual: {order.Status}");
 
         order.DeliveryManId = deliveryManId;
+        order.TouchDeliveryManAssignedAtUtc(_clock.UtcNow);
         await _context.SaveChangesAsync(cancellationToken);
         return order;
     }

@@ -1,6 +1,6 @@
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using MediatR;
 using SenorArroz.Application.Features.ExpenseHeaders.Commands;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 using SenorArroz.Application.Features.ExpenseHeaders.Queries;
@@ -22,15 +22,8 @@ public class ExpenseHeadersController : ControllerBase
 
     /// <summary>
     /// Obtiene una lista paginada de gastos.
-    /// Por defecto filtra los gastos del día actual.
+    /// Por defecto filtra los gastos del dia actual.
     /// </summary>
-    /// <param name="page">Número de página (default: 1)</param>
-    /// <param name="pageSize">Tamaño de página (default: 10)</param>
-    /// <param name="sortBy">Campo por el cual ordenar</param>
-    /// <param name="sortOrder">Orden ascendente (asc) o descendente (desc)</param>
-    /// <param name="branchId">ID de sucursal para filtrar (solo superadmin)</param>
-    /// <param name="fromDate">Fecha inicial del filtro (default: inicio del día actual)</param>
-    /// <param name="toDate">Fecha final del filtro (default: fin del día actual)</param>
     [HttpGet]
     public async Task<ActionResult<PagedResult<ExpenseHeaderDto>>> GetExpenseHeaders(
         [FromQuery] int page = 1,
@@ -39,7 +32,11 @@ public class ExpenseHeadersController : ControllerBase
         [FromQuery] string sortOrder = "asc",
         [FromQuery] int? branchId = null,
         [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null)
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] List<int>? supplierIds = null,
+        [FromQuery] List<string>? bankNames = null,
+        [FromQuery] List<string>? categoryNames = null,
+        [FromQuery] string? expenseName = null)
     {
         var query = new GetExpenseHeadersQuery
         {
@@ -49,31 +46,29 @@ public class ExpenseHeadersController : ControllerBase
             SortOrder = sortOrder,
             BranchId = branchId,
             FromDate = fromDate,
-            ToDate = toDate
+            ToDate = toDate,
+            SupplierIds = supplierIds ?? new List<int>(),
+            BankNames = bankNames ?? new List<string>(),
+            CategoryNames = categoryNames ?? new List<string>(),
+            ExpenseName = expenseName
         };
 
         var result = await _mediator.Send(query);
         return Ok(result);
     }
 
-    /// <summary>
-    /// Obtiene un gasto por ID
-    /// </summary>
     [HttpGet("{id}")]
     public async Task<ActionResult<ExpenseHeaderDto>> GetExpenseHeader(int id)
     {
         var query = new GetExpenseHeaderByIdQuery { Id = id };
         var result = await _mediator.Send(query);
-        
+
         if (result == null)
             return NotFound();
-            
+
         return Ok(result);
     }
 
-    /// <summary>
-    /// Crea un nuevo gasto
-    /// </summary>
     [HttpPost]
     [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult<ExpenseHeaderDto>> CreateExpenseHeader([FromBody] CreateExpenseHeaderDto dto)
@@ -83,9 +78,6 @@ public class ExpenseHeadersController : ControllerBase
         return CreatedAtAction(nameof(GetExpenseHeader), new { id = result.Id }, result);
     }
 
-    /// <summary>
-    /// Actualiza un gasto existente
-    /// </summary>
     [HttpPut("{id}")]
     [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult<ExpenseHeaderDto>> UpdateExpenseHeader(int id, [FromBody] UpdateExpenseHeaderDto dto)
@@ -95,21 +87,16 @@ public class ExpenseHeadersController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Elimina un gasto
-    /// </summary>
     [HttpDelete("{id}")]
     [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult> DeleteExpenseHeader(int id)
     {
         var command = new DeleteExpenseHeaderCommand { Id = id };
         var result = await _mediator.Send(command);
-        
+
         if (!result)
             return NotFound();
-            
+
         return NoContent();
     }
 }
-
-

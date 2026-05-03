@@ -13,6 +13,10 @@ public class GetExpenseHeadersQuery : IRequest<PagedResult<ExpenseHeaderDto>>
     public int? BranchId { get; set; } // Solo para superadmin
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
+    public List<int> SupplierIds { get; set; } = new();
+    public List<string> BankNames { get; set; } = new();
+    public List<string> CategoryNames { get; set; } = new();
+    public string? ExpenseName { get; set; }
 }
 
 

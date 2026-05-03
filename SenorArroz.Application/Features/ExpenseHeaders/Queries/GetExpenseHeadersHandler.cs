@@ -30,7 +30,6 @@ public class GetExpenseHeadersHandler : IRequestHandler<GetExpenseHeadersQuery, 
 
     public async Task<PagedResult<ExpenseHeaderDto>> Handle(GetExpenseHeadersQuery request, CancellationToken cancellationToken)
     {
-        // Determine branch filter based on user role
         int? branchFilter = null;
         int? createdByIdFilter = null;
 
@@ -38,7 +37,6 @@ public class GetExpenseHeadersHandler : IRequestHandler<GetExpenseHeadersQuery, 
         {
             branchFilter = _currentUser.BranchId;
 
-            // Si es cashier, solo ve sus propios gastos
             if (Roles.IsCashier(_currentUser.Role))
             {
                 createdByIdFilter = _currentUser.Id;
@@ -46,12 +44,9 @@ public class GetExpenseHeadersHandler : IRequestHandler<GetExpenseHeadersQuery, 
         }
         else if (request.BranchId > 0)
         {
-            // Superadmin can optionally filter by specific branch
             branchFilter = request.BranchId;
         }
 
-        // Fechas: por defecto hoy (Colombia) completo. Si se envían From/To como yyyy-MM-dd,
-        // deben ser días calendario inclusivos (hasta fin del día ToDate en Colombia), no solo medianoche de ToDate.
         DateTime fromDateUtc;
         DateTime toDateUtc;
 
@@ -69,35 +64,51 @@ public class GetExpenseHeadersHandler : IRequestHandler<GetExpenseHeadersQuery, 
 
         var result = await _expenseHeaderRepository.GetPagedAsync(
             branchFilter,
-            null, // supplierId - no se filtra en el query, se hace localmente
+            request.SupplierIds,
             createdByIdFilter,
             fromDateUtc,
             toDateUtc,
+            request.BankNames,
+            request.CategoryNames,
+            request.ExpenseName,
             request.Page,
             request.PageSize,
             request.SortBy,
-            request.SortOrder);
+            request.SortOrder,
+            cancellationToken);
 
         var expenseHeaderDtos = _mapper.Map<List<ExpenseHeaderDto>>(result.Items);
+        var normalizedCategoryNames = NormalizeStringFilters(request.CategoryNames);
+        var normalizedExpenseName = string.IsNullOrWhiteSpace(request.ExpenseName)
+            ? null
+            : request.ExpenseName.Trim().ToLower();
 
-        // Calcular campos calculados para filtros locales
         foreach (var dto in expenseHeaderDtos)
         {
-            // Categorías únicas
+            if (normalizedCategoryNames.Count > 0 || normalizedExpenseName is not null)
+            {
+                dto.ExpenseDetails = dto.ExpenseDetails
+                    .Where(detail => MatchesDetail(detail, normalizedCategoryNames, normalizedExpenseName))
+                    .ToList();
+
+                dto.Total = dto.ExpenseDetails.Sum(LineNumericTotal);
+            }
+
             dto.CategoryNames = dto.ExpenseDetails
                 .Select(ed => ed.ExpenseCategoryName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
                 .Distinct()
                 .ToList();
 
-            // Bancos de los pagos
             dto.BankNames = dto.ExpenseBankPayments
                 .Select(ebp => ebp.BankName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
                 .Distinct()
                 .ToList();
 
-            // Nombres de gastos
             dto.ExpenseNames = dto.ExpenseDetails
                 .Select(ed => ed.ExpenseName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
                 .Distinct()
                 .ToList();
         }
@@ -113,6 +124,51 @@ public class GetExpenseHeadersHandler : IRequestHandler<GetExpenseHeadersQuery, 
             TotalPages = result.TotalPages
         };
     }
+
+    private static List<string> NormalizeStringFilters(IEnumerable<string>? values)
+    {
+        if (values is null) return new List<string>();
+
+        return values
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v.Trim().ToLower())
+            .Distinct()
+            .ToList();
+    }
+
+    private static bool MatchesDetail(
+        ExpenseDetailDto detail,
+        IReadOnlyCollection<string> normalizedCategoryNames,
+        string? normalizedExpenseName)
+    {
+        if (normalizedCategoryNames.Count > 0)
+        {
+            var categoryName = (detail.ExpenseCategoryName ?? string.Empty).Trim().ToLower();
+            if (!normalizedCategoryNames.Contains(categoryName))
+            {
+                return false;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(normalizedExpenseName))
+        {
+            var expenseName = (detail.ExpenseName ?? string.Empty).Trim().ToLower();
+            if (!expenseName.Contains(normalizedExpenseName))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static decimal LineNumericTotal(ExpenseDetailDto detail)
+    {
+        if (detail.Total.HasValue)
+        {
+            return detail.Total.Value;
+        }
+
+        return detail.Quantity * detail.Amount;
+    }
 }
-
-

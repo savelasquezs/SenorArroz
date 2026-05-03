@@ -54,6 +54,13 @@ public class ReservationDepositRepository : IReservationDepositRepository
             .SumAsync(d => d.Amount, cancellationToken);
     }
 
+    public async Task<int> DeleteByOrderIdAsync(int orderId, CancellationToken cancellationToken = default)
+    {
+        return await _context.ReservationDeposits
+            .Where(d => d.OrderId == orderId)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
     public async Task<PagedResult<ReservationDeposit>> GetPagedAsync(
         int branchId,
         DateTime? fromDate = null,

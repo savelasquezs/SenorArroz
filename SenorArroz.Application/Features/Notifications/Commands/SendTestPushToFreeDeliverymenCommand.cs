@@ -116,7 +116,7 @@ public class SendTestPushToFreeDeliverymenHandler : IRequestHandler<SendTestPush
             await _fcm.SendToTokensAsync(
                 resolved.Tokens,
                 title: "Prueba de notificación",
-                body: "Mensaje de prueba desde administración (domiciliarios libres).",
+                body: "Mensaje de prueba desde administración (domiciliarios elegibles para push de pedido listo).",
                 data: new Dictionary<string, string>
                 {
                     ["type"] = "push_test",

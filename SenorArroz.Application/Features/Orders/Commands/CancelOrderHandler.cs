@@ -15,6 +15,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
     private readonly IOrderRepository _orderRepository;
     private readonly IBankPaymentRepository _bankPaymentRepository;
     private readonly IAppPaymentRepository _appPaymentRepository;
+    private readonly IReservationDepositRepository _reservationDepositRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly ILoyaltyCycleService _loyaltyCycle;
@@ -26,6 +27,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         IOrderRepository orderRepository,
         IBankPaymentRepository bankPaymentRepository,
         IAppPaymentRepository appPaymentRepository,
+        IReservationDepositRepository reservationDepositRepository,
         IMapper mapper,
         ICurrentUser currentUser,
         ILoyaltyCycleService loyaltyCycle,
@@ -36,6 +38,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         _orderRepository = orderRepository;
         _bankPaymentRepository = bankPaymentRepository;
         _appPaymentRepository = appPaymentRepository;
+        _reservationDepositRepository = reservationDepositRepository;
         _mapper = mapper;
         _currentUser = currentUser;
         _loyaltyCycle = loyaltyCycle;
@@ -117,5 +120,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(orderId, cancellationToken);
         foreach (var bankPayment in bankPayments)
             await _bankPaymentRepository.DeleteAsync(bankPayment.Id, cancellationToken);
+
+        await _reservationDepositRepository.DeleteByOrderIdAsync(orderId, cancellationToken);
     }
 }
