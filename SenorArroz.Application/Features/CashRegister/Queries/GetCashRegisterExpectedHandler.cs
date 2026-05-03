@@ -153,6 +153,10 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 openingBalance = prevRecon?.ActualBalance ?? 0;
             }
 
+            var promotedReservationDepositIds = _context.BankPayments
+                .Where(bp => bp.BankId == bank.Id && bp.SourceReservationDepositId.HasValue)
+                .Select(bp => bp.SourceReservationDepositId!.Value);
+
             var bankPaymentsIn = await _context.BankPayments
                 .Where(bp => bp.BankId == bank.Id
                     && bp.Order.BranchId == branchId
@@ -175,11 +179,13 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
 
             var bankDepositPaymentsIn = await _context.ReservationDeposits
                 .Where(d => d.BankId == bank.Id
+                    && !promotedReservationDepositIds.Contains(d.Id)
                     && d.ReceivedAt > since && d.ReceivedAt <= now)
                 .SumAsync(d => d.Amount, cancellationToken);
 
             var bankDepositsAlreadyCounted = await _context.ReservationDeposits
                 .Where(d => d.BankId == bank.Id
+                    && !promotedReservationDepositIds.Contains(d.Id)
                     && d.ReceivedAt <= since
                     && d.Order.Status == OrderStatus.Delivered
                     && d.Order.UpdatedAt > since && d.Order.UpdatedAt <= now)

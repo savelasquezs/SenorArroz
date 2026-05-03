@@ -10,6 +10,7 @@ public class BankPaymentDto
     public int BranchId { get; set; }
     public string BranchName { get; set; } = string.Empty;
     public decimal Amount { get; set; }
+    public int? SourceReservationDepositId { get; set; }
     public bool IsVerified { get; set; }
     public DateTime? VerifiedAt { get; set; }
     public DateTime CreatedAt { get; set; }

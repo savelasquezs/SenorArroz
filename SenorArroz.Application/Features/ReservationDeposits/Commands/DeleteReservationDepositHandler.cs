@@ -17,25 +17,41 @@ public class DeleteReservationDepositHandler : IRequestHandler<DeleteReservation
 
     public async Task<Unit> Handle(DeleteReservationDepositCommand request, CancellationToken cancellationToken)
     {
-        var deposit = await _context.ReservationDeposits
-            .Include(d => d.Order)
-            .FirstOrDefaultAsync(d => d.Id == request.Id, cancellationToken);
+        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
-        if (deposit == null)
-            throw new BusinessException("El abono no existe");
+        try
+        {
+            var deposit = await _context.ReservationDeposits
+                .Include(d => d.Order)
+                .FirstOrDefaultAsync(d => d.Id == request.Id, cancellationToken);
 
-        var order = deposit.Order;
-        if (order == null)
-            throw new BusinessException("El pedido asociado no existe");
+            if (deposit == null)
+                throw new BusinessException("El abono no existe");
 
-        if (order.Type != OrderType.Reservation)
-            throw new BusinessException("Solo aplican abonos de reserva");
+            var order = deposit.Order;
+            if (order == null)
+                throw new BusinessException("El pedido asociado no existe");
 
-        if (order.Status == OrderStatus.Delivered || order.Status == OrderStatus.Cancelled)
-            throw new BusinessException("No se puede eliminar abonos de un pedido ya finalizado");
+            if (order.Type != OrderType.Reservation)
+                throw new BusinessException("Solo aplican abonos de reserva");
 
-        _context.ReservationDeposits.Remove(deposit);
-        await _context.SaveChangesAsync(cancellationToken);
-        return Unit.Value;
+            if (order.Status == OrderStatus.Delivered || order.Status == OrderStatus.Cancelled)
+                throw new BusinessException("No se puede eliminar abonos de un pedido ya finalizado");
+
+            var linkedBankPayment = await _context.BankPayments
+                .FirstOrDefaultAsync(bp => bp.SourceReservationDepositId == deposit.Id, cancellationToken);
+            if (linkedBankPayment != null)
+                _context.BankPayments.Remove(linkedBankPayment);
+
+            _context.ReservationDeposits.Remove(deposit);
+            await _context.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+            return Unit.Value;
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 }

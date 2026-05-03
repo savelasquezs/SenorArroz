@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BankPayments.DTOs;
 using SenorArroz.Domain.Exceptions;
@@ -14,19 +15,22 @@ public class UpdateBankPaymentHandler : IRequestHandler<UpdateBankPaymentCommand
     private readonly IOrderBusinessRulesService _businessRules;
     private readonly ICurrentUser _currentUser;
     private readonly IMapper _mapper;
+    private readonly IApplicationDbContext _context;
 
     public UpdateBankPaymentHandler(
         IBankPaymentRepository bankPaymentRepository,
         IOrderRepository orderRepository,
         IOrderBusinessRulesService businessRules,
         ICurrentUser currentUser,
-        IMapper mapper)
+        IMapper mapper,
+        IApplicationDbContext context)
     {
         _bankPaymentRepository = bankPaymentRepository;
         _orderRepository = orderRepository;
         _businessRules = businessRules;
         _currentUser = currentUser;
         _mapper = mapper;
+        _context = context;
     }
 
     public async Task<BankPaymentDto> Handle(UpdateBankPaymentCommand request, CancellationToken cancellationToken)
@@ -49,11 +53,34 @@ public class UpdateBankPaymentHandler : IRequestHandler<UpdateBankPaymentCommand
         if (!Roles.IsSuperadmin(_currentUser.Role) && bankPayment.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pagos de esta sucursal");
 
-        // Actualizar el monto
-        bankPayment.Amount = request.Amount;
-        
-        var updatedPayment = await _bankPaymentRepository.UpdateAsync(bankPayment, cancellationToken);
-        return _mapper.Map<BankPaymentDto>(updatedPayment);
+        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            bankPayment.Amount = request.Amount;
+
+            var updatedPayment = await _bankPaymentRepository.UpdateAsync(bankPayment, cancellationToken);
+
+            if (updatedPayment.SourceReservationDepositId.HasValue)
+            {
+                var sourceDeposit = await _context.ReservationDeposits
+                    .FirstOrDefaultAsync(d => d.Id == updatedPayment.SourceReservationDepositId.Value, cancellationToken);
+
+                if (sourceDeposit == null)
+                    throw new BusinessException("No se pudo encontrar el abono de reserva original");
+
+                sourceDeposit.Amount = request.Amount;
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+
+            await tx.CommitAsync(cancellationToken);
+            return _mapper.Map<BankPaymentDto>(updatedPayment);
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 }
 

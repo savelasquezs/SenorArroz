@@ -14,7 +14,8 @@ public class BankPaymentMappingProfile : Profile
             .ForMember(dest => dest.BankName, opt => opt.MapFrom(src => src.Bank != null ? src.Bank.Name : string.Empty))
             .ForMember(dest => dest.BranchId, opt => opt.MapFrom(src => src.Bank != null ? src.Bank.BranchId : 0))
             .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src =>
-                src.Bank != null && src.Bank.Branch != null ? src.Bank.Branch.Name : string.Empty));
+                src.Bank != null && src.Bank.Branch != null ? src.Bank.Branch.Name : string.Empty))
+            .ForMember(dest => dest.SourceReservationDepositId, opt => opt.MapFrom(src => src.SourceReservationDepositId));
 
         CreateMap<CreateBankPaymentDto, BankPayment>();
         CreateMap<VerifyBankPaymentDto, BankPayment>()

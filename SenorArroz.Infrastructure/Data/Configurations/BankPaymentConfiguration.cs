@@ -17,6 +17,7 @@ public class BankPaymentConfiguration : IEntityTypeConfiguration<BankPayment>
         builder.Property(bp => bp.OrderId).HasColumnName("order_id").IsRequired();
         builder.Property(bp => bp.BankId).HasColumnName("bank_id").IsRequired();
         builder.Property(bp => bp.Amount).HasColumnName("amount").HasColumnType("numeric(12,2)").IsRequired();
+        builder.Property(bp => bp.SourceReservationDepositId).HasColumnName("source_reservation_deposit_id");
         builder.Property(bp => bp.IsVerified).HasColumnName("is_verified").HasDefaultValue(false);
         builder.Property(bp => bp.VerifiedAt).HasColumnName("verified_at");
 
@@ -35,5 +36,13 @@ public class BankPaymentConfiguration : IEntityTypeConfiguration<BankPayment>
             .WithMany(b => b.BankPayments)
             .HasForeignKey(bp => bp.BankId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne<ReservationDeposit>()
+            .WithMany()
+            .HasForeignKey(bp => bp.SourceReservationDepositId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(bp => bp.SourceReservationDepositId)
+            .IsUnique();
     }
 }

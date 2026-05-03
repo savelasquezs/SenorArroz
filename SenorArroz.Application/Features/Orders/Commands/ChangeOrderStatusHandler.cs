@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -13,6 +14,7 @@ namespace SenorArroz.Application.Features.Orders.Commands;
 public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand, OrderDto>
 {
     private readonly IOrderRepository _orderRepository;
+    private readonly IApplicationDbContext? _context;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly IOrderBusinessRulesService _businessRules;
@@ -23,8 +25,9 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     private readonly ILogger<ChangeOrderStatusHandler> _logger;
 
     public ChangeOrderStatusHandler(
-        IOrderRepository orderRepository, 
-        IMapper mapper, 
+        IOrderRepository orderRepository,
+        IApplicationDbContext context,
+        IMapper mapper,
         ICurrentUser currentUser,
         IOrderBusinessRulesService businessRules,
         IOrderNotificationService notificationService,
@@ -34,6 +37,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         ILogger<ChangeOrderStatusHandler> logger)
     {
         _orderRepository = orderRepository;
+        _context = context;
         _mapper = mapper;
         _currentUser = currentUser;
         _businessRules = businessRules;
@@ -44,73 +48,213 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         _logger = logger;
     }
 
+    public ChangeOrderStatusHandler(
+        IOrderRepository orderRepository,
+        IMapper mapper,
+        ICurrentUser currentUser,
+        IOrderBusinessRulesService businessRules,
+        IOrderNotificationService notificationService,
+        IDeliveryRouteWorkflowService deliveryRouteWorkflow,
+        IPrintQueueService printQueue,
+        ILoyaltyCycleService loyaltyCycle,
+        ILogger<ChangeOrderStatusHandler> logger)
+        : this(
+            orderRepository,
+            context: null!,
+            mapper,
+            currentUser,
+            businessRules,
+            notificationService,
+            deliveryRouteWorkflow,
+            printQueue,
+            loyaltyCycle,
+            logger)
+    {
+    }
+
     public async Task<OrderDto> Handle(ChangeOrderStatusCommand request, CancellationToken cancellationToken)
     {
-        // Get order first to validate access
+        if (_context is null)
+            return await HandleLegacyAsync(request, cancellationToken);
+
         var existingOrder = await _orderRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
-        // Validate branch access
         if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
-        // Validación especial para domiciliarios
         if (Roles.IsDeliveryman(_currentUser.Role))
         {
-            // Verificar que el pedido esté asignado a este domiciliario
             if (!existingOrder.DeliveryManId.HasValue || existingOrder.DeliveryManId.Value != _currentUser.Id)
                 throw new BusinessException("Solo puedes cambiar el estado de pedidos asignados a ti");
 
-            // Solo permitir transiciones OnTheWay ↔ Delivered
-            var allowedTransitions = new[] 
-            { 
-                (OrderStatus.OnTheWay, OrderStatus.Delivered),
-                (OrderStatus.Delivered, OrderStatus.OnTheWay) 
-            };
-            
+            var allowedTransitions =
+                new[]
+                {
+                    (OrderStatus.OnTheWay, OrderStatus.Delivered),
+                    (OrderStatus.Delivered, OrderStatus.OnTheWay),
+                };
+
             var transition = (existingOrder.Status, request.StatusChange.Status);
             if (!allowedTransitions.Contains(transition))
                 throw new BusinessException("Los domiciliarios solo pueden cambiar entre estados OnTheWay y Delivered");
         }
-        else
+        else if (!_businessRules.IsStatusTransitionValid(existingOrder, request.StatusChange.Status, _currentUser.Role))
         {
-            // Validar transición de estado para otros roles
-            if (!_businessRules.IsStatusTransitionValid(existingOrder, request.StatusChange.Status, _currentUser.Role))
-                throw new BusinessException($"No puedes cambiar el estado de {existingOrder.Status} a {request.StatusChange.Status}");
+            throw new BusinessException($"No puedes cambiar el estado de {existingOrder.Status} a {request.StatusChange.Status}");
         }
 
-        // Reserva pasando a preparación: resolver tipo definitivo según si tiene dirección
+        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            if (existingOrder.Type == OrderType.Reservation
+                && request.StatusChange.Status == OrderStatus.InPreparation)
+            {
+                var orderForTypeUpdate = await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken)
+                    ?? throw new BusinessException("Pedido no encontrado");
+
+                var detailCount = orderForTypeUpdate.OrderDetails?.Count ?? 0;
+                if (detailCount < 1)
+                {
+                    _logger.LogWarning(
+                        "Reserva a preparacion: pedido {OrderId} sin lineas al cargar detalle; se aborta para no vaciar el pedido en BD",
+                        request.Id);
+                    throw new BusinessException(
+                        "No se pudo preparar el pedido: faltan los productos en el sistema. Vuelva a abrir el pedido o pida a administracion verificarlo.");
+                }
+
+                var targetType = orderForTypeUpdate.AddressId.HasValue
+                    ? OrderType.Delivery
+                    : OrderType.Onsite;
+
+                await PromoteReservationDepositsToBankPaymentsAsync(orderForTypeUpdate.Id, cancellationToken);
+
+                await _context.Orders
+                    .Where(o => o.Id == request.Id)
+                    .ExecuteUpdateAsync(
+                        setters => setters.SetProperty(o => o.Type, targetType),
+                        cancellationToken);
+
+                existingOrder.Type = targetType;
+            }
+
+            var routeIdSnapshot = existingOrder.DeliveryRouteId;
+            var previousStatus = existingOrder.Status;
+
+            var order = await _orderRepository.ChangeStatusAsync(
+                request.Id,
+                request.StatusChange.Status,
+                request.StatusChange.Reason,
+                cancellationToken);
+
+            if (previousStatus == OrderStatus.Delivered && request.StatusChange.Status != OrderStatus.Delivered)
+                await _loyaltyCycle.OnOrderLeftDeliveredAsync(order.Id, cancellationToken);
+
+            if (request.StatusChange.Status == OrderStatus.Delivered
+                && previousStatus != OrderStatus.Delivered
+                && order.CustomerId.HasValue)
+            {
+                await _loyaltyCycle.OnOrderDeliveredAsync(order.Id, order.BranchId, order.CustomerId, cancellationToken);
+            }
+
+            var orderForResponse = await _orderRepository.GetByIdWithFullDetailsAsync(order.Id, cancellationToken) ?? order;
+            var orderDto = _mapper.Map<OrderDto>(orderForResponse);
+
+            if (request.StatusChange.Status == OrderStatus.Ready)
+            {
+                await _notificationService.NotifyOrderReadyToDelivery(orderDto);
+
+                var role = (_currentUser.Role ?? string.Empty).Trim();
+                if (Roles.IsKitchen(role))
+                {
+                    try
+                    {
+                        await _printQueue.EnqueueAsync(
+                            order.BranchId,
+                            PrintJobKind.Kitchen,
+                            new[] { order.Id },
+                            cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(
+                            ex,
+                            "No se encolo comanda de cocina para pedido {OrderId} (sucursal {BranchId}). El estado si se actualizo.",
+                            order.Id,
+                            order.BranchId);
+                    }
+                }
+            }
+
+            if (request.StatusChange.Status == OrderStatus.OnTheWay)
+                await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
+
+            if (request.StatusChange.Status == OrderStatus.Cancelled)
+                await _deliveryRouteWorkflow.OnOrderCancelledWhileRouteOpenAsync(request.Id, cancellationToken);
+
+            if (request.StatusChange.Status is OrderStatus.Delivered or OrderStatus.Cancelled)
+                await _deliveryRouteWorkflow.TryFinalizeRouteWhenAllTerminalAsync(
+                    request.Id,
+                    routeIdSnapshot,
+                    cancellationToken);
+
+            await tx.CommitAsync(cancellationToken);
+            return orderDto;
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    private async Task<OrderDto> HandleLegacyAsync(ChangeOrderStatusCommand request, CancellationToken cancellationToken)
+    {
+        var existingOrder = await _orderRepository.GetByIdAsync(request.Id, cancellationToken);
+        if (existingOrder == null)
+            throw new BusinessException("Pedido no encontrado");
+
+        if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
+            throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
+
+        if (Roles.IsDeliveryman(_currentUser.Role))
+        {
+            if (!existingOrder.DeliveryManId.HasValue || existingOrder.DeliveryManId.Value != _currentUser.Id)
+                throw new BusinessException("Solo puedes cambiar el estado de pedidos asignados a ti");
+
+            var allowedTransitions =
+                new[]
+                {
+                    (OrderStatus.OnTheWay, OrderStatus.Delivered),
+                    (OrderStatus.Delivered, OrderStatus.OnTheWay),
+                };
+
+            var transition = (existingOrder.Status, request.StatusChange.Status);
+            if (!allowedTransitions.Contains(transition))
+                throw new BusinessException("Los domiciliarios solo pueden cambiar entre estados OnTheWay y Delivered");
+        }
+        else if (!_businessRules.IsStatusTransitionValid(existingOrder, request.StatusChange.Status, _currentUser.Role))
+        {
+            throw new BusinessException($"No puedes cambiar el estado de {existingOrder.Status} a {request.StatusChange.Status}");
+        }
+
         if (existingOrder.Type == OrderType.Reservation
             && request.StatusChange.Status == OrderStatus.InPreparation)
         {
-            // Cargar con líneas: OrderRepository.UpdateAsync elimina en BD las líneas no listadas en memoria.
-            // GetByIdAsync no incluye OrderDetails; una colección vacía borraba todos los productos del pedido.
             var orderForTypeUpdate = await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken)
                 ?? throw new BusinessException("Pedido no encontrado");
+
             var detailCount = orderForTypeUpdate.OrderDetails?.Count ?? 0;
             if (detailCount < 1)
-            {
-                _logger.LogWarning(
-                    "Reserva a preparación: pedido {OrderId} sin líneas al cargar detalle; se aborta para no vaciar el pedido en BD",
-                    request.Id);
                 throw new BusinessException(
-                    "No se pudo preparar el pedido: faltan los productos en el sistema. Vuelva a abrir el pedido o pida a administración verificarlo.");
-            }
+                    "No se pudo preparar el pedido: faltan los productos en el sistema. Vuelva a abrir el pedido o pida a administracion verificarlo.");
 
-            try
-            {
-                orderForTypeUpdate.Type = orderForTypeUpdate.AddressId.HasValue
-                    ? OrderType.Delivery
-                    : OrderType.Onsite;
-                await _orderRepository.UpdateAsync(orderForTypeUpdate, cancellationToken);
-            }
-            catch (DbUpdateException ex)
-            {
-                _logger.LogError(ex, "Error de base de datos al actualizar tipo (reserva→preparación) pedido {OrderId}", request.Id);
-                throw new BusinessException("No se pudo guardar al pasar a preparación. Reintente o contacte su administrador.");
-            }
-
+            orderForTypeUpdate.Type = orderForTypeUpdate.AddressId.HasValue
+                ? OrderType.Delivery
+                : OrderType.Onsite;
+            await _orderRepository.UpdateAsync(orderForTypeUpdate, cancellationToken);
             existingOrder.Type = orderForTypeUpdate.Type;
         }
 
@@ -118,9 +262,10 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         var previousStatus = existingOrder.Status;
 
         var order = await _orderRepository.ChangeStatusAsync(
-            request.Id, 
-            request.StatusChange.Status, 
-            request.StatusChange.Reason);
+            request.Id,
+            request.StatusChange.Status,
+            request.StatusChange.Reason,
+            cancellationToken);
 
         if (previousStatus == OrderStatus.Delivered && request.StatusChange.Status != OrderStatus.Delivered)
             await _loyaltyCycle.OnOrderLeftDeliveredAsync(order.Id, cancellationToken);
@@ -134,18 +279,11 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
 
         var orderDto = _mapper.Map<OrderDto>(order);
 
-        // Notificar a domiciliarios si el estado cambia a Ready
         if (request.StatusChange.Status == OrderStatus.Ready)
         {
             await _notificationService.NotifyOrderReadyToDelivery(orderDto);
-
-            // Comanda de cocina al pasar a listo: solo cuando es cocina quien cambia el estado.
-            // Admin/superadmin no imprimen al marcar listo (pueden hacerlo manualmente si es necesario).
             var role = (_currentUser.Role ?? string.Empty).Trim();
-            var printsKitchenOnReady =
-                Roles.IsKitchen(role);
-
-            if (printsKitchenOnReady)
+            if (Roles.IsKitchen(role))
             {
                 try
                 {
@@ -159,27 +297,68 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
                 {
                     _logger.LogWarning(
                         ex,
-                        "No se encoló comanda de cocina para pedido {OrderId} (sucursal {BranchId}). El estado sí se actualizó.",
+                        "No se encolo comanda de cocina para pedido {OrderId} (sucursal {BranchId}). El estado si se actualizo.",
                         order.Id,
                         order.BranchId);
                 }
             }
         }
 
-        // Notificar a todos los domiciliarios cuando un pedido es asignado (OnTheWay)
-        // para que desaparezca de la lista de disponibles en sus pantallas
         if (request.StatusChange.Status == OrderStatus.OnTheWay)
-        {
             await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
-        }
 
         if (request.StatusChange.Status == OrderStatus.Cancelled)
             await _deliveryRouteWorkflow.OnOrderCancelledWhileRouteOpenAsync(request.Id, cancellationToken);
 
         if (request.StatusChange.Status is OrderStatus.Delivered or OrderStatus.Cancelled)
             await _deliveryRouteWorkflow.TryFinalizeRouteWhenAllTerminalAsync(
-                request.Id, routeIdSnapshot, cancellationToken);
+                request.Id,
+                routeIdSnapshot,
+                cancellationToken);
 
         return orderDto;
+    }
+
+    private async Task PromoteReservationDepositsToBankPaymentsAsync(int orderId, CancellationToken cancellationToken)
+    {
+        var deposits = await _context.ReservationDeposits
+            .AsNoTracking()
+            .Where(d =>
+                d.OrderId == orderId
+                && !d.IsEffective
+                && d.BankId.HasValue
+                && !d.AppId.HasValue)
+            .OrderBy(d => d.ReceivedAt)
+            .ThenBy(d => d.Id)
+            .ToListAsync(cancellationToken);
+
+        if (deposits.Count == 0)
+            return;
+
+        var depositIds = deposits.Select(d => d.Id).ToList();
+        var existingSourceIds = await _context.BankPayments
+            .Where(bp => bp.SourceReservationDepositId.HasValue
+                && depositIds.Contains(bp.SourceReservationDepositId.Value))
+            .Select(bp => bp.SourceReservationDepositId!.Value)
+            .ToListAsync(cancellationToken);
+
+        var existingSet = existingSourceIds.ToHashSet();
+        var newBankPayments = deposits
+            .Where(d => !existingSet.Contains(d.Id))
+            .Select(d => new BankPayment
+            {
+                OrderId = orderId,
+                BankId = d.BankId!.Value,
+                Amount = d.Amount,
+                SourceReservationDepositId = d.Id,
+                IsVerified = false,
+            })
+            .ToList();
+
+        if (newBankPayments.Count == 0)
+            return;
+
+        _context.BankPayments.AddRange(newBankPayments);
+        await _context.SaveChangesAsync(cancellationToken);
     }
 }
