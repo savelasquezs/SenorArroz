@@ -48,7 +48,8 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
 
     public bool CanModifyPayments(Order order, string userRole)
     {
-        if (IsSameDay(order.CreatedAt))
+        if (IsSameDay(order.CreatedAt)
+            || (order.PrepareAt.HasValue && IsSameDay(order.PrepareAt.Value)))
             return Roles.IsSuperadminOrAdminOrCashier(userRole);
 
         return Roles.IsSuperadmin(userRole);

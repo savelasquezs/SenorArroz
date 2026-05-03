@@ -37,4 +37,41 @@ public class OrderBusinessRulesServiceTests
         var sut = new OrderBusinessRulesService(clock);
         Assert.True(sut.CanModifyPayments(order, Roles.Cashier));
     }
+
+    [Fact]
+    public void CanModifyPayments_true_when_prepareAt_is_colombia_today_even_if_created_days_ago()
+    {
+        var utcNow = new DateTime(2026, 4, 15, 15, 0, 0, DateTimeKind.Utc);
+        var created = new DateTime(2026, 4, 10, 12, 0, 0, DateTimeKind.Utc);
+        var prepareAt = new DateTime(2026, 4, 15, 20, 0, 0, DateTimeKind.Utc);
+        var order = new Order
+        {
+            Status = OrderStatus.Taken,
+            CreatedAt = created,
+            PrepareAt = prepareAt,
+        };
+        var clock = new FakeClock(utcNow);
+        var sut = new OrderBusinessRulesService(clock);
+        Assert.True(sut.CanModifyPayments(order, Roles.Cashier));
+        Assert.True(sut.CanModifyPayments(order, Roles.Admin));
+    }
+
+    [Fact]
+    public void CanModifyPayments_false_for_admin_when_neither_created_nor_prepareAt_is_colombia_today()
+    {
+        var utcNow = new DateTime(2026, 4, 15, 15, 0, 0, DateTimeKind.Utc);
+        var created = new DateTime(2026, 4, 10, 12, 0, 0, DateTimeKind.Utc);
+        var prepareAt = new DateTime(2026, 4, 14, 20, 0, 0, DateTimeKind.Utc);
+        var order = new Order
+        {
+            Status = OrderStatus.Taken,
+            CreatedAt = created,
+            PrepareAt = prepareAt,
+        };
+        var clock = new FakeClock(utcNow);
+        var sut = new OrderBusinessRulesService(clock);
+        Assert.False(sut.CanModifyPayments(order, Roles.Admin));
+        Assert.False(sut.CanModifyPayments(order, Roles.Cashier));
+        Assert.True(sut.CanModifyPayments(order, Roles.Superadmin));
+    }
 }

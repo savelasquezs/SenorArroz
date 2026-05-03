@@ -99,20 +99,21 @@ public bool CanModifyPayments(Order order, string userRole)
 {
     var role = userRole.ToLower();
 
-    // Mismo día: admin, superadmin y cashier pueden modificar
-    if (IsSameDay(order.CreatedAt))
+    // Mismo día (calendario Colombia): por fecha de creación o, si existe, por prepareAt (reservas tomadas con anticipación)
+    if (IsSameDay(order.CreatedAt)
+        || (order.PrepareAt.HasValue && IsSameDay(order.PrepareAt.Value)))
     {
         return role == "admin" || role == "superadmin" || role == "cashier";
     }
 
-    // Días posteriores: solo superadmin
+    // Otros días: solo superadmin
     return role == "superadmin";
 }
 ```
 
 **Reglas**:
-- ✅ **Mismo día**: Admin/Superadmin/Cashier pueden crear, modificar y eliminar pagos
-- ✅ **Días posteriores**: Solo Superadmin puede modificar
+- ✅ **Mismo día (CO) que `CreatedAt` o que `PrepareAt` si está definido**: Admin/Superadmin/Cashier pueden crear, modificar y eliminar pagos
+- ✅ **Ninguno de esos días coincide con hoy (CO)**: Solo Superadmin puede modificar
 - ✅ **Aplica para cualquier estado** del pedido (incluso entregados)
 
 ---
@@ -378,6 +379,8 @@ public async Task<Order> CancelOrderAsync(int orderId, string reason)
 
 ## Reglas de Modificación de Pagos
 
+**Ventana temporal (Admin/Cajero)**: día calendario **Colombia** en que cae `CreatedAt` **o**, si el pedido tiene `PrepareAt`, el día en que cae ese instante. Fuera de esa ventana, solo Superadmin.
+
 ### Matriz por Rol y Tiempo
 
 | Rol / Tiempo | Mismo Día | Días Anteriores |
@@ -528,7 +531,7 @@ Resultado: false ❌ (día diferente en UTC)
 
 **Permisos**:
 - ✅ Ver/modificar solo su sucursal
-- ✅ Modificar pedidos/pagos solo del día actual
+- ✅ Modificar pedidos según estado; **pagos** cuando el día (Colombia) coincide con `CreatedAt` o con `PrepareAt` si existe
 - ✅ Revertir estados libremente
 - ✅ Cancelar pedidos
 - ✅ Crear/eliminar pagos
@@ -542,13 +545,13 @@ Resultado: false ❌ (día diferente en UTC)
 **Permisos**:
 - ✅ Ver/modificar pedidos de su sucursal
 - ✅ Cambiar estados (solo hacia adelante)
-- ✅ Crear, editar montos y eliminar pagos bancarios y por app del pedido (mismo día que el pedido; sucursal del pedido)
+- ✅ Crear, editar montos y eliminar pagos bancarios y por app del pedido cuando el día (Colombia) coincide con `CreatedAt` o con `PrepareAt` si existe; sucursal del pedido
 - ✅ Crear pedidos
 
 **Restricciones**:
 - ❌ No puede retroceder estados
 - ❌ No puede modificar productos de pedidos entregados
-- ❌ No puede crear/editar/eliminar pagos en pedidos que no sean del día de creación del pedido (misma regla temporal que admin; v. `CanModifyPayments`)
+- ❌ No puede crear/editar/eliminar pagos cuando ninguno de los días (Colombia) de `CreatedAt` ni `PrepareAt` coincide con hoy (misma regla temporal que admin; v. `CanModifyPayments`)
 - ❌ No puede cancelar pedidos
 - ❌ No puede verificar pagos bancarios
 - ❌ No puede liquidar app payments
