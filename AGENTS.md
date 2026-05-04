@@ -89,6 +89,7 @@ No usar excepciones genéricas para reglas de negocio.
 - JSON expone enums en `camelCase`.
 - DateTime siempre en UTC.
 - Cambios de entidades deben actualizar configuración EF, migraciones, seeds y `docs/DATABASE_MAP.md`.
+- Modificacion reciente relevante: `bank_payment` ahora puede vincularse con `reservation_deposit` mediante `source_reservation_deposit_id`. Si tocas ese flujo, revisa `SenorArroz.Infrastructure/Scripts/add_source_reservation_deposit_id_to_bank_payment.sql`, la configuracion EF de `BankPayment` y los tests asociados.
 
 ## Autenticación y autorización
 
