@@ -179,6 +179,16 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             }
         }
 
+        // "Preparar ya" de una reserva: promover abonos bancarios de reserva a bank_payment
+        // para que expected balance no cuente doble ni deje faltantes.
+        if (beforeType == OrderType.Reservation
+            && request.Order.Type is OrderType.Onsite or OrderType.Delivery
+            && request.Order.PrepareAt.HasValue
+            && !request.Order.ReservedFor.HasValue)
+        {
+            await PromoteReservationDepositsToBankPaymentsAsync(existingOrder.Id, cancellationToken);
+        }
+
         // Handle address changes - update delivery fee from address if not provided
         if (request.Order.AddressId.HasValue && !request.Order.DeliveryFee.HasValue)
         {
@@ -332,5 +342,42 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             await _bankPaymentRepository.DeleteAsync(bankPayment.Id, cancellationToken);
 
         await _reservationDepositRepository.DeleteByOrderIdAsync(orderId, cancellationToken);
+    }
+
+    private async Task PromoteReservationDepositsToBankPaymentsAsync(int orderId, CancellationToken cancellationToken)
+    {
+        var deposits = await _reservationDepositRepository.GetByOrderIdAsync(orderId, cancellationToken);
+        if (deposits.Count == 0)
+            return;
+
+        var bankDeposits = deposits
+            .Where(d => !d.IsEffective && d.BankId.HasValue && !d.AppId.HasValue)
+            .OrderBy(d => d.ReceivedAt)
+            .ThenBy(d => d.Id)
+            .ToList();
+
+        if (bankDeposits.Count == 0)
+            return;
+
+        var existingBankPayments = await _bankPaymentRepository.GetByOrderIdAsync(orderId, cancellationToken);
+        var linkedDepositIds = existingBankPayments
+            .Where(bp => bp.SourceReservationDepositId.HasValue)
+            .Select(bp => bp.SourceReservationDepositId!.Value)
+            .ToHashSet();
+
+        foreach (var deposit in bankDeposits)
+        {
+            if (linkedDepositIds.Contains(deposit.Id))
+                continue;
+
+            await _bankPaymentRepository.CreateAsync(new BankPayment
+            {
+                OrderId = orderId,
+                BankId = deposit.BankId!.Value,
+                Amount = deposit.Amount,
+                SourceReservationDepositId = deposit.Id,
+                IsVerified = false,
+            }, cancellationToken);
+        }
     }
 }

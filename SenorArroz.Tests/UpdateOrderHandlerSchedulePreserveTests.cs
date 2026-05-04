@@ -70,15 +70,21 @@ public class UpdateOrderHandlerSchedulePreserveTests
         IOrderRepository repo,
         IAddressRepository addressRepo,
         DateTime utcNow,
-        IOrderNotificationService? notifications = null)
+        IOrderNotificationService? notifications = null,
+        Mock<IBankPaymentRepository>? bankPaymentRepoMock = null,
+        Mock<IReservationDepositRepository>? reservationDepositRepoMock = null)
     {
         var mapper = new MapperConfiguration(cfg =>
         {
             cfg.AddMaps(typeof(UpdateOrderCommand).Assembly);
         }, NullLoggerFactory.Instance).CreateMapper();
         var clock = new FixedClock(utcNow);
-        var bankPaymentRepo = new Mock<IBankPaymentRepository>();
-        var reservationDepositRepo = new Mock<IReservationDepositRepository>();
+        var bankPaymentRepo = bankPaymentRepoMock ?? new Mock<IBankPaymentRepository>();
+        var reservationDepositRepo = reservationDepositRepoMock ?? new Mock<IReservationDepositRepository>();
+        bankPaymentRepo.Setup(r => r.GetByOrderIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<BankPayment>());
+        reservationDepositRepo.Setup(r => r.GetByOrderIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ReservationDeposit>());
         return new UpdateOrderHandler(
             repo,
             addressRepo,
@@ -304,5 +310,94 @@ public class UpdateOrderHandlerSchedulePreserveTests
         Assert.Equal(1, notifications.KitchenModifiedCalls);
         Assert.Equal("schedule", notifications.LastModificationKind);
         Assert.Equal("prepare_now", notifications.LastKitchenChanges?.ScheduleChangeKind);
+    }
+
+    [Fact]
+    public async Task Prepare_now_from_reservation_promotes_bank_reservation_deposit_to_bank_payment()
+    {
+        var utc = new DateTime(2026, 4, 19, 15, 0, 0, DateTimeKind.Utc);
+        var order = new Order
+        {
+            Id = 46,
+            BranchId = 1,
+            TakenById = 1,
+            Type = OrderType.Reservation,
+            Status = OrderStatus.Taken,
+            ReservedFor = utc.AddHours(4),
+            PrepareAt = utc.AddHours(3),
+            CreatedAt = utc,
+            OrderDetails = new List<OrderDetail>
+            {
+                new()
+                {
+                    Id = 1,
+                    OrderId = 46,
+                    ProductId = 1,
+                    Quantity = 1,
+                    UnitPrice = 10_000,
+                    Discount = 0,
+                    Subtotal = 10_000,
+                },
+            },
+        };
+
+        var repo = new Mock<IOrderRepository>();
+        repo.Setup(r => r.GetByIdWithDetailsAsync(46, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+        repo.Setup(r => r.UpdateAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()))
+            .Returns<Order, CancellationToken>((o, _) => Task.FromResult(o));
+
+        var bankPaymentRepo = new Mock<IBankPaymentRepository>();
+        bankPaymentRepo.Setup(r => r.GetByOrderIdAsync(46, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<BankPayment>());
+        bankPaymentRepo.Setup(r => r.CreateAsync(It.IsAny<BankPayment>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((BankPayment bp, CancellationToken _) => bp);
+
+        var depositRepo = new Mock<IReservationDepositRepository>();
+        depositRepo.Setup(r => r.GetByOrderIdAsync(46, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ReservationDeposit>
+            {
+                new()
+                {
+                    Id = 100,
+                    OrderId = 46,
+                    BranchId = 1,
+                    Amount = 200000m,
+                    IsEffective = false,
+                    BankId = 3,
+                    AppId = null,
+                    ReceivedAt = utc.AddHours(-2),
+                    ReceivedById = 1,
+                },
+            });
+
+        var handler = BuildHandler(
+            repo.Object,
+            Mock.Of<IAddressRepository>(),
+            utc,
+            notifications: new CaptureNotifications(),
+            bankPaymentRepoMock: bankPaymentRepo,
+            reservationDepositRepoMock: depositRepo);
+
+        await handler.Handle(
+            new UpdateOrderCommand
+            {
+                Id = 46,
+                Order = new UpdateOrderDto
+                {
+                    Type = OrderType.Onsite,
+                    PrepareAt = utc,
+                    ReservedFor = null,
+                },
+            },
+            CancellationToken.None);
+
+        bankPaymentRepo.Verify(r => r.CreateAsync(
+            It.Is<BankPayment>(bp =>
+                bp.OrderId == 46
+                && bp.BankId == 3
+                && bp.Amount == 200000m
+                && bp.SourceReservationDepositId == 100),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 }
