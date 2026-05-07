@@ -167,6 +167,36 @@ public static class ColombiaTimeHelper
         return local.Hour;
     }
 
+    public static DateTime OrderSalesEffectiveColombiaCalendarDate(DateTime createdAtUtc, DateTime? prepareAtUtc)
+    {
+        var instant = prepareAtUtc ?? createdAtUtc;
+        return ConvertUtcToColombiaCalendarDate(instant);
+    }
+
+    public static (int Year, int Month) OrderSalesEffectiveColombiaYearMonth(DateTime createdAtUtc, DateTime? prepareAtUtc)
+    {
+        var instant = prepareAtUtc ?? createdAtUtc;
+        var utc = EnsureUtc(instant);
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, ColombiaTimeZone);
+        return (local.Year, local.Month);
+    }
+
+    public static int OrderSalesEffectiveColombiaYear(DateTime createdAtUtc, DateTime? prepareAtUtc)
+    {
+        var instant = prepareAtUtc ?? createdAtUtc;
+        var utc = EnsureUtc(instant);
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, ColombiaTimeZone);
+        return local.Year;
+    }
+
+    public static int OrderSalesEffectiveColombiaHour(DateTime createdAtUtc, DateTime? prepareAtUtc)
+    {
+        var instant = prepareAtUtc ?? createdAtUtc;
+        var utc = EnsureUtc(instant);
+        var local = TimeZoneInfo.ConvertTimeFromUtc(utc, ColombiaTimeZone);
+        return local.Hour;
+    }
+
     public static DateTime ExpenseColombiaCalendarDate(DateTime headerCreatedAtUtc)
         => ConvertUtcToColombiaCalendarDate(headerCreatedAtUtc);
 

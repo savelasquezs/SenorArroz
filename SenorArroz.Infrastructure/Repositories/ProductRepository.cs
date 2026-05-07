@@ -250,12 +250,12 @@ public class ProductRepository : IProductRepository
                 od.ProductId == productId &&
                 od.Order.Status != OrderStatus.Cancelled)
             .Where(od =>
-                (od.Order.ReservedFor ?? od.Order.CreatedAt) >= wideFrom &&
-                (od.Order.ReservedFor ?? od.Order.CreatedAt) <= wideTo)
+                (od.Order.PrepareAt ?? od.Order.CreatedAt) >= wideFrom &&
+                (od.Order.PrepareAt ?? od.Order.CreatedAt) <= wideTo)
             .Select(od => new
             {
                 od.Order.CreatedAt,
-                od.Order.ReservedFor,
+                od.Order.PrepareAt,
                 od.Quantity
             })
             .ToListAsync(cancellationToken);
@@ -263,7 +263,7 @@ public class ProductRepository : IProductRepository
         var map = new Dictionary<DateTime, int>();
         foreach (var row in rows)
         {
-            var bucket = ColombiaTimeHelper.OrderOperationalColombiaCalendarDate(row.CreatedAt, row.ReservedFor);
+            var bucket = ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(row.CreatedAt, row.PrepareAt);
             if (bucket < start || bucket > end)
                 continue;
             map[bucket] = map.GetValueOrDefault(bucket, 0) + row.Quantity;

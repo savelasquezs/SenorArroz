@@ -575,13 +575,13 @@ public class OrderRepository : IOrderRepository
             query = query.Where(o => o.BranchId == branchId);
 
         if (fromDate.HasValue && toDate.HasValue)
-            query = WhereOperationalDateRangeUtc(query, fromDate.Value, toDate.Value);
+            query = ApplyOrderSalesDateRange(query, fromDate.Value, toDate.Value);
         else
         {
             if (fromDate.HasValue)
-                query = query.Where(o => o.CreatedAt >= fromDate.Value);
+                query = query.Where(o => (o.PrepareAt ?? o.CreatedAt) >= fromDate.Value);
             if (toDate.HasValue)
-                query = query.Where(o => o.CreatedAt <= toDate.Value);
+                query = query.Where(o => (o.PrepareAt ?? o.CreatedAt) <= toDate.Value);
         }
 
         return await query.SumAsync(o => o.Total, cancellationToken);
@@ -595,13 +595,13 @@ public class OrderRepository : IOrderRepository
             query = query.Where(o => o.BranchId == branchId);
 
         if (fromDate.HasValue && toDate.HasValue)
-            query = WhereOperationalDateRangeUtc(query, fromDate.Value, toDate.Value);
+            query = ApplyOrderSalesDateRange(query, fromDate.Value, toDate.Value);
         else
         {
             if (fromDate.HasValue)
-                query = query.Where(o => o.CreatedAt >= fromDate.Value);
+                query = query.Where(o => (o.PrepareAt ?? o.CreatedAt) >= fromDate.Value);
             if (toDate.HasValue)
-                query = query.Where(o => o.CreatedAt <= toDate.Value);
+                query = query.Where(o => (o.PrepareAt ?? o.CreatedAt) <= toDate.Value);
         }
 
         return await query.AverageAsync(o => (decimal?)o.Total, cancellationToken) ?? 0;
@@ -620,13 +620,13 @@ public class OrderRepository : IOrderRepository
             query = query.Where(od => od.Order.BranchId == branchId);
 
         if (fromDate.HasValue && toDate.HasValue)
-            query = WhereOrderDetailOperationalDateRangeUtc(query, fromDate.Value, toDate.Value);
+            query = ApplyOrderDetailSalesDateRange(query, fromDate.Value, toDate.Value);
         else
         {
             if (fromDate.HasValue)
-                query = query.Where(od => od.Order.CreatedAt >= fromDate.Value);
+                query = query.Where(od => (od.Order.PrepareAt ?? od.Order.CreatedAt) >= fromDate.Value);
             if (toDate.HasValue)
-                query = query.Where(od => od.Order.CreatedAt <= toDate.Value);
+                query = query.Where(od => (od.Order.PrepareAt ?? od.Order.CreatedAt) <= toDate.Value);
         }
 
         return await query
@@ -1100,7 +1100,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var q = WhereOperationalDateRangeUtc(_context.Orders.AsNoTracking(), fromUtc, toUtc);
+        var q = ApplyOrderSalesDateRange(_context.Orders.AsNoTracking(), fromUtc, toUtc);
         if (branchId.HasValue)
             q = q.Where(o => o.BranchId == branchId.Value);
 
@@ -1233,7 +1233,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime fromUtc,
         DateTime toUtc)
     {
-        var q = WhereOperationalDateRangeUtc(
+        var q = ApplyOrderSalesDateRange(
             _context.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled),
             fromUtc,
             toUtc);
@@ -1272,14 +1272,14 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         CancellationToken cancellationToken = default)
     {
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .Select(o => new { o.BranchId, o.CreatedAt, o.ReservedFor, o.Total })
+            .Select(o => new { o.BranchId, o.CreatedAt, o.PrepareAt, o.Total })
             .ToListAsync(cancellationToken);
 
         return rows
             .GroupBy(o => new
             {
                 o.BranchId,
-                Day = ColombiaTimeHelper.OrderOperationalColombiaCalendarDate(o.CreatedAt, o.ReservedFor),
+                Day = ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(o.CreatedAt, o.PrepareAt),
             })
             .Select(g => new SalesDayPoint(g.Key.BranchId, g.Key.Day, g.Sum(x => x.Total)))
             .ToList();
@@ -1292,11 +1292,11 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         CancellationToken cancellationToken = default)
     {
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .Select(o => new { o.CreatedAt, o.ReservedFor })
+            .Select(o => new { o.CreatedAt, o.PrepareAt })
             .ToListAsync(cancellationToken);
 
         return rows
-            .GroupBy(o => ColombiaTimeHelper.OrderOperationalColombiaCalendarDate(o.CreatedAt, o.ReservedFor))
+            .GroupBy(o => ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(o.CreatedAt, o.PrepareAt))
             .Select(g => new OrdersDayPoint(g.Key, g.Count()))
             .ToList();
     }
@@ -1308,14 +1308,14 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         CancellationToken cancellationToken = default)
     {
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .Select(o => new { o.BranchId, o.CreatedAt, o.ReservedFor, o.Total })
+            .Select(o => new { o.BranchId, o.CreatedAt, o.PrepareAt, o.Total })
             .ToListAsync(cancellationToken);
 
         return rows
             .GroupBy(o => new
             {
                 o.BranchId,
-                Ym = ColombiaTimeHelper.OrderOperationalColombiaYearMonth(o.CreatedAt, o.ReservedFor),
+                Ym = ColombiaTimeHelper.OrderSalesEffectiveColombiaYearMonth(o.CreatedAt, o.PrepareAt),
             })
             .Select(g => new SalesMonthPoint(
                 g.Key.BranchId,
@@ -1332,11 +1332,11 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         CancellationToken cancellationToken = default)
     {
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .Select(o => new { o.CreatedAt, o.ReservedFor })
+            .Select(o => new { o.CreatedAt, o.PrepareAt })
             .ToListAsync(cancellationToken);
 
         return rows
-            .GroupBy(o => ColombiaTimeHelper.OrderOperationalColombiaYearMonth(o.CreatedAt, o.ReservedFor))
+            .GroupBy(o => ColombiaTimeHelper.OrderSalesEffectiveColombiaYearMonth(o.CreatedAt, o.PrepareAt))
             .Select(g => new OrdersMonthPoint(g.Key.Year, g.Key.Month, g.Count()))
             .ToList();
     }
@@ -1348,14 +1348,14 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         CancellationToken cancellationToken = default)
     {
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .Select(o => new { o.BranchId, o.CreatedAt, o.ReservedFor, o.Total })
+            .Select(o => new { o.BranchId, o.CreatedAt, o.PrepareAt, o.Total })
             .ToListAsync(cancellationToken);
 
         return rows
             .GroupBy(o => new
             {
                 o.BranchId,
-                Year = ColombiaTimeHelper.OrderOperationalColombiaYear(o.CreatedAt, o.ReservedFor),
+                Year = ColombiaTimeHelper.OrderSalesEffectiveColombiaYear(o.CreatedAt, o.PrepareAt),
             })
             .Select(g => new SalesYearPoint(g.Key.BranchId, g.Key.Year, g.Sum(x => x.Total)))
             .ToList();
@@ -1368,11 +1368,11 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         CancellationToken cancellationToken = default)
     {
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .Select(o => new { o.CreatedAt, o.ReservedFor })
+            .Select(o => new { o.CreatedAt, o.PrepareAt })
             .ToListAsync(cancellationToken);
 
         return rows
-            .GroupBy(o => ColombiaTimeHelper.OrderOperationalColombiaYear(o.CreatedAt, o.ReservedFor))
+            .GroupBy(o => ColombiaTimeHelper.OrderSalesEffectiveColombiaYear(o.CreatedAt, o.PrepareAt))
             .Select(g => new OrdersYearPoint(g.Key, g.Count()))
             .ToList();
     }
@@ -1384,14 +1384,14 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         CancellationToken cancellationToken = default)
     {
         var rows = await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
-            .Select(o => new { o.BranchId, o.CreatedAt, o.ReservedFor, o.Total })
+            .Select(o => new { o.BranchId, o.CreatedAt, o.PrepareAt, o.Total })
             .ToListAsync(cancellationToken);
 
         return rows
             .GroupBy(o => new
             {
                 o.BranchId,
-                Hour = ColombiaTimeHelper.OrderOperationalColombiaHour(o.CreatedAt, o.ReservedFor),
+                Hour = ColombiaTimeHelper.OrderSalesEffectiveColombiaHour(o.CreatedAt, o.PrepareAt),
             })
             .Select(g => new SalesHourPoint(g.Key.BranchId, g.Key.Hour, g.Sum(x => x.Total)))
             .ToList();
@@ -1404,11 +1404,11 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         CancellationToken cancellationToken = default)
     {
         var rows = await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
-            .Select(o => new { o.CreatedAt, o.ReservedFor })
+            .Select(o => new { o.CreatedAt, o.PrepareAt })
             .ToListAsync(cancellationToken);
 
         return rows
-            .GroupBy(o => ColombiaTimeHelper.OrderOperationalColombiaHour(o.CreatedAt, o.ReservedFor))
+            .GroupBy(o => ColombiaTimeHelper.OrderSalesEffectiveColombiaHour(o.CreatedAt, o.PrepareAt))
             .Select(g => new OrdersHourPoint(g.Key, g.Count()))
             .ToList();
     }
@@ -1419,7 +1419,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var q = WhereOrderDetailOperationalDateRangeUtc(
+        var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
                 .Where(od => od.Order.Status != OrderStatus.Cancelled),
@@ -1447,7 +1447,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var q = WhereOrderDetailOperationalDateRangeUtc(
+        var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
                 .Where(od => od.Order.Status != OrderStatus.Cancelled),
@@ -1483,7 +1483,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var q = WhereOrderDetailOperationalDateRangeUtc(
+        var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
                 .Where(od => od.Order.Status != OrderStatus.Cancelled),
@@ -1515,7 +1515,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var q = WhereOrderDetailOperationalDateRangeUtc(
+        var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
                 .Where(od => od.Order.Status != OrderStatus.Cancelled && od.Product.WeightGrams != null),
@@ -1552,7 +1552,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var q = WhereOrderDetailOperationalDateRangeUtc(
+        var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
                 .Where(od => od.Order.Status != OrderStatus.Cancelled && od.Product.WeightGrams != null),
@@ -1587,7 +1587,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         CategoryWeightEvolutionGranularity granularity,
         CancellationToken cancellationToken = default)
     {
-        var q = WhereOrderDetailOperationalDateRangeUtc(
+        var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
                 .Where(od =>
@@ -1617,7 +1617,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         CategoryWeightEvolutionGranularity granularity,
         CancellationToken cancellationToken = default)
     {
-        var q = WhereOrderDetailOperationalDateRangeUtc(
+        var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
                 .Where(od =>
@@ -1644,14 +1644,13 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         var raw = await q
             .Select(od => new
             {
-                od.Order.CreatedAt,
-                od.Order.ReservedFor,
+                od.Order.CreatedAt, od.Order.PrepareAt,
                 W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
             .ToListAsync(cancellationToken);
 
         return raw
-            .GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaCalendarDate(x.CreatedAt, x.ReservedFor))
+            .GroupBy(x => ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(x.CreatedAt, x.PrepareAt))
             .Select(g => new SalesCategoryWeightEvolutionPoint(
                 ColombiaTimeHelper.ColombiaCalendarDayStartUtc(g.Key),
                 g.Sum(x => x.W)))
@@ -1666,14 +1665,13 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         var raw = await q
             .Select(od => new
             {
-                od.Order.CreatedAt,
-                od.Order.ReservedFor,
+                od.Order.CreatedAt, od.Order.PrepareAt,
                 W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
             .ToListAsync(cancellationToken);
 
         return raw
-            .GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaYearMonth(x.CreatedAt, x.ReservedFor))
+            .GroupBy(x => ColombiaTimeHelper.OrderSalesEffectiveColombiaYearMonth(x.CreatedAt, x.PrepareAt))
             .Select(g => new SalesCategoryWeightEvolutionPoint(
                 ColombiaTimeHelper.ColombiaCalendarDayStartUtc(new DateTime(g.Key.Year, g.Key.Month, 1)),
                 g.Sum(x => x.W)))
@@ -1688,14 +1686,13 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         var raw = await q
             .Select(od => new
             {
-                od.Order.CreatedAt,
-                od.Order.ReservedFor,
+                od.Order.CreatedAt, od.Order.PrepareAt,
                 W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
             .ToListAsync(cancellationToken);
 
         return raw
-            .GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaYear(x.CreatedAt, x.ReservedFor))
+            .GroupBy(x => ColombiaTimeHelper.OrderSalesEffectiveColombiaYear(x.CreatedAt, x.PrepareAt))
             .Select(g => new SalesCategoryWeightEvolutionPoint(
                 ColombiaTimeHelper.ColombiaCalendarDayStartUtc(new DateTime(g.Key, 1, 1)),
                 g.Sum(x => x.W)))
@@ -1712,8 +1709,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             {
                 od.Product.CategoryId,
                 Name = od.Product.Category.Name ?? string.Empty,
-                od.Order.CreatedAt,
-                od.Order.ReservedFor,
+                od.Order.CreatedAt, od.Order.PrepareAt,
                 W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
             .ToListAsync(cancellationToken);
@@ -1723,7 +1719,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             .Select(g => new SalesCategoryWeightEvolutionSeries(
                 g.Key.CategoryId,
                 g.Key.Name,
-                g.GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaCalendarDate(x.CreatedAt, x.ReservedFor))
+                g.GroupBy(x => ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(x.CreatedAt, x.PrepareAt))
                     .Select(gg => new SalesCategoryWeightEvolutionPoint(
                         ColombiaTimeHelper.ColombiaCalendarDayStartUtc(gg.Key),
                         gg.Sum(x => x.W)))
@@ -1742,8 +1738,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             {
                 od.Product.CategoryId,
                 Name = od.Product.Category.Name ?? string.Empty,
-                od.Order.CreatedAt,
-                od.Order.ReservedFor,
+                od.Order.CreatedAt, od.Order.PrepareAt,
                 W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
             .ToListAsync(cancellationToken);
@@ -1753,7 +1748,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             .Select(g => new SalesCategoryWeightEvolutionSeries(
                 g.Key.CategoryId,
                 g.Key.Name,
-                g.GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaYearMonth(x.CreatedAt, x.ReservedFor))
+                g.GroupBy(x => ColombiaTimeHelper.OrderSalesEffectiveColombiaYearMonth(x.CreatedAt, x.PrepareAt))
                     .Select(gg => new SalesCategoryWeightEvolutionPoint(
                         ColombiaTimeHelper.ColombiaCalendarDayStartUtc(new DateTime(gg.Key.Year, gg.Key.Month, 1)),
                         gg.Sum(x => x.W)))
@@ -1772,8 +1767,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             {
                 od.Product.CategoryId,
                 Name = od.Product.Category.Name ?? string.Empty,
-                od.Order.CreatedAt,
-                od.Order.ReservedFor,
+                od.Order.CreatedAt, od.Order.PrepareAt,
                 W = (long)od.Quantity * od.Product.WeightGrams!.Value,
             })
             .ToListAsync(cancellationToken);
@@ -1783,7 +1777,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             .Select(g => new SalesCategoryWeightEvolutionSeries(
                 g.Key.CategoryId,
                 g.Key.Name,
-                g.GroupBy(x => ColombiaTimeHelper.OrderOperationalColombiaYear(x.CreatedAt, x.ReservedFor))
+                g.GroupBy(x => ColombiaTimeHelper.OrderSalesEffectiveColombiaYear(x.CreatedAt, x.PrepareAt))
                     .Select(gg => new SalesCategoryWeightEvolutionPoint(
                         ColombiaTimeHelper.ColombiaCalendarDayStartUtc(new DateTime(gg.Key, 1, 1)),
                         gg.Sum(x => x.W)))
@@ -1816,7 +1810,8 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
     }
 
     /// <summary>
-    /// Incluye pedidos creados en el rango UTC o con <see cref="Order.ReservedFor"/> en el mismo rango (día operativo Colombia → UTC en el handler).
+    /// Incluye pedidos creados en el rango UTC o con <see cref="Order.ReservedFor"/> en el mismo rango (día operativo histórico).
+    /// Mantener para listados/auditoría que conservan semántica legacy.
     /// </summary>
     private static IQueryable<Order> WhereOperationalDateRangeUtc(
         IQueryable<Order> orders,
@@ -1841,4 +1836,28 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             (od.Order.CreatedAt >= from && od.Order.CreatedAt <= to)
             || (od.Order.ReservedFor.HasValue && od.Order.ReservedFor.Value >= from && od.Order.ReservedFor.Value <= to));
     }
+
+    private static DateTime GetSalesEffectiveDate(DateTime createdAtUtc, DateTime? prepareAtUtc)
+        => prepareAtUtc ?? createdAtUtc;
+
+    private static IQueryable<Order> ApplyOrderSalesDateRange(
+        IQueryable<Order> orders,
+        DateTime fromUtc,
+        DateTime toUtc)
+    {
+        var from = fromUtc.Kind == DateTimeKind.Utc ? fromUtc : DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        var to = toUtc.Kind == DateTimeKind.Utc ? toUtc : DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+        return orders.Where(o => (o.PrepareAt ?? o.CreatedAt) >= from && (o.PrepareAt ?? o.CreatedAt) <= to);
+    }
+
+    private static IQueryable<OrderDetail> ApplyOrderDetailSalesDateRange(
+        IQueryable<OrderDetail> query,
+        DateTime fromUtc,
+        DateTime toUtc)
+    {
+        var from = fromUtc.Kind == DateTimeKind.Utc ? fromUtc : DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        var to = toUtc.Kind == DateTimeKind.Utc ? toUtc : DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+        return query.Where(od => (od.Order.PrepareAt ?? od.Order.CreatedAt) >= from && (od.Order.PrepareAt ?? od.Order.CreatedAt) <= to);
+    }
 }
+
