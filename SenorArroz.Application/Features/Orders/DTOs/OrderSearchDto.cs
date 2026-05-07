@@ -34,7 +34,7 @@ public class OrderSearchDto
     public decimal? MinAmount { get; set; }
     public decimal? MaxAmount { get; set; }
     public int Page { get; set; } = 1;
-    public int PageSize { get; set; } = 10;
+    public int PageSize { get; set; } = 150;
     public string SortBy { get; set; } = "CreatedAt";
     public string SortOrder { get; set; } = "desc";
     /// <summary>Si true, excluye reservas cuyo reservedFor es posterior a hoy (fin del día)</summary>

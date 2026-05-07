@@ -1056,6 +1056,9 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             "type" => isDescending ? query.OrderByDescending(o => o.Type) : query.OrderBy(o => o.Type),
             "total" => isDescending ? query.OrderByDescending(o => o.Total) : query.OrderBy(o => o.Total),
             "subtotal" => isDescending ? query.OrderByDescending(o => o.Subtotal) : query.OrderBy(o => o.Subtotal),
+            "prepareat" => isDescending
+                ? query.OrderByDescending(o => o.PrepareAt.HasValue).ThenByDescending(o => o.PrepareAt)
+                : query.OrderBy(o => o.PrepareAt == null).ThenBy(o => o.PrepareAt),
             "reservedfor" => isDescending ? query.OrderByDescending(o => o.ReservedFor) : query.OrderBy(o => o.ReservedFor),
             _ => isDescending ? query.OrderByDescending(o => o.CreatedAt) : query.OrderBy(o => o.CreatedAt)
         };
