@@ -49,9 +49,10 @@ public class GetDashboardMainHandler : IRequestHandler<GetDashboardMainQuery, Da
 
             var d0 = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(kFrom);
             var d1 = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(kTo);
-            var n = Math.Max(1, (int)(d1 - d0).TotalDays + 1);
-            var prevD1 = d0.AddDays(-1);
-            var prevD0 = prevD1.AddDays(-(n - 1));
+            // Comparación semanal: mismo rango calendario desplazado exactamente 7 días atrás.
+            // Ejemplo: 2026-05-07 vs 2026-04-30 (no vs día anterior).
+            var prevD0 = d0.AddDays(-7);
+            var prevD1 = d1.AddDays(-7);
             var (prevFrom, prevTo) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(prevD0, prevD1);
 
             kpiDisplay = await _orderRepository.GetPrincipalKpiSnapshotAsync(branchFilter, kFrom, kTo, cancellationToken);
