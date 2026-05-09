@@ -45,6 +45,9 @@ public class UpdateAddressHandler : IRequestHandler<UpdateAddressCommand, Custom
 
         // Update address
         address.NeighborhoodId = request.NeighborhoodId;
+        // Evita que EF re-aplique el FK previo desde navegaciones cargadas (entidad AsNoTracking con Include).
+        address.Neighborhood = null!;
+        address.Customer = null!;
         address.AddressText = request.Address.Trim();
         address.AdditionalInfo = request.AdditionalInfo?.Trim();
         address.Latitude = request.Latitude;
