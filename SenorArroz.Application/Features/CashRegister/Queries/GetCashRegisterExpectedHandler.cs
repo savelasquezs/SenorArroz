@@ -90,6 +90,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             {
                 o.Id,
                 o.Total,
+                ReservationDepositsTotal = o.Deposits.Sum(d => d.Amount),
                 o.PrepareAt,
                 o.CreatedAt,
                 o.Status,
@@ -100,31 +101,15 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         foreach (var row in deliveredCandidates)
         {
             if (CashRegisterPeriodHelper.IsDeliveredSaleInCashRegisterPeriod(row.Status, row.PrepareAt, row.CreatedAt, since, now))
-                salesInPeriodTotal += (decimal)row.Total;
+                salesInPeriodTotal += Math.Max(0m, (decimal)row.Total - row.ReservationDepositsTotal);
         }
 
-        var reservationDepositsInPeriod = await _context.ReservationDeposits
-            .AsNoTracking()
+        var reservationDepositsInPeriodTotal = await _context.ReservationDeposits
             .Where(d => d.BranchId == branchId && d.ReceivedAt > since && d.ReceivedAt <= now)
-            .Select(d => new
-            {
-                d.Amount,
-                PrepareAt = d.Order.PrepareAt,
-                CreatedAt = d.Order.CreatedAt,
-            })
-            .ToListAsync(cancellationToken);
+            .SumAsync(d => d.Amount, cancellationToken);
 
-        var reservationDepositsOrderDeliveryNotColombiaTodayTotal = reservationDepositsInPeriod
-            .Where(d =>
-            {
-                var deliveryInstant = d.PrepareAt ?? d.CreatedAt;
-                var utc = ColombiaTimeHelper.EnsureUtc(deliveryInstant);
-                return !ColombiaTimeHelper.IsColombiaTodayFromUtc(utc, _clock.UtcNow);
-            })
-            .Sum(d => d.Amount);
-
-        // Total esperado = apertura global (C0+B0+L0+apps snapshot) + ventas − gastos + abonos de reserva del período cuyo pedido tiene fecha de entrega/programación (PrepareAt o CreatedAt) distinta a hoy (CO). L1 activo no se suma aparte en el esperado.
-        var expectedGlobalTotal = openingGlobalTotal + salesInPeriodTotal - expensesInPeriodTotal + reservationDepositsOrderDeliveryNotColombiaTodayTotal;
+        // Los abonos de reserva se cuentan cuando se reciben. La venta entregada entra neta de esos abonos.
+        var expectedGlobalTotal = openingGlobalTotal + salesInPeriodTotal - expensesInPeriodTotal + reservationDepositsInPeriodTotal;
 
         var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 
@@ -153,13 +138,10 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 openingBalance = prevRecon?.ActualBalance ?? 0;
             }
 
-            var promotedReservationDepositIds = _context.BankPayments
-                .Where(bp => bp.BankId == bank.Id && bp.SourceReservationDepositId.HasValue)
-                .Select(bp => bp.SourceReservationDepositId!.Value);
-
             var bankPaymentsIn = await _context.BankPayments
                 .Where(bp => bp.BankId == bank.Id
                     && bp.Order.BranchId == branchId
+                    && !bp.SourceReservationDepositId.HasValue
                     && bp.CreatedAt > since && bp.CreatedAt <= now)
                 .SumAsync(bp => bp.Amount, cancellationToken);
 
@@ -179,16 +161,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
 
             var bankDepositPaymentsIn = await _context.ReservationDeposits
                 .Where(d => d.BankId == bank.Id
-                    && !promotedReservationDepositIds.Contains(d.Id)
                     && d.ReceivedAt > since && d.ReceivedAt <= now)
-                .SumAsync(d => d.Amount, cancellationToken);
-
-            var bankDepositsAlreadyCounted = await _context.ReservationDeposits
-                .Where(d => d.BankId == bank.Id
-                    && !promotedReservationDepositIds.Contains(d.Id)
-                    && d.ReceivedAt <= since
-                    && d.Order.Status == OrderStatus.Delivered
-                    && d.Order.UpdatedAt > since && d.Order.UpdatedAt <= now)
                 .SumAsync(d => d.Amount, cancellationToken);
 
             var deliverymanBankIn = await _context.DeliverymanAdvances
@@ -198,7 +171,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                     && a.CreatedAt > since && a.CreatedAt <= now)
                 .SumAsync(a => a.Amount, cancellationToken);
 
-            var expectedBalance = openingBalance + bankPaymentsIn + bankDepositPaymentsIn - bankDepositsAlreadyCounted - expensePaymentsOut + incomingTransfers - outgoingTransfers + deliverymanBankIn;
+            var expectedBalance = openingBalance + bankPaymentsIn + bankDepositPaymentsIn - expensePaymentsOut + incomingTransfers - outgoingTransfers + deliverymanBankIn;
 
             if (bank.Type == BankType.CashVault)
             {
@@ -236,7 +209,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             SalesInPeriodTotal = salesInPeriodTotal,
             ExpensesInPeriodTotal = expensesInPeriodTotal,
             ExpectedGlobalTotal = expectedGlobalTotal,
-            ReservationDepositsAddedToGlobalTotal = reservationDepositsOrderDeliveryNotColombiaTodayTotal,
+            ReservationDepositsAddedToGlobalTotal = reservationDepositsInPeriodTotal,
             InformalLoansActiveTotal = informalLoansActiveTotal,
             UndeliveredOrdersCount = undeliveredOrdersCount,
             AsOf = now,

@@ -81,10 +81,16 @@ public class UpdateOrderHandlerSchedulePreserveTests
         var clock = new FixedClock(utcNow);
         var bankPaymentRepo = bankPaymentRepoMock ?? new Mock<IBankPaymentRepository>();
         var reservationDepositRepo = reservationDepositRepoMock ?? new Mock<IReservationDepositRepository>();
-        bankPaymentRepo.Setup(r => r.GetByOrderIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<BankPayment>());
-        reservationDepositRepo.Setup(r => r.GetByOrderIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<ReservationDeposit>());
+        if (bankPaymentRepoMock is null)
+        {
+            bankPaymentRepo.Setup(r => r.GetByOrderIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(Array.Empty<BankPayment>());
+        }
+        if (reservationDepositRepoMock is null)
+        {
+            reservationDepositRepo.Setup(r => r.GetByOrderIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<ReservationDeposit>());
+        }
         return new UpdateOrderHandler(
             repo,
             addressRepo,

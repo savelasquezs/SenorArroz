@@ -17,7 +17,7 @@ public class CashRegisterExpectedDto
     public decimal OpeningUnsettledAppsTotal { get; set; }
 
     /// <summary>
-    /// Suma de totales de pedidos entregados cuyo instante contable (PrepareAt o CreatedAt) cae en el período.
+    /// Suma neta de pedidos entregados cuyo instante contable (PrepareAt o CreatedAt) cae en el período, descontando abonos de reserva ya registrados por ReceivedAt.
     /// </summary>
     public decimal SalesInPeriodTotal { get; set; }
 
@@ -30,7 +30,7 @@ public class CashRegisterExpectedDto
     public decimal ExpectedGlobalTotal { get; set; }
 
     /// <summary>
-    /// Abonos de reserva recibidos en el período (por <c>ReceivedAt</c>) cuya fecha de entrega/programación del pedido en calendario Colombia no es hoy (<c>PrepareAt</c> o <c>CreatedAt</c>); se suman al total esperado global.
+    /// Abonos de reserva recibidos en el período por <c>ReceivedAt</c>; se suman al total esperado global como movimiento real de dinero.
     /// </summary>
     public decimal ReservationDepositsAddedToGlobalTotal { get; set; }
 

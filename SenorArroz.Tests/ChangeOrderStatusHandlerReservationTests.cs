@@ -15,7 +15,7 @@ using SenorArroz.Shared.Constants;
 namespace SenorArroz.Tests;
 
 /// <summary>
-/// Regresión: reserva → in_preparation debe llamar a UpdateAsync con líneas cargadas (antes se borraban todas).
+/// Regresión: reserva → ready debe llamar a UpdateAsync con líneas cargadas (antes se borraban todas).
 /// </summary>
 public class ChangeOrderStatusHandlerReservationTests
 {
@@ -175,10 +175,12 @@ public class ChangeOrderStatusHandlerReservationTests
     }
 
     [Fact]
-    public async Task Reservation_to_in_preparation_uses_details_load_and_keeps_lines_for_onsite()
+    public async Task Reservation_to_ready_uses_details_load_and_keeps_lines_for_onsite()
     {
         const int orderId = 42;
         var (summary, detailed) = ReservationPair(orderId, addressId: null);
+        summary.Status = OrderStatus.InPreparation;
+        detailed.Status = OrderStatus.InPreparation;
         var mock = new Mock<IOrderRepository>(MockBehavior.Strict);
 
         mock.Setup(r => r.GetByIdAsync(orderId, It.IsAny<CancellationToken>())).ReturnsAsync(summary);
@@ -189,10 +191,10 @@ public class ChangeOrderStatusHandlerReservationTests
                 detailed.Type = o.Type;
                 return Task.FromResult(o);
             });
-        mock.Setup(r => r.ChangeStatusAsync(orderId, OrderStatus.InPreparation, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+        mock.Setup(r => r.ChangeStatusAsync(orderId, OrderStatus.Ready, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Returns(() =>
             {
-                detailed.Status = OrderStatus.InPreparation;
+                detailed.Status = OrderStatus.Ready;
                 return Task.FromResult(detailed);
             });
 
@@ -201,7 +203,7 @@ public class ChangeOrderStatusHandlerReservationTests
             new ChangeOrderStatusCommand
             {
                 Id = orderId,
-                StatusChange = new ChangeOrderStatusDto { Status = OrderStatus.InPreparation },
+                StatusChange = new ChangeOrderStatusDto { Status = OrderStatus.Ready },
             },
             CancellationToken.None);
 
@@ -212,10 +214,12 @@ public class ChangeOrderStatusHandlerReservationTests
     }
 
     [Fact]
-    public async Task Reservation_to_in_preparation_sets_delivery_when_address_present()
+    public async Task Reservation_to_ready_sets_delivery_when_address_present()
     {
         const int orderId = 43;
         var (summary, detailed) = ReservationPair(orderId, addressId: 100);
+        summary.Status = OrderStatus.InPreparation;
+        detailed.Status = OrderStatus.InPreparation;
         var mock = new Mock<IOrderRepository>(MockBehavior.Strict);
 
         mock.Setup(r => r.GetByIdAsync(orderId, It.IsAny<CancellationToken>())).ReturnsAsync(summary);
@@ -226,10 +230,10 @@ public class ChangeOrderStatusHandlerReservationTests
                 detailed.Type = o.Type;
                 return Task.FromResult(o);
             });
-        mock.Setup(r => r.ChangeStatusAsync(orderId, OrderStatus.InPreparation, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+        mock.Setup(r => r.ChangeStatusAsync(orderId, OrderStatus.Ready, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Returns(() =>
             {
-                detailed.Status = OrderStatus.InPreparation;
+                detailed.Status = OrderStatus.Ready;
                 return Task.FromResult(detailed);
             });
 
@@ -238,7 +242,7 @@ public class ChangeOrderStatusHandlerReservationTests
             new ChangeOrderStatusCommand
             {
                 Id = orderId,
-                StatusChange = new ChangeOrderStatusDto { Status = OrderStatus.InPreparation },
+                StatusChange = new ChangeOrderStatusDto { Status = OrderStatus.Ready },
             },
             CancellationToken.None);
 
