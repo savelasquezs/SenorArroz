@@ -110,7 +110,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         try
         {
             if (existingOrder.Type == OrderType.Reservation
-                && request.StatusChange.Status == OrderStatus.InPreparation)
+                && request.StatusChange.Status == OrderStatus.Ready)
             {
                 var orderForTypeUpdate = await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken)
                     ?? throw new BusinessException("Pedido no encontrado");
@@ -241,7 +241,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         }
 
         if (existingOrder.Type == OrderType.Reservation
-            && request.StatusChange.Status == OrderStatus.InPreparation)
+            && request.StatusChange.Status == OrderStatus.Ready)
         {
             var orderForTypeUpdate = await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken)
                 ?? throw new BusinessException("Pedido no encontrado");
