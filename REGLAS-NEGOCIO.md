@@ -374,7 +374,7 @@ public async Task<Order> CancelOrderAsync(int orderId, string reason)
 - ✅ Razón de cancelación obligatoria
 - ✅ Cancela automáticamente todos los pagos asociados
 - ✅ Si es una reserva, también elimina todos los abonos asociados
-- ✅ **Reserva programada** (tipo `Reservation` con `PrepareAt` y `ReservedFor`): Admin/Superadmin solo pueden cancelar si **hoy (Colombia)** coincide con el día de **`CreatedAt`**, de **`PrepareAt`** o de **`ReservedFor`** (`CancelOrderHandler`). Resto de pedidos: sin esta ventana adicional en el mismo handler.
+- ✅ Admin/Superadmin pueden cancelar pedidos (incluyendo reservas) en cualquier momento, salvo que ya estén cancelados.
 
 ---
 

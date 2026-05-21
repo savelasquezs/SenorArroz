@@ -14,7 +14,7 @@ using SenorArroz.Shared.Constants;
 
 namespace SenorArroz.Tests;
 
-/// <summary>Cancelación de reserva programada: ventana temporal alineada a creación / prepareAt / reservedFor en calendario Colombia.</summary>
+/// <summary>Cancelación de reservas: Admin puede cancelar en cualquier momento mientras no esté cancelado.</summary>
 public class CancelOrderHandlerTests
 {
     private sealed class TestCurrentUser : ICurrentUser
@@ -145,7 +145,7 @@ public class CancelOrderHandlerTests
         };
 
     [Fact]
-    public async Task Scheduled_reservation_allows_cancel_on_prepare_day_when_created_earlier()
+    public async Task Scheduled_reservation_allows_cancel_even_when_dates_do_not_match_today()
     {
         var utcNow = new DateTime(2026, 4, 15, 15, 0, 0, DateTimeKind.Utc);
         var created = new DateTime(2026, 4, 10, 12, 0, 0, DateTimeKind.Utc);
@@ -178,7 +178,7 @@ public class CancelOrderHandlerTests
     }
 
     [Fact]
-    public async Task Scheduled_reservation_blocks_cancel_when_none_of_dates_is_colombia_today()
+    public async Task Scheduled_reservation_allows_cancel_when_none_of_dates_matches_today()
     {
         var utcNow = new DateTime(2026, 4, 15, 15, 0, 0, DateTimeKind.Utc);
         var created = new DateTime(2026, 4, 10, 12, 0, 0, DateTimeKind.Utc);
@@ -188,19 +188,25 @@ public class CancelOrderHandlerTests
 
         var orderRepo = new Mock<IOrderRepository>();
         orderRepo.Setup(r => r.GetByIdAsync(7, It.IsAny<CancellationToken>())).ReturnsAsync(order);
+        orderRepo
+            .Setup(r => r.CancelOrderAsync(7, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                order.Status = OrderStatus.Cancelled;
+                order.CancelledReason = "Motivo";
+                return order;
+            });
 
         var handler = BuildHandler(orderRepo.Object, new FakeClock(utcNow));
 
-        var ex = await Assert.ThrowsAsync<BusinessException>(() =>
-            handler.Handle(
-                new CancelOrderCommand { Id = 7, Cancellation = new CancelOrderDto { Reason = "x" } },
-                CancellationToken.None));
+        await handler.Handle(
+            new CancelOrderCommand
+            {
+                Id = 7,
+                Cancellation = new CancelOrderDto { Reason = "Cliente reprogramó" },
+            },
+            CancellationToken.None);
 
-        Assert.Contains("prepareAt", ex.Message);
-        Assert.Contains("reservedFor", ex.Message);
-
-        orderRepo.Verify(
-            r => r.CancelOrderAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+        orderRepo.Verify(r => r.CancelOrderAsync(7, It.Is<string>(s => !string.IsNullOrWhiteSpace(s)), It.IsAny<CancellationToken>()), Times.Once);
     }
 }

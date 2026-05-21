@@ -262,8 +262,7 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// Cancela un pedido (cualquier día salvo reservas con prepare_at y reserved_for: esas solo el día UTC de creación;
-    /// requiere razón; elimina pagos asociados no contabilizados vía repositorio).
+    /// Cancela un pedido (Admin/Superadmin), requiere razón y elimina pagos asociados vía repositorio.
     /// </summary>
     [HttpPut("{id}/cancel")]
     [Authorize(Roles = "Admin,Superadmin")]

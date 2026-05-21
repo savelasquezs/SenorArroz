@@ -65,22 +65,6 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         if (existingOrder.Status == OrderStatus.Cancelled)
             throw new BusinessException("El pedido ya está cancelado");
 
-        // Reserva con horario: mismo día calendario en Colombia que creación, prepareAt o entrega (reservedFor).
-        if (IsScheduledReservation(existingOrder))
-        {
-            var now = _clock.UtcNow;
-            var canCancelThisColombiaDay =
-                ColombiaTimeHelper.IsColombiaTodayFromUtc(existingOrder.CreatedAt, now)
-                || (existingOrder.PrepareAt.HasValue
-                    && ColombiaTimeHelper.IsColombiaTodayFromUtc(existingOrder.PrepareAt.Value, now))
-                || (existingOrder.ReservedFor.HasValue
-                    && ColombiaTimeHelper.IsColombiaTodayFromUtc(existingOrder.ReservedFor.Value, now));
-
-            if (!canCancelThisColombiaDay)
-                throw new BusinessException(
-                    "Las reservas con horario solo se pueden cancelar si hoy (Colombia) coincide con la fecha de registro del pedido, con la de inicio en cocina (prepareAt) o con la de entrega (reservedFor).");
-        }
-
         var routeIdSnapshot = existingOrder.DeliveryRouteId;
         var previousStatus = existingOrder.Status;
 
@@ -110,15 +94,6 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
 
         return _mapper.Map<OrderDto>(order);
     }
-
-    /// <summary>
-    /// Reserva con ambas fechas definidas (cocina y entrega); la ventana de cancelación es el día Colombia de la creación,
-    /// de <c>PrepareAt</c> o de <c>ReservedFor</c>.
-    /// </summary>
-    private static bool IsScheduledReservation(Order order) =>
-        order.Type == OrderType.Reservation
-        && order.PrepareAt.HasValue
-        && order.ReservedFor.HasValue;
 
     private async Task CancelAssociatedPaymentsAsync(int orderId, CancellationToken cancellationToken = default)
     {
