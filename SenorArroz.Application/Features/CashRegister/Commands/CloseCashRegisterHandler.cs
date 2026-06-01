@@ -59,7 +59,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
 
         foreach (var recon in dto.BankReconciliations)
         {
-            var diff = recon.ActualBalance - recon.ExpectedBalance;
+            var diff = CashRegisterMoney.DifferenceInWholePesos(recon.ActualBalance, recon.ExpectedBalance);
             if (diff != 0)
                 throw new InvalidOperationException(
                     $"El banco ID {recon.BankId} tiene una diferencia de {diff}. Todos los bancos deben cuadrar a 0.");
@@ -76,10 +76,10 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         var countedGlobalTotal = dto.ClosingCash + dto.BankReconciliations.Sum(r => r.ActualBalance) + informalActiveSum + unsettledAppsTotal;
 
         var expectedSnapshot = await _mediator.Send(new GetCashRegisterExpectedQuery { BranchId = branchId }, cancellationToken);
-        if (countedGlobalTotal != expectedSnapshot.ExpectedGlobalTotal)
+        if (!CashRegisterMoney.EqualInWholePesos(countedGlobalTotal, expectedSnapshot.ExpectedGlobalTotal))
         {
             throw new InvalidOperationException(
-                $"El total global contado ({countedGlobalTotal:N0}) no coincide con el esperado ({expectedSnapshot.ExpectedGlobalTotal:N0}). " +
+                $"El total global contado ({CashRegisterMoney.ToWholePeso(countedGlobalTotal):N0}) no coincide con el esperado ({CashRegisterMoney.ToWholePeso(expectedSnapshot.ExpectedGlobalTotal):N0}). " +
                 "Revisa efectivo, saldos reales por banco, préstamos informales activos y pendiente por liquidar en apps.");
         }
 
@@ -101,7 +101,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 ExpectedBalance = r.ExpectedBalance,
                 ActualBalance = r.ActualBalance,
                 Adjustments = r.Adjustments,
-                Difference = r.ActualBalance - r.ExpectedBalance
+                Difference = CashRegisterMoney.DifferenceInWholePesos(r.ActualBalance, r.ExpectedBalance)
             }).ToList(),
             InformalLoans = activeLoans
                 .Select(l => new CashClosureInformalLoan { Concept = l.Concept, Amount = l.Amount })
