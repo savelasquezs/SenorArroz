@@ -674,7 +674,7 @@ public class OrderRepository : IOrderRepository
                                (newStatus == OrderStatus.Delivered && order.Type == OrderType.Onsite),
             OrderStatus.OnTheWay => newStatus == OrderStatus.Delivered || newStatus == OrderStatus.Ready,
             OrderStatus.Delivered => false,
-            OrderStatus.Cancelled => false,
+            OrderStatus.Cancelled => newStatus == OrderStatus.Ready,
             _ => false
         };
     }
@@ -703,11 +703,15 @@ public class OrderRepository : IOrderRepository
         if (!await CanChangeStatusAsync(orderId, newStatus, cancellationToken))
             throw new BusinessException($"No se puede cambiar el estado de {order.Status} a {newStatus}.");
 
+        var wasCancelled = order.Status == OrderStatus.Cancelled;
+
         order.Status = newStatus;
         order.AddStatusTime(newStatus, _clock.UtcNow);
 
         if (newStatus == OrderStatus.Cancelled && !string.IsNullOrEmpty(reason))
             order.CancelledReason = reason;
+        else if (wasCancelled && newStatus != OrderStatus.Cancelled)
+            order.CancelledReason = null;
 
         await _context.SaveChangesAsync(cancellationToken);
 

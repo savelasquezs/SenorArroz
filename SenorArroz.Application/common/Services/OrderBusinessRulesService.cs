@@ -65,11 +65,11 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
         if (order.Status == newStatus)
             return true;
 
+        if (order.Status == OrderStatus.Cancelled)
+            return Roles.IsAdminOrSuperadmin(userRole) && newStatus == OrderStatus.Ready;
+
         if (Roles.IsAdminOrSuperadmin(userRole))
             return true;
-
-        if (order.Status == OrderStatus.Cancelled)
-            return false;
 
         if (newStatus == OrderStatus.Cancelled)
             return false;
