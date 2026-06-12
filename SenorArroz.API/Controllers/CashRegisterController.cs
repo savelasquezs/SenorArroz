@@ -108,6 +108,31 @@ public class CashRegisterController : ControllerBase
     /// <summary>
     /// Da de baja lógica a un préstamo informal.
     /// </summary>
+    /// <summary>
+    /// Actualiza concepto y monto de un prestamo informal.
+    /// </summary>
+    [HttpPut("informal-loans/{id:int}")]
+    public async Task<ActionResult<BranchInformalLoanDto>> UpdateInformalLoan(
+        int id,
+        [FromBody] UpdateBranchInformalLoanDto dto,
+        [FromQuery] int? branchId = null)
+    {
+        try
+        {
+            var result = await _mediator.Send(new UpdateBranchInformalLoanCommand
+            {
+                Id = id,
+                BranchId = branchId,
+                Dto = dto
+            });
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     [HttpPost("informal-loans/{id:int}/deactivate")]
     public async Task<ActionResult<BranchInformalLoanDto>> DeactivateInformalLoan(
         int id,

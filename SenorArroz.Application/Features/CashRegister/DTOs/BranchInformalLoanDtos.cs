@@ -9,6 +9,7 @@ public class BranchInformalLoanDto
     public string Concept { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
     public int CreatedById { get; set; }
     public string CreatedByName { get; set; } = string.Empty;
     public DateTime? DeactivatedAt { get; set; }
@@ -66,4 +67,14 @@ public class DeactivateBranchInformalLoanDto
 {
     [MaxLength(500)]
     public string? Notes { get; set; }
+}
+
+public class UpdateBranchInformalLoanDto
+{
+    [Required]
+    [MaxLength(500)]
+    public string Concept { get; set; } = string.Empty;
+
+    [Required]
+    public decimal Amount { get; set; }
 }

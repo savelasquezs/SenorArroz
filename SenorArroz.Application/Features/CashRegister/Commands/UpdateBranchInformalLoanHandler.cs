@@ -5,37 +5,33 @@ using SenorArroz.Application.Features.CashRegister.DTOs;
 
 namespace SenorArroz.Application.Features.CashRegister.Commands;
 
-public class DeactivateBranchInformalLoanHandler : IRequestHandler<DeactivateBranchInformalLoanCommand, BranchInformalLoanDto>
+public class UpdateBranchInformalLoanHandler : IRequestHandler<UpdateBranchInformalLoanCommand, BranchInformalLoanDto>
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUser _currentUser;
-    private readonly IClock _clock;
 
-    public DeactivateBranchInformalLoanHandler(IApplicationDbContext context, ICurrentUser currentUser, IClock clock)
+    public UpdateBranchInformalLoanHandler(IApplicationDbContext context, ICurrentUser currentUser)
     {
         _context = context;
         _currentUser = currentUser;
-        _clock = clock;
     }
 
-    public async Task<BranchInformalLoanDto> Handle(DeactivateBranchInformalLoanCommand request, CancellationToken cancellationToken)
+    public async Task<BranchInformalLoanDto> Handle(UpdateBranchInformalLoanCommand request, CancellationToken cancellationToken)
     {
         int branchId = request.BranchId ?? _currentUser.BranchId;
+        var concept = request.Dto.Concept?.Trim();
+
+        if (string.IsNullOrWhiteSpace(concept))
+            throw new InvalidOperationException("El concepto es obligatorio.");
 
         var entity = await _context.BranchInformalLoans
             .FirstOrDefaultAsync(l => l.Id == request.Id && l.BranchId == branchId, cancellationToken);
 
         if (entity is null)
-            throw new InvalidOperationException("Préstamo no encontrado.");
+            throw new InvalidOperationException("Prestamo no encontrado.");
 
-        if (entity.DeactivatedAt != null)
-            throw new InvalidOperationException("Este préstamo ya fue dado de baja.");
-
-        entity.DeactivatedAt = _clock.UtcNow;
-        entity.DeactivatedById = _currentUser.Id;
-        entity.DeactivationNotes = string.IsNullOrWhiteSpace(request.Dto.Notes)
-            ? null
-            : request.Dto.Notes.Trim();
+        entity.Concept = concept;
+        entity.Amount = request.Dto.Amount;
 
         await _context.SaveChangesAsync(cancellationToken);
 

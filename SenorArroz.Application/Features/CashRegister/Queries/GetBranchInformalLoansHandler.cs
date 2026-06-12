@@ -41,6 +41,7 @@ public class GetBranchInformalLoansHandler : IRequestHandler<GetBranchInformalLo
                 Concept = l.Concept,
                 Amount = l.Amount,
                 CreatedAt = l.CreatedAt,
+                UpdatedAt = l.UpdatedAt,
                 CreatedById = l.CreatedById,
                 CreatedByName = l.CreatedBy.Name,
                 DeactivatedAt = l.DeactivatedAt,
