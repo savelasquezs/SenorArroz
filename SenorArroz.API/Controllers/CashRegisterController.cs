@@ -106,9 +106,6 @@ public class CashRegisterController : ControllerBase
     }
 
     /// <summary>
-    /// Da de baja lógica a un préstamo informal.
-    /// </summary>
-    /// <summary>
     /// Actualiza concepto y monto de un prestamo informal.
     /// </summary>
     [HttpPut("informal-loans/{id:int}")]
@@ -133,6 +130,9 @@ public class CashRegisterController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Da de baja logica a un prestamo informal.
+    /// </summary>
     [HttpPost("informal-loans/{id:int}/deactivate")]
     public async Task<ActionResult<BranchInformalLoanDto>> DeactivateInformalLoan(
         int id,
