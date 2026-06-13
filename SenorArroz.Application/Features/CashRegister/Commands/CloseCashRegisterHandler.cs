@@ -57,6 +57,14 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 $"No se puede cerrar caja: hay {undelivered} pedido(s) sin entregar. Entrega o cancela esos pedidos antes de cuadrar.");
         }
 
+        var expectedSnapshot = await _mediator.Send(new GetCashRegisterExpectedQuery { BranchId = branchId }, cancellationToken);
+        var allowedBankIds = expectedSnapshot.Banks.Select(b => b.BankId).ToHashSet();
+        var unexpectedBank = dto.BankReconciliations.FirstOrDefault(r => !allowedBankIds.Contains(r.BankId));
+        if (unexpectedBank != null)
+        {
+            throw new InvalidOperationException($"El banco ID {unexpectedBank.BankId} no está disponible para este cuadre.");
+        }
+
         foreach (var recon in dto.BankReconciliations)
         {
             var diff = CashRegisterMoney.DifferenceInWholePesos(recon.ActualBalance, recon.ExpectedBalance);
@@ -75,7 +83,6 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
 
         var countedGlobalTotal = dto.ClosingCash + dto.BankReconciliations.Sum(r => r.ActualBalance) + informalActiveSum + unsettledAppsTotal;
 
-        var expectedSnapshot = await _mediator.Send(new GetCashRegisterExpectedQuery { BranchId = branchId }, cancellationToken);
         if (!CashRegisterMoney.EqualInWholePesos(countedGlobalTotal, expectedSnapshot.ExpectedGlobalTotal))
         {
             throw new InvalidOperationException(
@@ -85,6 +92,17 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
 
         var lastClosure = await _closureRepository.GetLastByBranchAsync(branchId, cancellationToken);
         decimal openingCash = lastClosure?.ClosingCash ?? 0;
+        var submittedBankIds = dto.BankReconciliations.Select(r => r.BankId).ToHashSet();
+        var carriedHiddenBankReconciliations = expectedSnapshot.HiddenBanksForClosureCarry
+            .Where(b => !submittedBankIds.Contains(b.BankId))
+            .Select(b => new CashClosureBankReconciliation
+            {
+                BankId = b.BankId,
+                ExpectedBalance = b.ExpectedBalance,
+                ActualBalance = b.ExpectedBalance,
+                Adjustments = "[]",
+                Difference = 0
+            });
 
         var closure = new CashRegisterClosure
         {
@@ -102,7 +120,9 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 ActualBalance = r.ActualBalance,
                 Adjustments = r.Adjustments,
                 Difference = CashRegisterMoney.DifferenceInWholePesos(r.ActualBalance, r.ExpectedBalance)
-            }).ToList(),
+            })
+                .Concat(carriedHiddenBankReconciliations)
+                .ToList(),
             InformalLoans = activeLoans
                 .Select(l => new CashClosureInformalLoan { Concept = l.Concept, Amount = l.Amount })
                 .ToList()

@@ -1,4 +1,5 @@
 using SenorArroz.Domain.Enums;
+using System.Text.Json.Serialization;
 
 namespace SenorArroz.Application.Features.CashRegister.DTOs;
 
@@ -45,6 +46,9 @@ public class CashRegisterExpectedDto
     public DateTime AsOf { get; set; }
     public DateTime? LastClosureAt { get; set; }
     public List<BankExpectedBalanceDto> Banks { get; set; } = new();
+
+    [JsonIgnore]
+    public List<BankExpectedBalanceDto> HiddenBanksForClosureCarry { get; set; } = new();
 
     /// <summary>Pagos vía app no liquidados ahora (pedidos entregados), desglosado por app.</summary>
     public List<UnsettledAppLineDto> UnsettledAppLines { get; set; } = new();

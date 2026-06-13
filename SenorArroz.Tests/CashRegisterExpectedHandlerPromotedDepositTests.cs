@@ -382,4 +382,75 @@ public class CashRegisterExpectedHandlerPromotedDepositTests
         Assert.Equal(10000m, result.ReservationDepositsAddedToGlobalTotal);
         Assert.Equal(10000m, result.ExpectedGlobalTotal);
     }
+
+    [Fact]
+    public async Task Cashier_expected_global_excludes_cash_vault_balance_from_last_closure()
+    {
+        var utcNow = new DateTime(2026, 6, 13, 15, 0, 0, DateTimeKind.Utc);
+        using var db = CreateCtx(nameof(Cashier_expected_global_excludes_cash_vault_balance_from_last_closure));
+        var (branch, normalBank, _) = SeedBase(db, utcNow);
+
+        var cashVaultBank = new Bank
+        {
+            Id = 2,
+            BranchId = 1,
+            Name = "Caja mayor",
+            Type = BankType.CashVault,
+            Active = true,
+            CreatedAt = utcNow,
+            UpdatedAt = utcNow,
+            Branch = branch,
+        };
+
+        db.Banks.Add(cashVaultBank);
+        await db.SaveChangesAsync();
+
+        var lastClosure = new CashRegisterClosure
+        {
+            Id = 1,
+            BranchId = 1,
+            ClosedAt = utcNow.AddHours(-2),
+            ClosingCash = 0,
+            BankReconciliations =
+            {
+                new CashClosureBankReconciliation
+                {
+                    BankId = normalBank.Id,
+                    ExpectedBalance = 0,
+                    ActualBalance = 0,
+                },
+                new CashClosureBankReconciliation
+                {
+                    BankId = cashVaultBank.Id,
+                    ExpectedBalance = 10_000_000m,
+                    ActualBalance = 10_000_000m,
+                },
+            },
+        };
+
+        var closureRepo = new Mock<ICashRegisterClosureRepository>();
+        closureRepo.Setup(r => r.GetLastByBranchAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(lastClosure);
+
+        var bankRepo = new Mock<IBankRepository>();
+        bankRepo.Setup(r => r.GetByBranchIdAsync(1, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { normalBank, cashVaultBank }.AsEnumerable());
+
+        var handler = new GetCashRegisterExpectedHandler(
+            closureRepo.Object,
+            bankRepo.Object,
+            db,
+            new TestCurrentUser(),
+            new FakeClock(utcNow));
+
+        var result = await handler.Handle(new GetCashRegisterExpectedQuery { BranchId = 1 }, CancellationToken.None);
+
+        var visibleBank = Assert.Single(result.Banks);
+        Assert.Equal(normalBank.Id, visibleBank.BankId);
+        Assert.Equal(0m, result.OpeningGlobalTotal);
+        Assert.Equal(0m, result.ExpectedGlobalTotal);
+
+        var carriedHiddenBank = Assert.Single(result.HiddenBanksForClosureCarry);
+        Assert.Equal(cashVaultBank.Id, carriedHiddenBank.BankId);
+        Assert.Equal(10_000_000m, carriedHiddenBank.ExpectedBalance);
+    }
 }

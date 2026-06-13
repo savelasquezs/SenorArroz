@@ -36,6 +36,12 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         int branchId = request.BranchId ?? _currentUser.BranchId;
 
         var lastClosure = await _closureRepository.GetLastByBranchAsync(branchId, cancellationToken);
+        bool canSeeHiddenBanks = Roles.IsAdminOrSuperadmin(_currentUser.Role);
+        var allBanks = (await _bankRepository.GetByBranchIdAsync(branchId, excludeHiddenBanks: false, cancellationToken)).ToList();
+        var hiddenBankIds = allBanks
+            .Where(b => b.Type == BankType.CashVault || b.Type == BankType.RealVault)
+            .Select(b => b.Id)
+            .ToHashSet();
 
         DateTime since;
         DateTime now;
@@ -54,10 +60,15 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         decimal openingCash = lastClosure?.ClosingCash ?? 0;
 
         decimal openingBanksActual = 0;
+        decimal openingHiddenBanksActual = 0;
         if (lastClosure != null)
         {
             foreach (var r in lastClosure.BankReconciliations)
+            {
                 openingBanksActual += r.ActualBalance;
+                if (hiddenBankIds.Contains(r.BankId))
+                    openingHiddenBanksActual += r.ActualBalance;
+            }
         }
 
         // Snapshot de préstamos en el último cierre; si no hay filas (cuadres previos a esta lógica), no sumar préstamo en apertura global.
@@ -125,11 +136,8 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                      && o.PrepareAt.Value.ToUniversalTime().AddHours(-5).Date != todayCol))
             .CountAsync(cancellationToken);
 
-        bool isAdmin = Roles.IsAdminOrSuperadmin(_currentUser.Role);
-        var banks = await _bankRepository.GetByBranchIdAsync(branchId, excludeHiddenBanks: !isAdmin, cancellationToken);
-
         var bankExpected = new List<BankExpectedBalanceDto>();
-        foreach (var bank in banks)
+        foreach (var bank in allBanks)
         {
             decimal openingBalance = 0;
             if (lastClosure != null)
@@ -198,23 +206,39 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             });
         }
 
+        var hiddenBankExpected = bankExpected
+            .Where(b => b.BankType == BankType.CashVault || b.BankType == BankType.RealVault)
+            .ToList();
+        var visibleBankExpected = canSeeHiddenBanks
+            ? bankExpected
+            : bankExpected
+                .Where(b => b.BankType != BankType.CashVault && b.BankType != BankType.RealVault)
+                .ToList();
+        var scopedOpeningGlobalTotal = canSeeHiddenBanks
+            ? openingGlobalTotal
+            : openingGlobalTotal - openingHiddenBanksActual;
+        var scopedExpectedGlobalTotal = canSeeHiddenBanks
+            ? expectedGlobalTotal
+            : expectedGlobalTotal - hiddenBankExpected.Sum(b => b.ExpectedBalance);
+
         var (unsettledAppLines, unsettledAppsTotal) =
             await CashRegisterUnsettledAppsHelper.LoadUnsettledForBranchAsync(_context, branchId, cancellationToken);
 
         return new CashRegisterExpectedDto
         {
             OpeningCash = openingCash,
-            OpeningGlobalTotal = openingGlobalTotal,
+            OpeningGlobalTotal = scopedOpeningGlobalTotal,
             OpeningUnsettledAppsTotal = openingUnsettledAppsTotal,
             SalesInPeriodTotal = salesInPeriodTotal,
             ExpensesInPeriodTotal = expensesInPeriodTotal,
-            ExpectedGlobalTotal = expectedGlobalTotal,
+            ExpectedGlobalTotal = scopedExpectedGlobalTotal,
             ReservationDepositsAddedToGlobalTotal = reservationDepositsInPeriodTotal,
             InformalLoansActiveTotal = informalLoansActiveTotal,
             UndeliveredOrdersCount = undeliveredOrdersCount,
             AsOf = now,
             LastClosureAt = lastClosure?.ClosedAt,
-            Banks = bankExpected,
+            Banks = visibleBankExpected,
+            HiddenBanksForClosureCarry = hiddenBankExpected,
             UnsettledAppLines = unsettledAppLines,
             UnsettledAppsTotal = unsettledAppsTotal
         };
