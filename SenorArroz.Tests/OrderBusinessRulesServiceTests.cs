@@ -75,6 +75,32 @@ public class OrderBusinessRulesServiceTests
         Assert.True(sut.CanModifyPayments(order, Roles.Superadmin));
     }
 
+    [Fact]
+    public void CanUpdateOrder_allows_superadmin_for_delivered_order_from_previous_colombia_day()
+    {
+        var utcNow = new DateTime(2026, 4, 15, 15, 0, 0, DateTimeKind.Utc);
+        var created = new DateTime(2026, 4, 10, 12, 0, 0, DateTimeKind.Utc);
+        var order = new Order { Status = OrderStatus.Delivered, CreatedAt = created };
+        var sut = new OrderBusinessRulesService(new FakeClock(utcNow));
+
+        Assert.True(sut.CanUpdateOrder(order, Roles.Superadmin));
+        Assert.False(sut.CanUpdateOrder(order, Roles.Admin));
+        Assert.False(sut.CanUpdateOrder(order, Roles.Cashier));
+    }
+
+    [Fact]
+    public void CanUpdateOrderProducts_allows_superadmin_for_delivered_order_from_previous_colombia_day()
+    {
+        var utcNow = new DateTime(2026, 4, 15, 15, 0, 0, DateTimeKind.Utc);
+        var created = new DateTime(2026, 4, 10, 12, 0, 0, DateTimeKind.Utc);
+        var order = new Order { Status = OrderStatus.Delivered, CreatedAt = created };
+        var sut = new OrderBusinessRulesService(new FakeClock(utcNow));
+
+        Assert.True(sut.CanUpdateOrderProducts(order, Roles.Superadmin));
+        Assert.False(sut.CanUpdateOrderProducts(order, Roles.Admin));
+        Assert.False(sut.CanUpdateOrderProducts(order, Roles.Cashier));
+    }
+
     [Theory]
     [InlineData(Roles.Admin)]
     [InlineData(Roles.Superadmin)]

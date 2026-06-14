@@ -21,10 +21,10 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
 
         if (order.Status == OrderStatus.Delivered)
         {
-            if (!Roles.IsAdminOrSuperadmin(userRole))
-                return false;
+            if (Roles.IsSuperadmin(userRole))
+                return true;
 
-            return IsSameDay(order.CreatedAt);
+            return Roles.IsAdmin(userRole) && IsSameDay(order.CreatedAt);
         }
 
         return Roles.IsSuperadminOrAdminOrCashier(userRole);
@@ -37,10 +37,10 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
 
         if (order.Status == OrderStatus.Delivered)
         {
-            if (!Roles.IsAdminOrSuperadmin(userRole))
-                return false;
+            if (Roles.IsSuperadmin(userRole))
+                return true;
 
-            return IsSameDay(order.CreatedAt);
+            return Roles.IsAdmin(userRole) && IsSameDay(order.CreatedAt);
         }
 
         return Roles.IsSuperadminOrAdminOrCashier(userRole);
