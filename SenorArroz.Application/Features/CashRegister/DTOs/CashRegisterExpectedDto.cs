@@ -26,7 +26,8 @@ public class CashRegisterExpectedDto
     public decimal ExpensesInPeriodTotal { get; set; }
 
     /// <summary>
-    /// <see cref="OpeningGlobalTotal"/> + ventas del período − gastos del período + <see cref="ReservationDepositsAddedToGlobalTotal"/>.
+    /// <see cref="OpeningGlobalTotal"/> + ventas del período − gastos del período
+    /// + <see cref="ReservationDepositsAddedToGlobalTotal"/> + <see cref="BankPaymentsAddedToGlobalTotal"/>.
     /// </summary>
     public decimal ExpectedGlobalTotal { get; set; }
 
@@ -34,6 +35,10 @@ public class CashRegisterExpectedDto
     /// Abonos de reserva recibidos en el período por <c>ReceivedAt</c>; se suman al total esperado global como movimiento real de dinero.
     /// </summary>
     public decimal ReservationDepositsAddedToGlobalTotal { get; set; }
+
+    /// <summary>
+    /// Transferencias recibidas después del último cuadre por <c>BankPayment.CreatedAt</c>, excluyendo abonos de reserva.
+    /// </summary>
     public decimal BankPaymentsAddedToGlobalTotal { get; set; }
 
     /// <summary>Suma de préstamos informales activos (referencia para el conteo al cerrar; no se suma de nuevo al esperado).</summary>

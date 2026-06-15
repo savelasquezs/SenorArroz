@@ -18,10 +18,10 @@ public class BankLedgerReservationDepositTests
     }
 
     [Fact]
-    public async Task Bank_ledger_counts_reservation_deposit_and_ignores_promoted_bank_payment_duplicate()
+    public async Task Bank_ledger_counts_reservation_deposit_and_ignores_promoted_bank_payment_duplicates()
     {
         var utcNow = new DateTime(2026, 6, 14, 15, 0, 0, DateTimeKind.Utc);
-        using var db = CreateCtx(nameof(Bank_ledger_counts_reservation_deposit_and_ignores_promoted_bank_payment_duplicate));
+        using var db = CreateCtx(nameof(Bank_ledger_counts_reservation_deposit_and_ignores_promoted_bank_payment_duplicates));
 
         var branch = new Branch
         {
@@ -113,6 +113,17 @@ public class BankLedgerReservationDepositTests
             Bank = bank,
             CreatedAt = utcNow.AddMinutes(-30),
             UpdatedAt = utcNow.AddMinutes(-30),
+        });
+        db.BankPayments.Add(new BankPayment
+        {
+            Id = 32,
+            OrderId = order.Id,
+            BankId = bank.Id,
+            Amount = 40000m,
+            Order = order,
+            Bank = bank,
+            CreatedAt = utcNow.AddMinutes(-20),
+            UpdatedAt = utcNow.AddMinutes(-20),
         });
         await db.SaveChangesAsync();
 

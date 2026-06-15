@@ -18,6 +18,18 @@ public class BankRepository : IBankRepository
         _context = context;
     }
 
+    private static IQueryable<BankPayment> StandaloneBankPayments(IQueryable<BankPayment> query)
+    {
+        return query.Where(bp =>
+            !bp.SourceReservationDepositId.HasValue
+            && !bp.Order.Deposits.Any(d =>
+                !d.IsEffective
+                && d.BankId == bp.BankId
+                && !d.AppId.HasValue
+                && d.Amount == bp.Amount
+                && d.ReceivedAt <= bp.CreatedAt));
+    }
+
     public async Task<PagedResult<Bank>> GetPagedAsync(
         int? branchId = null,
         string? name = null,
@@ -150,8 +162,8 @@ public class BankRepository : IBankRepository
 
     public async Task<decimal> GetTotalBankPaymentsAsync(int bankId, CancellationToken cancellationToken = default)
     {
-        return await _context.BankPayments
-            .Where(bp => bp.BankId == bankId && !bp.SourceReservationDepositId.HasValue)
+        return await StandaloneBankPayments(_context.BankPayments)
+            .Where(bp => bp.BankId == bankId)
             .SumAsync(bp => bp.Amount, cancellationToken);
     }
 
@@ -210,9 +222,8 @@ public class BankRepository : IBankRepository
     public async Task<decimal> GetBalanceAsOfAsync(int bankId, DateTime asOf, CancellationToken cancellationToken = default)
     {
         var utc = DateTime.SpecifyKind(asOf, DateTimeKind.Utc);
-        var totalIncome = await _context.BankPayments
+        var totalIncome = await StandaloneBankPayments(_context.BankPayments)
             .Where(bp => bp.BankId == bankId
-                && !bp.SourceReservationDepositId.HasValue
                 && bp.CreatedAt <= utc)
             .SumAsync(bp => bp.Amount, cancellationToken);
         var reservationDeposits = await GetTotalReservationDepositsAsync(bankId, utc, cancellationToken);
@@ -243,9 +254,8 @@ public class BankRepository : IBankRepository
     {
         var from = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
         var to = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
-        return await _context.BankPayments
+        return await StandaloneBankPayments(_context.BankPayments)
             .Where(bp => bp.BankId == bankId
-                && !bp.SourceReservationDepositId.HasValue
                 && bp.CreatedAt >= from && bp.CreatedAt <= to)
             .SumAsync(bp => bp.Amount, cancellationToken);
     }

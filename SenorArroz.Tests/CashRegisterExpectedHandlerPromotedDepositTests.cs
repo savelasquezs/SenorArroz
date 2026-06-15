@@ -400,6 +400,91 @@ public class CashRegisterExpectedHandlerPromotedDepositTests
     }
 
     [Fact]
+    public async Task Legacy_promoted_reservation_deposit_without_source_is_counted_by_deposit_received_at()
+    {
+        var utcNow = new DateTime(2026, 5, 10, 2, 0, 0, DateTimeKind.Utc);
+        var since = utcNow.AddHours(-5);
+        using var db = CreateCtx(nameof(Legacy_promoted_reservation_deposit_without_source_is_counted_by_deposit_received_at));
+        var (branch, bank, user) = SeedBase(db, utcNow);
+
+        var order = new Order
+        {
+            Id = 43,
+            BranchId = 1,
+            TakenById = user.Id,
+            Status = OrderStatus.Delivered,
+            Type = OrderType.Reservation,
+            Total = 100000,
+            CreatedAt = since.AddDays(-3),
+            UpdatedAt = utcNow.AddMinutes(-30),
+            PrepareAt = utcNow.AddHours(-1),
+            ReservedFor = utcNow.AddHours(-1),
+            StatusTimes = "{}",
+            Branch = branch,
+            TakenBy = user,
+        };
+
+        db.Orders.Add(order);
+        db.ReservationDeposits.Add(new ReservationDeposit
+        {
+            Id = 430,
+            OrderId = order.Id,
+            BranchId = 1,
+            Amount = 40000m,
+            IsEffective = false,
+            BankId = bank.Id,
+            ReceivedAt = since.AddHours(-2),
+            ReceivedById = user.Id,
+            Order = order,
+            Bank = bank,
+            ReceivedBy = user,
+            Branch = branch,
+            CreatedAt = since.AddHours(-2),
+            UpdatedAt = since.AddHours(-2),
+        });
+        db.BankPayments.Add(new BankPayment
+        {
+            Id = 431,
+            OrderId = order.Id,
+            BankId = bank.Id,
+            Amount = 40000m,
+            CreatedAt = utcNow.AddHours(-1),
+            UpdatedAt = utcNow.AddHours(-1),
+            Order = order,
+            Bank = bank,
+        });
+        await db.SaveChangesAsync();
+
+        var lastClosure = new CashRegisterClosure
+        {
+            Id = 1,
+            BranchId = 1,
+            ClosedAt = since,
+            ClosingCash = 0,
+            BankReconciliations =
+            {
+                new CashClosureBankReconciliation
+                {
+                    BankId = bank.Id,
+                    ActualBalance = 40000m,
+                    ExpectedBalance = 40000m,
+                },
+            },
+        };
+
+        var handler = BuildHandler(db, bank, utcNow, lastClosure);
+
+        var result = await handler.Handle(new GetCashRegisterExpectedQuery { BranchId = 1 }, CancellationToken.None);
+
+        var bankResult = Assert.Single(result.Banks);
+        Assert.Equal(40000m, bankResult.ExpectedBalance);
+        Assert.Equal(60000m, result.SalesInPeriodTotal);
+        Assert.Equal(0m, result.ReservationDepositsAddedToGlobalTotal);
+        Assert.Equal(0m, result.BankPaymentsAddedToGlobalTotal);
+        Assert.Equal(100000m, result.ExpectedGlobalTotal);
+    }
+
+    [Fact]
     public async Task Reservation_bank_payment_received_in_period_increases_bank_and_global_expected_even_before_delivery()
     {
         var utcNow = new DateTime(2026, 5, 10, 2, 0, 0, DateTimeKind.Utc);
