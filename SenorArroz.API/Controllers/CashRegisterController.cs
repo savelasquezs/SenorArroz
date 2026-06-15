@@ -55,6 +55,25 @@ public class CashRegisterController : ControllerBase
     }
 
     /// <summary>
+    /// Historial paginado de movimientos de Caja Mayor Efectivo.
+    /// </summary>
+    [HttpGet("cash-vault-movements")]
+    [Authorize(Roles = "Admin,Superadmin")]
+    public async Task<ActionResult<PagedResult<CashVaultMovementDto>>> GetCashVaultMovements(
+        [FromQuery] int? branchId = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
+    {
+        var result = await _mediator.Send(new GetCashVaultMovementsQuery
+        {
+            BranchId = branchId,
+            Page = page,
+            PageSize = pageSize
+        });
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Pedidos domicilio listos o en camino (para préstamo anticipado / excepción cuadre).
     /// </summary>
     [HttpGet("delivery-advance/orders")]

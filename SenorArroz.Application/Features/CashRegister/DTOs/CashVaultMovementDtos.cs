@@ -25,4 +25,5 @@ public class CashVaultMovementDto
     public string? Note { get; set; }
     public DateTime CreatedAt { get; set; }
     public int CreatedById { get; set; }
+    public string CreatedByName { get; set; } = string.Empty;
 }
