@@ -8,6 +8,9 @@ public class BankBalanceBreakdownDto
     /// <summary>Ingresos por pagos bancarios de pedidos.</summary>
     public decimal BankPaymentsIn { get; set; }
 
+    /// <summary>Ingresos por abonos de reserva recibidos en este banco.</summary>
+    public decimal ReservationDepositsIn { get; set; }
+
     /// <summary>Salidas por pagos de gastos cargados a este banco.</summary>
     public decimal ExpenseBankPaymentsOut { get; set; }
 

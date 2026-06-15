@@ -30,6 +30,7 @@ public interface IBankRepository
     Task<int> GetTotalAppsAsync(int bankId, CancellationToken cancellationToken = default);
     Task<int> GetActiveAppsAsync(int bankId, CancellationToken cancellationToken = default);
     Task<decimal> GetTotalBankPaymentsAsync(int bankId, CancellationToken cancellationToken = default);
+    Task<decimal> GetTotalReservationDepositsAsync(int bankId, DateTime? asOf = null, CancellationToken cancellationToken = default);
     Task<decimal> GetTotalExpenseBankPaymentsAsync(int bankId, CancellationToken cancellationToken = default);
     Task<decimal> GetTotalOutgoingTransfersAsync(int bankId, DateTime? asOf = null, CancellationToken cancellationToken = default);
     Task<decimal> GetTotalIncomingTransfersAsync(int bankId, DateTime? asOf = null, CancellationToken cancellationToken = default);
@@ -44,6 +45,7 @@ public interface IBankRepository
 
     /// <summary>Totales en rango UTC [fromUtc, toUtc] inclusive por CreatedAt.</summary>
     Task<decimal> GetTotalBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default);
+    Task<decimal> GetTotalReservationDepositsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default);
 
     Task<decimal> GetTotalExpenseBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default);
     Task<decimal> GetTotalOutgoingTransfersInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default);

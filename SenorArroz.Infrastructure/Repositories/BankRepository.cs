@@ -111,8 +111,9 @@ public class BankRepository : IBankRepository
 
         var hasApps = await _context.Apps.AnyAsync(a => a.BankId == id, cancellationToken);
         var hasBankPayments = await _context.BankPayments.AnyAsync(bp => bp.BankId == id, cancellationToken);
+        var hasReservationDeposits = await _context.ReservationDeposits.AnyAsync(d => d.BankId == id, cancellationToken);
 
-        if (hasApps || hasBankPayments)
+        if (hasApps || hasBankPayments || hasReservationDeposits)
         {
             bank.Active = false;
             await _context.SaveChangesAsync(cancellationToken);
@@ -150,8 +151,20 @@ public class BankRepository : IBankRepository
     public async Task<decimal> GetTotalBankPaymentsAsync(int bankId, CancellationToken cancellationToken = default)
     {
         return await _context.BankPayments
-            .Where(bp => bp.BankId == bankId)
+            .Where(bp => bp.BankId == bankId && !bp.SourceReservationDepositId.HasValue)
             .SumAsync(bp => bp.Amount, cancellationToken);
+    }
+
+    public async Task<decimal> GetTotalReservationDepositsAsync(int bankId, DateTime? asOf = null, CancellationToken cancellationToken = default)
+    {
+        var query = _context.ReservationDeposits.Where(d => d.BankId == bankId);
+        if (asOf.HasValue)
+        {
+            var utc = DateTime.SpecifyKind(asOf.Value, DateTimeKind.Utc);
+            query = query.Where(d => d.ReceivedAt <= utc);
+        }
+
+        return await query.SumAsync(d => (decimal?)d.Amount, cancellationToken) ?? 0m;
     }
 
     public async Task<decimal> GetTotalExpenseBankPaymentsAsync(int bankId, CancellationToken cancellationToken = default)
@@ -186,26 +199,30 @@ public class BankRepository : IBankRepository
     public async Task<decimal> GetCurrentBalanceAsync(int bankId, CancellationToken cancellationToken = default)
     {
         var totalIncome = await GetTotalBankPaymentsAsync(bankId, cancellationToken);
+        var reservationDeposits = await GetTotalReservationDepositsAsync(bankId, cancellationToken: cancellationToken);
         var totalExpenses = await GetTotalExpenseBankPaymentsAsync(bankId, cancellationToken);
         var outgoing = await GetTotalOutgoingTransfersAsync(bankId, cancellationToken: cancellationToken);
         var incoming = await GetTotalIncomingTransfersAsync(bankId, cancellationToken: cancellationToken);
         var deliverymanTransferIn = await GetTotalDeliverymanBankTransferInAsync(bankId, cancellationToken: cancellationToken);
-        return totalIncome - totalExpenses - outgoing + incoming + deliverymanTransferIn;
+        return totalIncome + reservationDeposits - totalExpenses - outgoing + incoming + deliverymanTransferIn;
     }
 
     public async Task<decimal> GetBalanceAsOfAsync(int bankId, DateTime asOf, CancellationToken cancellationToken = default)
     {
         var utc = DateTime.SpecifyKind(asOf, DateTimeKind.Utc);
         var totalIncome = await _context.BankPayments
-            .Where(bp => bp.BankId == bankId && bp.CreatedAt <= utc)
+            .Where(bp => bp.BankId == bankId
+                && !bp.SourceReservationDepositId.HasValue
+                && bp.CreatedAt <= utc)
             .SumAsync(bp => bp.Amount, cancellationToken);
+        var reservationDeposits = await GetTotalReservationDepositsAsync(bankId, utc, cancellationToken);
         var totalExpenses = await _context.ExpenseBankPayments
             .Where(ebp => ebp.BankId == bankId && ebp.CreatedAt <= utc)
             .SumAsync(ebp => ebp.Amount, cancellationToken);
         var outgoing = await GetTotalOutgoingTransfersAsync(bankId, utc, cancellationToken);
         var incoming = await GetTotalIncomingTransfersAsync(bankId, utc, cancellationToken);
         var deliverymanTransferIn = await GetTotalDeliverymanBankTransferInAsync(bankId, utc, cancellationToken);
-        return totalIncome - totalExpenses - outgoing + incoming + deliverymanTransferIn;
+        return totalIncome + reservationDeposits - totalExpenses - outgoing + incoming + deliverymanTransferIn;
     }
 
     /// <inheritdoc />
@@ -227,8 +244,19 @@ public class BankRepository : IBankRepository
         var from = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
         var to = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
         return await _context.BankPayments
-            .Where(bp => bp.BankId == bankId && bp.CreatedAt >= from && bp.CreatedAt <= to)
+            .Where(bp => bp.BankId == bankId
+                && !bp.SourceReservationDepositId.HasValue
+                && bp.CreatedAt >= from && bp.CreatedAt <= to)
             .SumAsync(bp => bp.Amount, cancellationToken);
+    }
+
+    public async Task<decimal> GetTotalReservationDepositsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default)
+    {
+        var from = DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc);
+        var to = DateTime.SpecifyKind(toUtc, DateTimeKind.Utc);
+        return await _context.ReservationDeposits
+            .Where(d => d.BankId == bankId && d.ReceivedAt >= from && d.ReceivedAt <= to)
+            .SumAsync(d => (decimal?)d.Amount, cancellationToken) ?? 0m;
     }
 
     public async Task<decimal> GetTotalExpenseBankPaymentsInPeriodAsync(int bankId, DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default)
