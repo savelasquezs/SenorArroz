@@ -34,6 +34,7 @@ public class CashRegisterExpectedDto
     /// Abonos de reserva recibidos en el período por <c>ReceivedAt</c>; se suman al total esperado global como movimiento real de dinero.
     /// </summary>
     public decimal ReservationDepositsAddedToGlobalTotal { get; set; }
+    public decimal BankPaymentsAddedToGlobalTotal { get; set; }
 
     /// <summary>Suma de préstamos informales activos (referencia para el conteo al cerrar; no se suma de nuevo al esperado).</summary>
     public decimal InformalLoansActiveTotal { get; set; }

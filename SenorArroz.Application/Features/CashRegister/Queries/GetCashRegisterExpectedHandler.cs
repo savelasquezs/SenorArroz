@@ -102,6 +102,9 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 o.Id,
                 o.Total,
                 ReservationDepositsTotal = o.Deposits.Sum(d => d.Amount),
+                BankPaymentsTotal = o.BankPayments
+                    .Where(bp => !bp.SourceReservationDepositId.HasValue)
+                    .Sum(bp => bp.Amount),
                 o.PrepareAt,
                 o.CreatedAt,
                 o.Status,
@@ -112,15 +115,21 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         foreach (var row in deliveredCandidates)
         {
             if (CashRegisterPeriodHelper.IsDeliveredSaleInCashRegisterPeriod(row.Status, row.PrepareAt, row.CreatedAt, since, now))
-                salesInPeriodTotal += Math.Max(0m, (decimal)row.Total - row.ReservationDepositsTotal);
+                salesInPeriodTotal += Math.Max(0m, (decimal)row.Total - row.ReservationDepositsTotal - row.BankPaymentsTotal);
         }
 
         var reservationDepositsInPeriodTotal = await _context.ReservationDeposits
             .Where(d => d.BranchId == branchId && d.ReceivedAt > since && d.ReceivedAt <= now)
             .SumAsync(d => d.Amount, cancellationToken);
 
-        // Los abonos de reserva se cuentan cuando se reciben. La venta entregada entra neta de esos abonos.
-        var expectedGlobalTotal = openingGlobalTotal + salesInPeriodTotal - expensesInPeriodTotal + reservationDepositsInPeriodTotal;
+        var bankPaymentsInPeriodTotal = await _context.BankPayments
+            .Where(bp => bp.Order.BranchId == branchId
+                && !bp.SourceReservationDepositId.HasValue
+                && bp.CreatedAt > since && bp.CreatedAt <= now)
+            .SumAsync(bp => bp.Amount, cancellationToken);
+
+        // Los abonos y transferencias de pedidos se cuentan cuando se reciben. La venta entregada entra neta de esos valores.
+        var expectedGlobalTotal = openingGlobalTotal + salesInPeriodTotal - expensesInPeriodTotal + reservationDepositsInPeriodTotal + bankPaymentsInPeriodTotal;
 
         var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
 
@@ -233,6 +242,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             ExpensesInPeriodTotal = expensesInPeriodTotal,
             ExpectedGlobalTotal = scopedExpectedGlobalTotal,
             ReservationDepositsAddedToGlobalTotal = reservationDepositsInPeriodTotal,
+            BankPaymentsAddedToGlobalTotal = bankPaymentsInPeriodTotal,
             InformalLoansActiveTotal = informalLoansActiveTotal,
             UndeliveredOrdersCount = undeliveredOrdersCount,
             AsOf = now,

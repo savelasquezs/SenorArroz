@@ -328,7 +328,142 @@ public class CashRegisterExpectedHandlerPromotedDepositTests
 
         var bankResult = Assert.Single(result.Banks);
         Assert.Equal(25000m, bankResult.ExpectedBalance);
-        Assert.Equal(25000m, result.SalesInPeriodTotal);
+        Assert.Equal(0m, result.SalesInPeriodTotal);
+        Assert.Equal(25000m, result.BankPaymentsAddedToGlobalTotal);
+        Assert.Equal(25000m, result.ExpectedGlobalTotal);
+    }
+
+    [Fact]
+    public async Task Reservation_bank_payment_received_before_last_closure_is_not_counted_again_when_order_is_delivered()
+    {
+        var utcNow = new DateTime(2026, 5, 10, 2, 0, 0, DateTimeKind.Utc);
+        var since = utcNow.AddHours(-5);
+        using var db = CreateCtx(nameof(Reservation_bank_payment_received_before_last_closure_is_not_counted_again_when_order_is_delivered));
+        var (branch, bank, user) = SeedBase(db, utcNow);
+
+        var order = new Order
+        {
+            Id = 41,
+            BranchId = 1,
+            TakenById = user.Id,
+            Status = OrderStatus.Delivered,
+            Type = OrderType.Delivery,
+            Total = 100000,
+            CreatedAt = since.AddDays(-3),
+            UpdatedAt = utcNow.AddMinutes(-30),
+            PrepareAt = utcNow.AddHours(-1),
+            StatusTimes = "{}",
+            Branch = branch,
+            TakenBy = user,
+        };
+
+        db.Orders.Add(order);
+        db.BankPayments.Add(new BankPayment
+        {
+            Id = 410,
+            OrderId = order.Id,
+            BankId = bank.Id,
+            Amount = 40000m,
+            CreatedAt = since.AddHours(-1),
+            UpdatedAt = since.AddHours(-1),
+            Order = order,
+            Bank = bank,
+        });
+        await db.SaveChangesAsync();
+
+        var lastClosure = new CashRegisterClosure
+        {
+            Id = 1,
+            BranchId = 1,
+            ClosedAt = since,
+            ClosingCash = 0,
+            BankReconciliations =
+            {
+                new CashClosureBankReconciliation
+                {
+                    BankId = bank.Id,
+                    ActualBalance = 40000m,
+                    ExpectedBalance = 40000m,
+                },
+            },
+        };
+
+        var handler = BuildHandler(db, bank, utcNow, lastClosure);
+
+        var result = await handler.Handle(new GetCashRegisterExpectedQuery { BranchId = 1 }, CancellationToken.None);
+
+        var bankResult = Assert.Single(result.Banks);
+        Assert.Equal(40000m, bankResult.ExpectedBalance);
+        Assert.Equal(60000m, result.SalesInPeriodTotal);
+        Assert.Equal(0m, result.BankPaymentsAddedToGlobalTotal);
+        Assert.Equal(100000m, result.ExpectedGlobalTotal);
+    }
+
+    [Fact]
+    public async Task Reservation_bank_payment_received_in_period_increases_bank_and_global_expected_even_before_delivery()
+    {
+        var utcNow = new DateTime(2026, 5, 10, 2, 0, 0, DateTimeKind.Utc);
+        var since = utcNow.AddHours(-5);
+        using var db = CreateCtx(nameof(Reservation_bank_payment_received_in_period_increases_bank_and_global_expected_even_before_delivery));
+        var (branch, bank, user) = SeedBase(db, utcNow);
+
+        var order = new Order
+        {
+            Id = 42,
+            BranchId = 1,
+            TakenById = user.Id,
+            Status = OrderStatus.Taken,
+            Type = OrderType.Reservation,
+            Total = 100000,
+            CreatedAt = since.AddDays(-1),
+            UpdatedAt = utcNow.AddMinutes(-30),
+            PrepareAt = utcNow.AddDays(1),
+            ReservedFor = utcNow.AddDays(1).AddHours(1),
+            StatusTimes = "{}",
+            Branch = branch,
+            TakenBy = user,
+        };
+
+        db.Orders.Add(order);
+        db.BankPayments.Add(new BankPayment
+        {
+            Id = 420,
+            OrderId = order.Id,
+            BankId = bank.Id,
+            Amount = 40000m,
+            CreatedAt = utcNow.AddHours(-1),
+            UpdatedAt = utcNow.AddHours(-1),
+            Order = order,
+            Bank = bank,
+        });
+        await db.SaveChangesAsync();
+
+        var lastClosure = new CashRegisterClosure
+        {
+            Id = 1,
+            BranchId = 1,
+            ClosedAt = since,
+            ClosingCash = 0,
+            BankReconciliations =
+            {
+                new CashClosureBankReconciliation
+                {
+                    BankId = bank.Id,
+                    ActualBalance = 0m,
+                    ExpectedBalance = 0m,
+                },
+            },
+        };
+
+        var handler = BuildHandler(db, bank, utcNow, lastClosure);
+
+        var result = await handler.Handle(new GetCashRegisterExpectedQuery { BranchId = 1 }, CancellationToken.None);
+
+        var bankResult = Assert.Single(result.Banks);
+        Assert.Equal(40000m, bankResult.ExpectedBalance);
+        Assert.Equal(0m, result.SalesInPeriodTotal);
+        Assert.Equal(40000m, result.BankPaymentsAddedToGlobalTotal);
+        Assert.Equal(40000m, result.ExpectedGlobalTotal);
     }
 
     [Fact]
