@@ -10,7 +10,7 @@ Este repositorio es el backend principal de Señor Arroz. Antes de buscar archiv
 2. `docs/DATABASE_MAP.md` - entidades, DbContext, migraciones y reglas de datos.
 3. `docs/BUSINESS_RULES.md` - reglas funcionales de pedidos, cocina, pagos, domicilios e impresión.
 4. `docs/MULTITENANT_PLAN.md` - estrategia para convertir el sistema en SaaS multitenant.
-
+tan ta ra tan
 ## Arquitectura
 
 El proyecto sigue Clean Architecture con cuatro capas:
