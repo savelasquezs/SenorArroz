@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Data.Configurations;
@@ -7,9 +8,12 @@ namespace SenorArroz.Infrastructure.Data
 {
     public class ApplicationDbContext : DbContext, IApplicationDbContext
     {
-        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+        private readonly ICurrentUser? _currentUser;
+
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ICurrentUser? currentUser = null)
             : base(options)
         {
+            _currentUser = currentUser;
         }
 
         public virtual DbSet<Address> Addresses { get; set; }
@@ -50,6 +54,9 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<DeliveryRoute> DeliveryRoutes { get; set; }
 
         public virtual DbSet<DeliveryRouteStop> DeliveryRouteStops { get; set; }
+
+        public virtual DbSet<DailyAuditDispatch> DailyAuditDispatches { get; set; }
+        public virtual DbSet<EntityAuditLog> EntityAuditLogs { get; set; }
 
         public virtual DbSet<Expense> Expenses { get; set; }
 
@@ -118,6 +125,8 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new DeliverymanLocationConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteStopConfiguration());
+            modelBuilder.ApplyConfiguration(new DailyAuditDispatchConfiguration());
+            modelBuilder.ApplyConfiguration(new EntityAuditLogConfiguration());
             modelBuilder.ApplyConfiguration(new SupplierConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseCategoryConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseConfiguration());
@@ -135,16 +144,42 @@ namespace SenorArroz.Infrastructure.Data
         }
         public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            // Convert all DateTime properties to UTC before saving
             ConvertDateTimesToUtc();
+            await ApplyAuditSessionContextAsync(cancellationToken);
             return await base.SaveChangesAsync(cancellationToken);
         }
 
         public override int SaveChanges()
         {
-            // Convert all DateTime properties to UTC before saving
             ConvertDateTimesToUtc();
+            ApplyAuditSessionContext();
             return base.SaveChanges();
+        }
+
+        private async Task ApplyAuditSessionContextAsync(CancellationToken cancellationToken)
+        {
+            if (!Database.IsNpgsql())
+                return;
+
+            var userId = _currentUser?.IsAuthenticated == true ? _currentUser.Id.ToString() : string.Empty;
+            var branchId = _currentUser?.BranchId > 0 ? _currentUser.BranchId.ToString() : string.Empty;
+
+            await Database.ExecuteSqlRawAsync("select set_config('app.current_user_id', {0}, true);", [userId], cancellationToken);
+            await Database.ExecuteSqlRawAsync("select set_config('app.current_user_name', {0}, true);", [string.Empty], cancellationToken);
+            await Database.ExecuteSqlRawAsync("select set_config('app.current_branch_id', {0}, true);", [branchId], cancellationToken);
+        }
+
+        private void ApplyAuditSessionContext()
+        {
+            if (!Database.IsNpgsql())
+                return;
+
+            var userId = _currentUser?.IsAuthenticated == true ? _currentUser.Id.ToString() : string.Empty;
+            var branchId = _currentUser?.BranchId > 0 ? _currentUser.BranchId.ToString() : string.Empty;
+
+            Database.ExecuteSqlRaw("select set_config('app.current_user_id', {0}, true);", userId);
+            Database.ExecuteSqlRaw("select set_config('app.current_user_name', {0}, true);", string.Empty);
+            Database.ExecuteSqlRaw("select set_config('app.current_branch_id', {0}, true);", branchId);
         }
 
         private void ConvertDateTimesToUtc()

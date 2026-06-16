@@ -216,4 +216,13 @@ public class CashRegisterController : ControllerBase
         if (result == null) return NotFound();
         return Ok(result);
     }
+
+    [HttpGet("closures/{id:int}/audit-summary")]
+    [Authorize(Roles = "Admin,Superadmin")]
+    public async Task<ActionResult<CashClosureAuditSummaryDto>> GetClosureAuditSummary(int id)
+    {
+        var result = await _mediator.Send(new GetClosureAuditSummaryQuery { Id = id });
+        if (result == null) return NotFound();
+        return Ok(result);
+    }
 }
