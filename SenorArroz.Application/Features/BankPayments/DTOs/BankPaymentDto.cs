@@ -12,6 +12,7 @@ public class BankPaymentDto
     public decimal Amount { get; set; }
     public int? SourceReservationDepositId { get; set; }
     public bool IsAppSettlement { get; set; }
+    public string? AppSettlementSourcePaymentIds { get; set; }
     public bool IsVerified { get; set; }
     public DateTime? VerifiedAt { get; set; }
     public DateTime CreatedAt { get; set; }

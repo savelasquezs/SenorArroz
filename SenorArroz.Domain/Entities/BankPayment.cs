@@ -11,6 +11,8 @@ public class BankPayment : BaseEntity
     public int? SourceReservationDepositId { get; set; }
     /// <summary>Marca pagos bancarios creados al liquidar dinero retenido por apps.</summary>
     public bool IsAppSettlement { get; set; } = false;
+    /// <summary>JSON con IDs de AppPayment incluidos en la liquidación que creó este ingreso bancario.</summary>
+    public string? AppSettlementSourcePaymentIds { get; set; }
     public bool IsVerified { get; set; } = false;
     public DateTime? VerifiedAt { get; set; }
 

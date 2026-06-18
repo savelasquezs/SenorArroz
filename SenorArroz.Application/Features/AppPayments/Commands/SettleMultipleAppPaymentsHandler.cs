@@ -74,7 +74,8 @@ public class SettleMultipleAppPaymentsHandler : IRequestHandler<SettleMultipleAp
             OrderId = firstOrderId, // Use the first order ID as reference
             BankId = firstBankId,   // Use the first bank ID (assuming all apps belong to same bank)
             Amount = totalAmount,
-            IsAppSettlement = true
+            IsAppSettlement = true,
+            AppSettlementSourcePaymentIds = AppSettlementBankPaymentSourceIds.Serialize(settledPaymentIds)
         };
 
         await _bankPaymentRepository.CreateAsync(bankPayment, cancellationToken);

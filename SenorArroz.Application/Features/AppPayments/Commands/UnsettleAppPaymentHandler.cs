@@ -1,5 +1,6 @@
 // SenorArroz.Application/Features/AppPayments/Commands/UnsettleAppPaymentHandler.cs
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -9,16 +10,16 @@ namespace SenorArroz.Application.Features.AppPayments.Commands;
 public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentCommand, bool>
 {
     private readonly IAppPaymentRepository _appPaymentRepository;
-    private readonly IBankPaymentRepository _bankPaymentRepository;
+    private readonly IApplicationDbContext _context;
     private readonly ICurrentUser _currentUser;
 
     public UnsettleAppPaymentHandler(
         IAppPaymentRepository appPaymentRepository,
-        IBankPaymentRepository bankPaymentRepository,
+        IApplicationDbContext context,
         ICurrentUser currentUser)
     {
         _appPaymentRepository = appPaymentRepository;
-        _bankPaymentRepository = bankPaymentRepository;
+        _context = context;
         _currentUser = currentUser;
     }
 
@@ -37,22 +38,60 @@ public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentComma
         if (!appPayment.IsSetted)
             return true; // Already unsettled
 
-        // Find and delete the corresponding bank payment
-        // We need to find the bank payment that was created when this app payment was settled
-        var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(appPayment.OrderId, cancellationToken);
-        var correspondingBankPayment = bankPayments
-            .FirstOrDefault(bp => bp.IsAppSettlement &&
-                                 bp.BankId == appPayment.App.BankId &&
-                                 bp.Amount == appPayment.Amount &&
-                                 bp.VerifiedAt == null); // Only unverified bank payments can be deleted
+        var settlementBankPayment = await FindSettlementBankPaymentAsync(appPayment, cancellationToken);
+        if (settlementBankPayment == null)
+            throw new BusinessException("No se encontró el ingreso bancario creado por esta liquidación. No se desliquidó para evitar duplicar caja.");
 
-        if (correspondingBankPayment != null)
+        if (settlementBankPayment.IsVerified || settlementBankPayment.VerifiedAt.HasValue)
+            throw new BusinessException("No se puede desliquidar este pago porque el ingreso bancario de la liquidación ya está verificado.");
+
+        var trackedAppPayment = await _context.AppPayments
+            .FirstOrDefaultAsync(ap => ap.Id == appPayment.Id, cancellationToken);
+        if (trackedAppPayment == null)
+            return false;
+
+        var sourceIds = AppSettlementBankPaymentSourceIds.Parse(settlementBankPayment.AppSettlementSourcePaymentIds);
+        var remainingSourceIds = sourceIds
+            .Where(id => id != appPayment.Id)
+            .ToList();
+
+        if (settlementBankPayment.Amount < appPayment.Amount)
+            throw new BusinessException("El ingreso bancario de la liquidación es menor al pago que se intenta desliquidar.");
+
+        if (settlementBankPayment.Amount == appPayment.Amount)
         {
-            // Delete the corresponding bank payment
-            await _bankPaymentRepository.DeleteAsync(correspondingBankPayment.Id, cancellationToken);
+            _context.BankPayments.Remove(settlementBankPayment);
+        }
+        else
+        {
+            settlementBankPayment.Amount -= appPayment.Amount;
+            settlementBankPayment.AppSettlementSourcePaymentIds = AppSettlementBankPaymentSourceIds.Serialize(remainingSourceIds);
         }
 
-        // Mark app payment as unsettled
-        return await _appPaymentRepository.UnsettlePaymentsAsync(new[] { request.Id }, cancellationToken);
+        trackedAppPayment.IsSetted = false;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    private async Task<SenorArroz.Domain.Entities.BankPayment?> FindSettlementBankPaymentAsync(
+        SenorArroz.Domain.Entities.AppPayment appPayment,
+        CancellationToken cancellationToken)
+    {
+        var candidates = await _context.BankPayments
+            .Where(bp => bp.IsAppSettlement
+                && bp.BankId == appPayment.App.BankId
+                && !bp.SourceReservationDepositId.HasValue)
+            .OrderByDescending(bp => bp.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var linked = candidates.FirstOrDefault(bp =>
+            AppSettlementBankPaymentSourceIds.Parse(bp.AppSettlementSourcePaymentIds).Contains(appPayment.Id));
+        if (linked != null)
+            return linked;
+
+        return candidates.FirstOrDefault(bp =>
+            bp.OrderId == appPayment.OrderId
+            && bp.Amount == appPayment.Amount
+            && string.IsNullOrWhiteSpace(bp.AppSettlementSourcePaymentIds));
     }
 }
