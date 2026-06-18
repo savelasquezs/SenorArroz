@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.CashRegister.DTOs;
+using SenorArroz.Application.Features.CashRegister.Helpers;
 using SenorArroz.Application.Features.CashRegister.Queries;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -331,6 +333,102 @@ public class CashRegisterExpectedHandlerPromotedDepositTests
         Assert.Equal(0m, result.SalesInPeriodTotal);
         Assert.Equal(25000m, result.BankPaymentsAddedToGlobalTotal);
         Assert.Equal(25000m, result.ExpectedGlobalTotal);
+    }
+
+    [Fact]
+    public async Task App_settlement_bank_payment_increases_bank_but_not_global_period_transfers()
+    {
+        var utcNow = new DateTime(2026, 6, 18, 16, 0, 0, DateTimeKind.Utc);
+        var since = utcNow.AddHours(-4);
+        using var db = CreateCtx(nameof(App_settlement_bank_payment_increases_bank_but_not_global_period_transfers));
+        var (branch, bank, user) = SeedBase(db, utcNow);
+
+        var app = new App
+        {
+            Id = 5,
+            BankId = bank.Id,
+            Name = "Rappi",
+            Active = true,
+            Bank = bank,
+            CreatedAt = since.AddDays(-2),
+            UpdatedAt = since.AddDays(-2),
+        };
+
+        var order = new Order
+        {
+            Id = 51,
+            BranchId = 1,
+            TakenById = user.Id,
+            Status = OrderStatus.Delivered,
+            Type = OrderType.Delivery,
+            Total = 1000,
+            CreatedAt = since.AddDays(-2),
+            UpdatedAt = since.AddDays(-2),
+            PrepareAt = since.AddDays(-2),
+            StatusTimes = "{}",
+            Branch = branch,
+            TakenBy = user,
+        };
+
+        db.Apps.Add(app);
+        db.Orders.Add(order);
+        db.AppPayments.Add(new AppPayment
+        {
+            Id = 52,
+            OrderId = order.Id,
+            AppId = app.Id,
+            Amount = 1000m,
+            IsSetted = true,
+            Order = order,
+            App = app,
+            CreatedAt = since.AddDays(-2),
+            UpdatedAt = utcNow.AddMinutes(-30),
+        });
+        db.BankPayments.Add(new BankPayment
+        {
+            Id = 53,
+            OrderId = order.Id,
+            BankId = bank.Id,
+            Amount = 1000m,
+            IsAppSettlement = true,
+            Order = order,
+            Bank = bank,
+            CreatedAt = utcNow.AddMinutes(-30),
+            UpdatedAt = utcNow.AddMinutes(-30),
+        });
+        await db.SaveChangesAsync();
+
+        var lastClosure = new CashRegisterClosure
+        {
+            Id = 1,
+            BranchId = 1,
+            ClosedAt = since,
+            ClosingCash = 0,
+            PendingAppPaymentsSnapshot = CashRegisterUnsettledAppsHelper.SerializeSnapshot(new[]
+            {
+                new UnsettledAppLineDto { AppId = app.Id, AppName = app.Name, Amount = 1000m },
+            }),
+            BankReconciliations =
+            {
+                new CashClosureBankReconciliation
+                {
+                    BankId = bank.Id,
+                    ActualBalance = 0m,
+                    ExpectedBalance = 0m,
+                },
+            },
+        };
+
+        var handler = BuildHandler(db, bank, utcNow, lastClosure);
+
+        var result = await handler.Handle(new GetCashRegisterExpectedQuery { BranchId = 1 }, CancellationToken.None);
+
+        var bankResult = Assert.Single(result.Banks);
+        Assert.Equal(1000m, bankResult.ExpectedBalance);
+        Assert.Equal(1000m, result.OpeningUnsettledAppsTotal);
+        Assert.Equal(0m, result.SalesInPeriodTotal);
+        Assert.Equal(0m, result.BankPaymentsAddedToGlobalTotal);
+        Assert.Equal(1000m, result.ExpectedGlobalTotal);
     }
 
     [Fact]

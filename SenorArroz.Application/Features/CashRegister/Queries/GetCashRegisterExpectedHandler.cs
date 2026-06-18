@@ -104,6 +104,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 ReservationDepositsTotal = o.Deposits.Sum(d => d.Amount),
                 BankPaymentsTotal = o.BankPayments
                     .Where(bp => !bp.SourceReservationDepositId.HasValue
+                        && !bp.IsAppSettlement
                         && !o.Deposits.Any(d =>
                             !d.IsEffective
                             && d.BankId == bp.BankId
@@ -131,6 +132,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         var bankPaymentsInPeriodTotal = await _context.BankPayments
             .Where(bp => bp.Order.BranchId == branchId
                 && !bp.SourceReservationDepositId.HasValue
+                && !bp.IsAppSettlement
                 && !bp.Order.Deposits.Any(d =>
                     !d.IsEffective
                     && d.BankId == bp.BankId
@@ -141,7 +143,8 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             .SumAsync(bp => bp.Amount, cancellationToken);
 
         // Los abonos y transferencias de pedidos se cuentan cuando se reciben. Los BankPayments que representan abonos
-        // de reserva se contabilizan por ReservationDeposit.ReceivedAt, no por el dia en que se entrego el pedido.
+        // de reserva se contabilizan por ReservationDeposit.ReceivedAt. Los creados por liquidar apps solo mueven el
+        // saldo retenido a banco: afectan el banco, pero no agregan una venta/entrada nueva al global del periodo.
         var expectedGlobalTotal = openingGlobalTotal + salesInPeriodTotal - expensesInPeriodTotal + reservationDepositsInPeriodTotal + bankPaymentsInPeriodTotal;
 
         var exemptOrderIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);

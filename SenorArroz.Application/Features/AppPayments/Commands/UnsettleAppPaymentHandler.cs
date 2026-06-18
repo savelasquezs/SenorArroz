@@ -41,7 +41,8 @@ public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentComma
         // We need to find the bank payment that was created when this app payment was settled
         var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(appPayment.OrderId, cancellationToken);
         var correspondingBankPayment = bankPayments
-            .FirstOrDefault(bp => bp.BankId == appPayment.App.BankId && 
+            .FirstOrDefault(bp => bp.IsAppSettlement &&
+                                 bp.BankId == appPayment.App.BankId &&
                                  bp.Amount == appPayment.Amount &&
                                  bp.VerifiedAt == null); // Only unverified bank payments can be deleted
 

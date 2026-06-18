@@ -37,7 +37,8 @@ public class CashRegisterExpectedDto
     public decimal ReservationDepositsAddedToGlobalTotal { get; set; }
 
     /// <summary>
-    /// Transferencias recibidas después del último cuadre por <c>BankPayment.CreatedAt</c>, excluyendo abonos de reserva.
+    /// Transferencias recibidas después del último cuadre por <c>BankPayment.CreatedAt</c>, excluyendo abonos de reserva
+    /// y liquidaciones de apps ya contadas como venta/app pendiente.
     /// </summary>
     public decimal BankPaymentsAddedToGlobalTotal { get; set; }
 

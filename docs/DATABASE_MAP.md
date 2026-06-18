@@ -129,7 +129,7 @@ Notas:
 | Bank | Sí | Tenant inicial |
 | App | Sí | Tenant inicial |
 | AppPayment | Sí | Desde `Order.TenantId`, `App.TenantId` o `Branch.TenantId` |
-| BankPayment | Sí | Desde `Order.TenantId`, `Bank.TenantId` o `Branch.TenantId` |
+| BankPayment | Sí | Desde `Order.TenantId`, `Bank.TenantId` o `Branch.TenantId`; `is_app_settlement` marca ingresos bancarios creados al liquidar apps para no duplicar el global de caja |
 | BankTransfer | Sí | Desde banco origen/destino o tenant inicial |
 | CashRegisterClosure | Sí | Desde `Branch.TenantId` |
 | CashClosureBankReconciliation | Sí | Desde cierre de caja |

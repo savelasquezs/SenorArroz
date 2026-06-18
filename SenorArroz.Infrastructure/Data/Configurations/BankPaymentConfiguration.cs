@@ -18,6 +18,7 @@ public class BankPaymentConfiguration : IEntityTypeConfiguration<BankPayment>
         builder.Property(bp => bp.BankId).HasColumnName("bank_id").IsRequired();
         builder.Property(bp => bp.Amount).HasColumnName("amount").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(bp => bp.SourceReservationDepositId).HasColumnName("source_reservation_deposit_id");
+        builder.Property(bp => bp.IsAppSettlement).HasColumnName("is_app_settlement").HasDefaultValue(false);
         builder.Property(bp => bp.IsVerified).HasColumnName("is_verified").HasDefaultValue(false);
         builder.Property(bp => bp.VerifiedAt).HasColumnName("verified_at");
 

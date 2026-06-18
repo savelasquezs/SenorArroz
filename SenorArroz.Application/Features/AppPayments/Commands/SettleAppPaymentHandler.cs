@@ -48,7 +48,8 @@ public class SettleAppPaymentHandler : IRequestHandler<SettleAppPaymentCommand, 
         {
             OrderId = appPayment.OrderId,
             BankId = appPayment.App.BankId, // Use the same bank as the app
-            Amount = appPayment.Amount
+            Amount = appPayment.Amount,
+            IsAppSettlement = true
         };
 
         await _bankPaymentRepository.CreateAsync(bankPayment, cancellationToken);
