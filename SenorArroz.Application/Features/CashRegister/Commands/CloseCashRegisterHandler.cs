@@ -1,4 +1,5 @@
-﻿using MediatR;
+using System.Text.Json;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
@@ -8,6 +9,8 @@ using SenorArroz.Application.Features.CashRegister.Queries;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Domain.Interfaces.Services;
+using SenorArroz.Domain.Models;
 
 namespace SenorArroz.Application.Features.CashRegister.Commands;
 
@@ -18,19 +21,25 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
     private readonly ICurrentUser _currentUser;
     private readonly IMediator _mediator;
     private readonly IClock _clock;
+    private readonly IUserRepository _userRepository;
+    private readonly IEmailService _emailService;
 
     public CloseCashRegisterHandler(
         ICashRegisterClosureRepository closureRepository,
         IApplicationDbContext context,
         ICurrentUser currentUser,
         IMediator mediator,
-        IClock clock)
+        IClock clock,
+        IUserRepository userRepository,
+        IEmailService emailService)
     {
         _closureRepository = closureRepository;
         _context = context;
         _currentUser = currentUser;
         _mediator = mediator;
         _clock = clock;
+        _userRepository = userRepository;
+        _emailService = emailService;
     }
 
     public async Task<CashClosureDto> Handle(CloseCashRegisterCommand request, CancellationToken cancellationToken)
@@ -39,7 +48,6 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         var dto = request.Dto;
 
         var exemptIds = await CashRegisterExemptOrderIds.ActiveExemptOrderIdsAsync(_context, branchId, cancellationToken);
-
         var today = ColombiaTimeHelper.GetPrepareAtSqlTruncDayUtc(_clock.UtcNow);
 
         var undelivered = await _context.Orders
@@ -69,8 +77,10 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         {
             var diff = CashRegisterMoney.DifferenceInWholePesos(recon.ActualBalance, recon.ExpectedBalance);
             if (diff != 0)
+            {
                 throw new InvalidOperationException(
                     $"El banco ID {recon.BankId} tiene una diferencia de {diff}. Todos los bancos deben cuadrar a 0.");
+            }
         }
 
         var activeLoans = await _context.BranchInformalLoans
@@ -81,7 +91,10 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         var (unsettledAppLines, unsettledAppsTotal) =
             await CashRegisterUnsettledAppsHelper.LoadUnsettledForBranchAsync(_context, branchId, cancellationToken);
 
-        var countedGlobalTotal = dto.ClosingCash + dto.BankReconciliations.Sum(r => r.ActualBalance) + informalActiveSum + unsettledAppsTotal;
+        var countedGlobalTotal = dto.ClosingCash
+            + dto.BankReconciliations.Sum(r => r.ActualBalance)
+            + informalActiveSum
+            + unsettledAppsTotal;
 
         if (!CashRegisterMoney.EqualInWholePesos(countedGlobalTotal, expectedSnapshot.ExpectedGlobalTotal))
         {
@@ -120,15 +133,115 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 ActualBalance = r.ActualBalance,
                 Adjustments = r.Adjustments,
                 Difference = CashRegisterMoney.DifferenceInWholePesos(r.ActualBalance, r.ExpectedBalance)
-            })
-                .Concat(carriedHiddenBankReconciliations)
-                .ToList(),
+            }).Concat(carriedHiddenBankReconciliations).ToList(),
             InformalLoans = activeLoans
                 .Select(l => new CashClosureInformalLoan { Concept = l.Concept, Amount = l.Amount })
                 .ToList()
         };
 
         var saved = await _closureRepository.CreateAsync(closure, cancellationToken);
+        var auditBusinessDate = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(saved.ClosedAt);
+        var existingDispatch = await _context.DailyAuditDispatches
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.BusinessDate == auditBusinessDate.Date, cancellationToken);
+
+        string auditStatus;
+        string? auditError = null;
+        DateTime? auditDispatchedAt = null;
+
+        if (existingDispatch != null)
+        {
+            auditStatus = "already_sent";
+            auditError = existingDispatch.DispatchError;
+            auditDispatchedAt = existingDispatch.DispatchedAt;
+        }
+        else
+        {
+            var previousClosure = await _context.CashRegisterClosures
+                .AsNoTracking()
+                .Where(x => x.BranchId == branchId && x.Id != saved.Id && x.ClosedAt < saved.ClosedAt)
+                .OrderByDescending(x => x.ClosedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var periodStartUtc = previousClosure?.ClosedAt ?? ColombiaTimeHelper.ColombiaCalendarDayStartUtc(auditBusinessDate);
+            var logs = await _context.EntityAuditLogs
+                .AsNoTracking()
+                .Where(x => x.BranchId == branchId && x.ChangedAt > periodStartUtc && x.ChangedAt <= saved.ClosedAt)
+                .OrderByDescending(x => x.ChangedAt)
+                .ToListAsync(cancellationToken);
+
+            var groups = logs
+                .GroupBy(CashClosureAuditMapper.GroupKey)
+                .Select(g => new CashClosureAuditGroupDto
+                {
+                    Key = g.Key,
+                    Title = CashClosureAuditMapper.GroupTitle(g.Key),
+                    EventCount = g.Count(),
+                    NetDifference = g.Sum(x => CashClosureAuditMapper.ParseDelta(x.MoneyDeltaJson).Difference ?? 0),
+                    Details = g.OrderByDescending(x => x.ChangedAt)
+                        .Select(x =>
+                        {
+                            var actor = string.IsNullOrWhiteSpace(x.ChangedByNameSnapshot) ? "Sistema" : x.ChangedByNameSnapshot;
+                            return $"{x.ChangedAt:HH:mm} - {actor} - {x.SummaryText}";
+                        })
+                        .ToList()
+                })
+                .OrderBy(x => x.Title)
+                .ToList();
+
+            var branchUsers = await _userRepository.GetAllAsync(branchId, cancellationToken);
+            var allUsers = await _userRepository.GetAllAsync(null, cancellationToken);
+            var recipients = branchUsers
+                .Where(x => x.Active && x.BranchId == branchId && x.Role == UserRole.Admin)
+                .Concat(allUsers.Where(x => x.Active && x.Role == UserRole.Superadmin))
+                .Select(x => x.Email?.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Cast<string>()
+                .ToList();
+
+            var payload = new DailyMonetaryAuditEmailPayload
+            {
+                BranchName = saved.Branch?.Name ?? string.Empty,
+                BusinessDate = auditBusinessDate,
+                PeriodStartUtc = periodStartUtc,
+                PeriodEndUtc = saved.ClosedAt,
+                RecipientEmails = recipients,
+                Groups = groups.Select(x => new DailyMonetaryAuditEmailGroup
+                {
+                    Title = x.Title,
+                    EventCount = x.EventCount,
+                    NetDifference = x.NetDifference,
+                    Lines = x.Details
+                }).ToList()
+            };
+
+            var emailSent = recipients.Count > 0 && await _emailService.SendDailyMonetaryAuditEmailAsync(recipients, payload);
+            auditStatus = emailSent ? "sent" : "failed";
+            auditError = emailSent ? null : "No se pudo enviar el correo de auditoría monetaria.";
+            auditDispatchedAt = emailSent ? _clock.UtcNow : null;
+
+            _context.DailyAuditDispatches.Add(new DailyAuditDispatch
+            {
+                BranchId = branchId,
+                BusinessDate = auditBusinessDate.Date,
+                CashRegisterClosureId = saved.Id,
+                DispatchedAt = auditDispatchedAt,
+                DispatchedByUserId = _currentUser.IsAuthenticated ? _currentUser.Id : null,
+                DispatchStatus = auditStatus,
+                DispatchError = auditError,
+                RecipientEmailsJson = JsonSerializer.Serialize(recipients),
+                SummaryJson = JsonSerializer.Serialize(new
+                {
+                    closureId = saved.Id,
+                    businessDate = auditBusinessDate.ToString("yyyy-MM-dd"),
+                    periodStartUtc,
+                    periodEndUtc = saved.ClosedAt,
+                    groups
+                })
+            });
+
+            await _context.SaveChangesAsync(cancellationToken);
+        }
 
         return new CashClosureDto
         {
@@ -142,6 +255,10 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
             ClosingCash = saved.ClosingCash,
             DenominationCounts = saved.DenominationCounts,
             PendingAppPaymentsSnapshot = saved.PendingAppPaymentsSnapshot,
+            AuditBusinessDate = auditBusinessDate.ToString("yyyy-MM-dd"),
+            AuditDispatchStatus = auditStatus,
+            AuditDispatchError = auditError,
+            AuditDispatchedAt = auditDispatchedAt,
             CreatedAt = saved.CreatedAt,
             BankReconciliations = saved.BankReconciliations.Select(br => new CashClosureBankReconciliationDto
             {

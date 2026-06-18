@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Resend;
 using SenorArroz.Domain.Interfaces.Services;
+using SenorArroz.Domain.Models;
 
 namespace SenorArroz.Infrastructure.Services;
 
@@ -164,6 +165,38 @@ public class EmailService : IEmailService
     public async Task<bool> SendTestEmailAsync(string toEmail, string subject, string body)
     {
         return await SendEmailAsync(toEmail, subject, body, isHtml: false);
+    }
+
+    public async Task<bool> SendDailyMonetaryAuditEmailAsync(IReadOnlyCollection<string> toEmails, DailyMonetaryAuditEmailPayload payload)
+    {
+        if (toEmails.Count == 0)
+            return false;
+
+        var subject = $"Auditoria monetaria diaria - {payload.BranchName} - {payload.BusinessDate:yyyy-MM-dd}";
+        var groupsHtml = string.Join("", payload.Groups.Select(group =>
+            $@"<div style='margin-bottom:16px;'>
+<h3 style='margin:0 0 8px 0;'>{WebUtility.HtmlEncode(group.Title)}</h3>
+<p style='margin:0 0 8px 0;'>Eventos: {group.EventCount} | Diferencia neta: {group.NetDifference:N0}</p>
+<ul>{string.Join("", group.Lines.Select(line => $"<li>{WebUtility.HtmlEncode(line)}</li>"))}</ul>
+</div>"));
+
+        var body = $@"
+<!DOCTYPE html>
+<html>
+<head><meta charset='utf-8'><title>Auditoria monetaria diaria</title></head>
+<body style='font-family:Arial,sans-serif;color:#222;line-height:1.5;'>
+<div style='max-width:720px;margin:0 auto;padding:20px;'>
+<h1 style='margin-bottom:8px;'>Auditoria monetaria diaria</h1>
+<p style='margin-top:0;'>Sucursal: <strong>{WebUtility.HtmlEncode(payload.BranchName)}</strong></p>
+<p>Fecha de negocio: {payload.BusinessDate:yyyy-MM-dd}</p>
+<p>Periodo auditado UTC: {payload.PeriodStartUtc:yyyy-MM-dd HH:mm} a {payload.PeriodEndUtc:yyyy-MM-dd HH:mm}</p>
+{groupsHtml}
+</div>
+</body>
+</html>";
+
+        var results = await Task.WhenAll(toEmails.Select(email => SendEmailAsync(email, subject, body, isHtml: true)));
+        return results.All(x => x);
     }
 
     private async Task<bool> SendEmailAsync(string toEmail, string subject, string body, bool isHtml = false)
