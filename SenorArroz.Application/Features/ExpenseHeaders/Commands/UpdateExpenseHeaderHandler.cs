@@ -6,6 +6,7 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 using SenorArroz.Application.Features.ExpenseHeaders.Helpers;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -68,6 +69,23 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                 throw new NotFoundException($"Proveedor con ID {request.ExpenseHeader.SupplierId.Value} no encontrado");
             }
             expenseHeader.SupplierId = request.ExpenseHeader.SupplierId.Value;
+        }
+
+        if (request.ExpenseHeader.DeliverymanId.HasValue)
+        {
+            var deliverymanId = request.ExpenseHeader.DeliverymanId.Value;
+            var deliveryman = await _context.Users.FindAsync(new object[] { deliverymanId }, cancellationToken);
+            if (deliveryman == null || deliveryman.Role != UserRole.Deliveryman || !deliveryman.Active)
+            {
+                throw new BusinessException("Domiciliario inválido");
+            }
+
+            if (deliveryman.BranchId != expenseHeader.BranchId)
+            {
+                throw new BusinessException("El domiciliario no pertenece a la sucursal del gasto");
+            }
+
+            expenseHeader.DeliverymanId = deliverymanId;
         }
 
         expenseHeader.Notes = NormalizeExpenseNote(request.ExpenseHeader.Notes, 2000);

@@ -6,6 +6,9 @@ public class UpdateExpenseHeaderDto
 {
     public int? SupplierId { get; set; }
 
+    /// <summary>Domiciliario al que se imputa el gasto.</summary>
+    public int? DeliverymanId { get; set; }
+
     public string? Notes { get; set; }
 
     public List<UpdateExpenseDetailDto>? ExpenseDetails { get; set; }
