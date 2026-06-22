@@ -198,10 +198,14 @@ builder.Services.AddCors(options =>
     {
         policy
             .WithOrigins(
+                "https://senorarroz.com",
+                "https://www.senorarroz.com",
                 "http://localhost:5173", 
                 "http://localhost:5174", 
                 "http://localhost:3000",
-                "https://senorarroz.up.railway.app"
+                "https://senorarroz.up.railway.app",
+                "https://senorarrozapi.up.railway.app",
+                "https://api.senorarroz.com"
             )
             .AllowAnyMethod()
             .AllowAnyHeader()
