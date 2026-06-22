@@ -81,7 +81,15 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 await _refreshTokenRepository.RevokeAllByUserIdAsync(user.Id, "password_reset", cancellationToken);
 
                 // Send confirmation email
-                await _emailService.SendPasswordResetConfirmationAsync(user.Email, user.Name);
+                var confirmationResult = await _emailService.SendPasswordResetConfirmationAsync(user.Email, user.Name);
+                if (!confirmationResult.Success)
+                {
+                    _logger.LogError(
+                        "Failed to send password reset confirmation to {Email}. Provider: {Provider}. Error: {Error}",
+                        user.Email,
+                        confirmationResult.Provider,
+                        confirmationResult.ErrorMessage);
+                }
 
                 _logger.LogInformation("Password reset successfully for user {UserId}", user.Id);
                 return true;

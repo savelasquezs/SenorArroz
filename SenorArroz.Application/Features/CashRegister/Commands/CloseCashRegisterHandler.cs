@@ -215,10 +215,12 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 }).ToList()
             };
 
-            var emailSent = recipients.Count > 0 && await _emailService.SendDailyMonetaryAuditEmailAsync(recipients, payload);
-            auditStatus = emailSent ? "sent" : "failed";
-            auditError = emailSent ? null : "No se pudo enviar el correo de auditoría monetaria.";
-            auditDispatchedAt = emailSent ? _clock.UtcNow : null;
+            var emailResult = await _emailService.SendDailyMonetaryAuditEmailAsync(recipients, payload);
+            auditStatus = emailResult.Success ? "sent" : "failed";
+            auditError = emailResult.Success
+                ? null
+                : $"No se pudo enviar el correo de auditoría monetaria. Provider: {emailResult.Provider}. Error: {emailResult.ErrorMessage}";
+            auditDispatchedAt = emailResult.Success ? _clock.UtcNow : null;
 
             _context.DailyAuditDispatches.Add(new DailyAuditDispatch
             {

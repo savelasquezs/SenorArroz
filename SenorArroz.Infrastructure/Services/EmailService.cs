@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Resend;
 using SenorArroz.Domain.Interfaces.Services;
 using SenorArroz.Domain.Models;
 
@@ -21,8 +20,6 @@ public class EmailService : IEmailService
     private readonly string _fromEmail;
     private readonly string _fromName;
     private readonly bool _enableSsl;
-    private readonly IResend? _resendClient;
-    private readonly bool _useResend;
 
     public EmailService(IConfiguration configuration, ILogger<EmailService> logger)
     {
@@ -36,16 +33,9 @@ public class EmailService : IEmailService
         _fromEmail = _configuration["EmailSettings:FromEmail"] ?? "";
         _fromName = _configuration["EmailSettings:FromName"] ?? "SenorArroz";
         _enableSsl = bool.Parse(_configuration["EmailSettings:EnableSsl"] ?? "true");
-
-        var resendApiKey = _configuration["EmailSettings:ResendApiKey"];
-        if (!string.IsNullOrWhiteSpace(resendApiKey))
-        {
-            _resendClient = ResendClient.Create(resendApiKey);
-            _useResend = true;
-        }
     }
 
-    public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string userName, string resetToken, string resetUrl)
+    public async Task<EmailSendResult> SendPasswordResetEmailAsync(string toEmail, string userName, string resetToken, string resetUrl)
     {
         var subject = "Recuperación de Contraseña - SenorArroz";
 
@@ -111,7 +101,7 @@ public class EmailService : IEmailService
         return await SendEmailAsync(toEmail, subject, body, isHtml: true);
     }
 
-    public async Task<bool> SendPasswordResetConfirmationAsync(string toEmail, string userName)
+    public async Task<EmailSendResult> SendPasswordResetConfirmationAsync(string toEmail, string userName)
     {
         var subject = "Contraseña Restablecida - SenorArroz";
 
@@ -162,15 +152,15 @@ public class EmailService : IEmailService
         return await SendEmailAsync(toEmail, subject, body, isHtml: true);
     }
 
-    public async Task<bool> SendTestEmailAsync(string toEmail, string subject, string body)
+    public async Task<EmailSendResult> SendTestEmailAsync(string toEmail, string subject, string body)
     {
         return await SendEmailAsync(toEmail, subject, body, isHtml: false);
     }
 
-    public async Task<bool> SendDailyMonetaryAuditEmailAsync(IReadOnlyCollection<string> toEmails, DailyMonetaryAuditEmailPayload payload)
+    public async Task<EmailSendResult> SendDailyMonetaryAuditEmailAsync(IReadOnlyCollection<string> toEmails, DailyMonetaryAuditEmailPayload payload)
     {
         if (toEmails.Count == 0)
-            return false;
+            return EmailSendResult.Fail("none", "No hay destinatarios configurados para la auditoría monetaria.");
 
         var subject = $"Auditoria monetaria diaria - {payload.BranchName} - {payload.BusinessDate:yyyy-MM-dd}";
         var groupsHtml = string.Join("", payload.Groups.Select(group =>
@@ -196,61 +186,37 @@ public class EmailService : IEmailService
 </html>";
 
         var results = await Task.WhenAll(toEmails.Select(email => SendEmailAsync(email, subject, body, isHtml: true)));
-        return results.All(x => x);
+        var firstFailure = results.FirstOrDefault(x => !x.Success);
+        return firstFailure ?? EmailSendResult.Ok(results.FirstOrDefault()?.Provider ?? "unknown");
     }
 
-    private async Task<bool> SendEmailAsync(string toEmail, string subject, string body, bool isHtml = false)
+    private async Task<EmailSendResult> SendEmailAsync(string toEmail, string subject, string body, bool isHtml = false)
     {
-        if (_useResend && _resendClient != null)
-        {
-            var resendResult = await SendEmailViaResendAsync(toEmail, subject, body, isHtml);
-            if (resendResult)
-            {
-                return true;
-            }
+        var missingSettings = new List<string>();
 
-            _logger.LogWarning("Falling back to SMTP for email to {Email}", toEmail);
+        if (string.IsNullOrWhiteSpace(_smtpHost))
+            missingSettings.Add("EmailSettings:SmtpHost");
+
+        if (string.IsNullOrWhiteSpace(_smtpUsername))
+            missingSettings.Add("EmailSettings:SmtpUsername");
+
+        if (string.IsNullOrWhiteSpace(_smtpPassword))
+            missingSettings.Add("EmailSettings:SmtpPassword");
+
+        if (string.IsNullOrWhiteSpace(_fromEmail))
+            missingSettings.Add("EmailSettings:FromEmail");
+
+        if (missingSettings.Count > 0)
+        {
+            var error = $"Falta configuración SMTP: {string.Join(", ", missingSettings)}";
+            _logger.LogError("Cannot send email to {Email}. {Error}", toEmail, error);
+            return EmailSendResult.Fail("smtp", error);
         }
 
         return await SendEmailViaSmtpAsync(toEmail, subject, body, isHtml);
     }
 
-    private async Task<bool> SendEmailViaResendAsync(string toEmail, string subject, string body, bool isHtml)
-    {
-        try
-        {
-            var fromValue = string.IsNullOrWhiteSpace(_fromName)
-                ? _fromEmail
-                : $"{_fromName} <{_fromEmail}>";
-
-            var message = new EmailMessage
-            {
-                From = fromValue,
-                To = new[] { toEmail },
-                Subject = subject,
-            };
-
-            if (isHtml)
-            {
-                message.HtmlBody = body;
-            }
-            else
-            {
-                message.TextBody = body;
-            }
-
-            await _resendClient!.EmailSendAsync(message);
-            _logger.LogInformation("Email sent successfully via Resend to {Email}", toEmail);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send email via Resend to {Email}", toEmail);
-            return false;
-        }
-    }
-
-    private async Task<bool> SendEmailViaSmtpAsync(string toEmail, string subject, string body, bool isHtml = false)
+    private async Task<EmailSendResult> SendEmailViaSmtpAsync(string toEmail, string subject, string body, bool isHtml = false)
     {
         try
         {
@@ -269,12 +235,12 @@ public class EmailService : IEmailService
             await client.SendMailAsync(message);
 
             _logger.LogInformation("Email sent successfully to {Email}", toEmail);
-            return true;
+            return EmailSendResult.Ok("smtp");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send email to {Email}", toEmail);
-            return false;
+            return EmailSendResult.Fail("smtp", ex.Message);
         }
     }
 }
