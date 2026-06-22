@@ -6,6 +6,7 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 using SenorArroz.Application.Features.ExpenseHeaders.Helpers;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -68,6 +69,23 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                 throw new NotFoundException($"Proveedor con ID {request.ExpenseHeader.SupplierId.Value} no encontrado");
             }
             expenseHeader.SupplierId = request.ExpenseHeader.SupplierId.Value;
+        }
+
+        if (request.ExpenseHeader.DeliverymanId.HasValue)
+        {
+            var deliverymanId = request.ExpenseHeader.DeliverymanId.Value;
+            var deliveryman = await _context.Users.FindAsync(new object[] { deliverymanId }, cancellationToken);
+            if (deliveryman == null || deliveryman.Role != UserRole.Deliveryman || !deliveryman.Active)
+            {
+                throw new BusinessException("Domiciliario inválido");
+            }
+
+            if (deliveryman.BranchId != expenseHeader.BranchId)
+            {
+                throw new BusinessException("El domiciliario no pertenece a la sucursal del gasto");
+            }
+
+            expenseHeader.DeliverymanId = deliverymanId;
         }
 
         expenseHeader.Notes = NormalizeExpenseNote(request.ExpenseHeader.Notes, 2000);
@@ -151,40 +169,41 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             subtotalForVat,
             request.ExpenseHeader.IncludeVat);
 
-        // Manejar pagos: reemplazar la lista completa con lo enviado
-        if (request.ExpenseHeader.ExpenseBankPayments != null)
+        // Manejar pagos: PUT reemplaza la lista completa; null equivale a sin pagos bancarios.
+        var requestedBankPayments = request.ExpenseHeader.ExpenseBankPayments ?? new List<CreateExpenseBankPaymentDto>();
+
+        // Primero eliminar los pagos actuales
+        var existingPayments = await _context.ExpenseBankPayments
+            .Where(p => p.ExpenseHeaderId == expenseHeader.Id)
+            .ToListAsync(cancellationToken);
+        if (existingPayments.Any())
         {
-            // Primero eliminar los pagos actuales
-            var existingPayments = expenseHeader.ExpenseBankPayments.ToList();
-            if (existingPayments.Any())
+            _context.ExpenseBankPayments.RemoveRange(existingPayments);
+            expenseHeader.ExpenseBankPayments.Clear();
+        }
+
+        if (requestedBankPayments.Any())
+        {
+            var branchId = _currentUser.BranchId;
+            var bankIds = requestedBankPayments.Select(ebp => ebp.BankId).Distinct().ToList();
+            var banks = await _context.Banks
+                .Where(b => bankIds.Contains(b.Id) && b.BranchId == branchId)
+                .ToListAsync(cancellationToken);
+
+            if (banks.Count != bankIds.Count)
             {
-                _context.ExpenseBankPayments.RemoveRange(existingPayments);
-                expenseHeader.ExpenseBankPayments.Clear();
+                var foundBankIds = banks.Select(b => b.Id).ToList();
+                var missingBankIds = bankIds.Except(foundBankIds).ToList();
+                throw new NotFoundException($"Bancos con IDs {string.Join(", ", missingBankIds)} no encontrados o no pertenecen a la sucursal");
             }
 
-            if (request.ExpenseHeader.ExpenseBankPayments.Any())
+            foreach (var paymentDto in requestedBankPayments)
             {
-                var branchId = _currentUser.BranchId;
-                var bankIds = request.ExpenseHeader.ExpenseBankPayments.Select(ebp => ebp.BankId).Distinct().ToList();
-                var banks = await _context.Banks
-                    .Where(b => bankIds.Contains(b.Id) && b.BranchId == branchId)
-                    .ToListAsync(cancellationToken);
-
-                if (banks.Count != bankIds.Count)
+                expenseHeader.ExpenseBankPayments.Add(new ExpenseBankPayment
                 {
-                    var foundBankIds = banks.Select(b => b.Id).ToList();
-                    var missingBankIds = bankIds.Except(foundBankIds).ToList();
-                    throw new NotFoundException($"Bancos con IDs {string.Join(", ", missingBankIds)} no encontrados o no pertenecen a la sucursal");
-                }
-
-                foreach (var paymentDto in request.ExpenseHeader.ExpenseBankPayments)
-                {
-                    expenseHeader.ExpenseBankPayments.Add(new ExpenseBankPayment
-                    {
-                        BankId = paymentDto.BankId,
-                        Amount = paymentDto.Amount
-                    });
-                }
+                    BankId = paymentDto.BankId,
+                    Amount = paymentDto.Amount
+                });
             }
         }
 
