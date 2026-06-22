@@ -20,6 +20,7 @@ public class EmailService : IEmailService
     private readonly string _fromEmail;
     private readonly string _fromName;
     private readonly bool _enableSsl;
+    private readonly int _smtpTimeoutMs;
 
     public EmailService(IConfiguration configuration, ILogger<EmailService> logger)
     {
@@ -33,6 +34,7 @@ public class EmailService : IEmailService
         _fromEmail = _configuration["EmailSettings:FromEmail"] ?? "";
         _fromName = _configuration["EmailSettings:FromName"] ?? "SenorArroz";
         _enableSsl = bool.Parse(_configuration["EmailSettings:EnableSsl"] ?? "true");
+        _smtpTimeoutMs = int.Parse(_configuration["EmailSettings:SmtpTimeoutMs"] ?? "15000");
     }
 
     public async Task<EmailSendResult> SendPasswordResetEmailAsync(string toEmail, string userName, string resetToken, string resetUrl)
@@ -224,6 +226,7 @@ public class EmailService : IEmailService
             client.EnableSsl = _enableSsl;
             client.UseDefaultCredentials = false;
             client.Credentials = new NetworkCredential(_smtpUsername, _smtpPassword);
+            client.Timeout = _smtpTimeoutMs;
 
             using var message = new MailMessage();
             message.From = new MailAddress(_fromEmail, _fromName);
