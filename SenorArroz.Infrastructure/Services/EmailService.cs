@@ -1,9 +1,11 @@
 ﻿
 // SenorArroz.Infrastructure/Services/EmailService.cs
 using System.Net;
-using System.Net.Mail;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Services;
 using SenorArroz.Domain.Models;
 
@@ -11,30 +13,15 @@ namespace SenorArroz.Infrastructure.Services;
 
 public class EmailService : IEmailService
 {
-    private readonly IConfiguration _configuration;
+    private readonly IApplicationDbContext _context;
     private readonly ILogger<EmailService> _logger;
-    private readonly string _smtpHost;
-    private readonly int _smtpPort;
-    private readonly string _smtpUsername;
-    private readonly string _smtpPassword;
-    private readonly string _fromEmail;
-    private readonly string _fromName;
-    private readonly bool _enableSsl;
-    private readonly int _smtpTimeoutMs;
+    private readonly int _maxAttempts;
 
-    public EmailService(IConfiguration configuration, ILogger<EmailService> logger)
+    public EmailService(IApplicationDbContext context, IConfiguration configuration, ILogger<EmailService> logger)
     {
-        _configuration = configuration;
+        _context = context;
         _logger = logger;
-
-        _smtpHost = _configuration["EmailSettings:SmtpHost"] ?? "smtp.gmail.com";
-        _smtpPort = int.Parse(_configuration["EmailSettings:SmtpPort"] ?? "587");
-        _smtpUsername = _configuration["EmailSettings:SmtpUsername"] ?? "";
-        _smtpPassword = _configuration["EmailSettings:SmtpPassword"] ?? "";
-        _fromEmail = _configuration["EmailSettings:FromEmail"] ?? "";
-        _fromName = _configuration["EmailSettings:FromName"] ?? "SenorArroz";
-        _enableSsl = bool.Parse(_configuration["EmailSettings:EnableSsl"] ?? "true");
-        _smtpTimeoutMs = int.Parse(_configuration["EmailSettings:SmtpTimeoutMs"] ?? "15000");
+        _maxAttempts = int.Parse(configuration["EmailSettings:MaxAttempts"] ?? "5");
     }
 
     public async Task<EmailSendResult> SendPasswordResetEmailAsync(string toEmail, string userName, string resetToken, string resetUrl)
@@ -100,7 +87,12 @@ public class EmailService : IEmailService
 </body>
 </html>";
 
-        return await SendEmailAsync(toEmail, subject, body, isHtml: true);
+        return await QueueEmailAsync(
+            messageType: "password_reset",
+            toEmails: [toEmail],
+            subject: subject,
+            body: body,
+            isHtml: true);
     }
 
     public async Task<EmailSendResult> SendPasswordResetConfirmationAsync(string toEmail, string userName)
@@ -151,15 +143,29 @@ public class EmailService : IEmailService
 </body>
 </html>";
 
-        return await SendEmailAsync(toEmail, subject, body, isHtml: true);
+        return await QueueEmailAsync(
+            messageType: "password_reset_confirmation",
+            toEmails: [toEmail],
+            subject: subject,
+            body: body,
+            isHtml: true);
     }
 
     public async Task<EmailSendResult> SendTestEmailAsync(string toEmail, string subject, string body)
     {
-        return await SendEmailAsync(toEmail, subject, body, isHtml: false);
+        return await QueueEmailAsync(
+            messageType: "test",
+            toEmails: [toEmail],
+            subject: subject,
+            body: body,
+            isHtml: false);
     }
 
-    public async Task<EmailSendResult> SendDailyMonetaryAuditEmailAsync(IReadOnlyCollection<string> toEmails, DailyMonetaryAuditEmailPayload payload)
+    public async Task<EmailSendResult> SendDailyMonetaryAuditEmailAsync(
+        IReadOnlyCollection<string> toEmails,
+        DailyMonetaryAuditEmailPayload payload,
+        string? relatedEntityType = null,
+        int? relatedEntityId = null)
     {
         if (toEmails.Count == 0)
             return EmailSendResult.Fail("none", "No hay destinatarios configurados para la auditoría monetaria.");
@@ -187,63 +193,61 @@ public class EmailService : IEmailService
 </body>
 </html>";
 
-        var results = await Task.WhenAll(toEmails.Select(email => SendEmailAsync(email, subject, body, isHtml: true)));
-        var firstFailure = results.FirstOrDefault(x => !x.Success);
-        return firstFailure ?? EmailSendResult.Ok(results.FirstOrDefault()?.Provider ?? "unknown");
+        return await QueueEmailAsync(
+            messageType: "daily_monetary_audit",
+            toEmails: toEmails,
+            subject: subject,
+            body: body,
+            isHtml: true,
+            relatedEntityType: relatedEntityType,
+            relatedEntityId: relatedEntityId);
     }
 
-    private async Task<EmailSendResult> SendEmailAsync(string toEmail, string subject, string body, bool isHtml = false)
-    {
-        var missingSettings = new List<string>();
-
-        if (string.IsNullOrWhiteSpace(_smtpHost))
-            missingSettings.Add("EmailSettings:SmtpHost");
-
-        if (string.IsNullOrWhiteSpace(_smtpUsername))
-            missingSettings.Add("EmailSettings:SmtpUsername");
-
-        if (string.IsNullOrWhiteSpace(_smtpPassword))
-            missingSettings.Add("EmailSettings:SmtpPassword");
-
-        if (string.IsNullOrWhiteSpace(_fromEmail))
-            missingSettings.Add("EmailSettings:FromEmail");
-
-        if (missingSettings.Count > 0)
-        {
-            var error = $"Falta configuración SMTP: {string.Join(", ", missingSettings)}";
-            _logger.LogError("Cannot send email to {Email}. {Error}", toEmail, error);
-            return EmailSendResult.Fail("smtp", error);
-        }
-
-        return await SendEmailViaSmtpAsync(toEmail, subject, body, isHtml);
-    }
-
-    private async Task<EmailSendResult> SendEmailViaSmtpAsync(string toEmail, string subject, string body, bool isHtml = false)
+    private async Task<EmailSendResult> QueueEmailAsync(
+        string messageType,
+        IReadOnlyCollection<string> toEmails,
+        string subject,
+        string body,
+        bool isHtml,
+        string? relatedEntityType = null,
+        int? relatedEntityId = null,
+        string? metadataJson = null)
     {
         try
         {
-            using var client = new SmtpClient(_smtpHost, _smtpPort);
-            client.EnableSsl = _enableSsl;
-            client.UseDefaultCredentials = false;
-            client.Credentials = new NetworkCredential(_smtpUsername, _smtpPassword);
-            client.Timeout = _smtpTimeoutMs;
+            var recipients = toEmails
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-            using var message = new MailMessage();
-            message.From = new MailAddress(_fromEmail, _fromName);
-            message.To.Add(toEmail);
-            message.Subject = subject;
-            message.Body = body;
-            message.IsBodyHtml = isHtml;
+            if (recipients.Count == 0)
+                return EmailSendResult.Fail("outbox", "No hay destinatarios configurados.");
 
-            await client.SendMailAsync(message);
+            _context.EmailOutboxMessages.Add(new EmailOutboxMessage
+            {
+                MessageType = messageType,
+                ToEmailsJson = JsonSerializer.Serialize(recipients),
+                Subject = subject,
+                Body = body,
+                IsHtml = isHtml,
+                Status = "pending",
+                AttemptCount = 0,
+                MaxAttempts = _maxAttempts,
+                NextAttemptAt = DateTime.UtcNow,
+                RelatedEntityType = relatedEntityType,
+                RelatedEntityId = relatedEntityId,
+                MetadataJson = string.IsNullOrWhiteSpace(metadataJson) ? "{}" : metadataJson
+            });
 
-            _logger.LogInformation("Email sent successfully to {Email}", toEmail);
-            return EmailSendResult.Ok("smtp");
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Email queued successfully. Type: {MessageType}. Recipients: {Recipients}", messageType, string.Join(", ", recipients));
+            return EmailSendResult.Ok("outbox");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send email to {Email}", toEmail);
-            return EmailSendResult.Fail("smtp", ex.Message);
+            _logger.LogError(ex, "Failed to queue email. Type: {MessageType}", messageType);
+            return EmailSendResult.Fail("outbox", ex.Message);
         }
     }
 }

@@ -215,22 +215,15 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 }).ToList()
             };
 
-            var emailResult = await _emailService.SendDailyMonetaryAuditEmailAsync(recipients, payload);
-            auditStatus = emailResult.Success ? "sent" : "failed";
-            auditError = emailResult.Success
-                ? null
-                : $"No se pudo enviar el correo de auditoría monetaria. Provider: {emailResult.Provider}. Error: {emailResult.ErrorMessage}";
-            auditDispatchedAt = emailResult.Success ? _clock.UtcNow : null;
-
-            _context.DailyAuditDispatches.Add(new DailyAuditDispatch
+            var dispatch = new DailyAuditDispatch
             {
                 BranchId = branchId,
                 BusinessDate = auditBusinessDate.Date,
                 CashRegisterClosureId = saved.Id,
-                DispatchedAt = auditDispatchedAt,
+                DispatchedAt = null,
                 DispatchedByUserId = _currentUser.IsAuthenticated ? _currentUser.Id : null,
-                DispatchStatus = auditStatus,
-                DispatchError = auditError,
+                DispatchStatus = "queued",
+                DispatchError = null,
                 RecipientEmailsJson = JsonSerializer.Serialize(recipients),
                 SummaryJson = JsonSerializer.Serialize(new
                 {
@@ -240,7 +233,25 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                     periodEndUtc = saved.ClosedAt,
                     groups
                 })
-            });
+            };
+
+            _context.DailyAuditDispatches.Add(dispatch);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            var emailResult = await _emailService.SendDailyMonetaryAuditEmailAsync(
+                recipients,
+                payload,
+                relatedEntityType: "daily_audit_dispatch",
+                relatedEntityId: dispatch.Id);
+
+            auditStatus = emailResult.Success ? "queued" : "failed";
+            auditError = emailResult.Success
+                ? null
+                : $"No se pudo encolar el correo de auditoría monetaria. Provider: {emailResult.Provider}. Error: {emailResult.ErrorMessage}";
+            auditDispatchedAt = null;
+
+            dispatch.DispatchStatus = auditStatus;
+            dispatch.DispatchError = auditError;
 
             await _context.SaveChangesAsync(cancellationToken);
         }

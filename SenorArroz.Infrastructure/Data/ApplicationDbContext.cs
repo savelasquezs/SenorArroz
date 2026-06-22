@@ -56,6 +56,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<DeliveryRouteStop> DeliveryRouteStops { get; set; }
 
         public virtual DbSet<DailyAuditDispatch> DailyAuditDispatches { get; set; }
+        public virtual DbSet<EmailOutboxMessage> EmailOutboxMessages { get; set; }
         public virtual DbSet<EntityAuditLog> EntityAuditLogs { get; set; }
 
         public virtual DbSet<Expense> Expenses { get; set; }
@@ -126,6 +127,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new DeliveryRouteConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteStopConfiguration());
             modelBuilder.ApplyConfiguration(new DailyAuditDispatchConfiguration());
+            modelBuilder.ApplyConfiguration(new EmailOutboxMessageConfiguration());
             modelBuilder.ApplyConfiguration(new EntityAuditLogConfiguration());
             modelBuilder.ApplyConfiguration(new SupplierConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseCategoryConfiguration());

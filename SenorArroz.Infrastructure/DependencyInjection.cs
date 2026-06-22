@@ -90,10 +90,12 @@ public static class DependencyInjection
         services.AddScoped<IPasswordService, PasswordService>();
         services.AddScoped<IJwtService, JwtService>();
         services.AddScoped<ICurrentUser, CurrentUserService>();
+        services.AddScoped<SmtpEmailDeliveryService>();
         services.AddScoped<IEmailService, EmailService>();
         // OrderNotificationService will be registered in Program.cs after SignalR setup
 
         // Background Services
+        services.AddHostedService<EmailOutboxWorker>();
         services.AddHostedService<TokenCleanupService>();
         services.AddHostedService<PasswordResetCleanupService>();
         services.AddHostedService<ReservationNotificationService>();
