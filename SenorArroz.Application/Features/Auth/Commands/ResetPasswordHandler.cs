@@ -85,10 +85,14 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 if (!confirmationResult.Success)
                 {
                     _logger.LogError(
-                        "Failed to send password reset confirmation to {Email}. Provider: {Provider}. Error: {Error}",
+                        "Failed to queue password reset confirmation for {Email}. Provider: {Provider}. Error: {Error}",
                         user.Email,
                         confirmationResult.Provider,
                         confirmationResult.ErrorMessage);
+                }
+                else
+                {
+                    _logger.LogInformation("Password reset confirmation queued for {Email}", user.Email);
                 }
 
                 _logger.LogInformation("Password reset successfully for user {UserId}", user.Id);

@@ -47,6 +47,23 @@ public class EmailOutboxWorker : BackgroundService
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
         var now = clock.UtcNow;
 
+        var staleProcessingMessages = await context.EmailOutboxMessages
+            .Where(x => x.Status == "processing"
+                && x.LastAttemptedAt != null
+                && x.LastAttemptedAt <= now.AddMinutes(-2)
+                && x.AttemptCount < x.MaxAttempts)
+            .ToListAsync(cancellationToken);
+
+        foreach (var staleMessage in staleProcessingMessages)
+        {
+            staleMessage.Status = "retry";
+            staleMessage.NextAttemptAt = now;
+            staleMessage.LastError = "Recovered stale processing message.";
+        }
+
+        if (staleProcessingMessages.Count > 0)
+            await context.SaveChangesAsync(cancellationToken);
+
         var messages = await context.EmailOutboxMessages
             .Where(x => (x.Status == "pending" || x.Status == "retry")
                 && (x.NextAttemptAt == null || x.NextAttemptAt <= now)

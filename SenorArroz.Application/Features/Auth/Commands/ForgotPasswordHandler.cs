@@ -49,12 +49,12 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
                 if (emailResult.Success)
                 {
-                    _logger.LogInformation("Password reset email sent successfully to {Email}", request.Email);
+                    _logger.LogInformation("Password reset email queued successfully for {Email}", request.Email);
                 }
                 else
                 {
                     _logger.LogError(
-                        "Failed to send password reset email to {Email}. Provider: {Provider}. Error: {Error}",
+                        "Failed to queue password reset email for {Email}. Provider: {Provider}. Error: {Error}",
                         request.Email,
                         emailResult.Provider,
                         emailResult.ErrorMessage);
