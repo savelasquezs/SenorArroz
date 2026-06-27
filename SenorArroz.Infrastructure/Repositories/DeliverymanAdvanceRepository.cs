@@ -68,7 +68,7 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
     public async Task<DeliverymanAdvance?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.DeliverymanAdvances
-            .AsNoTracking()
+            .AsNoTrackingWithIdentityResolution()
             .Include(da => da.Deliveryman)
             .Include(da => da.Creator)
             .Include(da => da.Branch)
@@ -109,6 +109,8 @@ public class DeliverymanAdvanceRepository : IDeliverymanAdvanceRepository
 
     public async Task<DeliverymanAdvance> UpdateAsync(DeliverymanAdvance advance, CancellationToken cancellationToken = default)
     {
+        DeliverymanAdvanceUpdateGraphForPersistence.DetachReadOnlyNavigations(advance);
+
         _context.DeliverymanAdvances.Update(advance);
         await _context.SaveChangesAsync(cancellationToken);
 

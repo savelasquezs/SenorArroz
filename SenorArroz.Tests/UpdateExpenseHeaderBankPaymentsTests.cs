@@ -327,4 +327,162 @@ public class UpdateExpenseHeaderBankPaymentsTests
         var saved = await db.ExpenseHeaders.AsNoTracking().SingleAsync(e => e.Id == header.Id);
         Assert.Equal(deliveryman.Id, saved.DeliverymanId);
     }
+
+    [Fact]
+    public async Task Update_replacing_one_detail_with_two_new_details_persists_new_prices_without_tracking_conflict()
+    {
+        var now = new DateTime(2026, 6, 27, 12, 0, 0, DateTimeKind.Utc);
+        using var db = CreateCtx(nameof(Update_replacing_one_detail_with_two_new_details_persists_new_prices_without_tracking_conflict));
+
+        var branch = new Branch
+        {
+            Id = 1,
+            Name = "Sucursal",
+            Address = "A",
+            Phone1 = "1",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var cashier = new User
+        {
+            Id = 1,
+            BranchId = branch.Id,
+            Role = UserRole.Cashier,
+            Name = "Caja",
+            Email = "caja@test.com",
+            Phone = "1",
+            PasswordHash = "x",
+            Branch = branch,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var deliveryman = new User
+        {
+            Id = 2,
+            BranchId = branch.Id,
+            Role = UserRole.Deliveryman,
+            Name = "Domi",
+            Email = "domi@test.com",
+            Phone = "2",
+            PasswordHash = "x",
+            Branch = branch,
+            Active = true,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var supplier = new Supplier
+        {
+            Id = 1,
+            BranchId = branch.Id,
+            Name = "Proveedor",
+            Phone = "1",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var category = new ExpenseCategory
+        {
+            Id = 1,
+            Name = "Categoria",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var expense = new Expense
+        {
+            Id = 1,
+            Name = "Insumo",
+            CategoryId = category.Id,
+            Category = category,
+            Unit = ExpenseUnit.Unit,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var header = new ExpenseHeader
+        {
+            Id = 536,
+            BranchId = branch.Id,
+            SupplierId = supplier.Id,
+            CreatedById = cashier.Id,
+            DeliverymanId = deliveryman.Id,
+            Total = 1000m,
+            Branch = branch,
+            Supplier = supplier,
+            CreatedBy = cashier,
+            Deliveryman = deliveryman,
+            CreatedAt = now,
+            UpdatedAt = now,
+            ExpenseDetails =
+            {
+                new ExpenseDetail
+                {
+                    Id = 1,
+                    ExpenseId = expense.Id,
+                    Expense = expense,
+                    Quantity = 1,
+                    Amount = 1000,
+                    Total = 1000m,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                },
+            },
+        };
+
+        db.Branches.Add(branch);
+        db.Users.AddRange(cashier, deliveryman);
+        db.Suppliers.Add(supplier);
+        db.ExpenseCategories.Add(category);
+        db.Expenses.Add(expense);
+        db.ExpenseHeaders.Add(header);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var handler = new UpdateExpenseHeaderHandler(
+            new ExpenseHeaderRepository(db),
+            new BankRepository(db),
+            db,
+            CreateMapper(),
+            new TestCurrentUser(),
+            new FakeClock(now));
+
+        var result = await handler.Handle(new UpdateExpenseHeaderCommand
+        {
+            Id = header.Id,
+            ExpenseHeader = new UpdateExpenseHeaderDto
+            {
+                SupplierId = supplier.Id,
+                DeliverymanId = deliveryman.Id,
+                IncludeVat = false,
+                ExpenseBankPayments = new List<CreateExpenseBankPaymentDto>(),
+                ExpenseDetails = new List<UpdateExpenseDetailDto>
+                {
+                    new()
+                    {
+                        ExpenseId = expense.Id,
+                        Quantity = 1,
+                        Amount = 700,
+                        Total = 700m,
+                    },
+                    new()
+                    {
+                        ExpenseId = expense.Id,
+                        Quantity = 1,
+                        Amount = 900,
+                        Total = 900m,
+                    },
+                },
+            },
+        }, CancellationToken.None);
+
+        Assert.Equal(1600m, result.Total);
+        Assert.Equal(2, result.ExpenseDetails.Count);
+        Assert.DoesNotContain(result.ExpenseDetails, d => d.Id == 1);
+        Assert.Equal(new[] { 700, 900 }, result.ExpenseDetails.Select(d => d.Amount).OrderBy(v => v).ToArray());
+
+        var savedDetails = await db.ExpenseDetails
+            .AsNoTracking()
+            .Where(d => d.HeaderId == header.Id)
+            .OrderBy(d => d.Amount)
+            .ToListAsync();
+        Assert.Equal(2, savedDetails.Count);
+        Assert.Equal(new[] { 700, 900 }, savedDetails.Select(d => d.Amount).ToArray());
+    }
 }
