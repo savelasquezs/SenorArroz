@@ -28,6 +28,15 @@ public sealed record SalesHourPoint(int BranchId, int Hour, int SalesCop);
 
 public sealed record OrdersHourPoint(int Hour, int OrderCount);
 
+/// <summary>Ventas agregadas por hora del dia, calculadas desde buckets diarios por hora.</summary>
+public sealed record SalesHourlyAnalyticsPoint(
+    int Hour,
+    int OrderCount,
+    long TotalSalesCop,
+    decimal AverageDailySalesCop,
+    decimal MedianDailySalesCop,
+    decimal AverageTicketCop);
+
 /// <summary>Agregado por producto (líneas de pedido, pedidos no cancelados).</summary>
 public class SalesProductAggregateRow
 {

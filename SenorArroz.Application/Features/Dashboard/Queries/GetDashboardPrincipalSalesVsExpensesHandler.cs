@@ -74,7 +74,7 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
         List<ExpenseCategoryTimeBucketRow> expenseRows,
         CancellationToken cancellationToken)
     {
-        var salesPoints = await _orderRepository.GetDashboardSalesByDayAsync(branchFilter, from, to, cancellationToken);
+        var salesPoints = await _orderRepository.GetDashboardSalesByDayAsync(branchFilter, from, to, null, cancellationToken);
         var (days, labels) = ColombiaTimeHelper.EnumerateColombiaDashboardDays(from, to, MaxDayBuckets, EsCo);
         var salesCop = SumSalesByDay(branchesInOrder, salesPoints, days);
         var buckets = days;
@@ -96,7 +96,7 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
         List<ExpenseCategoryTimeBucketRow> expenseRows,
         CancellationToken cancellationToken)
     {
-        var salesPoints = await _orderRepository.GetDashboardSalesByMonthAsync(branchFilter, from, to, cancellationToken);
+        var salesPoints = await _orderRepository.GetDashboardSalesByMonthAsync(branchFilter, from, to, null, cancellationToken);
         var (keys, labels) = ColombiaTimeHelper.EnumerateColombiaDashboardMonths(from, to, MaxMonthBuckets, EsCo);
         var salesCop = SumSalesByMonth(branchesInOrder, salesPoints, keys);
         var buckets = keys
@@ -120,7 +120,7 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
         List<ExpenseCategoryTimeBucketRow> expenseRows,
         CancellationToken cancellationToken)
     {
-        var salesPoints = await _orderRepository.GetDashboardSalesByYearAsync(branchFilter, from, to, cancellationToken);
+        var salesPoints = await _orderRepository.GetDashboardSalesByYearAsync(branchFilter, from, to, null, cancellationToken);
         var (years, labels) = ColombiaTimeHelper.EnumerateColombiaDashboardYears(from, to, MaxYearBuckets);
         var salesCop = SumSalesByYear(branchesInOrder, salesPoints, years);
         var buckets = years.Select(y => new DateTime(y, 1, 1, 0, 0, 0, DateTimeKind.Unspecified)).ToList();

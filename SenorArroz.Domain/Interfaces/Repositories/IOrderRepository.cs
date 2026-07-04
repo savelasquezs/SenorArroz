@@ -150,60 +150,77 @@ public interface IOrderRepository
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     Task<List<SalesDayPoint>> GetDashboardSalesByDayAsync(
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     Task<List<OrdersDayPoint>> GetDashboardOrdersByDayAsync(
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     Task<List<SalesMonthPoint>> GetDashboardSalesByMonthAsync(
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     Task<List<OrdersMonthPoint>> GetDashboardOrdersByMonthAsync(
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     Task<List<SalesYearPoint>> GetDashboardSalesByYearAsync(
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     Task<List<OrdersYearPoint>> GetDashboardOrdersByYearAsync(
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     Task<List<SalesHourPoint>> GetDashboardSalesByHourAsync(
         int? branchId,
         DateTime dayStartUtc,
         DateTime dayEndUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     Task<List<OrdersHourPoint>> GetDashboardOrdersByHourAsync(
         int? branchId,
         DateTime dayStartUtc,
         DateTime dayEndUtc,
+        int? dayOfWeek = null,
+        CancellationToken cancellationToken = default);
+
+    Task<List<SalesHourlyAnalyticsPoint>> GetDashboardSalesHourlyAnalyticsAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     Task<List<SalesProductAggregateRow>> GetSalesProductAggregatesForDashboardAsync(
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>Ventas por producto incluyendo categoría de producto (mismas reglas que agregado por producto).</summary>
@@ -211,12 +228,14 @@ public interface IOrderRepository
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     Task<List<SalesCategoryAggregateRow>> GetSalesCategoryAggregatesForDashboardAsync(
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -226,6 +245,7 @@ public interface IOrderRepository
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -235,6 +255,7 @@ public interface IOrderRepository
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -246,6 +267,7 @@ public interface IOrderRepository
         DateTime toUtc,
         int categoryId,
         CategoryWeightEvolutionGranularity granularity,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -256,6 +278,7 @@ public interface IOrderRepository
         DateTime fromUtc,
         DateTime toUtc,
         CategoryWeightEvolutionGranularity granularity,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>Pedidos entregados vinculados al cliente (fidelización).</summary>

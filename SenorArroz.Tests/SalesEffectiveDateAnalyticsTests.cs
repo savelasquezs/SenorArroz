@@ -125,4 +125,56 @@ public class SalesEffectiveDateAnalyticsTests
         Assert.Equal(20000, onlyFrom);
         Assert.Equal(30000, onlyTo);
     }
+
+    [Fact]
+    public async Task GetDashboardSalesHourlyAnalytics_GroupsByColombiaDateHourBeforeMedian()
+    {
+        using var ctx = CreateContext(nameof(GetDashboardSalesHourlyAnalytics_GroupsByColombiaDateHourBeforeMedian));
+        var (branch, user) = await SeedBaseAsync(ctx);
+        var repo = new OrderRepository(ctx, new SystemUtcClock());
+
+        DateTime Co(int year, int month, int day, int hour, int minute = 0) =>
+            ColombiaTimeHelper.ConvertColombiaToUtc(new DateTime(year, month, day, hour, minute, 0));
+
+        Order Order(DateTime createdAt, int total, DateTime? prepareAt = null, OrderStatus status = OrderStatus.Taken) => new()
+        {
+            BranchId = branch.Id,
+            TakenById = user.Id,
+            Status = status,
+            Type = OrderType.Onsite,
+            Total = total,
+            Subtotal = total,
+            CreatedAt = createdAt,
+            PrepareAt = prepareAt,
+            UpdatedAt = createdAt
+        };
+
+        ctx.Orders.AddRange(
+            Order(Co(2026, 7, 2, 11, 10), 100),
+            Order(Co(2026, 7, 2, 11, 30), 200),
+            Order(Co(2026, 7, 9, 11, 15), 500),
+            Order(Co(2026, 7, 2, 12, 0), 1000),
+            Order(Co(2026, 7, 3, 11, 0), 999),
+            Order(Co(2026, 7, 2, 11, 45), 700, status: OrderStatus.Cancelled),
+            Order(Co(2026, 7, 1, 18, 0), 300, Co(2026, 7, 9, 11, 45)));
+        await ctx.SaveChangesAsync();
+
+        var (from, to) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(
+            new DateTime(2026, 7, 1),
+            new DateTime(2026, 7, 31));
+
+        var rows = await repo.GetDashboardSalesHourlyAnalyticsAsync(branch.Id, from, to, 4);
+
+        var eleven = Assert.Single(rows, r => r.Hour == 11);
+        Assert.Equal(4, eleven.OrderCount);
+        Assert.Equal(1100, eleven.TotalSalesCop);
+        Assert.Equal(550m, eleven.AverageDailySalesCop);
+        Assert.Equal(550m, eleven.MedianDailySalesCop);
+        Assert.Equal(275m, eleven.AverageTicketCop);
+
+        var noon = Assert.Single(rows, r => r.Hour == 12);
+        Assert.Equal(1, noon.OrderCount);
+        Assert.Equal(1000, noon.TotalSalesCop);
+        Assert.Equal(1000m, noon.MedianDailySalesCop);
+    }
 }

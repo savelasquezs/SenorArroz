@@ -37,6 +37,7 @@ public class GetDashboardSalesComparisonHandler
             branchFilter,
             from,
             to,
+            NormalizeDayOfWeek(request.DayOfWeek),
             cancellationToken);
 
         var allBranches = (await _branchRepository.GetAllAsync(cancellationToken)).OrderBy(b => b.Name).ToList();
@@ -84,5 +85,12 @@ public class GetDashboardSalesComparisonHandler
         if (Roles.IsSuperadmin(_currentUser.Role))
             return requestedBranchId;
         return _currentUser.BranchId > 0 ? _currentUser.BranchId : null;
+    }
+
+    private static int? NormalizeDayOfWeek(int? dayOfWeek)
+    {
+        if (!dayOfWeek.HasValue || dayOfWeek.Value < 1 || dayOfWeek.Value > 7)
+            return null;
+        return dayOfWeek.Value;
     }
 }

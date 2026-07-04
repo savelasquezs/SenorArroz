@@ -45,16 +45,19 @@ public class GetMenuCategoryCostingDashboardHandler
             branchFilter,
             from,
             to,
+            null,
             cancellationToken);
         var prodWeightRows = await _orderRepository.GetSalesProductWeightAggregatesForDashboardAsync(
             branchFilter,
             from,
             to,
+            null,
             cancellationToken);
         var prodSales = await _orderRepository.GetSalesProductCategoryAggregatesForDashboardAsync(
             branchFilter,
             from,
             to,
+            null,
             cancellationToken);
 
         var gramsByCategory = catWeightRows.ToDictionary(r => r.CategoryId, r => r.TotalWeightGrams);

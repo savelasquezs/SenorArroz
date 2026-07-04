@@ -10,4 +10,5 @@ public class GetDashboardSalesProductsQuery : IRequest<DashboardSalesProductsRes
     public int? BranchId { get; set; }
     public int Top { get; set; } = 10;
     public SalesProductsGroupBy GroupBy { get; set; } = SalesProductsGroupBy.Product;
+    public int? DayOfWeek { get; set; }
 }

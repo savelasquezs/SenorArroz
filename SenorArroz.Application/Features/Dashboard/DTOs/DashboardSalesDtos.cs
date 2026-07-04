@@ -57,6 +57,46 @@ public class OrdersTimelineBlockDto
 
 #endregion
 
+#region Ventas por hora
+
+public class DashboardSalesHourlyResponseDto
+{
+    public List<DashboardSalesHourlyPointDto> Points { get; set; } = new();
+    public DashboardSalesHourlySummaryDto Summary { get; set; } = new();
+}
+
+public class DashboardSalesHourlyPointDto
+{
+    public int Hour { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public int OrderCount { get; set; }
+    public long TotalSalesCop { get; set; }
+    public decimal AverageDailySalesCop { get; set; }
+    public decimal MedianDailySalesCop { get; set; }
+    public decimal AverageTicketCop { get; set; }
+}
+
+public class DashboardSalesHourlySummaryDto
+{
+    public DashboardSalesBestHourDto? HighestTotalSalesHour { get; set; }
+    public DashboardSalesBestHourDto? HighestMedianSalesHour { get; set; }
+    public int? DayOfWeek { get; set; }
+    public string DayOfWeekLabel { get; set; } = "Todos los dias";
+    public decimal MedianDailySalesCop { get; set; }
+    public decimal AverageDailySalesCop { get; set; }
+    public long TotalSalesCop { get; set; }
+}
+
+public class DashboardSalesBestHourDto
+{
+    public int Hour { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public long TotalSalesCop { get; set; }
+    public decimal MedianDailySalesCop { get; set; }
+}
+
+#endregion
+
 #region Productos
 
 public class DashboardSalesProductsResponseDto

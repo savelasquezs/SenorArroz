@@ -71,11 +71,13 @@ public class GetExpenseMenuAttributionHandler
             branchFilter,
             from,
             to,
+            null,
             cancellationToken);
         var prodWeights = await _orderRepository.GetSalesProductWeightAggregatesForDashboardAsync(
             branchFilter,
             from,
             to,
+            null,
             cancellationToken);
 
         var gramsByCategory = catWeights.ToDictionary(r => r.CategoryId, r => r.TotalWeightGrams);

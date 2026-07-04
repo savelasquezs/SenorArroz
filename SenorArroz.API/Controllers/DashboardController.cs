@@ -105,6 +105,7 @@ public class DashboardController : ControllerBase
         [FromQuery(Name = "from")] DateTime fromUtc,
         [FromQuery(Name = "to")] DateTime toUtc,
         [FromQuery] int? branchId = null,
+        [FromQuery] int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
         var result = await _mediator.Send(
@@ -113,6 +114,7 @@ public class DashboardController : ControllerBase
                 FromUtc = fromUtc,
                 ToUtc = toUtc,
                 BranchId = branchId,
+                DayOfWeek = dayOfWeek,
             },
             cancellationToken);
 
@@ -126,6 +128,7 @@ public class DashboardController : ControllerBase
         [FromQuery(Name = "from")] DateTime fromUtc,
         [FromQuery(Name = "to")] DateTime toUtc,
         [FromQuery] int? branchId = null,
+        [FromQuery] int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
         var result = await _mediator.Send(
@@ -134,6 +137,30 @@ public class DashboardController : ControllerBase
                 FromUtc = fromUtc,
                 ToUtc = toUtc,
                 BranchId = branchId,
+                DayOfWeek = dayOfWeek,
+            },
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    /// <summary>Ventas — agregados por hora del dia sobre todo el rango, usando PrepareAt o CreatedAt en zona Colombia.</summary>
+    [HttpGet("sales/hourly")]
+    [ProducesResponseType(typeof(DashboardSalesHourlyResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DashboardSalesHourlyResponseDto>> GetSalesHourly(
+        [FromQuery(Name = "from")] DateTime fromUtc,
+        [FromQuery(Name = "to")] DateTime toUtc,
+        [FromQuery] int? branchId = null,
+        [FromQuery] int? dayOfWeek = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(
+            new GetDashboardSalesHourlyQuery
+            {
+                FromUtc = fromUtc,
+                ToUtc = toUtc,
+                BranchId = branchId,
+                DayOfWeek = dayOfWeek,
             },
             cancellationToken);
 
@@ -149,6 +176,7 @@ public class DashboardController : ControllerBase
         [FromQuery] int? branchId = null,
         [FromQuery] int top = 10,
         [FromQuery(Name = "groupBy")] string? groupBy = null,
+        [FromQuery] int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
         var gb = string.Equals(groupBy, "category", StringComparison.OrdinalIgnoreCase)
@@ -163,6 +191,7 @@ public class DashboardController : ControllerBase
                 BranchId = branchId,
                 Top = top,
                 GroupBy = gb,
+                DayOfWeek = dayOfWeek,
             },
             cancellationToken);
 
@@ -181,6 +210,7 @@ public class DashboardController : ControllerBase
         [FromQuery] int? branchId = null,
         [FromQuery] string granularity = "day",
         [FromQuery] int? categoryId = null,
+        [FromQuery] int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
         var result = await _mediator.Send(
@@ -191,6 +221,7 @@ public class DashboardController : ControllerBase
                 BranchId = branchId,
                 Granularity = granularity,
                 CategoryId = categoryId,
+                DayOfWeek = dayOfWeek,
             },
             cancellationToken);
 

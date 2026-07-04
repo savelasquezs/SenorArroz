@@ -8,4 +8,5 @@ public class GetDashboardSalesEvolutionQuery : IRequest<DashboardSalesEvolutionR
     public DateTime FromUtc { get; set; }
     public DateTime ToUtc { get; set; }
     public int? BranchId { get; set; }
+    public int? DayOfWeek { get; set; }
 }

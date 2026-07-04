@@ -43,21 +43,25 @@ public class GetDashboardSalesEvolutionHandler
             .ToList();
 
         // Secuencial: un mismo DbContext (scoped) no admite varias consultas activas en paralelo.
-        var salesByDay = await _orderRepository.GetDashboardSalesByDayAsync(branchFilter, from, to, cancellationToken);
-        var ordersByDay = await _orderRepository.GetDashboardOrdersByDayAsync(branchFilter, from, to, cancellationToken);
-        var salesByMonth = await _orderRepository.GetDashboardSalesByMonthAsync(branchFilter, from, to, cancellationToken);
-        var ordersByMonth = await _orderRepository.GetDashboardOrdersByMonthAsync(branchFilter, from, to, cancellationToken);
-        var salesByYear = await _orderRepository.GetDashboardSalesByYearAsync(branchFilter, from, to, cancellationToken);
-        var ordersByYear = await _orderRepository.GetDashboardOrdersByYearAsync(branchFilter, from, to, cancellationToken);
+        var dayOfWeek = NormalizeDayOfWeek(request.DayOfWeek);
+
+        var salesByDay = await _orderRepository.GetDashboardSalesByDayAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
+        var ordersByDay = await _orderRepository.GetDashboardOrdersByDayAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
+        var salesByMonth = await _orderRepository.GetDashboardSalesByMonthAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
+        var ordersByMonth = await _orderRepository.GetDashboardOrdersByMonthAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
+        var salesByYear = await _orderRepository.GetDashboardSalesByYearAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
+        var ordersByYear = await _orderRepository.GetDashboardOrdersByYearAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
         var salesByHour = await _orderRepository.GetDashboardSalesByHourAsync(
             branchFilter,
             hourDayStart,
             hourDayEnd,
+            dayOfWeek,
             cancellationToken);
         var ordersByHour = await _orderRepository.GetDashboardOrdersByHourAsync(
             branchFilter,
             hourDayStart,
             hourDayEnd,
+            dayOfWeek,
             cancellationToken);
 
         return SalesDashboardChartBuilder.BuildEvolution(
@@ -79,5 +83,12 @@ public class GetDashboardSalesEvolutionHandler
         if (Roles.IsSuperadmin(_currentUser.Role))
             return requestedBranchId;
         return _currentUser.BranchId > 0 ? _currentUser.BranchId : null;
+    }
+
+    private static int? NormalizeDayOfWeek(int? dayOfWeek)
+    {
+        if (!dayOfWeek.HasValue || dayOfWeek.Value < 1 || dayOfWeek.Value > 7)
+            return null;
+        return dayOfWeek.Value;
     }
 }

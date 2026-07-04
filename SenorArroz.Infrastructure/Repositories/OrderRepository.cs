@@ -1255,8 +1255,32 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
+        if (dayOfWeek.HasValue)
+        {
+            var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+                .Select(o => new { o.BranchId, o.Type, o.Total, o.CreatedAt, o.PrepareAt })
+                .ToListAsync(cancellationToken);
+
+            return rows
+                .Where(o => IsDashboardDayOfWeek(o.CreatedAt, o.PrepareAt, dayOfWeek.Value))
+                .GroupBy(o => o.BranchId)
+                .Select(g => new BranchSalesComparisonAggregate
+                {
+                    BranchId = g.Key,
+                    SalesTotal = g.Sum(o => o.Total),
+                    OrdersTotal = g.Count(),
+                    SalesDelivery = g.Sum(o => o.Type == OrderType.Delivery ? o.Total : 0),
+                    SalesOnsite = g.Sum(o => o.Type != OrderType.Delivery ? o.Total : 0),
+                    OrdersDelivery = g.Count(o => o.Type == OrderType.Delivery),
+                    OrdersOnsite = g.Count(o => o.Type != OrderType.Delivery),
+                })
+                .ToList();
+        }
+
         return await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
             .GroupBy(o => o.BranchId)
             .Select(g => new BranchSalesComparisonAggregate
@@ -1276,13 +1300,16 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
             .Select(o => new { o.BranchId, o.CreatedAt, o.PrepareAt, o.Total })
             .ToListAsync(cancellationToken);
 
         return rows
+            .Where(o => !dayOfWeek.HasValue || IsDashboardDayOfWeek(o.CreatedAt, o.PrepareAt, dayOfWeek.Value))
             .GroupBy(o => new
             {
                 o.BranchId,
@@ -1296,13 +1323,16 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
             .Select(o => new { o.CreatedAt, o.PrepareAt })
             .ToListAsync(cancellationToken);
 
         return rows
+            .Where(o => !dayOfWeek.HasValue || IsDashboardDayOfWeek(o.CreatedAt, o.PrepareAt, dayOfWeek.Value))
             .GroupBy(o => ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(o.CreatedAt, o.PrepareAt))
             .Select(g => new OrdersDayPoint(g.Key, g.Count()))
             .ToList();
@@ -1312,13 +1342,16 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
             .Select(o => new { o.BranchId, o.CreatedAt, o.PrepareAt, o.Total })
             .ToListAsync(cancellationToken);
 
         return rows
+            .Where(o => !dayOfWeek.HasValue || IsDashboardDayOfWeek(o.CreatedAt, o.PrepareAt, dayOfWeek.Value))
             .GroupBy(o => new
             {
                 o.BranchId,
@@ -1336,13 +1369,16 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
             .Select(o => new { o.CreatedAt, o.PrepareAt })
             .ToListAsync(cancellationToken);
 
         return rows
+            .Where(o => !dayOfWeek.HasValue || IsDashboardDayOfWeek(o.CreatedAt, o.PrepareAt, dayOfWeek.Value))
             .GroupBy(o => ColombiaTimeHelper.OrderSalesEffectiveColombiaYearMonth(o.CreatedAt, o.PrepareAt))
             .Select(g => new OrdersMonthPoint(g.Key.Year, g.Key.Month, g.Count()))
             .ToList();
@@ -1352,13 +1388,16 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
             .Select(o => new { o.BranchId, o.CreatedAt, o.PrepareAt, o.Total })
             .ToListAsync(cancellationToken);
 
         return rows
+            .Where(o => !dayOfWeek.HasValue || IsDashboardDayOfWeek(o.CreatedAt, o.PrepareAt, dayOfWeek.Value))
             .GroupBy(o => new
             {
                 o.BranchId,
@@ -1372,13 +1411,16 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
             .Select(o => new { o.CreatedAt, o.PrepareAt })
             .ToListAsync(cancellationToken);
 
         return rows
+            .Where(o => !dayOfWeek.HasValue || IsDashboardDayOfWeek(o.CreatedAt, o.PrepareAt, dayOfWeek.Value))
             .GroupBy(o => ColombiaTimeHelper.OrderSalesEffectiveColombiaYear(o.CreatedAt, o.PrepareAt))
             .Select(g => new OrdersYearPoint(g.Key, g.Count()))
             .ToList();
@@ -1388,13 +1430,16 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime dayStartUtc,
         DateTime dayEndUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var rows = await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
             .Select(o => new { o.BranchId, o.CreatedAt, o.PrepareAt, o.Total })
             .ToListAsync(cancellationToken);
 
         return rows
+            .Where(o => !dayOfWeek.HasValue || IsDashboardDayOfWeek(o.CreatedAt, o.PrepareAt, dayOfWeek.Value))
             .GroupBy(o => new
             {
                 o.BranchId,
@@ -1408,15 +1453,69 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime dayStartUtc,
         DateTime dayEndUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var rows = await DashboardNonCancelledOrdersInRange(branchId, dayStartUtc, dayEndUtc)
             .Select(o => new { o.CreatedAt, o.PrepareAt })
             .ToListAsync(cancellationToken);
 
         return rows
+            .Where(o => !dayOfWeek.HasValue || IsDashboardDayOfWeek(o.CreatedAt, o.PrepareAt, dayOfWeek.Value))
             .GroupBy(o => ColombiaTimeHelper.OrderSalesEffectiveColombiaHour(o.CreatedAt, o.PrepareAt))
             .Select(g => new OrdersHourPoint(g.Key, g.Count()))
+            .ToList();
+    }
+
+    public async Task<List<SalesHourlyAnalyticsPoint>> GetDashboardSalesHourlyAnalyticsAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int? dayOfWeek = null,
+        CancellationToken cancellationToken = default)
+    {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
+
+        var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .Select(o => new { o.CreatedAt, o.PrepareAt, o.Total })
+            .ToListAsync(cancellationToken);
+
+        var dailyHourBuckets = rows
+            .Select(o => new
+            {
+                Day = ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(o.CreatedAt, o.PrepareAt),
+                Hour = ColombiaTimeHelper.OrderSalesEffectiveColombiaHour(o.CreatedAt, o.PrepareAt),
+                o.Total,
+            })
+            .Where(o => !dayOfWeek.HasValue || IsoDayOfWeek(o.Day) == dayOfWeek.Value)
+            .GroupBy(o => new { o.Day, o.Hour })
+            .Select(g => new
+            {
+                g.Key.Day,
+                g.Key.Hour,
+                OrderCount = g.Count(),
+                TotalSalesCop = g.Sum(x => (long)x.Total),
+            })
+            .ToList();
+
+        return dailyHourBuckets
+            .GroupBy(b => b.Hour)
+            .Select(g =>
+            {
+                var orderedTotals = g.Select(x => (decimal)x.TotalSalesCop).OrderBy(x => x).ToList();
+                var totalSales = g.Sum(x => x.TotalSalesCop);
+                var orderCount = g.Sum(x => x.OrderCount);
+
+                return new SalesHourlyAnalyticsPoint(
+                    g.Key,
+                    orderCount,
+                    totalSales,
+                    g.Average(x => (decimal)x.TotalSalesCop),
+                    PercentileCont(orderedTotals, 0.5m),
+                    orderCount == 0 ? 0 : (decimal)totalSales / orderCount);
+            })
+            .OrderBy(p => p.Hour)
             .ToList();
     }
 
@@ -1424,8 +1523,10 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
@@ -1435,6 +1536,33 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
         if (branchId.HasValue)
             q = q.Where(od => od.Order.BranchId == branchId.Value);
+
+        if (dayOfWeek.HasValue)
+        {
+            var rows = await q
+                .Select(od => new
+                {
+                    od.ProductId,
+                    ProductName = od.Product.Name ?? string.Empty,
+                    od.Quantity,
+                    RevenueCop = (long)(od.Subtotal ?? (od.Quantity * od.UnitPrice - od.Discount)),
+                    od.Order.CreatedAt,
+                    od.Order.PrepareAt,
+                })
+                .ToListAsync(cancellationToken);
+
+            return rows
+                .Where(od => IsDashboardDayOfWeek(od.CreatedAt, od.PrepareAt, dayOfWeek.Value))
+                .GroupBy(od => new { od.ProductId, od.ProductName })
+                .Select(g => new SalesProductAggregateRow
+                {
+                    ProductId = g.Key.ProductId,
+                    ProductName = g.Key.ProductName,
+                    QuantitySold = g.Sum(od => od.Quantity),
+                    RevenueCop = g.Sum(od => od.RevenueCop),
+                })
+                .ToList();
+        }
 
         return await q
             .GroupBy(od => new { od.ProductId, Name = od.Product.Name ?? string.Empty })
@@ -1452,8 +1580,10 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
@@ -1463,6 +1593,37 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
         if (branchId.HasValue)
             q = q.Where(od => od.Order.BranchId == branchId.Value);
+
+        if (dayOfWeek.HasValue)
+        {
+            var rows = await q
+                .Select(od => new
+                {
+                    od.ProductId,
+                    ProductName = od.Product.Name ?? string.Empty,
+                    od.Product.CategoryId,
+                    CategoryName = od.Product.Category.Name ?? string.Empty,
+                    od.Quantity,
+                    RevenueCop = (long)(od.Subtotal ?? (od.Quantity * od.UnitPrice - od.Discount)),
+                    od.Order.CreatedAt,
+                    od.Order.PrepareAt,
+                })
+                .ToListAsync(cancellationToken);
+
+            return rows
+                .Where(od => IsDashboardDayOfWeek(od.CreatedAt, od.PrepareAt, dayOfWeek.Value))
+                .GroupBy(od => new { od.ProductId, od.ProductName, od.CategoryId, od.CategoryName })
+                .Select(g => new SalesProductCategoryAggregateRow
+                {
+                    ProductId = g.Key.ProductId,
+                    ProductName = g.Key.ProductName,
+                    CategoryId = g.Key.CategoryId,
+                    CategoryName = g.Key.CategoryName,
+                    QuantitySold = g.Sum(od => od.Quantity),
+                    RevenueCop = g.Sum(od => od.RevenueCop),
+                })
+                .ToList();
+        }
 
         return await q
             .GroupBy(od => new
@@ -1488,8 +1649,10 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
@@ -1499,6 +1662,33 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
         if (branchId.HasValue)
             q = q.Where(od => od.Order.BranchId == branchId.Value);
+
+        if (dayOfWeek.HasValue)
+        {
+            var rows = await q
+                .Select(od => new
+                {
+                    od.Product.CategoryId,
+                    CategoryName = od.Product.Category.Name ?? string.Empty,
+                    od.Quantity,
+                    RevenueCop = (long)(od.Subtotal ?? (od.Quantity * od.UnitPrice - od.Discount)),
+                    od.Order.CreatedAt,
+                    od.Order.PrepareAt,
+                })
+                .ToListAsync(cancellationToken);
+
+            return rows
+                .Where(od => IsDashboardDayOfWeek(od.CreatedAt, od.PrepareAt, dayOfWeek.Value))
+                .GroupBy(od => new { od.CategoryId, od.CategoryName })
+                .Select(g => new SalesCategoryAggregateRow
+                {
+                    CategoryId = g.Key.CategoryId,
+                    CategoryName = g.Key.CategoryName,
+                    QuantitySold = g.Sum(od => od.Quantity),
+                    RevenueCop = g.Sum(od => od.RevenueCop),
+                })
+                .ToList();
+        }
 
         return await q
             .GroupBy(od => new
@@ -1520,8 +1710,10 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
@@ -1532,19 +1724,48 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         if (branchId.HasValue)
             q = q.Where(od => od.Order.BranchId == branchId.Value);
 
-        var rows = await q
-            .GroupBy(od => new
-            {
-                od.Product.CategoryId,
-                Name = od.Product.Category.Name ?? string.Empty,
-            })
-            .Select(g => new SalesCategoryWeightRow
-            {
-                CategoryId = g.Key.CategoryId,
-                CategoryName = g.Key.Name,
-                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
-            })
-            .ToListAsync(cancellationToken);
+        List<SalesCategoryWeightRow> rows;
+        if (dayOfWeek.HasValue)
+        {
+            var rawRows = await q
+                .Select(od => new
+                {
+                    od.Product.CategoryId,
+                    CategoryName = od.Product.Category.Name ?? string.Empty,
+                    od.Quantity,
+                    WeightGrams = od.Product.WeightGrams!.Value,
+                    od.Order.CreatedAt,
+                    od.Order.PrepareAt,
+                })
+                .ToListAsync(cancellationToken);
+
+            rows = rawRows
+                .Where(od => IsDashboardDayOfWeek(od.CreatedAt, od.PrepareAt, dayOfWeek.Value))
+                .GroupBy(od => new { od.CategoryId, od.CategoryName })
+                .Select(g => new SalesCategoryWeightRow
+                {
+                    CategoryId = g.Key.CategoryId,
+                    CategoryName = g.Key.CategoryName,
+                    TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.WeightGrams),
+                })
+                .ToList();
+        }
+        else
+        {
+            rows = await q
+                .GroupBy(od => new
+                {
+                    od.Product.CategoryId,
+                    Name = od.Product.Category.Name ?? string.Empty,
+                })
+                .Select(g => new SalesCategoryWeightRow
+                {
+                    CategoryId = g.Key.CategoryId,
+                    CategoryName = g.Key.Name,
+                    TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
+                })
+                .ToListAsync(cancellationToken);
+        }
 
         return rows
             .Where(r => r.TotalWeightGrams > 0)
@@ -1557,8 +1778,10 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         int? branchId,
         DateTime fromUtc,
         DateTime toUtc,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
@@ -1569,15 +1792,44 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         if (branchId.HasValue)
             q = q.Where(od => od.Order.BranchId == branchId.Value);
 
-        var rows = await q
-            .GroupBy(od => new { od.ProductId, Name = od.Product.Name ?? string.Empty })
-            .Select(g => new SalesProductWeightRow
-            {
-                ProductId = g.Key.ProductId,
-                ProductName = g.Key.Name,
-                TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
-            })
-            .ToListAsync(cancellationToken);
+        List<SalesProductWeightRow> rows;
+        if (dayOfWeek.HasValue)
+        {
+            var rawRows = await q
+                .Select(od => new
+                {
+                    od.ProductId,
+                    ProductName = od.Product.Name ?? string.Empty,
+                    od.Quantity,
+                    WeightGrams = od.Product.WeightGrams!.Value,
+                    od.Order.CreatedAt,
+                    od.Order.PrepareAt,
+                })
+                .ToListAsync(cancellationToken);
+
+            rows = rawRows
+                .Where(od => IsDashboardDayOfWeek(od.CreatedAt, od.PrepareAt, dayOfWeek.Value))
+                .GroupBy(od => new { od.ProductId, od.ProductName })
+                .Select(g => new SalesProductWeightRow
+                {
+                    ProductId = g.Key.ProductId,
+                    ProductName = g.Key.ProductName,
+                    TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.WeightGrams),
+                })
+                .ToList();
+        }
+        else
+        {
+            rows = await q
+                .GroupBy(od => new { od.ProductId, Name = od.Product.Name ?? string.Empty })
+                .Select(g => new SalesProductWeightRow
+                {
+                    ProductId = g.Key.ProductId,
+                    ProductName = g.Key.Name,
+                    TotalWeightGrams = g.Sum(od => (long)od.Quantity * od.Product.WeightGrams!.Value),
+                })
+                .ToListAsync(cancellationToken);
+        }
 
         return rows
             .Where(r => r.TotalWeightGrams > 0)
@@ -1592,8 +1844,10 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime toUtc,
         int categoryId,
         CategoryWeightEvolutionGranularity granularity,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
@@ -1610,9 +1864,9 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         // Proyectar solo tipos anónimos traducibles; el record en Select hace que EF genere SQL inválido.
         return granularity switch
         {
-            CategoryWeightEvolutionGranularity.Day => await EvolutionByDayAsync(q, cancellationToken),
-            CategoryWeightEvolutionGranularity.Month => await EvolutionByMonthAsync(q, cancellationToken),
-            CategoryWeightEvolutionGranularity.Year => await EvolutionByYearAsync(q, cancellationToken),
+            CategoryWeightEvolutionGranularity.Day => await EvolutionByDayAsync(q, dayOfWeek, cancellationToken),
+            CategoryWeightEvolutionGranularity.Month => await EvolutionByMonthAsync(q, dayOfWeek, cancellationToken),
+            CategoryWeightEvolutionGranularity.Year => await EvolutionByYearAsync(q, dayOfWeek, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(granularity), granularity, null),
         };
     }
@@ -1622,8 +1876,10 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime fromUtc,
         DateTime toUtc,
         CategoryWeightEvolutionGranularity granularity,
+        int? dayOfWeek = null,
         CancellationToken cancellationToken = default)
     {
+        dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
@@ -1637,15 +1893,16 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
         return granularity switch
         {
-            CategoryWeightEvolutionGranularity.Day => await EvolutionAllCategoriesByDayAsync(q, cancellationToken),
-            CategoryWeightEvolutionGranularity.Month => await EvolutionAllCategoriesByMonthAsync(q, cancellationToken),
-            CategoryWeightEvolutionGranularity.Year => await EvolutionAllCategoriesByYearAsync(q, cancellationToken),
+            CategoryWeightEvolutionGranularity.Day => await EvolutionAllCategoriesByDayAsync(q, dayOfWeek, cancellationToken),
+            CategoryWeightEvolutionGranularity.Month => await EvolutionAllCategoriesByMonthAsync(q, dayOfWeek, cancellationToken),
+            CategoryWeightEvolutionGranularity.Year => await EvolutionAllCategoriesByYearAsync(q, dayOfWeek, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(granularity), granularity, null),
         };
     }
 
     private static async Task<List<SalesCategoryWeightEvolutionPoint>> EvolutionByDayAsync(
         IQueryable<OrderDetail> q,
+        int? dayOfWeek,
         CancellationToken cancellationToken)
     {
         var raw = await q
@@ -1657,6 +1914,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             .ToListAsync(cancellationToken);
 
         return raw
+            .Where(x => !dayOfWeek.HasValue || IsDashboardDayOfWeek(x.CreatedAt, x.PrepareAt, dayOfWeek.Value))
             .GroupBy(x => ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(x.CreatedAt, x.PrepareAt))
             .Select(g => new SalesCategoryWeightEvolutionPoint(
                 ColombiaTimeHelper.ColombiaCalendarDayStartUtc(g.Key),
@@ -1667,6 +1925,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
     private static async Task<List<SalesCategoryWeightEvolutionPoint>> EvolutionByMonthAsync(
         IQueryable<OrderDetail> q,
+        int? dayOfWeek,
         CancellationToken cancellationToken)
     {
         var raw = await q
@@ -1678,6 +1937,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             .ToListAsync(cancellationToken);
 
         return raw
+            .Where(x => !dayOfWeek.HasValue || IsDashboardDayOfWeek(x.CreatedAt, x.PrepareAt, dayOfWeek.Value))
             .GroupBy(x => ColombiaTimeHelper.OrderSalesEffectiveColombiaYearMonth(x.CreatedAt, x.PrepareAt))
             .Select(g => new SalesCategoryWeightEvolutionPoint(
                 ColombiaTimeHelper.ColombiaCalendarDayStartUtc(new DateTime(g.Key.Year, g.Key.Month, 1)),
@@ -1688,6 +1948,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
     private static async Task<List<SalesCategoryWeightEvolutionPoint>> EvolutionByYearAsync(
         IQueryable<OrderDetail> q,
+        int? dayOfWeek,
         CancellationToken cancellationToken)
     {
         var raw = await q
@@ -1699,6 +1960,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             .ToListAsync(cancellationToken);
 
         return raw
+            .Where(x => !dayOfWeek.HasValue || IsDashboardDayOfWeek(x.CreatedAt, x.PrepareAt, dayOfWeek.Value))
             .GroupBy(x => ColombiaTimeHelper.OrderSalesEffectiveColombiaYear(x.CreatedAt, x.PrepareAt))
             .Select(g => new SalesCategoryWeightEvolutionPoint(
                 ColombiaTimeHelper.ColombiaCalendarDayStartUtc(new DateTime(g.Key, 1, 1)),
@@ -1709,6 +1971,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
     private static async Task<List<SalesCategoryWeightEvolutionSeries>> EvolutionAllCategoriesByDayAsync(
         IQueryable<OrderDetail> q,
+        int? dayOfWeek,
         CancellationToken cancellationToken)
     {
         var raw = await q
@@ -1722,6 +1985,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             .ToListAsync(cancellationToken);
 
         return raw
+            .Where(x => !dayOfWeek.HasValue || IsDashboardDayOfWeek(x.CreatedAt, x.PrepareAt, dayOfWeek.Value))
             .GroupBy(x => (x.CategoryId, x.Name))
             .Select(g => new SalesCategoryWeightEvolutionSeries(
                 g.Key.CategoryId,
@@ -1738,6 +2002,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
     private static async Task<List<SalesCategoryWeightEvolutionSeries>> EvolutionAllCategoriesByMonthAsync(
         IQueryable<OrderDetail> q,
+        int? dayOfWeek,
         CancellationToken cancellationToken)
     {
         var raw = await q
@@ -1751,6 +2016,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             .ToListAsync(cancellationToken);
 
         return raw
+            .Where(x => !dayOfWeek.HasValue || IsDashboardDayOfWeek(x.CreatedAt, x.PrepareAt, dayOfWeek.Value))
             .GroupBy(x => (x.CategoryId, x.Name))
             .Select(g => new SalesCategoryWeightEvolutionSeries(
                 g.Key.CategoryId,
@@ -1767,6 +2033,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
     private static async Task<List<SalesCategoryWeightEvolutionSeries>> EvolutionAllCategoriesByYearAsync(
         IQueryable<OrderDetail> q,
+        int? dayOfWeek,
         CancellationToken cancellationToken)
     {
         var raw = await q
@@ -1780,6 +2047,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             .ToListAsync(cancellationToken);
 
         return raw
+            .Where(x => !dayOfWeek.HasValue || IsDashboardDayOfWeek(x.CreatedAt, x.PrepareAt, dayOfWeek.Value))
             .GroupBy(x => (x.CategoryId, x.Name))
             .Select(g => new SalesCategoryWeightEvolutionSeries(
                 g.Key.CategoryId,
@@ -1846,6 +2114,39 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
     private static DateTime GetSalesEffectiveDate(DateTime createdAtUtc, DateTime? prepareAtUtc)
         => prepareAtUtc ?? createdAtUtc;
+
+    private static int? NormalizeDashboardDayOfWeek(int? dayOfWeek)
+    {
+        if (!dayOfWeek.HasValue || dayOfWeek.Value < 1 || dayOfWeek.Value > 7)
+            return null;
+        return dayOfWeek.Value;
+    }
+
+    private static bool IsDashboardDayOfWeek(DateTime createdAtUtc, DateTime? prepareAtUtc, int dayOfWeek)
+    {
+        var day = ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(createdAtUtc, prepareAtUtc);
+        return IsoDayOfWeek(day) == dayOfWeek;
+    }
+
+    private static int IsoDayOfWeek(DateTime date)
+        => date.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)date.DayOfWeek;
+
+    private static decimal PercentileCont(IReadOnlyList<decimal> sortedValues, decimal percentile)
+    {
+        if (sortedValues.Count == 0)
+            return 0;
+        if (sortedValues.Count == 1)
+            return sortedValues[0];
+
+        var rank = (sortedValues.Count - 1) * percentile;
+        var lower = (int)Math.Floor(rank);
+        var upper = (int)Math.Ceiling(rank);
+        if (lower == upper)
+            return sortedValues[lower];
+
+        var fraction = rank - lower;
+        return sortedValues[lower] + (sortedValues[upper] - sortedValues[lower]) * fraction;
+    }
 
     private static IQueryable<Order> ApplyOrderSalesDateRange(
         IQueryable<Order> orders,

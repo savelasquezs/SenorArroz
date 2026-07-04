@@ -29,6 +29,7 @@ public class GetDashboardSalesProductsHandler
 
         var top = Math.Clamp(request.Top <= 0 ? 10 : request.Top, 5, 20);
         var branchFilter = ResolveBranchFilter(request.BranchId);
+        var dayOfWeek = NormalizeDayOfWeek(request.DayOfWeek);
 
         List<RankRow> rows;
         if (request.GroupBy == SalesProductsGroupBy.Category)
@@ -37,6 +38,7 @@ public class GetDashboardSalesProductsHandler
                 branchFilter,
                 from,
                 to,
+                dayOfWeek,
                 cancellationToken);
             rows = agg
                 .Select(r => new RankRow(
@@ -52,6 +54,7 @@ public class GetDashboardSalesProductsHandler
                 branchFilter,
                 from,
                 to,
+                dayOfWeek,
                 cancellationToken);
             rows = agg
                 .Select(r => new RankRow(
@@ -70,6 +73,7 @@ public class GetDashboardSalesProductsHandler
             branchFilter,
             from,
             to,
+            dayOfWeek,
             cancellationToken);
 
         var topByQuantity = rows
@@ -149,6 +153,13 @@ public class GetDashboardSalesProductsHandler
         if (Roles.IsSuperadmin(_currentUser.Role))
             return requestedBranchId;
         return _currentUser.BranchId > 0 ? _currentUser.BranchId : null;
+    }
+
+    private static int? NormalizeDayOfWeek(int? dayOfWeek)
+    {
+        if (!dayOfWeek.HasValue || dayOfWeek.Value < 1 || dayOfWeek.Value > 7)
+            return null;
+        return dayOfWeek.Value;
     }
 
     private sealed record RankRow(int Id, string Name, int QuantitySold, long RevenueCop);

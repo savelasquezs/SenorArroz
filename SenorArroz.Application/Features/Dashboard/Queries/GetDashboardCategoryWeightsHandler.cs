@@ -34,11 +34,13 @@ public class GetDashboardCategoryWeightsHandler
         var (from, to) = ColombiaTimeHelper.NormalizeDashboardRangeUtc(request.FromUtc, request.ToUtc, MaxRangeDays);
         var branchFilter = ResolveBranchFilter(request.BranchId);
         var granularity = ParseGranularity(request.Granularity);
+        var dayOfWeek = NormalizeDayOfWeek(request.DayOfWeek);
 
         var agg = await _orderRepository.GetSalesCategoryWeightAggregatesForDashboardAsync(
             branchFilter,
             from,
             to,
+            dayOfWeek,
             cancellationToken);
 
         var byCategory = agg
@@ -61,6 +63,7 @@ public class GetDashboardCategoryWeightsHandler
                 to,
                 cid,
                 granularity,
+                dayOfWeek,
                 cancellationToken);
             evolution = points
                 .Select(p => new CategoryWeightEvolutionPointDto
@@ -77,6 +80,7 @@ public class GetDashboardCategoryWeightsHandler
                 from,
                 to,
                 granularity,
+                dayOfWeek,
                 cancellationToken);
             evolutionsByCategory = seriesList
                 .Select(s => new CategoryWeightEvolutionSeriesDto
@@ -116,6 +120,13 @@ public class GetDashboardCategoryWeightsHandler
         if (string.Equals(g, "year", StringComparison.OrdinalIgnoreCase))
             return CategoryWeightEvolutionGranularity.Year;
         return CategoryWeightEvolutionGranularity.Day;
+    }
+
+    private static int? NormalizeDayOfWeek(int? dayOfWeek)
+    {
+        if (!dayOfWeek.HasValue || dayOfWeek.Value < 1 || dayOfWeek.Value > 7)
+            return null;
+        return dayOfWeek.Value;
     }
 
     private async Task ValidateCategoryAsync(int categoryId, CancellationToken cancellationToken = default)

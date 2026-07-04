@@ -14,4 +14,6 @@ public class GetDashboardCategoryWeightsQuery : IRequest<DashboardCategoryWeight
 
     /// <summary>Si tiene valor, <c>Evolution</c> para esa categoría; si no, <c>EvolutionsByCategory</c> (todas).</summary>
     public int? CategoryId { get; set; }
+
+    public int? DayOfWeek { get; set; }
 }
