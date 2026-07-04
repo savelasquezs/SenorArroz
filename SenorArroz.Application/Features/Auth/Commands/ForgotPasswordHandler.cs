@@ -41,22 +41,26 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 await _passwordResetRepository.CreateAsync(resetToken, cancellationToken);
 
                 // Send email
-                var emailSent = await _emailService.SendPasswordResetEmailAsync(
+                var emailResult = await _emailService.SendPasswordResetEmailAsync(
                     request.Email,
                     user.Name,
                     resetToken.Token,
                     request.ResetUrl);
 
-                if (emailSent)
+                if (emailResult.Success)
                 {
-                    _logger.LogInformation("Password reset email sent successfully to {Email}", request.Email);
+                    _logger.LogInformation("Password reset email queued successfully for {Email}", request.Email);
                 }
                 else
                 {
-                    _logger.LogError("Failed to send password reset email to {Email}", request.Email);
+                    _logger.LogError(
+                        "Failed to queue password reset email for {Email}. Provider: {Provider}. Error: {Error}",
+                        request.Email,
+                        emailResult.Provider,
+                        emailResult.ErrorMessage);
                 }
 
-                return emailSent;
+                return emailResult.Success;
             }
             catch (Exception ex)
             {

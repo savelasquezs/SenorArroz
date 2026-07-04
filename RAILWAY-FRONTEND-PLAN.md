@@ -40,9 +40,9 @@
 - `JwtSettings__RefreshTokenExpirationDays=7`
 - `EmailSettings__SmtpHost=smtp.gmail.com`
 - `EmailSettings__SmtpPort=587`
-- `EmailSettings__SmtpUsername=arrozcastilla@gmail.com`
-- `EmailSettings__SmtpPassword=nifg ksbt cdbn mpcc`
-- `EmailSettings__FromEmail=arrozcastilla@gmail.com`
+- `EmailSettings__SmtpUsername=<tu_correo>`
+- `EmailSettings__SmtpPassword=<tu_app_password>`
+- `EmailSettings__FromEmail=<tu_correo>`
 - `EmailSettings__FromName=SenorArroz`
 - `EmailSettings__EnableSsl=true`
 - `FrontendSettings__ResetPasswordUrl=https://TU-FRONTEND-URL.railway.app/reset-password` (actualizar después de crear frontend)
@@ -254,4 +254,3 @@ app.UseCors("AllowFrontend");
 - `RAILWAY-ROADMAP.md` - Roadmap general de despliegue
 - `RAILWAY-MIGRATIONS.md` - Guía de migraciones de base de datos
 - `RAILWAY-CONNECTION.md` - Guía de conexión a PostgreSQL
-

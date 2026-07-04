@@ -208,7 +208,7 @@ public class AuthController : ControllerBase
         // Always return success to prevent email enumeration
         return Ok(new
         {
-            message = "Si el email existe en nuestro sistema, se ha enviado un enlace de recuperación."
+            message = "Si el email existe en nuestro sistema, se procesó la solicitud de recuperación."
         });
     }
 
@@ -267,7 +267,7 @@ public class AuthController : ControllerBase
         {
             return Ok(new
             {
-                message = "Contraseña restablecida exitosamente. Se ha enviado un email de confirmación."
+                message = "Contraseña restablecida exitosamente. La confirmación quedó en cola para envío."
             });
         }
 

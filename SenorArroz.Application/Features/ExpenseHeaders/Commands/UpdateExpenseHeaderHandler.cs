@@ -122,7 +122,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
 
             foreach (var detail in detailsToRemove)
             {
-                _context.ExpenseDetails.Remove(detail);
+                expenseHeader.ExpenseDetails.Remove(detail);
             }
 
             // Actualizar o crear detalles

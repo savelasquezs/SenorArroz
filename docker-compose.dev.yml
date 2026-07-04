@@ -19,13 +19,13 @@ services:
       - JwtSettings__Issuer=SenorArroz.API
       - JwtSettings__Audience=SenorArroz.Client
       - JwtSettings__RefreshTokenExpirationDays=7
-      - EmailSettings__SmtpHost=smtp.gmail.com
-      - EmailSettings__SmtpPort=587
-      - EmailSettings__SmtpUsername=arrozcastilla@gmail.com
-      - EmailSettings__SmtpPassword=nifg ksbt cdbn mpcc
-      - EmailSettings__FromEmail=arrozcastilla@gmail.com
-      - EmailSettings__FromName=SenorArroz
-      - EmailSettings__EnableSsl=true
+      - EmailSettings__SmtpHost=${EmailSettings__SmtpHost:-smtp.gmail.com}
+      - EmailSettings__SmtpPort=${EmailSettings__SmtpPort:-587}
+      - EmailSettings__SmtpUsername=${EmailSettings__SmtpUsername}
+      - EmailSettings__SmtpPassword=${EmailSettings__SmtpPassword}
+      - EmailSettings__FromEmail=${EmailSettings__FromEmail}
+      - EmailSettings__FromName=${EmailSettings__FromName:-SenorArroz}
+      - EmailSettings__EnableSsl=${EmailSettings__EnableSsl:-true}
       - FrontendSettings__ResetPasswordUrl=http://localhost:5174/reset-password
     volumes:
       # Montar código fuente para hot reload
@@ -96,4 +96,3 @@ volumes:
 networks:
   senorarroz-network:
     driver: bridge
-

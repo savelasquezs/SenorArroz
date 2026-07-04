@@ -47,6 +47,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<DeliveryRouteStop> DeliveryRouteStops { get; set; }
 
         DbSet<DailyAuditDispatch> DailyAuditDispatches { get; set; }
+        DbSet<EmailOutboxMessage> EmailOutboxMessages { get; set; }
         DbSet<EntityAuditLog> EntityAuditLogs { get; set; }
 
         DbSet<Expense> Expenses { get; set; }

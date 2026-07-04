@@ -9,8 +9,12 @@ namespace SenorArroz.Domain.Interfaces.Services;
 
 public interface IEmailService
 {
-    Task<bool> SendPasswordResetEmailAsync(string toEmail, string userName, string resetToken, string resetUrl);
-    Task<bool> SendPasswordResetConfirmationAsync(string toEmail, string userName);
-    Task<bool> SendTestEmailAsync(string toEmail, string subject, string body);
-    Task<bool> SendDailyMonetaryAuditEmailAsync(IReadOnlyCollection<string> toEmails, DailyMonetaryAuditEmailPayload payload);
+    Task<EmailSendResult> SendPasswordResetEmailAsync(string toEmail, string userName, string resetToken, string resetUrl);
+    Task<EmailSendResult> SendPasswordResetConfirmationAsync(string toEmail, string userName);
+    Task<EmailSendResult> SendTestEmailAsync(string toEmail, string subject, string body);
+    Task<EmailSendResult> SendDailyMonetaryAuditEmailAsync(
+        IReadOnlyCollection<string> toEmails,
+        DailyMonetaryAuditEmailPayload payload,
+        string? relatedEntityType = null,
+        int? relatedEntityId = null);
 }

@@ -105,7 +105,7 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
     public async Task<ExpenseHeader?> GetByIdWithDetailsAsync(int id, CancellationToken cancellationToken = default)
     {
         return await _context.ExpenseHeaders
-            .AsNoTracking()
+            .AsNoTrackingWithIdentityResolution()
             .Include(eh => eh.Branch)
             .Include(eh => eh.Supplier)
             .Include(eh => eh.CreatedBy)
@@ -127,16 +127,34 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
 
     public async Task<ExpenseHeader> UpdateAsync(ExpenseHeader expenseHeader, CancellationToken cancellationToken = default)
     {
-        foreach (var d in expenseHeader.ExpenseDetails)
-            d.Expense = null!;
-        expenseHeader.Supplier = null!;
-        foreach (var p in expenseHeader.ExpenseBankPayments)
-            p.Bank = null!;
+        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            ExpenseHeaderUpdateGraphForPersistence.DetachReadOnlyNavigations(expenseHeader);
 
-        _context.ExpenseHeaders.Update(expenseHeader);
-        await _context.SaveChangesAsync(cancellationToken);
+            var keepIds = expenseHeader.ExpenseDetails
+                .Where(d => d.Id > 0)
+                .Select(d => d.Id)
+                .ToHashSet();
 
-        return await GetByIdWithDetailsAsync(expenseHeader.Id, cancellationToken) ?? expenseHeader;
+            var detailsToDelete = await _context.ExpenseDetails
+                .Where(d => d.HeaderId == expenseHeader.Id && !keepIds.Contains(d.Id))
+                .ToListAsync(cancellationToken);
+
+            if (detailsToDelete.Count > 0)
+                _context.ExpenseDetails.RemoveRange(detailsToDelete);
+
+            _context.ExpenseHeaders.Update(expenseHeader);
+            await _context.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+
+            return await GetByIdWithDetailsAsync(expenseHeader.Id, cancellationToken) ?? expenseHeader;
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
