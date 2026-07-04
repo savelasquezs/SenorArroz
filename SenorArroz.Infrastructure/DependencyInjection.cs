@@ -10,6 +10,7 @@ using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Repositories;
 using SenorArroz.Infrastructure.Services;
 using SenorArroz.Infrastructure.Storage;
+using SenorArroz.Infrastructure.WhatsApp;
 using Microsoft.Extensions.Hosting;
 
 
@@ -26,6 +27,7 @@ public static class DependencyInjection
         services.Configure<BrandingOptions>(configuration.GetSection(BrandingOptions.SectionName));
         services.Configure<DeliveryPayrollOptions>(configuration.GetSection(DeliveryPayrollOptions.SectionName));
         services.Configure<FirebaseStorageOptions>(configuration.GetSection(FirebaseStorageOptions.SectionName));
+        services.Configure<WhatsAppCloudOptions>(configuration.GetSection(WhatsAppCloudOptions.SectionName));
         services.AddSingleton<IFirebaseGcsStorage, FirebaseGcsStorageService>();
 
         // FCM Push Notifications
@@ -43,6 +45,7 @@ public static class DependencyInjection
         services.AddHttpClient<GoogleRoutesDrivingMetricsService>();
         services.AddScoped<IGoogleRoutesDrivingMetricsService>(sp => sp.GetRequiredService<GoogleRoutesDrivingMetricsService>());
         services.AddScoped<IDeliveryRouteWorkflowService, DeliveryRouteWorkflowService>();
+        services.AddHttpClient<IWhatsAppCloudClient, WhatsAppCloudClient>();
 
         // Repositories
         services.AddScoped<IBranchRepository, BranchRepository>();

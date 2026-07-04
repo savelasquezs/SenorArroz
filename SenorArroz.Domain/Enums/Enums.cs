@@ -115,4 +115,32 @@ namespace SenorArroz.Domain.Enums
         Done,
         Failed,
     }
+
+    public enum WhatsAppConversationStatus
+    {
+        Open,
+        Pending,
+        Closed,
+        Archived,
+    }
+
+    public enum WhatsAppMessageDirection
+    {
+        Inbound,
+        Outbound,
+    }
+
+    public enum WhatsAppMessageType
+    {
+        Text,
+    }
+
+    public enum WhatsAppMessageStatus
+    {
+        Received,
+        Sent,
+        Delivered,
+        Read,
+        Failed,
+    }
 }
