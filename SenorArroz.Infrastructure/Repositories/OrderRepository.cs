@@ -1477,27 +1477,14 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
     {
         dayOfWeek = NormalizeDashboardDayOfWeek(dayOfWeek);
 
-        var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .Select(o => new { o.CreatedAt, o.PrepareAt, o.Total })
-            .ToListAsync(cancellationToken);
+        var dailyHourBuckets = await GetDashboardSalesDailyHourBucketsAsync(
+            branchId,
+            fromUtc,
+            toUtc,
+            cancellationToken);
 
-        var dailyHourBuckets = rows
-            .Select(o => new
-            {
-                Day = ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(o.CreatedAt, o.PrepareAt),
-                Hour = ColombiaTimeHelper.OrderSalesEffectiveColombiaHour(o.CreatedAt, o.PrepareAt),
-                o.Total,
-            })
-            .Where(o => !dayOfWeek.HasValue || IsoDayOfWeek(o.Day) == dayOfWeek.Value)
-            .GroupBy(o => new { o.Day, o.Hour })
-            .Select(g => new
-            {
-                g.Key.Day,
-                g.Key.Hour,
-                OrderCount = g.Count(),
-                TotalSalesCop = g.Sum(x => (long)x.Total),
-            })
-            .ToList();
+        if (dayOfWeek.HasValue)
+            dailyHourBuckets = dailyHourBuckets.Where(b => b.DayOfWeek == dayOfWeek.Value).ToList();
 
         return dailyHourBuckets
             .GroupBy(b => b.Hour)
@@ -1516,6 +1503,40 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
                     orderCount == 0 ? 0 : (decimal)totalSales / orderCount);
             })
             .OrderBy(p => p.Hour)
+            .ToList();
+    }
+
+    public async Task<List<SalesDailyHourBucket>> GetDashboardSalesDailyHourBucketsAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .Select(o => new { o.CreatedAt, o.PrepareAt, o.Total })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(o =>
+            {
+                var day = ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(o.CreatedAt, o.PrepareAt);
+                return new
+                {
+                    Day = day,
+                    DayOfWeek = IsoDayOfWeek(day),
+                    Hour = ColombiaTimeHelper.OrderSalesEffectiveColombiaHour(o.CreatedAt, o.PrepareAt),
+                    o.Total,
+                };
+            })
+            .GroupBy(o => new { o.Day, o.DayOfWeek, o.Hour })
+            .Select(g => new SalesDailyHourBucket(
+                g.Key.Day,
+                g.Key.DayOfWeek,
+                g.Key.Hour,
+                g.Count(),
+                g.Sum(x => (long)x.Total)))
+            .OrderBy(b => b.Day)
+            .ThenBy(b => b.Hour)
             .ToList();
     }
 

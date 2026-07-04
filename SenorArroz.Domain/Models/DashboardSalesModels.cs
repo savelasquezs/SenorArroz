@@ -37,6 +37,14 @@ public sealed record SalesHourlyAnalyticsPoint(
     decimal MedianDailySalesCop,
     decimal AverageTicketCop);
 
+/// <summary>Bucket base para analitica horaria: un dia calendario Colombia + una hora.</summary>
+public sealed record SalesDailyHourBucket(
+    DateTime Day,
+    int DayOfWeek,
+    int Hour,
+    int OrderCount,
+    long TotalSalesCop);
+
 /// <summary>Agregado por producto (líneas de pedido, pedidos no cancelados).</summary>
 public class SalesProductAggregateRow
 {

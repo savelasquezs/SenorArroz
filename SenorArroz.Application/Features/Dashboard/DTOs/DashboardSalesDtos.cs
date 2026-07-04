@@ -62,6 +62,8 @@ public class OrdersTimelineBlockDto
 public class DashboardSalesHourlyResponseDto
 {
     public List<DashboardSalesHourlyPointDto> Points { get; set; } = new();
+    public List<DashboardSalesDailyPointDto> DailyHistory { get; set; } = new();
+    public List<DashboardSalesHeatmapPointDto> Heatmap { get; set; } = new();
     public DashboardSalesHourlySummaryDto Summary { get; set; } = new();
 }
 
@@ -74,6 +76,27 @@ public class DashboardSalesHourlyPointDto
     public decimal AverageDailySalesCop { get; set; }
     public decimal MedianDailySalesCop { get; set; }
     public decimal AverageTicketCop { get; set; }
+    public decimal ParticipationPercent { get; set; }
+}
+
+public class DashboardSalesDailyPointDto
+{
+    public DateTime Day { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public int DayOfWeek { get; set; }
+    public string DayOfWeekLabel { get; set; } = string.Empty;
+    public long TotalSalesCop { get; set; }
+    public int OrderCount { get; set; }
+    public decimal AverageTicketCop { get; set; }
+}
+
+public class DashboardSalesHeatmapPointDto
+{
+    public int DayOfWeek { get; set; }
+    public string DayOfWeekLabel { get; set; } = string.Empty;
+    public int Hour { get; set; }
+    public string HourLabel { get; set; } = string.Empty;
+    public decimal MedianDailySalesCop { get; set; }
 }
 
 public class DashboardSalesHourlySummaryDto

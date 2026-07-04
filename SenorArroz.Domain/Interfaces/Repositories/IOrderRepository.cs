@@ -216,6 +216,12 @@ public interface IOrderRepository
         int? dayOfWeek = null,
         CancellationToken cancellationToken = default);
 
+    Task<List<SalesDailyHourBucket>> GetDashboardSalesDailyHourBucketsAsync(
+        int? branchId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
     Task<List<SalesProductAggregateRow>> GetSalesProductAggregatesForDashboardAsync(
         int? branchId,
         DateTime fromUtc,
