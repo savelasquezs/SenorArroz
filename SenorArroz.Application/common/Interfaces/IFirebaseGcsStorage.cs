@@ -6,6 +6,9 @@ public interface IFirebaseGcsStorage
     /// <summary>Sube bytes y devuelve URL HTTPS de descarga (formato host Firebase).</summary>
     Task<string> UploadPublicObjectAsync(byte[] content, string objectName, string contentType, CancellationToken cancellationToken = default);
 
+    /// <summary>Asegura que una URL de Firebase Storage sea descargable por navegador y devuelve la URL con token si aplica.</summary>
+    Task<string> EnsureDownloadUrlAsync(string url, CancellationToken cancellationToken = default);
+
     /// <summary>Elimina un objeto por nombre completo en el bucket.</summary>
     Task DeleteObjectAsync(string objectName, CancellationToken cancellationToken = default);
 

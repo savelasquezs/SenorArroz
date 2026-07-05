@@ -221,11 +221,11 @@ public class WhatsAppController : ControllerBase
         }
 
         var messageEntities = await _db.WhatsAppMessages
-            .AsNoTracking()
             .Where(x => x.ConversationId == conversationId)
             .OrderBy(x => x.Timestamp)
             .ThenBy(x => x.Id)
             .ToListAsync(cancellationToken);
+        await EnsureMediaDownloadUrlsAsync(messageEntities, cancellationToken);
         var messages = messageEntities.Select(ToMessageDto).ToList();
 
         return Ok(ApiResponse<IReadOnlyList<WhatsAppMessageDto>>.SuccessResponse(messages, "Mensajes obtenidos."));
@@ -419,6 +419,33 @@ public class WhatsAppController : ControllerBase
         }
 
         return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Archivo enviado."));
+    }
+
+    private async Task EnsureMediaDownloadUrlsAsync(IReadOnlyList<WhatsAppMessage> messages, CancellationToken cancellationToken)
+    {
+        var changed = false;
+        foreach (var message in messages)
+        {
+            if (string.IsNullOrWhiteSpace(message.MediaUrl))
+                continue;
+
+            try
+            {
+                var downloadUrl = await _firebaseStorage.EnsureDownloadUrlAsync(message.MediaUrl, cancellationToken);
+                if (!string.Equals(downloadUrl, message.MediaUrl, StringComparison.Ordinal))
+                {
+                    message.MediaUrl = downloadUrl;
+                    changed = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not ensure Firebase download URL for WhatsApp message {MessageId}", message.Id);
+            }
+        }
+
+        if (changed)
+            await _db.SaveChangesAsync(cancellationToken);
     }
 
     private IQueryable<int> GetAllowedVerifiedBranchIdsQuery()

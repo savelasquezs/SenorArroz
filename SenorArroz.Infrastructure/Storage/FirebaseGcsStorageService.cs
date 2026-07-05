@@ -1,8 +1,10 @@
 using Google;
+using Google.Apis.Storage.v1.Data;
 using Google.Cloud.Storage.V1;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
+using StorageObject = Google.Apis.Storage.v1.Data.Object;
 
 namespace SenorArroz.Infrastructure.Storage;
 
@@ -34,13 +36,51 @@ public sealed class FirebaseGcsStorageService : IFirebaseGcsStorage
         if (_opt.UploadWithPublicReadAcl)
             uploadOptions = new UploadObjectOptions { PredefinedAcl = PredefinedObjectAcl.PublicRead };
 
-        using var stream = new MemoryStream(content, writable: false);
-        if (uploadOptions is not null)
-            await Client.UploadObjectAsync(bucket, name, ct, stream, uploadOptions, cancellationToken).ConfigureAwait(false);
-        else
-            await Client.UploadObjectAsync(bucket, name, ct, stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var downloadToken = Guid.NewGuid().ToString("D");
+        var destination = new StorageObject
+        {
+            Bucket = bucket,
+            Name = name,
+            ContentType = ct,
+            Metadata = new Dictionary<string, string>
+            {
+                ["firebaseStorageDownloadTokens"] = downloadToken
+            }
+        };
 
-        return BuildPublicUrl(bucket, name);
+        using var stream = new MemoryStream(content, writable: false);
+        await Client.UploadObjectAsync(destination, stream, uploadOptions, cancellationToken).ConfigureAwait(false);
+
+        return BuildFirebaseDownloadUrl(bucket, name, downloadToken);
+    }
+
+    public async Task<string> EnsureDownloadUrlAsync(string url, CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+
+        if (string.IsNullOrWhiteSpace(url) || url.Contains("token=", StringComparison.OrdinalIgnoreCase))
+            return url;
+
+        if (!TryParseFirebaseStorageUrl(url, out var bucket, out var objectName))
+            return url;
+
+        var storageObject = await Client.GetObjectAsync(bucket, objectName, cancellationToken: cancellationToken).ConfigureAwait(false);
+        storageObject.Metadata ??= new Dictionary<string, string>();
+
+        if (!storageObject.Metadata.TryGetValue("firebaseStorageDownloadTokens", out var tokens) || string.IsNullOrWhiteSpace(tokens))
+        {
+            tokens = Guid.NewGuid().ToString("D");
+            storageObject.Metadata["firebaseStorageDownloadTokens"] = tokens;
+            storageObject = await Client.UpdateObjectAsync(storageObject, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        var token = tokens
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+
+        return string.IsNullOrWhiteSpace(token)
+            ? url
+            : BuildFirebaseDownloadUrl(storageObject.Bucket ?? bucket, storageObject.Name ?? objectName, token);
     }
 
     public async Task DeleteObjectAsync(string objectName, CancellationToken cancellationToken = default)
@@ -93,5 +133,50 @@ public sealed class FirebaseGcsStorageService : IFirebaseGcsStorage
         var b = Uri.EscapeDataString(bucket);
         var o = Uri.EscapeDataString(objectName);
         return $"https://firebasestorage.googleapis.com/v0/b/{b}/o/{o}?alt=media";
+    }
+
+    internal static string BuildFirebaseDownloadUrl(string bucket, string objectName, string token)
+    {
+        var url = BuildPublicUrl(bucket, objectName);
+        return $"{url}&token={Uri.EscapeDataString(token)}";
+    }
+
+    private static bool TryParseFirebaseStorageUrl(string url, out string bucket, out string objectName)
+    {
+        bucket = string.Empty;
+        objectName = string.Empty;
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+
+        if (string.Equals(uri.Host, "firebasestorage.googleapis.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var segments = uri.Segments
+                .Select(x => x.Trim('/'))
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToArray();
+            var bucketIndex = Array.FindIndex(segments, x => string.Equals(x, "b", StringComparison.OrdinalIgnoreCase));
+            var objectIndex = Array.FindIndex(segments, x => string.Equals(x, "o", StringComparison.OrdinalIgnoreCase));
+            if (bucketIndex < 0 || objectIndex < 0 || bucketIndex + 1 >= segments.Length || objectIndex + 1 >= segments.Length)
+                return false;
+
+            bucket = Uri.UnescapeDataString(segments[bucketIndex + 1]);
+            objectName = Uri.UnescapeDataString(segments[objectIndex + 1]);
+            return !string.IsNullOrWhiteSpace(bucket) && !string.IsNullOrWhiteSpace(objectName);
+        }
+
+        if (string.Equals(uri.Host, "storage.googleapis.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var path = uri.AbsolutePath.Trim('/');
+            var slash = path.IndexOf('/');
+            if (slash <= 0 || slash >= path.Length - 1)
+                return false;
+
+            bucket = Uri.UnescapeDataString(path[..slash]);
+            objectName = Uri.UnescapeDataString(path[(slash + 1)..]);
+            return !string.IsNullOrWhiteSpace(bucket) && !string.IsNullOrWhiteSpace(objectName);
+        }
+
+        return false;
     }
 }
