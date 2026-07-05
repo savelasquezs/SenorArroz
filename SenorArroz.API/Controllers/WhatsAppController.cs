@@ -48,6 +48,43 @@ public class WhatsAppController : ControllerBase
         }, "Estado de WhatsApp obtenido."));
     }
 
+    [HttpGet("unread-summary")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppUnreadSummaryDto>>> GetUnreadSummary(CancellationToken cancellationToken)
+    {
+        var branchIds = await GetAllowedVerifiedBranchIdsQuery().ToListAsync(cancellationToken);
+        if (branchIds.Count == 0)
+        {
+            return Ok(ApiResponse<WhatsAppUnreadSummaryDto>.SuccessResponse(
+                new WhatsAppUnreadSummaryDto(),
+                "Resumen de WhatsApp obtenido."));
+        }
+
+        var query = _db.WhatsAppConversations
+            .AsNoTracking()
+            .Where(x => branchIds.Contains(x.BranchId) && x.UnreadCount > 0);
+
+        var unreadConversations = await query.CountAsync(cancellationToken);
+        if (unreadConversations == 0)
+        {
+            return Ok(ApiResponse<WhatsAppUnreadSummaryDto>.SuccessResponse(
+                new WhatsAppUnreadSummaryDto(),
+                "Resumen de WhatsApp obtenido."));
+        }
+
+        var totalUnread = await query.SumAsync(x => x.UnreadCount, cancellationToken);
+        var latestMessageAt = await query
+            .Select(x => x.LastMessageAt)
+            .MaxAsync(cancellationToken);
+
+        return Ok(ApiResponse<WhatsAppUnreadSummaryDto>.SuccessResponse(new WhatsAppUnreadSummaryDto
+        {
+            TotalUnread = totalUnread,
+            UnreadConversations = unreadConversations,
+            LatestMessageAt = latestMessageAt
+        }, "Resumen de WhatsApp obtenido."));
+    }
+
     [HttpGet("webhook")]
     [AllowAnonymous]
     public async Task<IActionResult> VerifyWebhook(CancellationToken cancellationToken)

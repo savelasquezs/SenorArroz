@@ -43,6 +43,13 @@ public class WhatsAppStatusDto
     public IReadOnlyList<int> BranchIds { get; set; } = [];
 }
 
+public class WhatsAppUnreadSummaryDto
+{
+    public int TotalUnread { get; set; }
+    public int UnreadConversations { get; set; }
+    public DateTime? LatestMessageAt { get; set; }
+}
+
 public class WhatsAppConversationDto
 {
     public int Id { get; set; }
