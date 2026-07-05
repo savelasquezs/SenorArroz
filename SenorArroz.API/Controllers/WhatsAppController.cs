@@ -20,6 +20,7 @@ public class WhatsAppController : ControllerBase
     private readonly ICurrentUser _currentUser;
     private readonly IClock _clock;
     private readonly IWhatsAppCloudClient _whatsAppCloudClient;
+    private readonly IWhatsAppNotificationService _whatsAppNotificationService;
     private readonly IFirebaseGcsStorage _firebaseStorage;
     private readonly FirebaseStorageOptions _firebaseOptions;
     private readonly ILogger<WhatsAppController> _logger;
@@ -29,6 +30,7 @@ public class WhatsAppController : ControllerBase
         ICurrentUser currentUser,
         IClock clock,
         IWhatsAppCloudClient whatsAppCloudClient,
+        IWhatsAppNotificationService whatsAppNotificationService,
         IFirebaseGcsStorage firebaseStorage,
         IOptions<FirebaseStorageOptions> firebaseOptions,
         ILogger<WhatsAppController> logger)
@@ -37,6 +39,7 @@ public class WhatsAppController : ControllerBase
         _currentUser = currentUser;
         _clock = clock;
         _whatsAppCloudClient = whatsAppCloudClient;
+        _whatsAppNotificationService = whatsAppNotificationService;
         _firebaseStorage = firebaseStorage;
         _firebaseOptions = firebaseOptions.Value;
         _logger = logger;
@@ -138,13 +141,19 @@ public class WhatsAppController : ControllerBase
             Processed = false
         };
         _db.WhatsAppWebhookEvents.Add(webhookEvent);
+        var createdMessages = new List<WhatsAppMessage>();
 
         try
         {
             using var document = JsonDocument.Parse(rawPayload);
-            var processedAny = await ProcessWebhookPayloadAsync(document.RootElement, webhookEvent, cancellationToken);
+            var processedAny = await ProcessWebhookPayloadAsync(document.RootElement, webhookEvent, createdMessages, cancellationToken);
             webhookEvent.Processed = processedAny;
             await _db.SaveChangesAsync(cancellationToken);
+
+            foreach (var message in createdMessages.Where(x => x.Id > 0))
+            {
+                await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
+            }
         }
         catch (JsonException ex)
         {
@@ -328,6 +337,7 @@ public class WhatsAppController : ControllerBase
         }
 
         _logger.LogInformation("WhatsApp outbound message sent for conversation {ConversationId}", conversationId);
+        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
         return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Mensaje enviado."));
     }
 
@@ -449,7 +459,28 @@ public class WhatsAppController : ControllerBase
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(sendResult.ErrorMessage ?? uploadResult.ErrorMessage ?? "No se pudo enviar el archivo."));
         }
 
+        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
         return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Archivo enviado."));
+    }
+
+    private async Task NotifyWhatsAppMessageCreatedAsync(int messageId, CancellationToken cancellationToken)
+    {
+        var message = await _db.WhatsAppMessages
+            .AsNoTracking()
+            .Include(x => x.Conversation)
+                .ThenInclude(x => x.Branch)
+            .Include(x => x.Conversation)
+                .ThenInclude(x => x.Customer)
+            .FirstOrDefaultAsync(x => x.Id == messageId, cancellationToken);
+
+        if (message?.Conversation is null)
+            return;
+
+        await _whatsAppNotificationService.NotifyMessageCreatedAsync(
+            message.Conversation.BranchId,
+            ToConversationDto(message.Conversation),
+            ToMessageDto(message),
+            cancellationToken);
     }
 
     private async Task EnsureMediaDownloadUrlsAsync(IReadOnlyList<WhatsAppMessage> messages, CancellationToken cancellationToken)
@@ -501,7 +532,11 @@ public class WhatsAppController : ControllerBase
             .AnyAsync(x => x.BranchId == branchId && x.IsActive && x.IsVerified, cancellationToken);
     }
 
-    private async Task<bool> ProcessWebhookPayloadAsync(JsonElement root, WhatsAppWebhookEvent webhookEvent, CancellationToken cancellationToken)
+    private async Task<bool> ProcessWebhookPayloadAsync(
+        JsonElement root,
+        WhatsAppWebhookEvent webhookEvent,
+        List<WhatsAppMessage> createdMessages,
+        CancellationToken cancellationToken)
     {
         var processedAny = false;
         if (!root.TryGetProperty("entry", out var entries) || entries.ValueKind != JsonValueKind.Array)
@@ -531,7 +566,7 @@ public class WhatsAppController : ControllerBase
                     continue;
                 }
 
-                processedAny |= await ProcessInboundMessagesAsync(value, setting, webhookEvent, cancellationToken);
+                processedAny |= await ProcessInboundMessagesAsync(value, setting, webhookEvent, createdMessages, cancellationToken);
                 processedAny |= await ProcessStatusesAsync(value, webhookEvent, cancellationToken);
             }
         }
@@ -543,6 +578,7 @@ public class WhatsAppController : ControllerBase
         JsonElement value,
         WhatsAppBranchSetting setting,
         WhatsAppWebhookEvent webhookEvent,
+        List<WhatsAppMessage> createdMessages,
         CancellationToken cancellationToken)
     {
         if (!value.TryGetProperty("messages", out var messages) || messages.ValueKind != JsonValueKind.Array)
@@ -600,7 +636,7 @@ public class WhatsAppController : ControllerBase
                 ? null
                 : await DownloadAndStoreInboundMediaAsync(setting, conversation.BranchId, conversation.Id, mediaPayload.Value, messageType, cancellationToken);
 
-            _db.WhatsAppMessages.Add(new WhatsAppMessage
+            var message = new WhatsAppMessage
             {
                 Conversation = conversation,
                 WhatsAppMessageId = messageId,
@@ -616,7 +652,9 @@ public class WhatsAppController : ControllerBase
                 Status = WhatsAppMessageStatus.Received,
                 Timestamp = timestamp,
                 RawPayload = messageElement.GetRawText()
-            });
+            };
+            _db.WhatsAppMessages.Add(message);
+            createdMessages.Add(message);
 
             webhookEvent.EventType = "message";
             webhookEvent.WhatsAppMessageId ??= messageId;
