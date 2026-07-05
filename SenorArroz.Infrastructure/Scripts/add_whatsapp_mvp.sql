@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS whatsapp_webhook_event (
     updated_at timestamp without time zone DEFAULT now()
 );
 
+ALTER TABLE customer
+    ADD COLUMN IF NOT EXISTS whatsapp_template_opt_in boolean NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS whatsapp_template_authorization_message_id varchar(128) NULL;
+
 CREATE INDEX IF NOT EXISTS idx_whatsapp_branch_setting_branch ON whatsapp_branch_setting(branch_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_branch_setting_phone_number_id ON whatsapp_branch_setting(phone_number_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_branch_setting_verify_token ON whatsapp_branch_setting(webhook_verify_token);
@@ -65,3 +69,4 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_message_whatsapp_id ON whatsapp_message(
 CREATE INDEX IF NOT EXISTS idx_whatsapp_message_timestamp ON whatsapp_message(timestamp);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_webhook_event_created_at ON whatsapp_webhook_event(created_at);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_webhook_event_whatsapp_id ON whatsapp_webhook_event(whatsapp_message_id);
+CREATE INDEX IF NOT EXISTS idx_customer_whatsapp_template_opt_in ON customer(whatsapp_template_opt_in);

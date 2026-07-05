@@ -9,6 +9,8 @@ public class Customer : BaseEntity
     public string Phone1 { get; set; } = string.Empty;
     public string? Phone2 { get; set; }
     public bool Active { get; set; } = true;
+    public bool WhatsAppTemplateOptIn { get; set; }
+    public string? WhatsAppTemplateAuthorizationMessageId { get; set; }
 
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;

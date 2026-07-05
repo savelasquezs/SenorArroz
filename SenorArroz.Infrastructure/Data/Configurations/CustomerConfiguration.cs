@@ -19,6 +19,12 @@ public class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.Property(c => c.Phone1).HasColumnName("phone1").HasMaxLength(10).IsRequired();
         builder.Property(c => c.Phone2).HasColumnName("phone2").HasMaxLength(10);
         builder.Property(c => c.Active).HasColumnName("active").HasDefaultValue(true);
+        builder.Property(c => c.WhatsAppTemplateOptIn)
+            .HasColumnName("whatsapp_template_opt_in")
+            .HasDefaultValue(false);
+        builder.Property(c => c.WhatsAppTemplateAuthorizationMessageId)
+            .HasColumnName("whatsapp_template_authorization_message_id")
+            .HasMaxLength(128);
 
         builder.Property(c => c.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore); ; ;
@@ -35,5 +41,6 @@ public class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.HasIndex(c => c.BranchId).HasDatabaseName("idx_customer_branch");
         builder.HasIndex(c => c.Phone1).HasDatabaseName("idx_customer_phone");
         builder.HasIndex(c => c.Active).HasDatabaseName("idx_customer_active").HasFilter("active = true");
+        builder.HasIndex(c => c.WhatsAppTemplateOptIn).HasDatabaseName("idx_customer_whatsapp_template_opt_in");
     }
 }
