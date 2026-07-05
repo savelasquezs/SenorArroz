@@ -60,6 +60,19 @@ CREATE TABLE IF NOT EXISTS whatsapp_webhook_event (
     updated_at timestamp without time zone DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS whatsapp_quick_reply (
+    id serial PRIMARY KEY,
+    branch_id integer NOT NULL REFERENCES branch(id) ON DELETE CASCADE,
+    shortcut varchar(40) NOT NULL,
+    message_template varchar(4096) NOT NULL,
+    is_active boolean NOT NULL DEFAULT true,
+    usage_count integer NOT NULL DEFAULT 0,
+    last_used_at timestamp without time zone NULL,
+    created_at timestamp without time zone DEFAULT now(),
+    updated_at timestamp without time zone DEFAULT now(),
+    CONSTRAINT uq_whatsapp_quick_reply_branch_shortcut UNIQUE (branch_id, shortcut)
+);
+
 ALTER TABLE customer
     ADD COLUMN IF NOT EXISTS whatsapp_template_opt_in boolean NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS whatsapp_template_authorization_message_id varchar(128) NULL;
@@ -84,4 +97,6 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_message_media_id ON whatsapp_message(med
 CREATE INDEX IF NOT EXISTS idx_whatsapp_message_timestamp ON whatsapp_message(timestamp);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_webhook_event_created_at ON whatsapp_webhook_event(created_at);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_webhook_event_whatsapp_id ON whatsapp_webhook_event(whatsapp_message_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_quick_reply_branch ON whatsapp_quick_reply(branch_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_quick_reply_usage ON whatsapp_quick_reply(branch_id, is_active, usage_count);
 CREATE INDEX IF NOT EXISTS idx_customer_whatsapp_template_opt_in ON customer(whatsapp_template_opt_in);

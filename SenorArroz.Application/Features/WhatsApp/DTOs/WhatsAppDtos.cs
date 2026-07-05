@@ -50,6 +50,35 @@ public class WhatsAppUnreadSummaryDto
     public DateTime? LatestMessageAt { get; set; }
 }
 
+public class WhatsAppQuickReplyDto
+{
+    public int Id { get; set; }
+    public int BranchId { get; set; }
+    public string? BranchName { get; set; }
+    public string Shortcut { get; set; } = string.Empty;
+    public string MessageTemplate { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+    public int UsageCount { get; set; }
+    public DateTime? LastUsedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class WhatsAppQuickReplySearchDto
+{
+    public int? BranchId { get; set; }
+    public bool ActiveOnly { get; set; } = false;
+    public string? Search { get; set; }
+}
+
+public class UpsertWhatsAppQuickReplyDto
+{
+    public int? BranchId { get; set; }
+    public string Shortcut { get; set; } = string.Empty;
+    public string MessageTemplate { get; set; } = string.Empty;
+    public bool IsActive { get; set; } = true;
+}
+
 public class WhatsAppConversationDto
 {
     public int Id { get; set; }
@@ -98,6 +127,11 @@ public class WhatsAppConversationSearchDto
 public class SendWhatsAppMessageDto
 {
     public string Text { get; set; } = string.Empty;
+}
+
+public class SendWhatsAppQuickReplyDto
+{
+    public int QuickReplyId { get; set; }
 }
 
 public class LinkWhatsAppConversationCustomerDto

@@ -40,6 +40,7 @@ public class Branch : BaseEntity
     public virtual ICollection<Supplier> Suppliers { get; set; } = new List<Supplier>();
     public virtual ICollection<CashRegisterClosure> CashRegisterClosures { get; set; } = new List<CashRegisterClosure>();
     public virtual ICollection<WhatsAppConversation> WhatsAppConversations { get; set; } = new List<WhatsAppConversation>();
+    public virtual ICollection<WhatsAppQuickReply> WhatsAppQuickReplies { get; set; } = new List<WhatsAppQuickReply>();
 
     public virtual BranchPrintSettings? PrintSettings { get; set; }
     public virtual WhatsAppBranchSetting? WhatsAppSetting { get; set; }

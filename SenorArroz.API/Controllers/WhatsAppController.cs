@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -94,6 +95,152 @@ public class WhatsAppController : ControllerBase
             UnreadConversations = unreadConversations,
             LatestMessageAt = latestMessageAt
         }, "Resumen de WhatsApp obtenido."));
+    }
+
+    [HttpGet("quick-replies")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<WhatsAppQuickReplyDto>>>> GetQuickReplies(
+        [FromQuery] WhatsAppQuickReplySearchDto search,
+        CancellationToken cancellationToken)
+    {
+        if (search.BranchId.HasValue && !CanAccessBranch(search.BranchId.Value))
+            return Forbid();
+
+        var query = _db.WhatsAppQuickReplies
+            .AsNoTracking()
+            .Include(x => x.Branch)
+            .AsQueryable();
+
+        if (!Roles.IsSuperadmin(_currentUser.Role))
+            query = query.Where(x => x.BranchId == _currentUser.BranchId);
+        else if (search.BranchId.HasValue)
+            query = query.Where(x => x.BranchId == search.BranchId.Value);
+
+        if (search.ActiveOnly)
+            query = query.Where(x => x.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(search.Search))
+        {
+            var term = search.Search.Trim().ToLowerInvariant().TrimStart('/');
+            query = query.Where(x =>
+                x.Shortcut.ToLower().Contains(term)
+                || x.MessageTemplate.ToLower().Contains(term));
+        }
+
+        var replies = await query
+            .OrderByDescending(x => x.UsageCount)
+            .ThenBy(x => x.Shortcut)
+            .ToListAsync(cancellationToken);
+
+        return Ok(ApiResponse<IReadOnlyList<WhatsAppQuickReplyDto>>.SuccessResponse(
+            replies.Select(ToQuickReplyDto).ToList(),
+            "Respuestas rápidas obtenidas."));
+    }
+
+    [HttpGet("quick-replies/{id:int}")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppQuickReplyDto>>> GetQuickReply(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var reply = await _db.WhatsAppQuickReplies
+            .AsNoTracking()
+            .Include(x => x.Branch)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (reply is null)
+            return NotFound(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse("Respuesta rápida no encontrada."));
+        if (!CanAccessBranch(reply.BranchId))
+            return Forbid();
+
+        return Ok(ApiResponse<WhatsAppQuickReplyDto>.SuccessResponse(ToQuickReplyDto(reply), "Respuesta rápida obtenida."));
+    }
+
+    [HttpPost("quick-replies")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppQuickReplyDto>>> CreateQuickReply(
+        [FromBody] UpsertWhatsAppQuickReplyDto dto,
+        CancellationToken cancellationToken)
+    {
+        var validation = await ValidateQuickReplyPayloadAsync(dto, null, cancellationToken);
+        if (validation.Error is not null)
+            return validation.Error;
+
+        var reply = new WhatsAppQuickReply
+        {
+            BranchId = validation.BranchId,
+            Shortcut = validation.Shortcut,
+            MessageTemplate = dto.MessageTemplate.Trim(),
+            IsActive = dto.IsActive
+        };
+
+        _db.WhatsAppQuickReplies.Add(reply);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        var saved = await _db.WhatsAppQuickReplies
+            .AsNoTracking()
+            .Include(x => x.Branch)
+            .FirstAsync(x => x.Id == reply.Id, cancellationToken);
+
+        return CreatedAtAction(
+            nameof(GetQuickReply),
+            new { id = reply.Id },
+            ApiResponse<WhatsAppQuickReplyDto>.SuccessResponse(ToQuickReplyDto(saved), "Respuesta rápida creada."));
+    }
+
+    [HttpPut("quick-replies/{id:int}")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppQuickReplyDto>>> UpdateQuickReply(
+        int id,
+        [FromBody] UpsertWhatsAppQuickReplyDto dto,
+        CancellationToken cancellationToken)
+    {
+        var reply = await _db.WhatsAppQuickReplies
+            .Include(x => x.Branch)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (reply is null)
+            return NotFound(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse("Respuesta rápida no encontrada."));
+        if (!CanAccessBranch(reply.BranchId))
+            return Forbid();
+
+        var validation = await ValidateQuickReplyPayloadAsync(dto, id, cancellationToken);
+        if (validation.Error is not null)
+            return validation.Error;
+
+        reply.BranchId = validation.BranchId;
+        reply.Shortcut = validation.Shortcut;
+        reply.MessageTemplate = dto.MessageTemplate.Trim();
+        reply.IsActive = dto.IsActive;
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        var saved = await _db.WhatsAppQuickReplies
+            .AsNoTracking()
+            .Include(x => x.Branch)
+            .FirstAsync(x => x.Id == reply.Id, cancellationToken);
+
+        return Ok(ApiResponse<WhatsAppQuickReplyDto>.SuccessResponse(ToQuickReplyDto(saved), "Respuesta rápida actualizada."));
+    }
+
+    [HttpDelete("quick-replies/{id:int}")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse>> DeleteQuickReply(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var reply = await _db.WhatsAppQuickReplies
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (reply is null)
+            return NotFound(ApiResponse.Error("Respuesta rápida no encontrada."));
+        if (!CanAccessBranch(reply.BranchId))
+            return Forbid();
+
+        _db.WhatsAppQuickReplies.Remove(reply);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return Ok(ApiResponse.Success("Respuesta rápida eliminada."));
     }
 
     [HttpGet("webhook")]
@@ -341,6 +488,85 @@ public class WhatsAppController : ControllerBase
         return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Mensaje enviado."));
     }
 
+    [HttpPost("conversations/{conversationId:int}/messages/quick-reply")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendQuickReply(
+        int conversationId,
+        [FromBody] SendWhatsAppQuickReplyDto dto,
+        CancellationToken cancellationToken)
+    {
+        var conversation = await _db.WhatsAppConversations
+            .Include(x => x.Customer)
+            .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
+        if (conversation is null)
+            return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
+        if (!await CanAccessVerifiedBranchAsync(conversation.BranchId, cancellationToken))
+            return Forbid();
+
+        var quickReply = await _db.WhatsAppQuickReplies
+            .FirstOrDefaultAsync(x => x.Id == dto.QuickReplyId && x.BranchId == conversation.BranchId && x.IsActive, cancellationToken);
+        if (quickReply is null)
+            return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Respuesta rápida no encontrada o inactiva para esta sucursal."));
+
+        var text = RenderQuickReplyTemplate(quickReply.MessageTemplate, conversation).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La respuesta rápida no tiene contenido para enviar."));
+        if (text.Length > 4096)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La respuesta rápida renderizada supera 4096 caracteres."));
+
+        var setting = await _db.WhatsAppBranchSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.BranchId == conversation.BranchId && x.IsActive && x.IsVerified, cancellationToken);
+        if (setting is null)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("WhatsApp no está activo y verificado para esta sucursal."));
+
+        var timestamp = _clock.UtcNow;
+        var result = await _whatsAppCloudClient.SendTextMessageAsync(
+            setting.PhoneNumberId,
+            setting.AccessToken,
+            conversation.PhoneNumber,
+            text,
+            cancellationToken);
+
+        var message = new WhatsAppMessage
+        {
+            ConversationId = conversation.Id,
+            WhatsAppMessageId = result.WhatsAppMessageId,
+            Direction = WhatsAppMessageDirection.Outbound,
+            Type = WhatsAppMessageType.Text,
+            TextBody = text,
+            Status = result.Success ? WhatsAppMessageStatus.Sent : WhatsAppMessageStatus.Failed,
+            SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null,
+            Timestamp = timestamp,
+            RawPayload = JsonSerializer.Serialize(new
+            {
+                to = conversation.PhoneNumber,
+                text,
+                quickReplyId = quickReply.Id,
+                result.Success,
+                result.WhatsAppMessageId,
+                result.ErrorMessage
+            })
+        };
+        _db.WhatsAppMessages.Add(message);
+
+        conversation.LastMessageAt = timestamp;
+        conversation.LastMessagePreview = text;
+        quickReply.UsageCount += 1;
+        quickReply.LastUsedAt = timestamp;
+        await _db.SaveChangesAsync(cancellationToken);
+
+        if (!result.Success)
+        {
+            _logger.LogWarning("WhatsApp quick reply failed for conversation {ConversationId}: {Error}", conversationId, result.ErrorMessage);
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(result.ErrorMessage ?? "No se pudo enviar la respuesta rápida."));
+        }
+
+        _logger.LogInformation("WhatsApp quick reply sent for conversation {ConversationId}", conversationId);
+        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
+        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Respuesta rápida enviada."));
+    }
+
     [HttpPost("conversations/{conversationId:int}/messages/media")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     [Consumes("multipart/form-data")]
@@ -530,6 +756,95 @@ public class WhatsAppController : ControllerBase
         return await _db.WhatsAppBranchSettings
             .AsNoTracking()
             .AnyAsync(x => x.BranchId == branchId && x.IsActive && x.IsVerified, cancellationToken);
+    }
+
+    private bool CanAccessBranch(int branchId)
+    {
+        return Roles.IsSuperadmin(_currentUser.Role) || _currentUser.BranchId == branchId;
+    }
+
+    private async Task<(ActionResult<ApiResponse<WhatsAppQuickReplyDto>>? Error, int BranchId, string Shortcut)> ValidateQuickReplyPayloadAsync(
+        UpsertWhatsAppQuickReplyDto dto,
+        int? currentId,
+        CancellationToken cancellationToken)
+    {
+        var branchId = Roles.IsSuperadmin(_currentUser.Role)
+            ? dto.BranchId.GetValueOrDefault()
+            : _currentUser.BranchId;
+
+        if (branchId <= 0)
+            return (BadRequest(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse("Debe seleccionar una sucursal.")), 0, string.Empty);
+        if (!CanAccessBranch(branchId))
+            return (Forbid(), 0, string.Empty);
+        if (!await _db.Branches.AsNoTracking().AnyAsync(x => x.Id == branchId, cancellationToken))
+            return (BadRequest(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse("Sucursal no encontrada.")), 0, string.Empty);
+
+        if (!TryNormalizeQuickReplyShortcut(dto.Shortcut, out var shortcut, out var shortcutError))
+            return (BadRequest(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse(shortcutError)), 0, string.Empty);
+
+        var template = (dto.MessageTemplate ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(template))
+            return (BadRequest(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse("El mensaje no puede estar vacío.")), 0, string.Empty);
+        if (template.Length > 4096)
+            return (BadRequest(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse("El mensaje no puede superar 4096 caracteres.")), 0, string.Empty);
+
+        var duplicate = await _db.WhatsAppQuickReplies
+            .AsNoTracking()
+            .AnyAsync(x => x.BranchId == branchId && x.Shortcut == shortcut && (!currentId.HasValue || x.Id != currentId.Value), cancellationToken);
+        if (duplicate)
+            return (BadRequest(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse("Ya existe una respuesta rápida con esa palabra en la sucursal.")), 0, string.Empty);
+
+        return (null, branchId, shortcut);
+    }
+
+    private static bool TryNormalizeQuickReplyShortcut(string? value, out string shortcut, out string error)
+    {
+        shortcut = (value ?? string.Empty).Trim().TrimStart('/').Trim().ToLowerInvariant();
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(shortcut))
+        {
+            error = "La palabra reservada es obligatoria.";
+            return false;
+        }
+
+        if (shortcut.Length > 40)
+        {
+            error = "La palabra reservada no puede superar 40 caracteres.";
+            return false;
+        }
+
+        if (!shortcut.All(c => char.IsLetterOrDigit(c) || c == '_' || c == '-'))
+        {
+            error = "La palabra reservada solo puede tener letras, números, guion o guion bajo.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string RenderQuickReplyTemplate(string template, WhatsAppConversation conversation)
+    {
+        var customerName = conversation.Customer?.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(customerName))
+            customerName = conversation.ContactName?.Trim();
+        if (string.IsNullOrWhiteSpace(customerName))
+            customerName = "cliente";
+
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["nombre_cliente"] = customerName,
+            ["cliente"] = customerName,
+            ["customerName"] = customerName,
+            ["guestName"] = customerName,
+            ["telefono"] = conversation.PhoneNumber,
+        };
+
+        return Regex.Replace(template, @"{{\s*([a-zA-Z0-9_]+)\s*}}", match =>
+        {
+            var key = match.Groups[1].Value;
+            return values.TryGetValue(key, out var replacement) ? replacement : match.Value;
+        });
     }
 
     private async Task<bool> ProcessWebhookPayloadAsync(
@@ -907,6 +1222,20 @@ public class WhatsAppController : ControllerBase
                 return false;
         }
     }
+
+    private static WhatsAppQuickReplyDto ToQuickReplyDto(WhatsAppQuickReply reply) => new()
+    {
+        Id = reply.Id,
+        BranchId = reply.BranchId,
+        BranchName = reply.Branch?.Name,
+        Shortcut = reply.Shortcut,
+        MessageTemplate = reply.MessageTemplate,
+        IsActive = reply.IsActive,
+        UsageCount = reply.UsageCount,
+        LastUsedAt = reply.LastUsedAt,
+        CreatedAt = reply.CreatedAt,
+        UpdatedAt = reply.UpdatedAt
+    };
 
     private static WhatsAppConversationDto ToConversationDto(WhatsAppConversation conversation) => new()
     {
