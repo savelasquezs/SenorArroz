@@ -133,6 +133,11 @@ namespace SenorArroz.Domain.Enums
     public enum WhatsAppMessageType
     {
         Text,
+        Image,
+        Audio,
+        Video,
+        Document,
+        Sticker,
     }
 
     public enum WhatsAppMessageStatus

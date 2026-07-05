@@ -4,6 +4,23 @@ public record WhatsAppCloudTestResult(bool Success, string? DisplayPhoneNumber, 
 
 public record WhatsAppCloudSendResult(bool Success, string? WhatsAppMessageId, string? ErrorMessage);
 
+public record WhatsAppCloudUploadMediaResult(bool Success, string? MediaId, string? ErrorMessage);
+
+public record WhatsAppCloudMediaInfoResult(
+    bool Success,
+    string? MediaId,
+    string? DownloadUrl,
+    string? MimeType,
+    string? Sha256,
+    long? FileSize,
+    string? ErrorMessage);
+
+public record WhatsAppCloudDownloadedMedia(
+    bool Success,
+    byte[]? Content,
+    string? ContentType,
+    string? ErrorMessage);
+
 public interface IWhatsAppCloudClient
 {
     Task<WhatsAppCloudTestResult> TestConnectionAsync(
@@ -16,5 +33,33 @@ public interface IWhatsAppCloudClient
         string accessToken,
         string toPhoneNumber,
         string text,
+        CancellationToken cancellationToken = default);
+
+    Task<WhatsAppCloudUploadMediaResult> UploadMediaAsync(
+        string phoneNumberId,
+        string accessToken,
+        byte[] content,
+        string fileName,
+        string contentType,
+        CancellationToken cancellationToken = default);
+
+    Task<WhatsAppCloudSendResult> SendMediaMessageAsync(
+        string phoneNumberId,
+        string accessToken,
+        string toPhoneNumber,
+        string mediaType,
+        string mediaId,
+        string? caption,
+        string? fileName,
+        CancellationToken cancellationToken = default);
+
+    Task<WhatsAppCloudMediaInfoResult> GetMediaInfoAsync(
+        string mediaId,
+        string accessToken,
+        CancellationToken cancellationToken = default);
+
+    Task<WhatsAppCloudDownloadedMedia> DownloadMediaAsync(
+        string downloadUrl,
+        string accessToken,
         CancellationToken cancellationToken = default);
 }

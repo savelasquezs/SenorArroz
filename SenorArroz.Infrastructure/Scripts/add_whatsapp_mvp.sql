@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS whatsapp_message (
     direction varchar(20) NOT NULL,
     type varchar(20) NOT NULL DEFAULT 'text',
     text_body varchar(4096) NOT NULL,
+    media_id varchar(128) NULL,
+    media_url varchar(2048) NULL,
+    media_mime_type varchar(120) NULL,
+    media_file_name varchar(255) NULL,
+    media_file_size bigint NULL,
+    media_sha256 varchar(128) NULL,
     status varchar(20) NOT NULL,
     sent_by_user_id integer NULL REFERENCES "user"(id) ON DELETE SET NULL,
     timestamp timestamp without time zone NOT NULL,
@@ -58,6 +64,14 @@ ALTER TABLE customer
     ADD COLUMN IF NOT EXISTS whatsapp_template_opt_in boolean NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS whatsapp_template_authorization_message_id varchar(128) NULL;
 
+ALTER TABLE whatsapp_message
+    ADD COLUMN IF NOT EXISTS media_id varchar(128) NULL,
+    ADD COLUMN IF NOT EXISTS media_url varchar(2048) NULL,
+    ADD COLUMN IF NOT EXISTS media_mime_type varchar(120) NULL,
+    ADD COLUMN IF NOT EXISTS media_file_name varchar(255) NULL,
+    ADD COLUMN IF NOT EXISTS media_file_size bigint NULL,
+    ADD COLUMN IF NOT EXISTS media_sha256 varchar(128) NULL;
+
 CREATE INDEX IF NOT EXISTS idx_whatsapp_branch_setting_branch ON whatsapp_branch_setting(branch_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_branch_setting_phone_number_id ON whatsapp_branch_setting(phone_number_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_branch_setting_verify_token ON whatsapp_branch_setting(webhook_verify_token);
@@ -66,6 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_whatsapp_conversation_branch_phone ON whatsapp_co
 CREATE INDEX IF NOT EXISTS idx_whatsapp_conversation_last_message_at ON whatsapp_conversation(last_message_at);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_message_conversation ON whatsapp_message(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_message_whatsapp_id ON whatsapp_message(whatsapp_message_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_message_media_id ON whatsapp_message(media_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_message_timestamp ON whatsapp_message(timestamp);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_webhook_event_created_at ON whatsapp_webhook_event(created_at);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_webhook_event_whatsapp_id ON whatsapp_webhook_event(whatsapp_message_id);

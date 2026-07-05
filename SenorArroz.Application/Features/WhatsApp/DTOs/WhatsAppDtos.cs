@@ -75,6 +75,12 @@ public class WhatsAppMessageDto
     public string Direction { get; set; } = string.Empty;
     public string Type { get; set; } = string.Empty;
     public string TextBody { get; set; } = string.Empty;
+    public string? MediaId { get; set; }
+    public string? MediaUrl { get; set; }
+    public string? MediaMimeType { get; set; }
+    public string? MediaFileName { get; set; }
+    public long? MediaFileSize { get; set; }
+    public string? MediaSha256 { get; set; }
     public string Status { get; set; } = string.Empty;
     public int? SentByUserId { get; set; }
     public DateTime Timestamp { get; set; }

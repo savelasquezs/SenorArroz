@@ -21,6 +21,12 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
         builder.Property(x => x.Type).HasColumnName("type").HasMaxLength(20).IsRequired()
             .HasConversion(v => TypeToDb(v), v => TypeFromDb(v));
         builder.Property(x => x.TextBody).HasColumnName("text_body").HasMaxLength(4096).IsRequired();
+        builder.Property(x => x.MediaId).HasColumnName("media_id").HasMaxLength(128);
+        builder.Property(x => x.MediaUrl).HasColumnName("media_url").HasMaxLength(2048);
+        builder.Property(x => x.MediaMimeType).HasColumnName("media_mime_type").HasMaxLength(120);
+        builder.Property(x => x.MediaFileName).HasColumnName("media_file_name").HasMaxLength(255);
+        builder.Property(x => x.MediaFileSize).HasColumnName("media_file_size");
+        builder.Property(x => x.MediaSha256).HasColumnName("media_sha256").HasMaxLength(128);
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(20).IsRequired()
             .HasConversion(v => StatusToDb(v), v => StatusFromDb(v));
         builder.Property(x => x.SentByUserId).HasColumnName("sent_by_user_id");
@@ -44,6 +50,7 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
 
         builder.HasIndex(x => x.ConversationId).HasDatabaseName("idx_whatsapp_message_conversation");
         builder.HasIndex(x => x.WhatsAppMessageId).HasDatabaseName("idx_whatsapp_message_whatsapp_id");
+        builder.HasIndex(x => x.MediaId).HasDatabaseName("idx_whatsapp_message_media_id");
         builder.HasIndex(x => x.Timestamp).HasDatabaseName("idx_whatsapp_message_timestamp");
     }
 
@@ -64,12 +71,22 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
     private static string TypeToDb(WhatsAppMessageType type) => type switch
     {
         WhatsAppMessageType.Text => "text",
+        WhatsAppMessageType.Image => "image",
+        WhatsAppMessageType.Audio => "audio",
+        WhatsAppMessageType.Video => "video",
+        WhatsAppMessageType.Document => "document",
+        WhatsAppMessageType.Sticker => "sticker",
         _ => throw new ArgumentOutOfRangeException(nameof(type)),
     };
 
     private static WhatsAppMessageType TypeFromDb(string value) => value?.ToLowerInvariant() switch
     {
         "text" => WhatsAppMessageType.Text,
+        "image" => WhatsAppMessageType.Image,
+        "audio" => WhatsAppMessageType.Audio,
+        "video" => WhatsAppMessageType.Video,
+        "document" => WhatsAppMessageType.Document,
+        "sticker" => WhatsAppMessageType.Sticker,
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 

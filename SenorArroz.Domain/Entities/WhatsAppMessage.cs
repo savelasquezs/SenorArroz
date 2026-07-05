@@ -10,6 +10,12 @@ public class WhatsAppMessage : BaseEntity
     public WhatsAppMessageDirection Direction { get; set; }
     public WhatsAppMessageType Type { get; set; } = WhatsAppMessageType.Text;
     public string TextBody { get; set; } = string.Empty;
+    public string? MediaId { get; set; }
+    public string? MediaUrl { get; set; }
+    public string? MediaMimeType { get; set; }
+    public string? MediaFileName { get; set; }
+    public long? MediaFileSize { get; set; }
+    public string? MediaSha256 { get; set; }
     public WhatsAppMessageStatus Status { get; set; }
     public int? SentByUserId { get; set; }
     public DateTime Timestamp { get; set; }

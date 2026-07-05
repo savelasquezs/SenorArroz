@@ -2,8 +2,10 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
+using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Shared.Models;
@@ -18,6 +20,8 @@ public class WhatsAppController : ControllerBase
     private readonly ICurrentUser _currentUser;
     private readonly IClock _clock;
     private readonly IWhatsAppCloudClient _whatsAppCloudClient;
+    private readonly IFirebaseGcsStorage _firebaseStorage;
+    private readonly FirebaseStorageOptions _firebaseOptions;
     private readonly ILogger<WhatsAppController> _logger;
 
     public WhatsAppController(
@@ -25,12 +29,16 @@ public class WhatsAppController : ControllerBase
         ICurrentUser currentUser,
         IClock clock,
         IWhatsAppCloudClient whatsAppCloudClient,
+        IFirebaseGcsStorage firebaseStorage,
+        IOptions<FirebaseStorageOptions> firebaseOptions,
         ILogger<WhatsAppController> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _whatsAppCloudClient = whatsAppCloudClient;
+        _firebaseStorage = firebaseStorage;
+        _firebaseOptions = firebaseOptions.Value;
         _logger = logger;
     }
 
@@ -292,6 +300,127 @@ public class WhatsAppController : ControllerBase
         return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Mensaje enviado."));
     }
 
+    [HttpPost("conversations/{conversationId:int}/messages/media")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(70_000_000)]
+    public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendMediaMessage(
+        int conversationId,
+        IFormFile? file,
+        [FromForm] string? caption,
+        CancellationToken cancellationToken)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Seleccione un archivo."));
+
+        var conversation = await _db.WhatsAppConversations
+            .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
+        if (conversation is null)
+            return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
+        if (!await CanAccessVerifiedBranchAsync(conversation.BranchId, cancellationToken))
+            return Forbid();
+
+        var setting = await _db.WhatsAppBranchSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.BranchId == conversation.BranchId && x.IsActive && x.IsVerified, cancellationToken);
+        if (setting is null)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("WhatsApp no está activo y verificado para esta sucursal."));
+
+        var mediaType = MediaTypeFromContentType(file.ContentType, file.FileName);
+        var fileName = SanitizeFileName(file.FileName);
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+        await using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, cancellationToken);
+        var bytes = ms.ToArray();
+        var timestamp = _clock.UtcNow;
+        var trimmedCaption = string.IsNullOrWhiteSpace(caption) ? null : caption.Trim();
+        if (trimmedCaption?.Length > 4096)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("El texto del archivo no puede superar 4096 caracteres."));
+
+        var text = trimmedCaption ?? fileName;
+
+        string? storageUrl = null;
+        try
+        {
+            storageUrl = await SaveWhatsAppMediaToFirebaseAsync(
+                conversation.BranchId,
+                conversation.Id,
+                bytes,
+                fileName,
+                contentType,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not upload outbound WhatsApp media to Firebase for conversation {ConversationId}", conversationId);
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("No se pudo guardar el archivo en Firebase Storage."));
+        }
+
+        var uploadResult = await _whatsAppCloudClient.UploadMediaAsync(
+            setting.PhoneNumberId,
+            setting.AccessToken,
+            bytes,
+            fileName,
+            contentType,
+            cancellationToken);
+
+        WhatsAppCloudSendResult sendResult = new(false, null, uploadResult.ErrorMessage);
+        if (uploadResult.Success && !string.IsNullOrWhiteSpace(uploadResult.MediaId))
+        {
+            sendResult = await _whatsAppCloudClient.SendMediaMessageAsync(
+                setting.PhoneNumberId,
+                setting.AccessToken,
+                conversation.PhoneNumber,
+                MediaTypeToApi(mediaType),
+                uploadResult.MediaId,
+                trimmedCaption,
+                fileName,
+                cancellationToken);
+        }
+
+        var message = new WhatsAppMessage
+        {
+            ConversationId = conversation.Id,
+            WhatsAppMessageId = sendResult.WhatsAppMessageId,
+            Direction = WhatsAppMessageDirection.Outbound,
+            Type = mediaType,
+            TextBody = text,
+            MediaId = uploadResult.MediaId,
+            MediaUrl = storageUrl,
+            MediaMimeType = contentType,
+            MediaFileName = fileName,
+            MediaFileSize = bytes.LongLength,
+            Status = sendResult.Success ? WhatsAppMessageStatus.Sent : WhatsAppMessageStatus.Failed,
+            SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null,
+            Timestamp = timestamp,
+            RawPayload = JsonSerializer.Serialize(new
+            {
+                to = conversation.PhoneNumber,
+                mediaType = MediaTypeToApi(mediaType),
+                mediaId = uploadResult.MediaId,
+                fileName,
+                caption = trimmedCaption,
+                storageUrl,
+                sendResult.Success,
+                sendResult.WhatsAppMessageId,
+                error = sendResult.ErrorMessage ?? uploadResult.ErrorMessage
+            })
+        };
+        _db.WhatsAppMessages.Add(message);
+
+        conversation.LastMessageAt = timestamp;
+        conversation.LastMessagePreview = PreviewForMedia(mediaType, text);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        if (!sendResult.Success)
+        {
+            _logger.LogWarning("WhatsApp outbound media failed for conversation {ConversationId}: {Error}", conversationId, sendResult.ErrorMessage ?? uploadResult.ErrorMessage);
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(sendResult.ErrorMessage ?? uploadResult.ErrorMessage ?? "No se pudo enviar el archivo."));
+        }
+
+        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Archivo enviado."));
+    }
+
     private IQueryable<int> GetAllowedVerifiedBranchIdsQuery()
     {
         var query = _db.WhatsAppBranchSettings
@@ -365,8 +494,8 @@ public class WhatsAppController : ControllerBase
         foreach (var messageElement in messages.EnumerateArray())
         {
             var messageId = TryGetString(messageElement, "id");
-            var type = TryGetString(messageElement, "type");
-            if (!string.Equals(type, "text", StringComparison.OrdinalIgnoreCase))
+            var typeText = TryGetString(messageElement, "type");
+            if (!TryMapMessageType(typeText, out var messageType))
                 continue;
 
             if (!string.IsNullOrWhiteSpace(messageId)
@@ -376,8 +505,11 @@ public class WhatsAppController : ControllerBase
             }
 
             var from = NormalizeWhatsAppPhone(TryGetString(messageElement, "from"));
-            var text = TryGetTextBody(messageElement);
-            if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(text))
+            var mediaPayload = TryGetMediaPayload(messageElement, messageType);
+            var text = messageType == WhatsAppMessageType.Text
+                ? TryGetTextBody(messageElement)
+                : TryGetMediaCaptionOrName(mediaPayload, messageType);
+            if (string.IsNullOrWhiteSpace(from))
                 continue;
 
             var timestamp = ParseWhatsAppTimestamp(TryGetString(messageElement, "timestamp")) ?? _clock.UtcNow;
@@ -400,16 +532,29 @@ public class WhatsAppController : ControllerBase
             conversation.CustomerId = customer?.Id;
             conversation.ContactName = contactName ?? conversation.ContactName;
             conversation.LastMessageAt = timestamp;
-            conversation.LastMessagePreview = text.Length > 500 ? text[..500] : text;
+            conversation.LastMessagePreview = PreviewForMedia(messageType, text ?? string.Empty);
             conversation.UnreadCount += 1;
+
+            if (conversation.Id == 0 && messageType != WhatsAppMessageType.Text && mediaPayload is not null)
+                await _db.SaveChangesAsync(cancellationToken);
+
+            var inboundMedia = messageType == WhatsAppMessageType.Text || mediaPayload is null
+                ? null
+                : await DownloadAndStoreInboundMediaAsync(setting, conversation.BranchId, conversation.Id, mediaPayload.Value, messageType, cancellationToken);
 
             _db.WhatsAppMessages.Add(new WhatsAppMessage
             {
                 Conversation = conversation,
                 WhatsAppMessageId = messageId,
                 Direction = WhatsAppMessageDirection.Inbound,
-                Type = WhatsAppMessageType.Text,
-                TextBody = text,
+                Type = messageType,
+                TextBody = text ?? string.Empty,
+                MediaId = inboundMedia?.MediaId ?? mediaPayload?.MediaId,
+                MediaUrl = inboundMedia?.MediaUrl,
+                MediaMimeType = inboundMedia?.MimeType ?? mediaPayload?.MimeType,
+                MediaFileName = inboundMedia?.FileName ?? mediaPayload?.FileName,
+                MediaFileSize = inboundMedia?.FileSize,
+                MediaSha256 = inboundMedia?.Sha256 ?? mediaPayload?.Sha256,
                 Status = WhatsAppMessageStatus.Received,
                 Timestamp = timestamp,
                 RawPayload = messageElement.GetRawText()
@@ -473,6 +618,86 @@ public class WhatsAppController : ControllerBase
         return message.TryGetProperty("text", out var text)
             ? TryGetString(text, "body")
             : null;
+    }
+
+    private static InboundMediaPayload? TryGetMediaPayload(JsonElement message, WhatsAppMessageType messageType)
+    {
+        var property = MediaTypeToApi(messageType);
+        if (property == "text" || !message.TryGetProperty(property, out var media) || media.ValueKind != JsonValueKind.Object)
+            return null;
+
+        return new InboundMediaPayload(
+            TryGetString(media, "id") ?? string.Empty,
+            TryGetString(media, "mime_type"),
+            TryGetString(media, "sha256"),
+            TryGetString(media, "filename"),
+            TryGetString(media, "caption"));
+    }
+
+    private async Task<StoredWhatsAppMedia?> DownloadAndStoreInboundMediaAsync(
+        WhatsAppBranchSetting setting,
+        int branchId,
+        int conversationId,
+        InboundMediaPayload mediaPayload,
+        WhatsAppMessageType messageType,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(mediaPayload.MediaId))
+            return null;
+
+        var info = await _whatsAppCloudClient.GetMediaInfoAsync(mediaPayload.MediaId, setting.AccessToken, cancellationToken);
+        if (!info.Success || string.IsNullOrWhiteSpace(info.DownloadUrl))
+        {
+            _logger.LogWarning("Could not get WhatsApp media info for media id {MediaId}: {Error}", mediaPayload.MediaId, info.ErrorMessage);
+            return new StoredWhatsAppMedia(mediaPayload.MediaId, null, mediaPayload.MimeType, mediaPayload.FileName, null, mediaPayload.Sha256);
+        }
+
+        var download = await _whatsAppCloudClient.DownloadMediaAsync(info.DownloadUrl, setting.AccessToken, cancellationToken);
+        if (!download.Success || download.Content is null)
+        {
+            _logger.LogWarning("Could not download WhatsApp media id {MediaId}: {Error}", mediaPayload.MediaId, download.ErrorMessage);
+            return new StoredWhatsAppMedia(mediaPayload.MediaId, null, info.MimeType ?? mediaPayload.MimeType, mediaPayload.FileName, info.FileSize, info.Sha256 ?? mediaPayload.Sha256);
+        }
+
+        var mimeType = download.ContentType ?? info.MimeType ?? mediaPayload.MimeType ?? "application/octet-stream";
+        var fileName = string.IsNullOrWhiteSpace(mediaPayload.FileName)
+            ? $"{mediaPayload.MediaId}{ExtensionFromContentType(mimeType, messageType)}"
+            : SanitizeFileName(mediaPayload.FileName);
+        string? storageUrl = null;
+        try
+        {
+            storageUrl = await SaveWhatsAppMediaToFirebaseAsync(branchId, conversationId, download.Content, fileName, mimeType, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not upload inbound WhatsApp media id {MediaId} to Firebase.", mediaPayload.MediaId);
+        }
+
+        return new StoredWhatsAppMedia(
+            mediaPayload.MediaId,
+            storageUrl,
+            mimeType,
+            fileName,
+            info.FileSize ?? download.Content.LongLength,
+            info.Sha256 ?? mediaPayload.Sha256);
+    }
+
+    private async Task<string> SaveWhatsAppMediaToFirebaseAsync(
+        int branchId,
+        int conversationId,
+        byte[] content,
+        string fileName,
+        string contentType,
+        CancellationToken cancellationToken)
+    {
+        var prefix = string.IsNullOrWhiteSpace(_firebaseOptions.WhatsAppMediaPrefix)
+            ? "whatsapp-media"
+            : _firebaseOptions.WhatsAppMediaPrefix.Trim().TrimStart('/').TrimEnd('/');
+        var ext = Path.GetExtension(fileName);
+        if (string.IsNullOrWhiteSpace(ext))
+            ext = ExtensionFromContentType(contentType, MediaTypeFromContentType(contentType, fileName));
+        var objectName = $"{prefix}/{branchId}/{conversationId}/{_clock.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}{ext}";
+        return await _firebaseStorage.UploadPublicObjectAsync(content, objectName, contentType, cancellationToken);
     }
 
     private static string? TryFindContactName(JsonElement value, string phoneNumber)
@@ -559,6 +784,34 @@ public class WhatsAppController : ControllerBase
         }
     }
 
+    private static bool TryMapMessageType(string? value, out WhatsAppMessageType type)
+    {
+        switch ((value ?? string.Empty).Trim().ToLowerInvariant())
+        {
+            case "text":
+                type = WhatsAppMessageType.Text;
+                return true;
+            case "image":
+                type = WhatsAppMessageType.Image;
+                return true;
+            case "audio":
+                type = WhatsAppMessageType.Audio;
+                return true;
+            case "video":
+                type = WhatsAppMessageType.Video;
+                return true;
+            case "document":
+                type = WhatsAppMessageType.Document;
+                return true;
+            case "sticker":
+                type = WhatsAppMessageType.Sticker;
+                return true;
+            default:
+                type = WhatsAppMessageType.Text;
+                return false;
+        }
+    }
+
     private static WhatsAppConversationDto ToConversationDto(WhatsAppConversation conversation) => new()
     {
         Id = conversation.Id,
@@ -582,8 +835,14 @@ public class WhatsAppController : ControllerBase
         ConversationId = message.ConversationId,
         WhatsAppMessageId = message.WhatsAppMessageId,
         Direction = message.Direction == WhatsAppMessageDirection.Inbound ? "inbound" : "outbound",
-        Type = "text",
+        Type = MediaTypeToApi(message.Type),
         TextBody = message.TextBody,
+        MediaId = message.MediaId,
+        MediaUrl = message.MediaUrl,
+        MediaMimeType = message.MediaMimeType,
+        MediaFileName = message.MediaFileName,
+        MediaFileSize = message.MediaFileSize,
+        MediaSha256 = message.MediaSha256,
         Status = MessageStatusToApi(message.Status),
         SentByUserId = message.SentByUserId,
         Timestamp = message.Timestamp,
@@ -608,4 +867,113 @@ public class WhatsAppController : ControllerBase
         WhatsAppMessageStatus.Failed => "failed",
         _ => "received"
     };
+
+    private static string MediaTypeToApi(WhatsAppMessageType type) => type switch
+    {
+        WhatsAppMessageType.Text => "text",
+        WhatsAppMessageType.Image => "image",
+        WhatsAppMessageType.Audio => "audio",
+        WhatsAppMessageType.Video => "video",
+        WhatsAppMessageType.Document => "document",
+        WhatsAppMessageType.Sticker => "sticker",
+        _ => "document"
+    };
+
+    private static WhatsAppMessageType MediaTypeFromContentType(string? contentType, string? fileName)
+    {
+        var ct = (contentType ?? string.Empty).ToLowerInvariant();
+        if (ct.StartsWith("image/", StringComparison.Ordinal))
+            return WhatsAppMessageType.Image;
+        if (ct.StartsWith("audio/", StringComparison.Ordinal))
+            return WhatsAppMessageType.Audio;
+        if (ct.StartsWith("video/", StringComparison.Ordinal))
+            return WhatsAppMessageType.Video;
+
+        var name = (fileName ?? string.Empty).ToLowerInvariant();
+        if (name.EndsWith(".jpg") || name.EndsWith(".jpeg") || name.EndsWith(".png") || name.EndsWith(".webp") || name.EndsWith(".gif"))
+            return WhatsAppMessageType.Image;
+        if (name.EndsWith(".mp3") || name.EndsWith(".ogg") || name.EndsWith(".opus") || name.EndsWith(".m4a") || name.EndsWith(".wav"))
+            return WhatsAppMessageType.Audio;
+        if (name.EndsWith(".mp4") || name.EndsWith(".3gp") || name.EndsWith(".mov"))
+            return WhatsAppMessageType.Video;
+        return WhatsAppMessageType.Document;
+    }
+
+    private static string PreviewForMedia(WhatsAppMessageType type, string text)
+    {
+        var label = type switch
+        {
+            WhatsAppMessageType.Image => "Imagen",
+            WhatsAppMessageType.Audio => "Audio",
+            WhatsAppMessageType.Video => "Video",
+            WhatsAppMessageType.Document => "Documento",
+            WhatsAppMessageType.Sticker => "Sticker",
+            _ => text
+        };
+        var trimmed = text.Trim();
+        var preview = type == WhatsAppMessageType.Text ? trimmed : string.IsNullOrWhiteSpace(trimmed) ? label : $"{label}: {trimmed}";
+        return preview.Length > 500 ? preview[..500] : preview;
+    }
+
+    private static string? TryGetMediaCaptionOrName(InboundMediaPayload? media, WhatsAppMessageType type)
+    {
+        if (media is null)
+            return string.Empty;
+        if (!string.IsNullOrWhiteSpace(media.Value.Caption))
+            return media.Value.Caption;
+        if (type == WhatsAppMessageType.Document && !string.IsNullOrWhiteSpace(media.Value.FileName))
+            return media.Value.FileName;
+        return string.Empty;
+    }
+
+    private static string SanitizeFileName(string? fileName)
+    {
+        var name = string.IsNullOrWhiteSpace(fileName) ? "archivo" : Path.GetFileName(fileName.Trim());
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            name = name.Replace(invalid, '_');
+        return string.IsNullOrWhiteSpace(name) ? "archivo" : name;
+    }
+
+    private static string ExtensionFromContentType(string contentType, WhatsAppMessageType type)
+    {
+        var ct = (contentType ?? string.Empty).ToLowerInvariant();
+        return ct switch
+        {
+            "image/jpeg" => ".jpg",
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            "image/gif" => ".gif",
+            "audio/mpeg" => ".mp3",
+            "audio/ogg" => ".ogg",
+            "audio/mp4" => ".m4a",
+            "audio/aac" => ".aac",
+            "video/mp4" => ".mp4",
+            "video/3gpp" => ".3gp",
+            "application/pdf" => ".pdf",
+            _ => type switch
+            {
+                WhatsAppMessageType.Image => ".jpg",
+                WhatsAppMessageType.Audio => ".ogg",
+                WhatsAppMessageType.Video => ".mp4",
+                WhatsAppMessageType.Document => ".bin",
+                WhatsAppMessageType.Sticker => ".webp",
+                _ => ".bin"
+            }
+        };
+    }
+
+    private readonly record struct InboundMediaPayload(
+        string MediaId,
+        string? MimeType,
+        string? Sha256,
+        string? FileName,
+        string? Caption);
+
+    private readonly record struct StoredWhatsAppMedia(
+        string MediaId,
+        string? MediaUrl,
+        string? MimeType,
+        string? FileName,
+        long? FileSize,
+        string? Sha256);
 }
