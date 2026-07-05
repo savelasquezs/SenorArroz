@@ -231,6 +231,37 @@ public class WhatsAppController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<WhatsAppMessageDto>>.SuccessResponse(messages, "Mensajes obtenidos."));
     }
 
+    [HttpPost("conversations/{conversationId:int}/customer")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppConversationDto>>> LinkCustomer(
+        int conversationId,
+        [FromBody] LinkWhatsAppConversationCustomerDto dto,
+        CancellationToken cancellationToken)
+    {
+        var conversation = await _db.WhatsAppConversations
+            .Include(x => x.Branch)
+            .Include(x => x.Customer)
+            .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
+        if (conversation is null)
+            return NotFound(ApiResponse<WhatsAppConversationDto>.ErrorResponse("Conversación no encontrada."));
+        if (!await CanAccessVerifiedBranchAsync(conversation.BranchId, cancellationToken))
+            return Forbid();
+
+        var customer = await _db.Customers
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == dto.CustomerId && x.BranchId == conversation.BranchId && x.Active, cancellationToken);
+        if (customer is null)
+            return BadRequest(ApiResponse<WhatsAppConversationDto>.ErrorResponse("Cliente no encontrado para la sucursal de esta conversación."));
+
+        conversation.CustomerId = customer.Id;
+        conversation.ContactName = customer.Name;
+        conversation.UpdatedAt = _clock.UtcNow;
+        await _db.SaveChangesAsync(cancellationToken);
+
+        conversation.Customer = customer;
+        return Ok(ApiResponse<WhatsAppConversationDto>.SuccessResponse(ToConversationDto(conversation), "Cliente vinculado a la conversación."));
+    }
+
     [HttpPost("conversations/{conversationId:int}/messages")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendMessage(

@@ -99,3 +99,8 @@ public class SendWhatsAppMessageDto
 {
     public string Text { get; set; } = string.Empty;
 }
+
+public class LinkWhatsAppConversationCustomerDto
+{
+    public int CustomerId { get; set; }
+}
