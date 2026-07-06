@@ -40,6 +40,8 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<WhatsAppQuickReply> WhatsAppQuickReplies { get; set; }
 
+        DbSet<WhatsAppTemplate> WhatsAppTemplates { get; set; }
+
         DbSet<WhatsAppWebhookEvent> WhatsAppWebhookEvents { get; set; }
 
         DbSet<PrintJob> PrintJobs { get; set; }

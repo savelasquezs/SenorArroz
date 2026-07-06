@@ -28,6 +28,13 @@ public static class DependencyInjection
         services.Configure<DeliveryPayrollOptions>(configuration.GetSection(DeliveryPayrollOptions.SectionName));
         services.Configure<FirebaseStorageOptions>(configuration.GetSection(FirebaseStorageOptions.SectionName));
         services.Configure<WhatsAppCloudOptions>(configuration.GetSection(WhatsAppCloudOptions.SectionName));
+        services.PostConfigure<WhatsAppCloudOptions>(options =>
+        {
+            options.AccessToken = FirstNonEmpty(configuration["WHATSAPP_TOKEN"], options.AccessToken);
+            options.BusinessAccountId = FirstNonEmpty(configuration["WHATSAPP_BUSINESS_ACCOUNT_ID"], options.BusinessAccountId);
+            options.PhoneNumberId = FirstNonEmpty(configuration["WHATSAPP_PHONE_NUMBER_ID"], options.PhoneNumberId);
+            options.GraphApiVersion = FirstNonEmpty(configuration["GRAPH_API_VERSION"], options.GraphApiVersion) ?? options.GraphApiVersion;
+        });
         services.AddSingleton<IFirebaseGcsStorage, FirebaseGcsStorageService>();
 
         // FCM Push Notifications
@@ -105,5 +112,10 @@ public static class DependencyInjection
         services.AddHostedService<DeliveryRouteConsolidationWorker>();
 
         return services;
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        return values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim();
     }
 }

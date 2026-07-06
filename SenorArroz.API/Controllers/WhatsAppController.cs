@@ -24,6 +24,7 @@ public class WhatsAppController : ControllerBase
     private readonly IWhatsAppNotificationService _whatsAppNotificationService;
     private readonly IFirebaseGcsStorage _firebaseStorage;
     private readonly FirebaseStorageOptions _firebaseOptions;
+    private readonly WhatsAppCloudOptions _whatsAppOptions;
     private readonly ILogger<WhatsAppController> _logger;
 
     public WhatsAppController(
@@ -34,6 +35,7 @@ public class WhatsAppController : ControllerBase
         IWhatsAppNotificationService whatsAppNotificationService,
         IFirebaseGcsStorage firebaseStorage,
         IOptions<FirebaseStorageOptions> firebaseOptions,
+        IOptions<WhatsAppCloudOptions> whatsAppOptions,
         ILogger<WhatsAppController> logger)
     {
         _db = db;
@@ -43,6 +45,7 @@ public class WhatsAppController : ControllerBase
         _whatsAppNotificationService = whatsAppNotificationService;
         _firebaseStorage = firebaseStorage;
         _firebaseOptions = firebaseOptions.Value;
+        _whatsAppOptions = whatsAppOptions.Value;
         _logger = logger;
     }
 
@@ -135,6 +138,197 @@ public class WhatsAppController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<WhatsAppQuickReplyDto>>.SuccessResponse(
             replies.Select(ToQuickReplyDto).ToList(),
             "Respuestas rápidas obtenidas."));
+    }
+
+    [HttpPost("templates/sync")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppTemplateSyncResultDto>>> SyncTemplates(
+        [FromBody] SyncWhatsAppTemplatesDto? dto,
+        CancellationToken cancellationToken)
+    {
+        var credentials = await ResolveTemplateCredentialsAsync(dto?.BranchId, requireBusinessAccount: true, cancellationToken);
+        if (credentials.Forbidden)
+            return Forbid();
+        if (credentials.ErrorMessage is not null)
+            return BadRequest(ApiResponse<WhatsAppTemplateSyncResultDto>.ErrorResponse(credentials.ErrorMessage));
+
+        var result = await _whatsAppCloudClient.GetMessageTemplatesAsync(
+            credentials.BusinessAccountId!,
+            credentials.AccessToken,
+            cancellationToken);
+
+        if (!result.Success)
+        {
+            _logger.LogWarning("WhatsApp template sync failed for business account {BusinessAccountId}: {Error}", credentials.BusinessAccountId, result.ErrorMessage);
+            return BadRequest(ApiResponse<WhatsAppTemplateSyncResultDto>.ErrorResponse(result.ErrorMessage ?? "No se pudieron sincronizar las plantillas."));
+        }
+
+        var created = 0;
+        var updated = 0;
+        foreach (var metaTemplate in result.Templates)
+        {
+            var template = await _db.WhatsAppTemplates
+                .FirstOrDefaultAsync(x => x.MetaTemplateId == metaTemplate.MetaTemplateId, cancellationToken);
+
+            if (template is null)
+            {
+                template = new WhatsAppTemplate { MetaTemplateId = metaTemplate.MetaTemplateId };
+                _db.WhatsAppTemplates.Add(template);
+                created++;
+            }
+            else
+            {
+                updated++;
+            }
+
+            template.BranchId = credentials.BranchId;
+            template.BusinessAccountId = credentials.BusinessAccountId;
+            template.Name = metaTemplate.Name;
+            template.Language = metaTemplate.Language;
+            template.Category = metaTemplate.Category;
+            template.Status = metaTemplate.Status;
+            template.Components = metaTemplate.ComponentsJson;
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        var response = new WhatsAppTemplateSyncResultDto
+        {
+            Synced = result.Templates.Count,
+            Created = created,
+            Updated = updated
+        };
+
+        _logger.LogInformation(
+            "WhatsApp templates synced. BusinessAccountId={BusinessAccountId} Synced={Synced} Created={Created} Updated={Updated}",
+            credentials.BusinessAccountId,
+            response.Synced,
+            response.Created,
+            response.Updated);
+
+        return Ok(ApiResponse<WhatsAppTemplateSyncResultDto>.SuccessResponse(response, "Plantillas sincronizadas."));
+    }
+
+    [HttpGet("templates")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<WhatsAppTemplateDto>>>> GetTemplates(
+        [FromQuery] WhatsAppTemplateSearchDto search,
+        CancellationToken cancellationToken)
+    {
+        if (search.BranchId.HasValue && !CanAccessBranch(search.BranchId.Value))
+            return Forbid();
+
+        var query = _db.WhatsAppTemplates
+            .AsNoTracking()
+            .Include(x => x.Branch)
+            .AsQueryable();
+
+        if (!Roles.IsSuperadmin(_currentUser.Role))
+            query = query.Where(x => x.BranchId == _currentUser.BranchId || x.BranchId == null);
+        else if (search.BranchId.HasValue)
+            query = query.Where(x => x.BranchId == search.BranchId.Value || x.BranchId == null);
+
+        if (!string.IsNullOrWhiteSpace(search.Status))
+        {
+            var status = search.Status.Trim().ToUpperInvariant();
+            query = query.Where(x => x.Status.ToUpper() == status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search.Search))
+        {
+            var term = search.Search.Trim().ToLowerInvariant();
+            query = query.Where(x =>
+                x.Name.ToLower().Contains(term)
+                || x.Language.ToLower().Contains(term)
+                || x.Category.ToLower().Contains(term));
+        }
+
+        var templates = await query
+            .OrderBy(x => x.Name)
+            .ThenBy(x => x.Language)
+            .ToListAsync(cancellationToken);
+
+        return Ok(ApiResponse<IReadOnlyList<WhatsAppTemplateDto>>.SuccessResponse(
+            templates.Select(ToTemplateDto).ToList(),
+            "Plantillas obtenidas."));
+    }
+
+    [HttpPost("send-template")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppTemplateSendResultDto>>> SendTemplate(
+        [FromBody] SendWhatsAppTemplateDto dto,
+        CancellationToken cancellationToken)
+    {
+        var normalizedLanguage = (dto.Language ?? string.Empty).Trim();
+        var templateName = (dto.TemplateName ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(templateName))
+            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Debe seleccionar una plantilla."));
+        if (string.IsNullOrWhiteSpace(normalizedLanguage))
+            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Debe indicar el idioma de la plantilla."));
+
+        var template = await _db.WhatsAppTemplates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Name == templateName && x.Language == normalizedLanguage, cancellationToken);
+        if (template is null)
+            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("La plantilla no existe localmente. Sincronice plantillas primero."));
+        if (!string.Equals(template.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("La plantilla no está aprobada en Meta."));
+
+        var expectedParameters = CountBodyTemplateParameters(template.Components);
+        var parameters = dto.Parameters?.Select(x => x ?? string.Empty).ToList() ?? [];
+        if (expectedParameters != parameters.Count)
+            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse($"La plantilla requiere {expectedParameters} parámetro(s) y se recibieron {parameters.Count}."));
+
+        var branchId = dto.BranchId ?? template.BranchId;
+        var credentials = await ResolveTemplateCredentialsAsync(branchId, requireBusinessAccount: false, cancellationToken);
+        if (credentials.Forbidden)
+            return Forbid();
+        if (credentials.ErrorMessage is not null)
+            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse(credentials.ErrorMessage));
+
+        var recipients = await ResolveTemplateRecipientsAsync(dto, credentials.BranchId, cancellationToken);
+        if (recipients.Forbidden)
+            return Forbid();
+        if (recipients.ErrorMessage is not null)
+            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse(recipients.ErrorMessage));
+
+        var response = new WhatsAppTemplateSendResultDto();
+        foreach (var recipient in recipients.Recipients)
+        {
+            var result = await _whatsAppCloudClient.SendTemplateMessageAsync(
+                credentials.PhoneNumberId!,
+                credentials.AccessToken,
+                recipient.PhoneNumber,
+                template.Name,
+                template.Language,
+                parameters,
+                cancellationToken);
+
+            if (result.Success)
+            {
+                response.SentCount++;
+                if (!string.IsNullOrWhiteSpace(result.WhatsAppMessageId))
+                    response.MessageIds.Add(result.WhatsAppMessageId);
+
+                if (credentials.BranchId.HasValue)
+                    await PersistOutboundTemplateMessageAsync(credentials.BranchId.Value, recipient.PhoneNumber, recipient.Customer, template, parameters, result.WhatsAppMessageId, cancellationToken);
+            }
+            else
+            {
+                response.FailedCount++;
+                response.Errors.Add($"{FormatPhoneForError(recipient.PhoneNumber)}: {result.ErrorMessage ?? "Meta rechazó el envío."}");
+                _logger.LogWarning("WhatsApp template send failed. Template={Template} To={To} Error={Error}", template.Name, recipient.PhoneNumber, result.ErrorMessage);
+            }
+        }
+
+        response.Success = response.SentCount > 0 && response.FailedCount == 0;
+        var message = response.FailedCount == 0
+            ? "Plantilla enviada."
+            : $"Plantillas enviadas con errores. Enviadas: {response.SentCount}, fallidas: {response.FailedCount}.";
+
+        return response.SentCount > 0
+            ? Ok(ApiResponse<WhatsAppTemplateSendResultDto>.SuccessResponse(response, message))
+            : BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse(response.Errors.FirstOrDefault() ?? "No se pudo enviar la plantilla."));
     }
 
     [HttpGet("quick-replies/{id:int}")]
@@ -758,6 +952,211 @@ public class WhatsAppController : ControllerBase
             .AnyAsync(x => x.BranchId == branchId && x.IsActive && x.IsVerified, cancellationToken);
     }
 
+    private async Task<TemplateCredentialsResolution> ResolveTemplateCredentialsAsync(
+        int? branchId,
+        bool requireBusinessAccount,
+        CancellationToken cancellationToken)
+    {
+        if (branchId.HasValue || !Roles.IsSuperadmin(_currentUser.Role))
+        {
+            var resolvedBranchId = branchId ?? _currentUser.BranchId;
+            if (!CanAccessBranch(resolvedBranchId))
+                return TemplateCredentialsResolution.Denied();
+
+            var setting = await _db.WhatsAppBranchSettings
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.BranchId == resolvedBranchId && x.IsActive && x.IsVerified, cancellationToken);
+
+            if (setting is null)
+                return TemplateCredentialsResolution.Failed("WhatsApp no está activo y verificado para esta sucursal.");
+
+            return new TemplateCredentialsResolution(
+                false,
+                null,
+                resolvedBranchId,
+                setting.AccessToken,
+                setting.BusinessAccountId,
+                setting.PhoneNumberId);
+        }
+
+        if (string.IsNullOrWhiteSpace(_whatsAppOptions.AccessToken))
+            return TemplateCredentialsResolution.Failed("Falta configurar WHATSAPP_TOKEN o WhatsAppCloud:AccessToken.");
+        if (string.IsNullOrWhiteSpace(_whatsAppOptions.PhoneNumberId))
+            return TemplateCredentialsResolution.Failed("Falta configurar WHATSAPP_PHONE_NUMBER_ID o WhatsAppCloud:PhoneNumberId.");
+        if (requireBusinessAccount && string.IsNullOrWhiteSpace(_whatsAppOptions.BusinessAccountId))
+            return TemplateCredentialsResolution.Failed("Falta configurar WHATSAPP_BUSINESS_ACCOUNT_ID o WhatsAppCloud:BusinessAccountId.");
+
+        return new TemplateCredentialsResolution(
+            false,
+            null,
+            null,
+            _whatsAppOptions.AccessToken!,
+            _whatsAppOptions.BusinessAccountId,
+            _whatsAppOptions.PhoneNumberId!);
+    }
+
+    private async Task<TemplateRecipientsResolution> ResolveTemplateRecipientsAsync(
+        SendWhatsAppTemplateDto dto,
+        int? branchId,
+        CancellationToken cancellationToken)
+    {
+        var recipients = new List<TemplateRecipient>();
+
+        if (!string.IsNullOrWhiteSpace(dto.To))
+        {
+            var phone = NormalizeWhatsAppPhone(dto.To);
+            if (!IsInternationalWhatsAppPhone(phone))
+                return TemplateRecipientsResolution.Failed("El número destino debe venir en formato internacional sin +. Ejemplo: 573001234567.");
+
+            recipients.Add(new TemplateRecipient(phone, null));
+        }
+
+        if (dto.CustomerIds is { Count: > 0 })
+        {
+            if (!branchId.HasValue)
+                return TemplateRecipientsResolution.Failed("Debe seleccionar una sucursal para enviar plantillas a clientes.");
+            if (!CanAccessBranch(branchId.Value))
+                return TemplateRecipientsResolution.Denied();
+
+            var uniqueCustomerIds = dto.CustomerIds.Distinct().ToList();
+            var customers = await _db.Customers
+                .AsNoTracking()
+                .Where(x => x.BranchId == branchId.Value && uniqueCustomerIds.Contains(x.Id) && x.Active)
+                .ToListAsync(cancellationToken);
+
+            foreach (var customer in customers)
+            {
+                var phone = NormalizeWhatsAppPhone(customer.Phone1);
+                if (!IsInternationalWhatsAppPhone(phone))
+                    phone = NormalizeWhatsAppPhone(customer.Phone2);
+                if (!IsInternationalWhatsAppPhone(phone))
+                    continue;
+
+                recipients.Add(new TemplateRecipient(phone, customer));
+            }
+        }
+
+        var unique = recipients
+            .GroupBy(x => x.PhoneNumber)
+            .Select(x => x.First())
+            .ToList();
+
+        if (unique.Count == 0)
+            return TemplateRecipientsResolution.Failed("Debe indicar al menos un número válido o seleccionar clientes con teléfono internacional.");
+
+        return new TemplateRecipientsResolution(false, null, unique);
+    }
+
+    private async Task PersistOutboundTemplateMessageAsync(
+        int branchId,
+        string phoneNumber,
+        Customer? customer,
+        WhatsAppTemplate template,
+        IReadOnlyList<string> parameters,
+        string? whatsAppMessageId,
+        CancellationToken cancellationToken)
+    {
+        var timestamp = _clock.UtcNow;
+        var conversation = await _db.WhatsAppConversations
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.PhoneNumber == phoneNumber, cancellationToken);
+
+        if (conversation is null)
+        {
+            conversation = new WhatsAppConversation
+            {
+                BranchId = branchId,
+                PhoneNumber = phoneNumber,
+                CustomerId = customer?.Id,
+                ContactName = customer?.Name,
+                Status = WhatsAppConversationStatus.Open
+            };
+            _db.WhatsAppConversations.Add(conversation);
+        }
+
+        conversation.CustomerId = customer?.Id ?? conversation.CustomerId;
+        conversation.ContactName = customer?.Name ?? conversation.ContactName;
+        conversation.LastMessageAt = timestamp;
+        conversation.LastMessagePreview = $"Plantilla: {template.Name}";
+
+        var message = new WhatsAppMessage
+        {
+            Conversation = conversation,
+            WhatsAppMessageId = whatsAppMessageId,
+            Direction = WhatsAppMessageDirection.Outbound,
+            Type = WhatsAppMessageType.Text,
+            TextBody = BuildTemplateMessagePreview(template, parameters),
+            Status = WhatsAppMessageStatus.Sent,
+            SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null,
+            Timestamp = timestamp,
+            RawPayload = JsonSerializer.Serialize(new
+            {
+                template = template.Name,
+                template.Language,
+                parameters,
+                whatsAppMessageId
+            })
+        };
+        _db.WhatsAppMessages.Add(message);
+
+        await _db.SaveChangesAsync(cancellationToken);
+        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
+    }
+
+    private static string BuildTemplateMessagePreview(WhatsAppTemplate template, IReadOnlyList<string> parameters)
+    {
+        var body = ExtractBodyText(template.Components);
+        if (string.IsNullOrWhiteSpace(body))
+            return $"Plantilla: {template.Name}";
+
+        for (var i = 0; i < parameters.Count; i++)
+            body = body.Replace($"{{{{{i + 1}}}}}", parameters[i] ?? string.Empty, StringComparison.Ordinal);
+
+        return body;
+    }
+
+    private static int CountBodyTemplateParameters(string componentsJson)
+    {
+        var body = ExtractBodyText(componentsJson);
+        if (string.IsNullOrWhiteSpace(body))
+            return 0;
+
+        var matches = Regex.Matches(body, @"{{\s*(\d+)\s*}}");
+        return matches
+            .Select(x => int.TryParse(x.Groups[1].Value, out var n) ? n : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+    }
+
+    private static string? ExtractBodyText(string componentsJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(componentsJson) ? "[]" : componentsJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+                return null;
+
+            foreach (var component in document.RootElement.EnumerateArray())
+            {
+                var type = TryGetString(component, "type");
+                if (string.Equals(type, "BODY", StringComparison.OrdinalIgnoreCase))
+                    return TryGetString(component, "text");
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static bool IsInternationalWhatsAppPhone(string value)
+    {
+        return Regex.IsMatch(value, @"^[1-9]\d{7,14}$");
+    }
+
+    private static string FormatPhoneForError(string phoneNumber) => $"+{phoneNumber}";
+
     private bool CanAccessBranch(int branchId)
     {
         return Roles.IsSuperadmin(_currentUser.Role) || _currentUser.BranchId == branchId;
@@ -1223,6 +1622,23 @@ public class WhatsAppController : ControllerBase
         }
     }
 
+    private static WhatsAppTemplateDto ToTemplateDto(WhatsAppTemplate template) => new()
+    {
+        Id = template.Id,
+        BranchId = template.BranchId,
+        BranchName = template.Branch?.Name,
+        BusinessAccountId = template.BusinessAccountId,
+        MetaTemplateId = template.MetaTemplateId,
+        Name = template.Name,
+        Language = template.Language,
+        Category = template.Category,
+        Status = template.Status,
+        Components = template.Components,
+        BodyParameterCount = CountBodyTemplateParameters(template.Components),
+        CreatedAt = template.CreatedAt,
+        UpdatedAt = template.UpdatedAt
+    };
+
     private static WhatsAppQuickReplyDto ToQuickReplyDto(WhatsAppQuickReply reply) => new()
     {
         Id = reply.Id,
@@ -1401,4 +1817,27 @@ public class WhatsAppController : ControllerBase
         string? FileName,
         long? FileSize,
         string? Sha256);
+
+    private sealed record TemplateCredentialsResolution(
+        bool Forbidden,
+        string? ErrorMessage,
+        int? BranchId,
+        string AccessToken,
+        string? BusinessAccountId,
+        string? PhoneNumberId)
+    {
+        public static TemplateCredentialsResolution Denied() => new(true, null, null, string.Empty, null, null);
+        public static TemplateCredentialsResolution Failed(string errorMessage) => new(false, errorMessage, null, string.Empty, null, null);
+    }
+
+    private sealed record TemplateRecipient(string PhoneNumber, Customer? Customer);
+
+    private sealed record TemplateRecipientsResolution(
+        bool Forbidden,
+        string? ErrorMessage,
+        IReadOnlyList<TemplateRecipient> Recipients)
+    {
+        public static TemplateRecipientsResolution Denied() => new(true, null, []);
+        public static TemplateRecipientsResolution Failed(string errorMessage) => new(false, errorMessage, []);
+    }
 }

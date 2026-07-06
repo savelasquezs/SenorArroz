@@ -4,6 +4,19 @@ public record WhatsAppCloudTestResult(bool Success, string? DisplayPhoneNumber, 
 
 public record WhatsAppCloudSendResult(bool Success, string? WhatsAppMessageId, string? ErrorMessage);
 
+public record WhatsAppCloudTemplate(
+    string MetaTemplateId,
+    string Name,
+    string Language,
+    string Category,
+    string Status,
+    string ComponentsJson);
+
+public record WhatsAppCloudTemplateSyncResult(
+    bool Success,
+    IReadOnlyList<WhatsAppCloudTemplate> Templates,
+    string? ErrorMessage);
+
 public record WhatsAppCloudUploadMediaResult(bool Success, string? MediaId, string? ErrorMessage);
 
 public record WhatsAppCloudMediaInfoResult(
@@ -33,6 +46,20 @@ public interface IWhatsAppCloudClient
         string accessToken,
         string toPhoneNumber,
         string text,
+        CancellationToken cancellationToken = default);
+
+    Task<WhatsAppCloudTemplateSyncResult> GetMessageTemplatesAsync(
+        string businessAccountId,
+        string accessToken,
+        CancellationToken cancellationToken = default);
+
+    Task<WhatsAppCloudSendResult> SendTemplateMessageAsync(
+        string phoneNumberId,
+        string accessToken,
+        string toPhoneNumber,
+        string templateName,
+        string language,
+        IReadOnlyList<string> parameters,
         CancellationToken cancellationToken = default);
 
     Task<WhatsAppCloudUploadMediaResult> UploadMediaAsync(

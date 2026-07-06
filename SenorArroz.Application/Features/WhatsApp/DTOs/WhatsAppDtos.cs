@@ -50,6 +50,61 @@ public class WhatsAppUnreadSummaryDto
     public DateTime? LatestMessageAt { get; set; }
 }
 
+public class WhatsAppTemplateDto
+{
+    public int Id { get; set; }
+    public int? BranchId { get; set; }
+    public string? BranchName { get; set; }
+    public string? BusinessAccountId { get; set; }
+    public string MetaTemplateId { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Language { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string Components { get; set; } = "[]";
+    public int BodyParameterCount { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class WhatsAppTemplateSearchDto
+{
+    public int? BranchId { get; set; }
+    public string? Status { get; set; } = "APPROVED";
+    public string? Search { get; set; }
+}
+
+public class SyncWhatsAppTemplatesDto
+{
+    public int? BranchId { get; set; }
+}
+
+public class WhatsAppTemplateSyncResultDto
+{
+    public int Synced { get; set; }
+    public int Created { get; set; }
+    public int Updated { get; set; }
+}
+
+public class SendWhatsAppTemplateDto
+{
+    public int? BranchId { get; set; }
+    public string? To { get; set; }
+    public List<int>? CustomerIds { get; set; }
+    public string TemplateName { get; set; } = string.Empty;
+    public string Language { get; set; } = string.Empty;
+    public List<string> Parameters { get; set; } = [];
+}
+
+public class WhatsAppTemplateSendResultDto
+{
+    public bool Success { get; set; }
+    public int SentCount { get; set; }
+    public int FailedCount { get; set; }
+    public List<string> MessageIds { get; set; } = [];
+    public List<string> Errors { get; set; } = [];
+}
+
 public class WhatsAppQuickReplyDto
 {
     public int Id { get; set; }

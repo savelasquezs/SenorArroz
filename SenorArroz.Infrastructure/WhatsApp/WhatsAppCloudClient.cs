@@ -88,6 +88,106 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         }
     }
 
+    public async Task<WhatsAppCloudTemplateSyncResult> GetMessageTemplatesAsync(
+        string businessAccountId,
+        string accessToken,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            BuildGraphUrl($"{businessAccountId}/message_templates?fields=id,name,language,category,status,components&limit=100"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return new WhatsAppCloudTemplateSyncResult(false, [], ExtractMetaError(body, response.StatusCode));
+
+            using var document = JsonDocument.Parse(body);
+            if (!document.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+                return new WhatsAppCloudTemplateSyncResult(true, [], null);
+
+            var templates = new List<WhatsAppCloudTemplate>();
+            foreach (var element in data.EnumerateArray())
+            {
+                var id = TryGetString(element, "id");
+                var name = TryGetString(element, "name");
+                var language = TryGetString(element, "language");
+                if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(language))
+                    continue;
+
+                var componentsJson = element.TryGetProperty("components", out var components)
+                    ? components.GetRawText()
+                    : "[]";
+
+                templates.Add(new WhatsAppCloudTemplate(
+                    id,
+                    name,
+                    language,
+                    TryGetString(element, "category") ?? string.Empty,
+                    TryGetString(element, "status") ?? string.Empty,
+                    componentsJson));
+            }
+
+            return new WhatsAppCloudTemplateSyncResult(true, templates, null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            _logger.LogWarning(ex, "WhatsApp template sync failed for business account id {BusinessAccountId}", businessAccountId);
+            return new WhatsAppCloudTemplateSyncResult(false, [], "No se pudieron consultar las plantillas en Meta WhatsApp Cloud API.");
+        }
+    }
+
+    public async Task<WhatsAppCloudSendResult> SendTemplateMessageAsync(
+        string phoneNumberId,
+        string accessToken,
+        string toPhoneNumber,
+        string templateName,
+        string language,
+        IReadOnlyList<string> parameters,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Content = JsonContent.Create(new
+        {
+            messaging_product = "whatsapp",
+            to = toPhoneNumber,
+            type = "template",
+            template = new
+            {
+                name = templateName,
+                language = new { code = language },
+                components = new[]
+                {
+                    new
+                    {
+                        type = "body",
+                        parameters = parameters.Select(x => new { type = "text", text = x ?? string.Empty }).ToArray()
+                    }
+                }
+            }
+        });
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return new WhatsAppCloudSendResult(false, null, ExtractMetaError(body, response.StatusCode));
+
+            using var document = JsonDocument.Parse(body);
+            return new WhatsAppCloudSendResult(true, TryGetFirstMessageId(document.RootElement), null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            _logger.LogWarning(ex, "WhatsApp template send failed for phone number id {PhoneNumberId}", phoneNumberId);
+            return new WhatsAppCloudSendResult(false, null, "No se pudo enviar la plantilla a Meta WhatsApp Cloud API.");
+        }
+    }
+
     public async Task<WhatsAppCloudUploadMediaResult> UploadMediaAsync(
         string phoneNumberId,
         string accessToken,
