@@ -39,6 +39,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<Branch> Branches { get; set; }
 
+        public virtual DbSet<BranchAiSetting> BranchAiSettings { get; set; }
+
         public virtual DbSet<BranchPrintSettings> BranchPrintSettings { get; set; }
 
         public virtual DbSet<WhatsAppBranchSetting> WhatsAppBranchSettings { get; set; }
@@ -111,6 +113,7 @@ namespace SenorArroz.Infrastructure.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.ApplyConfiguration(new BranchConfiguration());
+            modelBuilder.ApplyConfiguration(new BranchAiSettingConfiguration());
             modelBuilder.ApplyConfiguration(new BranchPrintSettingsConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppBranchSettingConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppConversationConfiguration());

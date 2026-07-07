@@ -45,4 +45,5 @@ public class Branch : BaseEntity
 
     public virtual BranchPrintSettings? PrintSettings { get; set; }
     public virtual WhatsAppBranchSetting? WhatsAppSetting { get; set; }
+    public virtual BranchAiSetting? AiSetting { get; set; }
 }

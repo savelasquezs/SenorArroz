@@ -30,6 +30,8 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<Branch> Branches { get; set; }
 
+        DbSet<BranchAiSetting> BranchAiSettings { get; set; }
+
         DbSet<BranchPrintSettings> BranchPrintSettings { get; set; }
 
         DbSet<WhatsAppBranchSetting> WhatsAppBranchSettings { get; set; }

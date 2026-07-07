@@ -53,6 +53,7 @@ public static class DependencyInjection
         services.AddScoped<IGoogleRoutesDrivingMetricsService>(sp => sp.GetRequiredService<GoogleRoutesDrivingMetricsService>());
         services.AddScoped<IDeliveryRouteWorkflowService, DeliveryRouteWorkflowService>();
         services.AddHttpClient<IWhatsAppCloudClient, WhatsAppCloudClient>();
+        services.AddHttpClient<IAiModelProviderClient, AiModelProviderClient>();
 
         // Repositories
         services.AddScoped<IBranchRepository, BranchRepository>();
