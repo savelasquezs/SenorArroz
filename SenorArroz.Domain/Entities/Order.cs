@@ -42,6 +42,8 @@ public class Order : BaseEntity
     public int Subtotal { get; set; } = 0;
     public int Total { get; set; } = 0;
     public int DiscountTotal { get; set; } = 0;
+    /// <summary>Indica que el descuento tipo domicilio gratis fue aplicado sobre las líneas del pedido.</summary>
+    public bool FreeDeliveryRequested { get; set; }
     public string? Notes { get; set; }
     public string? CancelledReason { get; set; }
 

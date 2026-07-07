@@ -16,6 +16,7 @@ public class CreateOrderDto
     public int? Subtotal { get; set; }
     public int? Total { get; set; }
     public int? DiscountTotal { get; set; }
+    public bool FreeDeliveryRequested { get; set; }
     public string? Notes { get; set; }
     public List<CreateOrderDetailDto> OrderDetails { get; set; } = new();
     public List<CreateOrderBankPaymentDto> BankPayments { get; set; } = new();

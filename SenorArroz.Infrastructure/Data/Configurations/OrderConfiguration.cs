@@ -55,6 +55,9 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.DiscountTotal)
             .HasColumnName("discount_total")
             .HasDefaultValue(0);
+        builder.Property(o => o.FreeDeliveryRequested)
+            .HasColumnName("free_delivery_requested")
+            .HasDefaultValue(false);
         builder.Property(o => o.Notes).HasColumnName("notes").HasMaxLength(200);
         builder.Property(o => o.CancelledReason).HasColumnName("cancelled_reason").HasMaxLength(200);
 

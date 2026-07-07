@@ -176,6 +176,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
                 existingOrder.AddressId = null;
                 existingOrder.DeliveryFee = null;
                 existingOrder.DeliveryManId = null;
+                existingOrder.FreeDeliveryRequested = false;
             }
         }
 

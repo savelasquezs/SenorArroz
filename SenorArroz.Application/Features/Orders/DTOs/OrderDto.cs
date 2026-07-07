@@ -45,6 +45,7 @@ public class OrderDto
     public int Subtotal { get; set; }
     public int Total { get; set; }
     public int DiscountTotal { get; set; }
+    public bool FreeDeliveryRequested { get; set; }
     public string? Notes { get; set; }
     public string? CancelledReason { get; set; }
     /// <summary>Efectivo ya cobrado en sucursal; nada que cobrar en entrega.</summary>
