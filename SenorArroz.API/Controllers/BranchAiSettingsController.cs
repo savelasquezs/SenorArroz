@@ -22,20 +22,20 @@ public class BranchAiSettingsController : ControllerBase
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IClock _clock;
-    private readonly IAiModelProviderClient _aiModelProviderClient;
+    private readonly IAiProviderResolver _aiProviderResolver;
     private readonly ILogger<BranchAiSettingsController> _logger;
 
     public BranchAiSettingsController(
         IApplicationDbContext db,
         ICurrentUser currentUser,
         IClock clock,
-        IAiModelProviderClient aiModelProviderClient,
+        IAiProviderResolver aiProviderResolver,
         ILogger<BranchAiSettingsController> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
-        _aiModelProviderClient = aiModelProviderClient;
+        _aiProviderResolver = aiProviderResolver;
         _logger = logger;
     }
 
@@ -133,7 +133,7 @@ public class BranchAiSettingsController : ControllerBase
             return BadRequest(ApiResponse<AiTestConnectionResultDto>.ErrorResponse(validationError));
         }
 
-        var modelsResult = await _aiModelProviderClient.ListModelsAsync(setting.Provider, setting.ApiKey, cancellationToken);
+        var modelsResult = await _aiProviderResolver.ListModelsAsync(setting.Provider, setting.ApiKey, cancellationToken);
         if (!modelsResult.Success)
         {
             setting.IsVerified = false;
@@ -197,7 +197,7 @@ public class BranchAiSettingsController : ControllerBase
         if (string.IsNullOrWhiteSpace(apiKey))
             return BadRequest(ApiResponse<AiProviderModelsResultDto>.ErrorResponse("ApiKey es requerida para consultar modelos."));
 
-        var result = await _aiModelProviderClient.ListModelsAsync(provider, apiKey, cancellationToken);
+        var result = await _aiProviderResolver.ListModelsAsync(provider, apiKey, cancellationToken);
         if (!result.Success)
             return BadRequest(ApiResponse<AiProviderModelsResultDto>.ErrorResponse(
                 result.ErrorMessage ?? "No se pudieron consultar los modelos disponibles."));

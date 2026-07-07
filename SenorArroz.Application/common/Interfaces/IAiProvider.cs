@@ -1,6 +1,15 @@
 namespace SenorArroz.Application.Common.Interfaces;
 
-public interface IAiModelProviderClient
+public interface IAiProvider
+{
+    string Provider { get; }
+
+    Task<AiModelProviderResult> ListModelsAsync(
+        string apiKey,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IAiProviderResolver
 {
     Task<AiModelProviderResult> ListModelsAsync(
         string provider,
