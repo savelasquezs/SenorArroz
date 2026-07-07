@@ -23,6 +23,8 @@ public class LoyaltyCycleService : ILoyaltyCycleService
             dto.LoyaltyDeliveredCount = await _orders.CountDeliveredOrdersForCustomerAsync(dto.Id, cancellationToken);
             dto.LoyaltyNextStepIndex = null;
             dto.LoyaltyNextRewardLabel = null;
+            dto.LoyaltyDeliveriesUntilNextReward = null;
+            dto.LoyaltyRewardDueOnCurrentOrder = false;
             dto.LoyaltyNextRewardMessage = null;
             return;
         }
@@ -37,11 +39,17 @@ public class LoyaltyCycleService : ILoyaltyCycleService
         if (!string.IsNullOrWhiteSpace(step?.RewardLabel))
         {
             var falta = LoyaltyDeliveriesPerReward.GetDeliveriesUntilNextReward(delivered);
+            dto.LoyaltyDeliveriesUntilNextReward = falta;
+            dto.LoyaltyRewardDueOnCurrentOrder = falta == 1;
             dto.LoyaltyNextRewardMessage =
                 $"Este cliente tiene {delivered} pedido(s) entregado(s) con nosotros. Le faltan {falta} entrega(s) para el premio: {step!.RewardLabel}.";
         }
         else
+        {
+            dto.LoyaltyDeliveriesUntilNextReward = null;
+            dto.LoyaltyRewardDueOnCurrentOrder = false;
             dto.LoyaltyNextRewardMessage = null;
+        }
     }
 
     public async Task OnOrderDeliveredAsync(int orderId, int branchId, int? customerId, CancellationToken cancellationToken = default)

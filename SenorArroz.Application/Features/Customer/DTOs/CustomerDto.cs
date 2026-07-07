@@ -32,6 +32,12 @@ namespace SenorArroz.Application.Features.Customers.DTOs
 
         public string? LoyaltyNextRewardLabel { get; set; }
 
+        /// <summary>Entregas que faltan para el próximo premio. Si vale 1, el pedido actual lo activará al entregarse.</summary>
+        public int? LoyaltyDeliveriesUntilNextReward { get; set; }
+
+        /// <summary>Indica si el pedido que se está tomando debe llevar el regalo de fidelidad.</summary>
+        public bool LoyaltyRewardDueOnCurrentOrder { get; set; }
+
         /// <summary>Mensaje listo para mostrar en toma de pedidos.</summary>
         public string? LoyaltyNextRewardMessage { get; set; }
     }
