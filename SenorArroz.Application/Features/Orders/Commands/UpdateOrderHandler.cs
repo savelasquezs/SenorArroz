@@ -108,6 +108,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
         // Apply scalar field mapping first (details are handled explicitly below)
         _mapper.Map(request.Order, existingOrder);
+        ApplyBenefitTrace(request.Order, existingOrder);
 
         if (request.Order.OrderDetails != null)
         {
@@ -379,6 +380,33 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
                 SourceReservationDepositId = deposit.Id,
                 IsVerified = false,
             }, cancellationToken);
+        }
+    }
+
+    private static void ApplyBenefitTrace(UpdateOrderDto request, Order order)
+    {
+        if (!request.AppliedBenefitType.HasValue)
+            return;
+
+        order.AppliedBenefitType = request.AppliedBenefitType.Value;
+        order.AppliedBenefitSourceId = request.AppliedBenefitSourceId;
+        order.AppliedBenefitCode = request.AppliedBenefitCode;
+        order.AppliedBenefitLabel = request.AppliedBenefitLabel;
+        order.AppliedBenefitRewardType = request.AppliedBenefitRewardType;
+        order.AppliedBenefitAmount = request.AppliedBenefitAmount;
+        order.AppliedBenefitSnapshot = request.AppliedBenefitSnapshot;
+
+        if (request.AppliedBenefitType.Value == OrderBenefitType.None)
+        {
+            order.AppliedBenefitSourceId = null;
+            order.AppliedBenefitCode = null;
+            order.AppliedBenefitLabel = null;
+            order.AppliedBenefitRewardType = null;
+            order.AppliedBenefitAmount = null;
+            order.AppliedBenefitSnapshot = null;
+            order.LoyaltyCycleStepId = null;
+            order.LoyaltyRewardSnapshot = null;
+            order.FreeDeliveryRequested = false;
         }
     }
 }
