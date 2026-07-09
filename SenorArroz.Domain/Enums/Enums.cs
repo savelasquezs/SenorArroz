@@ -42,6 +42,19 @@ namespace SenorArroz.Domain.Enums
         Deliveryman    // deliveryman
     }
 
+    public enum DailyPromotionType
+    {
+        GiftProduct,
+        FreeDelivery,
+        PercentageDiscount
+    }
+
+    public enum DailyPromotionDiscountScope
+    {
+        AllProducts,
+        SpecificProducts
+    }
+
     /// <summary>Bucket para la serie de peso vendido por categoría (dashboard ventas).</summary>
     public enum CategoryWeightEvolutionGranularity
     {

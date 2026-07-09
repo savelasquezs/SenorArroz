@@ -15,4 +15,6 @@ public class Product : BaseEntity
     // Navigation Properties
     public virtual ProductCategory Category { get; set; } = null!;
     public virtual ICollection<OrderDetail> OrderDetails { get; set; } = new List<OrderDetail>();
+    public virtual ICollection<DailyPromotion> GiftDailyPromotions { get; set; } = new List<DailyPromotion>();
+    public virtual ICollection<DailyPromotionProduct> DailyPromotionProducts { get; set; } = new List<DailyPromotionProduct>();
 }
