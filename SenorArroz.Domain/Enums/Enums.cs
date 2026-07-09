@@ -55,6 +55,13 @@ namespace SenorArroz.Domain.Enums
         SpecificProducts
     }
 
+    public enum LoyaltyRewardType
+    {
+        GiftProduct,
+        FreeDelivery,
+        PercentageDiscount
+    }
+
     /// <summary>Bucket para la serie de peso vendido por categoría (dashboard ventas).</summary>
     public enum CategoryWeightEvolutionGranularity
     {

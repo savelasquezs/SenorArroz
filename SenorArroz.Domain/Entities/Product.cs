@@ -17,4 +17,5 @@ public class Product : BaseEntity
     public virtual ICollection<OrderDetail> OrderDetails { get; set; } = new List<OrderDetail>();
     public virtual ICollection<DailyPromotion> GiftDailyPromotions { get; set; } = new List<DailyPromotion>();
     public virtual ICollection<DailyPromotionProduct> DailyPromotionProducts { get; set; } = new List<DailyPromotionProduct>();
+    public virtual ICollection<LoyaltyCycleStep> LoyaltyGiftSteps { get; set; } = new List<LoyaltyCycleStep>();
 }

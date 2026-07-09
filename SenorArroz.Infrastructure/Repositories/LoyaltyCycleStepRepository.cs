@@ -17,7 +17,7 @@ public class LoyaltyCycleStepRepository : ILoyaltyCycleStepRepository
     public async Task<int> GetCycleLengthAsync(int branchId, CancellationToken cancellationToken = default)
     {
         var max = await _context.LoyaltyCycleSteps.AsNoTracking()
-            .Where(s => s.BranchId == branchId)
+            .Where(s => s.BranchId == branchId && s.IsActive)
             .Select(s => (int?)s.StepIndex)
             .MaxAsync(cancellationToken);
         return max ?? 0;
@@ -26,6 +26,6 @@ public class LoyaltyCycleStepRepository : ILoyaltyCycleStepRepository
     public Task<LoyaltyCycleStep?> GetByBranchAndStepIndexAsync(int branchId, int stepIndex, CancellationToken cancellationToken = default)
     {
         return _context.LoyaltyCycleSteps.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.BranchId == branchId && s.StepIndex == stepIndex, cancellationToken);
+            .FirstOrDefaultAsync(s => s.BranchId == branchId && s.StepIndex == stepIndex && s.IsActive, cancellationToken);
     }
 }
