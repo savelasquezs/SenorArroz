@@ -69,7 +69,7 @@ public class BranchAiSettingsController : ControllerBase
         var setting = await _db.BranchAiSettings
             .FirstOrDefaultAsync(x => x.BranchId == branchId, cancellationToken);
 
-        var validationError = Validate(dto, setting?.ApiKey);
+        var validationError = Validate(dto, setting);
         if (validationError is not null)
             return BadRequest(ApiResponse<BranchAiSettingDto>.ErrorResponse(validationError));
 
@@ -189,9 +189,13 @@ public class BranchAiSettingsController : ControllerBase
         {
             var setting = await _db.BranchAiSettings
                 .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == provider, cancellationToken);
+                .FirstOrDefaultAsync(x => x.BranchId == branchId, cancellationToken);
 
-            apiKey = setting?.ApiKey;
+            if (setting is not null
+                && string.Equals(NormalizeProvider(setting.Provider), provider, StringComparison.OrdinalIgnoreCase))
+            {
+                apiKey = setting.ApiKey;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -220,7 +224,7 @@ public class BranchAiSettingsController : ControllerBase
         return Roles.IsAdmin(_currentUser.Role) && _currentUser.BranchId == branchId;
     }
 
-    private static string? Validate(UpsertBranchAiSettingDto dto, string? existingApiKey)
+    private static string? Validate(UpsertBranchAiSettingDto dto, BranchAiSetting? existingSetting)
     {
         var provider = NormalizeProvider(dto.Provider);
         if (string.IsNullOrWhiteSpace(provider))
@@ -233,8 +237,13 @@ public class BranchAiSettingsController : ControllerBase
             return "MaxContextMessages debe ser mayor que cero.";
         if (dto.Temperature is < 0 or > 2)
             return "Temperature debe estar entre 0 y 2.";
-        if (string.IsNullOrWhiteSpace(dto.ApiKey) && string.IsNullOrWhiteSpace(existingApiKey))
+        if (string.IsNullOrWhiteSpace(dto.ApiKey)
+            && (existingSetting is null
+                || !string.Equals(NormalizeProvider(existingSetting.Provider), provider, StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(existingSetting.ApiKey)))
+        {
             return "ApiKey es requerida para este provider.";
+        }
 
         return null;
     }
