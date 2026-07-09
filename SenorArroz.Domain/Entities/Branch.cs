@@ -43,6 +43,7 @@ public class Branch : BaseEntity
     public virtual ICollection<WhatsAppQuickReply> WhatsAppQuickReplies { get; set; } = new List<WhatsAppQuickReply>();
     public virtual ICollection<WhatsAppTemplate> WhatsAppTemplates { get; set; } = new List<WhatsAppTemplate>();
     public virtual ICollection<DailyPromotion> DailyPromotions { get; set; } = new List<DailyPromotion>();
+    public virtual ICollection<DiscountCode> DiscountCodes { get; set; } = new List<DiscountCode>();
 
     public virtual BranchPrintSettings? PrintSettings { get; set; }
     public virtual WhatsAppBranchSetting? WhatsAppSetting { get; set; }

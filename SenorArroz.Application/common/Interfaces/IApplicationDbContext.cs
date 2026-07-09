@@ -63,6 +63,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<DailyAuditDispatch> DailyAuditDispatches { get; set; }
         DbSet<DailyPromotion> DailyPromotions { get; set; }
         DbSet<DailyPromotionProduct> DailyPromotionProducts { get; set; }
+        DbSet<DiscountCode> DiscountCodes { get; set; }
         DbSet<EmailOutboxMessage> EmailOutboxMessages { get; set; }
         DbSet<EntityAuditLog> EntityAuditLogs { get; set; }
 

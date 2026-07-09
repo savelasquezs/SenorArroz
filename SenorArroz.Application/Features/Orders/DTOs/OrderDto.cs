@@ -46,6 +46,13 @@ public class OrderDto
     public int Total { get; set; }
     public int DiscountTotal { get; set; }
     public bool FreeDeliveryRequested { get; set; }
+    public OrderBenefitType AppliedBenefitType { get; set; }
+    public int? AppliedBenefitSourceId { get; set; }
+    public string? AppliedBenefitCode { get; set; }
+    public string? AppliedBenefitLabel { get; set; }
+    public LoyaltyRewardType? AppliedBenefitRewardType { get; set; }
+    public decimal? AppliedBenefitAmount { get; set; }
+    public string? AppliedBenefitSnapshot { get; set; }
     public string? Notes { get; set; }
     public string? CancelledReason { get; set; }
     /// <summary>Efectivo ya cobrado en sucursal; nada que cobrar en entrega.</summary>

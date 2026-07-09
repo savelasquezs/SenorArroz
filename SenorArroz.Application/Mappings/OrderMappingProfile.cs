@@ -22,7 +22,9 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.Latitude, opt => opt.MapFrom(src => src.Address != null ? src.Address.Latitude : null))
             .ForMember(dest => dest.Longitude, opt => opt.MapFrom(src => src.Address != null ? src.Address.Longitude : null))
             .ForMember(dest => dest.LoyaltyRuleName, opt => opt.MapFrom(src =>
-                !string.IsNullOrWhiteSpace(src.LoyaltyRewardSnapshot)
+                !string.IsNullOrWhiteSpace(src.AppliedBenefitLabel)
+                    ? src.AppliedBenefitLabel
+                    : !string.IsNullOrWhiteSpace(src.LoyaltyRewardSnapshot)
                     ? src.LoyaltyRewardSnapshot
                     : src.LoyaltyCycleStep != null
                         ? src.LoyaltyCycleStep.RewardLabel

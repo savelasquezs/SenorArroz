@@ -72,6 +72,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<DailyAuditDispatch> DailyAuditDispatches { get; set; }
         public virtual DbSet<DailyPromotion> DailyPromotions { get; set; }
         public virtual DbSet<DailyPromotionProduct> DailyPromotionProducts { get; set; }
+        public virtual DbSet<DiscountCode> DiscountCodes { get; set; }
         public virtual DbSet<EmailOutboxMessage> EmailOutboxMessages { get; set; }
         public virtual DbSet<EntityAuditLog> EntityAuditLogs { get; set; }
 
@@ -152,6 +153,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new DailyAuditDispatchConfiguration());
             modelBuilder.ApplyConfiguration(new DailyPromotionConfiguration());
             modelBuilder.ApplyConfiguration(new DailyPromotionProductConfiguration());
+            modelBuilder.ApplyConfiguration(new DiscountCodeConfiguration());
             modelBuilder.ApplyConfiguration(new EmailOutboxMessageConfiguration());
             modelBuilder.ApplyConfiguration(new EntityAuditLogConfiguration());
             modelBuilder.ApplyConfiguration(new SupplierConfiguration());

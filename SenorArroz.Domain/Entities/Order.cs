@@ -44,6 +44,13 @@ public class Order : BaseEntity
     public int DiscountTotal { get; set; } = 0;
     /// <summary>Indica que el descuento tipo domicilio gratis fue aplicado sobre las líneas del pedido.</summary>
     public bool FreeDeliveryRequested { get; set; }
+    public OrderBenefitType AppliedBenefitType { get; set; } = OrderBenefitType.None;
+    public int? AppliedBenefitSourceId { get; set; }
+    public string? AppliedBenefitCode { get; set; }
+    public string? AppliedBenefitLabel { get; set; }
+    public LoyaltyRewardType? AppliedBenefitRewardType { get; set; }
+    public decimal? AppliedBenefitAmount { get; set; }
+    public string? AppliedBenefitSnapshot { get; set; }
     public string? Notes { get; set; }
     public string? CancelledReason { get; set; }
 

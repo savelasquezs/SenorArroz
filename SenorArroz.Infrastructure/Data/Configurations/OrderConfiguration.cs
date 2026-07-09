@@ -58,6 +58,20 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.FreeDeliveryRequested)
             .HasColumnName("free_delivery_requested")
             .HasDefaultValue(false);
+        builder.Property(o => o.AppliedBenefitType)
+            .HasColumnName("applied_benefit_type")
+            .HasConversion<string>()
+            .HasMaxLength(40)
+            .HasDefaultValue(OrderBenefitType.None);
+        builder.Property(o => o.AppliedBenefitSourceId).HasColumnName("applied_benefit_source_id");
+        builder.Property(o => o.AppliedBenefitCode).HasColumnName("applied_benefit_code").HasMaxLength(80);
+        builder.Property(o => o.AppliedBenefitLabel).HasColumnName("applied_benefit_label").HasMaxLength(250);
+        builder.Property(o => o.AppliedBenefitRewardType)
+            .HasColumnName("applied_benefit_reward_type")
+            .HasConversion<string>()
+            .HasMaxLength(40);
+        builder.Property(o => o.AppliedBenefitAmount).HasColumnName("applied_benefit_amount").HasPrecision(10, 2);
+        builder.Property(o => o.AppliedBenefitSnapshot).HasColumnName("applied_benefit_snapshot").HasColumnType("jsonb");
         builder.Property(o => o.Notes).HasColumnName("notes").HasMaxLength(200);
         builder.Property(o => o.CancelledReason).HasColumnName("cancelled_reason").HasMaxLength(200);
 

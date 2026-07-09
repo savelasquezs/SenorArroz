@@ -62,6 +62,14 @@ namespace SenorArroz.Domain.Enums
         PercentageDiscount
     }
 
+    public enum OrderBenefitType
+    {
+        None,
+        DailyPromotion,
+        Loyalty,
+        DiscountCode
+    }
+
     /// <summary>Bucket para la serie de peso vendido por categoría (dashboard ventas).</summary>
     public enum CategoryWeightEvolutionGranularity
     {
