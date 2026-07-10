@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BranchPrintSettings.Commands;
 using SenorArroz.Application.Features.BranchPrintSettings.DTOs;
+using SenorArroz.Application.Features.BranchPrintSettings.Queries;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Shared.Models;
+using SenorArroz.API.Services;
 
 namespace SenorArroz.API.Controllers;
 
@@ -16,11 +18,13 @@ public class BranchPrintSettingsController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly ICurrentUser _currentUser;
+    private readonly IPrintAgentNotificationService _printAgentNotifications;
 
-    public BranchPrintSettingsController(IMediator mediator, ICurrentUser currentUser)
+    public BranchPrintSettingsController(IMediator mediator, ICurrentUser currentUser, IPrintAgentNotificationService printAgentNotifications)
     {
         _mediator = mediator;
         _currentUser = currentUser;
+        _printAgentNotifications = printAgentNotifications;
     }
 
     /// <summary>Sube el logo del ticket (PNG, JPEG, WebP o GIF, máx. 1,5 MB). Campo multipart: file.</summary>
@@ -47,6 +51,9 @@ public class BranchPrintSettingsController : ControllerBase
             await file.CopyToAsync(ms, cancellationToken);
             var bytes = ms.ToArray();
             var result = await _mediator.Send(new UploadBranchReceiptLogoCommand(branchId, bytes, extension), cancellationToken);
+            var config = await _mediator.Send(new GetPrintAgentConfigQuery(branchId), cancellationToken);
+            if (config is not null)
+                await _printAgentNotifications.NotifyConfigChangedAsync(branchId, config, cancellationToken);
             return Ok(ApiResponse<BranchPrintSettingsDto>.SuccessResponse(result, "Logo de ticket actualizado."));
         }
         catch (NotFoundException ex)
@@ -70,6 +77,9 @@ public class BranchPrintSettingsController : ControllerBase
         try
         {
             var result = await _mediator.Send(new DeleteBranchReceiptLogoCommand(branchId), cancellationToken);
+            var config = await _mediator.Send(new GetPrintAgentConfigQuery(branchId), cancellationToken);
+            if (config is not null)
+                await _printAgentNotifications.NotifyConfigChangedAsync(branchId, config, cancellationToken);
             return Ok(ApiResponse<BranchPrintSettingsDto>.SuccessResponse(result, "Logo de ticket eliminado."));
         }
         catch (NotFoundException ex)
@@ -145,6 +155,9 @@ public class BranchPrintSettingsController : ControllerBase
         try
         {
             var result = await _mediator.Send(new UpdateBranchPrintSettingsCommand(branchId, dto), cancellationToken);
+            var config = await _mediator.Send(new GetPrintAgentConfigQuery(branchId), cancellationToken);
+            if (config is not null)
+                await _printAgentNotifications.NotifyConfigChangedAsync(branchId, config, cancellationToken);
             return Ok(ApiResponse<BranchPrintSettingsDto>.SuccessResponse(result, "Configuración de impresión actualizada."));
         }
         catch (NotFoundException ex)
@@ -164,6 +177,9 @@ public class BranchPrintSettingsController : ControllerBase
         try
         {
             var result = await _mediator.Send(new RotateBranchAgentTokenCommand(branchId), cancellationToken);
+            var config = await _mediator.Send(new GetPrintAgentConfigQuery(branchId), cancellationToken);
+            if (config is not null)
+                await _printAgentNotifications.NotifyConfigChangedAsync(branchId, config, cancellationToken);
             return Ok(ApiResponse<RotateBranchAgentTokenResponseDto>.SuccessResponse(
                 result,
                 "Token generado. Guárdelo en el agente; no se volverá a mostrar."));

@@ -19,7 +19,7 @@ services:
       - JwtSettings__Issuer=SenorArroz.API
       - JwtSettings__Audience=SenorArroz.Client
       - JwtSettings__RefreshTokenExpirationDays=7
-      - EmailSettings__SmtpHost=${EmailSettings__SmtpHost:-smtp.senorarroz.com}
+      - EmailSettings__SmtpHost=${EmailSettings__SmtpHost:-mail.carrierzone.com}
       - EmailSettings__SmtpPort=${EmailSettings__SmtpPort:-465}
       - EmailSettings__SmtpUsername=${EmailSettings__SmtpUsername}
       - EmailSettings__SmtpPassword=${EmailSettings__SmtpPassword}

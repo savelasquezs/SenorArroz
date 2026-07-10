@@ -115,6 +115,7 @@ builder.Services.AddSignalR();
 // Register SignalR-based notification service (after SignalR is configured)
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IOrderNotificationService, SenorArroz.API.Services.OrderNotificationService>();
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IWhatsAppNotificationService, SenorArroz.API.Services.WhatsAppNotificationService>();
+builder.Services.AddScoped<SenorArroz.API.Services.IPrintAgentNotificationService, SenorArroz.API.Services.PrintAgentNotificationService>();
 
 // JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
@@ -315,5 +316,6 @@ app.MapControllers();
 // Map SignalR Hub
 app.MapHub<SenorArroz.API.Hubs.OrderHub>("/hubs/orders");
 app.MapHub<SenorArroz.API.Hubs.WhatsAppHub>("/hubs/whatsapp");
+app.MapHub<SenorArroz.API.Hubs.PrintAgentHub>("/hubs/print-agent");
 
 app.Run();
