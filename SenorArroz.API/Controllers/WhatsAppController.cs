@@ -1663,11 +1663,11 @@ public class WhatsAppController : ControllerBase
         PhoneNumber = conversation.PhoneNumber,
         ContactName = conversation.ContactName,
         Status = ConversationStatusToApi(conversation.Status),
-        LastMessageAt = conversation.LastMessageAt,
+        LastMessageAt = AsUtc(conversation.LastMessageAt),
         LastMessagePreview = conversation.LastMessagePreview,
         UnreadCount = conversation.UnreadCount,
-        CreatedAt = conversation.CreatedAt,
-        UpdatedAt = conversation.UpdatedAt
+        CreatedAt = AsUtc(conversation.CreatedAt),
+        UpdatedAt = AsUtc(conversation.UpdatedAt)
     };
 
     private static WhatsAppMessageDto ToMessageDto(WhatsAppMessage message) => new()
@@ -1686,9 +1686,21 @@ public class WhatsAppController : ControllerBase
         MediaSha256 = message.MediaSha256,
         Status = MessageStatusToApi(message.Status),
         SentByUserId = message.SentByUserId,
-        Timestamp = message.Timestamp,
-        CreatedAt = message.CreatedAt
+        Timestamp = AsUtc(message.Timestamp),
+        CreatedAt = AsUtc(message.CreatedAt)
     };
+
+    // PostgreSQL `timestamp without time zone` values are materialized with
+    // DateTimeKind.Unspecified. They contain UTC in this application, so mark
+    // them explicitly before JSON serialization (which then emits the `Z`).
+    private static DateTime AsUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
+
+    private static DateTime? AsUtc(DateTime? value) => value.HasValue ? AsUtc(value.Value) : null;
 
     private static string ConversationStatusToApi(WhatsAppConversationStatus status) => status switch
     {
