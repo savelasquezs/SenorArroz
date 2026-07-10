@@ -63,8 +63,9 @@ public class GlobalExceptionMiddleware
         var exposeInternal =
             _environment.IsDevelopment()
             || _configuration.GetValue<bool>("ExposeInternalApiErrors");
-        // Resumen tecnico (tipo + mensaje) sin pila; produccion sin ExposeInternalApiErrors.
-        var exposeExceptionSummary = _configuration.GetValue("Diagnostics:ExposeExceptionSummary", true);
+        // The exception summary can contain database or infrastructure details,
+        // so it must be explicitly enabled instead of being exposed by default.
+        var exposeExceptionSummary = _configuration.GetValue("Diagnostics:ExposeExceptionSummary", false);
 
         switch (exception)
         {

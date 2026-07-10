@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Common;
@@ -127,9 +128,15 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
 
     public async Task<ExpenseHeader> UpdateAsync(ExpenseHeader expenseHeader, CancellationToken cancellationToken = default)
     {
-        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+        IDbContextTransaction? tx = null;
         try
         {
+            // Non-relational providers (notably EF InMemory in tests) do not
+            // support transactions. Production uses PostgreSQL and retains the
+            // atomic update behavior.
+            if (_context.Database.IsRelational())
+                tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+
             ExpenseHeaderUpdateGraphForPersistence.DetachReadOnlyNavigations(expenseHeader);
 
             var keepIds = expenseHeader.ExpenseDetails
@@ -146,14 +153,21 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
 
             _context.ExpenseHeaders.Update(expenseHeader);
             await _context.SaveChangesAsync(cancellationToken);
-            await tx.CommitAsync(cancellationToken);
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken);
 
             return await GetByIdWithDetailsAsync(expenseHeader.Id, cancellationToken) ?? expenseHeader;
         }
         catch
         {
-            await tx.RollbackAsync(cancellationToken);
+            if (tx is not null)
+                await tx.RollbackAsync(cancellationToken);
             throw;
+        }
+        finally
+        {
+            if (tx is not null)
+                await tx.DisposeAsync();
         }
     }
 
