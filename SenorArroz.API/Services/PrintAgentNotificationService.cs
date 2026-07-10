@@ -26,7 +26,7 @@ public class PrintAgentNotificationService : IPrintAgentNotificationService
     public async Task NotifyJobsAvailableAsync(int branchId, CancellationToken cancellationToken = default)
     {
         await _hubContext.Clients.Group(PrintAgentHub.GetGroupName(branchId))
-            .SendAsync("PrintJobsAvailable", new { branchId }, cancellationToken);
+            .SendAsync("PrintJobsAvailable", cancellationToken);
 
         _logger.LogInformation("Print jobs availability pushed to branch {BranchId}.", branchId);
     }
