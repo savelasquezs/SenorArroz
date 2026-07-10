@@ -1,9 +1,6 @@
-using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Interfaces;
-using SenorArroz.Application.Features.BranchPrintSettings.Queries;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Shared.Models;
 
@@ -18,19 +15,13 @@ public class BranchPrintJobsController : ControllerBase
 
     private readonly IPrintQueueService _printQueue;
     private readonly ICurrentUser _currentUser;
-    private readonly IPrintAgentNotificationService _printAgentNotifications;
-    private readonly IMediator _mediator;
 
     public BranchPrintJobsController(
         IPrintQueueService printQueue,
-        ICurrentUser currentUser,
-        IPrintAgentNotificationService printAgentNotifications,
-        IMediator mediator)
+        ICurrentUser currentUser)
     {
         _printQueue = printQueue;
         _currentUser = currentUser;
-        _printAgentNotifications = printAgentNotifications;
-        _mediator = mediator;
     }
 
     /// <summary>Encola un trabajo de impresión con snapshot del ticket (usuarios de sucursal).</summary>

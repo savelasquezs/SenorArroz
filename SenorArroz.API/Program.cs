@@ -116,6 +116,8 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IOrderNotificationService, SenorArroz.API.Services.OrderNotificationService>();
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IWhatsAppNotificationService, SenorArroz.API.Services.WhatsAppNotificationService>();
 builder.Services.AddScoped<SenorArroz.API.Services.IPrintAgentNotificationService, SenorArroz.API.Services.PrintAgentNotificationService>();
+builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IPrintAgentNotifier>(
+    sp => sp.GetRequiredService<SenorArroz.API.Services.IPrintAgentNotificationService>());
 
 // JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
