@@ -1,6 +1,9 @@
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.BranchPrintSettings.Queries;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Shared.Models;
 
@@ -15,11 +18,19 @@ public class BranchPrintJobsController : ControllerBase
 
     private readonly IPrintQueueService _printQueue;
     private readonly ICurrentUser _currentUser;
+    private readonly IPrintAgentNotificationService _printAgentNotifications;
+    private readonly IMediator _mediator;
 
-    public BranchPrintJobsController(IPrintQueueService printQueue, ICurrentUser currentUser)
+    public BranchPrintJobsController(
+        IPrintQueueService printQueue,
+        ICurrentUser currentUser,
+        IPrintAgentNotificationService printAgentNotifications,
+        IMediator mediator)
     {
         _printQueue = printQueue;
         _currentUser = currentUser;
+        _printAgentNotifications = printAgentNotifications;
+        _mediator = mediator;
     }
 
     /// <summary>Encola un trabajo de impresión con snapshot del ticket (usuarios de sucursal).</summary>
@@ -62,6 +73,7 @@ public class BranchPrintJobsController : ControllerBase
         try
         {
             var job = await _printQueue.EnqueueAsync(branchId, request.Kind, request.OrderIds, cancellationToken);
+            await NotifyAgentAsync(branchId, cancellationToken);
             return Ok(ApiResponse<EnqueuePrintJobResponse>.SuccessResponse(
                 new EnqueuePrintJobResponse(job.Id),
                 "Trabajo de impresión encolado."));
@@ -93,6 +105,7 @@ public class BranchPrintJobsController : ControllerBase
         try
         {
             var job = await _printQueue.EnqueueTestPrintAsync(branchId, request.Kind, cancellationToken);
+            await NotifyAgentAsync(branchId, cancellationToken);
             return Ok(ApiResponse<EnqueuePrintJobResponse>.SuccessResponse(
                 new EnqueuePrintJobResponse(job.Id),
                 "Impresión de prueba encolada."));
@@ -191,6 +204,16 @@ public class BranchPrintJobsController : ControllerBase
             Roles.Cashier => PrintJobKind.Cashier,
             _ => null,
         };
+    }
+
+    private async Task NotifyAgentAsync(int branchId, CancellationToken cancellationToken)
+    {
+        var config = await _mediator.Send(new GetPrintAgentConfigQuery(branchId), cancellationToken);
+        if (config is null)
+            return;
+
+        await _printAgentNotifications.NotifyConfigChangedAsync(branchId, config, cancellationToken);
+        await _printAgentNotifications.NotifyPrintJobsAvailableAsync(branchId, cancellationToken);
     }
 }
 
