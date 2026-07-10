@@ -31,6 +31,11 @@ public interface IPrintQueueService
     Task<bool> TryFailJobAsync(int branchId, long jobId, string message, CancellationToken cancellationToken = default);
 }
 
+public interface IPrintAgentNotifier
+{
+    Task NotifyJobsAvailableAsync(int branchId, CancellationToken cancellationToken = default);
+}
+
 public record PrintJobAgentItemDto(
     long Id,
     string Kind,

@@ -25,6 +25,7 @@ public class PrintQueueService : IPrintQueueService
     private readonly IOrderRepository _orderRepository;
     private readonly ILoyaltyCycleStepRepository _loyaltyCycleStepRepository;
     private readonly IClock _clock;
+    private readonly IPrintAgentNotifier _printAgentNotifier;
 
     public PrintQueueService(
         ApplicationDbContext db,
@@ -32,7 +33,8 @@ public class PrintQueueService : IPrintQueueService
         IOptions<BrandingOptions> branding,
         IOrderRepository orderRepository,
         ILoyaltyCycleStepRepository loyaltyCycleStepRepository,
-        IClock clock)
+        IClock clock,
+        IPrintAgentNotifier printAgentNotifier)
     {
         _db = db;
         _clock = clock;
@@ -41,6 +43,7 @@ public class PrintQueueService : IPrintQueueService
         _branding = branding.Value;
         _orderRepository = orderRepository;
         _loyaltyCycleStepRepository = loyaltyCycleStepRepository;
+        _printAgentNotifier = printAgentNotifier;
     }
 
     public async Task<bool> IsAgentTokenValidAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default)
@@ -136,6 +139,7 @@ public class PrintQueueService : IPrintQueueService
 
         _db.PrintJobs.Add(job);
         await _db.SaveChangesAsync(cancellationToken);
+        await _printAgentNotifier.NotifyJobsAvailableAsync(branchId, cancellationToken);
         return job;
     }
 
@@ -191,6 +195,7 @@ public class PrintQueueService : IPrintQueueService
 
         _db.PrintJobs.Add(job);
         await _db.SaveChangesAsync(cancellationToken);
+        await _printAgentNotifier.NotifyJobsAvailableAsync(branchId, cancellationToken);
         return job;
     }
 
