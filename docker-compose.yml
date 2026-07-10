@@ -39,12 +39,12 @@ services:
       - JwtSettings__Issuer=SenorArroz.API
       - JwtSettings__Audience=SenorArroz.Client
       - JwtSettings__RefreshTokenExpirationDays=7
-      - EmailSettings__SmtpHost=${EmailSettings__SmtpHost:-smtp.gmail.com}
-      - EmailSettings__SmtpPort=${EmailSettings__SmtpPort:-587}
+      - EmailSettings__SmtpHost=${EmailSettings__SmtpHost:-smtp.senorarroz.com}
+      - EmailSettings__SmtpPort=${EmailSettings__SmtpPort:-465}
       - EmailSettings__SmtpUsername=${EmailSettings__SmtpUsername}
       - EmailSettings__SmtpPassword=${EmailSettings__SmtpPassword}
-      - EmailSettings__FromEmail=${EmailSettings__FromEmail}
-      - EmailSettings__FromName=${EmailSettings__FromName:-SenorArroz}
+      - EmailSettings__FromEmail=${EmailSettings__FromEmail:-noreply@senorarroz.com}
+      - EmailSettings__FromName=${EmailSettings__FromName:-El Senor Arroz}
       - EmailSettings__EnableSsl=${EmailSettings__EnableSsl:-true}
       - FrontendSettings__ResetPasswordUrl=http://localhost:5173/reset-password
     ports:

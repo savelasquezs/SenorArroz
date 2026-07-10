@@ -1,8 +1,9 @@
-using System.Net;
-using System.Net.Mail;
 using System.Text.Json;
+using MailKit.Net.Smtp;
+using MailKit.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using MimeKit;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Models;
 
@@ -59,25 +60,31 @@ public class SmtpEmailDeliveryService
             if (recipients.Count == 0)
                 return EmailSendResult.Fail("smtp", "El mensaje no tiene destinatarios.");
 
-            using var client = new SmtpClient(_smtpHost, _smtpPort);
-            client.EnableSsl = _enableSsl;
-            client.UseDefaultCredentials = false;
-            client.Credentials = new NetworkCredential(_smtpUsername, _smtpPassword);
-            client.Timeout = _smtpTimeoutMs;
-
-            using var mailMessage = new MailMessage();
-            mailMessage.From = new MailAddress(_fromEmail, _fromName);
+            var mailMessage = new MimeMessage();
+            mailMessage.From.Add(new MailboxAddress(_fromName, _fromEmail));
             foreach (var recipient in recipients.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                mailMessage.To.Add(recipient);
+                mailMessage.To.Add(MailboxAddress.Parse(recipient));
             }
 
             mailMessage.Subject = message.Subject;
-            mailMessage.Body = message.Body;
-            mailMessage.IsBodyHtml = message.IsHtml;
+            mailMessage.Body = new TextPart(message.IsHtml ? "html" : "plain")
+            {
+                Text = message.Body
+            };
 
             cancellationToken.ThrowIfCancellationRequested();
-            await client.SendMailAsync(mailMessage, cancellationToken);
+            using var client = new SmtpClient();
+            client.Timeout = _smtpTimeoutMs;
+
+            var socketOptions = _enableSsl
+                ? SecureSocketOptions.SslOnConnect
+                : SecureSocketOptions.None;
+
+            await client.ConnectAsync(_smtpHost, _smtpPort, socketOptions, cancellationToken);
+            await client.AuthenticateAsync(_smtpUsername, _smtpPassword, cancellationToken);
+            await client.SendAsync(mailMessage, cancellationToken);
+            await client.DisconnectAsync(true, cancellationToken);
 
             _logger.LogInformation("Queued email {MessageId} sent successfully to {Recipients}", message.Id, string.Join(", ", recipients));
             return EmailSendResult.Ok("smtp");

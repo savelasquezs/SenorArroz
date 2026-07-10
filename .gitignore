@@ -5,6 +5,9 @@
 
 # GCP / Firebase — cuenta de servicio solo en tu PC (FCM + Storage en local)
 firebase-adminsdk.local.json
+.env
+.env.*
+!.env.example
 
 # User-specific files
 *.rsuser
