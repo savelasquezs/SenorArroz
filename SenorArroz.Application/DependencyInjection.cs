@@ -47,6 +47,7 @@ namespace SenorArroz.Application
             services.AddScoped<IWhatsAppAiOrchestrator, WhatsAppAiOrchestrator>();
             services.AddScoped<IBranchBusinessHoursService, BranchBusinessHoursService>();
             services.AddScoped<IWhatsAppSystemPromptBuilder, WhatsAppSystemPromptBuilder>();
+            services.AddScoped<IWhatsAppOrderDraftCalculator, WhatsAppOrderDraftCalculator>();
 
             return services;
         }

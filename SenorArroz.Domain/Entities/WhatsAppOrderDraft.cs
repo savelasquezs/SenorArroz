@@ -1,0 +1,9 @@
+using SenorArroz.Domain.Entities.Common;using SenorArroz.Domain.Enums;
+namespace SenorArroz.Domain.Entities;
+public class WhatsAppOrderDraft:BaseEntity
+{
+ public int ConversationId{get;set;}public int? CustomerId{get;set;}public int BranchId{get;set;}public OrderType? OrderType{get;set;}public int? AddressId{get;set;}public WhatsAppOrderDraftStatus Status{get;set;}=WhatsAppOrderDraftStatus.Building;public string? PaymentMethod{get;set;}public int? PaymentMethodId{get;set;}public int? CashReceived{get;set;}public int? ChangeAmount{get;set;}public int Subtotal{get;set;}public int DeliveryFee{get;set;}public int DiscountTotal{get;set;}public int Total{get;set;}public string? Notes{get;set;}public DateTime? ConfirmedAt{get;set;}public DateTime? CancelledAt{get;set;}public string? CancelledReason{get;set;}public int? OrderId{get;set;}public long Version{get;set;}=1;
+ public WhatsAppConversation Conversation{get;set;}=null!;public Customer? Customer{get;set;}public Branch Branch{get;set;}=null!;public Address? Address{get;set;}public Order? Order{get;set;}public ICollection<WhatsAppOrderDraftItem> Items{get;set;}=[];public ICollection<WhatsAppOrderConfirmation> Confirmations{get;set;}=[];
+}
+public class WhatsAppOrderDraftItem:BaseEntity{public int DraftId{get;set;}public int ProductId{get;set;}public int Quantity{get;set;}public int UnitPrice{get;set;}public string? Notes{get;set;}public string? SelectedOptions{get;set;}public int Subtotal{get;set;}public WhatsAppOrderDraft Draft{get;set;}=null!;public Product Product{get;set;}=null!;}
+public class WhatsAppOrderConfirmation:BaseEntity{public int DraftId{get;set;}public int ConfirmationMessageId{get;set;}public int? OrderId{get;set;}public DateTime ConfirmedAt{get;set;}public WhatsAppOrderDraft Draft{get;set;}=null!;public WhatsAppMessage ConfirmationMessage{get;set;}=null!;public Order? Order{get;set;}}

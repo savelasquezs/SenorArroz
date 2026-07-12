@@ -69,6 +69,26 @@ public static class DependencyInjection
         services.AddScoped<IAgentTool, FindRegisteredNeighborhoodAgentTool>();
         services.AddScoped<IAgentTool, ResolveAddressWithMapsAgentTool>();
         services.AddScoped<IAgentTool, ValidateDeliveryAddressAgentTool>();
+        services.AddScoped<IAgentTool, FindCustomerByPhoneAgentTool>();
+        services.AddScoped<IAgentTool, CreateCustomerAgentTool>();
+        services.AddScoped<IAgentTool, UpdateCustomerAgentTool>();
+        services.AddScoped<IAgentTool, ListCustomerAddressesAgentTool>();
+        services.AddScoped<IAgentTool, CreateCustomerAddressAgentTool>();
+        services.AddScoped<WhatsAppDraftService>();
+        services.AddScoped<IAgentTool, GetOrCreateOrderDraftAgentTool>();
+        services.AddScoped<IAgentTool, GetOrderDraftAgentTool>();
+        services.AddScoped<IAgentTool, SetOrderTypeAgentTool>();
+        services.AddScoped<IAgentTool, AddDraftItemAgentTool>();
+        services.AddScoped<IAgentTool, RemoveDraftItemAgentTool>();
+        services.AddScoped<IAgentTool, SetDraftNotesAgentTool>();
+        services.AddScoped<IAgentTool, CancelOrderDraftAgentTool>();
+        services.AddScoped<IAgentTool, SelectCustomerAddressAgentTool>();
+        services.AddScoped<IAgentTool, CalculateDeliveryFeeAgentTool>();
+        services.AddScoped<IAgentTool, ListPaymentMethodsAgentTool>();
+        services.AddScoped<IAgentTool, SetPaymentMethodAgentTool>();
+        services.AddScoped<IAgentTool, CalculateCashChangeAgentTool>();
+        services.AddScoped<IAgentTool, GetOrderConfirmationSummaryAgentTool>();
+        services.AddScoped<IAgentTool, MarkDraftReadyAgentTool>();
         services.AddScoped<IWhatsAppAiMessageClaimer, WhatsAppAiMessageClaimer>();
 
         // Repositories
