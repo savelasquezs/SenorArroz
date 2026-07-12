@@ -29,6 +29,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<BranchInformalLoanExemptOrder> BranchInformalLoanExemptOrders { get; set; }
 
         DbSet<Branch> Branches { get; set; }
+        DbSet<BranchBusinessHour> BranchBusinessHours { get; set; }
 
         DbSet<BranchAiSetting> BranchAiSettings { get; set; }
 

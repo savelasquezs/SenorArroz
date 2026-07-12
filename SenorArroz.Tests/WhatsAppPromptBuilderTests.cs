@@ -1,0 +1,15 @@
+using Microsoft.EntityFrameworkCore;
+using Moq;
+using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
+using SenorArroz.Domain.Entities;
+using SenorArroz.Infrastructure.Data;
+
+namespace SenorArroz.Tests;
+
+public class WhatsAppPromptBuilderTests
+{
+ [Fact] public async Task Hours_AreOrderedAndFormatted(){await using var db=Db();db.BranchBusinessHours.AddRange(new BranchBusinessHour{BranchId=1,DayOfWeek=DayOfWeek.Tuesday,OpenTime=new(9,0),CloseTime=new(18,0),DisplayOrder=2},new BranchBusinessHour{BranchId=1,DayOfWeek=DayOfWeek.Monday,IsClosed=true,DisplayOrder=1});await db.SaveChangesAsync();var service=new BranchBusinessHoursService(db);var rows=await service.GetBusinessHours(1);Assert.Equal(DayOfWeek.Monday,rows[0].DayOfWeek);Assert.Contains("Cerrado",await service.GetBusinessHoursAsText(1));}
+ [Fact] public async Task Prompt_UsesConfiguredOrderVariablesAndOmitsEmptyBlocks(){await using var db=Db();db.Branches.Add(new Branch{Id=1,Name="Centro",Address="Calle 1",Phone1="555"});db.BranchAiSettings.Add(new BranchAiSetting{BranchId=1,AssistantName="Lina",PromptObjective="Atender a {{BranchName}}",PromptRequiredRules="Llamar al {{BranchPhone}}"});db.BranchBusinessHours.Add(new BranchBusinessHour{BranchId=1,DayOfWeek=DayOfWeek.Monday,IsClosed=true,DisplayOrder=1});await db.SaveChangesAsync();var clock=new Mock<IClock>();clock.SetupGet(x=>x.UtcNow).Returns(new DateTime(2026,7,12,15,0,0,DateTimeKind.Utc));var prompt=await new WhatsAppSystemPromptBuilder(db,new BranchBusinessHoursService(db),clock.Object).Build(1);Assert.Contains(WhatsAppSystemPromptBuilder.InternalBasePrompt,prompt);Assert.Contains("Atender a Centro",prompt);Assert.Contains("555",prompt);Assert.Contains("Lunes: Cerrado",prompt);Assert.DoesNotContain("Personalidad:",prompt);Assert.True(prompt.IndexOf("Objetivo",StringComparison.Ordinal)<prompt.IndexOf("Reglas obligatorias",StringComparison.Ordinal));}
+ private static ApplicationDbContext Db()=>new(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+}

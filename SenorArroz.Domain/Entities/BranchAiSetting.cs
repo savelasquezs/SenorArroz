@@ -13,6 +13,13 @@ public class BranchAiSetting : BaseEntity
     public int MaxContextMessages { get; set; } = 20;
     public DateTime? LastTestedAt { get; set; }
     public bool IsVerified { get; set; }
+    public string AssistantName { get; set; } = string.Empty;
+    public string? PromptObjective { get; set; }
+    public string? PromptPersonality { get; set; }
+    public string? PromptRequiredRules { get; set; }
+    public string? PromptFixedBranchInfo { get; set; }
+    public string? PromptAdditionalInstructions { get; set; }
+    public string TransferMessage { get; set; } = "Un asesor continuará con tu atención.";
 
     public virtual Branch Branch { get; set; } = null!;
 }

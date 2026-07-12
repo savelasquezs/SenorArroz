@@ -16,6 +16,13 @@ public class BranchAiSettingDto
     public DateTime? CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public string Status { get; set; } = "not_configured";
+    public string AssistantName { get; set; } = string.Empty;
+    public string PromptObjective { get; set; } = string.Empty;
+    public string PromptPersonality { get; set; } = string.Empty;
+    public string PromptRequiredRules { get; set; } = string.Empty;
+    public string PromptFixedBranchInfo { get; set; } = string.Empty;
+    public string PromptAdditionalInstructions { get; set; } = string.Empty;
+    public string TransferMessage { get; set; } = string.Empty;
 }
 
 public class UpsertBranchAiSettingDto
@@ -26,7 +33,16 @@ public class UpsertBranchAiSettingDto
     public bool IsActive { get; set; }
     public double? Temperature { get; set; }
     public int MaxContextMessages { get; set; } = 20;
+    public string AssistantName { get; set; } = string.Empty;
+    public string PromptObjective { get; set; } = string.Empty;
+    public string PromptPersonality { get; set; } = string.Empty;
+    public string PromptRequiredRules { get; set; } = string.Empty;
+    public string PromptFixedBranchInfo { get; set; } = string.Empty;
+    public string PromptAdditionalInstructions { get; set; } = string.Empty;
+    public string TransferMessage { get; set; } = string.Empty;
 }
+
+public record PromptPreviewDto(string Prompt);
 
 public class AiTestConnectionResultDto
 {

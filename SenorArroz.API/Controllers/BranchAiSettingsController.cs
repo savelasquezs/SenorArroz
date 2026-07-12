@@ -24,19 +24,21 @@ public class BranchAiSettingsController : ControllerBase
     private readonly IClock _clock;
     private readonly IAiProviderResolver _aiProviderResolver;
     private readonly ILogger<BranchAiSettingsController> _logger;
+    private readonly IWhatsAppSystemPromptBuilder _promptBuilder;
 
     public BranchAiSettingsController(
         IApplicationDbContext db,
         ICurrentUser currentUser,
         IClock clock,
         IAiProviderResolver aiProviderResolver,
-        ILogger<BranchAiSettingsController> logger)
+        ILogger<BranchAiSettingsController> logger, IWhatsAppSystemPromptBuilder promptBuilder)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _aiProviderResolver = aiProviderResolver;
         _logger = logger;
+        _promptBuilder = promptBuilder;
     }
 
     [HttpGet]
@@ -95,6 +97,13 @@ public class BranchAiSettingsController : ControllerBase
         setting.IsActive = dto.IsActive;
         setting.Temperature = dto.Temperature;
         setting.MaxContextMessages = dto.MaxContextMessages;
+        setting.AssistantName = dto.AssistantName.Trim();
+        setting.PromptObjective = dto.PromptObjective.Trim();
+        setting.PromptPersonality = dto.PromptPersonality.Trim();
+        setting.PromptRequiredRules = dto.PromptRequiredRules.Trim();
+        setting.PromptFixedBranchInfo = dto.PromptFixedBranchInfo.Trim();
+        setting.PromptAdditionalInstructions = dto.PromptAdditionalInstructions.Trim();
+        setting.TransferMessage = dto.TransferMessage.Trim();
 
         if (hasCriticalChanges)
         {
@@ -217,6 +226,15 @@ public class BranchAiSettingsController : ControllerBase
         return Ok(ApiResponse<AiProviderModelsResultDto>.SuccessResponse(response, "Modelos de IA obtenidos."));
     }
 
+    [HttpGet("prompt-preview")]
+    public async Task<ActionResult<ApiResponse<PromptPreviewDto>>> Preview(int branchId, CancellationToken cancellationToken)
+    {
+        if (!CanAccessBranch(branchId)) return Forbid();
+        if (!await _db.Branches.AsNoTracking().AnyAsync(x => x.Id == branchId, cancellationToken))
+            return NotFound(ApiResponse<PromptPreviewDto>.ErrorResponse("Sucursal no encontrada."));
+        return Ok(ApiResponse<PromptPreviewDto>.SuccessResponse(new(await _promptBuilder.Build(branchId, cancellationToken))));
+    }
+
     private bool CanAccessBranch(int branchId)
     {
         if (Roles.IsSuperadmin(_currentUser.Role))
@@ -298,7 +316,14 @@ public class BranchAiSettingsController : ControllerBase
                 ? "inactive"
                 : setting.IsVerified
                     ? "connected"
-                    : "configured_unverified"
+                    : "configured_unverified",
+            AssistantName = setting.AssistantName,
+            PromptObjective = setting.PromptObjective,
+            PromptPersonality = setting.PromptPersonality,
+            PromptRequiredRules = setting.PromptRequiredRules,
+            PromptFixedBranchInfo = setting.PromptFixedBranchInfo,
+            PromptAdditionalInstructions = setting.PromptAdditionalInstructions,
+            TransferMessage = setting.TransferMessage
         };
     }
 }

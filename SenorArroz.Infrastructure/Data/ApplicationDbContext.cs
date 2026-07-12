@@ -38,6 +38,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<BranchInformalLoanExemptOrder> BranchInformalLoanExemptOrders { get; set; }
 
         public virtual DbSet<Branch> Branches { get; set; }
+        public virtual DbSet<BranchBusinessHour> BranchBusinessHours { get; set; }
 
         public virtual DbSet<BranchAiSetting> BranchAiSettings { get; set; }
 
@@ -117,6 +118,7 @@ namespace SenorArroz.Infrastructure.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.ApplyConfiguration(new BranchConfiguration());
+            modelBuilder.ApplyConfiguration(new BranchBusinessHourConfiguration());
             modelBuilder.ApplyConfiguration(new BranchAiSettingConfiguration());
             modelBuilder.ApplyConfiguration(new BranchPrintSettingsConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppBranchSettingConfiguration());

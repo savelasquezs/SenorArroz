@@ -36,6 +36,7 @@ public class Branch : BaseEntity
     public virtual ICollection<Neighborhood> Neighborhoods { get; set; } = new List<Neighborhood>();
     public virtual ICollection<ProductCategory> ProductCategories { get; set; } = new List<ProductCategory>();
     public virtual ICollection<CommercialProfile> CommercialProfiles { get; set; } = new List<CommercialProfile>();
+    public virtual ICollection<BranchBusinessHour> BusinessHours { get; set; } = new List<BranchBusinessHour>();
     public virtual ICollection<Order> Orders { get; set; } = new List<Order>();
     public virtual ICollection<Bank> Banks { get; set; } = new List<Bank>();
     public virtual ICollection<LoyaltyCycleStep> LoyaltyCycleSteps { get; set; } = new List<LoyaltyCycleStep>();

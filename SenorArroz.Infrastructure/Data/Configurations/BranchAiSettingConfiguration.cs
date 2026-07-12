@@ -22,6 +22,13 @@ public class BranchAiSettingConfiguration : IEntityTypeConfiguration<BranchAiSet
         builder.Property(x => x.MaxContextMessages).HasColumnName("max_context_messages").HasDefaultValue(20);
         builder.Property(x => x.LastTestedAt).HasColumnName("last_tested_at");
         builder.Property(x => x.IsVerified).HasColumnName("is_verified").HasDefaultValue(false);
+        builder.Property(x => x.AssistantName).HasColumnName("assistant_name").HasMaxLength(200).HasDefaultValue("");
+        builder.Property(x => x.PromptObjective).HasColumnName("prompt_objective").HasMaxLength(4000);
+        builder.Property(x => x.PromptPersonality).HasColumnName("prompt_personality").HasMaxLength(2000);
+        builder.Property(x => x.PromptRequiredRules).HasColumnName("prompt_required_rules").HasMaxLength(8000);
+        builder.Property(x => x.PromptFixedBranchInfo).HasColumnName("prompt_fixed_branch_info").HasMaxLength(8000);
+        builder.Property(x => x.PromptAdditionalInstructions).HasColumnName("prompt_additional_instructions").HasMaxLength(8000);
+        builder.Property(x => x.TransferMessage).HasColumnName("transfer_message").HasMaxLength(1000).HasDefaultValue("Un asesor continuará con tu atención.");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
