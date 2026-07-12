@@ -501,7 +501,8 @@ public class WhatsAppController : ControllerBase
             foreach (var message in createdMessages.Where(x => x.Id > 0))
             {
                 await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
-                await _aiWorkQueue.EnqueueAsync(message.ConversationId, message.Id, cancellationToken);
+                if (!_aiWorkQueue.TryEnqueue(message.ConversationId, message.Id))
+                    _logger.LogWarning("WhatsApp AI queue full; message remains pending. ConversationId={ConversationId} MessageId={MessageId}", message.ConversationId, message.Id);
             }
         }
         catch (JsonException ex)

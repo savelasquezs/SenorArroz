@@ -25,6 +25,11 @@ public class WhatsAppMessage : BaseEntity
     public int AiProcessingAttempts { get; set; }
     public string? AiProcessingError { get; set; }
     public bool SentByAi { get; set; }
+    public DateTime? AiProcessingStartedAt { get; set; }
+    public DateTime? AiNextRetryAt { get; set; }
+    public string? AiGeneratedResponse { get; set; }
+    public string? AiResponseAttemptId { get; set; }
+    public string? AiResponseWhatsAppMessageId { get; set; }
 
     public virtual WhatsAppConversation Conversation { get; set; } = null!;
     public virtual User? SentByUser { get; set; }

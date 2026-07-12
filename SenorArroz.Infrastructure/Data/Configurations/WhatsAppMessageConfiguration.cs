@@ -37,6 +37,11 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
         builder.Property(x => x.AiProcessingAttempts).HasColumnName("ai_processing_attempts").HasDefaultValue(0);
         builder.Property(x => x.AiProcessingError).HasColumnName("ai_processing_error").HasMaxLength(1000);
         builder.Property(x => x.SentByAi).HasColumnName("sent_by_ai").HasDefaultValue(false);
+        builder.Property(x => x.AiProcessingStartedAt).HasColumnName("ai_processing_started_at");
+        builder.Property(x => x.AiNextRetryAt).HasColumnName("ai_next_retry_at");
+        builder.Property(x => x.AiGeneratedResponse).HasColumnName("ai_generated_response").HasMaxLength(4096);
+        builder.Property(x => x.AiResponseAttemptId).HasColumnName("ai_response_attempt_id").HasMaxLength(64);
+        builder.Property(x => x.AiResponseWhatsAppMessageId).HasColumnName("ai_response_whatsapp_message_id").HasMaxLength(128);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

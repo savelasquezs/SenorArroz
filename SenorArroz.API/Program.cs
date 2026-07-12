@@ -118,6 +118,7 @@ builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IWhatsAppNot
 builder.Services.AddSingleton<SenorArroz.API.Services.WhatsAppAiWorkQueue>();
 builder.Services.AddSingleton<IWhatsAppAiWorkQueue>(sp => sp.GetRequiredService<SenorArroz.API.Services.WhatsAppAiWorkQueue>());
 builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppAiBackgroundService>();
+builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppAiRecoveryService>();
 builder.Services.AddScoped<IWhatsAppAutomaticMessageSender, SenorArroz.API.Services.WhatsAppAutomaticMessageSender>();
 builder.Services.AddScoped<SenorArroz.API.Services.IPrintAgentNotificationService, SenorArroz.API.Services.PrintAgentNotificationService>();
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IPrintAgentNotifier>(
