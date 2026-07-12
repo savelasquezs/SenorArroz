@@ -33,6 +33,8 @@ public class WhatsAppAiOrchestratorTests
 
     [Fact] public async Task HumanChangeBeforeSend_PreventsResponse(){await using var f=await Fixture.Create();f.Provider.Setup(x=>x.GenerateAsync(It.IsAny<AiChatRequest>(),It.IsAny<CancellationToken>())).Callback(()=>{f.Db.WhatsAppConversations.Find(1)!.AttentionMode=WhatsAppAttentionMode.Human;f.Db.SaveChanges();}).ReturnsAsync(new AiChatResponse("No enviar",[],"model",null,null,null));var r=await f.Orchestrator.ProcessIncomingMessageAsync(1,1);Assert.True(r.Ignored);f.Sender.Verify(x=>x.SendTextAsync(It.IsAny<int>(),It.IsAny<int>(),It.IsAny<string>(),It.IsAny<string>(),It.IsAny<CancellationToken>()),Times.Never);}
 
+    [Fact] public async Task TechnicalProviderError_RemainsPendingAndDoesNotTransfer(){await using var f=await Fixture.Create();f.Provider.Setup(x=>x.GenerateAsync(It.IsAny<AiChatRequest>(),It.IsAny<CancellationToken>())).ReturnsAsync(new AiChatResponse(null,[],"model",null,null,null,false,"invalid request"));var r=await f.Orchestrator.ProcessIncomingMessageAsync(1,1);Assert.False(r.TransferredToHuman);Assert.Equal(WhatsAppAttentionMode.Ai,(await f.Db.WhatsAppConversations.FindAsync(1))!.AttentionMode);Assert.Equal(WhatsAppAiProcessingStatus.Pending,(await f.Db.WhatsAppMessages.FindAsync(1))!.AiProcessingStatus);f.Sender.Verify(x=>x.SendTransferTextAsync(It.IsAny<int>(),It.IsAny<int>(),It.IsAny<string>(),It.IsAny<string>(),It.IsAny<CancellationToken>()),Times.Never);}
+
     private sealed class Fixture:IAsyncDisposable
     {
       public Fixture(){Sender.Setup(x=>x.SendTransferTextAsync(It.IsAny<int>(),It.IsAny<int>(),It.IsAny<string>(),It.IsAny<string>(),It.IsAny<CancellationToken>())).ReturnsAsync(new WhatsAppAutomaticSendResult(true,false,"transfer-wamid",null));}
