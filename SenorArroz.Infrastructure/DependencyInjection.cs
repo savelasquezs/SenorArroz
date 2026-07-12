@@ -64,6 +64,11 @@ public static class DependencyInjection
         services.AddScoped<IAiChatProviderResolver, AiChatProviderResolver>();
         services.AddScoped<IAgentTool, SearchProductsAgentTool>();
         services.AddScoped<IAgentTool, ProductDetailsAgentTool>();
+        services.AddScoped<RegisteredNeighborhoodResolver>();
+        services.AddHttpClient<GoogleAddressGeocoder>();
+        services.AddScoped<IAgentTool, FindRegisteredNeighborhoodAgentTool>();
+        services.AddScoped<IAgentTool, ResolveAddressWithMapsAgentTool>();
+        services.AddScoped<IAgentTool, ValidateDeliveryAddressAgentTool>();
         services.AddScoped<IWhatsAppAiMessageClaimer, WhatsAppAiMessageClaimer>();
 
         // Repositories
