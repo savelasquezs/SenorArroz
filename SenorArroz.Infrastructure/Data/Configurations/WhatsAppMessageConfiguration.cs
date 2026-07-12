@@ -42,6 +42,7 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
         builder.Property(x => x.AiGeneratedResponse).HasColumnName("ai_generated_response").HasMaxLength(4096);
         builder.Property(x => x.AiResponseAttemptId).HasColumnName("ai_response_attempt_id").HasMaxLength(64);
         builder.Property(x => x.AiResponseWhatsAppMessageId).HasColumnName("ai_response_whatsapp_message_id").HasMaxLength(128);
+        builder.Property(x => x.AgentDispatchKey).HasColumnName("agent_dispatch_key").HasMaxLength(180);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
@@ -63,6 +64,7 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
         builder.HasIndex(x => x.MediaId).HasDatabaseName("idx_whatsapp_message_media_id");
         builder.HasIndex(x => x.Timestamp).HasDatabaseName("idx_whatsapp_message_timestamp");
         builder.HasIndex(x => x.AiProcessingStatus).HasDatabaseName("idx_whatsapp_message_ai_processing_status");
+        builder.HasIndex(x => x.AgentDispatchKey).IsUnique().HasFilter("agent_dispatch_key IS NOT NULL").HasDatabaseName("ux_whatsapp_message_agent_dispatch_key");
     }
 
     private static string DirectionToDb(WhatsAppMessageDirection direction) => direction switch

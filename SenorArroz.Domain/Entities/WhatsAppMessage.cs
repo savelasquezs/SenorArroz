@@ -30,6 +30,7 @@ public class WhatsAppMessage : BaseEntity
     public string? AiGeneratedResponse { get; set; }
     public string? AiResponseAttemptId { get; set; }
     public string? AiResponseWhatsAppMessageId { get; set; }
+    public string? AgentDispatchKey { get; set; }
 
     public virtual WhatsAppConversation Conversation { get; set; } = null!;
     public virtual User? SentByUser { get; set; }
