@@ -46,4 +46,11 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
             conversation.Id,
             message.Id);
     }
+
+    public async Task NotifyAttentionChangedAsync(int branchId, WhatsAppConversationDto conversation, CancellationToken cancellationToken = default)
+    {
+        var payload = new { branchId, conversation };
+        await _hubContext.Clients.Group($"Branch_{branchId}_WhatsApp").SendAsync("WhatsAppAttentionChanged", payload, cancellationToken);
+        await _hubContext.Clients.Group("WhatsApp_Superadmin").SendAsync("WhatsAppAttentionChanged", payload, cancellationToken);
+    }
 }

@@ -147,8 +147,29 @@ public class WhatsAppConversationDto
     public DateTime? LastMessageAt { get; set; }
     public string? LastMessagePreview { get; set; }
     public int UnreadCount { get; set; }
+    public string AttentionMode { get; set; } = "ai";
+    public int? AssignedUserId { get; set; }
+    public string? AssignedUserName { get; set; }
+    public DateTime? AiPausedAt { get; set; }
+    public DateTime? HumanAssignedAt { get; set; }
+    public DateTime? ClosedAt { get; set; }
+    public DateTime AttentionModeUpdatedAt { get; set; }
+    public int? AttentionModeUpdatedByUserId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+public class WhatsAppAttentionDto
+{
+    public int ConversationId { get; set; }
+    public string AttentionMode { get; set; } = "ai";
+    public int? AssignedUserId { get; set; }
+    public string? AssignedUserName { get; set; }
+    public DateTime? AiPausedAt { get; set; }
+    public DateTime? HumanAssignedAt { get; set; }
+    public DateTime? ClosedAt { get; set; }
+    public DateTime AttentionModeUpdatedAt { get; set; }
+    public int? UpdatedByUserId { get; set; }
 }
 
 public class WhatsAppMessageDto

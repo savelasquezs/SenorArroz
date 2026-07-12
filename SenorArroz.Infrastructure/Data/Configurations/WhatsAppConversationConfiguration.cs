@@ -23,6 +23,13 @@ public class WhatsAppConversationConfiguration : IEntityTypeConfiguration<WhatsA
         builder.Property(x => x.LastMessageAt).HasColumnName("last_message_at");
         builder.Property(x => x.LastMessagePreview).HasColumnName("last_message_preview").HasMaxLength(500);
         builder.Property(x => x.UnreadCount).HasColumnName("unread_count").HasDefaultValue(0);
+        builder.Property(x => x.AttentionMode).HasColumnName("attention_mode").HasMaxLength(32).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<WhatsAppAttentionMode>(v, true)).HasDefaultValue(WhatsAppAttentionMode.Ai);
+        builder.Property(x => x.AssignedUserId).HasColumnName("assigned_user_id");
+        builder.Property(x => x.AiPausedAt).HasColumnName("ai_paused_at");
+        builder.Property(x => x.HumanAssignedAt).HasColumnName("human_assigned_at");
+        builder.Property(x => x.ClosedAt).HasColumnName("closed_at");
+        builder.Property(x => x.AttentionModeUpdatedAt).HasColumnName("attention_mode_updated_at").HasDefaultValueSql("NOW()");
+        builder.Property(x => x.AttentionModeUpdatedByUserId).HasColumnName("attention_mode_updated_by_user_id");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

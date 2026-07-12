@@ -13,6 +13,13 @@ public class WhatsAppConversation : BaseEntity
     public DateTime? LastMessageAt { get; set; }
     public string? LastMessagePreview { get; set; }
     public int UnreadCount { get; set; }
+    public WhatsAppAttentionMode AttentionMode { get; set; } = WhatsAppAttentionMode.Ai;
+    public int? AssignedUserId { get; set; }
+    public DateTime? AiPausedAt { get; set; }
+    public DateTime? HumanAssignedAt { get; set; }
+    public DateTime? ClosedAt { get; set; }
+    public DateTime AttentionModeUpdatedAt { get; set; }
+    public int? AttentionModeUpdatedByUserId { get; set; }
 
     public virtual Branch Branch { get; set; } = null!;
     public virtual Customer? Customer { get; set; }

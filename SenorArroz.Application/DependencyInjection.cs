@@ -7,6 +7,7 @@ using SenorArroz.Application.Common.Behaviors;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
 using System.Reflection;
+using SenorArroz.Domain.Services;
 
 namespace SenorArroz.Application
 {
@@ -41,6 +42,7 @@ namespace SenorArroz.Application
             services.AddScoped<IOrderBusinessRulesService, OrderBusinessRulesService>();
             services.AddScoped<ILoyaltyCycleService, LoyaltyCycleService>();
             services.AddScoped<IFreeDeliverymanFcmTokenResolver, FreeDeliverymanFcmTokenResolver>();
+            services.AddScoped<WhatsAppAttentionService>();
 
             return services;
         }
