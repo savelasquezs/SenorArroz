@@ -99,6 +99,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<ReservationDeposit> ReservationDeposits { get; set; }
 
         public virtual DbSet<Product> Products { get; set; }
+        public virtual DbSet<CommercialProfile> CommercialProfiles { get; set; }
 
         public virtual DbSet<ProductCategory> ProductCategories { get; set; }
 
@@ -131,6 +132,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new AddressConfiguration());
             modelBuilder.ApplyConfiguration(new ProductCategoryConfiguration());
             modelBuilder.ApplyConfiguration(new ProductConfiguration());
+            modelBuilder.ApplyConfiguration(new CommercialProfileConfiguration());
             modelBuilder.ApplyConfiguration(new LoyaltyCycleStepConfiguration());
             modelBuilder.ApplyConfiguration(new OrderConfiguration());
             modelBuilder.ApplyConfiguration(new OrderDetailConfiguration());

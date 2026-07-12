@@ -90,6 +90,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<OrderDetail> OrderDetails { get; set; }
 
         DbSet<Product> Products { get; set; }
+        DbSet<CommercialProfile> CommercialProfiles { get; set; }
 
         DbSet<ProductCategory> ProductCategories { get; set; }
 

@@ -23,4 +23,9 @@ public class CreateProductDto
     public int? WeightGrams { get; set; }
 
     public bool Active { get; set; } = true;
+    public int? CommercialProfileId { get; set; }
+    [Range(1, int.MaxValue, ErrorMessage = "El mínimo de personas debe ser mayor que cero")]
+    public int? ServesPeopleMin { get; set; }
+    [Range(1, int.MaxValue, ErrorMessage = "El máximo de personas debe ser mayor que cero")]
+    public int? ServesPeopleMax { get; set; }
 }

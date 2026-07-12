@@ -37,13 +37,22 @@ public class ProductRepository : IProductRepository
             .AsNoTracking()
             .Include(p => p.Category)
             .ThenInclude(c => c.Branch)
+            .Include(p => p.CommercialProfile)
             .AsQueryable();
 
         if (branchId.HasValue)
             query = query.Where(p => p.Category.BranchId == branchId.Value);
 
         if (!string.IsNullOrWhiteSpace(name))
-            query = query.Where(p => EF.Functions.ILike(p.Name, $"%{name}%"));
+        {
+            var term = $"%{name.Trim()}%";
+            var people = int.TryParse(new string(name.Where(char.IsDigit).ToArray()), out var parsedPeople) ? parsedPeople : (int?)null;
+            query = query.Where(p => EF.Functions.ILike(p.Name, term)
+                || (p.CommercialProfile != null && EF.Functions.ILike(p.CommercialProfile.Name, term))
+                || (p.CommercialProfile != null && p.CommercialProfile.Description != null && EF.Functions.ILike(p.CommercialProfile.Description, term))
+                || (p.CommercialProfile != null && p.CommercialProfile.Ingredients != null && EF.Functions.ILike(p.CommercialProfile.Ingredients, term))
+                || (people.HasValue && p.ServesPeopleMin <= people && p.ServesPeopleMax >= people));
+        }
 
         if (categoryId.HasValue)
             query = query.Where(p => p.CategoryId == categoryId.Value);
@@ -76,6 +85,7 @@ public class ProductRepository : IProductRepository
             .AsNoTracking()
             .Include(p => p.Category)
             .ThenInclude(c => c.Branch)
+            .Include(p => p.CommercialProfile)
             .Where(p => p.CategoryId == categoryId)
             .OrderBy(p => p.Name)
             .ToListAsync(cancellationToken);
@@ -87,6 +97,7 @@ public class ProductRepository : IProductRepository
             .AsNoTracking()
             .Include(p => p.Category)
             .ThenInclude(c => c.Branch)
+            .Include(p => p.CommercialProfile)
             .Where(p => p.Category.BranchId == branchId)
             .OrderBy(p => p.Name)
             .ToListAsync(cancellationToken);
@@ -98,6 +109,7 @@ public class ProductRepository : IProductRepository
             .AsNoTracking()
             .Include(p => p.Category)
             .ThenInclude(c => c.Branch)
+            .Include(p => p.CommercialProfile)
             .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
     }
 
@@ -158,6 +170,8 @@ public class ProductRepository : IProductRepository
             p.CategoryId == categoryId &&
             (!excludeId.HasValue || p.Id != excludeId.Value), cancellationToken);
     }
+    public Task<bool> CommercialProfileBelongsToBranchAsync(int profileId, int branchId, CancellationToken cancellationToken = default) =>
+        _context.CommercialProfiles.AnyAsync(x => x.Id == profileId && x.BranchId == branchId, cancellationToken);
 
     public async Task<bool> AdjustStockAsync(int productId, int quantityChange, CancellationToken cancellationToken = default)
     {

@@ -47,6 +47,8 @@ public interface IWhatsAppCloudClient
         string toPhoneNumber,
         string text,
         CancellationToken cancellationToken = default);
+    Task<WhatsAppCloudSendResult> SendUrlButtonMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string body, string buttonText, string url, CancellationToken cancellationToken = default);
+    Task<WhatsAppCloudSendResult> SendImageLinkMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string imageUrl, string? caption, CancellationToken cancellationToken = default);
 
     Task<WhatsAppCloudTemplateSyncResult> GetMessageTemplatesAsync(
         string businessAccountId,

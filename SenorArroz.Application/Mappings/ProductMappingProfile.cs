@@ -27,12 +27,21 @@ public class ProductMappingProfile : Profile
         CreateMap<Product, ProductDto>()
             .ForMember(dest => dest.CategoryName, opt => opt.MapFrom(src => src.Category.Name))
             .ForMember(dest => dest.BranchId, opt => opt.MapFrom(src => src.Category.BranchId))
-            .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Category.Branch.Name));
+            .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Category.Branch.Name))
+            .ForMember(dest => dest.CommercialProfileName, opt => opt.MapFrom(src => src.CommercialProfile == null ? null : src.CommercialProfile.Name))
+            .ForMember(dest => dest.Description, opt => opt.MapFrom(src => src.CommercialProfile == null ? null : src.CommercialProfile.Description))
+            .ForMember(dest => dest.Ingredients, opt => opt.MapFrom(src => src.CommercialProfile == null ? null : src.CommercialProfile.Ingredients))
+            .ForMember(dest => dest.PhotoUrl, opt => opt.MapFrom(src => src.CommercialProfile == null ? null : src.CommercialProfile.PhotoUrl));
+            
 
         CreateMap<Product, ProductDetailDto>()
             .ForMember(dest => dest.CategoryName, opt => opt.MapFrom(src => src.Category.Name))
             .ForMember(dest => dest.BranchId, opt => opt.MapFrom(src => src.Category.BranchId))
             .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Category.Branch.Name))
+            .ForMember(dest => dest.CommercialProfileName, opt => opt.MapFrom(src => src.CommercialProfile == null ? null : src.CommercialProfile.Name))
+            .ForMember(dest => dest.Description, opt => opt.MapFrom(src => src.CommercialProfile == null ? null : src.CommercialProfile.Description))
+            .ForMember(dest => dest.Ingredients, opt => opt.MapFrom(src => src.CommercialProfile == null ? null : src.CommercialProfile.Ingredients))
+            .ForMember(dest => dest.PhotoUrl, opt => opt.MapFrom(src => src.CommercialProfile == null ? null : src.CommercialProfile.PhotoUrl))
             .ForMember(dest => dest.TotalSales, opt => opt.Ignore())
             .ForMember(dest => dest.TotalRevenue, opt => opt.Ignore())
             .ForMember(dest => dest.TotalOrders, opt => opt.Ignore())

@@ -31,6 +31,8 @@ public class BranchConfiguration : IEntityTypeConfiguration<Branch>
         builder.Property(b => b.PosCopyEtaRangeMinutes)
             .HasColumnName("pos_copy_eta_range_minutes")
             .HasDefaultValue(15);
+        builder.Property(b => b.MenuImageUrl1).HasColumnName("menu_image_url_1").HasMaxLength(2000);
+        builder.Property(b => b.MenuImageUrl2).HasColumnName("menu_image_url_2").HasMaxLength(2000);
 
         builder.Property(b => b.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()

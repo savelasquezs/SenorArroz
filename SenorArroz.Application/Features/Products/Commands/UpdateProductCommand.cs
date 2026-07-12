@@ -13,4 +13,7 @@ public class UpdateProductCommand : IRequest<ProductDto>
     public int? Stock { get; set; }
     public int? WeightGrams { get; set; }
     public bool Active { get; set; }
+    public int? CommercialProfileId { get; set; }
+    public int? ServesPeopleMin { get; set; }
+    public int? ServesPeopleMax { get; set; }
 }

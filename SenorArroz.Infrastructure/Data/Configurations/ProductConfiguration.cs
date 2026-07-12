@@ -20,6 +20,9 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.Stock).HasColumnName("stock");
         builder.Property(p => p.WeightGrams).HasColumnName("weight_grams");
         builder.Property(p => p.Active).HasColumnName("active").HasDefaultValue(true);
+        builder.Property(p => p.CommercialProfileId).HasColumnName("commercial_profile_id");
+        builder.Property(p => p.ServesPeopleMin).HasColumnName("serves_people_min");
+        builder.Property(p => p.ServesPeopleMax).HasColumnName("serves_people_max");
 
         builder.Property(p => p.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
@@ -31,6 +34,8 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
             .WithMany(pc => pc.Products)
             .HasForeignKey(p => p.CategoryId)
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(p => p.CommercialProfile).WithMany(x => x.Products)
+            .HasForeignKey(p => p.CommercialProfileId).OnDelete(DeleteBehavior.SetNull);
 
         // Índices
         builder.HasIndex(p => p.CategoryId).HasDatabaseName("idx_product_category");

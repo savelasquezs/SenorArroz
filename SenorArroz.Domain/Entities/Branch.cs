@@ -27,12 +27,15 @@ public class Branch : BaseEntity
 
     /// <summary>Minutos adicionales al mínimo para el tope de la ventana (p. ej. 30 + 15 → «30-45 min»).</summary>
     public int PosCopyEtaRangeMinutes { get; set; } = 15;
+    public string? MenuImageUrl1 { get; set; }
+    public string? MenuImageUrl2 { get; set; }
 
     // Navigation Properties
     public virtual ICollection<User> Users { get; set; } = new List<User>();
     public virtual ICollection<Customer> Customers { get; set; } = new List<Customer>();
     public virtual ICollection<Neighborhood> Neighborhoods { get; set; } = new List<Neighborhood>();
     public virtual ICollection<ProductCategory> ProductCategories { get; set; } = new List<ProductCategory>();
+    public virtual ICollection<CommercialProfile> CommercialProfiles { get; set; } = new List<CommercialProfile>();
     public virtual ICollection<Order> Orders { get; set; } = new List<Order>();
     public virtual ICollection<Bank> Banks { get; set; } = new List<Bank>();
     public virtual ICollection<LoyaltyCycleStep> LoyaltyCycleSteps { get; set; } = new List<LoyaltyCycleStep>();

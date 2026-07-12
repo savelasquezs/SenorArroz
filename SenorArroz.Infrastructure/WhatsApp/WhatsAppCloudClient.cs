@@ -88,6 +88,29 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         }
     }
 
+    public async Task<WhatsAppCloudSendResult> SendUrlButtonMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string body, string buttonText, string url, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Content = JsonContent.Create(new { messaging_product = "whatsapp", to = toPhoneNumber, type = "interactive", interactive = new { type = "cta_url", body = new { text = body }, action = new { name = "cta_url", parameters = new { display_text = buttonText, url } } } });
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken); var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode) return new(false, null, ExtractMetaError(json, response.StatusCode));
+            using var document = JsonDocument.Parse(json); return new(true, TryGetFirstMessageId(document.RootElement), null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        { _logger.LogWarning(ex, "WhatsApp URL button send failed."); return new(false, null, "No se pudo enviar el botón URL."); }
+    }
+
+    public async Task<WhatsAppCloudSendResult> SendImageLinkMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string imageUrl, string? caption, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages")); request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Content = JsonContent.Create(new { messaging_product = "whatsapp", to = toPhoneNumber, type = "image", image = new { link = imageUrl, caption } });
+        try { using var response = await _httpClient.SendAsync(request, cancellationToken); var json = await response.Content.ReadAsStringAsync(cancellationToken); if (!response.IsSuccessStatusCode) return new(false, null, ExtractMetaError(json, response.StatusCode)); using var doc = JsonDocument.Parse(json); return new(true, TryGetFirstMessageId(doc.RootElement), null); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { _logger.LogWarning(ex, "WhatsApp linked image send failed."); return new(false, null, "No se pudo enviar la imagen del producto."); }
+    }
+
     public async Task<WhatsAppCloudTemplateSyncResult> GetMessageTemplatesAsync(
         string businessAccountId,
         string accessToken,

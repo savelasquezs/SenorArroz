@@ -30,6 +30,7 @@ public interface IProductRepository
     Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
     Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
     Task<bool> NameExistsInCategoryAsync(string name, int categoryId, int? excludeId = null, CancellationToken cancellationToken = default);
+    Task<bool> CommercialProfileBelongsToBranchAsync(int profileId, int branchId, CancellationToken cancellationToken = default);
 
     // Statistics
     Task<bool> AdjustStockAsync(int productId, int quantityChange, CancellationToken cancellationToken = default);
