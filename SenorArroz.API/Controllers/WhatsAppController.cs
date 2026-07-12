@@ -28,6 +28,7 @@ public class WhatsAppController : ControllerBase
     private readonly WhatsAppCloudOptions _whatsAppOptions;
     private readonly ILogger<WhatsAppController> _logger;
     private readonly WhatsAppAttentionService _attentionService;
+    private readonly IWhatsAppAiWorkQueue _aiWorkQueue;
 
     public WhatsAppController(
         IApplicationDbContext db,
@@ -39,7 +40,8 @@ public class WhatsAppController : ControllerBase
         IOptions<FirebaseStorageOptions> firebaseOptions,
         IOptions<WhatsAppCloudOptions> whatsAppOptions,
         ILogger<WhatsAppController> logger,
-        WhatsAppAttentionService attentionService)
+        WhatsAppAttentionService attentionService,
+        IWhatsAppAiWorkQueue aiWorkQueue)
     {
         _db = db;
         _currentUser = currentUser;
@@ -51,6 +53,7 @@ public class WhatsAppController : ControllerBase
         _whatsAppOptions = whatsAppOptions.Value;
         _logger = logger;
         _attentionService = attentionService;
+        _aiWorkQueue = aiWorkQueue;
     }
 
     [HttpGet("status")]
@@ -498,6 +501,7 @@ public class WhatsAppController : ControllerBase
             foreach (var message in createdMessages.Where(x => x.Id > 0))
             {
                 await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
+                await _aiWorkQueue.EnqueueAsync(message.ConversationId, message.Id, cancellationToken);
             }
         }
         catch (JsonException ex)
@@ -1498,6 +1502,7 @@ public class WhatsAppController : ControllerBase
                 Status = WhatsAppMessageStatus.Received,
                 Timestamp = timestamp,
                 RawPayload = messageElement.GetRawText()
+                ,AiProcessingStatus = WhatsAppAiProcessingStatus.Pending
             };
             _db.WhatsAppMessages.Add(message);
             createdMessages.Add(message);

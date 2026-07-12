@@ -1,0 +1,2 @@
+namespace SenorArroz.Application.Options;
+public class WhatsAppAiOrchestratorOptions { public const string SectionName = "WhatsAppAiOrchestrator"; public int MaxModelCallsPerMessage { get; set; } = 4; public int MaxToolsPerCall { get; set; } = 5; public int MaxTotalToolCalls { get; set; } = 10; public int TotalTimeoutSeconds { get; set; } = 45; public int MaxToolResultCharacters { get; set; } = 6000; public int TransientRetryCount { get; set; } = 2; }

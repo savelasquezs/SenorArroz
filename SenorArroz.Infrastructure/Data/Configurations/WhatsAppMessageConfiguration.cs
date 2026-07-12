@@ -32,6 +32,11 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
         builder.Property(x => x.SentByUserId).HasColumnName("sent_by_user_id");
         builder.Property(x => x.Timestamp).HasColumnName("timestamp").IsRequired();
         builder.Property(x => x.RawPayload).HasColumnName("raw_payload").HasColumnType("jsonb");
+        builder.Property(x => x.AiProcessingStatus).HasColumnName("ai_processing_status").HasMaxLength(32).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<WhatsAppAiProcessingStatus>(v, true)).HasDefaultValue(WhatsAppAiProcessingStatus.NotApplicable);
+        builder.Property(x => x.AiProcessedAt).HasColumnName("ai_processed_at");
+        builder.Property(x => x.AiProcessingAttempts).HasColumnName("ai_processing_attempts").HasDefaultValue(0);
+        builder.Property(x => x.AiProcessingError).HasColumnName("ai_processing_error").HasMaxLength(1000);
+        builder.Property(x => x.SentByAi).HasColumnName("sent_by_ai").HasDefaultValue(false);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
@@ -52,6 +57,7 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
         builder.HasIndex(x => x.WhatsAppMessageId).HasDatabaseName("idx_whatsapp_message_whatsapp_id");
         builder.HasIndex(x => x.MediaId).HasDatabaseName("idx_whatsapp_message_media_id");
         builder.HasIndex(x => x.Timestamp).HasDatabaseName("idx_whatsapp_message_timestamp");
+        builder.HasIndex(x => x.AiProcessingStatus).HasDatabaseName("idx_whatsapp_message_ai_processing_status");
     }
 
     private static string DirectionToDb(WhatsAppMessageDirection direction) => direction switch

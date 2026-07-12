@@ -43,6 +43,8 @@ namespace SenorArroz.Application
             services.AddScoped<ILoyaltyCycleService, LoyaltyCycleService>();
             services.AddScoped<IFreeDeliverymanFcmTokenResolver, FreeDeliverymanFcmTokenResolver>();
             services.AddScoped<WhatsAppAttentionService>();
+            services.AddScoped<IAgentToolExecutor, AgentToolExecutor>();
+            services.AddScoped<IWhatsAppAiOrchestrator, WhatsAppAiOrchestrator>();
 
             return services;
         }

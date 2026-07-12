@@ -115,6 +115,10 @@ builder.Services.AddSignalR();
 // Register SignalR-based notification service (after SignalR is configured)
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IOrderNotificationService, SenorArroz.API.Services.OrderNotificationService>();
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IWhatsAppNotificationService, SenorArroz.API.Services.WhatsAppNotificationService>();
+builder.Services.AddSingleton<SenorArroz.API.Services.WhatsAppAiWorkQueue>();
+builder.Services.AddSingleton<IWhatsAppAiWorkQueue>(sp => sp.GetRequiredService<SenorArroz.API.Services.WhatsAppAiWorkQueue>());
+builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppAiBackgroundService>();
+builder.Services.AddScoped<IWhatsAppAutomaticMessageSender, SenorArroz.API.Services.WhatsAppAutomaticMessageSender>();
 builder.Services.AddScoped<SenorArroz.API.Services.IPrintAgentNotificationService, SenorArroz.API.Services.PrintAgentNotificationService>();
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IPrintAgentNotifier>(
     sp => sp.GetRequiredService<SenorArroz.API.Services.IPrintAgentNotificationService>());

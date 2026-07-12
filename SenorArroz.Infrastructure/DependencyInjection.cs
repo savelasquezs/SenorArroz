@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.Configure<DeliveryPayrollOptions>(configuration.GetSection(DeliveryPayrollOptions.SectionName));
         services.Configure<FirebaseStorageOptions>(configuration.GetSection(FirebaseStorageOptions.SectionName));
         services.Configure<WhatsAppCloudOptions>(configuration.GetSection(WhatsAppCloudOptions.SectionName));
+        services.Configure<WhatsAppAiOrchestratorOptions>(configuration.GetSection(WhatsAppAiOrchestratorOptions.SectionName));
         services.PostConfigure<WhatsAppCloudOptions>(options =>
         {
             options.AccessToken = FirstNonEmpty(configuration["WHATSAPP_TOKEN"], options.AccessToken);
@@ -58,6 +59,12 @@ public static class DependencyInjection
         services.AddScoped<IAiProvider>(sp => sp.GetRequiredService<OpenAiProvider>());
         services.AddScoped<IAiProvider>(sp => sp.GetRequiredService<GeminiProvider>());
         services.AddScoped<IAiProviderResolver, AiProviderResolver>();
+        services.AddScoped<IAiChatProvider>(sp => sp.GetRequiredService<OpenAiProvider>());
+        services.AddScoped<IAiChatProvider>(sp => sp.GetRequiredService<GeminiProvider>());
+        services.AddScoped<IAiChatProviderResolver, AiChatProviderResolver>();
+        services.AddScoped<IAgentTool, SearchProductsAgentTool>();
+        services.AddScoped<IAgentTool, ProductDetailsAgentTool>();
+        services.AddScoped<IWhatsAppAiMessageClaimer, WhatsAppAiMessageClaimer>();
 
         // Repositories
         services.AddScoped<IBranchRepository, BranchRepository>();

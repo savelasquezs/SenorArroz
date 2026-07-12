@@ -20,6 +20,11 @@ public class WhatsAppMessage : BaseEntity
     public int? SentByUserId { get; set; }
     public DateTime Timestamp { get; set; }
     public string? RawPayload { get; set; }
+    public WhatsAppAiProcessingStatus AiProcessingStatus { get; set; } = WhatsAppAiProcessingStatus.NotApplicable;
+    public DateTime? AiProcessedAt { get; set; }
+    public int AiProcessingAttempts { get; set; }
+    public string? AiProcessingError { get; set; }
+    public bool SentByAi { get; set; }
 
     public virtual WhatsAppConversation Conversation { get; set; } = null!;
     public virtual User? SentByUser { get; set; }
