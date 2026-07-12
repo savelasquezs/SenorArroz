@@ -653,8 +653,9 @@ public class WhatsAppController : ControllerBase
         if (conversation is null) return NotFound(ApiResponse<WhatsAppAttentionDto>.ErrorResponse("Conversación no encontrada."));
         if (!await CanAccessVerifiedBranchAsync(conversation.BranchId, ct)) return Forbid();
         var aiActive = await IsBranchAiActiveAsync(conversation.BranchId, ct); var now = _clock.UtcNow; var userId = _currentUser.Id;
-        switch (action) { case "take": _attentionService.Take(conversation, userId, now); break; case "ai": _attentionService.ReturnToAi(conversation, userId, now, aiActive); break; case "pause": _attentionService.Pause(conversation, userId, now); break; case "request-human": _attentionService.RequestHuman(conversation, userId, now); break; case "close": _attentionService.Close(conversation, userId, now); break; case "reopen": _attentionService.Reopen(conversation, userId, now, aiActive); break; default: return BadRequest(); }
-        await _db.SaveChangesAsync(ct); var dto = await ToAttentionDtoAsync(conversation, ct); await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId, ToConversationDto(conversation, dto.AssignedUserName), ct);
+        var changed = action switch { "take" => _attentionService.Take(conversation, userId, now), "ai" => _attentionService.ReturnToAi(conversation, userId, now, aiActive), "pause" => _attentionService.Pause(conversation, userId, now), "request-human" => _attentionService.RequestHuman(conversation, userId, now), "close" => _attentionService.Close(conversation, userId, now), "reopen" => _attentionService.Reopen(conversation, userId, now, aiActive), _ => throw new ArgumentOutOfRangeException(nameof(action)) };
+        if (changed) await _db.SaveChangesAsync(ct); var dto = await ToAttentionDtoAsync(conversation, ct);
+        if (changed) await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId, ToConversationDto(conversation, dto.AssignedUserName), ct);
         return Ok(ApiResponse<WhatsAppAttentionDto>.SuccessResponse(dto, "Estado de atención actualizado."));
     }
 
@@ -677,12 +678,8 @@ public class WhatsAppController : ControllerBase
             return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
         if (!await CanAccessVerifiedBranchAsync(conversation.BranchId, cancellationToken))
             return Forbid();
-        if (conversation.AttentionMode != WhatsAppAttentionMode.Human)
-        {
-            _attentionService.Take(conversation, _currentUser.Id, _clock.UtcNow);
-            await _db.SaveChangesAsync(cancellationToken);
-            await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId, ToConversationDto(conversation), cancellationToken);
-        }
+        if (conversation.AttentionMode == WhatsAppAttentionMode.Closed)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación está cerrada. Debes reabrirla antes de enviar mensajes."));
 
         var setting = await _db.WhatsAppBranchSettings
             .AsNoTracking()
@@ -690,6 +687,19 @@ public class WhatsAppController : ControllerBase
         if (setting is null)
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("WhatsApp no está activo y verificado para esta sucursal."));
 
+        if (conversation.AttentionMode != WhatsAppAttentionMode.Human || conversation.AssignedUserId != _currentUser.Id)
+        {
+            var attentionChanged = _attentionService.Take(conversation, _currentUser.Id, _clock.UtcNow);
+            if (attentionChanged)
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+                var attention = await ToAttentionDtoAsync(conversation, cancellationToken);
+                await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId, ToConversationDto(conversation, attention.AssignedUserName), cancellationToken);
+            }
+        }
+
+        // La toma se persiste antes de llamar a Meta. Si Meta falla, la conversación permanece
+        // asignada al empleado para que pueda revisar y reintentar de forma explícita.
         var timestamp = _clock.UtcNow;
         var result = await _whatsAppCloudClient.SendTextMessageAsync(
             setting.PhoneNumberId,
@@ -1186,7 +1196,7 @@ public class WhatsAppController : ControllerBase
                 CustomerId = customer?.Id,
                 ContactName = customer?.Name,
                 Status = WhatsAppConversationStatus.Open,
-                AttentionMode = aiActive ? WhatsAppAttentionMode.Ai : WhatsAppAttentionMode.Human,
+                AttentionMode = _attentionService.InitialMode(aiActive),
                 AttentionModeUpdatedAt = timestamp
             };
             _db.WhatsAppConversations.Add(conversation);
@@ -1453,7 +1463,7 @@ public class WhatsAppController : ControllerBase
                     BranchId = setting.BranchId,
                     PhoneNumber = from,
                     Status = WhatsAppConversationStatus.Open,
-                    AttentionMode = aiActive ? WhatsAppAttentionMode.Ai : WhatsAppAttentionMode.Human,
+                    AttentionMode = _attentionService.InitialMode(aiActive),
                     AttentionModeUpdatedAt = timestamp
                 };
                 _db.WhatsAppConversations.Add(conversation);
@@ -1780,7 +1790,7 @@ public class WhatsAppController : ControllerBase
     private async Task<WhatsAppAttentionDto> ToAttentionDtoAsync(WhatsAppConversation conversation, CancellationToken ct)
     {
         var name = conversation.AssignedUserId.HasValue ? await _db.Users.AsNoTracking().Where(x => x.Id == conversation.AssignedUserId).Select(x => x.Name).FirstOrDefaultAsync(ct) : null;
-        return new WhatsAppAttentionDto { ConversationId = conversation.Id, AttentionMode = AttentionModeToApi(conversation.AttentionMode), AssignedUserId = conversation.AssignedUserId, AssignedUserName = name, AiPausedAt = AsUtc(conversation.AiPausedAt), HumanAssignedAt = AsUtc(conversation.HumanAssignedAt), ClosedAt = AsUtc(conversation.ClosedAt), AttentionModeUpdatedAt = AsUtc(conversation.AttentionModeUpdatedAt), UpdatedByUserId = conversation.AttentionModeUpdatedByUserId };
+        return new WhatsAppAttentionDto { ConversationId = conversation.Id, AttentionMode = AttentionModeToApi(conversation.AttentionMode), AssignedUserId = conversation.AssignedUserId, AssignedUserName = name, AiPausedAt = AsUtc(conversation.AiPausedAt), HumanAssignedAt = AsUtc(conversation.HumanAssignedAt), ClosedAt = AsUtc(conversation.ClosedAt), AttentionModeUpdatedAt = AsUtc(conversation.AttentionModeUpdatedAt), AttentionModeUpdatedByUserId = conversation.AttentionModeUpdatedByUserId };
     }
 
     private static string AttentionModeToApi(WhatsAppAttentionMode mode) => mode switch { WhatsAppAttentionMode.Ai => "ai", WhatsAppAttentionMode.Human => "human", WhatsAppAttentionMode.WaitingForHuman => "waitingForHuman", WhatsAppAttentionMode.Paused => "paused", WhatsAppAttentionMode.Closed => "closed", _ => "human" };

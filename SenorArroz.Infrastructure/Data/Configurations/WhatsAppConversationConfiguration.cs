@@ -45,10 +45,14 @@ public class WhatsAppConversationConfiguration : IEntityTypeConfiguration<WhatsA
             .WithMany()
             .HasForeignKey(x => x.CustomerId)
             .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.AssignedUser).WithMany().HasForeignKey(x => x.AssignedUserId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.AttentionModeUpdatedByUser).WithMany().HasForeignKey(x => x.AttentionModeUpdatedByUserId).OnDelete(DeleteBehavior.SetNull);
 
         builder.HasIndex(x => x.BranchId).HasDatabaseName("idx_whatsapp_conversation_branch");
         builder.HasIndex(x => new { x.BranchId, x.PhoneNumber }).IsUnique().HasDatabaseName("idx_whatsapp_conversation_branch_phone");
         builder.HasIndex(x => x.LastMessageAt).HasDatabaseName("idx_whatsapp_conversation_last_message_at");
+        builder.HasIndex(x => x.AssignedUserId).HasDatabaseName("idx_whatsapp_conversation_assigned_user");
+        builder.HasIndex(x => x.AttentionModeUpdatedByUserId).HasDatabaseName("idx_whatsapp_conversation_attention_updated_by");
     }
 
     private static string StatusToDb(WhatsAppConversationStatus status) => status switch

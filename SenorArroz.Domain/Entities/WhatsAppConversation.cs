@@ -23,5 +23,7 @@ public class WhatsAppConversation : BaseEntity
 
     public virtual Branch Branch { get; set; } = null!;
     public virtual Customer? Customer { get; set; }
+    public virtual User? AssignedUser { get; set; }
+    public virtual User? AttentionModeUpdatedByUser { get; set; }
     public virtual ICollection<WhatsAppMessage> Messages { get; set; } = new List<WhatsAppMessage>();
 }

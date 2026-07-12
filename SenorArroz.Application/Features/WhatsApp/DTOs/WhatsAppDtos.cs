@@ -169,7 +169,7 @@ public class WhatsAppAttentionDto
     public DateTime? HumanAssignedAt { get; set; }
     public DateTime? ClosedAt { get; set; }
     public DateTime AttentionModeUpdatedAt { get; set; }
-    public int? UpdatedByUserId { get; set; }
+    public int? AttentionModeUpdatedByUserId { get; set; }
 }
 
 public class WhatsAppMessageDto
