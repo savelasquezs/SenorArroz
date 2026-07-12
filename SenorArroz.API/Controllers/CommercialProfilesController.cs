@@ -75,6 +75,32 @@ public class CommercialProfilesController : ControllerBase
         row.PhotoUrl = null; await _db.SaveChangesAsync(ct); return NoContent();
     }
 
+    [HttpGet("{id:int}/products")]
+    public async Task<ActionResult<ApiResponse<List<CommercialProfileProductDto>>>> GetProducts(int id, CancellationToken ct)
+    {
+        var profile = await _db.CommercialProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (profile is null) return NotFound(ApiResponse<List<CommercialProfileProductDto>>.ErrorResponse("Ficha no encontrada."));
+        if (!CanAccess(profile.BranchId)) return Forbid();
+        var products = await _db.Products.AsNoTracking().Where(x => x.Category.BranchId == profile.BranchId)
+            .OrderBy(x => x.Name).Select(x => new CommercialProfileProductDto(x.Id, x.Name, x.Active, x.CommercialProfileId, x.CommercialProfile != null ? x.CommercialProfile.Name : null)).ToListAsync(ct);
+        return Ok(ApiResponse<List<CommercialProfileProductDto>>.SuccessResponse(products));
+    }
+
+    [HttpPut("{id:int}/products")]
+    public async Task<ActionResult<ApiResponse<List<int>>>> SetProducts(int id, [FromBody] SetCommercialProfileProductsDto dto, CancellationToken ct)
+    {
+        var profile = await _db.CommercialProfiles.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (profile is null) return NotFound(ApiResponse<List<int>>.ErrorResponse("Ficha no encontrada."));
+        if (!CanAccess(profile.BranchId)) return Forbid();
+        var ids = dto.ProductIds.Distinct().ToHashSet();
+        if (await _db.Products.CountAsync(x => ids.Contains(x.Id) && x.Category.BranchId == profile.BranchId, ct) != ids.Count)
+            return BadRequest(ApiResponse<List<int>>.ErrorResponse("Uno o más productos no pertenecen a la sucursal."));
+        var affected = await _db.Products.Where(x => x.Category.BranchId == profile.BranchId && (x.CommercialProfileId == id || ids.Contains(x.Id))).ToListAsync(ct);
+        foreach (var product in affected) product.CommercialProfileId = ids.Contains(product.Id) ? id : null;
+        await _db.SaveChangesAsync(ct);
+        return Ok(ApiResponse<List<int>>.SuccessResponse(ids.Order().ToList(), "Productos vinculados correctamente."));
+    }
+
     private bool CanAccess(int branchId) => _currentUser.Role.Equals("superadmin", StringComparison.OrdinalIgnoreCase) || _currentUser.BranchId == branchId;
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static CommercialProfileDto ToDto(CommercialProfile x) => new(x.Id, x.BranchId, x.Name, x.Description, x.Ingredients, x.PhotoUrl);
@@ -82,3 +108,5 @@ public class CommercialProfilesController : ControllerBase
 
 public record CommercialProfileDto(int Id, int BranchId, string Name, string? Description, string? Ingredients, string? PhotoUrl);
 public record SaveCommercialProfileDto(int BranchId, string Name, string? Description, string? Ingredients);
+public record CommercialProfileProductDto(int Id, string Name, bool Active, int? CommercialProfileId, string? CommercialProfileName);
+public record SetCommercialProfileProductsDto(List<int> ProductIds);
