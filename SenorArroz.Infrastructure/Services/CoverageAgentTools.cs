@@ -19,7 +19,7 @@ public class RegisteredNeighborhoodResolver(ApplicationDbContext db)
  public async Task<NeighborhoodResolution> Resolve(string query,int conversationBranchId,CancellationToken ct)
  {
   var sought=Normalize(query);if(sought.Length<2)return new(false,false,null,[],null);
-  var rows=await db.Neighborhoods.AsNoTracking().Include(x=>x.Branch).Select(x=>new{x.Id,x.Name,x.BranchId,BranchName=x.Branch.Name,x.DeliveryFee}).ToListAsync(ct);
+  var rows=await db.Neighborhoods.AsNoTracking().Where(x=>x.Active).Include(x=>x.Branch).Select(x=>new{x.Id,x.Name,x.BranchId,BranchName=x.Branch.Name,x.DeliveryFee}).ToListAsync(ct);
   var ranked=rows.Select(x=>new{Row=x,Score=Score(sought,Normalize(x.Name))}).Where(x=>x.Score>=0.68).OrderByDescending(x=>x.Score).ThenBy(x=>x.Row.Name).Take(5).ToList();
   if(ranked.Count==0)return new(false,false,null,[],null);
   var options=ranked.Select(x=>new NeighborhoodMatch(x.Row.Id,x.Row.Name,x.Row.BranchName,x.Row.DeliveryFee,x.Row.BranchId!=conversationBranchId)).ToList();

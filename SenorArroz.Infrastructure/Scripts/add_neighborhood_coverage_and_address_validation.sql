@@ -1,0 +1,10 @@
+BEGIN;
+ALTER TABLE neighborhood ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true;
+CREATE INDEX IF NOT EXISTS idx_neighborhood_active_name ON neighborhood(active,name);
+ALTER TABLE address ADD COLUMN IF NOT EXISTS original_address varchar(500) NULL;
+ALTER TABLE address ADD COLUMN IF NOT EXISTS normalized_address varchar(500) NULL;
+ALTER TABLE address ADD COLUMN IF NOT EXISTS instructions varchar(500) NULL;
+ALTER TABLE address ADD COLUMN IF NOT EXISTS validation_source varchar(40) NULL;
+ALTER TABLE address ADD COLUMN IF NOT EXISTS validated_at timestamptz NULL;
+CREATE INDEX IF NOT EXISTS idx_address_validated_neighborhood ON address(neighborhood_id,validated_at);
+COMMIT;

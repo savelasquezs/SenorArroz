@@ -7,6 +7,7 @@ public class Neighborhood : BaseEntity
     public int BranchId { get; set; }
     public string Name { get; set; } = string.Empty;
     public int DeliveryFee { get; set; }
+    public bool Active { get; set; } = true;
 
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;

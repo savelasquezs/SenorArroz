@@ -17,6 +17,7 @@ public class NeighborhoodConfiguration : IEntityTypeConfiguration<Neighborhood>
         builder.Property(n => n.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(n => n.Name).HasColumnName("name").HasMaxLength(150).IsRequired();
         builder.Property(n => n.DeliveryFee).HasColumnName("delivery_fee").IsRequired();
+        builder.Property(n => n.Active).HasColumnName("active").HasDefaultValue(true);
 
         builder.Property(n => n.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore); 

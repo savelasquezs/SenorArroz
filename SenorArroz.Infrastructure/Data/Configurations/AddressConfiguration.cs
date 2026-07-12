@@ -22,6 +22,11 @@ public class AddressConfiguration : IEntityTypeConfiguration<Address>
         builder.Property(a => a.Latitude).HasColumnName("latitude").HasColumnType("numeric(10,6)");
         builder.Property(a => a.Longitude).HasColumnName("longitude").HasColumnType("numeric(10,6)");
         builder.Property(a => a.IsPrimary).HasColumnName("is_primary").HasDefaultValue(false);
+        builder.Property(a => a.OriginalAddressText).HasColumnName("original_address").HasMaxLength(500);
+        builder.Property(a => a.NormalizedAddressText).HasColumnName("normalized_address").HasMaxLength(500);
+        builder.Property(a => a.Instructions).HasColumnName("instructions").HasMaxLength(500);
+        builder.Property(a => a.ValidationSource).HasColumnName("validation_source").HasMaxLength(40);
+        builder.Property(a => a.ValidatedAt).HasColumnName("validated_at");
 
         builder.Property(a => a.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore); ; ;

@@ -12,6 +12,11 @@ public class Address : BaseEntity
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
     public bool IsPrimary { get; set; } = false;
+    public string? OriginalAddressText { get; set; }
+    public string? NormalizedAddressText { get; set; }
+    public string? Instructions { get; set; }
+    public string? ValidationSource { get; set; }
+    public DateTime? ValidatedAt { get; set; }
 
     // Navigation Properties
     public virtual Customer Customer { get; set; } = null!;

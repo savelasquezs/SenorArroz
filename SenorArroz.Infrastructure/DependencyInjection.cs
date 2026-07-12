@@ -74,6 +74,7 @@ public static class DependencyInjection
         services.AddScoped<IAgentTool, UpdateCustomerAgentTool>();
         services.AddScoped<IAgentTool, ListCustomerAddressesAgentTool>();
         services.AddScoped<IAgentTool, CreateCustomerAddressAgentTool>();
+        services.AddScoped<IAgentTool, SaveValidatedCustomerAddressAgentTool>();
         services.AddScoped<WhatsAppDraftService>();
         services.AddScoped<IAgentTool, GetOrCreateOrderDraftAgentTool>();
         services.AddScoped<IAgentTool, GetOrderDraftAgentTool>();
@@ -84,13 +85,10 @@ public static class DependencyInjection
         services.AddScoped<IAgentTool, CancelOrderDraftAgentTool>();
         services.AddScoped<IAgentTool, SelectCustomerAddressAgentTool>();
         services.AddScoped<IAgentTool, CalculateDeliveryFeeAgentTool>();
-        services.AddScoped<IAgentTool, ListPaymentMethodsAgentTool>();
-        services.AddScoped<IAgentTool, SetPaymentMethodAgentTool>();
-        services.AddScoped<IAgentTool, CalculateCashChangeAgentTool>();
         services.AddScoped<IAgentTool, GetOrderConfirmationSummaryAgentTool>();
-        services.AddScoped<IAgentTool, MarkDraftReadyAgentTool>();
         services.AddScoped<IAgentTool, SendProductDetailsAgentTool>();
         services.AddScoped<IAgentTool, SendMenuAgentTool>();
+        services.AddScoped<IAgentTool, RequestHumanAssistanceAgentTool>();
         services.AddScoped<IWhatsAppAiMessageClaimer, WhatsAppAiMessageClaimer>();
 
         // Repositories
