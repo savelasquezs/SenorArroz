@@ -97,13 +97,13 @@ public class BranchAiSettingsController : ControllerBase
         setting.IsActive = dto.IsActive;
         setting.Temperature = dto.Temperature;
         setting.MaxContextMessages = dto.MaxContextMessages;
-        setting.AssistantName = dto.AssistantName.Trim();
-        setting.PromptObjective = dto.PromptObjective.Trim();
-        setting.PromptPersonality = dto.PromptPersonality.Trim();
-        setting.PromptRequiredRules = dto.PromptRequiredRules.Trim();
-        setting.PromptFixedBranchInfo = dto.PromptFixedBranchInfo.Trim();
-        setting.PromptAdditionalInstructions = dto.PromptAdditionalInstructions.Trim();
-        setting.TransferMessage = dto.TransferMessage.Trim();
+        setting.AssistantName = (dto.AssistantName ?? string.Empty).Trim();
+        setting.PromptObjective = (dto.PromptObjective ?? string.Empty).Trim();
+        setting.PromptPersonality = (dto.PromptPersonality ?? string.Empty).Trim();
+        setting.PromptRequiredRules = (dto.PromptRequiredRules ?? string.Empty).Trim();
+        setting.PromptFixedBranchInfo = (dto.PromptFixedBranchInfo ?? string.Empty).Trim();
+        setting.PromptAdditionalInstructions = (dto.PromptAdditionalInstructions ?? string.Empty).Trim();
+        setting.TransferMessage = (dto.TransferMessage ?? string.Empty).Trim();
 
         if (hasCriticalChanges)
         {
@@ -226,13 +226,15 @@ public class BranchAiSettingsController : ControllerBase
         return Ok(ApiResponse<AiProviderModelsResultDto>.SuccessResponse(response, "Modelos de IA obtenidos."));
     }
 
-    [HttpGet("prompt-preview")]
-    public async Task<ActionResult<ApiResponse<PromptPreviewDto>>> Preview(int branchId, CancellationToken cancellationToken)
+    [HttpPost("prompt-preview")]
+    public async Task<ActionResult<ApiResponse<PromptPreviewDto>>> Preview(int branchId, [FromBody] UpsertBranchAiSettingDto dto, CancellationToken cancellationToken)
     {
         if (!CanAccessBranch(branchId)) return Forbid();
         if (!await _db.Branches.AsNoTracking().AnyAsync(x => x.Id == branchId, cancellationToken))
             return NotFound(ApiResponse<PromptPreviewDto>.ErrorResponse("Sucursal no encontrada."));
-        return Ok(ApiResponse<PromptPreviewDto>.SuccessResponse(new(await _promptBuilder.Build(branchId, cancellationToken))));
+        var promptError = ValidatePromptLengths(dto); if (promptError is not null) return BadRequest(ApiResponse<PromptPreviewDto>.ErrorResponse(promptError));
+        var draft = new WhatsAppPromptConfiguration(dto.AssistantName,dto.PromptObjective,dto.PromptPersonality,dto.PromptRequiredRules,dto.PromptFixedBranchInfo,dto.PromptAdditionalInstructions);
+        return Ok(ApiResponse<PromptPreviewDto>.SuccessResponse(new(await _promptBuilder.Build(branchId, draft, cancellationToken))));
     }
 
     private bool CanAccessBranch(int branchId)
@@ -255,6 +257,7 @@ public class BranchAiSettingsController : ControllerBase
             return "MaxContextMessages debe ser mayor que cero.";
         if (dto.Temperature is < 0 or > 2)
             return "Temperature debe estar entre 0 y 2.";
+        var promptError = ValidatePromptLengths(dto); if (promptError is not null) return promptError;
         if (string.IsNullOrWhiteSpace(dto.ApiKey)
             && (existingSetting is null
                 || !string.Equals(NormalizeProvider(existingSetting.Provider), provider, StringComparison.OrdinalIgnoreCase)
@@ -263,6 +266,15 @@ public class BranchAiSettingsController : ControllerBase
             return "ApiKey es requerida para este provider.";
         }
 
+        return null;
+    }
+
+    private static string? ValidatePromptLengths(UpsertBranchAiSettingDto dto)
+    {
+        if ((dto.AssistantName?.Length ?? 0)>150) return "AssistantName no puede superar 150 caracteres.";
+        if ((dto.PromptObjective?.Length ?? 0)>2000||(dto.PromptPersonality?.Length ?? 0)>2000) return "Objetivo y personalidad no pueden superar 2.000 caracteres.";
+        if ((dto.PromptRequiredRules?.Length ?? 0)>8000||(dto.PromptFixedBranchInfo?.Length ?? 0)>8000||(dto.PromptAdditionalInstructions?.Length ?? 0)>8000) return "Los bloques extensos del prompt no pueden superar 8.000 caracteres.";
+        if ((dto.TransferMessage?.Length ?? 0)>1000) return "TransferMessage no puede superar 1.000 caracteres.";
         return null;
     }
 
