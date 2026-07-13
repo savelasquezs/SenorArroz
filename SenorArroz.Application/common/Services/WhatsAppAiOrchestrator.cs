@@ -147,7 +147,7 @@ public class WhatsAppAiOrchestrator(
             if (contextPlanner is not null && toolCatalog is not null)
             {
                 var branch = await db.Branches.AsNoTracking().FirstAsync(x=>x.Id==conversation.BranchId,ct);
-                var customer = conversation.CustomerId.HasValue ? await db.Customers.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==conversation.CustomerId,ct) : null;
+                var customer = conversation.CustomerId.HasValue ? await db.Customers.AsNoTracking().Include(x=>x.Addresses).ThenInclude(x=>x.Neighborhood).FirstOrDefaultAsync(x=>x.Id==conversation.CustomerId&&x.BranchId==conversation.BranchId,ct) : null;
                 var draft = await LoadActiveDraft(conversationId,ct);
                 contextPlan = await contextPlanner.PlanAsync(new(conversation,message,branch,customer,draft,setting.ContextStrategy,setting.MaxContextMessages,history,toolCatalog.All,chat[0].Content??string.Empty),ct);
                 chat=contextPlan.Messages.ToList();
@@ -200,9 +200,12 @@ public class WhatsAppAiOrchestrator(
                     if (!await StillAi(conversationId, ct))
                         return await Ignore(message, "La atención cambió antes del envío.", ct, conversation.BranchId);
 
+                    var lastToolResult=chat.LastOrDefault(x=>x.Role=="tool")?.Content;
+                    var allowExtended=lastToolResult?.Contains("confirmation_required",StringComparison.OrdinalIgnoreCase)==true||lastToolResult?.Contains("products_found",StringComparison.OrdinalIgnoreCase)==true;
+                    var finalText=allowExtended?response.Text.Trim():WhatsAppConversationPolicy.EnforceShortOrdinaryResponse(response.Text);
                     var source = await db.WhatsAppMessages.FirstAsync(x => x.Id == message.Id, ct);
                     source.AiProcessingStatus = WhatsAppAiProcessingStatus.ResponseGenerated;
-                    source.AiGeneratedResponse = response.Text.Trim();
+                    source.AiGeneratedResponse = finalText;
                     source.AiResponseAttemptId ??= Guid.NewGuid().ToString("N");
                     await db.SaveChangesAsync(ct);
                     await NotifyCurrentStatusAsync(source.Id, conversation.BranchId, ct);
@@ -211,7 +214,7 @@ public class WhatsAppAiOrchestrator(
                         conversationId,
                         message.Id,
                         source.AiResponseAttemptId,
-                        response.Text.Trim(),
+                        finalText,
                         ct);
                     if (sent.InProgress)
                     {
@@ -320,7 +323,7 @@ public class WhatsAppAiOrchestrator(
                     if(contextPlan is not null&&toolCatalog!.ModifiesData(call.Name))
                     {
                         var refreshedConversation=await db.WhatsAppConversations.AsNoTracking().FirstAsync(x=>x.Id==conversationId,ct);
-                        var refreshedCustomer=refreshedConversation.CustomerId.HasValue?await db.Customers.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==refreshedConversation.CustomerId,ct):null;
+                        var refreshedCustomer=refreshedConversation.CustomerId.HasValue?await db.Customers.AsNoTracking().Include(x=>x.Addresses).ThenInclude(x=>x.Neighborhood).FirstOrDefaultAsync(x=>x.Id==refreshedConversation.CustomerId&&x.BranchId==refreshedConversation.BranchId,ct):null;
                         var refreshedDraft=await LoadActiveDraft(conversationId,ct);
                         var branch=await db.Branches.AsNoTracking().FirstAsync(x=>x.Id==refreshedConversation.BranchId,ct);
                         var newPlan=await contextPlanner!.PlanAsync(new(refreshedConversation,message,branch,refreshedCustomer,refreshedDraft,setting.ContextStrategy,setting.MaxContextMessages,history,toolCatalog.All,chat[0].Content??string.Empty),ct);

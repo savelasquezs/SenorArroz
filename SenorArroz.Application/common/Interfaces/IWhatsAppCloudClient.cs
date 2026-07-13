@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Models;
 namespace SenorArroz.Application.Common.Interfaces;
 
 public record WhatsAppCloudTestResult(bool Success, string? DisplayPhoneNumber, string? ErrorMessage);
@@ -48,6 +49,7 @@ public interface IWhatsAppCloudClient
         string text,
         CancellationToken cancellationToken = default);
     Task<WhatsAppCloudSendResult> SendUrlButtonMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string body, string buttonText, string url, CancellationToken cancellationToken = default);
+    Task<WhatsAppCloudSendResult> SendReplyButtonsMessageAsync(string phoneNumberId,string accessToken,string toPhoneNumber,string body,IReadOnlyList<WhatsAppReplyButton> buttons,CancellationToken cancellationToken=default);
     Task<WhatsAppCloudSendResult> SendImageLinkMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string imageUrl, string? caption, CancellationToken cancellationToken = default);
 
     Task<WhatsAppCloudTemplateSyncResult> GetMessageTemplatesAsync(

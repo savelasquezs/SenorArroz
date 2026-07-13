@@ -1889,9 +1889,14 @@ public class WhatsAppController : ControllerBase
 
     private static string? TryGetTextBody(JsonElement message)
     {
-        return message.TryGetProperty("text", out var text)
-            ? TryGetString(text, "body")
-            : null;
+        if(message.TryGetProperty("text",out var text))return TryGetString(text,"body");
+        if(message.TryGetProperty("interactive",out var interactive)&&interactive.TryGetProperty("button_reply",out var reply))
+        {
+            var id=TryGetString(reply,"id");
+            if(id?.StartsWith("address:",StringComparison.OrdinalIgnoreCase)==true)return $"Seleccionar dirección {id[8..]}";
+            return TryGetString(reply,"title");
+        }
+        return null;
     }
 
     private static InboundMediaPayload? TryGetMediaPayload(JsonElement message, WhatsAppMessageType messageType)
@@ -2116,6 +2121,9 @@ public class WhatsAppController : ControllerBase
         switch ((value ?? string.Empty).Trim().ToLowerInvariant())
         {
             case "text":
+                type = WhatsAppMessageType.Text;
+                return true;
+            case "interactive":
                 type = WhatsAppMessageType.Text;
                 return true;
             case "image":

@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Models;
 using SenorArroz.Application.Options;
 
 namespace SenorArroz.Infrastructure.WhatsApp;
@@ -101,6 +102,14 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         { return new(false, null, CreateClientError("send_url_button", ex, accessToken)); }
+    }
+
+    public async Task<WhatsAppCloudSendResult> SendReplyButtonsMessageAsync(string phoneNumberId,string accessToken,string toPhoneNumber,string body,IReadOnlyList<WhatsAppReplyButton> buttons,CancellationToken cancellationToken=default)
+    {
+        var safe=buttons.Take(3).Select(x=>new{type="reply",reply=new{id=x.Id[..Math.Min(256,x.Id.Length)],title=x.Title[..Math.Min(20,x.Title.Length)]}}).ToArray();
+        if(safe.Length==0)return new(false,null,"Se requiere al menos un botón.");
+        using var request=new HttpRequestMessage(HttpMethod.Post,BuildGraphUrl($"{phoneNumberId}/messages"));request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",accessToken);request.Content=JsonContent.Create(new{messaging_product="whatsapp",to=toPhoneNumber,type="interactive",interactive=new{type="button",body=new{text=body},action=new{buttons=safe}}});
+        try{using var response=await _httpClient.SendAsync(request,cancellationToken);var json=await response.Content.ReadAsStringAsync(cancellationToken);if(!response.IsSuccessStatusCode)return new(false,null,CreateMetaHttpError("send_reply_buttons",json,response.StatusCode,accessToken));using var document=JsonDocument.Parse(json);return new(true,TryGetFirstMessageId(document.RootElement),null);}catch(Exception ex)when(ex is HttpRequestException or TaskCanceledException or JsonException){return new(false,null,CreateClientError("send_reply_buttons",ex,accessToken));}
     }
 
     public async Task<WhatsAppCloudSendResult> SendImageLinkMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string imageUrl, string? caption, CancellationToken cancellationToken = default)
