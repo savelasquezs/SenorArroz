@@ -117,6 +117,9 @@ builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IOrderNotifi
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IWhatsAppNotificationService, SenorArroz.API.Services.WhatsAppNotificationService>();
 builder.Services.AddSingleton<SenorArroz.API.Services.WhatsAppAiWorkQueue>();
 builder.Services.AddSingleton<IWhatsAppAiWorkQueue>(sp => sp.GetRequiredService<SenorArroz.API.Services.WhatsAppAiWorkQueue>());
+builder.Services.AddSingleton<SenorArroz.API.Services.WhatsAppAiTelemetryQueue>();
+builder.Services.AddSingleton<IWhatsAppAiTelemetryQueue>(sp => sp.GetRequiredService<SenorArroz.API.Services.WhatsAppAiTelemetryQueue>());
+builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppAiTelemetryWorker>();
 builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppAiBackgroundService>();
 builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppAiRecoveryService>();
 builder.Services.AddScoped<IWhatsAppAutomaticMessageSender, SenorArroz.API.Services.WhatsAppAutomaticMessageSender>();

@@ -17,6 +17,7 @@ public class WhatsAppAiInvocation
     public int? CachedInputTokens { get; set; }
     public int? OutputTokens { get; set; }
     public int? ThinkingTokens { get; set; }
+    public int? BillableOutputTokens { get; set; }
     public int ToolCallCount { get; set; }
     public string? FinishReason { get; set; }
     public bool Success { get; set; }
@@ -28,6 +29,7 @@ public class WhatsAppAiInvocation
     public decimal? CachedInputPricePerMillionUsd { get; set; }
     public decimal? OutputPricePerMillionUsd { get; set; }
     public decimal? EstimatedCostUsd { get; set; }
+    public DateTime? PricingEffectiveDate { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public Branch Branch { get; set; } = null!;

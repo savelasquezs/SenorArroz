@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_ai_invocation (
     cached_input_tokens integer NULL,
     output_tokens integer NULL,
     thinking_tokens integer NULL,
+    billable_output_tokens integer NULL,
     tool_call_count integer NOT NULL DEFAULT 0,
     finish_reason varchar(80) NULL,
     success boolean NOT NULL,
@@ -25,8 +26,12 @@ CREATE TABLE IF NOT EXISTS whatsapp_ai_invocation (
     cached_input_price_per_million_usd numeric(18,8) NULL,
     output_price_per_million_usd numeric(18,8) NULL,
     estimated_cost_usd numeric(18,10) NULL,
+    pricing_effective_date timestamp without time zone NULL,
     created_at timestamp without time zone NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE whatsapp_ai_invocation ADD COLUMN IF NOT EXISTS billable_output_tokens integer NULL;
+ALTER TABLE whatsapp_ai_invocation ADD COLUMN IF NOT EXISTS pricing_effective_date timestamp without time zone NULL;
 
 CREATE INDEX IF NOT EXISTS idx_whatsapp_ai_invocation_branch_created
     ON whatsapp_ai_invocation(branch_id, created_at);
