@@ -1,7 +1,9 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
@@ -40,7 +42,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
-                return new WhatsAppCloudTestResult(false, null, ExtractMetaError(body, response.StatusCode));
+                return new WhatsAppCloudTestResult(false, null, CreateMetaHttpError("test_connection", body, response.StatusCode, accessToken));
 
             using var document = JsonDocument.Parse(body);
             var display = TryGetString(document.RootElement, "display_phone_number");
@@ -48,8 +50,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            _logger.LogWarning(ex, "WhatsApp test connection failed for phone number id {PhoneNumberId}", phoneNumberId);
-            return new WhatsAppCloudTestResult(false, null, "No se pudo conectar con Meta WhatsApp Cloud API.");
+            return new WhatsAppCloudTestResult(false, null, CreateClientError("test_connection", ex, accessToken));
         }
     }
 
@@ -75,7 +76,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
-                return new WhatsAppCloudSendResult(false, null, ExtractMetaError(body, response.StatusCode));
+                return new WhatsAppCloudSendResult(false, null, CreateMetaHttpError("send_text", body, response.StatusCode, accessToken));
 
             using var document = JsonDocument.Parse(body);
             var messageId = TryGetFirstMessageId(document.RootElement);
@@ -83,8 +84,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            _logger.LogWarning(ex, "WhatsApp text send failed for phone number id {PhoneNumberId}", phoneNumberId);
-            return new WhatsAppCloudSendResult(false, null, "No se pudo enviar el mensaje a Meta WhatsApp Cloud API.");
+            return new WhatsAppCloudSendResult(false, null, CreateClientError("send_text", ex, accessToken));
         }
     }
 
@@ -96,19 +96,19 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         try
         {
             using var response = await _httpClient.SendAsync(request, cancellationToken); var json = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode) return new(false, null, ExtractMetaError(json, response.StatusCode));
+            if (!response.IsSuccessStatusCode) return new(false, null, CreateMetaHttpError("send_url_button", json, response.StatusCode, accessToken));
             using var document = JsonDocument.Parse(json); return new(true, TryGetFirstMessageId(document.RootElement), null);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
-        { _logger.LogWarning(ex, "WhatsApp URL button send failed."); return new(false, null, "No se pudo enviar el botón URL."); }
+        { return new(false, null, CreateClientError("send_url_button", ex, accessToken)); }
     }
 
     public async Task<WhatsAppCloudSendResult> SendImageLinkMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string imageUrl, string? caption, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages")); request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         request.Content = JsonContent.Create(new { messaging_product = "whatsapp", to = toPhoneNumber, type = "image", image = new { link = imageUrl, caption } });
-        try { using var response = await _httpClient.SendAsync(request, cancellationToken); var json = await response.Content.ReadAsStringAsync(cancellationToken); if (!response.IsSuccessStatusCode) return new(false, null, ExtractMetaError(json, response.StatusCode)); using var doc = JsonDocument.Parse(json); return new(true, TryGetFirstMessageId(doc.RootElement), null); }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { _logger.LogWarning(ex, "WhatsApp linked image send failed."); return new(false, null, "No se pudo enviar la imagen del producto."); }
+        try { using var response = await _httpClient.SendAsync(request, cancellationToken); var json = await response.Content.ReadAsStringAsync(cancellationToken); if (!response.IsSuccessStatusCode) return new(false, null, CreateMetaHttpError("send_image_link", json, response.StatusCode, accessToken)); using var doc = JsonDocument.Parse(json); return new(true, TryGetFirstMessageId(doc.RootElement), null); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return new(false, null, CreateClientError("send_image_link", ex, accessToken)); }
     }
 
     public async Task<WhatsAppCloudTemplateSyncResult> GetMessageTemplatesAsync(
@@ -126,7 +126,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
-                return new WhatsAppCloudTemplateSyncResult(false, [], ExtractMetaError(body, response.StatusCode));
+                return new WhatsAppCloudTemplateSyncResult(false, [], CreateMetaHttpError("get_templates", body, response.StatusCode, accessToken));
 
             using var document = JsonDocument.Parse(body);
             if (!document.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
@@ -158,8 +158,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            _logger.LogWarning(ex, "WhatsApp template sync failed for business account id {BusinessAccountId}", businessAccountId);
-            return new WhatsAppCloudTemplateSyncResult(false, [], "No se pudieron consultar las plantillas en Meta WhatsApp Cloud API.");
+            return new WhatsAppCloudTemplateSyncResult(false, [], CreateClientError("get_templates", ex, accessToken));
         }
     }
 
@@ -199,15 +198,14 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
-                return new WhatsAppCloudSendResult(false, null, ExtractMetaError(body, response.StatusCode));
+                return new WhatsAppCloudSendResult(false, null, CreateMetaHttpError("send_template", body, response.StatusCode, accessToken));
 
             using var document = JsonDocument.Parse(body);
             return new WhatsAppCloudSendResult(true, TryGetFirstMessageId(document.RootElement), null);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            _logger.LogWarning(ex, "WhatsApp template send failed for phone number id {PhoneNumberId}", phoneNumberId);
-            return new WhatsAppCloudSendResult(false, null, "No se pudo enviar la plantilla a Meta WhatsApp Cloud API.");
+            return new WhatsAppCloudSendResult(false, null, CreateClientError("send_template", ex, accessToken));
         }
     }
 
@@ -234,15 +232,14 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
-                return new WhatsAppCloudUploadMediaResult(false, null, ExtractMetaError(body, response.StatusCode));
+                return new WhatsAppCloudUploadMediaResult(false, null, CreateMetaHttpError("upload_media", body, response.StatusCode, accessToken));
 
             using var document = JsonDocument.Parse(body);
             return new WhatsAppCloudUploadMediaResult(true, TryGetString(document.RootElement, "id"), null);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            _logger.LogWarning(ex, "WhatsApp media upload failed for phone number id {PhoneNumberId}", phoneNumberId);
-            return new WhatsAppCloudUploadMediaResult(false, null, "No se pudo subir el archivo a Meta WhatsApp Cloud API.");
+            return new WhatsAppCloudUploadMediaResult(false, null, CreateClientError("upload_media", ex, accessToken));
         }
     }
 
@@ -266,15 +263,14 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
-                return new WhatsAppCloudSendResult(false, null, ExtractMetaError(body, response.StatusCode));
+                return new WhatsAppCloudSendResult(false, null, CreateMetaHttpError("send_media", body, response.StatusCode, accessToken));
 
             using var document = JsonDocument.Parse(body);
             return new WhatsAppCloudSendResult(true, TryGetFirstMessageId(document.RootElement), null);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            _logger.LogWarning(ex, "WhatsApp media send failed for phone number id {PhoneNumberId}", phoneNumberId);
-            return new WhatsAppCloudSendResult(false, null, "No se pudo enviar el archivo a Meta WhatsApp Cloud API.");
+            return new WhatsAppCloudSendResult(false, null, CreateClientError("send_media", ex, accessToken));
         }
     }
 
@@ -291,7 +287,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
-                return new WhatsAppCloudMediaInfoResult(false, mediaId, null, null, null, null, ExtractMetaError(body, response.StatusCode));
+                return new WhatsAppCloudMediaInfoResult(false, mediaId, null, null, null, null, CreateMetaHttpError("get_media_info", body, response.StatusCode, accessToken));
 
             using var document = JsonDocument.Parse(body);
             var root = document.RootElement;
@@ -306,8 +302,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            _logger.LogWarning(ex, "WhatsApp media info failed for media id {MediaId}", mediaId);
-            return new WhatsAppCloudMediaInfoResult(false, mediaId, null, null, null, null, "No se pudo obtener el archivo desde Meta.");
+            return new WhatsAppCloudMediaInfoResult(false, mediaId, null, null, null, null, CreateClientError("get_media_info", ex, accessToken));
         }
     }
 
@@ -325,7 +320,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                return new WhatsAppCloudDownloadedMedia(false, null, null, ExtractMetaError(body, response.StatusCode));
+                return new WhatsAppCloudDownloadedMedia(false, null, null, CreateMetaHttpError("download_media", body, response.StatusCode, accessToken));
             }
 
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
@@ -334,8 +329,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            _logger.LogWarning(ex, "WhatsApp media download failed.");
-            return new WhatsAppCloudDownloadedMedia(false, null, null, "No se pudo descargar el archivo desde Meta.");
+            return new WhatsAppCloudDownloadedMedia(false, null, null, CreateClientError("download_media", ex, accessToken));
         }
     }
 
@@ -346,7 +340,40 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         return $"{baseUrl}/{version}/{path.TrimStart('/')}";
     }
 
-    private static string ExtractMetaError(string body, System.Net.HttpStatusCode statusCode)
+    private string CreateMetaHttpError(string operation, string body, HttpStatusCode statusCode, string accessToken)
+    {
+        var safeBody = Sanitize(body, accessToken);
+        var providerMessage = ExtractMetaProviderMessage(safeBody);
+        _logger.LogWarning(
+            "Meta WhatsApp request failed Operation={Operation} StatusCode={StatusCode} ProviderError={ProviderError} ResponseBody={ResponseBody}",
+            operation,
+            (int)statusCode,
+            providerMessage,
+            safeBody);
+
+        return $"Meta WhatsApp HTTP {(int)statusCode}: {providerMessage} | body: {safeBody}";
+    }
+
+    private string CreateClientError(string operation, Exception exception, string accessToken)
+    {
+        var failureType = exception switch
+        {
+            TaskCanceledException => "timeout",
+            HttpRequestException => "network_error",
+            JsonException => "invalid_response",
+            _ => "client_error"
+        };
+        var safeMessage = Sanitize(exception.Message, accessToken);
+        _logger.LogWarning(
+            "Meta WhatsApp client failure Operation={Operation} FailureType={FailureType} ExceptionType={ExceptionType} Error={ProviderError}",
+            operation,
+            failureType,
+            exception.GetType().Name,
+            safeMessage);
+        return $"Meta WhatsApp {failureType}: {safeMessage}";
+    }
+
+    private static string ExtractMetaProviderMessage(string body)
     {
         try
         {
@@ -355,16 +382,40 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
             {
                 var message = TryGetString(error, "message");
                 var type = TryGetString(error, "type");
+                var userMessage = TryGetString(error, "error_user_msg");
                 var code = error.TryGetProperty("code", out var codeElement) ? codeElement.ToString() : null;
-                return string.Join(" ", new[] { message, type, code is null ? null : $"(code {code})" }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                var subcode = error.TryGetProperty("error_subcode", out var subcodeElement) ? subcodeElement.ToString() : null;
+                var details = string.Join(", ", new[]
+                {
+                    type is null ? null : $"type={type}",
+                    code is null ? null : $"code={code}",
+                    subcode is null ? null : $"subcode={subcode}"
+                }.Where(x => !string.IsNullOrWhiteSpace(x)));
+                var primary = string.Join(" ", new[] { message, userMessage }.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct());
+                if (!string.IsNullOrWhiteSpace(primary))
+                    return string.IsNullOrWhiteSpace(details) ? primary : $"{primary} [{details}]";
             }
         }
         catch (JsonException)
         {
-            // Fall through to generic status message.
+            // The raw provider body is retained by the caller.
         }
 
-        return $"Meta respondió con HTTP {(int)statusCode}.";
+        return string.IsNullOrWhiteSpace(body) ? "Respuesta de error vacía de Meta." : body;
+    }
+
+    private static string Sanitize(string? value, string? accessToken)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "<empty>";
+
+        var safe = value;
+        if (!string.IsNullOrWhiteSpace(accessToken))
+            safe = safe.Replace(accessToken, "[REDACTED]", StringComparison.Ordinal);
+        safe = Regex.Replace(safe, "(?i)(Authorization\\s*[:=]\\s*Bearer\\s+)[^\\s\\\"']+", "$1[REDACTED]");
+        safe = Regex.Replace(safe, "(?i)(\\\"access_token\\\"\\s*:\\s*\\\")[^\\\"]*(\\\")", "$1[REDACTED]$2");
+        safe = Regex.Replace(safe, "(?i)(access_token=)[^&\\s\\\"']+", "$1[REDACTED]");
+        return safe;
     }
 
     private static string? TryGetString(JsonElement element, string propertyName)

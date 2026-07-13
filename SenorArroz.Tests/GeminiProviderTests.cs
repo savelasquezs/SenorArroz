@@ -24,7 +24,7 @@ public class GeminiProviderTests
     {
         var response = """{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"search_products","args":{"query":"arroz"},"id":"call_1"},"thoughtSignature":"signature"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":2}}""";
         var firstHandler = new CaptureHandler(HttpStatusCode.OK, response);
-        using var schema = JsonDocument.Parse("""{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}""");
+        using var schema = JsonDocument.Parse("""{"type":"object","properties":{"query":{"type":"string"}},"required":["query"],"additionalProperties":false}""");
         var request = new AiChatRequest("gemini-flash-latest", "secret", [new("user", "Qué venden")], [new("search_products", "Busca productos", schema.RootElement.Clone())], 0.3);
         var first = await new GeminiProvider(new HttpClient(firstHandler), NullLogger<GeminiProvider>.Instance).GenerateAsync(request);
         var call = Assert.Single(first.ToolCalls);
@@ -41,6 +41,7 @@ public class GeminiProviderTests
         Assert.Equal("search_products", functionResponse.GetProperty("name").GetString());
         Assert.Equal("call_1", functionResponse.GetProperty("id").GetString());
         Assert.True(body.RootElement.TryGetProperty("tools", out _));
+        Assert.DoesNotContain("additionalProperties", secondHandler.Body, StringComparison.Ordinal);
     }
 
     private sealed class CaptureHandler(HttpStatusCode status, string responseBody) : HttpMessageHandler

@@ -103,9 +103,31 @@ public class GeminiProvider(HttpClient httpClient, ILogger<GeminiProvider> logge
         root["contents"] = contents;
 
         if (input.Tools.Count > 0)
-            root["tools"] = new JsonArray(new JsonObject { ["functionDeclarations"] = new JsonArray(input.Tools.Select(tool => (JsonNode)new JsonObject { ["name"] = tool.Name, ["description"] = tool.Description, ["parameters"] = JsonNode.Parse(tool.ParametersSchema.GetRawText()) }).ToArray()) });
+            root["tools"] = new JsonArray(new JsonObject { ["functionDeclarations"] = new JsonArray(input.Tools.Select(tool => (JsonNode)new JsonObject { ["name"] = tool.Name, ["description"] = tool.Description, ["parameters"] = BuildGeminiSchema(tool.ParametersSchema) }).ToArray()) });
         if (input.Temperature.HasValue) root["generationConfig"] = new JsonObject { ["temperature"] = input.Temperature.Value };
         return root.ToJsonString(new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
+    }
+
+    private static JsonNode BuildGeminiSchema(JsonElement schema)
+    {
+        var node = JsonNode.Parse(schema.GetRawText()) ?? new JsonObject();
+        RemoveUnsupportedSchemaKeywords(node);
+        return node;
+    }
+
+    private static void RemoveUnsupportedSchemaKeywords(JsonNode node)
+    {
+        if (node is JsonObject jsonObject)
+        {
+            // Gemini function declarations use a Schema/OpenAPI subset and reject the JSON Schema
+            // keyword additionalProperties even when its value is false.
+            jsonObject.Remove("additionalProperties");
+            foreach (var child in jsonObject.ToList())
+                if (child.Value is not null) RemoveUnsupportedSchemaKeywords(child.Value);
+        }
+        else if (node is JsonArray jsonArray)
+            foreach (var child in jsonArray)
+                if (child is not null) RemoveUnsupportedSchemaKeywords(child);
     }
 
     public async Task<AiModelProviderResult> ListModelsAsync(string apiKey, CancellationToken cancellationToken = default)
