@@ -2,7 +2,7 @@ using System.Text.Json;
 namespace SenorArroz.Application.Common.Models;
 public record AiChatMessage(string Role, string? Content, string? ToolCallId = null, IReadOnlyList<AiToolCall>? ToolCalls = null);
 public record AiToolDefinition(string Name, string Description, JsonElement ParametersSchema);
-public record AiToolCall(string Id, string Name, JsonElement Arguments);
+public record AiToolCall(string Id, string Name, JsonElement Arguments, string? ProviderMetadata = null);
 public record AiChatRequest(string Model, string ApiKey, IReadOnlyList<AiChatMessage> Messages, IReadOnlyList<AiToolDefinition> Tools, double? Temperature);
 public record AiChatResponse(string? Text, IReadOnlyList<AiToolCall> ToolCalls, string Model, string? FinishReason, int? InputTokens, int? OutputTokens, bool IsTransientError = false, string? Error = null);
 public record AgentToolExecutionContext(int ConversationId,int BranchId,int? IncomingMessageId=null,string? PhoneNumber=null,int? CustomerId=null,int? DraftId=null,string? AttentionMode=null,string? ExecutionId=null,string? TechnicalActor=null);

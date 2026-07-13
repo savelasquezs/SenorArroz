@@ -23,6 +23,7 @@ public class BranchAiSettingsController : ControllerBase
     private readonly ICurrentUser _currentUser;
     private readonly IClock _clock;
     private readonly IAiProviderResolver _aiProviderResolver;
+    private readonly IAiChatProviderResolver _aiChatProviderResolver;
     private readonly ILogger<BranchAiSettingsController> _logger;
     private readonly IWhatsAppSystemPromptBuilder _promptBuilder;
 
@@ -31,12 +32,14 @@ public class BranchAiSettingsController : ControllerBase
         ICurrentUser currentUser,
         IClock clock,
         IAiProviderResolver aiProviderResolver,
+        IAiChatProviderResolver aiChatProviderResolver,
         ILogger<BranchAiSettingsController> logger, IWhatsAppSystemPromptBuilder promptBuilder)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _aiProviderResolver = aiProviderResolver;
+        _aiChatProviderResolver = aiChatProviderResolver;
         _logger = logger;
         _promptBuilder = promptBuilder;
     }
@@ -159,6 +162,28 @@ public class BranchAiSettingsController : ControllerBase
 
             return BadRequest(ApiResponse<AiTestConnectionResultDto>.ErrorResponse(
                 "El modelo seleccionado no esta disponible para la API Key y proveedor configurados."));
+        }
+
+        var chatProvider = _aiChatProviderResolver.Resolve(setting.Provider);
+        if (chatProvider is null)
+        {
+            setting.IsVerified = false;
+            await _db.SaveChangesAsync(cancellationToken);
+            return BadRequest(ApiResponse<AiTestConnectionResultDto>.ErrorResponse("El proveedor no soporta generación de conversación."));
+        }
+
+        var generation = await chatProvider.GenerateAsync(new(
+            setting.Model,
+            setting.ApiKey,
+            [new("user", "Responde únicamente OK")],
+            [],
+            setting.Temperature), cancellationToken);
+        if (generation.Error is not null || string.IsNullOrWhiteSpace(generation.Text))
+        {
+            setting.IsVerified = false;
+            await _db.SaveChangesAsync(cancellationToken);
+            return BadRequest(ApiResponse<AiTestConnectionResultDto>.ErrorResponse(
+                generation.Error ?? "El modelo no produjo una respuesta de prueba."));
         }
 
         setting.IsVerified = true;
