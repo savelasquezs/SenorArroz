@@ -6,21 +6,18 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Models;
+using SenorArroz.Application.Common.Services;
 
 namespace SenorArroz.Infrastructure.Services;
 
 public class OpenAiProvider(HttpClient httpClient, ILogger<OpenAiProvider> logger) : IAiProvider, IAiChatProvider
 {
-    private static readonly Regex ToolName = new("^[A-Za-z0-9_-]{1,64}$", RegexOptions.Compiled);
     public string Provider => "openai";
     public string ProviderName => Provider;
 
     public async Task<AiChatResponse> GenerateAsync(AiChatRequest input, CancellationToken cancellationToken = default)
     {
-        if (!SupportsChatCompletions(input.Model))
-            return Failure(input, false, $"El modelo '{input.Model}' no es compatible con /v1/chat/completions y tool calling.");
-
-        var toolError = ValidateTools(input.Tools);
+        var toolError = AiToolDefinitionValidator.Validate(input.Tools);
         if (toolError != null)
         {
             logger.LogError("OpenAI tool validation failed Tool={ToolName} Error={ToolError}", toolError.Value.Name, toolError.Value.Error);
@@ -36,9 +33,10 @@ public class OpenAiProvider(HttpClient httpClient, ILogger<OpenAiProvider> logge
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                var providerError = AiProviderJson.ExtractProviderError(body, $"OpenAI respondió con HTTP {(int)response.StatusCode}.");
-                logger.LogError("OpenAI request failed StatusCode={StatusCode} ResponseBody={ResponseBody} ProviderError={ProviderError}", (int)response.StatusCode, body, providerError);
-                return Failure(input, (int)response.StatusCode is 408 or 409 or 429 or >= 500, providerError);
+                var safeBody = AiProviderJson.SanitizeProviderPayload(body, input.ApiKey);
+                var providerError = AiProviderJson.ExtractProviderError(safeBody, $"OpenAI respondió con HTTP {(int)response.StatusCode}.");
+                logger.LogError("OpenAI request failed StatusCode={StatusCode} ResponseBody={ResponseBody} ProviderError={ProviderError}", (int)response.StatusCode, safeBody, providerError);
+                return Failure(input, (int)response.StatusCode is 408 or 409 or 429 or >= 500, providerError, (int)response.StatusCode);
             }
 
             logger.LogInformation("OpenAI request completed StatusCode={StatusCode} Model={Model}", (int)response.StatusCode, input.Model);
@@ -83,29 +81,12 @@ public class OpenAiProvider(HttpClient httpClient, ILogger<OpenAiProvider> logge
         return root.ToJsonString(new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
     }
 
-    private static (string Name, string Error)? ValidateTools(IReadOnlyList<AiToolDefinition> tools)
-    {
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var tool in tools)
-        {
-            if (!ToolName.IsMatch(tool.Name)) return (tool.Name, "nombre no válido");
-            if (!names.Add(tool.Name)) return (tool.Name, "nombre duplicado");
-            if (tool.ParametersSchema.ValueKind != JsonValueKind.Object) return (tool.Name, "parameters debe ser un objeto JSON");
-            if (!tool.ParametersSchema.TryGetProperty("type", out var type) || type.GetString() != "object") return (tool.Name, "la raíz debe tener type=object");
-            if (tool.ParametersSchema.TryGetProperty("properties", out var properties) && properties.ValueKind != JsonValueKind.Object) return (tool.Name, "properties debe ser un objeto");
-            if (tool.ParametersSchema.TryGetProperty("required", out var required))
-            {
-                if (required.ValueKind != JsonValueKind.Array) return (tool.Name, "required debe ser un arreglo");
-                foreach (var item in required.EnumerateArray())
-                    if (item.ValueKind != JsonValueKind.String || !tool.ParametersSchema.TryGetProperty("properties", out properties) || !properties.TryGetProperty(item.GetString()!, out _)) return (tool.Name, $"required contiene la propiedad inexistente '{item}'");
-            }
-        }
-        return null;
-    }
-
-    private static bool SupportsChatCompletions(string model) => model.StartsWith("gpt-", StringComparison.OrdinalIgnoreCase) || Regex.IsMatch(model, "^o[1-9]", RegexOptions.IgnoreCase);
+    private static bool IsPotentialConversationModel(string model) =>
+        model.StartsWith("gpt-", StringComparison.OrdinalIgnoreCase)
+        || model.StartsWith("chat-", StringComparison.OrdinalIgnoreCase)
+        || Regex.IsMatch(model, "^o[1-9]", RegexOptions.IgnoreCase);
     private static bool SupportsTemperature(string model) => !Regex.IsMatch(model, "^(o[1-9]|gpt-5)", RegexOptions.IgnoreCase);
-    private static AiChatResponse Failure(AiChatRequest input, bool transient, string error) => new(null, [], input.Model, null, null, null, transient, error);
+    private static AiChatResponse Failure(AiChatRequest input, bool transient, string error, int? httpStatusCode = null) => new(null, [], input.Model, null, null, null, transient, error, httpStatusCode);
 
     public async Task<AiModelProviderResult> ListModelsAsync(string apiKey, CancellationToken cancellationToken = default)
     {
@@ -114,9 +95,16 @@ public class OpenAiProvider(HttpClient httpClient, ILogger<OpenAiProvider> logge
         try
         {
             using var response = await httpClient.SendAsync(request, cancellationToken); var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode) return new(false, [], AiProviderJson.ExtractProviderError(body, $"OpenAI respondió con HTTP {(int)response.StatusCode}."));
+            if (!response.IsSuccessStatusCode)
+            {
+                var safeBody = AiProviderJson.SanitizeProviderPayload(body, apiKey);
+                return new(false, [], AiProviderJson.ExtractProviderError(safeBody, $"OpenAI respondió con HTTP {(int)response.StatusCode}."));
+            }
             using var document = JsonDocument.Parse(body);
-            var models = document.RootElement.GetProperty("data").EnumerateArray().Select(x => AiProviderJson.TryGetString(x, "id")).Where(x => x != null && SupportsChatCompletions(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).Select(x => new AiProviderModel(x!, x!)).ToList();
+            // /models has no reliable capability metadata. This is only a broad
+            // candidate list; TestConnection performs the authoritative request
+            // to chat/completions with a tool definition.
+            var models = document.RootElement.GetProperty("data").EnumerateArray().Select(x => AiProviderJson.TryGetString(x, "id")).Where(x => x != null && IsPotentialConversationModel(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).Select(x => new AiProviderModel(x!, x!)).ToList();
             return new(true, models, null);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { logger.LogWarning(ex, "OpenAI model listing failed"); return new(false, [], ex.Message); }

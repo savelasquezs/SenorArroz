@@ -16,6 +16,7 @@ public class GeminiProviderTests
         var result = await new GeminiProvider(new HttpClient(handler), NullLogger<GeminiProvider>.Instance)
             .GenerateAsync(new("gemini-old", "secret", [new("user", "Hola")], [], null));
         Assert.Equal("model is no longer available", result.Error);
+        Assert.Equal(404, result.HttpStatusCode);
         Assert.False(result.IsTransientError);
     }
 
@@ -44,11 +45,35 @@ public class GeminiProviderTests
         Assert.DoesNotContain("additionalProperties", secondHandler.Body, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task InvalidToolSchema_IdentifiesToolWithoutCallingGemini()
+    {
+        var handler = new CaptureHandler(
+            HttpStatusCode.OK,
+            """{"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}""");
+        using var schema = JsonDocument.Parse(
+            """{"type":"array","items":{"type":"string"}}""");
+        var provider = new GeminiProvider(new HttpClient(handler), NullLogger<GeminiProvider>.Instance);
+
+        var result = await provider.GenerateAsync(new(
+            "gemini-flash-latest",
+            "secret",
+            [new("user", "Hola")],
+            [new("search_products", "Busca", schema.RootElement.Clone())],
+            null));
+
+        Assert.Contains("search_products", result.Error);
+        Assert.Contains("type=object", result.Error);
+        Assert.Equal(0, handler.CallCount);
+    }
+
     private sealed class CaptureHandler(HttpStatusCode status, string responseBody) : HttpMessageHandler
     {
         public string? Body { get; private set; }
+        public int CallCount { get; private set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            CallCount++;
             Body = request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
             return new HttpResponseMessage(status) { Content = new StringContent(responseBody, Encoding.UTF8, "application/json") };
         }

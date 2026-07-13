@@ -1,7 +1,9 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Models;
 using SenorArroz.Application.Features.BranchAiSettings.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Shared.Models;
@@ -172,18 +174,24 @@ public class BranchAiSettingsController : ControllerBase
             return BadRequest(ApiResponse<AiTestConnectionResultDto>.ErrorResponse("El proveedor no soporta generación de conversación."));
         }
 
+        using var probeSchema = JsonDocument.Parse(
+            """{"type":"object","properties":{},"additionalProperties":false}""");
         var generation = await chatProvider.GenerateAsync(new(
             setting.Model,
             setting.ApiKey,
-            [new("user", "Responde únicamente OK")],
-            [],
+            [new("user", "Responde únicamente OK y no llames herramientas.")],
+            [new AiToolDefinition(
+                "compatibility_probe",
+                "Herramienta inocua usada solo para comprobar compatibilidad con function calling.",
+                probeSchema.RootElement.Clone())],
             setting.Temperature), cancellationToken);
-        if (generation.Error is not null || string.IsNullOrWhiteSpace(generation.Text))
+        if (generation.Error is not null
+            || (string.IsNullOrWhiteSpace(generation.Text) && generation.ToolCalls.Count == 0))
         {
             setting.IsVerified = false;
             await _db.SaveChangesAsync(cancellationToken);
             return BadRequest(ApiResponse<AiTestConnectionResultDto>.ErrorResponse(
-                generation.Error ?? "El modelo no produjo una respuesta de prueba."));
+                generation.Error ?? "El modelo no produjo una respuesta de prueba compatible con herramientas."));
         }
 
         setting.IsVerified = true;

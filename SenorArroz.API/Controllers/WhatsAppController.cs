@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
@@ -29,6 +31,7 @@ public class WhatsAppController : ControllerBase
     private readonly ILogger<WhatsAppController> _logger;
     private readonly WhatsAppAttentionService _attentionService;
     private readonly IWhatsAppAiWorkQueue _aiWorkQueue;
+    private readonly int _aiMaxPersistentAttempts;
 
     public WhatsAppController(
         IApplicationDbContext db,
@@ -39,6 +42,7 @@ public class WhatsAppController : ControllerBase
         IFirebaseGcsStorage firebaseStorage,
         IOptions<FirebaseStorageOptions> firebaseOptions,
         IOptions<WhatsAppCloudOptions> whatsAppOptions,
+        IOptions<WhatsAppAiOrchestratorOptions> aiOptions,
         ILogger<WhatsAppController> logger,
         WhatsAppAttentionService attentionService,
         IWhatsAppAiWorkQueue aiWorkQueue)
@@ -51,6 +55,7 @@ public class WhatsAppController : ControllerBase
         _firebaseStorage = firebaseStorage;
         _firebaseOptions = firebaseOptions.Value;
         _whatsAppOptions = whatsAppOptions.Value;
+        _aiMaxPersistentAttempts = Math.Max(1, aiOptions.Value.MaxPersistentAttempts);
         _logger = logger;
         _attentionService = attentionService;
         _aiWorkQueue = aiWorkQueue;
@@ -490,11 +495,17 @@ public class WhatsAppController : ControllerBase
         };
         _db.WhatsAppWebhookEvents.Add(webhookEvent);
         var createdMessages = new List<WhatsAppMessage>();
+        var aiProcessingChanges = new List<WhatsAppMessage>();
 
         try
         {
             using var document = JsonDocument.Parse(rawPayload);
-            var processedAny = await ProcessWebhookPayloadAsync(document.RootElement, webhookEvent, createdMessages, cancellationToken);
+            var processedAny = await ProcessWebhookPayloadAsync(
+                document.RootElement,
+                webhookEvent,
+                createdMessages,
+                aiProcessingChanges,
+                cancellationToken);
             webhookEvent.Processed = processedAny;
             await _db.SaveChangesAsync(cancellationToken);
 
@@ -504,6 +515,8 @@ public class WhatsAppController : ControllerBase
                 if (!_aiWorkQueue.TryEnqueue(message.ConversationId, message.Id))
                     _logger.LogWarning("WhatsApp AI queue full; message remains pending. ConversationId={ConversationId} MessageId={MessageId}", message.ConversationId, message.Id);
             }
+            foreach (var messageId in aiProcessingChanges.Select(x => x.Id).Where(x => x > 0).Distinct())
+                await NotifyWhatsAppAiProcessingChangedAsync(messageId, cancellationToken);
         }
         catch (JsonException ex)
         {
@@ -1034,6 +1047,35 @@ public class WhatsAppController : ControllerBase
             cancellationToken);
     }
 
+    private async Task NotifyWhatsAppAiProcessingChangedAsync(int messageId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var message = await _db.WhatsAppMessages
+                .AsNoTracking()
+                .Include(x => x.Conversation)
+                .FirstOrDefaultAsync(x => x.Id == messageId, cancellationToken);
+            if (message?.Conversation is null)
+                return;
+
+            await _whatsAppNotificationService.NotifyAiProcessingChangedAsync(
+                message.Conversation.BranchId,
+                WhatsAppAiDiagnosticsMapper.ToDto(message, _aiMaxPersistentAttempts),
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The webhook request is ending; the persisted state remains available through REST.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Could not emit WhatsApp AI delivery status IncomingMessageId={IncomingMessageId}",
+                messageId);
+        }
+    }
+
     private async Task EnsureMediaDownloadUrlsAsync(IReadOnlyList<WhatsAppMessage> messages, CancellationToken cancellationToken)
     {
         var changed = false;
@@ -1384,6 +1426,7 @@ public class WhatsAppController : ControllerBase
         JsonElement root,
         WhatsAppWebhookEvent webhookEvent,
         List<WhatsAppMessage> createdMessages,
+        List<WhatsAppMessage> aiProcessingChanges,
         CancellationToken cancellationToken)
     {
         var processedAny = false;
@@ -1415,7 +1458,7 @@ public class WhatsAppController : ControllerBase
                 }
 
                 processedAny |= await ProcessInboundMessagesAsync(value, setting, webhookEvent, createdMessages, cancellationToken);
-                processedAny |= await ProcessStatusesAsync(value, webhookEvent, cancellationToken);
+                processedAny |= await ProcessStatusesAsync(value, webhookEvent, aiProcessingChanges, cancellationToken);
             }
         }
 
@@ -1516,7 +1559,11 @@ public class WhatsAppController : ControllerBase
         return processed;
     }
 
-    private async Task<bool> ProcessStatusesAsync(JsonElement value, WhatsAppWebhookEvent webhookEvent, CancellationToken cancellationToken)
+    private async Task<bool> ProcessStatusesAsync(
+        JsonElement value,
+        WhatsAppWebhookEvent webhookEvent,
+        List<WhatsAppMessage> aiProcessingChanges,
+        CancellationToken cancellationToken)
     {
         if (!value.TryGetProperty("statuses", out var statuses) || statuses.ValueKind != JsonValueKind.Array)
             return false;
@@ -1530,17 +1577,296 @@ public class WhatsAppController : ControllerBase
                 continue;
 
             var message = await _db.WhatsAppMessages
+                .AsNoTracking()
                 .FirstOrDefaultAsync(x => x.WhatsAppMessageId == messageId, cancellationToken);
             if (message is null)
                 continue;
 
-            message.Status = status;
+            var transition = await TryApplyOutboundStatusAsync(message.Id, status, cancellationToken);
+            if (!transition.Applied)
+            {
+                webhookEvent.EventType = "status";
+                webhookEvent.WhatsAppMessageId ??= messageId;
+                processed = true;
+                continue;
+            }
+
+            var previousStatus = transition.PreviousStatus;
+            if (message.SentByAi)
+            {
+                var source = await FindAiSourceForOutboundAsync(message, cancellationToken);
+                if (source is not null)
+                {
+                    if (status == WhatsAppMessageStatus.Failed)
+                    {
+                        source = await PersistMetaDeliveryFailureAsync(
+                            source,
+                            message.Id,
+                            statusElement,
+                            cancellationToken);
+                        if (source is not null)
+                        {
+                            aiProcessingChanges.Add(source);
+                            _logger.LogError(
+                                "WhatsApp AI delivery failed ConversationId={ConversationId} IncomingMessageId={IncomingMessageId} OutboundMessageId={OutboundMessageId} MetaError={MetaError}",
+                                source.ConversationId,
+                                source.Id,
+                                message.Id,
+                                source.AiProcessingError);
+                        }
+                    }
+                    else if (previousStatus == WhatsAppMessageStatus.Failed
+                             && WhatsAppMessageStatusTransitions.IsDeliveryProof(status)
+                             && await TryPersistMetaDeliveryRecoveryAsync(
+                                 source,
+                                 message.Id,
+                                 status,
+                                 cancellationToken) is { } healedSource)
+                    {
+                        aiProcessingChanges.Add(healedSource);
+                        _logger.LogInformation(
+                            "WhatsApp AI delivery recovered ConversationId={ConversationId} IncomingMessageId={IncomingMessageId} OutboundMessageId={OutboundMessageId} DeliveryStatus={DeliveryStatus}",
+                            healedSource.ConversationId,
+                            healedSource.Id,
+                            message.Id,
+                            status);
+                    }
+                }
+            }
             webhookEvent.EventType = "status";
             webhookEvent.WhatsAppMessageId ??= messageId;
             processed = true;
         }
 
         return processed;
+    }
+
+    private async Task<(bool Applied, WhatsAppMessageStatus PreviousStatus)> TryApplyOutboundStatusAsync(
+        int messageId,
+        WhatsAppMessageStatus incoming,
+        CancellationToken cancellationToken)
+    {
+        if (!_db.Database.IsRelational())
+        {
+            var tracked = await _db.WhatsAppMessages.FirstAsync(x => x.Id == messageId, cancellationToken);
+            var previous = tracked.Status;
+            if (!WhatsAppMessageStatusTransitions.ShouldApply(previous, incoming))
+                return (false, previous);
+            tracked.Status = incoming;
+            return (true, previous);
+        }
+
+        // Compare-and-swap avoids two out-of-order webhook requests both
+        // deciding from the same stale state. Retry after a lost race so a
+        // delivery proof can heal Failed and Failed can never regress delivery.
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var previous = await _db.WhatsAppMessages
+                .AsNoTracking()
+                .Where(x => x.Id == messageId)
+                .Select(x => x.Status)
+                .FirstAsync(cancellationToken);
+            if (!WhatsAppMessageStatusTransitions.ShouldApply(previous, incoming))
+                return (false, previous);
+
+            var updated = await _db.WhatsAppMessages
+                .Where(x => x.Id == messageId && x.Status == previous)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(x => x.Status, incoming),
+                    cancellationToken);
+            if (updated == 1)
+                return (true, previous);
+        }
+
+        var current = await _db.WhatsAppMessages
+            .AsNoTracking()
+            .Where(x => x.Id == messageId)
+            .Select(x => x.Status)
+            .FirstAsync(cancellationToken);
+        return (false, current);
+    }
+
+    private async Task<WhatsAppMessage?> FindAiSourceForOutboundAsync(
+        WhatsAppMessage outbound,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(outbound.WhatsAppMessageId))
+        {
+            var exact = await _db.WhatsAppMessages.FirstOrDefaultAsync(
+                x => x.ConversationId == outbound.ConversationId
+                    && x.Direction == WhatsAppMessageDirection.Inbound
+                    && x.AiResponseWhatsAppMessageId == outbound.WhatsAppMessageId,
+                cancellationToken);
+            if (exact is not null)
+                return exact;
+        }
+
+        if (!TryReadAutomaticAiAttemptId(outbound.RawPayload, out var attemptId))
+            return null;
+
+        var candidates = await _db.WhatsAppMessages
+            .Where(x => x.ConversationId == outbound.ConversationId
+                && x.Direction == WhatsAppMessageDirection.Inbound
+                && x.AiResponseAttemptId == attemptId)
+            .OrderByDescending(x => x.Id)
+            .Take(2)
+            .ToListAsync(cancellationToken);
+        if (candidates.Count == 1)
+            return candidates[0];
+
+        if (candidates.Count > 1)
+        {
+            _logger.LogWarning(
+                "WhatsApp AI delivery status was not correlated because AttemptId={AttemptId} is ambiguous ConversationId={ConversationId} OutboundMessageId={OutboundMessageId}",
+                attemptId,
+                outbound.ConversationId,
+                outbound.Id);
+        }
+
+        return null;
+    }
+
+    private async Task<WhatsAppMessage?> PersistMetaDeliveryFailureAsync(
+        WhatsAppMessage source,
+        int outboundMessageId,
+        JsonElement statusElement,
+        CancellationToken cancellationToken)
+    {
+        if (!_db.Database.IsRelational()
+            || source.AiProcessingStatus == WhatsAppAiProcessingStatus.TransferredToHuman)
+        {
+            var outboundStillFailed = await _db.WhatsAppMessages
+                .AsNoTracking()
+                .AnyAsync(
+                    x => x.Id == outboundMessageId && x.Status == WhatsAppMessageStatus.Failed,
+                    cancellationToken);
+            if (!outboundStillFailed)
+                return null;
+            ApplyMetaDeliveryFailure(source, statusElement);
+            return source;
+        }
+
+        var metaError = ExtractMetaDeliveryError(statusElement);
+        var storedError = metaError[..Math.Min(1000, metaError.Length)];
+        var now = _clock.UtcNow;
+        var updated = await _db.WhatsAppMessages
+            .Where(x =>
+                x.Id == source.Id
+                && x.AiProcessingStatus != WhatsAppAiProcessingStatus.TransferredToHuman
+                && _db.WhatsAppMessages.Any(outbound =>
+                    outbound.Id == outboundMessageId
+                    && outbound.Status == WhatsAppMessageStatus.Failed))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.AiProcessingStatus, WhatsAppAiProcessingStatus.Failed)
+                    .SetProperty(x => x.AiProcessingError, storedError)
+                    .SetProperty(x => x.AiProcessingStartedAt, (DateTime?)null)
+                    .SetProperty(x => x.AiNextRetryAt, (DateTime?)null)
+                    .SetProperty(x => x.AiProcessedAt, now),
+                cancellationToken);
+        return updated == 1
+            ? await _db.WhatsAppMessages.AsNoTracking().FirstAsync(x => x.Id == source.Id, cancellationToken)
+            : null;
+    }
+
+    private async Task<WhatsAppMessage?> TryPersistMetaDeliveryRecoveryAsync(
+        WhatsAppMessage source,
+        int outboundMessageId,
+        WhatsAppMessageStatus deliveryStatus,
+        CancellationToken cancellationToken)
+    {
+        if (!WhatsAppMessageStatusTransitions.IsDeliveryProof(deliveryStatus))
+            return null;
+
+        if (!_db.Database.IsRelational()
+            || source.AiProcessingStatus == WhatsAppAiProcessingStatus.TransferredToHuman)
+        {
+            var outboundIsDelivered = await _db.WhatsAppMessages
+                .AsNoTracking()
+                .AnyAsync(
+                    x => x.Id == outboundMessageId
+                        && (x.Status == WhatsAppMessageStatus.Delivered
+                            || x.Status == WhatsAppMessageStatus.Read),
+                    cancellationToken);
+            return outboundIsDelivered && TryHealMetaDeliveryFailure(source) ? source : null;
+        }
+
+        const string metaFailurePrefix = "Meta reportó que la respuesta de IA no pudo entregarse.";
+        var now = _clock.UtcNow;
+        var updated = await _db.WhatsAppMessages
+            .Where(x =>
+                x.Id == source.Id
+                && x.AiProcessingStatus == WhatsAppAiProcessingStatus.Failed
+                && x.AiProcessingError != null
+                && x.AiProcessingError.StartsWith(metaFailurePrefix)
+                && _db.WhatsAppMessages.Any(outbound =>
+                    outbound.Id == outboundMessageId
+                    && (outbound.Status == WhatsAppMessageStatus.Delivered
+                        || outbound.Status == WhatsAppMessageStatus.Read)))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.AiProcessingStatus, WhatsAppAiProcessingStatus.Completed)
+                    .SetProperty(x => x.AiProcessingError, (string?)null)
+                    .SetProperty(x => x.AiProcessingStartedAt, (DateTime?)null)
+                    .SetProperty(x => x.AiNextRetryAt, (DateTime?)null)
+                    .SetProperty(x => x.AiProcessedAt, now),
+                cancellationToken);
+        return updated == 1
+            ? await _db.WhatsAppMessages.AsNoTracking().FirstAsync(x => x.Id == source.Id, cancellationToken)
+            : null;
+    }
+
+    private void ApplyMetaDeliveryFailure(WhatsAppMessage source, JsonElement statusElement)
+    {
+        const string transferMarker = " | Aviso al cliente no entregado: ";
+        var metaError = ExtractMetaDeliveryError(statusElement);
+        if (source.AiProcessingStatus == WhatsAppAiProcessingStatus.TransferredToHuman)
+        {
+            var currentReason = source.AiProcessingError ?? "La conversación requiere atención humana.";
+            var markerAt = currentReason.IndexOf(transferMarker, StringComparison.Ordinal);
+            if (markerAt >= 0)
+                currentReason = currentReason[..markerAt];
+            var combined = $"{currentReason}{transferMarker}{metaError}";
+            source.AiProcessingError = combined[..Math.Min(1000, combined.Length)];
+        }
+        else
+        {
+            source.AiProcessingStatus = WhatsAppAiProcessingStatus.Failed;
+            source.AiProcessingError = metaError[..Math.Min(1000, metaError.Length)];
+        }
+
+        source.AiProcessingStartedAt = null;
+        source.AiNextRetryAt = null;
+        source.AiProcessedAt = _clock.UtcNow;
+    }
+
+    private bool TryHealMetaDeliveryFailure(WhatsAppMessage source)
+    {
+        const string metaFailurePrefix = "Meta reportó que la respuesta de IA no pudo entregarse.";
+        const string transferMarker = " | Aviso al cliente no entregado: ";
+
+        if (source.AiProcessingStatus == WhatsAppAiProcessingStatus.Failed
+            && source.AiProcessingError?.StartsWith(metaFailurePrefix, StringComparison.Ordinal) == true)
+        {
+            source.AiProcessingStatus = WhatsAppAiProcessingStatus.Completed;
+            source.AiProcessingError = null;
+            source.AiProcessedAt = _clock.UtcNow;
+            return true;
+        }
+
+        if (source.AiProcessingStatus == WhatsAppAiProcessingStatus.TransferredToHuman
+            && source.AiProcessingError is { } transferError)
+        {
+            var markerAt = transferError.IndexOf(transferMarker, StringComparison.Ordinal);
+            if (markerAt >= 0)
+            {
+                source.AiProcessingError = transferError[..markerAt];
+                source.AiProcessedAt = _clock.UtcNow;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<Customer?> FindCustomerByPhoneAsync(int branchId, string whatsappPhone, CancellationToken cancellationToken)
@@ -1670,6 +1996,59 @@ public class WhatsAppController : ControllerBase
         return element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+    }
+
+    private static bool TryReadAutomaticAiAttemptId(string? rawPayload, out string attemptId)
+    {
+        attemptId = string.Empty;
+        if (string.IsNullOrWhiteSpace(rawPayload))
+            return false;
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawPayload);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("origin", out var origin)
+                || origin.GetString() is not ("ai" or "ai_transfer")
+                || !root.TryGetProperty("attemptId", out var attempt))
+                return false;
+
+            attemptId = attempt.GetString() ?? string.Empty;
+            return !string.IsNullOrWhiteSpace(attemptId);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string ExtractMetaDeliveryError(JsonElement statusElement)
+    {
+        const string fallback = "Meta reportó que la respuesta de IA no pudo entregarse.";
+        if (!statusElement.TryGetProperty("errors", out var errors) || errors.ValueKind != JsonValueKind.Array)
+            return fallback;
+
+        var details = new List<string>();
+        foreach (var error in errors.EnumerateArray())
+        {
+            if (error.TryGetProperty("code", out var code)
+                && code.ValueKind is JsonValueKind.Number or JsonValueKind.String)
+                details.Add($"código {code.ToString()}");
+            AddMetaErrorPart(details, TryGetString(error, "title"));
+            AddMetaErrorPart(details, TryGetString(error, "message"));
+            if (error.TryGetProperty("error_data", out var errorData) && errorData.ValueKind == JsonValueKind.Object)
+                AddMetaErrorPart(details, TryGetString(errorData, "details"));
+        }
+
+        return details.Count == 0
+            ? fallback
+            : $"{fallback} {string.Join(" · ", details.Distinct(StringComparer.OrdinalIgnoreCase))}";
+    }
+
+    private static void AddMetaErrorPart(ICollection<string> parts, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            parts.Add(value.Trim());
     }
 
     private static DateTime? ParseWhatsAppTimestamp(string? timestamp)
@@ -1826,7 +2205,7 @@ public class WhatsAppController : ControllerBase
         UpdatedAt = AsUtc(conversation.UpdatedAt)
     };
 
-    private static WhatsAppMessageDto ToMessageDto(WhatsAppMessage message) => new()
+    private WhatsAppMessageDto ToMessageDto(WhatsAppMessage message) => new()
     {
         Id = message.Id,
         ConversationId = message.ConversationId,
@@ -1843,7 +2222,11 @@ public class WhatsAppController : ControllerBase
         Status = MessageStatusToApi(message.Status),
         SentByUserId = message.SentByUserId,
         Timestamp = AsUtc(message.Timestamp),
-        CreatedAt = AsUtc(message.CreatedAt)
+        CreatedAt = AsUtc(message.CreatedAt),
+        AiProcessing = message.Direction == WhatsAppMessageDirection.Inbound
+            && message.AiProcessingStatus != WhatsAppAiProcessingStatus.NotApplicable
+                ? WhatsAppAiDiagnosticsMapper.ToDto(message, _aiMaxPersistentAttempts, includeTechnicalDetail: false)
+                : null
     };
 
     // PostgreSQL `timestamp without time zone` values are materialized with

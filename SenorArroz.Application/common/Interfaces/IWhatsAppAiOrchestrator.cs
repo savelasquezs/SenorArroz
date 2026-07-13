@@ -11,4 +11,12 @@ public interface IWhatsAppOrderDraftCalculator{Task<WhatsAppOrderDraft> Recalcul
 public record WhatsAppAutomaticSendResult(bool Success, bool TransientFailure, string? WhatsAppMessageId, string? Error, bool InProgress = false);
 public interface IWhatsAppAutomaticMessageSender { Task<WhatsAppAutomaticSendResult> SendTextAsync(int conversationId, int incomingMessageId, string attemptId, string text, CancellationToken cancellationToken); Task<WhatsAppAutomaticSendResult> SendTransferTextAsync(int conversationId,int incomingMessageId,string attemptId,string text,CancellationToken cancellationToken);Task<WhatsAppAutomaticSendResult> SendAgentContentAsync(int conversationId,string dispatchKey,string text,string? imageUrl,CancellationToken cancellationToken); }
 public interface IWhatsAppAiWorkQueue { bool TryEnqueue(int conversationId, int messageId); }
-public interface IWhatsAppAiMessageClaimer { Task<bool> TryClaimAsync(int conversationId, int messageId, CancellationToken cancellationToken); }
+public interface IWhatsAppAiMessageClaimer
+{
+    Task<bool> TryClaimAsync(int conversationId, int messageId, CancellationToken cancellationToken);
+    Task<bool> TryCompleteAsync(
+        int conversationId,
+        int messageId,
+        DateTime processedAt,
+        CancellationToken cancellationToken);
+}

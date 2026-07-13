@@ -190,6 +190,47 @@ public class WhatsAppMessageDto
     public int? SentByUserId { get; set; }
     public DateTime Timestamp { get; set; }
     public DateTime CreatedAt { get; set; }
+    public WhatsAppAiProcessingDto? AiProcessing { get; set; }
+}
+
+public class WhatsAppAiDiagnosticsDto
+{
+    public int BranchId { get; set; }
+    public int? ConversationId { get; set; }
+    public string AgentStatus { get; set; } = "not_configured";
+    public string OverallStatus { get; set; } = "idle";
+    public string Title { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public string? Provider { get; set; }
+    public string? Model { get; set; }
+    public bool IsActive { get; set; }
+    public bool IsVerified { get; set; }
+    public string? AttentionMode { get; set; }
+    public int PendingCount { get; set; }
+    public int FailedCountLast24Hours { get; set; }
+    public DateTime? LastActivityAt { get; set; }
+    public IReadOnlyList<WhatsAppAiProcessingDto> RecentMessages { get; set; } = [];
+}
+
+public class WhatsAppAiProcessingDto
+{
+    public int MessageId { get; set; }
+    public int ConversationId { get; set; }
+    public string Status { get; set; } = "notApplicable";
+    public string Severity { get; set; } = "neutral";
+    public string Title { get; set; } = string.Empty;
+    public string Detail { get; set; } = string.Empty;
+    public string? TechnicalDetail { get; set; }
+    public string? ErrorCategory { get; set; }
+    public int? HttpStatusCode { get; set; }
+    public int Attempts { get; set; }
+    public int MaxAttempts { get; set; }
+    public bool WillRetry { get; set; }
+    public DateTime Timestamp { get; set; }
+    public DateTime StatusChangedAt { get; set; }
+    public DateTime? StartedAt { get; set; }
+    public DateTime? NextRetryAt { get; set; }
+    public DateTime? ProcessedAt { get; set; }
 }
 
 public class WhatsAppConversationSearchDto

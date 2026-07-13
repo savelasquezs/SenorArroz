@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -119,6 +120,7 @@ public class WhatsAppAiRecoveryService(
     {
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var notifications = scope.ServiceProvider.GetService<IWhatsAppNotificationService>();
         var configuration = options.Value;
         var now = DateTime.UtcNow;
         var staleBefore = now.AddSeconds(-Math.Max(1, configuration.ProcessingStaleAfterSeconds));
@@ -178,6 +180,13 @@ public class WhatsAppAiRecoveryService(
         if (interrupted.Count > 0)
         {
             await db.SaveChangesAsync(cancellationToken);
+            if (notifications is not null)
+                await NotifyProcessingChangesAsync(
+                    db,
+                    notifications,
+                    interrupted,
+                    configuration.MaxPersistentAttempts,
+                    cancellationToken);
         }
 
         var dueMessages = await db.WhatsAppMessages
@@ -196,7 +205,20 @@ public class WhatsAppAiRecoveryService(
             exhausted.AiProcessedAt = now;
             exhausted.AiProcessingError = "El mensaje agotó el máximo de intentos antes de ser reclamado.";
         }
-        if (db.ChangeTracker.HasChanges()) await db.SaveChangesAsync(cancellationToken);
+        var exhaustedMessages = dueMessages
+            .Where(message => message.AiProcessingAttempts >= configuration.MaxPersistentAttempts)
+            .ToList();
+        if (db.ChangeTracker.HasChanges())
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            if (notifications is not null)
+                await NotifyProcessingChangesAsync(
+                    db,
+                    notifications,
+                    exhaustedMessages,
+                    configuration.MaxPersistentAttempts,
+                    cancellationToken);
+        }
 
         foreach (var message in dueMessages.Where(message => message.AiProcessingAttempts < configuration.MaxPersistentAttempts))
         {
@@ -303,7 +325,9 @@ public class WhatsAppAiRecoveryService(
                 conversationIds.Contains(message.ConversationId) &&
                 message.Direction == WhatsAppMessageDirection.Outbound &&
                 message.SentByAi &&
-                message.Status == WhatsAppMessageStatus.Sent &&
+                (message.Status == WhatsAppMessageStatus.Sent
+                 || message.Status == WhatsAppMessageStatus.Delivered
+                 || message.Status == WhatsAppMessageStatus.Read) &&
                 message.RawPayload != null)
             .Select(message => new { message.RawPayload, message.WhatsAppMessageId })
             .ToListAsync(cancellationToken);
@@ -346,6 +370,45 @@ public class WhatsAppAiRecoveryService(
         catch (JsonException)
         {
             return false;
+        }
+    }
+
+    private async Task NotifyProcessingChangesAsync(
+        ApplicationDbContext db,
+        IWhatsAppNotificationService notifications,
+        IReadOnlyCollection<WhatsAppMessage> messages,
+        int maxAttempts,
+        CancellationToken cancellationToken)
+    {
+        if (messages.Count == 0)
+            return;
+
+        var conversationIds = messages.Select(x => x.ConversationId).Distinct().ToList();
+        var branchByConversation = await db.WhatsAppConversations
+            .AsNoTracking()
+            .Where(x => conversationIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.BranchId, cancellationToken);
+
+        foreach (var message in messages)
+        {
+            if (!branchByConversation.TryGetValue(message.ConversationId, out var branchId))
+                continue;
+
+            try
+            {
+                await notifications.NotifyAiProcessingChangedAsync(
+                    branchId,
+                    WhatsAppAiDiagnosticsMapper.ToDto(message, Math.Max(1, maxAttempts)),
+                    cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Could not emit recovered WhatsApp AI status BranchId={BranchId} IncomingMessageId={IncomingMessageId}",
+                    branchId,
+                    message.Id);
+            }
         }
     }
 }

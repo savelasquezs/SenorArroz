@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Models;
+using SenorArroz.Application.Common.Services;
 
 namespace SenorArroz.Infrastructure.Services;
 
@@ -15,6 +16,16 @@ public class GeminiProvider(HttpClient httpClient, ILogger<GeminiProvider> logge
 
     public async Task<AiChatResponse> GenerateAsync(AiChatRequest input, CancellationToken cancellationToken = default)
     {
+        var toolError = AiToolDefinitionValidator.Validate(input.Tools);
+        if (toolError is not null)
+        {
+            logger.LogError(
+                "Gemini tool validation failed Tool={ToolName} Error={ToolError}",
+                toolError.Value.Name,
+                toolError.Value.Error);
+            return Failure(input, false, $"Herramienta '{toolError.Value.Name}' inválida: {toolError.Value.Error}");
+        }
+
         var uri = $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(input.Model)}:generateContent";
         using var request = new HttpRequestMessage(HttpMethod.Post, uri);
         request.Headers.Add("x-goog-api-key", input.ApiKey);
@@ -26,9 +37,10 @@ public class GeminiProvider(HttpClient httpClient, ILogger<GeminiProvider> logge
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                var providerError = AiProviderJson.ExtractProviderError(body, $"Gemini respondió con HTTP {(int)response.StatusCode}.");
-                logger.LogError("Gemini request failed StatusCode={StatusCode} ResponseBody={ResponseBody} ProviderError={ProviderError} Model={Model}", (int)response.StatusCode, body, providerError, input.Model);
-                return Failure(input, (int)response.StatusCode is 408 or 409 or 429 or >= 500, providerError);
+                var safeBody = AiProviderJson.SanitizeProviderPayload(body, input.ApiKey);
+                var providerError = AiProviderJson.ExtractProviderError(safeBody, $"Gemini respondió con HTTP {(int)response.StatusCode}.");
+                logger.LogError("Gemini request failed StatusCode={StatusCode} ResponseBody={ResponseBody} ProviderError={ProviderError} Model={Model}", (int)response.StatusCode, safeBody, providerError, input.Model);
+                return Failure(input, (int)response.StatusCode is 408 or 409 or 429 or >= 500, providerError, (int)response.StatusCode);
             }
 
             using var document = JsonDocument.Parse(body);
@@ -137,7 +149,11 @@ public class GeminiProvider(HttpClient httpClient, ILogger<GeminiProvider> logge
         try
         {
             using var response = await httpClient.SendAsync(request, cancellationToken); var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode) return new(false, [], AiProviderJson.ExtractProviderError(body, $"Gemini respondió con HTTP {(int)response.StatusCode}."));
+            if (!response.IsSuccessStatusCode)
+            {
+                var safeBody = AiProviderJson.SanitizeProviderPayload(body, apiKey);
+                return new(false, [], AiProviderJson.ExtractProviderError(safeBody, $"Gemini respondió con HTTP {(int)response.StatusCode}."));
+            }
             using var document = JsonDocument.Parse(body);
             var models = document.RootElement.GetProperty("models").EnumerateArray().Where(SupportsContentGeneration).Select(ToModel).Where(x => !string.IsNullOrWhiteSpace(x.Id)).DistinctBy(x => x.Id, StringComparer.OrdinalIgnoreCase).OrderBy(x => x.Id, StringComparer.OrdinalIgnoreCase).ToList();
             return new(true, models, null);
@@ -148,5 +164,5 @@ public class GeminiProvider(HttpClient httpClient, ILogger<GeminiProvider> logge
     private static AiProviderModel ToModel(JsonElement element) { var name = AiProviderJson.TryGetString(element, "name") ?? string.Empty; var id = name.StartsWith("models/", StringComparison.OrdinalIgnoreCase) ? name[7..] : name; return new(id, AiProviderJson.TryGetString(element, "displayName") ?? id); }
     private static bool SupportsContentGeneration(JsonElement element) => !element.TryGetProperty("supportedGenerationMethods", out var methods) || methods.ValueKind != JsonValueKind.Array || methods.EnumerateArray().Any(x => x.GetString() == "generateContent");
     private static int? TryGetInt(JsonElement element, string property) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) && value.TryGetInt32(out var result) ? result : null;
-    private static AiChatResponse Failure(AiChatRequest input, bool transient, string error) => new(null, [], input.Model, null, null, null, transient, error);
+    private static AiChatResponse Failure(AiChatRequest input, bool transient, string error, int? httpStatusCode = null) => new(null, [], input.Model, null, null, null, transient, error, httpStatusCode);
 }
