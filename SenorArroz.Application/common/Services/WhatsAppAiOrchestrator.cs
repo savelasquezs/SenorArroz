@@ -169,6 +169,7 @@ public class WhatsAppAiOrchestrator(
 
                 modelCalls++;
                 var exposedDefinitions = contextPlan is null ? tools.Definitions : toolCatalog!.GetByNames(contextPlan.AllowedToolNames);
+                var exposedToolNames = exposedDefinitions.Select(x=>x.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var response = await GenerateWithRetry(
                     provider,
                     new(model, setting.ApiKey, chat, exposedDefinitions, setting.Temperature),
@@ -247,7 +248,7 @@ public class WhatsAppAiOrchestrator(
                     if (!await StillAi(conversationId, ct))
                         return await Ignore(message, "La atención cambió antes de ejecutar una herramienta.", ct, conversation.BranchId);
 
-                    if(contextPlan is not null&&!contextPlan.AllowedToolNames.Contains(call.Name,StringComparer.OrdinalIgnoreCase))
+                    if(contextPlan is not null&&!exposedToolNames.Contains(call.Name))
                     { chat.Add(new("tool",JsonSerializer.Serialize(new{success=false,code="tool_not_exposed",error="Herramienta no permitida para el estado actual."}),call.Id)); continue; }
                     var result = await tools.ExecuteAsync(
                         call.Name,
@@ -264,14 +265,6 @@ public class WhatsAppAiOrchestrator(
                         call.Arguments,
                         ct);
                     totalTools++;
-                    if(contextPlan is not null&&toolCatalog!.ModifiesData(call.Name))
-                    {
-                        var refreshed=await LoadActiveDraft(conversationId,ct);
-                        var branch=await db.Branches.AsNoTracking().FirstAsync(x=>x.Id==conversation.BranchId,ct);
-                        var customer=conversation.CustomerId.HasValue?await db.Customers.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==conversation.CustomerId,ct):null;
-                        contextPlan=await contextPlanner!.PlanAsync(new(conversation,message,branch,customer,refreshed,setting.ContextStrategy,setting.MaxContextMessages,history,toolCatalog.All,chat[0].Content??string.Empty),ct);
-                    }
-
                     if (result.TransferredToHuman)
                     {
                         var transferred = await db.WhatsAppMessages
@@ -324,6 +317,16 @@ public class WhatsAppAiOrchestrator(
                             data = raw[..Math.Max(0, _options.MaxToolResultCharacters - 100)]
                         });
                     chat.Add(new("tool", json, call.Id));
+                    if(contextPlan is not null&&toolCatalog!.ModifiesData(call.Name))
+                    {
+                        var refreshedConversation=await db.WhatsAppConversations.AsNoTracking().FirstAsync(x=>x.Id==conversationId,ct);
+                        var refreshedCustomer=refreshedConversation.CustomerId.HasValue?await db.Customers.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==refreshedConversation.CustomerId,ct):null;
+                        var refreshedDraft=await LoadActiveDraft(conversationId,ct);
+                        var branch=await db.Branches.AsNoTracking().FirstAsync(x=>x.Id==refreshedConversation.BranchId,ct);
+                        var newPlan=await contextPlanner!.PlanAsync(new(refreshedConversation,message,branch,refreshedCustomer,refreshedDraft,setting.ContextStrategy,setting.MaxContextMessages,history,toolCatalog.All,chat[0].Content??string.Empty),ct);
+                        UpdateRuntimeContextMessage(chat,newPlan);
+                        contextPlan=AlignPlanWithChat(newPlan,chat,toolCatalog.GetByNames(newPlan.AllowedToolNames));
+                    }
                 }
             }
 
@@ -442,6 +445,23 @@ public class WhatsAppAiOrchestrator(
             .AnyAsync(x => x.Id == conversationId && x.AttentionMode == WhatsAppAttentionMode.Ai, cancellationToken);
 
     private Task<WhatsAppOrderDraft?> LoadActiveDraft(int conversationId,CancellationToken ct)=>db.WhatsAppOrderDrafts.AsNoTracking().Include(x=>x.Items).ThenInclude(x=>x.Product).Include(x=>x.Address).ThenInclude(x=>x.Neighborhood).Where(x=>x.ConversationId==conversationId&&x.Status!=WhatsAppOrderDraftStatus.Cancelled&&x.Status!=WhatsAppOrderDraftStatus.Confirmed&&x.Status!=WhatsAppOrderDraftStatus.ConvertedToOrder&&x.Status!=WhatsAppOrderDraftStatus.Expired).OrderByDescending(x=>x.Id).FirstOrDefaultAsync(ct);
+
+    private static void UpdateRuntimeContextMessage(List<AiChatMessage> chat,WhatsAppAiContextPlan plan)
+    {
+        var index=chat.FindIndex(x=>x.Role=="system"&&x.Content?.StartsWith(WhatsAppAiContextPlanner.RuntimeContextMarker,StringComparison.Ordinal)==true);
+        var replacement=plan.Messages.FirstOrDefault(x=>x.Role=="system"&&x.Content?.StartsWith(WhatsAppAiContextPlanner.RuntimeContextMarker,StringComparison.Ordinal)==true);
+        if(index>=0)
+        {
+            if(replacement is null)chat.RemoveAt(index);else chat[index]=replacement;
+        }
+        else if(replacement is not null)chat.Insert(Math.Min(1,chat.Count),replacement);
+    }
+
+    private static WhatsAppAiContextPlan AlignPlanWithChat(WhatsAppAiContextPlan plan,IReadOnlyList<AiChatMessage> chat,IReadOnlyList<AiToolDefinition> tools)
+    {
+        var transcript=chat.Where(x=>x.Role!="system").ToList();
+        return plan with{Messages=chat.ToList(),HistoryMessageCount=transcript.Count,HistoryCharacters=transcript.Sum(x=>x.Content?.Length??0),ToolDefinitionCount=tools.Count,ToolDefinitionsCharacters=tools.Sum(x=>x.Name.Length+x.Description.Length+x.ParametersSchema.GetRawText().Length)};
+    }
 
     private async Task<WhatsAppAiProcessingResult> HandleUnexpectedFailure(
         int messageId,

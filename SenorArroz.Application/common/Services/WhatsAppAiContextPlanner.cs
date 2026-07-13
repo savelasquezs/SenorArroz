@@ -10,6 +10,7 @@ namespace SenorArroz.Application.Common.Services;
 
 public class WhatsAppAiContextPlanner(IOptions<WhatsAppAiContextOptimizationOptions> options, ILogger<WhatsAppAiContextPlanner> logger) : IWhatsAppAiContextPlanner
 {
+    public const string RuntimeContextMarker = "ESTADO_OPERATIVO_ACTUAL";
     private static readonly string[] Always = ["request_human_assistance"];
     public Task<WhatsAppAiContextPlan> PlanAsync(WhatsAppAiContextPlannerInput i, CancellationToken ct=default)
     {
@@ -28,7 +29,7 @@ public class WhatsAppAiContextPlanner(IOptions<WhatsAppAiContextOptimizationOpti
         if(!history.Any(x=>x.Role=="user"&&x.Content==i.IncomingMessage.TextBody)) history.Add(new("user",i.IncomingMessage.TextBody));
         history=history.TakeLast(max).ToList();
         var state=BuildState(i);
-        var messages=new List<AiChatMessage>{new("system",i.SystemPrompt),new("system","ESTADO_OPERATIVO_ACTUAL (prevalece sobre el historial):\n"+state)};messages.AddRange(history);
+        var messages=new List<AiChatMessage>{new("system",i.SystemPrompt),new("system",RuntimeContextMarker+" (prevalece sobre el historial):\n"+state)};messages.AddRange(history);
         var names=SelectTools(i).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if(names.Count==0||!Always.All(x=>names.Contains(x,StringComparer.OrdinalIgnoreCase))) return Legacy(i,true,"tool_selection_incomplete");
         var selected=i.AllTools.Where(x=>names.Contains(x.Name,StringComparer.OrdinalIgnoreCase)).ToList();
@@ -50,10 +51,22 @@ public class WhatsAppAiContextPlanner(IOptions<WhatsAppAiContextOptimizationOpti
         result.UnionWith(["get_order_confirmation_summary","mark_draft_ready_for_confirmation"]);
         return result;
     }
-    private static string BuildState(WhatsAppAiContextPlannerInput i)
+    private string BuildState(WhatsAppAiContextPlannerInput i)
+    {
+        var limit=Math.Max(1,options.Value.MaxRuntimeContextCharacters);
+        var total=i.ActiveDraft?.Items.Count??0;
+        for(var itemLimit=Math.Min(30,total);itemLimit>=0;itemLimit--)
+        {
+            var json=SerializeState(i,itemLimit,total);
+            if(json.Length<=limit)return json;
+        }
+        throw new InvalidOperationException("runtime_context_limit_too_small");
+    }
+    private static string SerializeState(WhatsAppAiContextPlannerInput i,int itemLimit,int totalItemCount)
     {
         var d=i.ActiveDraft;var missing=d is null?[]:Missing(d);
-        var value=new{conversation=new{customerLinked=i.Customer is not null,attentionMode="ai"},draft=d is null?null:new{exists=true,status=d.Status.ToString(),orderType=d.OrderType?.ToString(),items=d.Items.Take(30).Select(x=>new{draftItemId=x.Id,productId=x.ProductId,name=x.Product?.Name,quantity=x.Quantity,notes=x.Notes}),hasValidAddress=d.AddressId.HasValue,neighborhood=d.Address?.Neighborhood?.Name,deliveryFee=d.DeliveryFee,subtotal=d.Subtotal,total=d.Total,paymentMethod=d.PaymentMethod,missing,readyToConfirm=d.Status==WhatsAppOrderDraftStatus.ReadyForConfirmation}};
+        static string? Short(string? value,int max)=>string.IsNullOrWhiteSpace(value)?value:value[..Math.Min(max,value.Length)];
+        var value=new{conversation=new{customerLinked=i.Customer is not null,attentionMode="ai"},draft=d is null?null:new{exists=true,status=d.Status.ToString(),orderType=d.OrderType?.ToString(),items=d.Items.Take(itemLimit).Select(x=>new{draftItemId=x.Id,productId=x.ProductId,name=Short(x.Product?.Name,80),quantity=x.Quantity,notes=Short(x.Notes,120)}),totalItemCount,itemsTruncated=itemLimit<totalItemCount,hasValidAddress=d.AddressId.HasValue,neighborhood=Short(d.Address?.Neighborhood?.Name,80),deliveryFee=d.DeliveryFee,subtotal=d.Subtotal,total=d.Total,paymentMethod=d.PaymentMethod,missing,readyToConfirm=d.Status==WhatsAppOrderDraftStatus.ReadyForConfirmation}};
         return JsonSerializer.Serialize(value);
     }
     private static string[] Missing(SenorArroz.Domain.Entities.WhatsAppOrderDraft d)
