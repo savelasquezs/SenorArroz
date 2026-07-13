@@ -40,6 +40,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<WhatsAppConversation> WhatsAppConversations { get; set; }
 
         DbSet<WhatsAppMessage> WhatsAppMessages { get; set; }
+        DbSet<WhatsAppAiInvocation> WhatsAppAiInvocations { get; set; }
 
         DbSet<WhatsAppQuickReply> WhatsAppQuickReplies { get; set; }
 

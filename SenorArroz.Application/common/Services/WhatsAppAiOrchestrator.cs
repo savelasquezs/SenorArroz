@@ -23,9 +23,11 @@ public class WhatsAppAiOrchestrator(
     WhatsAppAttentionService attention,
     IClock clock,
     IOptions<WhatsAppAiOrchestratorOptions> options,
-    ILogger<WhatsAppAiOrchestrator> logger) : IWhatsAppAiOrchestrator
+    ILogger<WhatsAppAiOrchestrator> logger,
+    IOptions<WhatsAppAiPricingOptions>? pricing = null) : IWhatsAppAiOrchestrator
 {
     private readonly WhatsAppAiOrchestratorOptions _options = options.Value;
+    private readonly WhatsAppAiPricingOptions _pricing = pricing?.Value ?? new();
 
     public async Task<WhatsAppAiProcessingResult> ProcessIncomingMessageAsync(
         int conversationId,
@@ -158,6 +160,10 @@ public class WhatsAppAiOrchestrator(
                 var response = await GenerateWithRetry(
                     provider,
                     new(model, setting.ApiKey, chat, tools.Definitions, setting.Temperature),
+                    conversation.BranchId,
+                    conversationId,
+                    incomingMessageId,
+                    modelCalls,
                     ct);
                 if (response.Error is not null)
                 {
@@ -343,18 +349,69 @@ public class WhatsAppAiOrchestrator(
     private async Task<AiChatResponse> GenerateWithRetry(
         IAiChatProvider provider,
         AiChatRequest request,
+        int branchId,
+        int conversationId,
+        int incomingMessageId,
+        int invocationIndex,
         CancellationToken cancellationToken)
     {
         AiChatResponse response = new(null, [], request.Model, null, null, null, true, "Sin respuesta");
         for (var attempt = 0; attempt <= _options.TransientRetryCount; attempt++)
         {
+            var startedAt = clock.UtcNow;
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             response = await provider.GenerateAsync(request, cancellationToken);
+            stopwatch.Stop();
+            await TryRecordInvocation(provider.ProviderName, request.Model, branchId, conversationId, incomingMessageId, invocationIndex, attempt + 1, startedAt, stopwatch.ElapsedMilliseconds, response);
             if (!response.IsTransientError)
                 return response;
             if (attempt < _options.TransientRetryCount)
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * (attempt + 1)), cancellationToken);
         }
         return response;
+    }
+
+    private async Task TryRecordInvocation(string provider, string model, int branchId, int conversationId, int messageId, int invocationIndex, int attemptIndex, DateTime startedAt, long durationMs, AiChatResponse response)
+    {
+        var price = _pricing.Find(provider, model);
+        decimal? cost = null;
+        if (price is not null && response.InputTokens.HasValue && response.OutputTokens.HasValue)
+        {
+            var cached = Math.Max(0, response.CachedInputTokens ?? 0);
+            var uncached = Math.Max(0, response.InputTokens.Value - cached);
+            cost = (uncached * price.InputPerMillionUsd + cached * price.CachedInputPerMillionUsd + response.OutputTokens.Value * price.OutputPerMillionUsd) / 1_000_000m;
+        }
+        var error = SanitizeError(response.Error);
+        var entity = new WhatsAppAiInvocation
+        {
+            BranchId = branchId, ConversationId = conversationId, IncomingMessageId = messageId,
+            Provider = provider, Model = model, InvocationIndex = invocationIndex, AttemptIndex = attemptIndex,
+            StartedAt = startedAt, CompletedAt = startedAt.AddMilliseconds(durationMs), DurationMs = durationMs,
+            InputTokens = response.InputTokens, CachedInputTokens = response.CachedInputTokens, OutputTokens = response.OutputTokens, ThinkingTokens = response.ThinkingTokens,
+            ToolCallCount = response.ToolCalls.Count, FinishReason = response.FinishReason,
+            Success = response.Error is null, IsTransientError = response.IsTransientError, HttpStatusCode = response.HttpStatusCode,
+            ErrorCategory = response.Error is null ? null : response.HttpStatusCode.HasValue ? "http" : response.IsTransientError ? "transient_technical" : "provider",
+            ErrorMessage = error,
+            InputPricePerMillionUsd = price?.InputPerMillionUsd, CachedInputPricePerMillionUsd = price?.CachedInputPerMillionUsd, OutputPricePerMillionUsd = price?.OutputPerMillionUsd,
+            EstimatedCostUsd = cost, CreatedAt = clock.UtcNow
+        };
+        try
+        {
+            db.WhatsAppAiInvocations.Add(entity);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            db.WhatsAppAiInvocations.Remove(entity);
+            logger.LogWarning(ex, "Could not persist WhatsApp AI invocation telemetry Provider={Provider} Model={Model} MessageId={MessageId}", provider, model, messageId);
+        }
+    }
+
+    private static string? SanitizeError(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(value, "(?i)(api[-_ ]?key|bearer|token)\\s*[:=]?\\s*[^\\s,;]+", "$1=[redacted]");
+        return sanitized[..Math.Min(500, sanitized.Length)];
     }
 
     private Task<bool> StillAi(int conversationId, CancellationToken cancellationToken) =>

@@ -53,7 +53,16 @@ public class OpenAiProvider(HttpClient httpClient, ILogger<OpenAiProvider> logge
                     calls.Add(new(item.GetProperty("id").GetString()!, function.GetProperty("name").GetString()!, args.RootElement.Clone()));
                 }
             var usage = doc.RootElement.TryGetProperty("usage", out var u) ? u : default;
-            return new(text, calls, input.Model, choice.GetProperty("finish_reason").GetString(), usage.ValueKind != JsonValueKind.Undefined ? usage.GetProperty("prompt_tokens").GetInt32() : null, usage.ValueKind != JsonValueKind.Undefined ? usage.GetProperty("completion_tokens").GetInt32() : null);
+            var inputTokens = TryGetInt(usage, "prompt_tokens");
+            var outputTokens = TryGetInt(usage, "completion_tokens");
+            int? cachedTokens = null;
+            int? thinkingTokens = null;
+            if (usage.ValueKind == JsonValueKind.Object)
+            {
+                if (usage.TryGetProperty("prompt_tokens_details", out var promptDetails)) cachedTokens = TryGetInt(promptDetails, "cached_tokens");
+                if (usage.TryGetProperty("completion_tokens_details", out var completionDetails)) thinkingTokens = TryGetInt(completionDetails, "reasoning_tokens");
+            }
+            return new(text, calls, input.Model, choice.GetProperty("finish_reason").GetString(), inputTokens, outputTokens, CachedInputTokens: cachedTokens, ThinkingTokens: thinkingTokens);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
@@ -86,6 +95,7 @@ public class OpenAiProvider(HttpClient httpClient, ILogger<OpenAiProvider> logge
         || model.StartsWith("chat-", StringComparison.OrdinalIgnoreCase)
         || Regex.IsMatch(model, "^o[1-9]", RegexOptions.IgnoreCase);
     private static bool SupportsTemperature(string model) => !Regex.IsMatch(model, "^(o[1-9]|gpt-5)", RegexOptions.IgnoreCase);
+    private static int? TryGetInt(JsonElement element, string name) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.TryGetInt32(out var parsed) ? parsed : null;
     private static AiChatResponse Failure(AiChatRequest input, bool transient, string error, int? httpStatusCode = null) => new(null, [], input.Model, null, null, null, transient, error, httpStatusCode);
 
     public async Task<AiModelProviderResult> ListModelsAsync(string apiKey, CancellationToken cancellationToken = default)

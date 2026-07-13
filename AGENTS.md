@@ -83,6 +83,8 @@ No usar excepciones genéricas para reglas de negocio.
 
 ## Base de datos
 
+- Este repositorio no utiliza migraciones EF para cambios de esquema. Crear y mantener scripts SQL idempotentes en `SenorArroz.Infrastructure/Scripts`.
+
 - PostgreSQL usa `snake_case`.
 - C# usa PascalCase/camelCase.
 - Los enums se almacenan en `snake_case`.

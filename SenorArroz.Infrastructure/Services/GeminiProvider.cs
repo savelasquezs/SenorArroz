@@ -70,9 +70,11 @@ public class GeminiProvider(HttpClient httpClient, ILogger<GeminiProvider> logge
             var usage = document.RootElement.TryGetProperty("usageMetadata", out var usageMetadata) ? usageMetadata : default;
             var inputTokens = TryGetInt(usage, "promptTokenCount");
             var outputTokens = TryGetInt(usage, "candidatesTokenCount");
+            var cachedTokens = TryGetInt(usage, "cachedContentTokenCount");
+            var thinkingTokens = TryGetInt(usage, "thoughtsTokenCount");
             var finishReason = candidate.TryGetProperty("finishReason", out var finish) ? finish.GetString() : null;
             logger.LogInformation("Gemini request completed StatusCode={StatusCode} Model={Model} ToolCallCount={ToolCallCount}", (int)response.StatusCode, input.Model, calls.Count);
-            return new(string.Join("\n", textParts), calls, input.Model, finishReason, inputTokens, outputTokens);
+            return new(string.Join("\n", textParts), calls, input.Model, finishReason, inputTokens, outputTokens, CachedInputTokens: cachedTokens, ThinkingTokens: thinkingTokens);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {
