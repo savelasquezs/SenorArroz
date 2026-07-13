@@ -102,6 +102,7 @@ public class BranchAiSettingsController : ControllerBase
         setting.IsActive = dto.IsActive;
         setting.Temperature = dto.Temperature;
         setting.MaxContextMessages = dto.MaxContextMessages;
+        setting.ContextStrategy = dto.ContextStrategy.Trim().ToLowerInvariant();
         setting.AssistantName = (dto.AssistantName ?? string.Empty).Trim();
         setting.PromptObjective = (dto.PromptObjective ?? string.Empty).Trim();
         setting.PromptPersonality = (dto.PromptPersonality ?? string.Empty).Trim();
@@ -288,6 +289,8 @@ public class BranchAiSettingsController : ControllerBase
             return "Model es requerido.";
         if (dto.MaxContextMessages <= 0)
             return "MaxContextMessages debe ser mayor que cero.";
+        if (dto.ContextStrategy.Trim().ToLowerInvariant() is not ("legacy" or "optimized_v1"))
+            return "ContextStrategy debe ser legacy u optimized_v1.";
         if (dto.Temperature is < 0 or > 2)
             return "Temperature debe estar entre 0 y 2.";
         var promptError = ValidatePromptLengths(dto); if (promptError is not null) return promptError;
@@ -353,6 +356,7 @@ public class BranchAiSettingsController : ControllerBase
             IsActive = setting.IsActive,
             Temperature = setting.Temperature,
             MaxContextMessages = setting.MaxContextMessages,
+            ContextStrategy = string.IsNullOrWhiteSpace(setting.ContextStrategy) ? "legacy" : setting.ContextStrategy,
             LastTestedAt = setting.LastTestedAt,
             IsVerified = setting.IsVerified,
             CreatedAt = setting.CreatedAt,

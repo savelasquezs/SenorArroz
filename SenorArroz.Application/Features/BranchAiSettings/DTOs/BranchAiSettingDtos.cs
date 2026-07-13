@@ -11,6 +11,7 @@ public class BranchAiSettingDto
     public bool IsActive { get; set; }
     public double? Temperature { get; set; }
     public int MaxContextMessages { get; set; } = 20;
+    public string ContextStrategy { get; set; } = "legacy";
     public DateTime? LastTestedAt { get; set; }
     public bool IsVerified { get; set; }
     public DateTime? CreatedAt { get; set; }
@@ -33,6 +34,7 @@ public class UpsertBranchAiSettingDto
     public bool IsActive { get; set; }
     public double? Temperature { get; set; }
     public int MaxContextMessages { get; set; } = 20;
+    public string ContextStrategy { get; set; } = "legacy";
     public string? AssistantName { get; set; }
     public string? PromptObjective { get; set; }
     public string? PromptPersonality { get; set; }

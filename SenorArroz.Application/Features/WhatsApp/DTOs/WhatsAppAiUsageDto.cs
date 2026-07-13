@@ -17,8 +17,11 @@ public class WhatsAppAiUsageDto
     public double ErrorRate { get; set; }
     public double AverageInvocationsPerMessage { get; set; }
     public double AverageToolCallsPerMessage { get; set; }
+    public double AverageContextMessages { get; set; }
+    public double AverageToolDefinitions { get; set; }
+    public double ContextPlannerFallbackRate { get; set; }
     public List<WhatsAppAiUsageBreakdownDto> Breakdown { get; set; } = [];
     public List<WhatsAppAiUsageDailyDto> Daily { get; set; } = [];
 }
-public record WhatsAppAiUsageBreakdownDto(string Provider, string Model, int Invocations, int MessagesProcessed, long InputTokens, long CachedInputTokens, long OutputTokens, long ThinkingTokens, long BillableOutputTokens, decimal EstimatedCostUsd, int UnpricedInvocations, double AverageDurationMs, double ErrorRate);
+public record WhatsAppAiUsageBreakdownDto(string Provider, string Model, string ContextStrategy, int Invocations, int MessagesProcessed, long InputTokens, long CachedInputTokens, long OutputTokens, long ThinkingTokens, long BillableOutputTokens, decimal EstimatedCostUsd, int UnpricedInvocations, double AverageDurationMs, double ErrorRate, double AverageContextMessages, double AverageToolDefinitions, double FallbackRate);
 public record WhatsAppAiUsageDailyDto(DateTime Date, int Invocations, long InputTokens, long CachedInputTokens, long OutputTokens, long ThinkingTokens, long BillableOutputTokens, decimal EstimatedCostUsd, int UnpricedInvocations);

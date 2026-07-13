@@ -43,7 +43,10 @@ namespace SenorArroz.Application
             services.AddScoped<ILoyaltyCycleService, LoyaltyCycleService>();
             services.AddScoped<IFreeDeliverymanFcmTokenResolver, FreeDeliverymanFcmTokenResolver>();
             services.AddScoped<WhatsAppAttentionService>();
-            services.AddScoped<IAgentToolExecutor, AgentToolExecutor>();
+            services.AddScoped<AgentToolExecutor>();
+            services.AddScoped<IAgentToolExecutor>(sp=>sp.GetRequiredService<AgentToolExecutor>());
+            services.AddScoped<IAgentToolCatalog>(sp=>sp.GetRequiredService<AgentToolExecutor>());
+            services.AddScoped<IWhatsAppAiContextPlanner, WhatsAppAiContextPlanner>();
             services.AddScoped<IWhatsAppAiOrchestrator, WhatsAppAiOrchestrator>();
             services.AddScoped<IBranchBusinessHoursService, BranchBusinessHoursService>();
             services.AddScoped<IWhatsAppSystemPromptBuilder, WhatsAppSystemPromptBuilder>();

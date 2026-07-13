@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.Configure<WhatsAppCloudOptions>(configuration.GetSection(WhatsAppCloudOptions.SectionName));
         services.Configure<WhatsAppAiOrchestratorOptions>(configuration.GetSection(WhatsAppAiOrchestratorOptions.SectionName));
         services.Configure<WhatsAppAiPricingOptions>(configuration.GetSection(WhatsAppAiPricingOptions.SectionName));
+        services.Configure<WhatsAppAiContextOptimizationOptions>(configuration.GetSection(WhatsAppAiContextOptimizationOptions.SectionName));
         services.PostConfigure<WhatsAppCloudOptions>(options =>
         {
             options.AccessToken = FirstNonEmpty(configuration["WHATSAPP_TOKEN"], options.AccessToken);

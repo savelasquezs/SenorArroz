@@ -25,7 +25,9 @@ public class WhatsAppAiOrchestrator(
     IOptions<WhatsAppAiOrchestratorOptions> options,
     ILogger<WhatsAppAiOrchestrator> logger,
     IOptions<WhatsAppAiPricingOptions>? pricing = null,
-    IWhatsAppAiTelemetryQueue? telemetryQueue = null) : IWhatsAppAiOrchestrator
+    IWhatsAppAiTelemetryQueue? telemetryQueue = null,
+    IWhatsAppAiContextPlanner? contextPlanner = null,
+    IAgentToolCatalog? toolCatalog = null) : IWhatsAppAiOrchestrator
 {
     private readonly WhatsAppAiOrchestratorOptions _options = options.Value;
     private readonly WhatsAppAiPricingOptions _pricing = pricing?.Value ?? new();
@@ -140,8 +142,16 @@ public class WhatsAppAiOrchestrator(
             var chat = new List<AiChatMessage>
             {
                 new("system", await promptBuilder.Build(conversation.BranchId, ct))
-            };
-            chat.AddRange(history);
+            }; chat.AddRange(history);
+            WhatsAppAiContextPlan? contextPlan = null;
+            if (contextPlanner is not null && toolCatalog is not null)
+            {
+                var branch = await db.Branches.AsNoTracking().FirstAsync(x=>x.Id==conversation.BranchId,ct);
+                var customer = conversation.CustomerId.HasValue ? await db.Customers.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==conversation.CustomerId,ct) : null;
+                var draft = await LoadActiveDraft(conversationId,ct);
+                contextPlan = await contextPlanner.PlanAsync(new(conversation,message,branch,customer,draft,setting.ContextStrategy,setting.MaxContextMessages,history,toolCatalog.All,chat[0].Content??string.Empty),ct);
+                chat=contextPlan.Messages.ToList();
+            }
 
             logger.LogInformation(
                 "WhatsApp AI processing ConversationId={ConversationId} IncomingMessageId={IncomingMessageId} Provider={Provider} Model={Model} ContextMessageCount={ContextMessageCount} ToolNames={ToolNames}",
@@ -150,7 +160,7 @@ public class WhatsAppAiOrchestrator(
                 providerName,
                 model,
                 chat.Count,
-                string.Join(",", tools.Definitions.Select(x => x.Name)));
+                string.Join(",", (contextPlan is null ? tools.Definitions : toolCatalog!.GetByNames(contextPlan.AllowedToolNames)).Select(x => x.Name)));
 
             while (modelCalls < _options.MaxModelCallsPerMessage)
             {
@@ -158,13 +168,15 @@ public class WhatsAppAiOrchestrator(
                     return await Ignore(message, "La atención cambió durante el procesamiento.", ct, conversation.BranchId);
 
                 modelCalls++;
+                var exposedDefinitions = contextPlan is null ? tools.Definitions : toolCatalog!.GetByNames(contextPlan.AllowedToolNames);
                 var response = await GenerateWithRetry(
                     provider,
-                    new(model, setting.ApiKey, chat, tools.Definitions, setting.Temperature),
+                    new(model, setting.ApiKey, chat, exposedDefinitions, setting.Temperature),
                     conversation.BranchId,
                     conversationId,
                     incomingMessageId,
                     modelCalls,
+                    contextPlan,
                     ct);
                 if (response.Error is not null)
                 {
@@ -235,6 +247,8 @@ public class WhatsAppAiOrchestrator(
                     if (!await StillAi(conversationId, ct))
                         return await Ignore(message, "La atención cambió antes de ejecutar una herramienta.", ct, conversation.BranchId);
 
+                    if(contextPlan is not null&&!contextPlan.AllowedToolNames.Contains(call.Name,StringComparer.OrdinalIgnoreCase))
+                    { chat.Add(new("tool",JsonSerializer.Serialize(new{success=false,code="tool_not_exposed",error="Herramienta no permitida para el estado actual."}),call.Id)); continue; }
                     var result = await tools.ExecuteAsync(
                         call.Name,
                         new(
@@ -250,6 +264,13 @@ public class WhatsAppAiOrchestrator(
                         call.Arguments,
                         ct);
                     totalTools++;
+                    if(contextPlan is not null&&toolCatalog!.ModifiesData(call.Name))
+                    {
+                        var refreshed=await LoadActiveDraft(conversationId,ct);
+                        var branch=await db.Branches.AsNoTracking().FirstAsync(x=>x.Id==conversation.BranchId,ct);
+                        var customer=conversation.CustomerId.HasValue?await db.Customers.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==conversation.CustomerId,ct):null;
+                        contextPlan=await contextPlanner!.PlanAsync(new(conversation,message,branch,customer,refreshed,setting.ContextStrategy,setting.MaxContextMessages,history,toolCatalog.All,chat[0].Content??string.Empty),ct);
+                    }
 
                     if (result.TransferredToHuman)
                     {
@@ -354,6 +375,7 @@ public class WhatsAppAiOrchestrator(
         int conversationId,
         int incomingMessageId,
         int invocationIndex,
+        WhatsAppAiContextPlan? contextPlan,
         CancellationToken cancellationToken)
     {
         AiChatResponse response = new(null, [], request.Model, null, null, null, true, "Sin respuesta");
@@ -368,11 +390,11 @@ public class WhatsAppAiOrchestrator(
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                EnqueueInvocation(provider.ProviderName, request.Model, branchId, conversationId, incomingMessageId, invocationIndex, attempt + 1, startedAt, stopwatch.ElapsedMilliseconds, new(null, [], request.Model, null, null, null, false, SanitizeError(ex.Message)), "unexpected_exception");
+                EnqueueInvocation(provider.ProviderName, request.Model, branchId, conversationId, incomingMessageId, invocationIndex, attempt + 1, startedAt, stopwatch.ElapsedMilliseconds, new(null, [], request.Model, null, null, null, false, SanitizeError(ex.Message)), contextPlan,"unexpected_exception");
                 throw;
             }
             stopwatch.Stop();
-            EnqueueInvocation(provider.ProviderName, request.Model, branchId, conversationId, incomingMessageId, invocationIndex, attempt + 1, startedAt, stopwatch.ElapsedMilliseconds, response);
+            EnqueueInvocation(provider.ProviderName, request.Model, branchId, conversationId, incomingMessageId, invocationIndex, attempt + 1, startedAt, stopwatch.ElapsedMilliseconds, response,contextPlan);
             if (!response.IsTransientError)
                 return response;
             if (attempt < _options.TransientRetryCount)
@@ -381,7 +403,7 @@ public class WhatsAppAiOrchestrator(
         return response;
     }
 
-    private void EnqueueInvocation(string provider, string model, int branchId, int conversationId, int messageId, int invocationIndex, int attemptIndex, DateTime startedAt, long durationMs, AiChatResponse response, string? category = null)
+    private void EnqueueInvocation(string provider, string model, int branchId, int conversationId, int messageId, int invocationIndex, int attemptIndex, DateTime startedAt, long durationMs, AiChatResponse response, WhatsAppAiContextPlan? plan, string? category = null)
     {
         var price = _pricing.Find(provider, model);
         var usage = AiBillingUsage.From(provider, response);
@@ -402,6 +424,7 @@ public class WhatsAppAiOrchestrator(
             InputPricePerMillionUsd = price?.InputPerMillionUsd, CachedInputPricePerMillionUsd = price?.CachedInputPerMillionUsd, OutputPricePerMillionUsd = price?.OutputPerMillionUsd,
             EstimatedCostUsd = cost, PricingEffectiveDate = price is null ? null : _pricing.EffectiveDate, CreatedAt = clock.UtcNow
         };
+        entity.ContextStrategy=plan?.Strategy??"legacy";entity.ContextMessageCount=plan?.HistoryMessageCount;entity.ToolDefinitionCount=plan?.ToolDefinitionCount;entity.SystemPromptCharacters=plan?.SystemPromptCharacters;entity.RuntimeContextCharacters=plan?.RuntimeContextCharacters;entity.HistoryCharacters=plan?.HistoryCharacters;entity.ToolDefinitionsCharacters=plan?.ToolDefinitionsCharacters;entity.ContextPlannerFallback=plan?.FallbackToLegacyTools??false;entity.ContextPlannerFallbackReason=SanitizeError(plan?.FallbackReason);
         if (telemetryQueue is null || !telemetryQueue.TryEnqueue(entity))
             logger.LogWarning("WhatsApp AI invocation telemetry was not queued Provider={Provider} Model={Model} MessageId={MessageId}", provider, model, messageId);
     }
@@ -417,6 +440,8 @@ public class WhatsAppAiOrchestrator(
         db.WhatsAppConversations
             .AsNoTracking()
             .AnyAsync(x => x.Id == conversationId && x.AttentionMode == WhatsAppAttentionMode.Ai, cancellationToken);
+
+    private Task<WhatsAppOrderDraft?> LoadActiveDraft(int conversationId,CancellationToken ct)=>db.WhatsAppOrderDrafts.AsNoTracking().Include(x=>x.Items).ThenInclude(x=>x.Product).Include(x=>x.Address).ThenInclude(x=>x.Neighborhood).Where(x=>x.ConversationId==conversationId&&x.Status!=WhatsAppOrderDraftStatus.Cancelled&&x.Status!=WhatsAppOrderDraftStatus.Confirmed&&x.Status!=WhatsAppOrderDraftStatus.ConvertedToOrder&&x.Status!=WhatsAppOrderDraftStatus.Expired).OrderByDescending(x=>x.Id).FirstOrDefaultAsync(ct);
 
     private async Task<WhatsAppAiProcessingResult> HandleUnexpectedFailure(
         int messageId,
