@@ -118,6 +118,7 @@ builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IWhatsAppNot
 builder.Services.AddSingleton<SenorArroz.API.Services.WhatsAppAiWorkQueue>();
 builder.Services.AddSingleton<IWhatsAppAiWorkQueue>(sp => sp.GetRequiredService<SenorArroz.API.Services.WhatsAppAiWorkQueue>());
 builder.Services.AddSingleton<SenorArroz.API.Services.WhatsAppAiTelemetryQueue>();
+builder.Services.Configure<SenorArroz.API.Services.WhatsAppAiTelemetryWorkerOptions>(builder.Configuration.GetSection(SenorArroz.API.Services.WhatsAppAiTelemetryWorkerOptions.SectionName));
 builder.Services.AddSingleton<IWhatsAppAiTelemetryQueue>(sp => sp.GetRequiredService<SenorArroz.API.Services.WhatsAppAiTelemetryQueue>());
 builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppAiTelemetryWorker>();
 builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppAiBackgroundService>();
