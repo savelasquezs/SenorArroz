@@ -68,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<IAiChatProvider>(sp => sp.GetRequiredService<GeminiProvider>());
         services.AddScoped<IAiChatProviderResolver, AiChatProviderResolver>();
         services.AddScoped<IWhatsAppProductMatcher, WhatsAppProductMatcher>();
+        services.AddScoped<IWhatsAppOrderDraftSession, WhatsAppOrderDraftSession>();
         services.AddScoped<IAgentTool, SearchProductsAgentTool>();
         services.AddScoped<IAgentTool, ProductDetailsAgentTool>();
         services.AddScoped<RegisteredNeighborhoodResolver>();
@@ -81,7 +82,7 @@ public static class DependencyInjection
         services.AddScoped<IAgentTool, ListCustomerAddressesAgentTool>();
         services.AddScoped<IAgentTool, CreateCustomerAddressAgentTool>();
         services.AddScoped<IAgentTool, SaveValidatedCustomerAddressAgentTool>();
-        services.AddScoped<WhatsAppDraftService>();
+        services.AddScoped<WhatsAppDraftService>(sp=>new WhatsAppDraftService(sp.GetRequiredService<IWhatsAppOrderDraftCalculator>(),sp.GetRequiredService<IWhatsAppOrderDraftSession>()));
         services.AddScoped<IAgentTool, GetOrCreateOrderDraftAgentTool>();
         services.AddScoped<IAgentTool, GetOrderDraftAgentTool>();
         services.AddScoped<IAgentTool, SetOrderTypeAgentTool>();

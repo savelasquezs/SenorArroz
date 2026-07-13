@@ -39,7 +39,16 @@ public class WhatsAppAiContextPlannerTests
         services.AddInfrastructureServices(configuration);services.AddScoped(_=>Mock.Of<IWhatsAppAutomaticMessageSender>());services.AddScoped(_=>Mock.Of<IWhatsAppNotificationService>());
         await using var provider=services.BuildServiceProvider();await using var scope=provider.CreateAsyncScope();
         var catalog=scope.ServiceProvider.GetRequiredService<IAgentToolCatalog>();
+        var schemaValidator=scope.ServiceProvider.GetRequiredService<IAiToolSchemaValidator>();
         var planner=scope.ServiceProvider.GetRequiredService<IWhatsAppAiContextPlanner>();
+        Assert.Null(schemaValidator.Validate(catalog.All));
+        Assert.All(catalog.All,tool=>
+        {
+            Assert.Equal("object",tool.ParametersSchema.GetProperty("type").GetString());
+            Assert.Equal(JsonValueKind.Object,tool.ParametersSchema.GetProperty("properties").ValueKind);
+            Assert.False(tool.ParametersSchema.GetProperty("additionalProperties").GetBoolean());
+            Assert.DoesNotContain("Ã",tool.Description);Assert.DoesNotContain("Â",tool.Description);Assert.DoesNotContain("�",tool.Description);
+        });
         var registered=catalog.All.Select(x=>x.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         Assert.Contains("list_payment_methods",registered);Assert.Contains("set_payment_method",registered);Assert.Contains("calculate_cash_change",registered);Assert.Contains("mark_draft_ready_for_confirmation",registered);
         var scenarios=new (Customer? customer,WhatsAppOrderDraft? draft)[]{(null,null),(new Customer{Id=1},null),(new Customer{Id=1},Draft(WhatsAppOrderDraftStatus.Building,false)),(new Customer{Id=1},Draft(WhatsAppOrderDraftStatus.Building,true)),(new Customer{Id=1},Draft(WhatsAppOrderDraftStatus.AwaitingAddress,true)),(new Customer{Id=1},Draft(WhatsAppOrderDraftStatus.AwaitingPayment,true)),(new Customer{Id=1},Draft(WhatsAppOrderDraftStatus.ReadyForConfirmation,true))};

@@ -19,7 +19,23 @@ public class UpdateCustomerAgentTool(ApplicationDbContext db):IAgentTool
 public class ListCustomerAddressesAgentTool(ApplicationDbContext db,IWhatsAppAutomaticMessageSender? sender=null):IAgentTool
 {
  public string Name=>"list_customer_addresses";public string Description=>"Lista únicamente direcciones del cliente asociado a la conversación.";public string Category=>"addresses";public JsonElement ParametersSchema=>JsonDocument.Parse("""{"type":"object","properties":{},"additionalProperties":false}""").RootElement.Clone();
- public async Task<AgentToolExecutionResult> ExecuteAsync(AgentToolExecutionContext c,JsonElement a,CancellationToken ct){if(!c.CustomerId.HasValue)return new(false,null,"Se requiere cliente.","customer_not_found");var rows=await db.Addresses.AsNoTracking().Include(x=>x.Neighborhood).Where(x=>x.CustomerId==c.CustomerId).OrderByDescending(x=>x.IsPrimary).ThenBy(x=>x.Id).Take(3).Select(x=>new{addressId=x.Id,address=x.AddressText,x.AdditionalInfo,neighborhood=x.Neighborhood.Name,x.IsPrimary,hasCoverage=x.Neighborhood.Active&&x.Neighborhood.BranchId==c.BranchId}).ToListAsync(ct);if(sender is not null&&rows.Count>1){var buttons=rows.Select(x=>new WhatsAppReplyButton($"address:{x.addressId}",$"{x.addressId}: {x.address}")).ToList();await sender.SendAgentReplyButtonsAsync(c.ConversationId,$"{c.ExecutionId??$"msg-{c.IncomingMessageId}"}:addresses","�En cu�l direcci�n entregamos?",buttons,ct);}return new(true,new{addresses=rows,selectionButtonsSent=rows.Count>1,suggestedAddressId=rows.FirstOrDefault(x=>x.IsPrimary&&x.hasCoverage)?.addressId??(rows.Count(x=>x.hasCoverage)==1?rows.First(x=>x.hasCoverage).addressId:(int?)null)},null,rows.Count==0?"address_required":"addresses_found",rows.Count==0?"El cliente no tiene direcciones.":null,rows.Count==0,rows.Count==0?"¿Cuál es la dirección del domicilio?":null);}
+ public async Task<AgentToolExecutionResult> ExecuteAsync(AgentToolExecutionContext c,JsonElement a,CancellationToken ct)
+ {
+  if(!c.CustomerId.HasValue)return new(false,null,"Se requiere cliente.","customer_not_found");
+  var rows=await db.Addresses.AsNoTracking().Include(x=>x.Neighborhood).Where(x=>x.CustomerId==c.CustomerId).OrderByDescending(x=>x.IsPrimary).ThenBy(x=>x.Id).Select(x=>new{addressId=x.Id,address=x.AddressText,x.AdditionalInfo,neighborhood=x.Neighborhood.Name,x.IsPrimary,hasCoverage=x.Neighborhood.Active&&x.Neighborhood.BranchId==c.BranchId}).ToListAsync(ct);
+  var valid=rows.Where(x=>x.hasCoverage).Take(3).ToList();
+  var invalid=rows.Where(x=>!x.hasCoverage).Take(3).ToList();
+  var buttonsSent=false;
+  if(sender is not null&&valid.Count>1)
+  {
+   var body=string.Join("\n",valid.Select((x,index)=>$"Dirección {index+1}: {x.address}{(string.IsNullOrWhiteSpace(x.AdditionalInfo)?string.Empty:$", {x.AdditionalInfo}")}, {x.neighborhood}"));
+   var buttons=valid.Select((x,index)=>new WhatsAppReplyButton($"address:{x.addressId}",$"Dirección {index+1}")).ToList();
+   var sent=await sender.SendAgentReplyButtonsAsync(c.ConversationId,$"{c.ExecutionId??$"msg-{c.IncomingMessageId}"}:addresses",body,buttons,ct);
+   buttonsSent=sent.Success;
+  }
+  var suggested=valid.FirstOrDefault(x=>x.IsPrimary)?.addressId??(valid.Count==1?valid[0].addressId:(int?)null);
+  return new(true,new{addresses=valid,invalidAddresses=invalid,selectionButtonsSent=buttonsSent,suggestedAddressId=suggested},null,valid.Count==0?"address_required":"addresses_found",valid.Count==0?"El cliente no tiene direcciones válidas para esta sucursal.":null,valid.Count==0,valid.Count==0?"¿Cuál es la dirección del domicilio?":null);
+ }
 }
 public class CreateCustomerAddressAgentTool(ApplicationDbContext db,RegisteredNeighborhoodResolver resolver):IAgentTool
 {

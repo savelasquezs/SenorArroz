@@ -28,6 +28,8 @@ public class BranchAiSettingsController : ControllerBase
     private readonly IAiChatProviderResolver _aiChatProviderResolver;
     private readonly ILogger<BranchAiSettingsController> _logger;
     private readonly IWhatsAppSystemPromptBuilder _promptBuilder;
+    private readonly IAgentToolCatalog _toolCatalog;
+    private readonly IAiToolSchemaValidator _toolSchemaValidator;
 
     public BranchAiSettingsController(
         IApplicationDbContext db,
@@ -35,7 +37,8 @@ public class BranchAiSettingsController : ControllerBase
         IClock clock,
         IAiProviderResolver aiProviderResolver,
         IAiChatProviderResolver aiChatProviderResolver,
-        ILogger<BranchAiSettingsController> logger, IWhatsAppSystemPromptBuilder promptBuilder)
+        ILogger<BranchAiSettingsController> logger, IWhatsAppSystemPromptBuilder promptBuilder,
+        IAgentToolCatalog toolCatalog, IAiToolSchemaValidator toolSchemaValidator)
     {
         _db = db;
         _currentUser = currentUser;
@@ -44,6 +47,8 @@ public class BranchAiSettingsController : ControllerBase
         _aiChatProviderResolver = aiChatProviderResolver;
         _logger = logger;
         _promptBuilder = promptBuilder;
+        _toolCatalog = toolCatalog;
+        _toolSchemaValidator = toolSchemaValidator;
     }
 
     [HttpGet]
@@ -175,16 +180,18 @@ public class BranchAiSettingsController : ControllerBase
             return BadRequest(ApiResponse<AiTestConnectionResultDto>.ErrorResponse("El proveedor no soporta generación de conversación."));
         }
 
-        using var probeSchema = JsonDocument.Parse(
-            """{"type":"object","properties":{},"additionalProperties":false}""");
+        var schemaError = _toolSchemaValidator.Validate(_toolCatalog.All);
+        if (schemaError is not null)
+        {
+            setting.IsVerified = false;
+            await _db.SaveChangesAsync(cancellationToken);
+            return BadRequest(ApiResponse<AiTestConnectionResultDto>.ErrorResponse(schemaError.ToString()));
+        }
         var generation = await chatProvider.GenerateAsync(new(
             setting.Model,
             setting.ApiKey,
             [new("user", "Responde únicamente OK y no llames herramientas.")],
-            [new AiToolDefinition(
-                "compatibility_probe",
-                "Herramienta inocua usada solo para comprobar compatibilidad con function calling.",
-                probeSchema.RootElement.Clone())],
+            _toolCatalog.All,
             setting.Temperature), cancellationToken);
         if (generation.Error is not null
             || (string.IsNullOrWhiteSpace(generation.Text) && generation.ToolCalls.Count == 0))

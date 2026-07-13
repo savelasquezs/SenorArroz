@@ -1,9 +1,11 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SenorArroz.API.Controllers;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Common.Models;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Data;
@@ -43,6 +45,9 @@ public class BranchAiSettingsControllerTests
             .ReturnsAsync(new AiChatResponse("OK", [], "chat-latest", "stop", 1, 1));
         var chatResolver = new Mock<IAiChatProviderResolver>();
         chatResolver.Setup(x => x.Resolve("openai")).Returns(chatProvider.Object);
+        using var schema = JsonDocument.Parse("""{"type":"object","properties":{"query":{"type":"string"}},"additionalProperties":false}""");
+        var catalog = new Mock<IAgentToolCatalog>();
+        catalog.SetupGet(x => x.All).Returns([new("search_products", "Busca productos", schema.RootElement.Clone())]);
 
         var controller = new BranchAiSettingsController(
             db,
@@ -51,13 +56,15 @@ public class BranchAiSettingsControllerTests
             modelResolver.Object,
             chatResolver.Object,
             NullLogger<BranchAiSettingsController>.Instance,
-            Mock.Of<IWhatsAppSystemPromptBuilder>());
+            Mock.Of<IWhatsAppSystemPromptBuilder>(),
+            catalog.Object,
+            new AiToolSchemaValidator());
 
         var action = await controller.TestConnection(7, default);
 
         Assert.IsType<OkObjectResult>(action.Result);
         var tool = Assert.Single(captured!.Tools);
-        Assert.Equal("compatibility_probe", tool.Name);
+        Assert.Equal("search_products", tool.Name);
         Assert.Equal("object", tool.ParametersSchema.GetProperty("type").GetString());
         Assert.True((await db.BranchAiSettings.FindAsync(1))!.IsVerified);
     }

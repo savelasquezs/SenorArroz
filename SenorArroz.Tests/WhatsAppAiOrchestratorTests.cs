@@ -32,6 +32,16 @@ public class WhatsAppAiOrchestratorTests
 
     [Fact] public async Task Optimized_create_customer_refreshes_operational_state_for_second_request(){await using var f=await Fixture.Create(optimized:true);using var d=JsonDocument.Parse("""{"name":"Ana"}""");var requests=new List<AiChatRequest>();f.Provider.SetupSequence(x=>x.GenerateAsync(It.IsAny<AiChatRequest>(),It.IsAny<CancellationToken>())).ReturnsAsync(()=>new AiChatResponse(null,[new("c1","create_customer",d.RootElement.Clone())],"model","tool_calls",null,null)).ReturnsAsync(()=>new AiChatResponse("Listo",[],"model","stop",null,null));f.Provider.Setup(x=>x.GenerateAsync(It.IsAny<AiChatRequest>(),It.IsAny<CancellationToken>())).Callback<AiChatRequest,CancellationToken>((r,_)=>requests.Add(r)).ReturnsAsync(()=>requests.Count==1?new AiChatResponse(null,[new("c1","create_customer",d.RootElement.Clone())],"model","tool_calls",null,null):new AiChatResponse("Listo",[],"model","stop",null,null));f.Tools.Setup(x=>x.ExecuteAsync("create_customer",It.IsAny<AgentToolExecutionContext>(),It.IsAny<JsonElement>(),It.IsAny<CancellationToken>())).Callback(()=>{var customer=new Customer{Id=7,BranchId=1,Name="Ana",Phone1="1"};f.Db.Customers.Add(customer);f.Db.WhatsAppConversations.Find(1)!.CustomerId=7;f.Db.SaveChanges();}).ReturnsAsync(new AgentToolExecutionResult(true,new{}));await f.Orchestrator.ProcessIncomingMessageAsync(1,1);Assert.Equal(2,requests.Count);var state=requests[1].Messages.Single(x=>x.Role=="system"&&x.Content!.StartsWith(WhatsAppAiContextPlanner.RuntimeContextMarker));Assert.Contains("\"customerLinked\":true",state.Content);Assert.Contains(requests[1].Messages,x=>x.Role=="tool"&&x.ToolCallId=="c1");Assert.DoesNotContain(requests[1].Tools,x=>x.Name=="create_customer");Assert.Contains(requests[1].Tools,x=>x.Name=="get_or_create_order_draft");}
 
+    [Fact]
+    public async Task Create_customer_refreshes_next_tool_execution_context()
+    {
+      await using var f=await Fixture.Create(optimized:true,maxCalls:4);using var create=JsonDocument.Parse("""{"name":"Ana"}""");using var empty=JsonDocument.Parse("{}");var calls=0;AgentToolExecutionContext? secondContext=null;
+      f.Provider.Setup(x=>x.GenerateAsync(It.IsAny<AiChatRequest>(),It.IsAny<CancellationToken>())).ReturnsAsync(()=>++calls switch{1=>new AiChatResponse(null,[new("c1","create_customer",create.RootElement.Clone())],"model","tool_calls",null,null),2=>new AiChatResponse(null,[new("c2","get_or_create_order_draft",empty.RootElement.Clone())],"model","tool_calls",null,null),_=>new AiChatResponse("Listo",[],"model","stop",null,null)});
+      f.Tools.Setup(x=>x.ExecuteAsync("create_customer",It.IsAny<AgentToolExecutionContext>(),It.IsAny<JsonElement>(),It.IsAny<CancellationToken>())).Callback(()=>{f.Db.Customers.Add(new Customer{Id=7,BranchId=1,Name="Ana",Phone1="1"});f.Db.WhatsAppConversations.Find(1)!.CustomerId=7;f.Db.SaveChanges();}).ReturnsAsync(new AgentToolExecutionResult(true,new{}));
+      f.Tools.Setup(x=>x.ExecuteAsync("get_or_create_order_draft",It.IsAny<AgentToolExecutionContext>(),It.IsAny<JsonElement>(),It.IsAny<CancellationToken>())).Callback<string,AgentToolExecutionContext,JsonElement,CancellationToken>((_,context,_,_)=>secondContext=context).ReturnsAsync(new AgentToolExecutionResult(true,new{}));
+      await f.Orchestrator.ProcessIncomingMessageAsync(1,1);Assert.NotNull(secondContext);Assert.Equal(7,secondContext!.CustomerId);
+    }
+
     [Fact] public async Task Optimized_add_item_replaces_old_state_and_keeps_tool_result(){await using var f=await Fixture.Create(optimized:true,withCustomer:true);f.Db.WhatsAppOrderDrafts.Add(new WhatsAppOrderDraft{Id=8,ConversationId=1,CustomerId=7,BranchId=1,Status=WhatsAppOrderDraftStatus.Building});await f.Db.SaveChangesAsync();using var d=JsonDocument.Parse("""{"productId":5,"quantity":1}""");var requests=new List<AiChatRequest>();f.Provider.Setup(x=>x.GenerateAsync(It.IsAny<AiChatRequest>(),It.IsAny<CancellationToken>())).Callback<AiChatRequest,CancellationToken>((r,_)=>requests.Add(r)).ReturnsAsync(()=>requests.Count==1?new AiChatResponse(null,[new("add1","add_draft_item",d.RootElement.Clone())],"model","tool_calls",null,null):new AiChatResponse("Listo",[],"model","stop",null,null));f.Tools.Setup(x=>x.ExecuteAsync("add_draft_item",It.IsAny<AgentToolExecutionContext>(),It.IsAny<JsonElement>(),It.IsAny<CancellationToken>())).Callback(()=>{var product=new Product{Id=5,Name="Arroz especial",Active=true};f.Db.Products.Add(product);f.Db.WhatsAppOrderDrafts.Add(new WhatsAppOrderDraft{Id=9,ConversationId=1,CustomerId=7,BranchId=1,Status=WhatsAppOrderDraftStatus.Building});f.Db.SaveChanges();f.Db.WhatsAppOrderDraftItems.Add(new WhatsAppOrderDraftItem{Id=10,DraftId=9,ProductId=5,Quantity=1});f.Db.SaveChanges();}).ReturnsAsync(new AgentToolExecutionResult(true,new{}));await f.Orchestrator.ProcessIncomingMessageAsync(1,1);var second=requests[1];Assert.Single(second.Messages.Where(x=>x.Role=="system"&&x.Content!.StartsWith(WhatsAppAiContextPlanner.RuntimeContextMarker)));Assert.Contains("Arroz especial",second.Messages.Single(x=>x.Role=="system"&&x.Content!.StartsWith(WhatsAppAiContextPlanner.RuntimeContextMarker)).Content);Assert.Contains(second.Messages,x=>x.Role=="tool"&&x.ToolCallId=="add1");Assert.Contains(second.Tools,x=>x.Name=="set_payment_method");}
 
     [Fact] public async Task ToolLoopLimit_TransfersToHuman(){await using var f=await Fixture.Create(maxCalls:1);using var d=JsonDocument.Parse("{}");f.Provider.Setup(x=>x.GenerateAsync(It.IsAny<AiChatRequest>(),It.IsAny<CancellationToken>())).ReturnsAsync(new AiChatResponse(null,[new("c","search_products",d.RootElement.Clone())],"model",null,null,null));f.Tools.Setup(x=>x.ExecuteAsync(It.IsAny<string>(),It.IsAny<AgentToolExecutionContext>(),It.IsAny<JsonElement>(),It.IsAny<CancellationToken>())).ReturnsAsync(new AgentToolExecutionResult(true,new{}));var r=await f.Orchestrator.ProcessIncomingMessageAsync(1,1);Assert.True(r.TransferredToHuman);Assert.Equal(WhatsAppAttentionMode.WaitingForHuman,(await f.Db.WhatsAppConversations.FindAsync(1))!.AttentionMode);}
@@ -112,6 +122,21 @@ public class WhatsAppAiOrchestratorTests
       Assert.True(result.TransferredToHuman);
       f.Sender.Verify(x=>x.SendTransferTextAsync(
         1,1,It.IsAny<string>(),It.IsAny<string>(),It.IsAny<CancellationToken>()),Times.Once);
+    }
+
+    [Fact]
+    public async Task ProviderHttp400_IsConfigurationFailureWithoutPersistentRetryOrTransfer()
+    {
+      await using var f=await Fixture.Create();
+      f.Provider.Setup(x=>x.GenerateAsync(It.IsAny<AiChatRequest>(),It.IsAny<CancellationToken>()))
+        .ReturnsAsync(new AiChatResponse(null,[],"model",null,null,null,false,"Invalid function schema",400));
+
+      var result=await f.Orchestrator.ProcessIncomingMessageAsync(1,1);
+
+      var message=await f.Db.WhatsAppMessages.FindAsync(1);
+      Assert.False(result.TransferredToHuman);Assert.Equal(WhatsAppAiProcessingStatus.Failed,message!.AiProcessingStatus);Assert.Null(message.AiNextRetryAt);
+      f.Provider.Verify(x=>x.GenerateAsync(It.IsAny<AiChatRequest>(),It.IsAny<CancellationToken>()),Times.Once);
+      f.Sender.Verify(x=>x.SendTransferTextAsync(It.IsAny<int>(),It.IsAny<int>(),It.IsAny<string>(),It.IsAny<string>(),It.IsAny<CancellationToken>()),Times.Never);
     }
 
     [Fact]

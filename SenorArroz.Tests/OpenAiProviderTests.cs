@@ -35,6 +35,7 @@ public class OpenAiProviderTests
         Assert.Contains("Invalid parameter: tool_call_id", result.Error);
         Assert.Equal(400, result.HttpStatusCode);
         Assert.False(result.IsTransientError);
+        Assert.Equal(1, handler.CallCount);
     }
 
     [Fact]
