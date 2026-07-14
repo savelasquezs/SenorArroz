@@ -27,7 +27,6 @@ public class BranchAiSettingsControllerTests
             BranchId = 7,
             Provider = "openai",
             Model = "chat-latest",
-            ApiKey = "secret",
             IsActive = true
         });
         await db.SaveChangesAsync();
@@ -36,8 +35,11 @@ public class BranchAiSettingsControllerTests
         currentUser.SetupGet(x => x.Role).Returns("admin");
         currentUser.SetupGet(x => x.BranchId).Returns(7);
         var modelResolver = new Mock<IAiProviderResolver>();
-        modelResolver.Setup(x => x.ListModelsAsync("openai", "secret", It.IsAny<CancellationToken>()))
+        modelResolver.Setup(x => x.ListModelsAsync("openai", "environment-secret", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AiModelProviderResult(true, [new("chat-latest", "Chat Latest")], null));
+        var apiKeys = new Mock<IAiApiKeyProvider>();
+        apiKeys.Setup(x => x.GetApiKey("openai")).Returns("environment-secret");
+        apiKeys.Setup(x => x.GetEnvironmentVariableName("openai")).Returns("OPENAI_API_KEY");
         var chatProvider = new Mock<IAiChatProvider>();
         AiChatRequest? captured = null;
         chatProvider.Setup(x => x.GenerateAsync(It.IsAny<AiChatRequest>(), It.IsAny<CancellationToken>()))
@@ -55,6 +57,7 @@ public class BranchAiSettingsControllerTests
             new FakeClock(DateTime.UtcNow),
             modelResolver.Object,
             chatResolver.Object,
+            apiKeys.Object,
             NullLogger<BranchAiSettingsController>.Instance,
             Mock.Of<IWhatsAppSystemPromptBuilder>(),
             catalog.Object,
@@ -66,6 +69,7 @@ public class BranchAiSettingsControllerTests
         var tool = Assert.Single(captured!.Tools);
         Assert.Equal("search_products", tool.Name);
         Assert.Equal("object", tool.ParametersSchema.GetProperty("type").GetString());
+        Assert.Equal("environment-secret", captured.ApiKey);
         Assert.True((await db.BranchAiSettings.FindAsync(1))!.IsVerified);
     }
 }

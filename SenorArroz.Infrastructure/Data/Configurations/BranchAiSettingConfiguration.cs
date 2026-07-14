@@ -16,7 +16,6 @@ public class BranchAiSettingConfiguration : IEntityTypeConfiguration<BranchAiSet
         builder.Property(x => x.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(x => x.Provider).HasColumnName("provider").HasMaxLength(40).IsRequired();
         builder.Property(x => x.Model).HasColumnName("model").HasMaxLength(120).IsRequired();
-        builder.Property(x => x.ApiKey).HasColumnName("api_key").IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(false);
         builder.Property(x => x.Temperature).HasColumnName("temperature");
         builder.Property(x => x.MaxContextMessages).HasColumnName("max_context_messages").HasDefaultValue(20);

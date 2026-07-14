@@ -133,7 +133,6 @@ public class WhatsAppAiDiagnosticsTests
             BranchId = 1,
             Provider = "openai",
             Model = "gpt-4o-mini",
-            ApiKey = "secret",
             IsActive = true,
             IsVerified = true
         });
@@ -208,7 +207,6 @@ public class WhatsAppAiDiagnosticsTests
             BranchId = 1,
             Provider = "gemini",
             Model = "gemini-flash-latest",
-            ApiKey = "secret",
             IsActive = false,
             IsVerified = true
         });
@@ -236,7 +234,6 @@ public class WhatsAppAiDiagnosticsTests
             BranchId = 1,
             Provider = "openai",
             Model = "gpt-4o-mini",
-            ApiKey = "secret",
             IsActive = true,
             IsVerified = true
         });

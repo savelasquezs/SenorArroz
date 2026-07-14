@@ -16,6 +16,7 @@ public class WhatsAppAiOrchestrator(
     IApplicationDbContext db,
     IWhatsAppAiMessageClaimer claimer,
     IAiChatProviderResolver providers,
+    IAiApiKeyProvider apiKeys,
     IAgentToolExecutor tools,
     IWhatsAppAutomaticMessageSender sender,
     IWhatsAppNotificationService notifications,
@@ -79,6 +80,9 @@ public class WhatsAppAiOrchestrator(
 
             providerName = setting.Provider;
             model = setting.Model;
+            var apiKey = apiKeys.GetApiKey(setting.Provider);
+            if (string.IsNullOrWhiteSpace(apiKey))
+                return await RetryOrFail(message, $"Falta la variable de entorno {apiKeys.GetEnvironmentVariableName(setting.Provider)}.", ct, providerName, model, modelCalls, totalTools, conversation.BranchId);
             var provider = providers.Resolve(setting.Provider);
             if (provider is null)
                 return await RetryOrFail(message, "Proveedor no soportado.", ct, providerName, model, modelCalls, totalTools, conversation.BranchId);
@@ -188,7 +192,7 @@ public class WhatsAppAiOrchestrator(
                 modelCalls++;
                 var response = await GenerateWithRetry(
                     provider,
-                    new(model, setting.ApiKey, chat, tools.Definitions, setting.Temperature),
+                    new(model, apiKey, chat, tools.Definitions, setting.Temperature),
                     conversation.BranchId,
                     conversationId,
                     incomingMessageId,

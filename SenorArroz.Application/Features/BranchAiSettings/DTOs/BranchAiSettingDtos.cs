@@ -29,7 +29,6 @@ public class UpsertBranchAiSettingDto
 {
     public string Provider { get; set; } = string.Empty;
     public string Model { get; set; } = string.Empty;
-    public string? ApiKey { get; set; }
     public bool IsActive { get; set; }
     public double? Temperature { get; set; }
     public int MaxContextMessages { get; set; } = 20;
@@ -54,7 +53,6 @@ public class AiTestConnectionResultDto
 public class AiModelLookupDto
 {
     public string Provider { get; set; } = string.Empty;
-    public string? ApiKey { get; set; }
 }
 
 public class AiProviderModelDto

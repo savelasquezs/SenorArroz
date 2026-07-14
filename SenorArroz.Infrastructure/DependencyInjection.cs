@@ -62,6 +62,7 @@ public static class DependencyInjection
         services.AddScoped<IAiProvider>(sp => sp.GetRequiredService<OpenAiProvider>());
         services.AddScoped<IAiProvider>(sp => sp.GetRequiredService<GeminiProvider>());
         services.AddScoped<IAiProviderResolver, AiProviderResolver>();
+        services.AddSingleton<IAiApiKeyProvider, EnvironmentAiApiKeyProvider>();
         services.AddScoped<IAiChatProvider>(sp => sp.GetRequiredService<OpenAiProvider>());
         services.AddScoped<IAiChatProvider>(sp => sp.GetRequiredService<GeminiProvider>());
         services.AddScoped<IAiChatProviderResolver, AiChatProviderResolver>();
