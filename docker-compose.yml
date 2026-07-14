@@ -47,6 +47,8 @@ services:
       - EmailSettings__FromName=${EmailSettings__FromName:-El Senor Arroz}
       - EmailSettings__EnableSsl=${EmailSettings__EnableSsl:-true}
       - FrontendSettings__ResetPasswordUrl=http://localhost:5173/reset-password
+      - GOOGLE_MAPS_GEOCODING_API_KEY=${GOOGLE_MAPS_GEOCODING_API_KEY:-}
+      - GOOGLE_MAPS_ROUTES_API_KEY=${GOOGLE_MAPS_ROUTES_API_KEY:-}
     ports:
       - "5000:8080"
       - "5001:8081"

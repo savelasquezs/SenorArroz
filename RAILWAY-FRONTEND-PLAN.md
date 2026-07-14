@@ -62,7 +62,7 @@
 **Variables de entorno requeridas en build time:**
 - `VITE_API_URL` - URL pública del backend API: `https://senorarrozapi.up.railway.app/api`
 - `VITE_SIGNALR_HUB_URL` - URL pública del SignalR hub: `https://senorarrozapi.up.railway.app/hubs/orders`
-- `VITE_GOOGLE_MAPS_API_KEY` - API key de Google Maps: `AIzaSyCDIdNFxyStE1Kmeg1TCQEbw6f8NfHiOcI`
+- `VITE_GOOGLE_MAPS_API_KEY` - API key de Google Maps para el navegador, configurada como secreto del entorno
 - `VITE_GOOGLE_MAPS_MAP_ID` - Map ID de Google Maps: `bd195b095873dfbd928a393f`
 
 **Variables opcionales (usadas en el código pero no en Dockerfile actual):**
@@ -96,7 +96,7 @@
 3. **Configurar Build Arguments (Variables de Entorno de Build):**
    - `VITE_API_URL=https://senorarrozapi.up.railway.app/api`
    - `VITE_SIGNALR_HUB_URL=https://senorarrozapi.up.railway.app/hubs/orders`
-   - `VITE_GOOGLE_MAPS_API_KEY=AIzaSyCDIdNFxyStE1Kmeg1TCQEbw6f8NfHiOcI`
+   - `VITE_GOOGLE_MAPS_API_KEY=<configurar-en-railway>`
    - `VITE_GOOGLE_MAPS_MAP_ID=bd195b095873dfbd928a393f`
    - `VITE_APP_NAME=Sistema Señor Arroz` (si el Dockerfile lo soporta)
    - `VITE_LOGO_URL=` (vacío, configurar si se necesita)
@@ -185,7 +185,7 @@ app.UseCors("AllowFrontend");
 {
   "VITE_API_URL": "https://senorarrozapi.up.railway.app/api",
   "VITE_SIGNALR_HUB_URL": "https://senorarrozapi.up.railway.app/hubs/orders",
-  "VITE_GOOGLE_MAPS_API_KEY": "AIzaSyCDIdNFxyStE1Kmeg1TCQEbw6f8NfHiOcI",
+  "VITE_GOOGLE_MAPS_API_KEY": "${VITE_GOOGLE_MAPS_API_KEY}",
   "VITE_GOOGLE_MAPS_MAP_ID": "bd195b095873dfbd928a393f",
   "VITE_APP_NAME": "Sistema Señor Arroz",
   "VITE_LOGO_URL": "",
@@ -195,7 +195,7 @@ app.UseCors("AllowFrontend");
 
 **Valores actualizados:**
 - **Backend URL**: `https://senorarrozapi.up.railway.app` (URL real del backend en Railway)
-- **Google Maps API Key**: `AIzaSyCDIdNFxyStE1Kmeg1TCQEbw6f8NfHiOcI` (valor de `.env` y `.env.development`)
+- **Google Maps API Key**: configurar `VITE_GOOGLE_MAPS_API_KEY` como secreto del entorno
 - **Google Maps Map ID**: `bd195b095873dfbd928a393f` (valor de `.env` y `.env.development`)
 - **App Name**: `Sistema Señor Arroz` (valor de `.env.development` y `.env.production`)
 - **Logo URL**: Vacío (puede configurarse después si se necesita)

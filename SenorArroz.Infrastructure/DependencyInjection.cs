@@ -23,6 +23,15 @@ public static class DependencyInjection
     {
         services.Configure<DeliveryRouteOptions>(configuration.GetSection(DeliveryRouteOptions.SectionName));
         services.Configure<GoogleMapsRouteOptions>(configuration.GetSection(GoogleMapsRouteOptions.SectionName));
+        services.PostConfigure<GoogleMapsRouteOptions>(options =>
+        {
+            options.GeocodingApiKey = FirstNonEmpty(
+                configuration["GOOGLE_MAPS_GEOCODING_API_KEY"],
+                options.GeocodingApiKey);
+            options.RoutesApiKey = FirstNonEmpty(
+                configuration["GOOGLE_MAPS_ROUTES_API_KEY"],
+                options.RoutesApiKey);
+        });
         services.Configure<ApiPublicOptions>(configuration.GetSection(ApiPublicOptions.SectionName));
         services.Configure<BrandingOptions>(configuration.GetSection(BrandingOptions.SectionName));
         services.Configure<DeliveryPayrollOptions>(configuration.GetSection(DeliveryPayrollOptions.SectionName));

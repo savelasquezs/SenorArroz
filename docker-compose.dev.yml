@@ -27,6 +27,8 @@ services:
       - EmailSettings__FromName=${EmailSettings__FromName:-El Senor Arroz}
       - EmailSettings__EnableSsl=${EmailSettings__EnableSsl:-true}
       - FrontendSettings__ResetPasswordUrl=http://localhost:5174/reset-password
+      - GOOGLE_MAPS_GEOCODING_API_KEY=${GOOGLE_MAPS_GEOCODING_API_KEY:-}
+      - GOOGLE_MAPS_ROUTES_API_KEY=${GOOGLE_MAPS_ROUTES_API_KEY:-}
     volumes:
       # Montar código fuente para hot reload
       - ./SenorArroz.API:/src/SenorArroz.API

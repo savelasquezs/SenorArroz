@@ -113,6 +113,16 @@ public class GoogleAddressGeocoder(HttpClient http, IOptions<GoogleMapsRouteOpti
             return (null, "No fue posible consultar Google Maps.");
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var status = doc.RootElement.TryGetProperty("status", out var statusElement)
+            ? statusElement.GetString()
+            : null;
+        if (string.Equals(status, "REQUEST_DENIED", StringComparison.OrdinalIgnoreCase))
+            return (null, "Google Maps rechazó la credencial de Geocoding. Verifica que la API esté habilitada, tenga facturación y restricciones compatibles con el servidor.");
+        if (string.Equals(status, "OVER_DAILY_LIMIT", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "OVER_QUERY_LIMIT", StringComparison.OrdinalIgnoreCase))
+            return (null, "Google Maps Geocoding alcanzó su cuota o tiene un problema de facturación.");
+        if (string.Equals(status, "UNKNOWN_ERROR", StringComparison.OrdinalIgnoreCase))
+            return (null, "Google Maps Geocoding no estuvo disponible temporalmente.");
         if (!doc.RootElement.TryGetProperty("results", out var results) || results.GetArrayLength() == 0)
             return (null, "Google Maps no encontró la dirección.");
 

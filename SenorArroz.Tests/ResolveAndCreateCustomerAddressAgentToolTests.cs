@@ -163,6 +163,22 @@ public class ResolveAndCreateCustomerAddressAgentToolTests
         Assert.NotEqual("exact", result.Result.Quality);
     }
 
+    [Theory]
+    [InlineData("REQUEST_DENIED", "credencial")]
+    [InlineData("OVER_QUERY_LIMIT", "cuota")]
+    [InlineData("UNKNOWN_ERROR", "temporalmente")]
+    public async Task GoogleGeocoder_ExplainsGoogleServiceFailures(string status, string expectedError)
+    {
+        var geocoder = new GoogleAddressGeocoder(
+            new HttpClient(new StubHandler(_ => JsonSerializer.Serialize(new { results = Array.Empty<object>(), status }))),
+            Options.Create(new GoogleMapsRouteOptions { GeocodingApiKey = "key" }));
+
+        var result = await geocoder.Resolve("Carrera 65 # 95-24", null, null, default);
+
+        Assert.Null(result.Result);
+        Assert.Contains(expectedError, result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task ToolSchema_ExposesOnlyCustomerProvidedFields()
     {
