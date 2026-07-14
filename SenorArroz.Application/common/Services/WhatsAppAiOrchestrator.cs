@@ -124,7 +124,7 @@ public class WhatsAppAiOrchestrator(
                 .AsNoTracking()
                 .Where(x =>
                     x.ConversationId == conversationId
-                    && (x.Timestamp < message.Timestamp || x.Id == incomingMessageId)
+                    && x.Id <= incomingMessageId
                     && !string.IsNullOrWhiteSpace(x.TextBody)
                     && x.Type == WhatsAppMessageType.Text
                     && (x.Direction == WhatsAppMessageDirection.Inbound
