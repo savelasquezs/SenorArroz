@@ -141,9 +141,34 @@ public class WhatsAppAiOrchestrator(
             var systemPrompt=await promptBuilder.Build(conversation.BranchId,ct);
             var simpleState=await orderState.LoadAsync(conversationId,ct);
             var cart=await orderState.BuildSummaryAsync(conversation.BranchId,simpleState,ct);
-            var customerName=conversation.CustomerId.HasValue?await db.Customers.AsNoTracking().Where(x=>x.Id==conversation.CustomerId&&x.BranchId==conversation.BranchId).Select(x=>x.Name).FirstOrDefaultAsync(ct):null;
+            var customer=conversation.CustomerId.HasValue?await db.Customers.AsNoTracking().Where(x=>x.Id==conversation.CustomerId&&x.BranchId==conversation.BranchId).Select(x=>new
+            {
+                id=x.Id,
+                name=x.Name,
+                savedAddresses=x.Addresses
+                    .OrderByDescending(a=>a.IsPrimary)
+                    .ThenBy(a=>a.Id)
+                    .Select(a=>new
+                    {
+                        id=a.Id,
+                        address=a.AddressText,
+                        additionalInfo=a.AdditionalInfo,
+                        instructions=a.Instructions,
+                        neighborhood=a.Neighborhood.Name,
+                        deliveryFee=a.DeliveryFee,
+                        isPrimary=a.IsPrimary
+                    }).ToList()
+            }).FirstOrDefaultAsync(ct):null;
             var catalog=await db.Products.AsNoTracking().Include(x=>x.Category).Include(x=>x.CommercialProfile).Where(x=>x.Category.BranchId==conversation.BranchId&&x.Active).OrderBy(x=>x.Name).Select(x=>new{id=x.Id,name=x.Name,price=x.Price,available=!x.Stock.HasValue||x.Stock>0,x.ServesPeopleMin,x.ServesPeopleMax,commercialProfile=x.CommercialProfile==null?null:x.CommercialProfile.Name}).ToListAsync(ct);
-            var operationalContext=JsonSerializer.Serialize(new{architecture="simple_v1",customerName,cart,catalog},new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var operationalContext=JsonSerializer.Serialize(new
+            {
+                architecture="simple_v1",
+                customerName=customer?.name,
+                savedAddresses=customer?.savedAddresses,
+                isFirstAssistantReply=!history.Any(x=>x.Role=="assistant"),
+                cart,
+                catalog
+            },new JsonSerializerOptions(JsonSerializerDefaults.Web));
             var chat=new List<AiChatMessage>{new("system",systemPrompt),new("system",operationalContext)};chat.AddRange(history);
 
             logger.LogInformation(
