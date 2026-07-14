@@ -627,6 +627,116 @@ public class WhatsAppController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<WhatsAppMessageDto>>.SuccessResponse(messages, "Mensajes obtenidos."));
     }
 
+    [HttpGet("conversations/{conversationId:int}/order-draft")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppOrderDraftDto>>> GetOrderDraft(
+        int conversationId,
+        [FromServices] IWhatsAppSimpleOrderStateService orderState,
+        CancellationToken cancellationToken)
+    {
+        var conversation = await _db.WhatsAppConversations
+            .AsNoTracking()
+            .Include(x => x.Customer)
+            .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
+        if (conversation is null)
+            return NotFound(ApiResponse<WhatsAppOrderDraftDto>.ErrorResponse("Conversación no encontrada."));
+        if (!await CanAccessVerifiedBranchAsync(conversation.BranchId, cancellationToken))
+            return Forbid();
+
+        var state = await orderState.LoadAsync(conversationId, cancellationToken);
+        var summary = await orderState.BuildSummaryAsync(conversation.BranchId, state, cancellationToken);
+        WhatsAppOrderDraftAddressDto? selectedAddress = null;
+        if (state.SelectedAddressId.HasValue && conversation.CustomerId.HasValue)
+        {
+            selectedAddress = await _db.Addresses.AsNoTracking()
+                .Where(x => x.Id == state.SelectedAddressId.Value
+                    && x.CustomerId == conversation.CustomerId.Value
+                    && x.Customer.BranchId == conversation.BranchId)
+                .Select(x => new WhatsAppOrderDraftAddressDto(
+                    x.Id,
+                    x.AddressText,
+                    x.AdditionalInfo,
+                    x.Neighborhood.Name,
+                    x.DeliveryFee))
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        var deliveryFee = state.OrderType == OrderType.Delivery ? selectedAddress?.DeliveryFee ?? 0 : 0;
+        var notes = state.Items.ToDictionary(x => x.ProductId, x => x.Notes);
+        var dto = new WhatsAppOrderDraftDto
+        {
+            ConversationId = conversation.Id,
+            BranchId = conversation.BranchId,
+            CustomerId = conversation.CustomerId,
+            CustomerName = conversation.Customer?.Name ?? conversation.ContactName,
+            PhoneNumber = conversation.PhoneNumber,
+            OrderType = state.OrderType?.ToString().ToLowerInvariant(),
+            SelectedAddressId = selectedAddress?.Id,
+            SelectedAddress = selectedAddress,
+            Items = summary.Items.Select(x => new WhatsAppOrderDraftItemDto(
+                x.ProductId,
+                x.Name,
+                x.Quantity,
+                x.UnitPrice,
+                x.Subtotal,
+                notes.GetValueOrDefault(x.ProductId),
+                x.Available)).ToList(),
+            Activities = state.Activities
+                .OrderByDescending(x => x.Timestamp)
+                .Select(x => new WhatsAppOrderDraftActivityDto(x.Type, x.Message, x.Timestamp))
+                .ToList(),
+            Subtotal = summary.Subtotal,
+            DeliveryFee = deliveryFee,
+            Total = summary.Subtotal + deliveryFee,
+            TotalItems = summary.TotalItems,
+            UpdatedAt = state.UpdatedAt == default ? null : AsUtc(state.UpdatedAt)
+        };
+        return Ok(ApiResponse<WhatsAppOrderDraftDto>.SuccessResponse(dto, "Draft de WhatsApp obtenido."));
+    }
+
+    [HttpPut("conversations/{conversationId:int}/order-draft/fulfillment")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<string>>> UpdateOrderDraftFulfillment(
+        int conversationId,
+        [FromBody] UpdateWhatsAppOrderDraftFulfillmentDto request,
+        [FromServices] IWhatsAppSimpleOrderStateService orderState,
+        CancellationToken cancellationToken)
+    {
+        var conversation = await _db.WhatsAppConversations.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
+        if (conversation is null) return NotFound(ApiResponse<string>.ErrorResponse("Conversación no encontrada."));
+        if (!await CanAccessVerifiedBranchAsync(conversation.BranchId, cancellationToken)) return Forbid();
+        if (request.OrderType is not ("onsite" or "delivery"))
+            return BadRequest(ApiResponse<string>.ErrorResponse("Tipo de pedido inválido."));
+
+        Address? address = null;
+        if (request.OrderType == "delivery" && request.AddressId.HasValue && conversation.CustomerId.HasValue)
+        {
+            address = await _db.Addresses.AsNoTracking().Include(x => x.Neighborhood)
+                .FirstOrDefaultAsync(x => x.Id == request.AddressId.Value
+                    && x.CustomerId == conversation.CustomerId.Value
+                    && x.Customer.BranchId == conversation.BranchId,
+                    cancellationToken);
+            if (address is null) return BadRequest(ApiResponse<string>.ErrorResponse("La dirección no pertenece al cliente de la conversación."));
+        }
+
+        var state = await orderState.LoadAsync(conversationId, cancellationToken);
+        state.OrderType = request.OrderType == "onsite" ? OrderType.Onsite : OrderType.Delivery;
+        state.SelectedAddressId = request.OrderType == "delivery" ? address?.Id : null;
+        state.Activities.Add(new()
+        {
+            Type = "manual_fulfillment",
+            Message = request.OrderType == "onsite"
+                ? "Un asesor configuró el pedido para recoger en el local."
+                : address is null
+                    ? "Un asesor dejó pendiente la dirección de domicilio."
+                    : $"Un asesor seleccionó la dirección {address.AddressText}, {address.Neighborhood.Name}.",
+            Timestamp = _clock.UtcNow
+        });
+        await orderState.SaveAsync(conversationId, state, cancellationToken);
+        return Ok(ApiResponse<string>.SuccessResponse("ok", "Draft actualizado."));
+    }
+
     [HttpPost("conversations/{conversationId:int}/customer")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppConversationDto>>> LinkCustomer(

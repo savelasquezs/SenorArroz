@@ -22,9 +22,11 @@ public sealed class WhatsAppSimpleOrderStateService(ApplicationDbContext db,IClo
         try
         {
             var state=JsonSerializer.Deserialize<WhatsAppSimpleOrderState>(conversation.AiOrderState,JsonOptions);
+            if(state is not null)state.Activities??=[];
             if(state is null||state.Version!=1||state.Items.Any(x=>x.ProductId<=0||x.Quantity is<1 or>50))throw new JsonException("Estado de carrito inválido.");
             state.Items=state.Items.GroupBy(x=>x.ProductId).Select(g=>new WhatsAppSimpleOrderItem{ProductId=g.Key,Quantity=Math.Min(50,g.Sum(x=>x.Quantity)),Notes=g.Last().Notes}).ToList();
             state.AppliedOperationKeys=state.AppliedOperationKeys.Where(x=>!string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).TakeLast(20).ToList();
+            state.Activities=state.Activities.Where(x=>!string.IsNullOrWhiteSpace(x.Type)&&!string.IsNullOrWhiteSpace(x.Message)).TakeLast(30).ToList();
             if(state.SelectedAddressId<=0)state.SelectedAddressId=null;
             if(state.OrderType.HasValue&&!Enum.IsDefined(state.OrderType.Value))throw new JsonException("Tipo de pedido inválido.");
             return state;
@@ -37,7 +39,7 @@ public sealed class WhatsAppSimpleOrderStateService(ApplicationDbContext db,IClo
 
     public async Task SaveAsync(int conversationId,WhatsAppSimpleOrderState state,CancellationToken ct=default)
     {
-        state.Version=1;state.UpdatedAt=clock.UtcNow;state.AppliedOperationKeys=state.AppliedOperationKeys.Distinct(StringComparer.Ordinal).TakeLast(20).ToList();
+        state.Version=1;state.UpdatedAt=clock.UtcNow;state.AppliedOperationKeys=state.AppliedOperationKeys.Distinct(StringComparer.Ordinal).TakeLast(20).ToList();state.Activities=state.Activities.Where(x=>!string.IsNullOrWhiteSpace(x.Type)&&!string.IsNullOrWhiteSpace(x.Message)).TakeLast(30).ToList();
         var conversation=await db.WhatsAppConversations.FirstAsync(x=>x.Id==conversationId,ct);
         conversation.AiOrderState=JsonSerializer.Serialize(state,JsonOptions);conversation.AiOrderStateUpdatedAt=clock.UtcNow;await db.SaveChangesAsync(ct);
     }

@@ -19,7 +19,7 @@ public class WhatsAppSimpleOrderStateTests
         var service=Service(db);var tool=new ApplyOrderActionAgentTool(service,db);
         using var args=JsonDocument.Parse("""{"action":"add_product","productId":1,"quantity":2}""");
         var result=await tool.ExecuteAsync(new(1,1,ExecutionId:"run"),args.RootElement,default);
-        Assert.True(result.Success);var state=await service.LoadAsync(1);Assert.Equal(2,state.Items.Single().Quantity);
+        Assert.True(result.Success);var state=await service.LoadAsync(1);Assert.Equal(2,state.Items.Single().Quantity);Assert.Contains(state.Activities,x=>x.Message.Contains("Paisa"));
         Assert.Equal(24000,(await service.BuildSummaryAsync(1,state)).Subtotal);
     }
 

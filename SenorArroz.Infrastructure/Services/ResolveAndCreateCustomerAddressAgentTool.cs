@@ -58,6 +58,12 @@ public sealed class ResolveAndCreateCustomerAddressAgentTool(
             var state = await states.LoadAsync(context.ConversationId, cancellationToken);
             state.OrderType = OrderType.Delivery;
             state.SelectedAddressId = persisted.Address!.Id;
+            state.Activities.Add(new()
+            {
+                Type = "address",
+                Message = $"Validó y seleccionó la dirección {persisted.Address.AddressText}, {resolved.Address!.Neighborhood.Name}.",
+                Timestamp = DateTime.UtcNow
+            });
             await states.SaveAsync(context.ConversationId, state, cancellationToken);
             if (transaction is not null)
                 await transaction.CommitAsync(cancellationToken);

@@ -115,6 +115,12 @@ public sealed class CreateCustomerAgentTool(
             {
                 state.OrderType = OrderType.Onsite;
                 state.SelectedAddressId = null;
+                state.Activities.Add(new()
+                {
+                    Type = "customer",
+                    Message = $"Vinculó a {customer.Name} y configuró el pedido para recoger en el local.",
+                    Timestamp = DateTime.UtcNow
+                });
             }
             else
             {
@@ -128,6 +134,12 @@ public sealed class CreateCustomerAgentTool(
                 addressCreated = persisted.Created;
                 state.OrderType = OrderType.Delivery;
                 state.SelectedAddressId = selectedAddress!.Id;
+                state.Activities.Add(new()
+                {
+                    Type = "customer_address",
+                    Message = $"Vinculó a {customer.Name} y seleccionó {selectedAddress.AddressText} para domicilio.",
+                    Timestamp = DateTime.UtcNow
+                });
             }
 
             await states.SaveAsync(context.ConversationId, state, cancellationToken);

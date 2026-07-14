@@ -77,6 +77,7 @@ public static class DependencyInjection
         services.AddScoped<IAgentTool>(sp => sp.GetRequiredService<RequestHumanAssistanceAgentTool>());
         services.AddScoped<IAgentTool, ResolveAndCreateCustomerAddressAgentTool>();
         services.AddScoped<IAgentTool, CreateCustomerAgentTool>();
+        services.AddScoped<IAgentTool, SetOrderFulfillmentAgentTool>();
         services.AddScoped<IWhatsAppAiMessageClaimer, WhatsAppAiMessageClaimer>();
 
         // Repositories

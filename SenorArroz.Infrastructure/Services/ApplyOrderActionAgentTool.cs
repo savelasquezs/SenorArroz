@@ -50,6 +50,14 @@ public sealed class ApplyOrderActionAgentTool(IWhatsAppSimpleOrderStateService s
         else if(action=="remove_product")state.Items.RemoveAll(x=>x.ProductId==productId);
         else state.Items.Clear();
 
+        var activityMessage=action switch
+        {
+            "add_product"=>$"Agregó {effectiveQuantity} × {product!.Name} al pedido.",
+            "set_quantity"=>$"Cambió {product!.Name} a {effectiveQuantity} unidad(es).",
+            "remove_product"=>$"Retiró {product!.Name} del pedido.",
+            _=>"Vació los productos del pedido."
+        };
+        state.Activities.Add(new(){Type="cart",Message=activityMessage,Timestamp=DateTime.UtcNow});
         state.AppliedOperationKeys.Add(operationKey);await states.SaveAsync(c.ConversationId,state,ct);var summary=await states.BuildSummaryAsync(c.BranchId,state,ct);
         return new(true,new{actionApplied=action,alreadyApplied=false,product=product is null?null:new{productId=product.Id,product.Name,quantity=state.Items.FirstOrDefault(x=>x.ProductId==product.Id)?.Quantity??0},cart=summary},Code:"order_action_applied");
     }

@@ -235,6 +235,30 @@ public class WhatsAppAiProcessingDto
     public DateTime? ProcessedAt { get; set; }
 }
 
+public class WhatsAppOrderDraftDto
+{
+    public int ConversationId { get; set; }
+    public int BranchId { get; set; }
+    public int? CustomerId { get; set; }
+    public string? CustomerName { get; set; }
+    public string PhoneNumber { get; set; } = string.Empty;
+    public string? OrderType { get; set; }
+    public int? SelectedAddressId { get; set; }
+    public WhatsAppOrderDraftAddressDto? SelectedAddress { get; set; }
+    public IReadOnlyList<WhatsAppOrderDraftItemDto> Items { get; set; } = [];
+    public IReadOnlyList<WhatsAppOrderDraftActivityDto> Activities { get; set; } = [];
+    public int Subtotal { get; set; }
+    public int DeliveryFee { get; set; }
+    public int Total { get; set; }
+    public int TotalItems { get; set; }
+    public DateTime? UpdatedAt { get; set; }
+}
+
+public record WhatsAppOrderDraftItemDto(int ProductId, string Name, int Quantity, int UnitPrice, int Subtotal, string? Notes, bool Available);
+public record WhatsAppOrderDraftAddressDto(int Id, string Address, string? AdditionalInfo, string Neighborhood, int DeliveryFee);
+public record WhatsAppOrderDraftActivityDto(string Type, string Message, DateTime Timestamp);
+public class UpdateWhatsAppOrderDraftFulfillmentDto { public string OrderType { get; set; } = string.Empty; public int? AddressId { get; set; } }
+
 public class WhatsAppConversationSearchDto
 {
     public int? BranchId { get; set; }
