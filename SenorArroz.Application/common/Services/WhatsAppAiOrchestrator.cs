@@ -42,8 +42,13 @@ public class WhatsAppAiOrchestrator(
         var ct = timeout.Token;
         var modelCalls = 0;
         var totalTools = 0;
+        var executedToolNames = new List<string>();
+        string? toolCycleLimitReason = null;
         string? providerName = null;
         string? model = null;
+        var maxModelCalls = Math.Clamp(_options.MaxModelCallsPerMessage, 1, 3);
+        var maxToolsPerCall = Math.Clamp(_options.MaxToolsPerCall, 1, 1);
+        var maxTotalToolCalls = Math.Clamp(_options.MaxTotalToolCalls, 1, 2);
 
         try
         {
@@ -187,7 +192,7 @@ public class WhatsAppAiOrchestrator(
                 chat.Count,
                 string.Join(",",tools.Definitions.Select(x=>x.Name)));
 
-            while (modelCalls < Math.Min(2,_options.MaxModelCallsPerMessage))
+            while (modelCalls < maxModelCalls)
             {
                 if (!await StillAi(conversationId, ct))
                     return await Ignore(message, "La atención cambió durante el procesamiento.", ct, conversation.BranchId);
@@ -263,9 +268,22 @@ public class WhatsAppAiOrchestrator(
                     return new(true, false, null, sent.Success, false, providerName, model, modelCalls, totalTools, sent.Error);
                 }
 
-                if (response.ToolCalls.Count>1||totalTools>0||response.ToolCalls.Count > _options.MaxToolsPerCall
-                    || totalTools + response.ToolCalls.Count > Math.Min(1,_options.MaxTotalToolCalls))
+                if (response.ToolCalls.Count > maxToolsPerCall
+                    || totalTools + response.ToolCalls.Count > maxTotalToolCalls)
+                {
+                    var executed = executedToolNames.Count == 0 ? "ninguna" : string.Join(", ", executedToolNames);
+                    var requested = response.ToolCalls.Count == 0 ? "ninguna" : string.Join(", ", response.ToolCalls.Select(x => x.Name));
+                    toolCycleLimitReason = $"Se alcanzó el límite seguro del ciclo de herramientas. Ejecutadas: {executed}. Solicitud bloqueada: {requested}.";
+                    logger.LogWarning(
+                        "WhatsApp AI tool cycle limit ConversationId={ConversationId} IncomingMessageId={IncomingMessageId} ExecutedTools={ExecutedTools} RequestedTools={RequestedTools} MaxTotalTools={MaxTotalTools} MaxToolsPerCall={MaxToolsPerCall}",
+                        conversationId,
+                        incomingMessageId,
+                        executed,
+                        requested,
+                        maxTotalToolCalls,
+                        maxToolsPerCall);
                     break;
+                }
 
                 chat.Add(new("assistant", response.Text, null, response.ToolCalls));
                 foreach (var call in response.ToolCalls)
@@ -288,6 +306,7 @@ public class WhatsAppAiOrchestrator(
                         call.Arguments,
                         ct);
                     totalTools++;
+                    executedToolNames.Add(call.Name);
                     if (result.TransferredToHuman)
                     {
                         var transferred = await db.WhatsAppMessages
@@ -347,7 +366,8 @@ public class WhatsAppAiOrchestrator(
             return await Transfer(
                 message,
                 conversation,
-                "Se alcanzó el límite del ciclo de herramientas.",
+                toolCycleLimitReason
+                    ?? $"Se alcanzó el límite seguro del ciclo de herramientas después de {modelCalls} llamada(s) al modelo y {totalTools} herramienta(s): {(executedToolNames.Count == 0 ? "ninguna" : string.Join(", ", executedToolNames))}.",
                 ct,
                 providerName,
                 model,
