@@ -148,6 +148,7 @@ public class WhatsAppConversationDto
     public string? LastMessagePreview { get; set; }
     public int UnreadCount { get; set; }
     public string AttentionMode { get; set; } = "ai";
+    public string? AttentionReason { get; set; }
     public int? AssignedUserId { get; set; }
     public string? AssignedUserName { get; set; }
     public DateTime? AiPausedAt { get; set; }
@@ -163,6 +164,7 @@ public class WhatsAppAttentionDto
 {
     public int ConversationId { get; set; }
     public string AttentionMode { get; set; } = "ai";
+    public string? AttentionReason { get; set; }
     public int? AssignedUserId { get; set; }
     public string? AssignedUserName { get; set; }
     public DateTime? AiPausedAt { get; set; }

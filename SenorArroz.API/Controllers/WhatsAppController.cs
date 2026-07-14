@@ -570,7 +570,29 @@ public class WhatsAppController : ControllerBase
             .ToListAsync(cancellationToken);
         var assignedIds = conversationEntities.Where(x => x.AssignedUserId.HasValue).Select(x => x.AssignedUserId!.Value).Distinct().ToList();
         var assignedNames = await _db.Users.AsNoTracking().Where(x => assignedIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
-        var conversations = conversationEntities.Select(x => ToConversationDto(x, x.AssignedUserId.HasValue ? assignedNames.GetValueOrDefault(x.AssignedUserId.Value) : null)).ToList();
+        var waitingIds = conversationEntities
+            .Where(x => x.AttentionMode == WhatsAppAttentionMode.WaitingForHuman)
+            .Select(x => x.Id)
+            .ToList();
+        var transferredMessages = await _db.WhatsAppMessages
+            .AsNoTracking()
+            .Where(x => waitingIds.Contains(x.ConversationId)
+                && x.AiProcessingStatus == WhatsAppAiProcessingStatus.TransferredToHuman
+                && x.AiProcessingError != null)
+            .Select(x => new { x.ConversationId, x.Timestamp, x.Id, x.AiProcessingError })
+            .ToListAsync(cancellationToken);
+        var attentionReasons = transferredMessages
+            .GroupBy(x => x.ConversationId)
+            .ToDictionary(
+                x => x.Key,
+                x => WhatsAppAiDiagnosticsMapper.SanitizeTechnicalDetail(x
+                    .OrderByDescending(message => message.Timestamp)
+                    .ThenByDescending(message => message.Id)
+                    .First().AiProcessingError));
+        var conversations = conversationEntities.Select(x => ToConversationDto(
+            x,
+            x.AssignedUserId.HasValue ? assignedNames.GetValueOrDefault(x.AssignedUserId.Value) : null,
+            attentionReasons.GetValueOrDefault(x.Id))).ToList();
 
         return Ok(ApiResponse<IReadOnlyList<WhatsAppConversationDto>>.SuccessResponse(conversations, "Conversaciones obtenidas."));
     }
@@ -740,7 +762,7 @@ public class WhatsAppController : ControllerBase
         var aiActive = await IsBranchAiActiveAsync(conversation.BranchId, ct); var now = _clock.UtcNow; var userId = _currentUser.Id;
         var changed = action switch { "take" => _attentionService.Take(conversation, userId, now), "ai" => _attentionService.ReturnToAi(conversation, userId, now, aiActive), "pause" => _attentionService.Pause(conversation, userId, now), "request-human" => _attentionService.RequestHuman(conversation, userId, now), "close" => _attentionService.Close(conversation, userId, now), "reopen" => _attentionService.Reopen(conversation, userId, now, aiActive), _ => throw new ArgumentOutOfRangeException(nameof(action)) };
         if (changed) await _db.SaveChangesAsync(ct); var dto = await ToAttentionDtoAsync(conversation, ct);
-        if (changed) await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId, ToConversationDto(conversation, dto.AssignedUserName), ct);
+        if (changed) await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId, ToConversationDto(conversation, dto.AssignedUserName, dto.AttentionReason), ct);
         return Ok(ApiResponse<WhatsAppAttentionDto>.SuccessResponse(dto, "Estado de atención actualizado."));
     }
 
@@ -779,7 +801,7 @@ public class WhatsAppController : ControllerBase
             {
                 await _db.SaveChangesAsync(cancellationToken);
                 var attention = await ToAttentionDtoAsync(conversation, cancellationToken);
-                await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId, ToConversationDto(conversation, attention.AssignedUserName), cancellationToken);
+                await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId, ToConversationDto(conversation, attention.AssignedUserName, attention.AttentionReason), cancellationToken);
             }
         }
 
@@ -2250,12 +2272,22 @@ public class WhatsAppController : ControllerBase
     private async Task<WhatsAppAttentionDto> ToAttentionDtoAsync(WhatsAppConversation conversation, CancellationToken ct)
     {
         var name = conversation.AssignedUserId.HasValue ? await _db.Users.AsNoTracking().Where(x => x.Id == conversation.AssignedUserId).Select(x => x.Name).FirstOrDefaultAsync(ct) : null;
-        return new WhatsAppAttentionDto { ConversationId = conversation.Id, AttentionMode = AttentionModeToApi(conversation.AttentionMode), AssignedUserId = conversation.AssignedUserId, AssignedUserName = name, AiPausedAt = AsUtc(conversation.AiPausedAt), HumanAssignedAt = AsUtc(conversation.HumanAssignedAt), ClosedAt = AsUtc(conversation.ClosedAt), AttentionModeUpdatedAt = AsUtc(conversation.AttentionModeUpdatedAt), AttentionModeUpdatedByUserId = conversation.AttentionModeUpdatedByUserId };
+        var reason = conversation.AttentionMode == WhatsAppAttentionMode.WaitingForHuman
+            ? await _db.WhatsAppMessages.AsNoTracking()
+                .Where(x => x.ConversationId == conversation.Id
+                    && x.AiProcessingStatus == WhatsAppAiProcessingStatus.TransferredToHuman
+                    && x.AiProcessingError != null)
+                .OrderByDescending(x => x.Timestamp)
+                .ThenByDescending(x => x.Id)
+                .Select(x => x.AiProcessingError)
+                .FirstOrDefaultAsync(ct)
+            : null;
+        return new WhatsAppAttentionDto { ConversationId = conversation.Id, AttentionMode = AttentionModeToApi(conversation.AttentionMode), AttentionReason = WhatsAppAiDiagnosticsMapper.SanitizeTechnicalDetail(reason), AssignedUserId = conversation.AssignedUserId, AssignedUserName = name, AiPausedAt = AsUtc(conversation.AiPausedAt), HumanAssignedAt = AsUtc(conversation.HumanAssignedAt), ClosedAt = AsUtc(conversation.ClosedAt), AttentionModeUpdatedAt = AsUtc(conversation.AttentionModeUpdatedAt), AttentionModeUpdatedByUserId = conversation.AttentionModeUpdatedByUserId };
     }
 
     private static string AttentionModeToApi(WhatsAppAttentionMode mode) => mode switch { WhatsAppAttentionMode.Ai => "ai", WhatsAppAttentionMode.Human => "human", WhatsAppAttentionMode.WaitingForHuman => "waitingForHuman", WhatsAppAttentionMode.Paused => "paused", WhatsAppAttentionMode.Closed => "closed", _ => "human" };
 
-    private static WhatsAppConversationDto ToConversationDto(WhatsAppConversation conversation, string? assignedUserName = null) => new()
+    private static WhatsAppConversationDto ToConversationDto(WhatsAppConversation conversation, string? assignedUserName = null, string? attentionReason = null) => new()
     {
         Id = conversation.Id,
         BranchId = conversation.BranchId,
@@ -2269,6 +2301,7 @@ public class WhatsAppController : ControllerBase
         LastMessagePreview = conversation.LastMessagePreview,
         UnreadCount = conversation.UnreadCount,
         AttentionMode = AttentionModeToApi(conversation.AttentionMode),
+        AttentionReason = conversation.AttentionMode == WhatsAppAttentionMode.WaitingForHuman ? attentionReason : null,
         AssignedUserId = conversation.AssignedUserId,
         AssignedUserName = assignedUserName,
         AiPausedAt = AsUtc(conversation.AiPausedAt),

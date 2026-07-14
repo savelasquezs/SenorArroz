@@ -146,7 +146,7 @@ public static partial class WhatsAppAiDiagnosticsMapper
             WhatsAppAiProcessingStatus.TransferredToHuman =>
                 ("warning", "Transferido a una persona", category == "meta"
                     ? "La conversación fue transferida, pero no se pudo entregar el aviso al cliente por WhatsApp."
-                    : "La conversación requiere atención humana."),
+                    : technicalDetail ?? "La conversación requiere atención humana."),
             WhatsAppAiProcessingStatus.Ignored when category is "configuration" =>
                 ("error", "Agente de IA no disponible", FriendlyError(category, false)),
             WhatsAppAiProcessingStatus.Ignored =>

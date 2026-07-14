@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Models;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -116,6 +117,8 @@ public class RequestHumanAssistanceAgentTool(
                         PhoneNumber = conversation.PhoneNumber,
                         Status = "open",
                         AttentionMode = "waitingForHuman",
+                        AttentionReason = WhatsAppAiDiagnosticsMapper.SanitizeTechnicalDetail(
+                            arguments.GetProperty("reason").GetString()?.Trim()),
                         LastMessageAt = conversation.LastMessageAt,
                         LastMessagePreview = conversation.LastMessagePreview,
                         UnreadCount = conversation.UnreadCount,

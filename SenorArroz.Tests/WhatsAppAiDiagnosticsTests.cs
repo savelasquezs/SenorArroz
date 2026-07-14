@@ -101,6 +101,27 @@ public class WhatsAppAiDiagnosticsTests
     }
 
     [Fact]
+    public void Mapper_ShowsOperationalTransferReasonInFriendlyDetail()
+    {
+        var message = new WhatsAppMessage
+        {
+            Id = 91,
+            ConversationId = 3,
+            Direction = WhatsAppMessageDirection.Inbound,
+            Type = WhatsAppMessageType.Text,
+            Status = WhatsAppMessageStatus.Received,
+            Timestamp = DateTime.UtcNow,
+            AiProcessingStatus = WhatsAppAiProcessingStatus.TransferredToHuman,
+            AiProcessingError = "Google Maps Geocoding no está configurado."
+        };
+
+        var result = WhatsAppAiDiagnosticsMapper.ToDto(message, 3, includeTechnicalDetail: false);
+
+        Assert.Equal("Google Maps Geocoding no está configurado.", result.Detail);
+        Assert.Null(result.TechnicalDetail);
+    }
+
+    [Fact]
     public void Mapper_ClassifiesUnsupportedProviderAsConfiguration()
     {
         var message = new WhatsAppMessage

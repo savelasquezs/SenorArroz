@@ -34,7 +34,8 @@ public class HumanAssistanceAgentToolTests
         Assert.Equal(WhatsAppAttentionMode.WaitingForHuman, (await db.WhatsAppConversations.FindAsync(1))!.AttentionMode);
         notifications.Verify(x => x.NotifyAttentionChangedAsync(
             1,
-            It.IsAny<WhatsAppConversationDto>(),
+            It.Is<WhatsAppConversationDto>(conversation =>
+                conversation.AttentionReason == "El cliente solicita asesor"),
             It.IsAny<CancellationToken>()), Times.Once);
         sender.VerifyAll();
     }
