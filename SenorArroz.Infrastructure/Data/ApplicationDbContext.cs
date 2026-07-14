@@ -56,9 +56,6 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<WhatsAppTemplate> WhatsAppTemplates { get; set; }
 
         public virtual DbSet<WhatsAppWebhookEvent> WhatsAppWebhookEvents { get; set; }
-        public virtual DbSet<WhatsAppOrderDraft> WhatsAppOrderDrafts { get; set; }
-        public virtual DbSet<WhatsAppOrderDraftItem> WhatsAppOrderDraftItems { get; set; }
-        public virtual DbSet<WhatsAppOrderConfirmation> WhatsAppOrderConfirmations { get; set; }
 
         public virtual DbSet<PrintJob> PrintJobs { get; set; }
 
@@ -132,9 +129,6 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new WhatsAppQuickReplyConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppTemplateConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppWebhookEventConfiguration());
-            modelBuilder.ApplyConfiguration(new WhatsAppOrderDraftConfiguration());
-            modelBuilder.ApplyConfiguration(new WhatsAppOrderDraftItemConfiguration());
-            modelBuilder.ApplyConfiguration(new WhatsAppOrderConfirmationConfiguration());
             modelBuilder.ApplyConfiguration(new PrintJobConfiguration());
             modelBuilder.ApplyConfiguration(new UserConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerConfiguration());

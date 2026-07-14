@@ -11,7 +11,6 @@ public class BranchAiSetting : BaseEntity
     public bool IsActive { get; set; }
     public double? Temperature { get; set; }
     public int MaxContextMessages { get; set; } = 20;
-    public string ContextStrategy { get; set; } = "legacy";
     public DateTime? LastTestedAt { get; set; }
     public bool IsVerified { get; set; }
     public string AssistantName { get; set; } = string.Empty;

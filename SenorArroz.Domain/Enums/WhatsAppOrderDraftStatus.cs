@@ -1,3 +1,0 @@
-namespace SenorArroz.Domain.Enums;
-public enum WhatsAppOrderDraftStatus{Building,AwaitingCustomerData,AwaitingAddress,AwaitingPayment,ReadyForConfirmation,Confirmed,Cancelled,Expired,ConvertedToOrder}
-public enum WhatsAppDraftPaymentKind{Cash,BankTransfer}

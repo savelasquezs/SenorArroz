@@ -20,7 +20,6 @@ public class BranchAiSettingConfiguration : IEntityTypeConfiguration<BranchAiSet
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(false);
         builder.Property(x => x.Temperature).HasColumnName("temperature");
         builder.Property(x => x.MaxContextMessages).HasColumnName("max_context_messages").HasDefaultValue(20);
-        builder.Property(x => x.ContextStrategy).HasColumnName("context_strategy").HasMaxLength(32).HasDefaultValue("legacy");
         builder.Property(x => x.LastTestedAt).HasColumnName("last_tested_at");
         builder.Property(x => x.IsVerified).HasColumnName("is_verified").HasDefaultValue(false);
         builder.Property(x => x.AssistantName).HasColumnName("assistant_name").HasMaxLength(200).HasDefaultValue("");

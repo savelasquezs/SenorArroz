@@ -30,6 +30,8 @@ public class WhatsAppConversationConfiguration : IEntityTypeConfiguration<WhatsA
         builder.Property(x => x.ClosedAt).HasColumnName("closed_at");
         builder.Property(x => x.AttentionModeUpdatedAt).HasColumnName("attention_mode_updated_at").HasDefaultValueSql("NOW()");
         builder.Property(x => x.AttentionModeUpdatedByUserId).HasColumnName("attention_mode_updated_by_user_id");
+        builder.Property(x => x.AiOrderState).HasColumnName("ai_order_state").HasColumnType("jsonb");
+        builder.Property(x => x.AiOrderStateUpdatedAt).HasColumnName("ai_order_state_updated_at");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

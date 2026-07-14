@@ -20,6 +20,8 @@ public class WhatsAppConversation : BaseEntity
     public DateTime? ClosedAt { get; set; }
     public DateTime AttentionModeUpdatedAt { get; set; }
     public int? AttentionModeUpdatedByUserId { get; set; }
+    public string? AiOrderState { get; set; }
+    public DateTime? AiOrderStateUpdatedAt { get; set; }
 
     public virtual Branch Branch { get; set; } = null!;
     public virtual Customer? Customer { get; set; }

@@ -31,7 +31,7 @@ public class WhatsAppAiInvocation
     public decimal? EstimatedCostUsd { get; set; }
     public DateTime? PricingEffectiveDate { get; set; }
     public DateTime CreatedAt { get; set; }
-    public string ContextStrategy { get; set; } = "legacy";
+    public string ContextStrategy { get; set; } = "simple_v1";
     public int? ContextMessageCount { get; set; }
     public int? ToolDefinitionCount { get; set; }
     public int? SystemPromptCharacters { get; set; }

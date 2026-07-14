@@ -30,8 +30,6 @@ public static class DependencyInjection
         services.Configure<WhatsAppCloudOptions>(configuration.GetSection(WhatsAppCloudOptions.SectionName));
         services.Configure<WhatsAppAiOrchestratorOptions>(configuration.GetSection(WhatsAppAiOrchestratorOptions.SectionName));
         services.Configure<WhatsAppAiPricingOptions>(configuration.GetSection(WhatsAppAiPricingOptions.SectionName));
-        services.Configure<WhatsAppAiContextOptimizationOptions>(configuration.GetSection(WhatsAppAiContextOptimizationOptions.SectionName));
-        services.Configure<WhatsAppOrderDraftOptions>(configuration.GetSection(WhatsAppOrderDraftOptions.SectionName));
         services.PostConfigure<WhatsAppCloudOptions>(options =>
         {
             options.AccessToken = FirstNonEmpty(configuration["WHATSAPP_TOKEN"], options.AccessToken);
@@ -67,36 +65,10 @@ public static class DependencyInjection
         services.AddScoped<IAiChatProvider>(sp => sp.GetRequiredService<OpenAiProvider>());
         services.AddScoped<IAiChatProvider>(sp => sp.GetRequiredService<GeminiProvider>());
         services.AddScoped<IAiChatProviderResolver, AiChatProviderResolver>();
-        services.AddScoped<IWhatsAppProductMatcher, WhatsAppProductMatcher>();
-        services.AddScoped<IWhatsAppOrderDraftSession, WhatsAppOrderDraftSession>();
-        services.AddScoped<IAgentTool, SearchProductsAgentTool>();
-        services.AddScoped<IAgentTool, ProductDetailsAgentTool>();
         services.AddScoped<RegisteredNeighborhoodResolver>();
         services.AddHttpClient<GoogleAddressGeocoder>();
-        services.AddScoped<IAgentTool, FindRegisteredNeighborhoodAgentTool>();
-        services.AddScoped<IAgentTool, ResolveAddressWithMapsAgentTool>();
-        services.AddScoped<IAgentTool, ValidateDeliveryAddressAgentTool>();
-        services.AddScoped<IAgentTool, FindCustomerByPhoneAgentTool>();
-        services.AddScoped<IAgentTool, CreateCustomerAgentTool>();
-        services.AddScoped<IAgentTool, UpdateCustomerAgentTool>();
-        services.AddScoped<IAgentTool, ListCustomerAddressesAgentTool>();
-        services.AddScoped<IAgentTool, CreateCustomerAddressAgentTool>();
-        services.AddScoped<IAgentTool, SaveValidatedCustomerAddressAgentTool>();
-        services.AddScoped<WhatsAppDraftService>(sp=>new WhatsAppDraftService(sp.GetRequiredService<IWhatsAppOrderDraftCalculator>(),sp.GetRequiredService<IWhatsAppOrderDraftSession>()));
-        services.AddScoped<IAgentTool, GetOrCreateOrderDraftAgentTool>();
-        services.AddScoped<IAgentTool, GetOrderDraftAgentTool>();
-        services.AddScoped<IAgentTool, SetOrderTypeAgentTool>();
-        services.AddScoped<IAgentTool, AddDraftItemAgentTool>();
-        services.AddScoped<IAgentTool, RemoveDraftItemAgentTool>();
-        services.AddScoped<IAgentTool, SetDraftNotesAgentTool>();
-        services.AddScoped<IAgentTool, CancelOrderDraftAgentTool>();
-        services.AddScoped<IAgentTool, SelectCustomerAddressAgentTool>();
-        services.AddScoped<IAgentTool, CalculateDeliveryFeeAgentTool>();
-        services.AddScoped<IAgentTool, ListPaymentMethodsAgentTool>();
-        services.AddScoped<IAgentTool, SetPaymentMethodAgentTool>();
-        services.AddScoped<IAgentTool, CalculateCashChangeAgentTool>();
-        services.AddScoped<IAgentTool, GetOrderConfirmationSummaryAgentTool>();
-        services.AddScoped<IAgentTool, MarkDraftReadyAgentTool>();
+        services.AddScoped<IWhatsAppSimpleOrderStateService, WhatsAppSimpleOrderStateService>();
+        services.AddScoped<IAgentTool, ApplyOrderActionAgentTool>();
         services.AddScoped<IAgentTool, SendProductDetailsAgentTool>();
         services.AddScoped<IAgentTool, SendMenuAgentTool>();
         services.AddScoped<IAgentTool, RequestHumanAssistanceAgentTool>();

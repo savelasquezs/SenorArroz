@@ -1,0 +1,26 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using SenorArroz.Application.Options;
+using SenorArroz.Infrastructure.Data;
+
+namespace SenorArroz.Infrastructure.Services;
+
+public record NeighborhoodMatch(int Id,string Name,string BranchName,int DeliveryFee,bool RequiresBranchReassignment);
+public record NeighborhoodResolution(bool Matched,bool RequiresConfirmation,NeighborhoodMatch? Match,IReadOnlyList<NeighborhoodMatch> Options,string? SuggestedQuestion);
+
+public class RegisteredNeighborhoodResolver(ApplicationDbContext db)
+{
+ public async Task<NeighborhoodResolution> Resolve(string query,int conversationBranchId,CancellationToken ct){var sought=Normalize(query);if(sought.Length<2)return new(false,false,null,[],null);var rows=await db.Neighborhoods.AsNoTracking().Where(x=>x.Active).Include(x=>x.Branch).Select(x=>new{x.Id,x.Name,x.BranchId,BranchName=x.Branch.Name,x.DeliveryFee}).ToListAsync(ct);var ranked=rows.Select(x=>new{Row=x,Score=Score(sought,Normalize(x.Name))}).Where(x=>x.Score>=.68).OrderByDescending(x=>x.Score).ThenBy(x=>x.Row.Name).Take(5).ToList();if(ranked.Count==0)return new(false,false,null,[],null);var options=ranked.Select(x=>new NeighborhoodMatch(x.Row.Id,x.Row.Name,x.Row.BranchName,x.Row.DeliveryFee,x.Row.BranchId!=conversationBranchId)).ToList();var safe=ranked[0].Score>=.82&&(ranked.Count==1||ranked[0].Score-ranked[1].Score>=.12);return safe?new(true,false,options[0],[],null):new(false,true,null,options.Take(3).ToList(),$"¿Te encuentras en {string.Join(" o ",options.Take(3).Select(x=>x.Name))}?");}
+ private static string Normalize(string value){var s=value.ToLowerInvariant().Normalize(NormalizationForm.FormD);var b=new StringBuilder();foreach(var c in s)if(CharUnicodeInfo.GetUnicodeCategory(c)!=UnicodeCategory.NonSpacingMark)b.Append(char.IsLetterOrDigit(c)?c:' ');return string.Join(' ',b.ToString().Split(' ',StringSplitOptions.RemoveEmptyEntries).Where(x=>x is not("barrio" or "sector" or "por" or "en" or "vivo" or "estoy" or "para" or "es")));}
+ private static double Score(string a,string b){if(a==b)return 1;if(b.Contains(a)||a.Contains(b))return .91;return 1d-(double)Levenshtein(a,b)/Math.Max(a.Length,b.Length);}
+ private static int Levenshtein(string a,string b){var row=Enumerable.Range(0,b.Length+1).ToArray();for(var i=1;i<=a.Length;i++){var previous=row[0];row[0]=i;for(var j=1;j<=b.Length;j++){var old=row[j];row[j]=Math.Min(Math.Min(row[j]+1,row[j-1]+1),previous+(a[i-1]==b[j-1]?0:1));previous=old;}}return row[b.Length];}
+}
+
+public record GeocodedAddress(string FormattedAddress,decimal Latitude,decimal Longitude,string? Neighborhood,string Quality,bool RequiresConfirmation);
+public class GoogleAddressGeocoder(HttpClient http,IOptions<GoogleMapsRouteOptions> options)
+{
+ public async Task<(GeocodedAddress? Result,string? Error)> Resolve(string? address,decimal? latitude,decimal? longitude,CancellationToken ct){var key=options.Value.GeocodingApiKey;if(string.IsNullOrWhiteSpace(key))return(null,"Google Maps Geocoding no está configurado.");var target=latitude.HasValue&&longitude.HasValue?$"latlng={latitude.Value.ToString(CultureInfo.InvariantCulture)},{longitude.Value.ToString(CultureInfo.InvariantCulture)}":$"address={Uri.EscapeDataString(address??string.Empty)}";using var response=await http.GetAsync($"https://maps.googleapis.com/maps/api/geocode/json?{target}&key={Uri.EscapeDataString(key)}&language=es&region=co",ct);if(!response.IsSuccessStatusCode)return(null,"No fue posible consultar Google Maps.");using var doc=JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));var results=doc.RootElement.GetProperty("results");if(results.GetArrayLength()==0)return(null,"Google Maps no encontró la dirección.");var first=results[0];var location=first.GetProperty("geometry").GetProperty("location");string? neighborhood=null;foreach(var component in first.GetProperty("address_components").EnumerateArray()){var types=component.GetProperty("types").EnumerateArray().Select(x=>x.GetString()).ToHashSet();if(types.Contains("neighborhood")||types.Contains("sublocality")||types.Contains("sublocality_level_1")){neighborhood=component.GetProperty("long_name").GetString();break;}}var quality=first.TryGetProperty("partial_match",out var partial)&&partial.GetBoolean()?"partial":"exact";return(new(first.GetProperty("formatted_address").GetString()??string.Empty,location.GetProperty("lat").GetDecimal(),location.GetProperty("lng").GetDecimal(),neighborhood,quality,quality!="exact"),null);}
+}
