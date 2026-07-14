@@ -665,6 +665,73 @@ public class WhatsAppController : ControllerBase
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public Task<ActionResult<ApiResponse<WhatsAppAttentionDto>>> ReopenConversation(int conversationId, CancellationToken ct) => ChangeAttention(conversationId, "reopen", ct);
 
+    [HttpDelete("conversations/{conversationId:int}/test-context")]
+    [Authorize(Roles = "Superadmin, Admin")]
+    public async Task<ActionResult<ApiResponse<WhatsAppConversationDto>>> ResetConversationForTesting(
+        int conversationId,
+        CancellationToken cancellationToken)
+    {
+        var conversation = await _db.WhatsAppConversations
+            .Include(x => x.Branch)
+            .Include(x => x.Customer)
+            .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
+        if (conversation is null)
+            return NotFound(ApiResponse<WhatsAppConversationDto>.ErrorResponse("Conversación no encontrada."));
+        if (!await CanAccessVerifiedBranchAsync(conversation.BranchId, cancellationToken))
+            return Forbid();
+
+        var processing = await _db.WhatsAppMessages.AsNoTracking().AnyAsync(x =>
+            x.ConversationId == conversationId
+            && (x.AiProcessingStatus == WhatsAppAiProcessingStatus.Pending
+                || x.AiProcessingStatus == WhatsAppAiProcessingStatus.Processing
+                || x.AiProcessingStatus == WhatsAppAiProcessingStatus.ResponseGenerated
+                || x.AiProcessingStatus == WhatsAppAiProcessingStatus.Sending), cancellationToken);
+        if (processing)
+            return Conflict(ApiResponse<WhatsAppConversationDto>.ErrorResponse(
+                "Espera a que la IA termine de procesar antes de reiniciar la prueba."));
+
+        var invocations = await _db.WhatsAppAiInvocations
+            .Where(x => x.ConversationId == conversationId)
+            .ToListAsync(cancellationToken);
+        var messages = await _db.WhatsAppMessages
+            .Where(x => x.ConversationId == conversationId)
+            .ToListAsync(cancellationToken);
+        _db.WhatsAppAiInvocations.RemoveRange(invocations);
+        _db.WhatsAppMessages.RemoveRange(messages);
+
+        var now = _clock.UtcNow;
+        var aiActive = await IsBranchAiActiveAsync(conversation.BranchId, cancellationToken);
+        conversation.Status = WhatsAppConversationStatus.Open;
+        conversation.LastMessageAt = null;
+        conversation.LastMessagePreview = null;
+        conversation.UnreadCount = 0;
+        conversation.AttentionMode = _attentionService.InitialMode(aiActive);
+        conversation.AssignedUserId = null;
+        conversation.AiPausedAt = null;
+        conversation.HumanAssignedAt = null;
+        conversation.ClosedAt = null;
+        conversation.AttentionModeUpdatedAt = now;
+        conversation.AttentionModeUpdatedByUserId = _currentUser.Id;
+        conversation.AiOrderState = null;
+        conversation.AiOrderStateUpdatedAt = null;
+        conversation.UpdatedAt = now;
+
+        await _db.SaveChangesAsync(cancellationToken);
+        var dto = ToConversationDto(conversation);
+        await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId, dto, cancellationToken);
+
+        _logger.LogInformation(
+            "WhatsApp test context reset ConversationId={ConversationId} BranchId={BranchId} UserId={UserId} DeletedMessages={DeletedMessages}",
+            conversation.Id,
+            conversation.BranchId,
+            _currentUser.Id,
+            messages.Count);
+
+        return Ok(ApiResponse<WhatsAppConversationDto>.SuccessResponse(
+            dto,
+            "Contexto de prueba reiniciado. El cliente y sus direcciones se conservaron."));
+    }
+
     private async Task<ActionResult<ApiResponse<WhatsAppAttentionDto>>> ChangeAttention(int conversationId, string action, CancellationToken ct)
     {
         var conversation = await _db.WhatsAppConversations.FirstOrDefaultAsync(x => x.Id == conversationId, ct);
