@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Models;
@@ -8,7 +9,7 @@ namespace SenorArroz.Infrastructure.Services;
 
 public sealed class WhatsAppSimpleOrderStateService(ApplicationDbContext db,IClock clock):IWhatsAppSimpleOrderStateService
 {
-    private static readonly JsonSerializerOptions JsonOptions=new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions=CreateJsonOptions();
 
     public async Task<WhatsAppSimpleOrderState> LoadAsync(int conversationId,CancellationToken ct=default)
     {
@@ -25,6 +26,7 @@ public sealed class WhatsAppSimpleOrderStateService(ApplicationDbContext db,IClo
             state.Items=state.Items.GroupBy(x=>x.ProductId).Select(g=>new WhatsAppSimpleOrderItem{ProductId=g.Key,Quantity=Math.Min(50,g.Sum(x=>x.Quantity)),Notes=g.Last().Notes}).ToList();
             state.AppliedOperationKeys=state.AppliedOperationKeys.Where(x=>!string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).TakeLast(20).ToList();
             if(state.SelectedAddressId<=0)state.SelectedAddressId=null;
+            if(state.OrderType.HasValue&&!Enum.IsDefined(state.OrderType.Value))throw new JsonException("Tipo de pedido inválido.");
             return state;
         }
         catch(JsonException)
@@ -54,4 +56,11 @@ public sealed class WhatsAppSimpleOrderStateService(ApplicationDbContext db,IClo
     }
 
     private WhatsAppSimpleOrderState Empty()=>new(){UpdatedAt=clock.UtcNow};
+
+    private static JsonSerializerOptions CreateJsonOptions()
+    {
+        var options=new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        return options;
+    }
 }

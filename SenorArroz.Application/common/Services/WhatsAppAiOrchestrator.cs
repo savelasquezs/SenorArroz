@@ -170,6 +170,7 @@ public class WhatsAppAiOrchestrator(
                 customerName=customer?.name,
                 savedAddresses=customer?.savedAddresses,
                 selectedAddressId=simpleState.SelectedAddressId,
+                orderType=simpleState.OrderType?.ToString().ToLowerInvariant(),
                 isFirstAssistantReply=!history.Any(x=>x.Role=="assistant"),
                 cart,
                 catalog

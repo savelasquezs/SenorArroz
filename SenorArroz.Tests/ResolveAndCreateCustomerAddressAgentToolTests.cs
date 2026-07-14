@@ -36,7 +36,9 @@ public class ResolveAndCreateCustomerAddressAgentToolTests
         Assert.Equal(-75.581m, saved.Longitude);
         Assert.Equal(7000, saved.DeliveryFee);
         Assert.True(saved.IsPrimary);
-        Assert.Equal(saved.Id, (await fixture.State.LoadAsync(1)).SelectedAddressId);
+        var state = await fixture.State.LoadAsync(1);
+        Assert.Equal(saved.Id, state.SelectedAddressId);
+        Assert.Equal(OrderType.Delivery, state.OrderType);
     }
 
     [Fact]
@@ -221,11 +223,9 @@ public class ResolveAndCreateCustomerAddressAgentToolTests
                 NullLogger<RequestHumanAssistanceAgentTool>.Instance);
             var tool = new ResolveAndCreateCustomerAddressAgentTool(
                 db,
-                new RegisteredNeighborhoodResolver(db),
-                geocoder,
+                new CustomerAddressResolutionService(db, new RegisteredNeighborhoodResolver(db), geocoder, clock),
                 state,
-                human,
-                clock);
+                human);
             return new(db, state, tool);
         }
 

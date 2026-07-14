@@ -68,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<IAiChatProviderResolver, AiChatProviderResolver>();
         services.AddScoped<RegisteredNeighborhoodResolver>();
         services.AddHttpClient<GoogleAddressGeocoder>();
+        services.AddScoped<CustomerAddressResolutionService>();
         services.AddScoped<IWhatsAppSimpleOrderStateService, WhatsAppSimpleOrderStateService>();
         services.AddScoped<IAgentTool, ApplyOrderActionAgentTool>();
         services.AddScoped<IAgentTool, SendProductDetailsAgentTool>();
@@ -75,6 +76,7 @@ public static class DependencyInjection
         services.AddScoped<RequestHumanAssistanceAgentTool>();
         services.AddScoped<IAgentTool>(sp => sp.GetRequiredService<RequestHumanAssistanceAgentTool>());
         services.AddScoped<IAgentTool, ResolveAndCreateCustomerAddressAgentTool>();
+        services.AddScoped<IAgentTool, CreateCustomerAgentTool>();
         services.AddScoped<IWhatsAppAiMessageClaimer, WhatsAppAiMessageClaimer>();
 
         // Repositories

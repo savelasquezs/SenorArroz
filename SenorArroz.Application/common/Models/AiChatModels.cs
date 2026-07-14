@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SenorArroz.Domain.Enums;
 namespace SenorArroz.Application.Common.Models;
 public record AiChatMessage(string Role, string? Content, string? ToolCallId = null, IReadOnlyList<AiToolCall>? ToolCalls = null);
 public record AiToolDefinition(string Name, string Description, JsonElement ParametersSchema);
@@ -14,7 +15,7 @@ public record AiChatResponse(string? Text, IReadOnlyList<AiToolCall> ToolCalls, 
     public AiChatUsage Usage => new(InputTokens, CachedInputTokens, OutputTokens, ThinkingTokens);
 }
 public record AgentToolExecutionContext(int ConversationId,int BranchId,int? IncomingMessageId=null,string? PhoneNumber=null,int? CustomerId=null,int? DraftId=null,string? AttentionMode=null,string? ExecutionId=null,string? TechnicalActor=null);
-public sealed class WhatsAppSimpleOrderState { public int Version { get; set; }=1;public List<WhatsAppSimpleOrderItem> Items { get; set; }=[];public List<string> AppliedOperationKeys { get; set; }=[];public int? SelectedAddressId { get; set; }public DateTime UpdatedAt { get; set; } }
+public sealed class WhatsAppSimpleOrderState { public int Version { get; set; }=1;public List<WhatsAppSimpleOrderItem> Items { get; set; }=[];public List<string> AppliedOperationKeys { get; set; }=[];public int? SelectedAddressId { get; set; }public OrderType? OrderType { get; set; }public DateTime UpdatedAt { get; set; } }
 public sealed class WhatsAppSimpleOrderItem { public int ProductId { get; set; }public int Quantity { get; set; }public string? Notes { get; set; } }
 public record WhatsAppSimpleOrderSummary(IReadOnlyList<WhatsAppSimpleOrderSummaryItem> Items,int Subtotal,int TotalItems);
 public record WhatsAppSimpleOrderSummaryItem(int ProductId,string Name,int Quantity,int UnitPrice,int Subtotal,bool Available);
