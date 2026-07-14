@@ -72,7 +72,9 @@ public static class DependencyInjection
         services.AddScoped<IAgentTool, ApplyOrderActionAgentTool>();
         services.AddScoped<IAgentTool, SendProductDetailsAgentTool>();
         services.AddScoped<IAgentTool, SendMenuAgentTool>();
-        services.AddScoped<IAgentTool, RequestHumanAssistanceAgentTool>();
+        services.AddScoped<RequestHumanAssistanceAgentTool>();
+        services.AddScoped<IAgentTool>(sp => sp.GetRequiredService<RequestHumanAssistanceAgentTool>());
+        services.AddScoped<IAgentTool, ResolveAndCreateCustomerAddressAgentTool>();
         services.AddScoped<IWhatsAppAiMessageClaimer, WhatsAppAiMessageClaimer>();
 
         // Repositories

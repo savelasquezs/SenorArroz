@@ -24,6 +24,7 @@ public sealed class WhatsAppSimpleOrderStateService(ApplicationDbContext db,IClo
             if(state is null||state.Version!=1||state.Items.Any(x=>x.ProductId<=0||x.Quantity is<1 or>50))throw new JsonException("Estado de carrito inválido.");
             state.Items=state.Items.GroupBy(x=>x.ProductId).Select(g=>new WhatsAppSimpleOrderItem{ProductId=g.Key,Quantity=Math.Min(50,g.Sum(x=>x.Quantity)),Notes=g.Last().Notes}).ToList();
             state.AppliedOperationKeys=state.AppliedOperationKeys.Where(x=>!string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).TakeLast(20).ToList();
+            if(state.SelectedAddressId<=0)state.SelectedAddressId=null;
             return state;
         }
         catch(JsonException)
