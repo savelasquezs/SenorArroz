@@ -156,10 +156,29 @@ public sealed class CustomerAddressResolutionService(
                 || googleResolution.RequiresConfirmation
                 || googleResolution.Match is null
                 || googleResolution.Match.Id != resolution.Match.Id)
-                return (null, "El barrio informado no coincide de forma segura con el barrio obtenido por Google.");
+                return (null,
+                    "El barrio informado no coincide de forma segura con el barrio obtenido por Google. "
+                    + $"Comparación: cliente=\"{DiagnosticValue(suppliedNeighborhood)}\" => {DescribeResolution(resolution)}; "
+                    + $"Google=\"{DiagnosticValue(geocoded.Neighborhood)}\" => {DescribeResolution(googleResolution)}.");
         }
 
         return (resolution.Match, null);
+    }
+
+    private static string DescribeResolution(NeighborhoodResolution resolution)
+    {
+        if (resolution.Match is not null)
+            return $"registrado=\"{DiagnosticValue(resolution.Match.Name)}\" (id {resolution.Match.Id})";
+        if (resolution.RequiresConfirmation && resolution.Options.Count > 0)
+            return $"ambiguo entre [{string.Join(", ", resolution.Options.Select(x => $"\"{DiagnosticValue(x.Name)}\" (id {x.Id})"))}]";
+        return "sin coincidencia activa en la sucursal";
+    }
+
+    private static string DiagnosticValue(string? value)
+    {
+        var normalized = string.Join(' ', (value ?? string.Empty)
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return normalized[..Math.Min(150, normalized.Length)];
     }
 
     internal static IReadOnlyList<string> BuildLastDigitAlternatives(string address)

@@ -121,6 +121,23 @@ public class ResolveAndCreateCustomerAddressAgentToolTests
     }
 
     [Fact]
+    public async Task NeighborhoodMismatch_RecordsComparedValuesAndRegisteredMatches()
+    {
+        await using var fixture = await Fixture.Create(address => Exact(address, 6.251m, -75.581m, "Santander"));
+        fixture.Db.Neighborhoods.Add(new Neighborhood { Id = 102, BranchId = 1, Name = "Castilla", Active = true, DeliveryFee = 8000 });
+        await fixture.Db.SaveChangesAsync();
+
+        var result = await fixture.Execute(neighborhood: "Castilla");
+
+        Assert.True(result.TransferredToHuman);
+        var diagnostic = (await fixture.Db.WhatsAppMessages.FindAsync(50))!.AiProcessingError;
+        Assert.Contains("cliente=\"Castilla\"", diagnostic);
+        Assert.Contains("registrado=\"Castilla\" (id 102)", diagnostic);
+        Assert.Contains("Google=\"Santander\"", diagnostic);
+        Assert.Contains("registrado=\"Santander\" (id 100)", diagnostic);
+    }
+
+    [Fact]
     public async Task MissingGoogleConfiguration_TransfersToHuman()
     {
         await using var fixture = await Fixture.Create(_ => Exact("x", 1, 1, "Santander"), configured: false);
