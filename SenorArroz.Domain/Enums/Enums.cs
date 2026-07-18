@@ -67,7 +67,8 @@ namespace SenorArroz.Domain.Enums
         None,
         DailyPromotion,
         Loyalty,
-        DiscountCode
+        DiscountCode,
+        Manual
     }
 
     /// <summary>Bucket para la serie de peso vendido por categoría (dashboard ventas).</summary>

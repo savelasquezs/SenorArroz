@@ -22,6 +22,8 @@ public class UpdateOrderDto
     public LoyaltyRewardType? AppliedBenefitRewardType { get; set; }
     public decimal? AppliedBenefitAmount { get; set; }
     public string? AppliedBenefitSnapshot { get; set; }
+    public string? ManualBenefitReason { get; set; }
+    public int? ManualBenefitGiftProductId { get; set; }
     public string? Notes { get; set; }
     public List<UpdateOrderDetailDto>? OrderDetails { get; set; }
     public bool DeleteReservationAssociatedPayments { get; set; }

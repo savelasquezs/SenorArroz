@@ -1,5 +1,6 @@
 using AutoMapper;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Kitchen;
@@ -21,6 +22,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
     private const string ScheduleKindUpdated = "updated";
 
     private readonly IOrderRepository _orderRepository;
+    private readonly IApplicationDbContext _db;
     private readonly IAddressRepository _addressRepository;
     private readonly IBankPaymentRepository _bankPaymentRepository;
     private readonly IReservationDepositRepository _reservationDepositRepository;
@@ -32,6 +34,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
     public UpdateOrderHandler(
         IOrderRepository orderRepository,
+        IApplicationDbContext db,
         IAddressRepository addressRepository,
         IBankPaymentRepository bankPaymentRepository,
         IReservationDepositRepository reservationDepositRepository,
@@ -42,6 +45,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         IClock clock)
     {
         _orderRepository = orderRepository;
+        _db = db;
         _addressRepository = addressRepository;
         _bankPaymentRepository = bankPaymentRepository;
         _reservationDepositRepository = reservationDepositRepository;
@@ -107,6 +111,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         }
 
         // Apply scalar field mapping first (details are handled explicitly below)
+        await ValidateManualBenefitAsync(request.Order, existingOrder, cancellationToken);
         _mapper.Map(request.Order, existingOrder);
         ApplyBenefitTrace(request.Order, existingOrder);
 
@@ -383,7 +388,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         }
     }
 
-    private static void ApplyBenefitTrace(UpdateOrderDto request, Order order)
+    private void ApplyBenefitTrace(UpdateOrderDto request, Order order)
     {
         if (!request.AppliedBenefitType.HasValue)
             return;
@@ -396,6 +401,24 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         order.AppliedBenefitAmount = request.AppliedBenefitAmount;
         order.AppliedBenefitSnapshot = request.AppliedBenefitSnapshot;
 
+        if (request.AppliedBenefitType.Value == OrderBenefitType.Manual)
+        {
+            order.ManualBenefitReason = request.ManualBenefitReason!.Trim();
+            order.ManualBenefitGiftProductId = request.ManualBenefitGiftProductId;
+            order.ManualBenefitGrantedByUserId = _currentUser.Id;
+            order.ManualBenefitGrantedByUserName = _db.Users.AsNoTracking()
+                .Where(x => x.Id == _currentUser.Id).Select(x => x.Name).FirstOrDefault();
+            order.ManualBenefitGrantedAt = _clock.UtcNow;
+        }
+        else
+        {
+            order.ManualBenefitReason = null;
+            order.ManualBenefitGiftProductId = null;
+            order.ManualBenefitGrantedByUserId = null;
+            order.ManualBenefitGrantedByUserName = null;
+            order.ManualBenefitGrantedAt = null;
+        }
+
         if (request.AppliedBenefitType.Value == OrderBenefitType.None)
         {
             order.AppliedBenefitSourceId = null;
@@ -407,6 +430,31 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             order.LoyaltyCycleStepId = null;
             order.LoyaltyRewardSnapshot = null;
             order.FreeDeliveryRequested = false;
+            order.ManualBenefitReason = null;
+            order.ManualBenefitGiftProductId = null;
+            order.ManualBenefitGrantedByUserId = null;
+            order.ManualBenefitGrantedByUserName = null;
+            order.ManualBenefitGrantedAt = null;
         }
+    }
+
+    private async Task ValidateManualBenefitAsync(UpdateOrderDto dto, Order order, CancellationToken ct)
+    {
+        if (dto.AppliedBenefitType != OrderBenefitType.Manual) return;
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role)) throw new BusinessException("Solo administradores pueden conceder beneficios manuales");
+        if (string.IsNullOrWhiteSpace(dto.ManualBenefitReason)) throw new BusinessException("El motivo del beneficio manual es obligatorio");
+        var type = dto.Type ?? order.Type;
+        var addressId = dto.AddressId ?? order.AddressId;
+        if (dto.AppliedBenefitRewardType == LoyaltyRewardType.FreeDelivery)
+        {
+            if (type != OrderType.Delivery && !(type == OrderType.Reservation && addressId.HasValue))
+                throw new BusinessException("El domicilio gratis solo aplica a domicilios o reservas con direccion");
+            return;
+        }
+        if (dto.AppliedBenefitRewardType != LoyaltyRewardType.GiftProduct || !dto.ManualBenefitGiftProductId.HasValue)
+            throw new BusinessException("Selecciona un producto regalo valido");
+        var validGift = await _db.Products.AsNoTracking().Include(x => x.Category).AnyAsync(x =>
+            x.Id == dto.ManualBenefitGiftProductId && x.Active && x.Category.BranchId == order.BranchId && x.Category.Name.ToLower() == "regalos", ct);
+        if (!validGift) throw new BusinessException("El producto debe estar activo y pertenecer a la categoria Regalos de la sucursal");
     }
 }

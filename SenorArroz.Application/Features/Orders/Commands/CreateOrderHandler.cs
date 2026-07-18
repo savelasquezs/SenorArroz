@@ -93,7 +93,19 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             throw new BusinessException("La hora de preparación no puede ser posterior a la hora de entrega");
         }
 
+        await ValidateAndStampManualBenefitAsync(request.Order, branchId, cancellationToken);
+
         var order = _mapper.Map<Order>(request.Order);
+        if (request.Order.AppliedBenefitType == OrderBenefitType.Manual)
+        {
+            var grantedByName = await _db.Users.AsNoTracking()
+                .Where(x => x.Id == _currentUser.Id).Select(x => x.Name).FirstOrDefaultAsync(cancellationToken);
+            order.ManualBenefitReason = request.Order.ManualBenefitReason!.Trim();
+            order.ManualBenefitGiftProductId = request.Order.ManualBenefitGiftProductId;
+            order.ManualBenefitGrantedByUserId = _currentUser.Id;
+            order.ManualBenefitGrantedByUserName = grantedByName;
+            order.ManualBenefitGrantedAt = _clock.UtcNow;
+        }
 
         // prepare_at por defecto: reserved_for - 1h si null y hay reserved_for
         if (order.ReservedFor.HasValue && !order.PrepareAt.HasValue)
@@ -182,5 +194,26 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         }
 
         return result;
+    }
+
+    private async Task ValidateAndStampManualBenefitAsync(CreateOrderDto dto, int branchId, CancellationToken ct)
+    {
+        if (dto.AppliedBenefitType != OrderBenefitType.Manual) return;
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
+            throw new BusinessException("Solo administradores pueden conceder beneficios manuales");
+        if (string.IsNullOrWhiteSpace(dto.ManualBenefitReason))
+            throw new BusinessException("El motivo del beneficio manual es obligatorio");
+        if (dto.AppliedBenefitRewardType == LoyaltyRewardType.FreeDelivery)
+        {
+            if (dto.Type != OrderType.Delivery && !(dto.Type == OrderType.Reservation && dto.AddressId.HasValue))
+                throw new BusinessException("El domicilio gratis solo aplica a domicilios o reservas con direccion");
+            return;
+        }
+        if (dto.AppliedBenefitRewardType != LoyaltyRewardType.GiftProduct || !dto.ManualBenefitGiftProductId.HasValue)
+            throw new BusinessException("Selecciona un producto regalo valido");
+        var validGift = await _db.Products.AsNoTracking().Include(x => x.Category).AnyAsync(x =>
+            x.Id == dto.ManualBenefitGiftProductId && x.Active && x.Category.BranchId == branchId &&
+            x.Category.Name.ToLower() == "regalos", ct);
+        if (!validGift) throw new BusinessException("El producto debe estar activo y pertenecer a la categoria Regalos de la sucursal");
     }
 }

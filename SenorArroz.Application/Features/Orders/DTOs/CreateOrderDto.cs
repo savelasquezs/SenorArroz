@@ -24,6 +24,8 @@ public class CreateOrderDto
     public LoyaltyRewardType? AppliedBenefitRewardType { get; set; }
     public decimal? AppliedBenefitAmount { get; set; }
     public string? AppliedBenefitSnapshot { get; set; }
+    public string? ManualBenefitReason { get; set; }
+    public int? ManualBenefitGiftProductId { get; set; }
     public string? Notes { get; set; }
     public List<CreateOrderDetailDto> OrderDetails { get; set; } = new();
     public List<CreateOrderBankPaymentDto> BankPayments { get; set; } = new();

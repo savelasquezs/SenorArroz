@@ -93,6 +93,7 @@ public class UpdateOrderHandlerSchedulePreserveTests
         }
         return new UpdateOrderHandler(
             repo,
+            new Mock<IApplicationDbContext>().Object,
             addressRepo,
             bankPaymentRepo.Object,
             reservationDepositRepo.Object,

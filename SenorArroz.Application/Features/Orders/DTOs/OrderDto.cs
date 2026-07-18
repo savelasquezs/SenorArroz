@@ -53,6 +53,11 @@ public class OrderDto
     public LoyaltyRewardType? AppliedBenefitRewardType { get; set; }
     public decimal? AppliedBenefitAmount { get; set; }
     public string? AppliedBenefitSnapshot { get; set; }
+    public string? ManualBenefitReason { get; set; }
+    public int? ManualBenefitGrantedByUserId { get; set; }
+    public string? ManualBenefitGrantedByUserName { get; set; }
+    public DateTime? ManualBenefitGrantedAt { get; set; }
+    public int? ManualBenefitGiftProductId { get; set; }
     public string? Notes { get; set; }
     public string? CancelledReason { get; set; }
     /// <summary>Efectivo ya cobrado en sucursal; nada que cobrar en entrega.</summary>

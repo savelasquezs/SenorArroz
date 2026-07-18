@@ -72,6 +72,11 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
             .HasMaxLength(40);
         builder.Property(o => o.AppliedBenefitAmount).HasColumnName("applied_benefit_amount").HasPrecision(10, 2);
         builder.Property(o => o.AppliedBenefitSnapshot).HasColumnName("applied_benefit_snapshot").HasColumnType("jsonb");
+        builder.Property(o => o.ManualBenefitReason).HasColumnName("manual_benefit_reason").HasMaxLength(500);
+        builder.Property(o => o.ManualBenefitGrantedByUserId).HasColumnName("manual_benefit_granted_by_user_id");
+        builder.Property(o => o.ManualBenefitGrantedByUserName).HasColumnName("manual_benefit_granted_by_user_name").HasMaxLength(150);
+        builder.Property(o => o.ManualBenefitGrantedAt).HasColumnName("manual_benefit_granted_at");
+        builder.Property(o => o.ManualBenefitGiftProductId).HasColumnName("manual_benefit_gift_product_id");
         builder.Property(o => o.Notes).HasColumnName("notes").HasMaxLength(200);
         builder.Property(o => o.CancelledReason).HasColumnName("cancelled_reason").HasMaxLength(200);
 
