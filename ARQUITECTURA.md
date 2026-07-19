@@ -396,9 +396,14 @@ API → Application → Domain
     "ExpirationMinutes": 60
   },
   "EmailSettings": {
-    "SmtpServer": "smtp.gmail.com",
-    "SmtpPort": 587,
-    // ...
+    "MaxAttempts": 5
+  },
+  "ResendSettings": {
+    "ApiKey": "",
+    "FromEmail": "noreply@senorarroz.com",
+    "FromName": "El Señor Arroz",
+    "BaseUrl": "https://api.resend.com",
+    "TimeoutMs": 15000
   }
 }
 ```

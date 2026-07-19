@@ -57,13 +57,12 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
    - `JwtSettings__Issuer=SenorArroz.API`
    - `JwtSettings__Audience=SenorArroz.Client`
    - `JwtSettings__RefreshTokenExpirationDays=7`
-   - `EmailSettings__SmtpHost=smtp.gmail.com`
-   - `EmailSettings__SmtpPort=587`
-   - `EmailSettings__SmtpUsername=<tu_correo>`
-   - `EmailSettings__SmtpPassword=<tu_app_password>`
-   - `EmailSettings__FromEmail=<tu_correo>`
-   - `EmailSettings__FromName=SenorArroz`
-   - `EmailSettings__EnableSsl=true`
+   - `EmailSettings__MaxAttempts=5`
+   - `ResendSettings__ApiKey=<tu_api_key_de_resend>`
+   - `ResendSettings__FromEmail=noreply@senorarroz.com`
+   - `ResendSettings__FromName=El Señor Arroz`
+   - `ResendSettings__BaseUrl=https://api.resend.com`
+   - `ResendSettings__TimeoutMs=15000`
    - `FrontendSettings__ResetPasswordUrl=https://TU-FRONTEND-URL.railway.app/reset-password` (actualizar después de crear frontend)
 
 4. **Verificar Despliegue:**
