@@ -169,7 +169,34 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 .OrderByDescending(x => x.ChangedAt)
                 .ToListAsync(cancellationToken);
 
-            var groups = logs
+            var relevantLogs = logs
+                .Where(CashClosureAuditMapper.ShouldIncludeInDailyEmail)
+                .ToList();
+            var referencedProductIds = relevantLogs
+                .SelectMany(x => CashClosureAuditMapper.ParseDelta(x.MoneyDeltaJson).ProductIds)
+                .Distinct()
+                .ToList();
+            var productNames = await _context.Products
+                .AsNoTracking()
+                .Where(x => referencedProductIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+            var cancelledOrderIds = relevantLogs
+                .Where(x => x.OperationType == "cancelled")
+                .Select(x => x.EntityId)
+                .Distinct()
+                .ToList();
+            var cancelledOrderProductRows = await _context.OrderDetails
+                .AsNoTracking()
+                .Where(x => cancelledOrderIds.Contains(x.OrderId))
+                .Select(x => new { x.OrderId, x.Product.Name })
+                .ToListAsync(cancellationToken);
+            var cancelledOrderProductNames = cancelledOrderProductRows
+                .GroupBy(x => x.OrderId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyList<string>)g.Select(x => x.Name).Distinct().ToList());
+
+            var groups = relevantLogs
                 .GroupBy(CashClosureAuditMapper.GroupKey)
                 .Select(g => new CashClosureAuditGroupDto
                 {
@@ -178,11 +205,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                     EventCount = g.Count(),
                     NetDifference = g.Sum(x => CashClosureAuditMapper.ParseDelta(x.MoneyDeltaJson).Difference ?? 0),
                     Details = g.OrderByDescending(x => x.ChangedAt)
-                        .Select(x =>
-                        {
-                            var actor = string.IsNullOrWhiteSpace(x.ChangedByNameSnapshot) ? "Sistema" : x.ChangedByNameSnapshot;
-                            return $"{x.ChangedAt:HH:mm} - {actor} - {x.SummaryText}";
-                        })
+                        .Select(x => CashClosureAuditMapper.FormatDailyEmailDetail(x, productNames, cancelledOrderProductNames))
                         .ToList()
                 })
                 .OrderBy(x => x.Title)

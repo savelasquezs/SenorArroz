@@ -1,9 +1,11 @@
 ﻿
 // SenorArroz.Infrastructure/Services/EmailService.cs
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Services;
@@ -13,79 +15,42 @@ namespace SenorArroz.Infrastructure.Services;
 
 public class EmailService : IEmailService
 {
+    private static readonly CultureInfo ColombianCulture = CultureInfo.GetCultureInfo("es-CO");
     private readonly IApplicationDbContext _context;
     private readonly ILogger<EmailService> _logger;
+    private readonly IClock _clock;
     private readonly int _maxAttempts;
+    private readonly string _logoUrl;
+    private readonly string _restaurantName;
 
-    public EmailService(IApplicationDbContext context, IConfiguration configuration, ILogger<EmailService> logger)
+    public EmailService(IApplicationDbContext context, IConfiguration configuration, ILogger<EmailService> logger, IClock clock)
     {
         _context = context;
         _logger = logger;
+        _clock = clock;
         _maxAttempts = int.Parse(configuration["EmailSettings:MaxAttempts"] ?? "5");
+        _logoUrl = configuration["Branding:EmailLogoUrl"] ?? "https://senorarroz.up.railway.app/favicon.png";
+        _restaurantName = configuration["Branding:RestaurantDisplayName"] ?? "El Señor Arroz";
     }
 
     public async Task<EmailSendResult> SendPasswordResetEmailAsync(string toEmail, string userName, string resetToken, string resetUrl)
     {
         var subject = "Recuperación de Contraseña - SenorArroz";
 
-        var body = $@"
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset='utf-8'>
-    <title>Recuperación de Contraseña</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background-color: #ff6b35; color: white; padding: 20px; text-align: center; }}
-        .content {{ padding: 20px; background-color: #f9f9f9; }}
-        .button {{ display: inline-block; background-color: #ff6b35; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
-        .footer {{ padding: 20px; text-align: center; font-size: 12px; color: #666; }}
-        .warning {{ background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 5px; margin: 15px 0; }}
-    </style>
-</head>
-<body>
-    <div class='container'>
-        <div class='header'>
-            <h1>🍚 SenorArroz</h1>
-            <p>Recuperación de Contraseña</p>
-        </div>
-        
-        <div class='content'>
-            <h2>Hola {userName}!</h2>
-            
-            <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en SenorArroz.</p>
-            
-            <p>Haz clic en el siguiente botón para crear una nueva contraseña:</p>
-            
-            <div style='text-align: center;'>
-                <a href='{resetUrl}?token={resetToken}&email={Uri.EscapeDataString(toEmail)}' class='button'>
-                    Restablecer Contraseña
-                </a>
-            </div>
-            
-            <div class='warning'>
-                <strong>⚠️ Importante:</strong>
-                <ul>
-                    <li>Este enlace expira en 1 hora</li>
-                    <li>Solo se puede usar una vez</li>
-                    <li>Si no solicitaste este cambio, ignora este correo</li>
-                </ul>
-            </div>
-            
-            <p>Si el botón no funciona, copia y pega este enlace en tu navegador:</p>
-            <p style='word-break: break-all; background-color: #f0f0f0; padding: 10px; border-radius: 3px;'>
-                {resetUrl}?token={resetToken}&email={Uri.EscapeDataString(toEmail)}
-            </p>
-        </div>
-        
-        <div class='footer'>
-            <p>© 2025 SenorArroz. Todos los derechos reservados.</p>
-            <p>Este es un correo automático, por favor no responder.</p>
-        </div>
-    </div>
-</body>
-</html>";
+        var resetLink = $"{resetUrl}?token={resetToken}&email={Uri.EscapeDataString(toEmail)}";
+        var encodedResetLink = WebUtility.HtmlEncode(resetLink);
+        var content = $@"
+<h2 style='margin:0 0 18px;color:#171717;'>¡Hola {WebUtility.HtmlEncode(userName)}!</h2>
+<p>Recibimos una solicitud para restablecer la contraseña de tu cuenta.</p>
+<p style='text-align:center;margin:28px 0;'>
+    <a href='{encodedResetLink}' style='display:inline-block;background:#f97316;color:#ffffff;padding:13px 24px;text-decoration:none;border-radius:7px;font-weight:bold;'>Restablecer contraseña</a>
+</p>
+<div style='background:#fff7ed;border-left:4px solid #f97316;padding:14px 16px;margin:20px 0;'>
+    <strong>Importante:</strong> el enlace expira en una hora, solo puede usarse una vez y puedes ignorarlo si no solicitaste el cambio.
+</div>
+<p style='font-size:13px;color:#525252;'>Si el botón no funciona, copia este enlace:</p>
+<p style='word-break:break-all;background:#f5f5f5;padding:12px;border-radius:5px;font-size:12px;'>{encodedResetLink}</p>";
+        var body = BuildBrandedEmail("Recuperación de contraseña", "Protección de tu cuenta", content);
 
         return await QueueEmailAsync(
             messageType: "password_reset",
@@ -99,49 +64,16 @@ public class EmailService : IEmailService
     {
         var subject = "Contraseña Restablecida - SenorArroz";
 
-        var body = $@"
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset='utf-8'>
-    <title>Contraseña Restablecida</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background-color: #28a745; color: white; padding: 20px; text-align: center; }}
-        .content {{ padding: 20px; background-color: #f9f9f9; }}
-        .footer {{ padding: 20px; text-align: center; font-size: 12px; color: #666; }}
-        .success {{ background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 5px; margin: 15px 0; }}
-    </style>
-</head>
-<body>
-    <div class='container'>
-        <div class='header'>
-            <h1>🍚 SenorArroz</h1>
-            <p>Contraseña Restablecida</p>
-        </div>
-        
-        <div class='content'>
-            <h2>¡Hola {userName}!</h2>
-            
-            <div class='success'>
-                <strong>✅ ¡Éxito!</strong> Tu contraseña ha sido restablecida correctamente.
-            </div>
-            
-            <p>Tu contraseña de SenorArroz ha sido cambiada exitosamente el {DateTime.Now:dd/MM/yyyy} a las {DateTime.Now:HH:mm}.</p>
-            
-            <p>Si no realizaste este cambio, por favor contacta al administrador del sistema inmediatamente.</p>
-            
-            <p>Ya puedes iniciar sesión con tu nueva contraseña.</p>
-        </div>
-        
-        <div class='footer'>
-            <p>© 2025 SenorArroz. Todos los derechos reservados.</p>
-            <p>Este es un correo automático, por favor no responder.</p>
-        </div>
-    </div>
-</body>
-</html>";
+        var changedAtColombia = ColombiaTimeHelper.GetNowInColombiaFromUtc(_clock.UtcNow);
+        var content = $@"
+<h2 style='margin:0 0 18px;color:#171717;'>¡Hola {WebUtility.HtmlEncode(userName)}!</h2>
+<div style='background:#fff7ed;border-left:4px solid #f97316;padding:14px 16px;margin:18px 0;'>
+    <strong>Tu contraseña fue restablecida correctamente.</strong>
+</div>
+<p>El cambio se realizó el <strong>{changedAtColombia:dd/MM/yyyy}</strong> a las <strong>{changedAtColombia:HH:mm}</strong>, hora de Colombia.</p>
+<p>Si no realizaste este cambio, contacta inmediatamente al administrador del sistema.</p>
+<p>Ya puedes iniciar sesión con tu nueva contraseña.</p>";
+        var body = BuildBrandedEmail("Contraseña restablecida", "Confirmación de seguridad", content);
 
         return await QueueEmailAsync(
             messageType: "password_reset_confirmation",
@@ -153,12 +85,13 @@ public class EmailService : IEmailService
 
     public async Task<EmailSendResult> SendTestEmailAsync(string toEmail, string subject, string body)
     {
+        var content = $"<p>{WebUtility.HtmlEncode(body).Replace("\r\n", "<br>").Replace("\n", "<br>")}</p>";
         return await QueueEmailAsync(
             messageType: "test",
             toEmails: [toEmail],
             subject: subject,
-            body: body,
-            isHtml: false);
+            body: BuildBrandedEmail("Correo de prueba", "Verificación del servicio de correo", content),
+            isHtml: true);
     }
 
     public async Task<EmailSendResult> SendDailyMonetaryAuditEmailAsync(
@@ -170,28 +103,24 @@ public class EmailService : IEmailService
         if (toEmails.Count == 0)
             return EmailSendResult.Fail("none", "No hay destinatarios configurados para la auditoría monetaria.");
 
-        var subject = $"Auditoria monetaria diaria - {payload.BranchName} - {payload.BusinessDate:yyyy-MM-dd}";
+        var subject = $"Auditoría monetaria diaria - {payload.BranchName} - {payload.BusinessDate:yyyy-MM-dd}";
         var groupsHtml = string.Join("", payload.Groups.Select(group =>
-            $@"<div style='margin-bottom:16px;'>
-<h3 style='margin:0 0 8px 0;'>{WebUtility.HtmlEncode(group.Title)}</h3>
-<p style='margin:0 0 8px 0;'>Eventos: {group.EventCount} | Diferencia neta: {group.NetDifference:N0}</p>
-<ul>{string.Join("", group.Lines.Select(line => $"<li>{WebUtility.HtmlEncode(line)}</li>"))}</ul>
+            $@"<div style='margin:0 0 18px;border:1px solid #e5e5e5;border-top:4px solid #f97316;border-radius:7px;padding:16px;'>
+<h3 style='margin:0 0 8px;color:#171717;'>{WebUtility.HtmlEncode(group.Title)}</h3>
+<p style='margin:0 0 10px;color:#525252;'>Eventos: <strong>{group.EventCount}</strong>{(group.NetDifference < 0 ? $" · Reducción total: <strong>{FormatMoney(Math.Abs(group.NetDifference))}</strong>" : string.Empty)}</p>
+<ul style='margin:0;padding-left:20px;'>{string.Join("", group.Lines.Select(line => $"<li style='margin-bottom:8px;'>{WebUtility.HtmlEncode(line)}</li>"))}</ul>
 </div>"));
-
-        var body = $@"
-<!DOCTYPE html>
-<html>
-<head><meta charset='utf-8'><title>Auditoria monetaria diaria</title></head>
-<body style='font-family:Arial,sans-serif;color:#222;line-height:1.5;'>
-<div style='max-width:720px;margin:0 auto;padding:20px;'>
-<h1 style='margin-bottom:8px;'>Auditoria monetaria diaria</h1>
+        var periodStartColombia = ColombiaTimeHelper.GetNowInColombiaFromUtc(payload.PeriodStartUtc);
+        var periodEndColombia = ColombiaTimeHelper.GetNowInColombiaFromUtc(payload.PeriodEndUtc);
+        var emptyState = payload.Groups.Count == 0
+            ? "<div style='background:#fff7ed;border-left:4px solid #f97316;padding:16px;'>No hubo pedidos cancelados ni reducciones monetarias durante este periodo.</div>"
+            : groupsHtml;
+        var content = $@"
 <p style='margin-top:0;'>Sucursal: <strong>{WebUtility.HtmlEncode(payload.BranchName)}</strong></p>
-<p>Fecha de negocio: {payload.BusinessDate:yyyy-MM-dd}</p>
-<p>Periodo auditado UTC: {payload.PeriodStartUtc:yyyy-MM-dd HH:mm} a {payload.PeriodEndUtc:yyyy-MM-dd HH:mm}</p>
-{groupsHtml}
-</div>
-</body>
-</html>";
+<p>Fecha de negocio: <strong>{payload.BusinessDate:dd/MM/yyyy}</strong></p>
+<p style='color:#525252;'>Periodo auditado (hora de Colombia): {periodStartColombia:dd/MM/yyyy HH:mm} a {periodEndColombia:dd/MM/yyyy HH:mm}</p>
+{emptyState}";
+        var body = BuildBrandedEmail("Auditoría monetaria diaria", "Cancelaciones y reducciones de valor", content);
 
         return await QueueEmailAsync(
             messageType: "daily_monetary_audit",
@@ -234,7 +163,7 @@ public class EmailService : IEmailService
                 Status = "pending",
                 AttemptCount = 0,
                 MaxAttempts = _maxAttempts,
-                NextAttemptAt = DateTime.UtcNow,
+                NextAttemptAt = _clock.UtcNow,
                 RelatedEntityType = relatedEntityType,
                 RelatedEntityId = relatedEntityId,
                 MetadataJson = string.IsNullOrWhiteSpace(metadataJson) ? "{}" : metadataJson
@@ -250,4 +179,38 @@ public class EmailService : IEmailService
             return EmailSendResult.Fail("outbox", ex.Message);
         }
     }
+
+    private string BuildBrandedEmail(string title, string subtitle, string contentHtml)
+    {
+        var encodedTitle = WebUtility.HtmlEncode(title);
+        var encodedSubtitle = WebUtility.HtmlEncode(subtitle);
+        var encodedRestaurantName = WebUtility.HtmlEncode(_restaurantName);
+        var encodedLogoUrl = WebUtility.HtmlEncode(_logoUrl);
+        var currentYear = ColombiaTimeHelper.GetNowInColombiaFromUtc(_clock.UtcNow).Year;
+
+        return $@"<!DOCTYPE html>
+<html>
+<head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{encodedTitle}</title></head>
+<body style='margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif;color:#262626;line-height:1.55;'>
+<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='background:#f5f5f5;padding:24px 10px;'>
+<tr><td align='center'>
+<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='max-width:680px;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #e5e5e5;'>
+<tr><td style='background:#111111;border-bottom:6px solid #f97316;padding:22px 28px;text-align:center;'>
+    <img src='{encodedLogoUrl}' width='92' alt='{encodedRestaurantName}' style='display:block;margin:0 auto 10px;max-width:92px;height:auto;'>
+    <h1 style='margin:0;color:#ffffff;font-size:25px;'>{encodedTitle}</h1>
+    <p style='margin:5px 0 0;color:#fdba74;font-size:14px;'>{encodedSubtitle}</p>
+</td></tr>
+<tr><td style='padding:28px;'>{contentHtml}</td></tr>
+<tr><td style='background:#171717;color:#d4d4d4;padding:18px 28px;text-align:center;font-size:12px;'>
+    <div style='color:#fb923c;font-weight:bold;margin-bottom:4px;'>{encodedRestaurantName}</div>
+    <div>© {currentYear}. Correo automático, por favor no responder.</div>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>";
+    }
+
+    private static string FormatMoney(decimal value) => $"${value.ToString("N0", ColombianCulture)}";
 }
