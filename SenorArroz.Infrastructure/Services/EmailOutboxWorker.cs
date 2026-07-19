@@ -43,7 +43,7 @@ public class EmailOutboxWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
-        var sender = scope.ServiceProvider.GetRequiredService<SmtpEmailDeliveryService>();
+        var sender = scope.ServiceProvider.GetRequiredService<ResendEmailDeliveryService>();
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
         var now = clock.UtcNow;
 

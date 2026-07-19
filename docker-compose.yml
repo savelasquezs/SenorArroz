@@ -39,13 +39,9 @@ services:
       - JwtSettings__Issuer=SenorArroz.API
       - JwtSettings__Audience=SenorArroz.Client
       - JwtSettings__RefreshTokenExpirationDays=7
-      - EmailSettings__SmtpHost=${EmailSettings__SmtpHost:-mail.carrierzone.com}
-      - EmailSettings__SmtpPort=${EmailSettings__SmtpPort:-465}
-      - EmailSettings__SmtpUsername=${EmailSettings__SmtpUsername}
-      - EmailSettings__SmtpPassword=${EmailSettings__SmtpPassword}
-      - EmailSettings__FromEmail=${EmailSettings__FromEmail:-noreply@senorarroz.com}
-      - EmailSettings__FromName=${EmailSettings__FromName:-El Senor Arroz}
-      - EmailSettings__EnableSsl=${EmailSettings__EnableSsl:-true}
+      - ResendSettings__ApiKey=${ResendSettings__ApiKey}
+      - ResendSettings__FromEmail=${ResendSettings__FromEmail:-noreply@senorarroz.com}
+      - ResendSettings__FromName=${ResendSettings__FromName:-El Senor Arroz}
       - FrontendSettings__ResetPasswordUrl=http://localhost:5173/reset-password
       - GOOGLE_MAPS_GEOCODING_API_KEY=${GOOGLE_MAPS_GEOCODING_API_KEY:-}
       - GOOGLE_MAPS_ROUTES_API_KEY=${GOOGLE_MAPS_ROUTES_API_KEY:-}
