@@ -15,6 +15,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
         IPasswordService passwordService,
         IEmailService emailService,
         IUserRepository userRepository,
+        IApplicationDbContext context,
         ILogger<ResetPasswordHandler> logger,
         IClock clock) : IRequestHandler<ResetPasswordCommand, bool>
     {
@@ -24,11 +25,14 @@ namespace SenorArroz.Application.Features.Auth.Commands
         private readonly IRefreshTokenRepository _refreshTokenRepository = refreshTokenRepository;
         private readonly IPasswordService _passwordService = passwordService;
         private readonly IEmailService _emailService = emailService;
+        private readonly IApplicationDbContext _context = context;
         private readonly ILogger<ResetPasswordHandler> _logger = logger;
         private readonly IClock _clock = clock;
 
         public async Task<bool> Handle(ResetPasswordCommand request, CancellationToken cancellationToken)
         {
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
             try
             {
                 // Validate reset token
@@ -84,17 +88,12 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 var confirmationResult = await _emailService.SendPasswordResetConfirmationAsync(user.Email, user.Name);
                 if (!confirmationResult.Success)
                 {
-                    _logger.LogError(
-                        "Failed to queue password reset confirmation for {Email}. Provider: {Provider}. Error: {Error}",
-                        user.Email,
-                        confirmationResult.Provider,
-                        confirmationResult.ErrorMessage);
-                }
-                else
-                {
-                    _logger.LogInformation("Password reset confirmation queued for {Email}", user.Email);
+                    throw new BusinessException(
+                        $"No se pudo encolar la confirmación del cambio de contraseña. Provider: {confirmationResult.Provider}. Error: {confirmationResult.ErrorMessage}");
                 }
 
+                await transaction.CommitAsync(cancellationToken);
+                _logger.LogInformation("Password reset confirmation queued for {Email}", user.Email);
                 _logger.LogInformation("Password reset successfully for user {UserId}", user.Id);
                 return true;
             }

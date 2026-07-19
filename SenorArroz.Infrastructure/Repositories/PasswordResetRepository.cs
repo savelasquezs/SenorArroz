@@ -56,7 +56,16 @@ public class PasswordResetRepository : IPasswordResetRepository
 
     public async Task UpdateAsync(PasswordResetToken passwordResetToken, CancellationToken cancellationToken = default)
     {
-        _context.PasswordResetTokens.Update(passwordResetToken);
+        // GetByTokenAsync returns a detached graph that includes User. Attaching that
+        // graph with Update() can conflict with another tracked User instance during
+        // the password-reset flow. Update only the token's mutable scalar fields.
+        var existingToken = await _context.PasswordResetTokens
+            .FirstOrDefaultAsync(x => x.Id == passwordResetToken.Id, cancellationToken)
+            ?? throw new InvalidOperationException($"Password reset token {passwordResetToken.Id} no longer exists.");
+
+        existingToken.IsUsed = passwordResetToken.IsUsed;
+        existingToken.UsedAt = passwordResetToken.UsedAt;
+        existingToken.UsedByIp = passwordResetToken.UsedByIp;
         await _context.SaveChangesAsync(cancellationToken);
     }
 
