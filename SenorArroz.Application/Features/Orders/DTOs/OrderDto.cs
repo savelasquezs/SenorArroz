@@ -34,6 +34,10 @@ public class OrderDto
     public string? DeliveryRoutePlanningWarnings { get; set; }
     public string? DeliveryManName { get; set; }
     public string? GuestName { get; set; }
+    public int? DeliveryAppConnectionId { get; set; }
+    public string? ExternalOrderId { get; set; }
+    public string? OrderSource { get; set; }
+    public string? ExternalFulfillmentProvider { get; set; }
     public OrderType? Type { get; set; }
     public string? TypeDisplayName { get; set; }
     public int? DeliveryFee { get; set; }

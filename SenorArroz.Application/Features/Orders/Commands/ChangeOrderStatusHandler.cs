@@ -23,6 +23,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     private readonly IPrintQueueService _printQueue;
     private readonly ILoyaltyCycleService _loyaltyCycle;
     private readonly ILogger<ChangeOrderStatusHandler> _logger;
+    private readonly IExternalDeliveryStatusSyncService? _externalDeliveryStatusSync;
 
     public ChangeOrderStatusHandler(
         IOrderRepository orderRepository,
@@ -34,7 +35,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         IDeliveryRouteWorkflowService deliveryRouteWorkflow,
         IPrintQueueService printQueue,
         ILoyaltyCycleService loyaltyCycle,
-        ILogger<ChangeOrderStatusHandler> logger)
+        ILogger<ChangeOrderStatusHandler> logger,
+        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null)
     {
         _orderRepository = orderRepository;
         _context = context;
@@ -46,6 +48,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         _printQueue = printQueue;
         _loyaltyCycle = loyaltyCycle;
         _logger = logger;
+        _externalDeliveryStatusSync = externalDeliveryStatusSync;
     }
 
     public ChangeOrderStatusHandler(
@@ -164,7 +167,10 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
 
             if (request.StatusChange.Status == OrderStatus.Ready)
             {
-                await _notificationService.NotifyOrderReadyToDelivery(orderDto);
+                if (string.IsNullOrWhiteSpace(order.ExternalFulfillmentProvider))
+                    await _notificationService.NotifyOrderReadyToDelivery(orderDto);
+                if (_externalDeliveryStatusSync is not null)
+                    await _externalDeliveryStatusSync.SyncReadyForPickupAsync(order.Id, cancellationToken);
 
                 var role = (_currentUser.Role ?? string.Empty).Trim();
                 if (Roles.IsKitchen(role))
@@ -281,7 +287,10 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
 
         if (request.StatusChange.Status == OrderStatus.Ready)
         {
-            await _notificationService.NotifyOrderReadyToDelivery(orderDto);
+            if (string.IsNullOrWhiteSpace(order.ExternalFulfillmentProvider))
+                await _notificationService.NotifyOrderReadyToDelivery(orderDto);
+            if (_externalDeliveryStatusSync is not null)
+                await _externalDeliveryStatusSync.SyncReadyForPickupAsync(order.Id, cancellationToken);
             var role = (_currentUser.Role ?? string.Empty).Trim();
             if (Roles.IsKitchen(role))
             {

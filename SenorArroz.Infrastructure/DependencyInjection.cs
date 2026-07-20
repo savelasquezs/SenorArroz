@@ -11,6 +11,7 @@ using SenorArroz.Infrastructure.Repositories;
 using SenorArroz.Infrastructure.Services;
 using SenorArroz.Infrastructure.Storage;
 using SenorArroz.Infrastructure.WhatsApp;
+using SenorArroz.Infrastructure.Integrations;
 using Microsoft.Extensions.Hosting;
 
 
@@ -66,6 +67,9 @@ public static class DependencyInjection
         services.AddScoped<IGoogleRoutesDrivingMetricsService>(sp => sp.GetRequiredService<GoogleRoutesDrivingMetricsService>());
         services.AddScoped<IDeliveryRouteWorkflowService, DeliveryRouteWorkflowService>();
         services.AddHttpClient<IWhatsAppCloudClient, WhatsAppCloudClient>();
+        services.AddSingleton<IIntegrationSecretProtector, IntegrationSecretProtector>();
+        services.AddHttpClient<IRappiDeliveryProvider, RappiDeliveryProvider>(client => client.Timeout = TimeSpan.FromSeconds(20));
+        services.AddScoped<IExternalDeliveryStatusSyncService, ExternalDeliveryStatusSyncService>();
         services.AddHttpClient<OpenAiProvider>();
         services.AddHttpClient<GeminiProvider>();
         services.AddScoped<IAiProvider>(sp => sp.GetRequiredService<OpenAiProvider>());

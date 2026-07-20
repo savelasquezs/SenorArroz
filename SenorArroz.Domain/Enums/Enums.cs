@@ -42,6 +42,18 @@ namespace SenorArroz.Domain.Enums
         Deliveryman    // deliveryman
     }
 
+    public enum ExternalOrderStatus
+    {
+        New,
+        BlockedMapping,
+        PendingAcceptance,
+        Processing,
+        Accepted,
+        Rejected,
+        Cancelled,
+        SyncError
+    }
+
     public enum DailyPromotionType
     {
         GiftProduct,

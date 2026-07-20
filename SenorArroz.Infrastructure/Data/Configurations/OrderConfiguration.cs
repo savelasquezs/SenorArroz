@@ -24,6 +24,10 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.DeliveryRouteId).HasColumnName("delivery_route_id");
         builder.Property(o => o.DeliveryManId).HasColumnName("delivery_man_id");
         builder.Property(o => o.GuestName).HasColumnName("guestname").HasMaxLength(100);
+        builder.Property(o => o.DeliveryAppConnectionId).HasColumnName("delivery_app_connection_id");
+        builder.Property(o => o.ExternalOrderId).HasColumnName("external_order_id").HasMaxLength(160);
+        builder.Property(o => o.OrderSource).HasColumnName("order_source").HasMaxLength(40);
+        builder.Property(o => o.ExternalFulfillmentProvider).HasColumnName("external_fulfillment_provider").HasMaxLength(40);
 
         // Enum conversions
         builder.Property(o => o.Type).HasColumnName("type").HasConversion(
@@ -125,6 +129,11 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
             .HasForeignKey(o => o.DeliveryRouteId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.HasOne(o => o.DeliveryAppConnection)
+            .WithMany()
+            .HasForeignKey(o => o.DeliveryAppConnectionId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         // Índices
         builder.HasIndex(o => o.BranchId).HasDatabaseName("idx_order_branch");
         builder.HasIndex(o => o.CustomerId).HasDatabaseName("idx_order_customer");
@@ -134,6 +143,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.HasIndex(o => o.DeliveryManId).HasDatabaseName("idx_order_delivery_man");
         builder.HasIndex(o => o.DeliveryRouteId).HasDatabaseName("idx_order_delivery_route");
         builder.HasIndex(o => o.LoyaltyCycleStepId).HasDatabaseName("idx_order_loyalty_cycle_step");
+        builder.HasIndex(o => new { o.DeliveryAppConnectionId, o.ExternalOrderId }).IsUnique().HasDatabaseName("ux_order_external_source");
     }
 
     /// <summary>

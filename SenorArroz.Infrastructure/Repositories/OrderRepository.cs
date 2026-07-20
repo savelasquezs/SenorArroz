@@ -454,7 +454,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.DeliveryRoute)
             .Where(o => o.DeliveryManId == deliveryManId &&
                       (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Ready) &&
-                      o.Type == OrderType.Delivery)
+                      o.Type == OrderType.Delivery &&
+                      o.ExternalFulfillmentProvider == null)
             .OrderBy(o => o.CreatedAt)
             .ToListAsync(cancellationToken);
     }
@@ -473,7 +474,8 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.DeliveryRoute)
             .Where(o => o.Status == OrderStatus.Ready &&
                        o.DeliveryManId == null &&
-                       o.Type == OrderType.Delivery)
+                       o.Type == OrderType.Delivery &&
+                       o.ExternalFulfillmentProvider == null)
             .AsQueryable();
 
         if (branchId.HasValue)

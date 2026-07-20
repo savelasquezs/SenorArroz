@@ -92,6 +92,9 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
                 throw new BusinessException(
                     "Solo puedes tomar pedidos de domicilio desde la app. Los pedidos en local los asigna caja o administración.");
 
+            if (!string.IsNullOrWhiteSpace(order.ExternalFulfillmentProvider))
+                throw new BusinessException($"El pedido {orderId} es entregado por {order.ExternalFulfillmentProvider} y no admite domiciliario interno.");
+
             // Validate branch access
             if (order.BranchId != _currentUser.BranchId)
                 throw new BusinessException($"No tienes permisos para asignarte pedidos de la sucursal {order.BranchId}");

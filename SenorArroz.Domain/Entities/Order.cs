@@ -21,6 +21,10 @@ public class Order : BaseEntity
     public int? DeliveryRouteId { get; set; }
     public int? DeliveryManId { get; set; }
     public string? GuestName { get; set; }
+    public int? DeliveryAppConnectionId { get; set; }
+    public string? ExternalOrderId { get; set; }
+    public string? OrderSource { get; set; }
+    public string? ExternalFulfillmentProvider { get; set; }
 
     public OrderType? Type { get; set; }
     public int? DeliveryFee { get; set; }
@@ -74,6 +78,7 @@ public class Order : BaseEntity
     public virtual LoyaltyCycleStep? LoyaltyCycleStep { get; set; }
     public virtual User? DeliveryMan { get; set; }
     public virtual DeliveryRoute? DeliveryRoute { get; set; }
+    public virtual DeliveryAppConnection? DeliveryAppConnection { get; set; }
 
     public virtual ICollection<OrderDetail> OrderDetails { get; set; } = new List<OrderDetail>();
     public virtual ICollection<BankPayment> BankPayments { get; set; } = new List<BankPayment>();
