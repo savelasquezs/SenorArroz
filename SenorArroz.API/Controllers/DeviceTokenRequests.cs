@@ -1,10 +1,23 @@
 using System.ComponentModel.DataAnnotations;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.API.Controllers;
 
 public record RegisterDeviceTokenRequest(string Token, string? Platform);
 public record RemoveDeviceTokenRequest(string Token);
-public record RecordLocationRequest(int WorkSessionId, decimal Latitude, decimal Longitude, DateTime RecordedAt);
+public record RecordLocationRequest(
+    int WorkSessionId,
+    decimal Latitude,
+    decimal Longitude,
+    DateTime RecordedAt,
+    Guid? ClientPointId = null,
+    int? DeliveryRouteId = null,
+    double? AccuracyMeters = null,
+    double? HeadingDegrees = null,
+    int? BatteryLevelPercent = null,
+    bool? InternetAvailable = null,
+    bool? GpsEnabled = null,
+    DeliveryTrackingMode? TrackingMode = null);
 
 public class StartDeliveryWorkSessionRequest
 {

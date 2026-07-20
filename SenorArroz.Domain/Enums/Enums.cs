@@ -172,6 +172,14 @@ namespace SenorArroz.Domain.Enums
         ExceptionalClosure,
     }
 
+    public enum DeliveryTrackingMode
+    {
+        Light,
+        ActiveDelivery,
+        Offline,
+        Stopped,
+    }
+
     public enum WhatsAppConversationStatus
     {
         Open,

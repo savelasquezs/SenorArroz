@@ -1,7 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Helpers;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
@@ -11,8 +11,16 @@ namespace SenorArroz.Application.Features.Deliverymen.Commands;
 public class RecordLocationCommand : IRequest
 {
     public int WorkSessionId { get; set; }
+    public Guid? ClientPointId { get; set; }
+    public int? DeliveryRouteId { get; set; }
     public decimal Latitude { get; set; }
     public decimal Longitude { get; set; }
+    public double? AccuracyMeters { get; set; }
+    public double? HeadingDegrees { get; set; }
+    public int? BatteryLevelPercent { get; set; }
+    public bool? InternetAvailable { get; set; }
+    public bool? GpsEnabled { get; set; }
+    public DeliveryTrackingMode? TrackingMode { get; set; }
     public DateTime RecordedAt { get; set; }
 }
 
@@ -43,58 +51,115 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand>
         var deliverymanId = _currentUser.Id;
         var branchId = _currentUser.BranchId;
         var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
+        var recordedAtUtc = ColombiaTimeHelper.EnsureUtc(request.RecordedAt);
 
-        var workSession = await _db.DeliveryWorkSessions
-            .FirstOrDefaultAsync(x => x.DeliverymanId == deliverymanId &&
-                                      x.BranchId == branchId &&
-                                      x.Status == DeliveryWorkSessionStatus.Active,
-                cancellationToken);
-        if (workSession is null)
-            throw new BusinessException("No existe una jornada laboral activa.");
-        if (workSession.Id != request.WorkSessionId)
-            throw new BusinessException("La jornada laboral del dispositivo ya no está activa.");
-        if (nowUtc >= workSession.AutoCloseAt)
+        if (request.ClientPointId.HasValue)
         {
-            workSession.Close(nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
-            await _db.SaveChangesAsync(cancellationToken);
-            throw new BusinessException("La jornada laboral ya finalizó.");
+            var existingOwner = await _db.DeliverymanLocations.AsNoTracking()
+                .Where(x => x.ClientPointId == request.ClientPointId)
+                .Select(x => (int?)x.DeliverymanId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (existingOwner == deliverymanId)
+                return;
+            if (existingOwner.HasValue)
+                throw new BusinessException("El identificador de la ubicación ya pertenece a otro domiciliario.");
         }
 
-        // Busca la ruta activa más reciente del domiciliario (Open o InProgress)
-        var activeRoute = await _db.DeliveryRoutes
-            .Where(r => r.DeliverymanId == deliverymanId &&
-                        (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress))
-            .OrderByDescending(r => r.LastAssignmentAtUtc)
-            .FirstOrDefaultAsync(cancellationToken);
+        Validate(request);
 
-        int? activeRouteId = null;
-        if (activeRoute is not null)
+        var workSession = await _db.DeliveryWorkSessions
+            .FirstOrDefaultAsync(x => x.DeliverymanId == deliverymanId
+                                      && x.BranchId == branchId
+                                      && x.Id == request.WorkSessionId,
+                cancellationToken);
+        if (workSession is null)
+            throw new BusinessException("La jornada laboral del dispositivo ya no está activa.");
+
+        var captureDeadline = workSession.EndedAt.HasValue && workSession.EndedAt.Value < workSession.AutoCloseAt
+            ? workSession.EndedAt.Value
+            : workSession.AutoCloseAt;
+        if (recordedAtUtc < workSession.StartedAt || recordedAtUtc >= captureDeadline)
+            throw new BusinessException("La ubicación fue capturada fuera de la jornada laboral.");
+
+        if (workSession.Status == DeliveryWorkSessionStatus.Active && nowUtc >= workSession.AutoCloseAt)
+            workSession.Close(nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
+
+        int? routeId = request.DeliveryRouteId;
+        if (routeId.HasValue)
         {
-            var hasOnTheWay = await _db.Orders
-                .AnyAsync(o => o.DeliveryRouteId == activeRoute.Id && o.Status == OrderStatus.OnTheWay,
+            var routeBelongsToDeliveryman = await _db.DeliveryRoutes.AsNoTracking()
+                .AnyAsync(x => x.Id == routeId.Value
+                               && x.DeliverymanId == deliverymanId
+                               && x.BranchId == branchId,
                     cancellationToken);
-            if (hasOnTheWay) activeRouteId = activeRoute.Id;
+            if (!routeBelongsToDeliveryman)
+                throw new BusinessException("La ruta indicada no pertenece al domiciliario.");
+        }
+        else
+        {
+            routeId = await FindCurrentRouteIdAsync(deliverymanId, cancellationToken);
         }
 
         _db.DeliverymanLocations.Add(new DeliverymanLocation
         {
             DeliverymanId = deliverymanId,
             WorkSessionId = workSession.Id,
-            DeliveryRouteId = activeRouteId,
+            DeliveryRouteId = routeId,
+            ClientPointId = request.ClientPointId ?? Guid.NewGuid(),
             Latitude = request.Latitude,
             Longitude = request.Longitude,
-            RecordedAt = request.RecordedAt,
+            AccuracyMeters = request.AccuracyMeters,
+            HeadingDegrees = request.HeadingDegrees,
+            BatteryLevelPercent = request.BatteryLevelPercent,
+            InternetAvailable = request.InternetAvailable ?? true,
+            GpsEnabled = request.GpsEnabled ?? true,
+            TrackingMode = request.TrackingMode
+                           ?? (routeId.HasValue
+                               ? DeliveryTrackingMode.ActiveDelivery
+                               : DeliveryTrackingMode.Light),
+            RecordedAt = recordedAtUtc,
+            SyncedAt = nowUtc,
         });
         workSession.LastCommunicationAt = nowUtc;
         await _db.SaveChangesAsync(cancellationToken);
 
-        // Propaga a admins de la sucursal vía SignalR
         await _notifications.NotifyDeliverymanLocation(
             branchId,
             deliverymanId,
-            activeRouteId,
+            routeId,
             (double)request.Latitude,
             (double)request.Longitude,
-            request.RecordedAt);
+            recordedAtUtc);
+    }
+
+    private async Task<int?> FindCurrentRouteIdAsync(int deliverymanId, CancellationToken cancellationToken)
+    {
+        var activeRoute = await _db.DeliveryRoutes
+            .Where(r => r.DeliverymanId == deliverymanId
+                        && (r.Status == DeliveryRouteStatus.Open
+                            || r.Status == DeliveryRouteStatus.InProgress))
+            .OrderByDescending(r => r.LastAssignmentAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (activeRoute is null)
+            return null;
+
+        var hasOnTheWay = await _db.Orders
+            .AnyAsync(o => o.DeliveryRouteId == activeRoute.Id && o.Status == OrderStatus.OnTheWay,
+                cancellationToken);
+        return hasOnTheWay ? activeRoute.Id : null;
+    }
+
+    private static void Validate(RecordLocationCommand request)
+    {
+        if (request.Latitude is < -90 or > 90 || request.Longitude is < -180 or > 180)
+            throw new BusinessException("Las coordenadas de la ubicación no son válidas.");
+        if (request.AccuracyMeters is < 0)
+            throw new BusinessException("La precisión GPS no puede ser negativa.");
+        if (request.HeadingDegrees is < 0 or > 360)
+            throw new BusinessException("La dirección de movimiento debe estar entre 0 y 360 grados.");
+        if (request.BatteryLevelPercent is < 0 or > 100)
+            throw new BusinessException("El nivel de batería debe estar entre 0 y 100.");
+        if (request.TrackingMode == DeliveryTrackingMode.Stopped)
+            throw new BusinessException("No se pueden registrar ubicaciones en modo detenido.");
     }
 }

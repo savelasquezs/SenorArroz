@@ -122,8 +122,125 @@ public class DeliveryWorkSessionTests
         var point = Assert.Single(db.DeliverymanLocations);
         Assert.Equal(10, point.WorkSessionId);
         Assert.Null(point.DeliveryRouteId);
+        Assert.NotNull(point.ClientPointId);
+        Assert.Equal(DeliveryTrackingMode.Light, point.TrackingMode);
+        Assert.True(point.InternetAvailable);
+        Assert.True(point.GpsEnabled);
+        Assert.Equal(now, point.SyncedAt);
         notifications.Verify(x => x.NotifyDeliverymanLocation(
             7, 1, null, 4.60971, -74.08175, now), Times.Once);
+    }
+
+    [Fact]
+    public async Task RecordOfflineLocation_IsIdempotentAndKeepsCapturedRouteAfterSessionClosed()
+    {
+        await using var db = CreateDb();
+        var now = new DateTime(2026, 7, 20, 23, 0, 0, DateTimeKind.Utc);
+        var capturedAt = now.AddMinutes(-10);
+        var pointId = Guid.NewGuid();
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device-a",
+            DevicePlatform = "android",
+            StartedAt = now.AddHours(-4),
+            AutoCloseAt = now.AddHours(3),
+            EndedAt = now.AddMinutes(-5),
+            EndReason = DeliveryWorkSessionEndReason.TotalSettlement,
+            LastCommunicationAt = now.AddMinutes(-5),
+            Status = DeliveryWorkSessionStatus.Closed,
+        });
+        db.DeliveryRoutes.Add(new DeliveryRoute
+        {
+            Id = 20,
+            DeliverymanId = 1,
+            BranchId = 7,
+            Status = DeliveryRouteStatus.Completed,
+            LastAssignmentAtUtc = now.AddHours(-2),
+            CompletedAtUtc = now.AddMinutes(-6),
+        });
+        await db.SaveChangesAsync();
+        var notifications = new Mock<IOrderNotificationService>();
+        var handler = new RecordLocationHandler(
+            db,
+            CurrentUser().Object,
+            notifications.Object,
+            new FakeClock(now));
+        var command = new RecordLocationCommand
+        {
+            WorkSessionId = 10,
+            ClientPointId = pointId,
+            DeliveryRouteId = 20,
+            Latitude = 4.60971m,
+            Longitude = -74.08175m,
+            AccuracyMeters = 8.5,
+            HeadingDegrees = 125,
+            BatteryLevelPercent = 42,
+            InternetAvailable = false,
+            GpsEnabled = true,
+            TrackingMode = DeliveryTrackingMode.Offline,
+            RecordedAt = capturedAt,
+        };
+
+        await handler.Handle(command, default);
+        await handler.Handle(command, default);
+
+        var point = Assert.Single(db.DeliverymanLocations);
+        Assert.Equal(pointId, point.ClientPointId);
+        Assert.Equal(20, point.DeliveryRouteId);
+        Assert.Equal(8.5, point.AccuracyMeters);
+        Assert.Equal(125, point.HeadingDegrees);
+        Assert.Equal(42, point.BatteryLevelPercent);
+        Assert.False(point.InternetAvailable);
+        Assert.True(point.GpsEnabled);
+        Assert.Equal(DeliveryTrackingMode.Offline, point.TrackingMode);
+        Assert.Equal(capturedAt, point.RecordedAt);
+        Assert.Equal(now, point.SyncedAt);
+        notifications.Verify(x => x.NotifyDeliverymanLocation(
+            7, 1, 20, 4.60971, -74.08175, capturedAt), Times.Once);
+    }
+
+    [Fact]
+    public async Task RecordLocation_CapturedAfterSessionEnd_IsRejected()
+    {
+        await using var db = CreateDb();
+        var now = new DateTime(2026, 7, 20, 23, 0, 0, DateTimeKind.Utc);
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device-a",
+            DevicePlatform = "android",
+            StartedAt = now.AddHours(-4),
+            AutoCloseAt = now.AddHours(3),
+            EndedAt = now.AddMinutes(-5),
+            EndReason = DeliveryWorkSessionEndReason.TotalSettlement,
+            LastCommunicationAt = now.AddMinutes(-5),
+            Status = DeliveryWorkSessionStatus.Closed,
+        });
+        await db.SaveChangesAsync();
+        var handler = new RecordLocationHandler(
+            db,
+            CurrentUser().Object,
+            Mock.Of<IOrderNotificationService>(),
+            new FakeClock(now));
+
+        var error = await Assert.ThrowsAsync<BusinessException>(() => handler.Handle(
+            new RecordLocationCommand
+            {
+                WorkSessionId = 10,
+                ClientPointId = Guid.NewGuid(),
+                Latitude = 4.60971m,
+                Longitude = -74.08175m,
+                RecordedAt = now.AddMinutes(-4),
+            },
+            default));
+
+        Assert.Contains("fuera de la jornada", error.Message);
+        Assert.Empty(db.DeliverymanLocations);
     }
 
     private static ApplicationDbContext CreateDb() => new(

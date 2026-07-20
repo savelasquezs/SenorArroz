@@ -367,8 +367,16 @@ public class DeliverymanController : ControllerBase
         await _mediator.Send(new RecordLocationCommand
         {
             WorkSessionId = request.WorkSessionId,
+            ClientPointId = request.ClientPointId,
+            DeliveryRouteId = request.DeliveryRouteId,
             Latitude = request.Latitude,
             Longitude = request.Longitude,
+            AccuracyMeters = request.AccuracyMeters,
+            HeadingDegrees = request.HeadingDegrees,
+            BatteryLevelPercent = request.BatteryLevelPercent,
+            InternetAvailable = request.InternetAvailable,
+            GpsEnabled = request.GpsEnabled,
+            TrackingMode = request.TrackingMode,
             RecordedAt = request.RecordedAt,
         });
         return NoContent();
