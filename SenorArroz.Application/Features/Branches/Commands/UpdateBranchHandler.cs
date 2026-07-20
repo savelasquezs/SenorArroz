@@ -138,6 +138,15 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
         if (request.DeliveryTrackingIncidentRetentionDays.HasValue)
             branch.DeliveryTrackingIncidentRetentionDays = request.DeliveryTrackingIncidentRetentionDays.Value;
 
+        var staysToReclassify = await (
+            from stay in _db.DeliveryStays
+            join session in _db.DeliveryWorkSessions on stay.WorkSessionId equals session.Id
+            where session.BranchId == branch.Id
+            select stay)
+            .ToListAsync(cancellationToken);
+        foreach (var stay in staysToReclassify)
+            stay.InvalidateClassification();
+
         branch = await _branchRepository.UpdateAsync(branch, cancellationToken);
 
         var branchDto = _mapper.Map<BranchDto>(branch);

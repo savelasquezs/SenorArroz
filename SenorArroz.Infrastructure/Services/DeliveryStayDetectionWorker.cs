@@ -28,11 +28,19 @@ public class DeliveryStayDetectionWorker : BackgroundService
                 await using var scope = _serviceProvider.CreateAsyncScope();
                 var detector = scope.ServiceProvider.GetRequiredService<IDeliveryStayDetectionService>();
                 var processedSessions = await detector.ProcessPendingSessionsAsync(stoppingToken);
+                var classifier = scope.ServiceProvider.GetRequiredService<IDeliveryStayClassificationService>();
+                var classifiedStays = await classifier.ProcessPendingStaysAsync(stoppingToken);
                 if (processedSessions > 0)
                 {
                     _logger.LogInformation(
                         "Se analizaron {SessionCount} jornadas con nuevos puntos para detectar permanencias.",
                         processedSessions);
+                }
+                if (classifiedStays > 0)
+                {
+                    _logger.LogInformation(
+                        "Se clasificaron {StayCount} permanencias de domiciliarios.",
+                        classifiedStays);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

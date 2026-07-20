@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Infrastructure.Data.Configurations;
 
@@ -16,6 +17,7 @@ public class DeliveryStayConfiguration : IEntityTypeConfiguration<DeliveryStay>
         builder.Property(x => x.WorkSessionId).HasColumnName("work_session_id").IsRequired();
         builder.Property(x => x.DeliveryRouteId).HasColumnName("delivery_route_id");
         builder.Property(x => x.NearestOrderId).HasColumnName("nearest_order_id");
+        builder.Property(x => x.AuthorizedPlaceId).HasColumnName("authorized_place_id");
         builder.Property(x => x.FirstLocationId).HasColumnName("first_location_id").IsRequired();
         builder.Property(x => x.LastLocationId).HasColumnName("last_location_id").IsRequired();
         builder.Property(x => x.StartedAt).HasColumnName("started_at").IsRequired();
@@ -27,7 +29,13 @@ public class DeliveryStayConfiguration : IEntityTypeConfiguration<DeliveryStay>
         builder.Property(x => x.AverageAccuracyMeters).HasColumnName("average_accuracy_meters").IsRequired();
         builder.Property(x => x.DistanceToBranchMeters).HasColumnName("distance_to_branch_meters");
         builder.Property(x => x.DistanceToNearestOrderMeters).HasColumnName("distance_to_nearest_order_meters");
+        builder.Property(x => x.DistanceToAuthorizedPlaceMeters).HasColumnName("distance_to_authorized_place_meters");
         builder.Property(x => x.PointCount).HasColumnName("point_count").IsRequired();
+        builder.Property(x => x.Classification).HasColumnName("classification").HasMaxLength(40).HasConversion(
+            value => ToSnakeCase(value.ToString()),
+            value => Enum.Parse<DeliveryStayClassification>(ToPascalCase(value), true)).IsRequired();
+        builder.Property(x => x.ClassificationReason).HasColumnName("classification_reason").HasMaxLength(300);
+        builder.Property(x => x.ClassifiedAt).HasColumnName("classified_at");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd().Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
@@ -40,6 +48,8 @@ public class DeliveryStayConfiguration : IEntityTypeConfiguration<DeliveryStay>
             .OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.NearestOrder).WithMany().HasForeignKey(x => x.NearestOrderId)
             .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.AuthorizedPlace).WithMany().HasForeignKey(x => x.AuthorizedPlaceId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasIndex(x => new { x.WorkSessionId, x.FirstLocationId }).IsUnique()
             .HasDatabaseName("uq_delivery_stay_session_first_location");
@@ -48,5 +58,17 @@ public class DeliveryStayConfiguration : IEntityTypeConfiguration<DeliveryStay>
         builder.HasIndex(x => new { x.DeliverymanId, x.StartedAt })
             .HasDatabaseName("idx_delivery_stay_deliveryman_started");
         builder.HasIndex(x => x.DeliveryRouteId).HasDatabaseName("idx_delivery_stay_route");
+        builder.HasIndex(x => x.AuthorizedPlaceId).HasDatabaseName("idx_delivery_stay_authorized_place");
+        builder.HasIndex(x => new { x.Classification, x.ClassifiedAt })
+            .HasDatabaseName("idx_delivery_stay_classification");
     }
+
+    private static string ToSnakeCase(string input) => string.Concat(
+        input.Select((character, index) => char.IsUpper(character) && index > 0
+            ? $"_{char.ToLowerInvariant(character)}"
+            : char.ToLowerInvariant(character).ToString()));
+
+    private static string ToPascalCase(string input) => string.Concat(
+        input.Split('_', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => char.ToUpperInvariant(part[0]) + part[1..]));
 }

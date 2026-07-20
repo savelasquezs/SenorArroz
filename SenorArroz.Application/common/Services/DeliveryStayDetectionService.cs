@@ -287,6 +287,7 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
         stay.AverageAccuracyMeters = candidate.AverageAccuracyMeters;
         stay.PointCount = candidate.PointCount;
         stay.UpdatedAt = nowUtc;
+        stay.InvalidateClassification();
         stay.DistanceToBranchMeters = branchLatitude.HasValue && branchLongitude.HasValue
             ? GeoHelper.HaversineDistanceMeters(
                 (double)candidate.CenterLatitude,

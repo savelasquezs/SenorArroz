@@ -197,6 +197,17 @@ namespace SenorArroz.Domain.Enums
         TotalSettlement,
     }
 
+    public enum DeliveryStayClassification
+    {
+        Branch,
+        OrderDestination,
+        AuthorizedPlace,
+        TrafficOrRoute,
+        UnexpectedPlace,
+        GpsUnreliable,
+        PendingReview,
+    }
+
     public enum WhatsAppConversationStatus
     {
         Open,

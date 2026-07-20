@@ -1,3 +1,5 @@
+using SenorArroz.Domain.Enums;
+
 namespace SenorArroz.Domain.Entities;
 
 /// <summary>
@@ -11,6 +13,7 @@ public class DeliveryStay
     public int WorkSessionId { get; set; }
     public int? DeliveryRouteId { get; set; }
     public int? NearestOrderId { get; set; }
+    public int? AuthorizedPlaceId { get; set; }
     public long FirstLocationId { get; set; }
     public long LastLocationId { get; set; }
     public DateTime StartedAt { get; set; }
@@ -22,7 +25,11 @@ public class DeliveryStay
     public double AverageAccuracyMeters { get; set; }
     public double? DistanceToBranchMeters { get; set; }
     public double? DistanceToNearestOrderMeters { get; set; }
+    public double? DistanceToAuthorizedPlaceMeters { get; set; }
     public int PointCount { get; set; }
+    public DeliveryStayClassification Classification { get; set; } = DeliveryStayClassification.PendingReview;
+    public string? ClassificationReason { get; set; }
+    public DateTime? ClassifiedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
@@ -30,4 +37,14 @@ public class DeliveryStay
     public virtual DeliveryWorkSession WorkSession { get; set; } = null!;
     public virtual DeliveryRoute? DeliveryRoute { get; set; }
     public virtual Order? NearestOrder { get; set; }
+    public virtual DeliveryAuthorizedPlace? AuthorizedPlace { get; set; }
+
+    public void InvalidateClassification()
+    {
+        Classification = DeliveryStayClassification.PendingReview;
+        ClassificationReason = "awaiting_classification";
+        ClassifiedAt = null;
+        AuthorizedPlaceId = null;
+        DistanceToAuthorizedPlaceMeters = null;
+    }
 }
