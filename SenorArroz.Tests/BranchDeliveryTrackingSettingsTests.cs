@@ -1,6 +1,8 @@
 using System.ComponentModel.DataAnnotations;
+using SenorArroz.Application.Features.Branches.Commands;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Tests;
 
@@ -54,4 +56,49 @@ public class BranchDeliveryTrackingSettingsTests
         Assert.Contains(results, result =>
             result.MemberNames.Contains(nameof(UpdateBranchDto.DeliveryTrackingLightIntervalSeconds)));
     }
+
+    [Fact]
+    public void UpdatingAutoCloseTime_RecalculatesActiveSessionCutoff()
+    {
+        var session = ActiveSession(new DateTime(2026, 7, 20, 18, 0, 0, DateTimeKind.Utc));
+        var now = new DateTime(2026, 7, 20, 19, 0, 0, DateTimeKind.Utc);
+
+        UpdateBranchHandler.ApplyAutoCloseTimeToActiveSessions(
+            [session],
+            new TimeOnly(22, 0),
+            now);
+
+        Assert.Equal(new DateTime(2026, 7, 21, 3, 0, 0, DateTimeKind.Utc), session.AutoCloseAt);
+        Assert.Equal(DeliveryWorkSessionStatus.Active, session.Status);
+        Assert.Null(session.EndedAt);
+    }
+
+    [Fact]
+    public void UpdatingAutoCloseTimeToPast_ClosesActiveSessionImmediately()
+    {
+        var session = ActiveSession(new DateTime(2026, 7, 20, 18, 0, 0, DateTimeKind.Utc));
+        var now = new DateTime(2026, 7, 21, 1, 0, 0, DateTimeKind.Utc);
+
+        UpdateBranchHandler.ApplyAutoCloseTimeToActiveSessions(
+            [session],
+            new TimeOnly(19, 0),
+            now);
+
+        Assert.Equal(new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc), session.AutoCloseAt);
+        Assert.Equal(DeliveryWorkSessionStatus.Closed, session.Status);
+        Assert.Equal(DeliveryWorkSessionEndReason.AutomaticClosure, session.EndReason);
+        Assert.Equal(now, session.EndedAt);
+    }
+
+    private static DeliveryWorkSession ActiveSession(DateTime startedAt) => new()
+    {
+        DeliverymanId = 1,
+        BranchId = 7,
+        DeviceInstallationId = "device-a",
+        DevicePlatform = "android",
+        StartedAt = startedAt,
+        AutoCloseAt = startedAt.AddHours(8),
+        LastCommunicationAt = startedAt,
+        Status = DeliveryWorkSessionStatus.Active,
+    };
 }

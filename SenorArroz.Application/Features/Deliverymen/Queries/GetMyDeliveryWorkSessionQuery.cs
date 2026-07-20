@@ -33,7 +33,7 @@ public class GetMyDeliveryWorkSessionHandler : IRequestHandler<GetMyDeliveryWork
         var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
         if (nowUtc >= session.AutoCloseAt)
         {
-            StartDeliveryWorkSessionHandler.Close(session, nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
+            session.Close(nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
             await _db.SaveChangesAsync(cancellationToken);
             return null;
         }

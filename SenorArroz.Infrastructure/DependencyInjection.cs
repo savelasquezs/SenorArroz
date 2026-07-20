@@ -149,6 +149,7 @@ public static class DependencyInjection
         services.AddHostedService<PasswordResetCleanupService>();
         services.AddHostedService<ReservationNotificationService>();
         services.AddHostedService<DeliveryRouteConsolidationWorker>();
+        services.AddHostedService<DeliveryWorkSessionAutoCloseService>();
 
         return services;
     }

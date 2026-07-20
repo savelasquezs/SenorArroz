@@ -43,6 +43,29 @@ public class DeliveryWorkSessionTests
     }
 
     [Fact]
+    public async Task Start_AfterFullSettlementBlock_IsRejected()
+    {
+        await using var db = CreateDb();
+        db.Branches.Add(CreateBranch());
+        db.DeliverymanDayStates.Add(new DeliverymanDayState
+        {
+            BranchId = 7,
+            DeliverymanId = 1,
+            Date = new DateOnly(2026, 7, 20),
+            LiquidationMode = DeliverymanDayLiquidationMode.FullLiquidation,
+            Blocked = true,
+        });
+        await db.SaveChangesAsync();
+        var handler = CreateStartHandler(db, new DateTime(2026, 7, 20, 18, 0, 0, DateTimeKind.Utc));
+
+        var error = await Assert.ThrowsAsync<BusinessException>(
+            () => handler.Handle(StartCommand("device-a"), default));
+
+        Assert.Contains("liquidación total", error.Message);
+        Assert.Empty(db.DeliveryWorkSessions);
+    }
+
+    [Fact]
     public async Task Start_OnAnotherDevice_ClosesPreviousSession()
     {
         await using var db = CreateDb();

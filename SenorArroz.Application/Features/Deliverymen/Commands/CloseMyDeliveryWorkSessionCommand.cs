@@ -28,8 +28,7 @@ public class CloseMyDeliveryWorkSessionHandler : IRequestHandler<CloseMyDelivery
                 cancellationToken);
         if (session is null) return;
 
-        StartDeliveryWorkSessionHandler.Close(
-            session,
+        session.Close(
             ColombiaTimeHelper.EnsureUtc(_clock.UtcNow),
             DeliveryWorkSessionEndReason.UserChange);
         await _db.SaveChangesAsync(cancellationToken);

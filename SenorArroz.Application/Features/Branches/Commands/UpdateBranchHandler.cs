@@ -1,9 +1,13 @@
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BranchPrintSettings.DTOs;
 using SenorArroz.Application.Features.Branches.DTOs;
+using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -15,13 +19,29 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
     private readonly IApplicationDbContext _db;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IClock _clock;
+    private readonly IFcmPushService _fcm;
+    private readonly ILogger<UpdateBranchHandler> _logger;
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
 
-    public UpdateBranchHandler(IBranchRepository branchRepository, IApplicationDbContext db, IMapper mapper, ICurrentUser currentUser)
+    public UpdateBranchHandler(
+        IBranchRepository branchRepository,
+        IApplicationDbContext db,
+        IMapper mapper,
+        ICurrentUser currentUser,
+        IClock clock,
+        IFcmPushService fcm,
+        ILogger<UpdateBranchHandler> logger,
+        IRefreshTokenRepository refreshTokenRepository)
     {
         _branchRepository = branchRepository;
         _db = db;
         _mapper = mapper;
         _currentUser = currentUser;
+        _clock = clock;
+        _fcm = fcm;
+        _logger = logger;
+        _refreshTokenRepository = refreshTokenRepository;
     }
 
     public async Task<BranchDto> Handle(UpdateBranchCommand request, CancellationToken cancellationToken)
@@ -77,8 +97,27 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
             branch.MaxFreeDeliveryDiscount = Math.Max(0, request.MaxFreeDeliveryDiscount.Value);
         branch.PosCopyEtaMinMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaMinMinutes, 30);
         branch.PosCopyEtaRangeMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaRangeMinutes, 15);
-        if (request.DeliveryTrackingAutoCloseTime.HasValue)
+        var sessionsWithUpdatedCutoff = new List<DeliveryWorkSession>();
+        if (request.DeliveryTrackingAutoCloseTime.HasValue
+            && request.DeliveryTrackingAutoCloseTime.Value != branch.DeliveryTrackingAutoCloseTime)
+        {
             branch.DeliveryTrackingAutoCloseTime = request.DeliveryTrackingAutoCloseTime.Value;
+            sessionsWithUpdatedCutoff = await _db.DeliveryWorkSessions
+                .Where(x => x.BranchId == branch.Id && x.Status == DeliveryWorkSessionStatus.Active)
+                .ToListAsync(cancellationToken);
+            ApplyAutoCloseTimeToActiveSessions(
+                sessionsWithUpdatedCutoff,
+                branch.DeliveryTrackingAutoCloseTime,
+                ColombiaTimeHelper.EnsureUtc(_clock.UtcNow));
+            foreach (var closedSession in sessionsWithUpdatedCutoff
+                         .Where(x => x.Status == DeliveryWorkSessionStatus.Closed))
+            {
+                await _refreshTokenRepository.RevokeAllByUserIdAsync(
+                    closedSession.DeliverymanId,
+                    "updated-work-session-cutoff",
+                    cancellationToken);
+            }
+        }
         if (request.DeliveryTrackingLightIntervalSeconds.HasValue)
             branch.DeliveryTrackingLightIntervalSeconds = request.DeliveryTrackingLightIntervalSeconds.Value;
         if (request.DeliveryTrackingActiveIntervalSeconds.HasValue)
@@ -109,9 +148,71 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
             .FirstOrDefaultAsync(s => s.BranchId == branch.Id, cancellationToken);
         branchDto.PrintSettings = ps is null ? null : _mapper.Map<BranchPrintSettingsDto>(ps);
 
+        await NotifyUpdatedWorkSessionsAsync(sessionsWithUpdatedCutoff, cancellationToken);
+
         return branchDto;
     }
 
     private static string? NullIfWhiteSpace(string? s) =>
         string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    internal static void ApplyAutoCloseTimeToActiveSessions(
+        IEnumerable<DeliveryWorkSession> sessions,
+        TimeOnly autoCloseTime,
+        DateTime nowUtc)
+    {
+        foreach (var session in sessions)
+        {
+            var sessionDateColombia = ColombiaTimeHelper
+                .GetNowInColombiaFromUtc(session.StartedAt)
+                .Date;
+            var cutoffLocal = sessionDateColombia.Add(autoCloseTime.ToTimeSpan());
+            session.AutoCloseAt = ColombiaTimeHelper.ConvertColombiaToUtc(cutoffLocal);
+
+            if (session.AutoCloseAt <= nowUtc)
+            {
+                session.Close(nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
+            }
+        }
+    }
+
+    private async Task NotifyUpdatedWorkSessionsAsync(
+        IReadOnlyCollection<DeliveryWorkSession> sessions,
+        CancellationToken cancellationToken)
+    {
+        foreach (var session in sessions)
+        {
+            try
+            {
+                var tokens = await _db.UserDeviceTokens
+                    .AsNoTracking()
+                    .Where(x => x.UserId == session.DeliverymanId)
+                    .Select(x => x.Token)
+                    .ToListAsync(cancellationToken);
+                var wasClosed = session.Status == DeliveryWorkSessionStatus.Closed;
+                var cutoffColombia = ColombiaTimeHelper.GetNowInColombiaFromUtc(session.AutoCloseAt);
+                await _fcm.SendToTokensAsync(
+                    tokens,
+                    wasClosed ? "Jornada finalizada" : "Horario de jornada actualizado",
+                    wasClosed
+                        ? "La nueva hora de cierre ya se cumplió. El seguimiento fue detenido."
+                        : $"La jornada cerrará a las {cutoffColombia:HH:mm} (Colombia).",
+                    new Dictionary<string, string>
+                    {
+                        ["type"] = wasClosed ? "work_session_closed" : "work_session_updated",
+                        ["workSessionId"] = session.Id.ToString(),
+                        ["autoCloseAt"] = session.AutoCloseAt.ToString("O"),
+                    },
+                    cancellationToken,
+                    $"work_session_cutoff:{session.Id}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "No se pudo notificar el nuevo cierre de la jornada {WorkSessionId}.",
+                    session.Id);
+            }
+        }
+    }
 }

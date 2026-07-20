@@ -43,13 +43,23 @@ public class StartDeliveryWorkSessionHandler : IRequestHandler<StartDeliveryWork
         var nowColombia = ColombiaTimeHelper.GetNowInColombiaFromUtc(nowUtc);
         var cutoffLocal = nowColombia.Date.Add(branch.DeliveryTrackingAutoCloseTime.ToTimeSpan());
 
+        var dayIsBlocked = await _db.DeliverymanDayStates.AsNoTracking()
+            .AnyAsync(x => x.BranchId == branch.Id
+                           && x.DeliverymanId == _currentUser.Id
+                           && x.Date == DateOnly.FromDateTime(nowColombia)
+                           && x.Blocked,
+                cancellationToken);
+        if (dayIsBlocked)
+            throw new BusinessException(
+                "La jornada fue cerrada por liquidación total. Un administrador debe habilitarla para continuar.");
+
         var active = await _db.DeliveryWorkSessions
             .FirstOrDefaultAsync(x => x.DeliverymanId == _currentUser.Id && x.Status == DeliveryWorkSessionStatus.Active,
                 cancellationToken);
 
         if (active is not null && nowUtc >= active.AutoCloseAt)
         {
-            Close(active, nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
+            active.Close(nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
             await _db.SaveChangesAsync(cancellationToken);
             active = null;
         }
@@ -68,7 +78,7 @@ public class StartDeliveryWorkSessionHandler : IRequestHandler<StartDeliveryWork
                 return DeliveryWorkSessionDtoMapper.Map(active, branch);
             }
 
-            Close(active, nowUtc, DeliveryWorkSessionEndReason.UserChange);
+            active.Close(nowUtc, DeliveryWorkSessionEndReason.UserChange);
             await _db.SaveChangesAsync(cancellationToken);
         }
 
@@ -107,11 +117,4 @@ public class StartDeliveryWorkSessionHandler : IRequestHandler<StartDeliveryWork
             : normalized;
     }
 
-    internal static void Close(DeliveryWorkSession session, DateTime nowUtc, DeliveryWorkSessionEndReason reason)
-    {
-        session.Status = DeliveryWorkSessionStatus.Closed;
-        session.EndedAt = nowUtc;
-        session.EndReason = reason;
-        session.LastCommunicationAt = nowUtc;
-    }
 }

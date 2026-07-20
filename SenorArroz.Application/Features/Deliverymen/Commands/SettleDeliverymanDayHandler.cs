@@ -1,6 +1,7 @@
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.DeliverymanAdvances.DTOs;
@@ -26,6 +27,9 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
     private readonly ICurrentUser _currentUser;
     private readonly IMapper _mapper;
     private readonly IClock _clock;
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IFcmPushService _fcm;
+    private readonly ILogger<SettleDeliverymanDayHandler> _logger;
 
     public SettleDeliverymanDayHandler(
         IApplicationDbContext context,
@@ -36,7 +40,10 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         IExpenseHeaderRepository expenseHeaderRepository,
         ICurrentUser currentUser,
         IMapper mapper,
-        IClock clock)
+        IClock clock,
+        IRefreshTokenRepository refreshTokenRepository,
+        IFcmPushService fcm,
+        ILogger<SettleDeliverymanDayHandler> logger)
     {
         _context = context;
         _userRepository = userRepository;
@@ -47,6 +54,9 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         _currentUser = currentUser;
         _mapper = mapper;
         _clock = clock;
+        _refreshTokenRepository = refreshTokenRepository;
+        _fcm = fcm;
+        _logger = logger;
     }
 
     public async Task<SettleDeliverymanDayResultDto> Handle(SettleDeliverymanDayCommand request, CancellationToken cancellationToken)
@@ -76,42 +86,20 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         if (!Roles.IsSuperadmin(_currentUser.Role) && deliveryman.BranchId != branchId)
             throw new BusinessException("No tienes permisos para liquidar este domiciliario");
 
-        var onTheWayDelivery = await _orderRepository.SearchOrdersAsync(
-            searchTerm: null,
-            branchId: branchId,
-            customerId: null,
-            deliveryManId: request.DeliverymanId,
-            status: OrderStatus.OnTheWay,
-            type: OrderType.Delivery,
-            fromDate: null,
-            toDate: null,
-            minAmount: null,
-            maxAmount: null,
-            page: 1,
-            pageSize: 1,
-            sortBy: "CreatedAt",
-            sortOrder: "desc");
-        var onTheWayOnsite = await _orderRepository.SearchOrdersAsync(
-            searchTerm: null,
-            branchId: branchId,
-            customerId: null,
-            deliveryManId: request.DeliverymanId,
-            status: OrderStatus.OnTheWay,
-            type: OrderType.Onsite,
-            fromDate: null,
-            toDate: null,
-            minAmount: null,
-            maxAmount: null,
-            page: 1,
-            pageSize: 1,
-            sortBy: "CreatedAt",
-            sortOrder: "desc");
-        if (onTheWayDelivery.TotalCount + onTheWayOnsite.TotalCount > 0)
+        var hasActiveAssignedOrders = await _context.Orders.AsNoTracking()
+            .AnyAsync(x => x.BranchId == branchId
+                           && x.DeliveryManId == request.DeliverymanId
+                           && x.Status != OrderStatus.Delivered
+                           && x.Status != OrderStatus.Cancelled,
+                cancellationToken);
+        if (hasActiveAssignedOrders)
             throw new BusinessException(
-                "No puedes liquidar mientras el domiciliario tenga pedidos en camino sin entregar.");
+                "No puedes liquidar mientras el domiciliario tenga pedidos activos sin entregar o reasignar.");
 
         var startColombia = settlementDate.ToDateTime(TimeOnly.MinValue);
         var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(startColombia, startColombia);
+        var closesCurrentWorkSession = s.Mode == DeliverymanDayLiquidationMode.FullLiquidation
+                                       && settlementDate == ColombiaTimeHelper.GetTodayDateOnlyColombiaFromUtc(_clock.UtcNow);
 
         var orders = (await DeliverymanDeliveredOrdersQuery.LoadAllDeliveredInRangeAsync(
                 _orderRepository,
@@ -195,6 +183,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         var newAdvances = new List<DeliverymanAdvance>();
+        var workSessionTokens = new List<string>();
 
         decimal cashAdvanceAmount = s.Mode == DeliverymanDayLiquidationMode.FullLiquidation
             ? s.CashAmount
@@ -295,8 +284,33 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
             : _clock.UtcNow;
         state.LastLiquidationAtUtc = DateTime.SpecifyKind(liquidationMarkerUtc, DateTimeKind.Utc).AddTicks(10);
 
+        if (closesCurrentWorkSession)
+        {
+            var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
+            var activeSessions = await _context.DeliveryWorkSessions
+                .Where(x => x.DeliverymanId == request.DeliverymanId
+                            && x.Status == DeliveryWorkSessionStatus.Active)
+                .ToListAsync(cancellationToken);
+            foreach (var session in activeSessions)
+            {
+                session.Close(nowUtc, DeliveryWorkSessionEndReason.TotalSettlement);
+            }
+
+            workSessionTokens = await _context.UserDeviceTokens.AsNoTracking()
+                .Where(x => x.UserId == request.DeliverymanId)
+                .Select(x => x.Token)
+                .ToListAsync(cancellationToken);
+            await _refreshTokenRepository.RevokeAllByUserIdAsync(
+                request.DeliverymanId,
+                "total-settlement",
+                cancellationToken);
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
+
+        if (closesCurrentWorkSession)
+            await NotifyWorkSessionClosedAsync(request.DeliverymanId, workSessionTokens, cancellationToken);
 
         var dtos = new List<DeliverymanAdvanceDto>();
         foreach (var id in createdIds)
@@ -311,5 +325,33 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
             Advances = dtos,
             SurplusApplied = surplus
         };
+    }
+
+    private async Task NotifyWorkSessionClosedAsync(
+        int deliverymanId,
+        IReadOnlyList<string> tokens,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _fcm.SendToTokensAsync(
+                tokens,
+                "Jornada finalizada",
+                "Tu jornada fue cerrada por liquidación total.",
+                new Dictionary<string, string>
+                {
+                    ["type"] = "work_session_closed",
+                    ["reason"] = "total_settlement",
+                },
+                cancellationToken,
+                $"total_settlement:{deliverymanId}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "La liquidación se completó, pero no se pudo notificar al domiciliario {DeliverymanId}.",
+                deliverymanId);
+        }
     }
 }

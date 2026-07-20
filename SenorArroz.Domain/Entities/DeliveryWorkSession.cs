@@ -21,4 +21,12 @@ public class DeliveryWorkSession : BaseEntity
     public virtual User Deliveryman { get; set; } = null!;
     public virtual Branch Branch { get; set; } = null!;
     public virtual ICollection<DeliverymanLocation> Locations { get; set; } = new List<DeliverymanLocation>();
+
+    public void Close(DateTime nowUtc, DeliveryWorkSessionEndReason reason)
+    {
+        Status = DeliveryWorkSessionStatus.Closed;
+        EndedAt = nowUtc;
+        EndReason = reason;
+        LastCommunicationAt = nowUtc;
+    }
 }

@@ -55,10 +55,7 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand>
             throw new BusinessException("La jornada laboral del dispositivo ya no está activa.");
         if (nowUtc >= workSession.AutoCloseAt)
         {
-            StartDeliveryWorkSessionHandler.Close(
-                workSession,
-                nowUtc,
-                DeliveryWorkSessionEndReason.AutomaticClosure);
+            workSession.Close(nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
             await _db.SaveChangesAsync(cancellationToken);
             throw new BusinessException("La jornada laboral ya finalizó.");
         }
