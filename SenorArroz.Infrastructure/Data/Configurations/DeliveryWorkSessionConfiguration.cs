@@ -30,6 +30,7 @@ public class DeliveryWorkSessionConfiguration : IEntityTypeConfiguration<Deliver
             value => ToSnakeCase(value.ToString()),
             value => Enum.Parse<DeliveryWorkSessionStatus>(ToPascalCase(value), true)).IsRequired();
         builder.Property(x => x.LastCommunicationAt).HasColumnName("last_communication_at").IsRequired();
+        builder.Property(x => x.StayAnalysisLastLocationId).HasColumnName("stay_analysis_last_location_id");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAddOrUpdate()

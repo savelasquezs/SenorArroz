@@ -58,6 +58,7 @@ public class DeliverymanLocationConfiguration : IEntityTypeConfiguration<Deliver
 
         builder.HasIndex(e => e.DeliverymanId).HasDatabaseName("idx_dloc_deliveryman");
         builder.HasIndex(e => e.WorkSessionId).HasDatabaseName("idx_dloc_work_session");
+        builder.HasIndex(e => new { e.WorkSessionId, e.Id }).HasDatabaseName("idx_dloc_work_session_id");
         builder.HasIndex(e => e.DeliveryRouteId).HasDatabaseName("idx_dloc_route");
         builder.HasIndex(e => e.RecordedAt).HasDatabaseName("idx_dloc_recorded");
         builder.HasIndex(e => e.ClientPointId)

@@ -150,6 +150,7 @@ public static class DependencyInjection
         services.AddHostedService<ReservationNotificationService>();
         services.AddHostedService<DeliveryRouteConsolidationWorker>();
         services.AddHostedService<DeliveryWorkSessionAutoCloseService>();
+        services.AddHostedService<DeliveryStayDetectionWorker>();
 
         return services;
     }

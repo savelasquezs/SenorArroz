@@ -17,6 +17,7 @@ public class DeliveryWorkSession : BaseEntity
     public DeliveryWorkSessionEndReason? EndReason { get; set; }
     public DeliveryWorkSessionStatus Status { get; set; } = DeliveryWorkSessionStatus.Active;
     public DateTime LastCommunicationAt { get; set; }
+    public long? StayAnalysisLastLocationId { get; set; }
 
     public virtual User Deliveryman { get; set; } = null!;
     public virtual Branch Branch { get; set; } = null!;
