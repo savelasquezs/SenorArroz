@@ -8,6 +8,15 @@ public class DailyMonetaryAuditEmailPayload
     public DateTime PeriodEndUtc { get; set; }
     public IReadOnlyCollection<string> RecipientEmails { get; set; } = Array.Empty<string>();
     public IReadOnlyCollection<DailyMonetaryAuditEmailGroup> Groups { get; set; } = Array.Empty<DailyMonetaryAuditEmailGroup>();
+    public IReadOnlyCollection<DailyTrackingAlertEmailGroup> TrackingAlertGroups { get; set; } = Array.Empty<DailyTrackingAlertEmailGroup>();
+}
+
+public class DailyTrackingAlertEmailGroup
+{
+    public string Title { get; set; } = string.Empty;
+    public string Severity { get; set; } = string.Empty;
+    public int EventCount { get; set; }
+    public int ActiveCount { get; set; }
 }
 
 public class DailyMonetaryAuditEmailGroup

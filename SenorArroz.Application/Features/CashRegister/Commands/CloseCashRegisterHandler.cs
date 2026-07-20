@@ -211,6 +211,24 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 .OrderBy(x => x.Title)
                 .ToList();
 
+            var trackingAlerts = await _context.DeliveryTrackingAlerts.AsNoTracking()
+                .Where(x => x.BranchId == branchId
+                    && x.OccurredAt > periodStartUtc
+                    && x.OccurredAt <= saved.ClosedAt)
+                .ToListAsync(cancellationToken);
+            var trackingAlertGroups = trackingAlerts
+                .GroupBy(x => new { x.AlertType, x.Severity })
+                .Select(group => new DailyTrackingAlertEmailGroup
+                {
+                    Title = TrackingAlertTitle(group.Key.AlertType),
+                    Severity = TrackingAlertSeverityLabel(group.Key.Severity),
+                    EventCount = group.Count(),
+                    ActiveCount = group.Count(x => x.Status == DeliveryTrackingAlertStatus.Active),
+                })
+                .OrderByDescending(x => TrackingAlertSeverityOrder(x.Severity))
+                .ThenBy(x => x.Title)
+                .ToList();
+
             var branchUsers = await _userRepository.GetAllAsync(branchId, cancellationToken);
             var allUsers = await _userRepository.GetAllAsync(null, cancellationToken);
             var recipients = branchUsers
@@ -235,7 +253,8 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                     EventCount = x.EventCount,
                     NetDifference = x.NetDifference,
                     Lines = x.Details
-                }).ToList()
+                }).ToList(),
+                TrackingAlertGroups = trackingAlertGroups,
             };
 
             var dispatch = new DailyAuditDispatch
@@ -254,7 +273,8 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                     businessDate = auditBusinessDate.ToString("yyyy-MM-dd"),
                     periodStartUtc,
                     periodEndUtc = saved.ClosedAt,
-                    groups
+                    groups,
+                    trackingAlertGroups
                 })
             };
 
@@ -314,4 +334,32 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
             }).ToList()
         };
     }
+
+    private static string TrackingAlertTitle(DeliveryTrackingAlertType type) => type switch
+    {
+        DeliveryTrackingAlertType.GpsDisabled => "GPS apagado",
+        DeliveryTrackingAlertType.LocationPermissionRevoked => "Permiso de ubicación retirado",
+        DeliveryTrackingAlertType.NoCommunication => "Sin comunicación",
+        DeliveryTrackingAlertType.UnexpectedStay => "Permanencia no esperada",
+        DeliveryTrackingAlertType.OfflineLocationsQueued => "Ubicaciones offline sincronizadas",
+        DeliveryTrackingAlertType.SessionPastAutoClose => "Jornada después del cierre",
+        _ => type.ToString(),
+    };
+
+    private static string TrackingAlertSeverityLabel(DeliveryTrackingAlertSeverity severity) => severity switch
+    {
+        DeliveryTrackingAlertSeverity.Informational => "Informativa",
+        DeliveryTrackingAlertSeverity.Warning => "Advertencia",
+        DeliveryTrackingAlertSeverity.RequiresReview => "Requiere revisión",
+        DeliveryTrackingAlertSeverity.Critical => "Crítica",
+        _ => severity.ToString(),
+    };
+
+    private static int TrackingAlertSeverityOrder(string severity) => severity switch
+    {
+        "Crítica" => 4,
+        "Requiere revisión" => 3,
+        "Advertencia" => 2,
+        _ => 1,
+    };
 }

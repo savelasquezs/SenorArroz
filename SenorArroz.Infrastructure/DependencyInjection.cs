@@ -151,6 +151,7 @@ public static class DependencyInjection
         services.AddHostedService<DeliveryRouteConsolidationWorker>();
         services.AddHostedService<DeliveryWorkSessionAutoCloseService>();
         services.AddHostedService<DeliveryStayDetectionWorker>();
+        services.AddHostedService<DeliveryTrackingAlertWorker>();
 
         return services;
     }

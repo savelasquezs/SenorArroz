@@ -79,6 +79,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<DeliveryTrackingIncident> DeliveryTrackingIncidents { get; set; }
 
+        public virtual DbSet<DeliveryTrackingAlert> DeliveryTrackingAlerts { get; set; }
+
         public virtual DbSet<DeliveryIncidentLocationEvidence> DeliveryIncidentLocationEvidence { get; set; }
 
         public virtual DbSet<DeliveryIncidentDeviceEventEvidence> DeliveryIncidentDeviceEventEvidence { get; set; }
@@ -180,6 +182,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new DeliveryAuthorizedPlaceConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryStayConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryTrackingIncidentConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryTrackingAlertConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryIncidentLocationEvidenceConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryIncidentDeviceEventEvidenceConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryWorkSessionConfiguration());

@@ -103,7 +103,7 @@ public class EmailService : IEmailService
         if (toEmails.Count == 0)
             return EmailSendResult.Fail("none", "No hay destinatarios configurados para la auditoría monetaria.");
 
-        var subject = $"Auditoría monetaria diaria - {payload.BranchName} - {payload.BusinessDate:yyyy-MM-dd}";
+        var subject = $"Auditoría diaria - {payload.BranchName} - {payload.BusinessDate:yyyy-MM-dd}";
         var groupsHtml = string.Join("", payload.Groups.Select(group =>
             $@"<div style='margin:0 0 18px;border:1px solid #e5e5e5;border-top:4px solid #f97316;border-radius:7px;padding:16px;'>
 <h3 style='margin:0 0 8px;color:#171717;'>{WebUtility.HtmlEncode(group.Title)}</h3>
@@ -115,12 +115,27 @@ public class EmailService : IEmailService
         var emptyState = payload.Groups.Count == 0
             ? "<div style='background:#fff7ed;border-left:4px solid #f97316;padding:16px;'>No hubo pedidos cancelados ni reducciones monetarias durante este periodo.</div>"
             : groupsHtml;
+        var trackingGroupsHtml = string.Join("", payload.TrackingAlertGroups.Select(group =>
+            $@"<tr>
+<td style='padding:9px;border-bottom:1px solid #e5e5e5;'>{WebUtility.HtmlEncode(group.Title)}</td>
+<td style='padding:9px;border-bottom:1px solid #e5e5e5;'>{WebUtility.HtmlEncode(group.Severity)}</td>
+<td style='padding:9px;border-bottom:1px solid #e5e5e5;text-align:center;'>{group.EventCount}</td>
+<td style='padding:9px;border-bottom:1px solid #e5e5e5;text-align:center;'>{group.ActiveCount}</td>
+</tr>"));
+        var trackingSection = payload.TrackingAlertGroups.Count == 0
+            ? "<div style='background:#ecfdf5;border-left:4px solid #10b981;padding:16px;'>No se generaron alertas de seguimiento durante este periodo.</div>"
+            : $@"<table style='width:100%;border-collapse:collapse;border:1px solid #e5e5e5;'>
+<thead><tr style='background:#f5f5f5;'><th style='padding:9px;text-align:left;'>Tipo</th><th style='padding:9px;text-align:left;'>Nivel</th><th style='padding:9px;'>Eventos</th><th style='padding:9px;'>Activas</th></tr></thead>
+<tbody>{trackingGroupsHtml}</tbody></table>";
         var content = $@"
 <p style='margin-top:0;'>Sucursal: <strong>{WebUtility.HtmlEncode(payload.BranchName)}</strong></p>
 <p>Fecha de negocio: <strong>{payload.BusinessDate:dd/MM/yyyy}</strong></p>
 <p style='color:#525252;'>Periodo auditado (hora de Colombia): {periodStartColombia:dd/MM/yyyy HH:mm} a {periodEndColombia:dd/MM/yyyy HH:mm}</p>
-{emptyState}";
-        var body = BuildBrandedEmail("Auditoría monetaria diaria", "Cancelaciones y reducciones de valor", content);
+<h2 style='margin:24px 0 12px;color:#171717;'>Auditoría monetaria</h2>
+{emptyState}
+<h2 style='margin:24px 0 12px;color:#171717;'>Alertas de seguimiento de domiciliarios</h2>
+{trackingSection}";
+        var body = BuildBrandedEmail("Auditoría diaria", "Operación monetaria y seguimiento de domiciliarios", content);
 
         return await QueueEmailAsync(
             messageType: "daily_monetary_audit",

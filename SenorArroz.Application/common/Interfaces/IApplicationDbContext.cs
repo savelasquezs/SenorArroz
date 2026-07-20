@@ -70,6 +70,8 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<DeliveryTrackingIncident> DeliveryTrackingIncidents { get; set; }
 
+        DbSet<DeliveryTrackingAlert> DeliveryTrackingAlerts { get; set; }
+
         DbSet<DeliveryIncidentLocationEvidence> DeliveryIncidentLocationEvidence { get; set; }
 
         DbSet<DeliveryIncidentDeviceEventEvidence> DeliveryIncidentDeviceEventEvidence { get; set; }

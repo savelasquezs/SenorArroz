@@ -225,6 +225,30 @@ namespace SenorArroz.Domain.Enums
         ReferredToDisciplinaryProcess,
     }
 
+    public enum DeliveryTrackingAlertType
+    {
+        GpsDisabled,
+        LocationPermissionRevoked,
+        NoCommunication,
+        UnexpectedStay,
+        OfflineLocationsQueued,
+        SessionPastAutoClose,
+    }
+
+    public enum DeliveryTrackingAlertSeverity
+    {
+        Informational,
+        Warning,
+        RequiresReview,
+        Critical,
+    }
+
+    public enum DeliveryTrackingAlertStatus
+    {
+        Active,
+        Resolved,
+    }
+
     public enum WhatsAppConversationStatus
     {
         Open,
