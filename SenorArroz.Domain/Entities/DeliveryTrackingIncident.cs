@@ -34,6 +34,12 @@ public class DeliveryTrackingIncident
     public DateTime SourceUpdatedAt { get; set; }
     public DateTime EvidenceCapturedAt { get; set; }
     public bool EvidenceComplete { get; set; }
+    public DeliveryIncidentReviewStatus ReviewStatus { get; set; } = DeliveryIncidentReviewStatus.Pending;
+    public DeliveryStayClassification? FinalClassification { get; set; }
+    public string? AdminNotes { get; set; }
+    public string? DeliverymanExplanation { get; set; }
+    public int? ReviewedByUserId { get; set; }
+    public DateTime? ReviewedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

@@ -43,6 +43,17 @@ public class DeliveryTrackingIncidentConfiguration : IEntityTypeConfiguration<De
         builder.Property(x => x.SourceUpdatedAt).HasColumnName("source_updated_at").IsRequired();
         builder.Property(x => x.EvidenceCapturedAt).HasColumnName("evidence_captured_at").IsRequired();
         builder.Property(x => x.EvidenceComplete).HasColumnName("evidence_complete").IsRequired();
+        builder.Property(x => x.ReviewStatus).HasColumnName("review_status").HasMaxLength(50)
+            .HasConversion(value => ToSnakeCase(value.ToString()), value => Parse<DeliveryIncidentReviewStatus>(value))
+            .IsRequired();
+        builder.Property(x => x.FinalClassification).HasColumnName("final_classification").HasMaxLength(40)
+            .HasConversion(
+                value => value == null ? null : ToSnakeCase(value.Value.ToString()),
+                value => value == null ? null : Parse<DeliveryStayClassification>(value));
+        builder.Property(x => x.AdminNotes).HasColumnName("admin_notes").HasMaxLength(2000);
+        builder.Property(x => x.DeliverymanExplanation).HasColumnName("deliveryman_explanation").HasMaxLength(2000);
+        builder.Property(x => x.ReviewedByUserId).HasColumnName("reviewed_by_user_id");
+        builder.Property(x => x.ReviewedAt).HasColumnName("reviewed_at");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd().Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
@@ -53,6 +64,8 @@ public class DeliveryTrackingIncidentConfiguration : IEntityTypeConfiguration<De
             .HasDatabaseName("idx_delivery_tracking_incident_branch_started");
         builder.HasIndex(x => new { x.WorkSessionId, x.StartedAt })
             .HasDatabaseName("idx_delivery_tracking_incident_session_started");
+        builder.HasIndex(x => new { x.BranchId, x.ReviewStatus, x.StartedAt })
+            .HasDatabaseName("idx_delivery_tracking_incident_review");
     }
 
     private static string ToSnakeCase(string input) => string.Concat(

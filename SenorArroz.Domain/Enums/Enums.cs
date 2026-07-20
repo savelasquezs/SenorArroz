@@ -214,6 +214,17 @@ namespace SenorArroz.Domain.Enums
         RouteDeviation,
     }
 
+    public enum DeliveryIncidentReviewStatus
+    {
+        Pending,
+        Justified,
+        NotJustified,
+        GpsError,
+        TechnicalFailure,
+        ClosedWithoutAction,
+        ReferredToDisciplinaryProcess,
+    }
+
     public enum WhatsAppConversationStatus
     {
         Open,
