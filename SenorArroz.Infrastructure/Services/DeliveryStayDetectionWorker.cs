@@ -30,6 +30,8 @@ public class DeliveryStayDetectionWorker : BackgroundService
                 var processedSessions = await detector.ProcessPendingSessionsAsync(stoppingToken);
                 var classifier = scope.ServiceProvider.GetRequiredService<IDeliveryStayClassificationService>();
                 var classifiedStays = await classifier.ProcessPendingStaysAsync(stoppingToken);
+                var evidenceService = scope.ServiceProvider.GetRequiredService<IDeliveryIncidentEvidenceService>();
+                var incidentsCaptured = await evidenceService.ProcessPendingStaysAsync(stoppingToken);
                 if (processedSessions > 0)
                 {
                     _logger.LogInformation(
@@ -42,6 +44,12 @@ public class DeliveryStayDetectionWorker : BackgroundService
                         "Se clasificaron {StayCount} permanencias de domiciliarios.",
                         classifiedStays);
                 }
+                if (incidentsCaptured > 0)
+                {
+                    _logger.LogInformation(
+                        "Se actualizo la evidencia de {IncidentCount} incidentes de seguimiento.",
+                        incidentsCaptured);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -49,7 +57,7 @@ public class DeliveryStayDetectionWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error al detectar permanencias de domiciliarios.");
+                _logger.LogError(ex, "Error al detectar, clasificar o conservar evidencia de permanencias.");
             }
 
             try

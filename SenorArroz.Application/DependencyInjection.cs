@@ -51,6 +51,7 @@ namespace SenorArroz.Application
             services.AddScoped<IBranchBusinessHoursService, BranchBusinessHoursService>();
             services.AddScoped<IDeliveryStayDetectionService, DeliveryStayDetectionService>();
             services.AddScoped<IDeliveryStayClassificationService, DeliveryStayClassificationService>();
+            services.AddScoped<IDeliveryIncidentEvidenceService, DeliveryIncidentEvidenceService>();
             services.AddScoped<IWhatsAppSystemPromptBuilder, WhatsAppSystemPromptBuilder>();
 
             return services;

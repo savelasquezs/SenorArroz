@@ -208,6 +208,12 @@ namespace SenorArroz.Domain.Enums
         PendingReview,
     }
 
+    public enum DeliveryTrackingIncidentType
+    {
+        Stay,
+        RouteDeviation,
+    }
+
     public enum WhatsAppConversationStatus
     {
         Open,

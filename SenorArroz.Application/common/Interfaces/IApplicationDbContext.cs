@@ -68,6 +68,12 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<DeliveryStay> DeliveryStays { get; set; }
 
+        DbSet<DeliveryTrackingIncident> DeliveryTrackingIncidents { get; set; }
+
+        DbSet<DeliveryIncidentLocationEvidence> DeliveryIncidentLocationEvidence { get; set; }
+
+        DbSet<DeliveryIncidentDeviceEventEvidence> DeliveryIncidentDeviceEventEvidence { get; set; }
+
         DbSet<DeliveryWorkSession> DeliveryWorkSessions { get; set; }
 
         DbSet<DeliveryRoute> DeliveryRoutes { get; set; }

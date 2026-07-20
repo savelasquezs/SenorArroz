@@ -77,6 +77,12 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<DeliveryStay> DeliveryStays { get; set; }
 
+        public virtual DbSet<DeliveryTrackingIncident> DeliveryTrackingIncidents { get; set; }
+
+        public virtual DbSet<DeliveryIncidentLocationEvidence> DeliveryIncidentLocationEvidence { get; set; }
+
+        public virtual DbSet<DeliveryIncidentDeviceEventEvidence> DeliveryIncidentDeviceEventEvidence { get; set; }
+
         public virtual DbSet<DeliveryWorkSession> DeliveryWorkSessions { get; set; }
 
         public virtual DbSet<DeliveryRoute> DeliveryRoutes { get; set; }
@@ -173,6 +179,9 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new DeliveryDeviceEventConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryAuthorizedPlaceConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryStayConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryTrackingIncidentConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryIncidentLocationEvidenceConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryIncidentDeviceEventEvidenceConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryWorkSessionConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteStopConfiguration());
