@@ -46,7 +46,7 @@ public class CancelOrderHandlerTests
         public Task NotifyDeliverymanLocation(
             int branchId,
             int deliverymanId,
-            int deliveryRouteId,
+            int? deliveryRouteId,
             double latitude,
             double longitude,
             DateTime recordedAt) => Task.CompletedTask;

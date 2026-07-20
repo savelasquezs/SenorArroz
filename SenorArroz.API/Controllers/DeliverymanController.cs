@@ -329,12 +329,44 @@ public class DeliverymanController : ControllerBase
     /// Registra la ubicación GPS del domiciliario autenticado.
     /// Solo se guarda si tiene una ruta activa con pedidos "on the way".
     /// </summary>
+    [HttpPost("me/work-session")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult<DeliveryWorkSessionDto>> StartWorkSession(
+        [FromBody] StartDeliveryWorkSessionRequest request)
+    {
+        var result = await _mediator.Send(new StartDeliveryWorkSessionCommand
+        {
+            DeviceInstallationId = request.DeviceInstallationId,
+            DevicePlatform = request.DevicePlatform,
+            DeviceDescription = request.DeviceDescription,
+            AppVersion = request.AppVersion,
+        });
+        return Ok(result);
+    }
+
+    [HttpGet("me/work-session")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult<DeliveryWorkSessionDto?>> GetWorkSession()
+    {
+        var result = await _mediator.Send(new GetMyDeliveryWorkSessionQuery());
+        return Ok(result);
+    }
+
+    [HttpDelete("me/work-session")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult> CloseWorkSession()
+    {
+        await _mediator.Send(new CloseMyDeliveryWorkSessionCommand());
+        return NoContent();
+    }
+
     [HttpPost("location")]
     [Authorize(Roles = "Deliveryman")]
     public async Task<ActionResult> RecordLocation([FromBody] RecordLocationRequest request)
     {
         await _mediator.Send(new RecordLocationCommand
         {
+            WorkSessionId = request.WorkSessionId,
             Latitude = request.Latitude,
             Longitude = request.Longitude,
             RecordedAt = request.RecordedAt,

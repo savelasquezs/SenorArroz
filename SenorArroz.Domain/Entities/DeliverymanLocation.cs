@@ -7,6 +7,7 @@ public class DeliverymanLocation
 {
     public long Id { get; set; }
     public int DeliverymanId { get; set; }
+    public int? WorkSessionId { get; set; }
     public int? DeliveryRouteId { get; set; }
     public decimal Latitude { get; set; }
     public decimal Longitude { get; set; }
@@ -18,5 +19,6 @@ public class DeliverymanLocation
 
     // Navigation
     public virtual User Deliveryman { get; set; } = null!;
+    public virtual DeliveryWorkSession? WorkSession { get; set; }
     public virtual DeliveryRoute? DeliveryRoute { get; set; }
 }

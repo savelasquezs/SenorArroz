@@ -36,7 +36,7 @@ public class ChangeOrderStatusHandlerReservationTests
         public Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null) => Task.CompletedTask;
         public Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null) => Task.CompletedTask;
         public Task NotifyOrderCancelledToKitchen(int branchId, int orderId, string? reasonPreview = null) => Task.CompletedTask;
-        public Task NotifyDeliverymanLocation(int branchId, int deliverymanId, int deliveryRouteId, double latitude, double longitude, DateTime recordedAt) => Task.CompletedTask;
+        public Task NotifyDeliverymanLocation(int branchId, int deliverymanId, int? deliveryRouteId, double latitude, double longitude, DateTime recordedAt) => Task.CompletedTask;
     }
 
     private sealed class NullDeliveryRouteWorkflow : IDeliveryRouteWorkflowService

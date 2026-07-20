@@ -29,7 +29,7 @@ public interface IOrderNotificationService
     Task NotifyDeliverymanLocation(
         int branchId,
         int deliverymanId,
-        int deliveryRouteId,
+        int? deliveryRouteId,
         double latitude,
         double longitude,
         DateTime recordedAt);

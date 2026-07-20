@@ -168,12 +168,14 @@ Notas:
 | DeliverymanAdvance | Sí | Desde `User.TenantId` o `Branch.TenantId` |
 | DeliverymanDayState | Sí | Desde `User.TenantId` o `Branch.TenantId` |
 | DeliverymanLocation | Sí | Desde `User.TenantId` |
+| DeliveryWorkSession | Sí | Desde `User.TenantId` o `Branch.TenantId` |
 | DeliveryRoute | Sí | Desde `Branch.TenantId` |
 | DeliveryRouteStop | Sí | Desde `DeliveryRoute.TenantId` |
 
 Notas:
 
 - La app móvil no debe poder operar sobre tenant distinto al del domiciliario autenticado.
+- Cada ubicación nueva debe pertenecer a una sesión laboral activa del mismo domiciliario y dispositivo.
 
 ### Impresión
 

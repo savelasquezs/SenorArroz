@@ -157,6 +157,21 @@ namespace SenorArroz.Domain.Enums
         Failed,
     }
 
+    public enum DeliveryWorkSessionStatus
+    {
+        Active,
+        Closed,
+    }
+
+    public enum DeliveryWorkSessionEndReason
+    {
+        TotalSettlement,
+        AutomaticClosure,
+        AdministrativeClosure,
+        UserChange,
+        ExceptionalClosure,
+    }
+
     public enum WhatsAppConversationStatus
     {
         Open,

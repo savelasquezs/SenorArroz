@@ -71,6 +71,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<DeliverymanLocation> DeliverymanLocations { get; set; }
 
+        public virtual DbSet<DeliveryWorkSession> DeliveryWorkSessions { get; set; }
+
         public virtual DbSet<DeliveryRoute> DeliveryRoutes { get; set; }
 
         public virtual DbSet<DeliveryRouteStop> DeliveryRouteStops { get; set; }
@@ -162,6 +164,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new DeliverymanAdvanceConfiguration());
             modelBuilder.ApplyConfiguration(new DeliverymanDayStateConfiguration());
             modelBuilder.ApplyConfiguration(new DeliverymanLocationConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryWorkSessionConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteStopConfiguration());
             modelBuilder.ApplyConfiguration(new DailyAuditDispatchConfiguration());
