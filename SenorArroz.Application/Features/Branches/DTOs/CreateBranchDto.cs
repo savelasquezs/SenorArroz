@@ -39,4 +39,27 @@ public class CreateBranchDto
 
     [Range(0, 10_080, ErrorMessage = "El rango de minutos debe estar entre 0 y 10080")]
     public int PosCopyEtaRangeMinutes { get; set; } = 15;
+
+    public TimeOnly DeliveryTrackingAutoCloseTime { get; set; } = new(21, 0);
+
+    [Range(1, int.MaxValue, ErrorMessage = "La frecuencia de seguimiento liviano debe ser mayor que cero")]
+    public int DeliveryTrackingLightIntervalSeconds { get; set; } = 300;
+
+    [Range(1, int.MaxValue, ErrorMessage = "La frecuencia de seguimiento activo debe ser mayor que cero")]
+    public int DeliveryTrackingActiveIntervalSeconds { get; set; } = 30;
+
+    [Range(1, int.MaxValue, ErrorMessage = "El tiempo de permanencia debe ser mayor que cero")]
+    public int DeliveryTrackingStayThresholdMinutes { get; set; } = 10;
+
+    [Range(1, int.MaxValue, ErrorMessage = "El radio de permanencia debe ser mayor que cero")]
+    public int DeliveryTrackingStayRadiusMeters { get; set; } = 50;
+
+    [Range(1, int.MaxValue, ErrorMessage = "La distancia permitida debe ser mayor que cero")]
+    public int DeliveryTrackingAllowedDistanceMeters { get; set; } = 50;
+
+    [Range(1, int.MaxValue, ErrorMessage = "La retención de ubicaciones debe ser mayor que cero")]
+    public int DeliveryTrackingLocationRetentionDays { get; set; } = 3;
+
+    [Range(1, int.MaxValue, ErrorMessage = "La retención de incidentes debe ser mayor que cero")]
+    public int DeliveryTrackingIncidentRetentionDays { get; set; } = 15;
 }

@@ -80,6 +80,7 @@ UpdatedAt
 Notas:
 
 - `Branch` debe ser la primera tabla del negocio en recibir `TenantId`.
+- `Branch` contiene la configuración operativa del seguimiento de domiciliarios: hora local de cierre, frecuencias, permanencias, tolerancia geográfica y retenciones.
 - `User` debe quedar asociado a tenant aunque sea superadmin. Si hay superadmin global, documentar excepción.
 
 ### Clientes y ubicación

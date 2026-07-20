@@ -19,4 +19,12 @@ public class UpdateBranchCommand : IRequest<BranchDto>
 
     public int PosCopyEtaMinMinutes { get; set; } = 30;
     public int PosCopyEtaRangeMinutes { get; set; } = 15;
+    public TimeOnly? DeliveryTrackingAutoCloseTime { get; set; }
+    public int? DeliveryTrackingLightIntervalSeconds { get; set; }
+    public int? DeliveryTrackingActiveIntervalSeconds { get; set; }
+    public int? DeliveryTrackingStayThresholdMinutes { get; set; }
+    public int? DeliveryTrackingStayRadiusMeters { get; set; }
+    public int? DeliveryTrackingAllowedDistanceMeters { get; set; }
+    public int? DeliveryTrackingLocationRetentionDays { get; set; }
+    public int? DeliveryTrackingIncidentRetentionDays { get; set; }
 }

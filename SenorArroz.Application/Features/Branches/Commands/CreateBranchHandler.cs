@@ -57,6 +57,14 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
             MaxFreeDeliveryDiscount = Math.Max(0, request.MaxFreeDeliveryDiscount),
             PosCopyEtaMinMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaMinMinutes, 30),
             PosCopyEtaRangeMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaRangeMinutes, 15),
+            DeliveryTrackingAutoCloseTime = request.DeliveryTrackingAutoCloseTime,
+            DeliveryTrackingLightIntervalSeconds = request.DeliveryTrackingLightIntervalSeconds,
+            DeliveryTrackingActiveIntervalSeconds = request.DeliveryTrackingActiveIntervalSeconds,
+            DeliveryTrackingStayThresholdMinutes = request.DeliveryTrackingStayThresholdMinutes,
+            DeliveryTrackingStayRadiusMeters = request.DeliveryTrackingStayRadiusMeters,
+            DeliveryTrackingAllowedDistanceMeters = request.DeliveryTrackingAllowedDistanceMeters,
+            DeliveryTrackingLocationRetentionDays = request.DeliveryTrackingLocationRetentionDays,
+            DeliveryTrackingIncidentRetentionDays = request.DeliveryTrackingIncidentRetentionDays,
         };
 
         branch = await _branchRepository.CreateAsync(branch, cancellationToken);

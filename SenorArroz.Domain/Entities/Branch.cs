@@ -27,6 +27,31 @@ public class Branch : BaseEntity
 
     /// <summary>Minutos adicionales al mínimo para el tope de la ventana (p. ej. 30 + 15 → «30-45 min»).</summary>
     public int PosCopyEtaRangeMinutes { get; set; } = 15;
+
+    /// <summary>Hora local de Colombia en la que deben cerrarse las jornadas abiertas.</summary>
+    public TimeOnly DeliveryTrackingAutoCloseTime { get; set; } = new(21, 0);
+
+    /// <summary>Frecuencia de captura sin pedidos en curso.</summary>
+    public int DeliveryTrackingLightIntervalSeconds { get; set; } = 300;
+
+    /// <summary>Frecuencia de captura durante un pedido en camino.</summary>
+    public int DeliveryTrackingActiveIntervalSeconds { get; set; } = 30;
+
+    /// <summary>Minutos mínimos para considerar una permanencia.</summary>
+    public int DeliveryTrackingStayThresholdMinutes { get; set; } = 10;
+
+    /// <summary>Radio máximo de los puntos que conforman una permanencia.</summary>
+    public int DeliveryTrackingStayRadiusMeters { get; set; } = 50;
+
+    /// <summary>Distancia tolerada respecto a la sucursal o al destino del pedido.</summary>
+    public int DeliveryTrackingAllowedDistanceMeters { get; set; } = 50;
+
+    /// <summary>Días de conservación de ubicaciones ordinarias.</summary>
+    public int DeliveryTrackingLocationRetentionDays { get; set; } = 3;
+
+    /// <summary>Días de conservación de incidentes y su evidencia.</summary>
+    public int DeliveryTrackingIncidentRetentionDays { get; set; } = 15;
+
     public string? MenuImageUrl1 { get; set; }
     public string? MenuImageUrl2 { get; set; }
 

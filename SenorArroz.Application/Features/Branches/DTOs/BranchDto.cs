@@ -23,6 +23,15 @@ public class BranchDto
     /// <summary>Minutos adicionales al mínimo para el tope (p. ej. 30+15 → 30-45 min).</summary>
     public int PosCopyEtaRangeMinutes { get; set; } = 15;
 
+    public TimeOnly DeliveryTrackingAutoCloseTime { get; set; } = new(21, 0);
+    public int DeliveryTrackingLightIntervalSeconds { get; set; } = 300;
+    public int DeliveryTrackingActiveIntervalSeconds { get; set; } = 30;
+    public int DeliveryTrackingStayThresholdMinutes { get; set; } = 10;
+    public int DeliveryTrackingStayRadiusMeters { get; set; } = 50;
+    public int DeliveryTrackingAllowedDistanceMeters { get; set; } = 50;
+    public int DeliveryTrackingLocationRetentionDays { get; set; } = 3;
+    public int DeliveryTrackingIncidentRetentionDays { get; set; } = 15;
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

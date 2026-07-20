@@ -180,6 +180,8 @@ Reglas:
 - La app móvil no debe operar fuera del tenant y sucursal autorizados.
 - Ubicaciones, avances, estados diarios, rutas y paradas pertenecen al tenant.
 - Tokens de dispositivo pertenecen al usuario y tenant.
+- Las frecuencias, tolerancias y retenciones del seguimiento se configuran por sucursal.
+- La hora de cierre del seguimiento es una hora local de Colombia; los instantes de ubicación y sesión se persisten en UTC.
 
 ## Impresión POS
 

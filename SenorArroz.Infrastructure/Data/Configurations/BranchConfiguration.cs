@@ -31,6 +31,30 @@ public class BranchConfiguration : IEntityTypeConfiguration<Branch>
         builder.Property(b => b.PosCopyEtaRangeMinutes)
             .HasColumnName("pos_copy_eta_range_minutes")
             .HasDefaultValue(15);
+        builder.Property(b => b.DeliveryTrackingAutoCloseTime)
+            .HasColumnName("delivery_tracking_auto_close_time")
+            .HasDefaultValue(new TimeOnly(21, 0));
+        builder.Property(b => b.DeliveryTrackingLightIntervalSeconds)
+            .HasColumnName("delivery_tracking_light_interval_seconds")
+            .HasDefaultValue(300);
+        builder.Property(b => b.DeliveryTrackingActiveIntervalSeconds)
+            .HasColumnName("delivery_tracking_active_interval_seconds")
+            .HasDefaultValue(30);
+        builder.Property(b => b.DeliveryTrackingStayThresholdMinutes)
+            .HasColumnName("delivery_tracking_stay_threshold_minutes")
+            .HasDefaultValue(10);
+        builder.Property(b => b.DeliveryTrackingStayRadiusMeters)
+            .HasColumnName("delivery_tracking_stay_radius_meters")
+            .HasDefaultValue(50);
+        builder.Property(b => b.DeliveryTrackingAllowedDistanceMeters)
+            .HasColumnName("delivery_tracking_allowed_distance_meters")
+            .HasDefaultValue(50);
+        builder.Property(b => b.DeliveryTrackingLocationRetentionDays)
+            .HasColumnName("delivery_tracking_location_retention_days")
+            .HasDefaultValue(3);
+        builder.Property(b => b.DeliveryTrackingIncidentRetentionDays)
+            .HasColumnName("delivery_tracking_incident_retention_days")
+            .HasDefaultValue(15);
         builder.Property(b => b.MenuImageUrl1).HasColumnName("menu_image_url_1").HasMaxLength(2000);
         builder.Property(b => b.MenuImageUrl2).HasColumnName("menu_image_url_2").HasMaxLength(2000);
 

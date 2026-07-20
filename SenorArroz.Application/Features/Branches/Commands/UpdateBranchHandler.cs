@@ -77,6 +77,22 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
             branch.MaxFreeDeliveryDiscount = Math.Max(0, request.MaxFreeDeliveryDiscount.Value);
         branch.PosCopyEtaMinMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaMinMinutes, 30);
         branch.PosCopyEtaRangeMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaRangeMinutes, 15);
+        if (request.DeliveryTrackingAutoCloseTime.HasValue)
+            branch.DeliveryTrackingAutoCloseTime = request.DeliveryTrackingAutoCloseTime.Value;
+        if (request.DeliveryTrackingLightIntervalSeconds.HasValue)
+            branch.DeliveryTrackingLightIntervalSeconds = request.DeliveryTrackingLightIntervalSeconds.Value;
+        if (request.DeliveryTrackingActiveIntervalSeconds.HasValue)
+            branch.DeliveryTrackingActiveIntervalSeconds = request.DeliveryTrackingActiveIntervalSeconds.Value;
+        if (request.DeliveryTrackingStayThresholdMinutes.HasValue)
+            branch.DeliveryTrackingStayThresholdMinutes = request.DeliveryTrackingStayThresholdMinutes.Value;
+        if (request.DeliveryTrackingStayRadiusMeters.HasValue)
+            branch.DeliveryTrackingStayRadiusMeters = request.DeliveryTrackingStayRadiusMeters.Value;
+        if (request.DeliveryTrackingAllowedDistanceMeters.HasValue)
+            branch.DeliveryTrackingAllowedDistanceMeters = request.DeliveryTrackingAllowedDistanceMeters.Value;
+        if (request.DeliveryTrackingLocationRetentionDays.HasValue)
+            branch.DeliveryTrackingLocationRetentionDays = request.DeliveryTrackingLocationRetentionDays.Value;
+        if (request.DeliveryTrackingIncidentRetentionDays.HasValue)
+            branch.DeliveryTrackingIncidentRetentionDays = request.DeliveryTrackingIncidentRetentionDays.Value;
 
         branch = await _branchRepository.UpdateAsync(branch, cancellationToken);
 
