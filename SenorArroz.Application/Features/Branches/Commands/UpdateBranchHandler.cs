@@ -105,13 +105,18 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
             sessionsWithUpdatedCutoff = await _db.DeliveryWorkSessions
                 .Where(x => x.BranchId == branch.Id && x.Status == DeliveryWorkSessionStatus.Active)
                 .ToListAsync(cancellationToken);
+            var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
             ApplyAutoCloseTimeToActiveSessions(
                 sessionsWithUpdatedCutoff,
                 branch.DeliveryTrackingAutoCloseTime,
-                ColombiaTimeHelper.EnsureUtc(_clock.UtcNow));
+                nowUtc);
             foreach (var closedSession in sessionsWithUpdatedCutoff
                          .Where(x => x.Status == DeliveryWorkSessionStatus.Closed))
             {
+                _db.DeliveryDeviceEvents.Add(DeliveryDeviceEvent.ForClosure(
+                    closedSession,
+                    nowUtc,
+                    DeliveryWorkSessionEndReason.AutomaticClosure));
                 await _refreshTokenRepository.RevokeAllByUserIdAsync(
                     closedSession.DeliverymanId,
                     "updated-work-session-cutoff",

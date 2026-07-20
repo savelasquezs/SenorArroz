@@ -19,6 +19,17 @@ public record RecordLocationRequest(
     bool? GpsEnabled = null,
     DeliveryTrackingMode? TrackingMode = null);
 
+public record RecordDeliveryDeviceEventRequest(
+    int WorkSessionId,
+    DeliveryDeviceEventType EventType,
+    DateTime RecordedAt,
+    Guid? ClientEventId = null,
+    int? BatteryLevelPercent = null,
+    bool? InternetAvailable = null,
+    bool? GpsEnabled = null,
+    bool? LocationPermissionGranted = null,
+    string? Details = null);
+
 public class StartDeliveryWorkSessionRequest
 {
     [Required, StringLength(64)]

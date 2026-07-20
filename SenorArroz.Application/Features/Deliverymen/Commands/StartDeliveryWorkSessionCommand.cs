@@ -60,6 +60,10 @@ public class StartDeliveryWorkSessionHandler : IRequestHandler<StartDeliveryWork
         if (active is not null && nowUtc >= active.AutoCloseAt)
         {
             active.Close(nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
+            _db.DeliveryDeviceEvents.Add(DeliveryDeviceEvent.ForClosure(
+                active,
+                nowUtc,
+                DeliveryWorkSessionEndReason.AutomaticClosure));
             await _db.SaveChangesAsync(cancellationToken);
             active = null;
         }

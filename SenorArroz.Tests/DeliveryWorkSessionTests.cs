@@ -243,6 +243,80 @@ public class DeliveryWorkSessionTests
         Assert.Empty(db.DeliverymanLocations);
     }
 
+    [Fact]
+    public async Task RecordDeviceEvent_IsIdempotentAndKeepsCaptureTimeForClosedSession()
+    {
+        await using var db = CreateDb();
+        var syncedAt = new DateTime(2026, 7, 20, 23, 0, 0, DateTimeKind.Utc);
+        var recordedAt = syncedAt.AddMinutes(-8);
+        var clientEventId = Guid.NewGuid();
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device-a",
+            DevicePlatform = "android",
+            StartedAt = syncedAt.AddHours(-4),
+            AutoCloseAt = syncedAt.AddHours(3),
+            EndedAt = syncedAt.AddMinutes(-5),
+            EndReason = DeliveryWorkSessionEndReason.TotalSettlement,
+            LastCommunicationAt = syncedAt.AddMinutes(-5),
+            Status = DeliveryWorkSessionStatus.Closed,
+        });
+        await db.SaveChangesAsync();
+        var handler = new RecordDeliveryDeviceEventHandler(
+            db,
+            CurrentUser().Object,
+            new FakeClock(syncedAt));
+        var command = new RecordDeliveryDeviceEventCommand
+        {
+            WorkSessionId = 10,
+            ClientEventId = clientEventId,
+            EventType = DeliveryDeviceEventType.InternetLost,
+            InternetAvailable = false,
+            BatteryLevelPercent = 42,
+            RecordedAt = recordedAt,
+            Details = "  detected_while_offline  ",
+        };
+
+        await handler.Handle(command, default);
+        await handler.Handle(command, default);
+
+        var deviceEvent = Assert.Single(db.DeliveryDeviceEvents);
+        Assert.Equal(clientEventId, deviceEvent.ClientEventId);
+        Assert.Equal(DeliveryDeviceEventType.InternetLost, deviceEvent.EventType);
+        Assert.False(deviceEvent.InternetAvailable);
+        Assert.Equal(42, deviceEvent.BatteryLevelPercent);
+        Assert.Equal(recordedAt, deviceEvent.RecordedAt);
+        Assert.Equal(syncedAt, deviceEvent.SyncedAt);
+        Assert.Equal("detected_while_offline", deviceEvent.Details);
+        Assert.Equal(syncedAt, db.DeliveryWorkSessions.Single().LastCommunicationAt);
+    }
+
+    [Fact]
+    public async Task RecordDeviceEvent_WithInvalidBatteryLevel_IsRejected()
+    {
+        await using var db = CreateDb();
+        var now = new DateTime(2026, 7, 20, 23, 0, 0, DateTimeKind.Utc);
+        var handler = new RecordDeliveryDeviceEventHandler(
+            db,
+            CurrentUser().Object,
+            new FakeClock(now));
+
+        await Assert.ThrowsAsync<BusinessException>(() => handler.Handle(
+            new RecordDeliveryDeviceEventCommand
+            {
+                WorkSessionId = 10,
+                EventType = DeliveryDeviceEventType.BatteryLow,
+                BatteryLevelPercent = 101,
+                RecordedAt = now,
+            },
+            default));
+
+        Assert.Empty(db.DeliveryDeviceEvents);
+    }
+
     private static ApplicationDbContext CreateDb() => new(
         new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())

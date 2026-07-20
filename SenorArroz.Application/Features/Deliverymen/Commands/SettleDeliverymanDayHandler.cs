@@ -294,6 +294,10 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
             foreach (var session in activeSessions)
             {
                 session.Close(nowUtc, DeliveryWorkSessionEndReason.TotalSettlement);
+                _context.DeliveryDeviceEvents.Add(DeliveryDeviceEvent.ForClosure(
+                    session,
+                    nowUtc,
+                    DeliveryWorkSessionEndReason.TotalSettlement));
             }
 
             workSessionTokens = await _context.UserDeviceTokens.AsNoTracking()

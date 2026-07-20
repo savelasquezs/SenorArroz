@@ -180,6 +180,23 @@ namespace SenorArroz.Domain.Enums
         Stopped,
     }
 
+    public enum DeliveryDeviceEventType
+    {
+        TrackingStarted,
+        TrackingStopped,
+        GpsDisabled,
+        GpsEnabled,
+        LocationPermissionRevoked,
+        LocationPermissionRecovered,
+        InternetLost,
+        InternetRecovered,
+        AppStopped,
+        LocationServiceRestarted,
+        BatteryLow,
+        AutomaticClosure,
+        TotalSettlement,
+    }
+
     public enum WhatsAppConversationStatus
     {
         Open,

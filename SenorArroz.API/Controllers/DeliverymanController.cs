@@ -382,6 +382,25 @@ public class DeliverymanController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("device-event")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult> RecordDeviceEvent([FromBody] RecordDeliveryDeviceEventRequest request)
+    {
+        await _mediator.Send(new RecordDeliveryDeviceEventCommand
+        {
+            WorkSessionId = request.WorkSessionId,
+            ClientEventId = request.ClientEventId,
+            EventType = request.EventType,
+            BatteryLevelPercent = request.BatteryLevelPercent,
+            InternetAvailable = request.InternetAvailable,
+            GpsEnabled = request.GpsEnabled,
+            LocationPermissionGranted = request.LocationPermissionGranted,
+            Details = request.Details,
+            RecordedAt = request.RecordedAt,
+        });
+        return NoContent();
+    }
+
     /// <summary>
     /// Retorna la última ubicación registrada de un domiciliario (para fallback de polling).
     /// 200 con cuerpo <c>null</c> si aún no hay puntos GPS guardados (no usar 404 para ese caso).

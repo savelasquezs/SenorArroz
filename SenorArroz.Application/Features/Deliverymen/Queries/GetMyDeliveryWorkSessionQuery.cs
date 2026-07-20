@@ -4,6 +4,7 @@ using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Deliverymen.Commands;
 using SenorArroz.Application.Features.Deliverymen.DTOs;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Application.Features.Deliverymen.Queries;
@@ -34,6 +35,10 @@ public class GetMyDeliveryWorkSessionHandler : IRequestHandler<GetMyDeliveryWork
         if (nowUtc >= session.AutoCloseAt)
         {
             session.Close(nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
+            _db.DeliveryDeviceEvents.Add(DeliveryDeviceEvent.ForClosure(
+                session,
+                nowUtc,
+                DeliveryWorkSessionEndReason.AutomaticClosure));
             await _db.SaveChangesAsync(cancellationToken);
             return null;
         }

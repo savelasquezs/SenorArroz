@@ -82,7 +82,13 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand>
             throw new BusinessException("La ubicación fue capturada fuera de la jornada laboral.");
 
         if (workSession.Status == DeliveryWorkSessionStatus.Active && nowUtc >= workSession.AutoCloseAt)
+        {
             workSession.Close(nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
+            _db.DeliveryDeviceEvents.Add(DeliveryDeviceEvent.ForClosure(
+                workSession,
+                nowUtc,
+                DeliveryWorkSessionEndReason.AutomaticClosure));
+        }
 
         int? routeId = request.DeliveryRouteId;
         if (routeId.HasValue)

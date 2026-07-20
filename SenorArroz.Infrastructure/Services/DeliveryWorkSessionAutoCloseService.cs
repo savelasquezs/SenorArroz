@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
 
@@ -73,6 +74,10 @@ public class DeliveryWorkSessionAutoCloseService : BackgroundService
         foreach (var session in sessions)
         {
             session.Close(nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
+            db.DeliveryDeviceEvents.Add(DeliveryDeviceEvent.ForClosure(
+                session,
+                nowUtc,
+                DeliveryWorkSessionEndReason.AutomaticClosure));
         }
 
         foreach (var refreshToken in refreshTokens)
