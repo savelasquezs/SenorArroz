@@ -132,6 +132,104 @@ public class DeliveryWorkSessionTests
     }
 
     [Fact]
+    public async Task RecordLocation_WithOrderOnTheWay_UsesActiveDeliveryTracking()
+    {
+        await using var db = CreateDb();
+        var now = new DateTime(2026, 7, 20, 18, 0, 0, DateTimeKind.Utc);
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device-a",
+            DevicePlatform = "android",
+            StartedAt = now,
+            AutoCloseAt = now.AddHours(8),
+            LastCommunicationAt = now,
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        db.DeliveryRoutes.Add(new DeliveryRoute
+        {
+            Id = 20,
+            DeliverymanId = 1,
+            BranchId = 7,
+            LastAssignmentAtUtc = now,
+            Status = DeliveryRouteStatus.InProgress,
+        });
+        db.Orders.Add(new Order
+        {
+            Id = 30,
+            BranchId = 7,
+            TakenById = 2,
+            DeliveryManId = 1,
+            DeliveryRouteId = 20,
+            Type = OrderType.Delivery,
+            Status = OrderStatus.OnTheWay,
+        });
+        await db.SaveChangesAsync();
+        var handler = new RecordLocationHandler(
+            db,
+            CurrentUser().Object,
+            Mock.Of<IOrderNotificationService>(),
+            new FakeClock(now));
+
+        await handler.Handle(new RecordLocationCommand
+        {
+            WorkSessionId = 10,
+            Latitude = 4.60971m,
+            Longitude = -74.08175m,
+            RecordedAt = now,
+        }, default);
+
+        var point = Assert.Single(db.DeliverymanLocations);
+        Assert.Equal(20, point.DeliveryRouteId);
+        Assert.Equal(DeliveryTrackingMode.ActiveDelivery, point.TrackingMode);
+    }
+
+    [Fact]
+    public async Task RecordOfflinePointCapturedBeforeCutoff_ClosesExpiredSessionAndKeepsPoint()
+    {
+        await using var db = CreateDb();
+        var now = new DateTime(2026, 7, 21, 2, 5, 0, DateTimeKind.Utc);
+        var cutoff = now.AddMinutes(-5);
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device-a",
+            DevicePlatform = "android",
+            StartedAt = now.AddHours(-8),
+            AutoCloseAt = cutoff,
+            LastCommunicationAt = now.AddMinutes(-10),
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        await db.SaveChangesAsync();
+        var handler = new RecordLocationHandler(
+            db,
+            CurrentUser().Object,
+            Mock.Of<IOrderNotificationService>(),
+            new FakeClock(now));
+
+        await handler.Handle(new RecordLocationCommand
+        {
+            WorkSessionId = 10,
+            ClientPointId = Guid.NewGuid(),
+            Latitude = 4.60971m,
+            Longitude = -74.08175m,
+            InternetAvailable = false,
+            TrackingMode = DeliveryTrackingMode.Offline,
+            RecordedAt = cutoff.AddSeconds(-30),
+        }, default);
+
+        var session = db.DeliveryWorkSessions.Single();
+        Assert.Equal(DeliveryWorkSessionStatus.Closed, session.Status);
+        Assert.Equal(DeliveryWorkSessionEndReason.AutomaticClosure, session.EndReason);
+        Assert.Equal(DeliveryTrackingMode.Offline, Assert.Single(db.DeliverymanLocations).TrackingMode);
+        Assert.Equal(DeliveryDeviceEventType.AutomaticClosure, Assert.Single(db.DeliveryDeviceEvents).EventType);
+    }
+
+    [Fact]
     public async Task RecordOfflineLocation_IsIdempotentAndKeepsCapturedRouteAfterSessionClosed()
     {
         await using var db = CreateDb();

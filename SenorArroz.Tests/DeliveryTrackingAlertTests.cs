@@ -104,6 +104,58 @@ public class DeliveryTrackingAlertTests
             db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.NoCommunication).Status);
     }
 
+    [Fact]
+    public async Task Process_UsesActiveDeliveryIntervalAndFlagsSessionPastCutoff()
+    {
+        await using var db = CreateDb();
+        db.Branches.Add(new Branch
+        {
+            Id = 7,
+            Name = "Centro",
+            Address = "A",
+            Phone1 = "1",
+            DeliveryTrackingLightIntervalSeconds = 300,
+            DeliveryTrackingActiveIntervalSeconds = 30,
+        });
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device",
+            DevicePlatform = "android",
+            StartedAt = BaseTime,
+            AutoCloseAt = BaseTime.AddSeconds(30),
+            LastCommunicationAt = BaseTime,
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        db.DeliverymanLocations.Add(new DeliverymanLocation
+        {
+            Id = 100,
+            DeliverymanId = 1,
+            WorkSessionId = 10,
+            Latitude = 4.6m,
+            Longitude = -74.08m,
+            TrackingMode = DeliveryTrackingMode.ActiveDelivery,
+            RecordedAt = BaseTime,
+        });
+        await db.SaveChangesAsync();
+        var service = new DeliveryTrackingAlertService(
+            db,
+            new FakeClock(BaseTime.AddSeconds(61)));
+
+        await service.ProcessAsync();
+
+        var noCommunication = db.DeliveryTrackingAlerts.Single(
+            x => x.AlertType == DeliveryTrackingAlertType.NoCommunication);
+        Assert.Equal(BaseTime.AddSeconds(60), noCommunication.OccurredAt);
+        Assert.Contains("30 segundos", noCommunication.Message);
+        var pastCutoff = db.DeliveryTrackingAlerts.Single(
+            x => x.AlertType == DeliveryTrackingAlertType.SessionPastAutoClose);
+        Assert.Equal(DeliveryTrackingAlertSeverity.Critical, pastCutoff.Severity);
+        Assert.Equal(BaseTime.AddSeconds(30), pastCutoff.OccurredAt);
+    }
+
     private static DeliveryDeviceEvent DeviceEvent(
         long id,
         DeliveryDeviceEventType type,
