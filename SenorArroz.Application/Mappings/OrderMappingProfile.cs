@@ -35,6 +35,14 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.StatusTimes, opt => opt.MapFrom(src => src.GetStatusTimes()))
             .ForMember(dest => dest.DeliveryRoutePlanningWarnings, opt => opt.MapFrom(src =>
                 src.DeliveryRoute != null ? src.DeliveryRoute.PlanningWarnings : null))
+            .ForMember(dest => dest.DeliveryRouteStartedAtUtc, opt => opt.MapFrom(src =>
+                src.DeliveryRoute != null ? src.DeliveryRoute.RouteStartedAtUtc : null))
+            .ForMember(dest => dest.DeliveryRouteCompletedAtUtc, opt => opt.MapFrom(src =>
+                src.DeliveryRoute != null ? src.DeliveryRoute.CompletedAtUtc : null))
+            .ForMember(dest => dest.DeliveryRouteMetaDurationSeconds, opt => opt.MapFrom(src =>
+                src.DeliveryRoute != null ? src.DeliveryRoute.MetaDurationSeconds : null))
+            .ForMember(dest => dest.DeliveryRouteActualDurationSeconds, opt => opt.MapFrom(src =>
+                src.DeliveryRoute != null ? src.DeliveryRoute.ActualDurationSeconds : null))
             .ForMember(dest => dest.BankPayments, opt => opt.MapFrom(src => src.BankPayments))
             .ForMember(dest => dest.AppPayments, opt => opt.MapFrom(src => src.AppPayments))
             .ForMember(dest => dest.TotalDeposited, opt => opt.Ignore())

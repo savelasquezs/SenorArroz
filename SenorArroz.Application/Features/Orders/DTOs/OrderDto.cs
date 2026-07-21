@@ -32,6 +32,10 @@ public class OrderDto
     public int? DeliveryRouteId { get; set; }
     /// <summary>Advertencias al planificar la ruta (saltos de línea), cuando hay ruta asociada.</summary>
     public string? DeliveryRoutePlanningWarnings { get; set; }
+    public DateTime? DeliveryRouteStartedAtUtc { get; set; }
+    public DateTime? DeliveryRouteCompletedAtUtc { get; set; }
+    public int? DeliveryRouteMetaDurationSeconds { get; set; }
+    public int? DeliveryRouteActualDurationSeconds { get; set; }
     public string? DeliveryManName { get; set; }
     public string? GuestName { get; set; }
     public int? DeliveryAppConnectionId { get; set; }
