@@ -110,14 +110,18 @@ public class OrderNotificationService : IOrderNotificationService
             if (resolved.Tokens.Count == 0)
             {
                 _logger.LogInformation(
-                    "FCM_ORDER_READY [{Corr}] STEP skip no_tokens busyCount={Busy}",
-                    correlationId, resolved.BusyDeliverymanCount);
+                    "FCM_ORDER_READY [{Corr}] STEP skip no_tokens busyCount={Busy} atBranchCount={AtBranch}",
+                    correlationId,
+                    resolved.BusyDeliverymanCount,
+                    resolved.AtBranchDeliverymanCount);
                 return;
             }
 
             _logger.LogInformation(
-                "FCM_ORDER_READY [{Corr}] STEP send tokens={Count}",
-                correlationId, resolved.Tokens.Count);
+                "FCM_ORDER_READY [{Corr}] STEP send tokens={Count} atBranchCount={AtBranch}",
+                correlationId,
+                resolved.Tokens.Count,
+                resolved.AtBranchDeliverymanCount);
 
             await _fcm.SendToTokensAsync(
                 resolved.Tokens,

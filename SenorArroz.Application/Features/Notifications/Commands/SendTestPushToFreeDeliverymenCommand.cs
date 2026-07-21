@@ -14,6 +14,7 @@ public sealed record SendTestPushToFreeDeliverymenResultDto(
     int BranchId,
     int TokensTargeted,
     int BusyDeliverymanCount,
+    int AtBranchDeliverymanCount,
     string CorrelationId);
 
 public class SendTestPushToFreeDeliverymenHandler : IRequestHandler<SendTestPushToFreeDeliverymenCommand, SendTestPushToFreeDeliverymenResultDto>
@@ -92,8 +93,12 @@ public class SendTestPushToFreeDeliverymenHandler : IRequestHandler<SendTestPush
         var resolved = await _tokenResolver.ResolveAsync(branchId, cancellationToken);
 
         _logger.LogInformation(
-            "{Prefix} [{Corr}] STEP tokens_resolved count={Count} busyDeliverymen={Busy}",
-            LogPrefix, correlationId, resolved.Tokens.Count, resolved.BusyDeliverymanCount);
+            "{Prefix} [{Corr}] STEP tokens_resolved count={Count} busyDeliverymen={Busy} atBranchDeliverymen={AtBranch}",
+            LogPrefix,
+            correlationId,
+            resolved.Tokens.Count,
+            resolved.BusyDeliverymanCount,
+            resolved.AtBranchDeliverymanCount);
 
         if (resolved.Tokens.Count == 0)
         {
@@ -104,6 +109,7 @@ public class SendTestPushToFreeDeliverymenHandler : IRequestHandler<SendTestPush
                 branchId,
                 0,
                 resolved.BusyDeliverymanCount,
+                resolved.AtBranchDeliverymanCount,
                 correlationId);
         }
 
@@ -141,6 +147,7 @@ public class SendTestPushToFreeDeliverymenHandler : IRequestHandler<SendTestPush
             branchId,
             resolved.Tokens.Count,
             resolved.BusyDeliverymanCount,
+            resolved.AtBranchDeliverymanCount,
             correlationId);
     }
 }

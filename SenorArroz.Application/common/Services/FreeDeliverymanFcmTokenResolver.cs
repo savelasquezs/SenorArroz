@@ -1,18 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
-using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Application.Common.Services;
 
 public class FreeDeliverymanFcmTokenResolver : IFreeDeliverymanFcmTokenResolver
 {
-    private sealed class DeliverymanIdRow
-    {
-        public int DeliveryManId { get; set; }
-    }
-
     private readonly IApplicationDbContext _db;
     private readonly IClock _clock;
 
@@ -22,74 +16,111 @@ public class FreeDeliverymanFcmTokenResolver : IFreeDeliverymanFcmTokenResolver
         _clock = clock;
     }
 
-    public async Task<FreeDeliverymanFcmTokensResult> ResolveAsync(int branchId, CancellationToken cancellationToken = default)
+    public async Task<FreeDeliverymanFcmTokensResult> ResolveAsync(
+        int branchId,
+        CancellationToken cancellationToken = default)
     {
+        var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
+        var branch = await _db.Branches
+            .AsNoTracking()
+            .Where(x => x.Id == branchId)
+            .Select(x => new
+            {
+                x.Latitude,
+                x.Longitude,
+                x.DeliveryTrackingAllowedDistanceMeters,
+                x.DeliveryTrackingLightIntervalSeconds,
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (branch?.Latitude is null || branch.Longitude is null)
+            return new FreeDeliverymanFcmTokensResult([], 0, 0);
+
+        // "Libre" significa que no tiene ningún pedido activo asignado,
+        // independientemente del estado concreto del flujo de domicilio.
         var busyDeliverymanIds = await _db.Orders
-            .Where(o => o.BranchId == branchId &&
-                        o.Status == OrderStatus.OnTheWay &&
-                        o.DeliveryManId != null)
+            .AsNoTracking()
+            .Where(o => o.BranchId == branchId
+                        && o.DeliveryManId != null
+                        && o.Status != OrderStatus.Delivered
+                        && o.Status != OrderStatus.Cancelled)
             .Select(o => o.DeliveryManId!.Value)
             .Distinct()
             .ToListAsync(cancellationToken);
 
-        var todayColombia = ColombiaTimeHelper.GetTodayDateOnlyColombiaFromUtc(_clock.UtcNow);
-        var colombiaMidnightUnspecified = new DateTime(todayColombia.Year, todayColombia.Month, todayColombia.Day);
-        var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(colombiaMidnightUnspecified, colombiaMidnightUnspecified);
-
-        var blockedDeliverymanIds = await _db.DeliverymanDayStates
+        var candidateTokens = await _db.UserDeviceTokens
             .AsNoTracking()
-            .Where(s => s.BranchId == branchId && s.Date == todayColombia && s.Blocked)
-            .Select(s => s.DeliverymanId)
+            .Where(t => t.User.BranchId == branchId
+                        && t.User.Role == UserRole.Deliveryman
+                        && t.User.Active
+                        && !busyDeliverymanIds.Contains(t.UserId))
+            .Select(t => new { t.UserId, t.Token })
+            .ToListAsync(cancellationToken);
+
+        var candidateIds = candidateTokens
+            .Select(x => x.UserId)
             .Distinct()
+            .ToList();
+        if (candidateIds.Count == 0)
+            return new FreeDeliverymanFcmTokensResult([], busyDeliverymanIds.Count, 0);
+
+        var activeSessionIds = await _db.DeliveryWorkSessions
+            .AsNoTracking()
+            .Where(x => x.BranchId == branchId
+                        && candidateIds.Contains(x.DeliverymanId)
+                        && x.Status == DeliveryWorkSessionStatus.Active
+                        && x.AutoCloseAt > nowUtc)
+            .Select(x => x.Id)
             .ToListAsync(cancellationToken);
 
-        // Preferencia: delivery_man_assigned (persistido al asignar). Fallback legacy: ontheway / on_the_way.
-        var assignmentTsExpr =
-            $"""
-             COALESCE(
-               NULLIF(TRIM(COALESCE(o.status_times->>'{Order.DeliveryManAssignedStatusTimeKey}','')), ''),
-               NULLIF(TRIM(COALESCE(o.status_times->>'ontheway','')), ''),
-               NULLIF(TRIM(COALESCE(o.status_times->>'on_the_way','')), ''))
-             """.ReplaceLineEndings(" ").Trim();
+        if (activeSessionIds.Count == 0)
+            return new FreeDeliverymanFcmTokensResult([], busyDeliverymanIds.Count, 0);
 
-        // Placeholders {0}…{2} los parametriza SqlQueryRaw (Npgsql).
-        var sql =
-            """
-            SELECT DISTINCT o.delivery_man_id AS "DeliveryManId"
-            FROM "order" o
-            WHERE o.branch_id = {0}
-              AND o.delivery_man_id IS NOT NULL
-              AND (
-            """ + assignmentTsExpr + """
-            ) IS NOT NULL
-              AND (
-            """ + assignmentTsExpr + """
-            ) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt ][0-9]{2}:[0-9]{2}'
-              AND (
-            """ + assignmentTsExpr + """
-            )::timestamptz >= {1}
-              AND (
-            """ + assignmentTsExpr + """
-            )::timestamptz <= {2}
-            """;
+        // En modo libre la app reporta cada LightInterval. Se admite un minuto
+        // adicional por red/procesamiento, pero nunca una ventana menor a 2 min.
+        var freshnessSeconds = Math.Max(
+            120,
+            Math.Max(1, branch.DeliveryTrackingLightIntervalSeconds) + 60);
+        var recordedAfterUtc = nowUtc.AddSeconds(-freshnessSeconds);
 
-        var assignedTodayRows = await _db.Database
-            .SqlQueryRaw<DeliverymanIdRow>(sql, branchId, fromUtc, toUtc)
+        var recentLocations = await _db.DeliverymanLocations
+            .AsNoTracking()
+            .Where(x => x.WorkSessionId.HasValue
+                        && activeSessionIds.Contains(x.WorkSessionId.Value)
+                        && x.RecordedAt >= recordedAfterUtc
+                        && x.RecordedAt <= nowUtc.AddMinutes(1)
+                        && x.GpsEnabled != false)
+            .OrderByDescending(x => x.RecordedAt)
+            .ThenByDescending(x => x.Id)
+            .Select(x => new
+            {
+                x.DeliverymanId,
+                x.Latitude,
+                x.Longitude,
+            })
             .ToListAsync(cancellationToken);
 
-        var assignedTodayIds = assignedTodayRows.Select(r => r.DeliveryManId).Distinct().ToList();
+        var allowedDistanceMeters = Math.Max(1, branch.DeliveryTrackingAllowedDistanceMeters);
+        var deliverymenAtBranch = recentLocations
+            .GroupBy(x => x.DeliverymanId)
+            .Select(x => x.First())
+            .Where(x => GeoHelper.HaversineDistanceMeters(
+                (double)x.Latitude,
+                (double)x.Longitude,
+                (double)branch.Latitude.Value,
+                (double)branch.Longitude.Value) <= allowedDistanceMeters)
+            .Select(x => x.DeliverymanId)
+            .ToHashSet();
 
-        var tokens = await _db.UserDeviceTokens
-            .Where(t =>
-                t.User.BranchId == branchId &&
-                t.User.Role == UserRole.Deliveryman &&
-                t.User.Active &&
-                assignedTodayIds.Contains(t.UserId) &&
-                !busyDeliverymanIds.Contains(t.UserId) &&
-                !blockedDeliverymanIds.Contains(t.UserId))
-            .Select(t => t.Token)
-            .ToListAsync(cancellationToken);
+        var tokens = candidateTokens
+            .Where(x => deliverymenAtBranch.Contains(x.UserId))
+            .Select(x => x.Token)
+            .Distinct()
+            .ToList();
 
-        return new FreeDeliverymanFcmTokensResult(tokens, busyDeliverymanIds.Count);
+        return new FreeDeliverymanFcmTokensResult(
+            tokens,
+            busyDeliverymanIds.Count,
+            deliverymenAtBranch.Count);
     }
 }

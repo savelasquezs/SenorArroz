@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.Orders;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -167,7 +168,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
 
             if (request.StatusChange.Status == OrderStatus.Ready)
             {
-                if (string.IsNullOrWhiteSpace(order.ExternalFulfillmentProvider))
+                if (DeliveryReadyNotificationEligibility.ShouldNotifyOwnDeliverymen(order))
                     await _notificationService.NotifyOrderReadyToDelivery(orderDto);
                 if (_externalDeliveryStatusSync is not null)
                     await _externalDeliveryStatusSync.SyncReadyForPickupAsync(order.Id, cancellationToken);
@@ -287,7 +288,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
 
         if (request.StatusChange.Status == OrderStatus.Ready)
         {
-            if (string.IsNullOrWhiteSpace(order.ExternalFulfillmentProvider))
+            if (DeliveryReadyNotificationEligibility.ShouldNotifyOwnDeliverymen(order))
                 await _notificationService.NotifyOrderReadyToDelivery(orderDto);
             if (_externalDeliveryStatusSync is not null)
                 await _externalDeliveryStatusSync.SyncReadyForPickupAsync(order.Id, cancellationToken);

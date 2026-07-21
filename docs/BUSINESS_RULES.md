@@ -180,6 +180,7 @@ Reglas:
 - La app móvil no debe operar fuera del tenant y sucursal autorizados.
 - Los domicilios en estado Tomado o En preparación solo se muestran al domiciliario cuando una ubicación GPS actual está dentro de `DeliveryTrackingAllowedDistanceMeters` respecto a las coordenadas de su sucursal.
 - La app puede hacer una validación previa para la experiencia de usuario, pero el backend debe volver a calcular la distancia antes de devolver esos pedidos.
+- Cuando un pedido propio de tipo Delivery pasa a Listo, la notificación push solo se dirige a domiciliarios de la misma sucursal que no tengan pedidos activos asignados y cuya última ubicación reciente de una jornada activa esté dentro de `DeliveryTrackingAllowedDistanceMeters`.
 - Ubicaciones, avances, estados diarios, rutas y paradas pertenecen al tenant.
 - Tokens de dispositivo pertenecen al usuario y tenant.
 - Las frecuencias, tolerancias y retenciones del seguimiento se configuran por sucursal.
