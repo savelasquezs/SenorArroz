@@ -14,6 +14,48 @@ namespace SenorArroz.Tests;
 public class DeliveryRouteAssignmentTests
 {
     [Fact]
+    public async Task Assignment_DoesNotReuseInProgressRouteFromPreviousColombiaDay()
+    {
+        await using var db = CreateDb();
+        var now = new DateTime(2026, 7, 21, 17, 30, 0, DateTimeKind.Utc);
+        db.Branches.Add(new Branch { Id = 1, Name = "Centro", Address = "Sucursal" });
+        db.Orders.AddRange(
+            DeliveryOrder(10, deliverymanId: 7, routeId: 30),
+            DeliveryOrder(11, deliverymanId: 7));
+        db.DeliveryRoutes.Add(new DeliveryRoute
+        {
+            Id = 30,
+            DeliverymanId = 7,
+            BranchId = 1,
+            Status = DeliveryRouteStatus.InProgress,
+            LastAssignmentAtUtc = now,
+            RouteStartedAtUtc = now.AddDays(-10),
+        });
+        db.DeliveryRouteStops.Add(new DeliveryRouteStop
+        {
+            Id = 40,
+            DeliveryRouteId = 30,
+            OrderId = 10,
+            StopSequence = 1,
+        });
+        await db.SaveChangesAsync();
+        var service = new DeliveryRouteWorkflowService(
+            db,
+            Mock.Of<IGoogleRoutesDrivingMetricsService>(),
+            Options.Create(new DeliveryRouteOptions()),
+            NullLogger<DeliveryRouteWorkflowService>.Instance,
+            new FakeClock(now));
+
+        await service.OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 11));
+
+        var assigned = await db.Orders.SingleAsync(o => o.Id == 11);
+        Assert.NotEqual(30, assigned.DeliveryRouteId);
+        Assert.Equal(2, await db.DeliveryRoutes.CountAsync());
+        Assert.Equal(DeliveryRouteStatus.Open,
+            (await db.DeliveryRoutes.SingleAsync(r => r.Id == assigned.DeliveryRouteId)).Status);
+    }
+
+    [Fact]
     public async Task Assignment_AppendsOrderToInProgressRoute_WithoutRestartingClock()
     {
         await using var db = CreateDb();

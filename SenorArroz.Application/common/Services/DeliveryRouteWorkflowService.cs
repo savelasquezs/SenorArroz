@@ -54,13 +54,16 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
             .ToListAsync(cancellationToken);
         _db.DeliveryRouteStops.RemoveRange(oldStops);
         tracked.DeliveryRouteId = null;
+        var colombiaTodayStartUtc = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(_clock.UtcNow);
 
         var route = await _db.DeliveryRoutes
             .Where(r =>
                     r.DeliverymanId == tracked.DeliveryManId.Value
                     && r.BranchId == tracked.BranchId
-                    && (r.Status == DeliveryRouteStatus.InProgress
-                        || r.Status == DeliveryRouteStatus.Open))
+                    && ((r.Status == DeliveryRouteStatus.InProgress
+                         && r.RouteStartedAtUtc >= colombiaTodayStartUtc)
+                        || (r.Status == DeliveryRouteStatus.Open
+                            && r.LastAssignmentAtUtc >= colombiaTodayStartUtc)))
             .OrderByDescending(r => r.Status == DeliveryRouteStatus.InProgress)
             .ThenByDescending(r => r.LastAssignmentAtUtc)
             .FirstOrDefaultAsync(cancellationToken);

@@ -108,6 +108,9 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
             routeId = await FindCurrentRouteIdAsync(deliverymanId, cancellationToken);
         }
 
+        if (routeId.HasValue)
+            await RepairStaleRouteClockAsync(routeId.Value, recordedAtUtc, cancellationToken);
+
         _db.DeliverymanLocations.Add(new DeliverymanLocation
         {
             DeliverymanId = deliverymanId,
@@ -205,6 +208,47 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
                 : null;
         }
         route.Status = DeliveryRouteStatus.Completed;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task RepairStaleRouteClockAsync(
+        int routeId,
+        DateTime recordedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var todayStartUtc = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(recordedAtUtc);
+        var route = await _db.DeliveryRoutes
+            .Include(r => r.Stops)
+            .FirstOrDefaultAsync(r => r.Id == routeId
+                                      && r.Status == DeliveryRouteStatus.InProgress
+                                      && r.RouteStartedAtUtc < todayStartUtc,
+                cancellationToken);
+        if (route is null)
+            return;
+
+        var orderIds = route.Stops.Select(s => s.OrderId).ToList();
+        var activeOrders = await _db.Orders
+            .Where(o => orderIds.Contains(o.Id)
+                        && o.Status != OrderStatus.Delivered
+                        && o.Status != OrderStatus.Cancelled)
+            .ToListAsync(cancellationToken);
+        if (activeOrders.Count == 0)
+            return;
+
+        var operationalStart = activeOrders
+            .Select(o =>
+            {
+                var times = o.GetStatusTimes();
+                if (times.TryGetValue("ontheway", out var onTheWay)) return (DateTime?)onTheWay;
+                if (times.TryGetValue(Order.DeliveryManAssignedStatusTimeKey, out var assigned)) return assigned;
+                return null;
+            })
+            .Where(x => x.HasValue && x.Value >= todayStartUtc)
+            .Select(x => x!.Value)
+            .DefaultIfEmpty(recordedAtUtc)
+            .Min();
+
+        route.RouteStartedAtUtc = ColombiaTimeHelper.EnsureUtc(operationalStart);
         await _db.SaveChangesAsync(cancellationToken);
     }
 
