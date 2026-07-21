@@ -56,11 +56,14 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         tracked.DeliveryRouteId = null;
 
         var route = await _db.DeliveryRoutes
-            .FirstOrDefaultAsync(r =>
+            .Where(r =>
                     r.DeliverymanId == tracked.DeliveryManId.Value
                     && r.BranchId == tracked.BranchId
-                    && r.Status == DeliveryRouteStatus.Open,
-                cancellationToken);
+                    && (r.Status == DeliveryRouteStatus.InProgress
+                        || r.Status == DeliveryRouteStatus.Open))
+            .OrderByDescending(r => r.Status == DeliveryRouteStatus.InProgress)
+            .ThenByDescending(r => r.LastAssignmentAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (route is null)
         {
@@ -96,6 +99,40 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         route.ComplexAccessBufferSeconds = _opt.ComplexAccessBufferSeconds;
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        // Una asignacion urgente debe incorporarse a la ruta que ya esta en camino.
+        // Se recalculan sus metricas, pero nunca se reinicia el reloj operativo.
+        if (route.Status == DeliveryRouteStatus.InProgress)
+        {
+            try
+            {
+                var routeStops = await _db.DeliveryRouteStops
+                    .Where(s => s.DeliveryRouteId == route.Id)
+                    .OrderBy(s => s.StopSequence)
+                    .ToListAsync(cancellationToken);
+                var routeOrderIds = routeStops.Select(s => s.OrderId).ToList();
+                var routeOrders = await _db.Orders
+                    .Include(o => o.Address)
+                    .Where(o => routeOrderIds.Contains(o.Id))
+                    .ToListAsync(cancellationToken);
+
+                await ApplyRoutePlanningCoreAsync(
+                    route,
+                    routeStops,
+                    routeOrders.ToDictionary(o => o.Id),
+                    cancellationToken,
+                    preserveRouteStartedAt: true);
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "El pedido {OrderId} se agrego a la ruta activa {RouteId}, pero no fue posible recalcular sus metricas.",
+                    tracked.Id,
+                    route.Id);
+            }
+        }
 
         foreach (var rid in oldRouteIds.Where(id => id != route.Id))
             await PruneEmptyOpenRouteAsync(rid, cancellationToken);
@@ -330,7 +367,8 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         DeliveryRoute route,
         List<DeliveryRouteStop> planningStops,
         Dictionary<int, Order> dict,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preserveRouteStartedAt = false)
     {
         var keywords = ComplexAccessKeywordEvaluator.ParseKeywords(_opt.ComplexAccessKeywords);
         var complexBuffer = _opt.ComplexAccessBufferSeconds;
@@ -425,7 +463,8 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         route.PerOrderBufferSeconds = perOrder;
         route.ComplexAccessBufferSeconds = complexBuffer;
         route.PlanningWarnings = warnings.Count > 0 ? string.Join('\n', warnings) : null;
-        route.RouteStartedAtUtc = route.LastAssignmentAtUtc.AddSeconds(_opt.ConsolidationDelaySeconds);
+        if (!preserveRouteStartedAt)
+            route.RouteStartedAtUtc = route.LastAssignmentAtUtc.AddSeconds(_opt.ConsolidationDelaySeconds);
     }
 
     private async Task CompleteOpenRouteWithFullMetaAsync(

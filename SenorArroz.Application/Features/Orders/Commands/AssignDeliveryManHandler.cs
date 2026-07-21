@@ -14,17 +14,20 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
+    private readonly IOrderNotificationService _notificationService;
 
     public AssignDeliveryManHandler(
         IOrderRepository orderRepository,
         IMapper mapper,
         ICurrentUser currentUser,
-        IDeliveryRouteWorkflowService deliveryRouteWorkflow)
+        IDeliveryRouteWorkflowService deliveryRouteWorkflow,
+        IOrderNotificationService notificationService)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
+        _notificationService = notificationService;
     }
 
     public async Task<OrderDto> Handle(AssignDeliveryManCommand request, CancellationToken cancellationToken)
@@ -43,8 +46,9 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
             throw new BusinessException("No tienes permisos para asignar domiciliarios");
 
         var order = await _orderRepository.AssignDeliveryManAsync(
-            request.Id, 
-            request.Assignment.DeliveryManId);
+            request.Id,
+            request.Assignment.DeliveryManId,
+            cancellationToken);
 
         // Cambiar estado a OnTheWay si estaba en Ready
         if (order.Status == Domain.Enums.OrderStatus.Ready)
@@ -52,13 +56,19 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
             order = await _orderRepository.ChangeStatusAsync(
                 request.Id, 
                 Domain.Enums.OrderStatus.OnTheWay, 
-                null);
+                null,
+                cancellationToken);
         }
 
         order = await _orderRepository.GetByIdAsync(request.Id, cancellationToken);
         if (order != null)
             await _deliveryRouteWorkflow.OnOrderAssignedToDeliverymanAsync(order, cancellationToken);
 
-        return _mapper.Map<OrderDto>(order ?? throw new BusinessException("Pedido no encontrado"));
+        order = await _orderRepository.GetByIdAsync(request.Id, cancellationToken)
+            ?? throw new BusinessException("Pedido no encontrado");
+        var orderDto = _mapper.Map<OrderDto>(order);
+        await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
+
+        return orderDto;
     }
 }
