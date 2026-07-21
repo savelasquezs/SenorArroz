@@ -20,6 +20,8 @@ public class DeliveryWorkSessionDto
     public int Id { get; set; }
     public int DeliverymanId { get; set; }
     public int BranchId { get; set; }
+    public decimal? BranchLatitude { get; set; }
+    public decimal? BranchLongitude { get; set; }
     public string DeviceInstallationId { get; set; } = string.Empty;
     public string DevicePlatform { get; set; } = string.Empty;
     public string? DeviceDescription { get; set; }
@@ -40,6 +42,8 @@ internal static class DeliveryWorkSessionDtoMapper
         Id = session.Id,
         DeliverymanId = session.DeliverymanId,
         BranchId = session.BranchId,
+        BranchLatitude = branch.Latitude,
+        BranchLongitude = branch.Longitude,
         DeviceInstallationId = session.DeviceInstallationId,
         DevicePlatform = session.DevicePlatform,
         DeviceDescription = session.DeviceDescription,

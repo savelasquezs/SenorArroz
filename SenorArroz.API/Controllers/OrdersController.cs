@@ -135,6 +135,7 @@ public class OrdersController : ControllerBase
     /// Busca pedidos con filtros avanzados
     /// </summary>
     [HttpPost("search")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier,Kitchen")]
     public async Task<ActionResult<PagedResult<OrderDto>>> SearchOrders([FromBody] OrderSearchDto searchDto)
     {
         var query = new SearchOrdersQuery
@@ -548,6 +549,24 @@ public class OrdersController : ControllerBase
         };
 
         var result = await _mediator.Send(query);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Obtiene domicilios tomados o en preparación únicamente cuando el
+    /// domiciliario autenticado se encuentra dentro del radio de su sucursal.
+    /// </summary>
+    [HttpPost("delivery/preparation/near-branch")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<ActionResult<List<OrderDto>>> GetPreparationOrdersNearBranch(
+        [FromBody] DeliveryPreparationLocationDto location)
+    {
+        var result = await _mediator.Send(new GetPreparationOrdersNearBranchQuery
+        {
+            Latitude = location.Latitude,
+            Longitude = location.Longitude,
+        });
+
         return Ok(result);
     }
 
