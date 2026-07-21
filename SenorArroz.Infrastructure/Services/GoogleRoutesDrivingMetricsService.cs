@@ -35,17 +35,17 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
             _http.BaseAddress = new Uri("https://routes.googleapis.com/");
     }
 
-    public async Task<(int DistanceMeters, int DurationSeconds)> ComputeRouteAsync(
+    public async Task<DrivingRouteMetrics> ComputeRouteAsync(
         IReadOnlyList<(double Latitude, double Longitude)> orderedWaypoints,
         CancellationToken cancellationToken = default)
     {
         if (orderedWaypoints.Count < 2)
-            return (0, 0);
+            return default;
 
         if (string.IsNullOrWhiteSpace(_opts.RoutesApiKey))
         {
             _logger.LogDebug("GoogleMaps:RoutesApiKey vacío; métricas de manejo en 0.");
-            return (0, 0);
+            return default;
         }
 
         var origin = orderedWaypoints[0];
@@ -84,12 +84,14 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
             },
             Intermediates = intermediates,
             TravelMode = "DRIVE",
-            RoutingPreference = "TRAFFIC_UNAWARE",
+            RoutingPreference = "TRAFFIC_AWARE_OPTIMAL",
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "directions/v2:computeRoutes");
         request.Headers.TryAddWithoutValidation("X-Goog-Api-Key", _opts.RoutesApiKey);
-        request.Headers.TryAddWithoutValidation("X-Goog-FieldMask", "routes.distanceMeters,routes.duration");
+        request.Headers.TryAddWithoutValidation(
+            "X-Goog-FieldMask",
+            "routes.distanceMeters,routes.duration,routes.legs.distanceMeters,routes.legs.duration");
         request.Content = JsonContent.Create(body, options: JsonOptions);
 
         HttpResponseMessage response;
@@ -100,25 +102,33 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Fallo de red al llamar Routes API.");
-            return (0, 0);
+            return default;
         }
 
         if (!response.IsSuccessStatusCode)
         {
             var err = await response.Content.ReadAsStringAsync(cancellationToken);
             _logger.LogWarning("Routes API {Status}: {Body}", response.StatusCode, err);
-            return (0, 0);
+            return default;
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         if (!doc.RootElement.TryGetProperty("routes", out var routes) || routes.GetArrayLength() == 0)
-            return (0, 0);
+            return default;
 
         var route0 = routes[0];
         var distance = ReadDistanceMeters(route0);
         var durationSec = ReadDurationSeconds(route0);
-        return (distance, durationSec);
+        var returnDistance = 0;
+        var returnDuration = 0;
+        if (route0.TryGetProperty("legs", out var legs) && legs.GetArrayLength() > 0)
+        {
+            var returnLeg = legs[legs.GetArrayLength() - 1];
+            returnDistance = ReadDistanceMeters(returnLeg);
+            returnDuration = ReadDurationSeconds(returnLeg);
+        }
+        return new DrivingRouteMetrics(distance, durationSec, returnDistance, returnDuration);
     }
 
     private sealed class RoutesComputeRequest
@@ -127,7 +137,7 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
         public RoutesWaypoint Destination { get; set; } = null!;
         public RoutesWaypoint[]? Intermediates { get; set; }
         public string TravelMode { get; set; } = "DRIVE";
-        public string RoutingPreference { get; set; } = "TRAFFIC_UNAWARE";
+        public string RoutingPreference { get; set; } = "TRAFFIC_AWARE_OPTIMAL";
     }
 
     private sealed class RoutesWaypoint
@@ -163,7 +173,13 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
         if (dur.ValueKind == JsonValueKind.String)
         {
             var s = dur.GetString() ?? "";
-            return int.TryParse(s.TrimEnd('s'), out var sec) ? sec : 0;
+            return decimal.TryParse(
+                s.TrimEnd('s'),
+                System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var sec)
+                ? (int)Math.Ceiling(sec)
+                : 0;
         }
 
         if (dur.TryGetProperty("seconds", out var secEl))

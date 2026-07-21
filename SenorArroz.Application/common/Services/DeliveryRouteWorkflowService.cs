@@ -226,6 +226,9 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         IReadOnlyList<Order> routeOrders,
         CancellationToken cancellationToken)
     {
+        if (route.ReturnToBranchMeters is > 0)
+            return;
+
         var branch = await _db.Branches.AsNoTracking()
             .FirstOrDefaultAsync(b => b.Id == route.BranchId, cancellationToken);
         if (branch?.Latitude is null || branch.Longitude is null)
@@ -421,6 +424,11 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
                 waypoints.Add(((double)lat, (double)lng));
         }
 
+        // Una sola consulta representa la ruta completa y conserva el orden:
+        // sucursal -> entregas -> sucursal.
+        if (branchHasCoords && stopsMissingCoords.Count == 0 && waypoints.Count >= 2)
+            waypoints.Add(((double)branch!.Latitude!.Value, (double)branch.Longitude!.Value));
+
         var n = planningStops.Count;
         var perOrder = _opt.PerOrderBufferSeconds;
         int distMeters = 0;
@@ -441,7 +449,10 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         }
         else
         {
-            (distMeters, driveSecs) = await _routesMetrics.ComputeRouteAsync(waypoints, cancellationToken);
+            var metrics = await _routesMetrics.ComputeRouteAsync(waypoints, cancellationToken);
+            distMeters = Math.Max(0, metrics.DistanceMeters - metrics.ReturnDistanceMeters);
+            driveSecs = metrics.DurationSeconds;
+            route.ReturnToBranchMeters = metrics.ReturnDistanceMeters;
             if (distMeters == 0 && driveSecs == 0)
             {
                 warnings.Add(
@@ -450,29 +461,10 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
             }
         }
 
-        // Google calcula primero sucursal -> entregas. La meta tambien debe
-        // incluir el regreso desde la ultima entrega hasta la sucursal.
-        var returnDriveSecs = 0;
-        if (!skipGoogle && branchHasCoords && waypoints.Count >= 2)
-        {
-            var returnWaypoints = new List<(double Lat, double Lng)>
-            {
-                waypoints[^1],
-                ((double)branch!.Latitude!.Value, (double)branch.Longitude!.Value),
-            };
-            var (_, returnDurationSeconds) = await _routesMetrics.ComputeRouteAsync(
-                returnWaypoints,
-                cancellationToken);
-            returnDriveSecs = returnDurationSeconds;
-            if (returnDriveSecs == 0)
-                warnings.Add("No se obtuvo el tiempo de regreso a la sucursal desde Google Maps.");
-        }
-
-        var totalDriveSecs = driveSecs + returnDriveSecs;
-        var meta = totalDriveSecs + n * perOrder + k * complexBuffer;
+        var meta = driveSecs + n * perOrder + k * complexBuffer;
 
         route.PlannedDistanceMeters = distMeters;
-        route.PlannedDrivingDurationSeconds = totalDriveSecs;
+        route.PlannedDrivingDurationSeconds = driveSecs;
         route.StopCount = n;
         route.ComplexAccessStopCount = k;
         route.MetaDurationSeconds = meta;
