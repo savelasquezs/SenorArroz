@@ -204,22 +204,16 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         if (!allTerminal)
             return;
 
-        if (route.RouteStartedAtUtc is null || route.MetaDurationSeconds is null)
+        if (orders.All(o => o.Status == OrderStatus.Cancelled))
         {
-            _logger.LogWarning("Ruta {RouteId} InProgress sin route_started_at o meta; se cierra sin SLA.", route.Id);
+            route.Status = DeliveryRouteStatus.Cancelled;
             route.CompletedAtUtc = _clock.UtcNow;
-            route.Status = DeliveryRouteStatus.Completed;
-            await TrySetReturnToBranchMetersAsync(route, orders, cancellationToken);
             await _db.SaveChangesAsync(cancellationToken);
             return;
         }
 
-        var completedAt = _clock.UtcNow;
-        route.CompletedAtUtc = completedAt;
-        var actual = (int)Math.Max(0, (completedAt - route.RouteStartedAtUtc.Value).TotalSeconds);
-        route.ActualDurationSeconds = actual;
-        route.MetSla = actual <= route.MetaDurationSeconds.Value;
-        route.Status = DeliveryRouteStatus.Completed;
+        // Todos los pedidos terminaron, pero la ruta continua activa durante el
+        // regreso. Se completa con el primer punto GPS dentro de la sucursal.
         await TrySetReturnToBranchMetersAsync(route, orders, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
     }
@@ -453,10 +447,29 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
             }
         }
 
-        var meta = driveSecs + n * perOrder + k * complexBuffer;
+        // Google calcula primero sucursal -> entregas. La meta tambien debe
+        // incluir el regreso desde la ultima entrega hasta la sucursal.
+        var returnDriveSecs = 0;
+        if (!skipGoogle && branchHasCoords && waypoints.Count >= 2)
+        {
+            var returnWaypoints = new List<(double Lat, double Lng)>
+            {
+                waypoints[^1],
+                ((double)branch!.Latitude!.Value, (double)branch.Longitude!.Value),
+            };
+            var (_, returnDurationSeconds) = await _routesMetrics.ComputeRouteAsync(
+                returnWaypoints,
+                cancellationToken);
+            returnDriveSecs = returnDurationSeconds;
+            if (returnDriveSecs == 0)
+                warnings.Add("No se obtuvo el tiempo de regreso a la sucursal desde Google Maps.");
+        }
+
+        var totalDriveSecs = driveSecs + returnDriveSecs;
+        var meta = totalDriveSecs + n * perOrder + k * complexBuffer;
 
         route.PlannedDistanceMeters = distMeters;
-        route.PlannedDrivingDurationSeconds = driveSecs;
+        route.PlannedDrivingDurationSeconds = totalDriveSecs;
         route.StopCount = n;
         route.ComplexAccessStopCount = k;
         route.MetaDurationSeconds = meta;
@@ -483,12 +496,10 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
 
         await ApplyRoutePlanningCoreAsync(route, stopList, dict, cancellationToken);
 
-        var now = _clock.UtcNow;
-        route.ConsolidatedAtUtc = now;
-        route.CompletedAtUtc = now;
-        route.ActualDurationSeconds = route.MetaDurationSeconds;
-        route.MetSla = true;
-        route.Status = DeliveryRouteStatus.Completed;
+        route.ConsolidatedAtUtc = _clock.UtcNow;
+        route.Status = orders.All(o => o.Status == OrderStatus.Cancelled)
+            ? DeliveryRouteStatus.Cancelled
+            : DeliveryRouteStatus.InProgress;
 
         await TrySetReturnToBranchMetersAsync(route, orders, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);

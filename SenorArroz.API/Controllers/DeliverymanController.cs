@@ -364,7 +364,7 @@ public class DeliverymanController : ControllerBase
     [Authorize(Roles = "Deliveryman")]
     public async Task<ActionResult> RecordLocation([FromBody] RecordLocationRequest request)
     {
-        await _mediator.Send(new RecordLocationCommand
+        var result = await _mediator.Send(new RecordLocationCommand
         {
             WorkSessionId = request.WorkSessionId,
             ClientPointId = request.ClientPointId,
@@ -379,7 +379,7 @@ public class DeliverymanController : ControllerBase
             TrackingMode = request.TrackingMode,
             RecordedAt = request.RecordedAt,
         });
-        return NoContent();
+        return Ok(result);
     }
 
     [HttpPost("device-event")]

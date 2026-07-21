@@ -183,6 +183,7 @@ Reglas:
 - Cuando un pedido propio de tipo Delivery pasa a Listo, la notificación push solo se dirige a domiciliarios de la misma sucursal que no tengan pedidos activos asignados y cuya última ubicación reciente de una jornada activa esté dentro de `DeliveryTrackingAllowedDistanceMeters`.
 - Ubicaciones, avances, estados diarios, rutas y paradas pertenecen al tenant.
 - Cuando admin o cajero asigna un domicilio, el pedido pasa a En camino, queda vinculado al seguimiento y se notifica a la app. Si el domiciliario ya tiene una ruta `InProgress`, se agrega como una nueva parada a esa misma ruta sin reiniciar su hora de inicio; solo se crea una ruta `Open` cuando no existe una ruta activa o abierta compatible.
+- Entregar el último pedido no completa la ruta: comienza el regreso a la sucursal y se conserva el seguimiento GPS activo. La ruta se completa con el primer punto GPS dentro del radio `DeliveryTrackingAllowedDistanceMeters`; ese instante determina el tiempo real y solo entonces se compara con la meta, cuyo tiempo de conducción incluye también el regreso calculado por Google Maps.
 - Tokens de dispositivo pertenecen al usuario y tenant.
 - Las frecuencias, tolerancias y retenciones del seguimiento se configuran por sucursal.
 - La hora de cierre del seguimiento es una hora local de Colombia; los instantes de ubicación y sesión se persisten en UTC.

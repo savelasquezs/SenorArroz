@@ -12,6 +12,98 @@ namespace SenorArroz.Tests;
 public class DeliveryWorkSessionTests
 {
     [Fact]
+    public async Task RecordLocation_CompletesTerminalRouteOnlyAfterReturnToBranch()
+    {
+        await using var db = CreateDb();
+        var startedAt = new DateTime(2026, 7, 21, 16, 0, 0, DateTimeKind.Utc);
+        var now = startedAt.AddMinutes(30);
+        db.Branches.Add(new Branch
+        {
+            Id = 7,
+            Name = "Centro",
+            Address = "Sucursal",
+            Latitude = 4.60971m,
+            Longitude = -74.08175m,
+            DeliveryTrackingAllowedDistanceMeters = 50,
+        });
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device-a",
+            DevicePlatform = "android",
+            StartedAt = startedAt,
+            AutoCloseAt = now.AddHours(5),
+            LastCommunicationAt = startedAt,
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        db.DeliveryRoutes.Add(new DeliveryRoute
+        {
+            Id = 20,
+            DeliverymanId = 1,
+            BranchId = 7,
+            Status = DeliveryRouteStatus.InProgress,
+            LastAssignmentAtUtc = startedAt,
+            RouteStartedAtUtc = startedAt,
+            MetaDurationSeconds = 2400,
+        });
+        db.Orders.Add(new Order
+        {
+            Id = 30,
+            BranchId = 7,
+            TakenById = 2,
+            DeliveryManId = 1,
+            DeliveryRouteId = 20,
+            Type = OrderType.Delivery,
+            Status = OrderStatus.Delivered,
+        });
+        db.DeliveryRouteStops.Add(new DeliveryRouteStop
+        {
+            Id = 40,
+            DeliveryRouteId = 20,
+            OrderId = 30,
+            StopSequence = 1,
+        });
+        await db.SaveChangesAsync();
+        var handler = new RecordLocationHandler(
+            db,
+            CurrentUser().Object,
+            Mock.Of<IOrderNotificationService>(),
+            new FakeClock(now));
+
+        var outside = await handler.Handle(new RecordLocationCommand
+        {
+            WorkSessionId = 10,
+            ClientPointId = Guid.NewGuid(),
+            Latitude = 4.61971m,
+            Longitude = -74.08175m,
+            RecordedAt = now,
+        }, default);
+
+        Assert.True(outside.ContinueActiveTracking);
+        Assert.Equal(DeliveryRouteStatus.InProgress, db.DeliveryRoutes.Single().Status);
+
+        var arrivedAt = now.AddMinutes(7);
+        var arrived = await handler.Handle(new RecordLocationCommand
+        {
+            WorkSessionId = 10,
+            ClientPointId = Guid.NewGuid(),
+            DeliveryRouteId = 20,
+            Latitude = 4.60971m,
+            Longitude = -74.08175m,
+            RecordedAt = arrivedAt,
+        }, default);
+
+        var route = db.DeliveryRoutes.Single();
+        Assert.False(arrived.ContinueActiveTracking);
+        Assert.Equal(DeliveryRouteStatus.Completed, route.Status);
+        Assert.Equal(arrivedAt, route.CompletedAtUtc);
+        Assert.Equal(2220, route.ActualDurationSeconds);
+        Assert.True(route.MetSla);
+    }
+
+    [Fact]
     public async Task Start_CreatesOneSessionWithColombiaCutoff()
     {
         await using var db = CreateDb();

@@ -8,7 +8,9 @@ using SenorArroz.Domain.Exceptions;
 
 namespace SenorArroz.Application.Features.Deliverymen.Commands;
 
-public class RecordLocationCommand : IRequest
+public sealed record RecordLocationResult(bool ContinueActiveTracking, int? DeliveryRouteId);
+
+public class RecordLocationCommand : IRequest<RecordLocationResult>
 {
     public int WorkSessionId { get; set; }
     public Guid? ClientPointId { get; set; }
@@ -24,7 +26,7 @@ public class RecordLocationCommand : IRequest
     public DateTime RecordedAt { get; set; }
 }
 
-public class RecordLocationHandler : IRequestHandler<RecordLocationCommand>
+public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, RecordLocationResult>
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
@@ -43,7 +45,7 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand>
         _clock = clock;
     }
 
-    public async Task Handle(RecordLocationCommand request, CancellationToken cancellationToken)
+    public async Task<RecordLocationResult> Handle(RecordLocationCommand request, CancellationToken cancellationToken)
     {
         if (!_currentUser.IsAuthenticated)
             throw new UnauthorizedAccessException("Usuario no autenticado.");
@@ -60,7 +62,7 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand>
                 .Select(x => (int?)x.DeliverymanId)
                 .FirstOrDefaultAsync(cancellationToken);
             if (existingOwner == deliverymanId)
-                return;
+                return await CurrentTrackingResultAsync(deliverymanId, cancellationToken);
             if (existingOwner.HasValue)
                 throw new BusinessException("El identificador de la ubicación ya pertenece a otro domiciliario.");
         }
@@ -136,6 +138,89 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand>
             (double)request.Latitude,
             (double)request.Longitude,
             recordedAtUtc);
+
+        if (routeId.HasValue)
+        {
+            await TryCompleteRouteAtBranchAsync(
+                routeId.Value,
+                deliverymanId,
+                branchId,
+                request.Latitude,
+                request.Longitude,
+                recordedAtUtc,
+                cancellationToken);
+        }
+
+        return await CurrentTrackingResultAsync(deliverymanId, cancellationToken);
+    }
+
+    private async Task TryCompleteRouteAtBranchAsync(
+        int routeId,
+        int deliverymanId,
+        int branchId,
+        decimal latitude,
+        decimal longitude,
+        DateTime recordedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var route = await _db.DeliveryRoutes
+            .Include(r => r.Stops)
+            .FirstOrDefaultAsync(r => r.Id == routeId
+                                      && r.DeliverymanId == deliverymanId
+                                      && r.BranchId == branchId
+                                      && r.Status == DeliveryRouteStatus.InProgress,
+                cancellationToken);
+        if (route is null || route.Stops.Count == 0)
+            return;
+
+        var orderIds = route.Stops.Select(s => s.OrderId).ToList();
+        var allTerminal = await _db.Orders
+            .Where(o => orderIds.Contains(o.Id))
+            .AllAsync(o => o.Status == OrderStatus.Delivered || o.Status == OrderStatus.Cancelled,
+                cancellationToken);
+        if (!allTerminal)
+            return;
+
+        var branch = await _db.Branches.AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == branchId, cancellationToken);
+        if (branch?.Latitude is null || branch.Longitude is null)
+            return;
+
+        var distance = GeoHelper.HaversineDistanceMeters(
+            (double)latitude,
+            (double)longitude,
+            (double)branch.Latitude.Value,
+            (double)branch.Longitude.Value);
+        if (distance > Math.Max(1, branch.DeliveryTrackingAllowedDistanceMeters))
+            return;
+
+        route.CompletedAtUtc = recordedAtUtc;
+        if (route.RouteStartedAtUtc.HasValue)
+        {
+            route.ActualDurationSeconds = (int)Math.Max(
+                0,
+                (recordedAtUtc - route.RouteStartedAtUtc.Value).TotalSeconds);
+            route.MetSla = route.MetaDurationSeconds.HasValue
+                ? route.ActualDurationSeconds <= route.MetaDurationSeconds.Value
+                : null;
+        }
+        route.Status = DeliveryRouteStatus.Completed;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<RecordLocationResult> CurrentTrackingResultAsync(
+        int deliverymanId,
+        CancellationToken cancellationToken)
+    {
+        var routeId = await _db.DeliveryRoutes.AsNoTracking()
+            .Where(r => r.DeliverymanId == deliverymanId
+                        && (r.Status == DeliveryRouteStatus.Open
+                            || r.Status == DeliveryRouteStatus.InProgress))
+            .OrderByDescending(r => r.Status == DeliveryRouteStatus.InProgress)
+            .ThenByDescending(r => r.LastAssignmentAtUtc)
+            .Select(r => (int?)r.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        return new RecordLocationResult(routeId.HasValue, routeId);
     }
 
     private async Task<int?> FindCurrentRouteIdAsync(int deliverymanId, CancellationToken cancellationToken)
@@ -149,10 +234,7 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand>
         if (activeRoute is null)
             return null;
 
-        var hasOnTheWay = await _db.Orders
-            .AnyAsync(o => o.DeliveryRouteId == activeRoute.Id && o.Status == OrderStatus.OnTheWay,
-                cancellationToken);
-        return hasOnTheWay ? activeRoute.Id : null;
+        return activeRoute.Id;
     }
 
     private static void Validate(RecordLocationCommand request)
