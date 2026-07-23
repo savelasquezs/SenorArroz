@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+using SenorArroz.API.Extensions;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.API.Controllers;
@@ -17,6 +19,7 @@ public record RecordLocationRequest(
     int? BatteryLevelPercent = null,
     bool? InternetAvailable = null,
     bool? GpsEnabled = null,
+    [property: JsonConverter(typeof(DeliveryTrackingModeJsonConverter))]
     DeliveryTrackingMode? TrackingMode = null);
 
 public record RecordDeliveryDeviceEventRequest(

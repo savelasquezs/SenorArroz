@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -33,6 +34,33 @@ builder.Services.AddControllers().AddJsonOptions(options =>
         new JsonStringEnumConverter(new SnakeCaseNamingPolicy())
     );
 }); ;
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    var defaultFactory = options.InvalidModelStateResponseFactory;
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        if (context.HttpContext.Request.Path.StartsWithSegments("/api/deliverymen/location"))
+        {
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("DeliveryLocationValidation");
+            var errors = context.ModelState
+                .Where(entry => entry.Value?.Errors.Count > 0)
+                .SelectMany(entry => entry.Value!.Errors.Select(error =>
+                    $"{entry.Key}: {error.ErrorMessage}"))
+                .ToArray();
+
+            logger.LogWarning(
+                "DELIVERY_LOCATION_REJECTED userId={UserId} branchId={BranchId} traceId={TraceId} errors={Errors}",
+                context.HttpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+                context.HttpContext.User.FindFirst("branch_id")?.Value,
+                context.HttpContext.TraceIdentifier,
+                string.Join(" | ", errors));
+        }
+
+        return defaultFactory(context);
+    };
+});
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
