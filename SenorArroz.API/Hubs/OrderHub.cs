@@ -28,7 +28,7 @@ public class OrderHub : Hub
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, $"Branch_{branchId}_Delivery");
             }
-            else if (role == "Admin" || role == "Superadmin")
+            else if (role == "Admin" || role == "Superadmin" || role == "Cashier")
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, $"Branch_{branchId}_Admin");
             }
@@ -54,7 +54,7 @@ public class OrderHub : Hub
             {
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Branch_{branchId}_Delivery");
             }
-            else if (role == "Admin" || role == "Superadmin")
+            else if (role == "Admin" || role == "Superadmin" || role == "Cashier")
             {
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Branch_{branchId}_Admin");
             }
