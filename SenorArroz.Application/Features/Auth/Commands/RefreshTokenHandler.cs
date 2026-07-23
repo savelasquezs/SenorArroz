@@ -35,6 +35,8 @@ namespace SenorArroz.Application.Features.Auth.Commands
         {
             // Obtener usuario del token expirado
             var userId = _jwtService.GetUserIdFromExpiredToken(request.Token) ?? throw new BusinessException("Token inválido");
+            var sessionId = _jwtService.GetSessionIdFromExpiredToken(request.Token);
+            var deviceInstallationId = _jwtService.GetDeviceInstallationIdFromExpiredToken(request.Token);
 
             // Validar refresh token
             var refreshToken = await _refreshTokenRepository.GetByTokenAsync(request.RefreshToken, cancellationToken);
@@ -43,19 +45,28 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
             // Obtener usuario actualizado
             var user = await _authRepository.GetUserByIdWithBranchAsync(userId, cancellationToken) ?? throw new BusinessException("Usuario no encontrado");
+            if (user.Role == Domain.Enums.UserRole.Deliveryman
+                && (user.ActiveSessionId != sessionId || refreshToken.SessionId != sessionId))
+            {
+                throw new SessionReplacedException();
+            }
 
             // Revocar el refresh token usado
             refreshToken.Revoke(request.IpAddress, _clock.UtcNow);
             await _refreshTokenRepository.UpdateAsync(refreshToken, cancellationToken);
 
             // Generar nuevos tokens
-            var newAccessToken = _jwtService.GenerateAccessToken(user);
+            var newAccessToken = _jwtService.GenerateAccessToken(
+                user,
+                sessionId,
+                deviceInstallationId);
             var newRefreshToken = _jwtService.GenerateRefreshToken();
 
             // Crear nuevo refresh token entity
             var newRefreshTokenEntity = new RefreshToken
             {
                 UserId = user.Id,
+                SessionId = sessionId,
                 Token = newRefreshToken,
                 ExpiresAt = _clock.UtcNow.AddDays(7)
             };

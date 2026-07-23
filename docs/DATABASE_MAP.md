@@ -82,6 +82,10 @@ Notas:
 - `Branch` debe ser la primera tabla del negocio en recibir `TenantId`.
 - `Branch` contiene la configuración operativa del seguimiento de domiciliarios: hora local de cierre, frecuencias, permanencias, tolerancia geográfica y retenciones.
 - `User` debe quedar asociado a tenant aunque sea superadmin. Si hay superadmin global, documentar excepción.
+- `User.ActiveSessionId` contiene la sesión exclusiva vigente de un domiciliario.
+- `RefreshToken.SessionId` vincula cada refresh token con la sesión que lo creó. Un token anterior puede conservarse para auditoría, pero deja de ser válido cuando no coincide con `User.ActiveSessionId`.
+- El esquema de sesión exclusiva se instala con el script idempotente `SenorArroz.Infrastructure/Scripts/add_exclusive_delivery_sessions.sql`, que debe ejecutarse antes de desplegar el backend que usa estas columnas.
+- En Railway, abrir Bash desde la raíz del backend, ejecutar `railway connect MainDatabase` y, dentro de `psql`, ejecutar `\i SenorArroz.Infrastructure/Scripts/add_exclusive_delivery_sessions.sql`.
 
 ### Clientes y ubicación
 
@@ -176,6 +180,7 @@ Notas:
 
 - La app móvil no debe poder operar sobre tenant distinto al del domiciliario autenticado.
 - Cada ubicación nueva debe pertenecer a una sesión laboral activa del mismo domiciliario y dispositivo.
+- El JWT de un domiciliario incluye `session_id` y, para la app actualizada, `device_id`. El backend valida `session_id` en cada solicitud y compara `device_id` al iniciar, cerrar o reportar datos de una jornada.
 
 ### Impresión
 

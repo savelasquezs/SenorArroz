@@ -76,6 +76,14 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
                 cancellationToken);
         if (workSession is null)
             throw new BusinessException("La jornada laboral del dispositivo ya no está activa.");
+        if (!string.IsNullOrWhiteSpace(_currentUser.DeviceInstallationId)
+            && !string.Equals(
+                _currentUser.DeviceInstallationId,
+                workSession.DeviceInstallationId,
+                StringComparison.Ordinal))
+        {
+            throw new SessionReplacedException();
+        }
 
         var captureDeadline = workSession.EndedAt.HasValue && workSession.EndedAt.Value < workSession.AutoCloseAt
             ? workSession.EndedAt.Value

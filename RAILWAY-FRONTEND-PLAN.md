@@ -31,7 +31,7 @@
 ### Variables de Entorno del Backend (para referencia)
 - `ASPNETCORE_ENVIRONMENT=Production`
 - `ASPNETCORE_URLS=http://+:8080`
-- `ConnectionStrings__DefaultConnection=Host=postgres.railway.internal;Port=5432;Database=railway;Username=postgres;Password=ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg`
+- `ConnectionStrings__DefaultConnection=<valor construido con PGHOST, PGPORT, PGDATABASE, PGUSER y PGPASSWORD del servicio MainDatabase>`
 - `JwtSettings__SecretKey=IsmaelHermoso2023andPaolaHermosaEsposa2024andSantiagoPapasitoTodoeltiempo`
 - `JwtSettings__ExpiryInHours=24`
 - `JwtSettings__AccessTokenExpirationMinutes=480`

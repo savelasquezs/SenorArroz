@@ -13,6 +13,7 @@ using SenorArroz.Application;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
+using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure;
 using SenorArroz.Infrastructure.Storage;
 using System.Text.Json;
@@ -131,6 +132,7 @@ builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IPrintAgentN
 // JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey not configured");
+const string sessionReplacedItemKey = "exclusive-delivery-session-replaced";
 
 builder.Services.AddAuthentication(options =>
 {
@@ -167,6 +169,35 @@ builder.Services.AddAuthentication(options =>
             }
             return Task.CompletedTask;
         },
+        OnTokenValidated = async context =>
+        {
+            var principal = context.Principal;
+            var role = principal?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            if (!string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var userIdValue = principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!int.TryParse(userIdValue, out var userId))
+            {
+                context.Fail("Usuario de la sesión inválido.");
+                return;
+            }
+
+            var sessionValue = principal?.FindFirst("session_id")?.Value;
+            Guid? sessionId = Guid.TryParse(sessionValue, out var parsedSessionId)
+                ? parsedSessionId
+                : null;
+            var authRepository = context.HttpContext.RequestServices
+                .GetRequiredService<IAuthRepository>();
+            if (!await authRepository.IsSessionCurrentAsync(
+                    userId,
+                    sessionId,
+                    context.HttpContext.RequestAborted))
+            {
+                context.HttpContext.Items[sessionReplacedItemKey] = true;
+                context.Fail("SESSION_REPLACED");
+            }
+        },
         OnAuthenticationFailed = context =>
         {
             if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
@@ -181,10 +212,17 @@ builder.Services.AddAuthentication(options =>
             context.HandleResponse();
             context.Response.StatusCode = 401;
             context.Response.ContentType = "application/json";
+            var sessionWasReplaced =
+                context.HttpContext.Items.ContainsKey(sessionReplacedItemKey);
+            if (sessionWasReplaced)
+                context.Response.Headers.Append("X-Session-Replaced", "true");
             var result = System.Text.Json.JsonSerializer.Serialize(new
             {
                 error = "Unauthorized",
-                message = "Token inválido o expirado"
+                code = sessionWasReplaced ? "SESSION_REPLACED" : "UNAUTHORIZED",
+                message = sessionWasReplaced
+                    ? "Tu sesión fue iniciada en otro dispositivo. Inicia sesión nuevamente."
+                    : "Token inválido o expirado"
             });
             return context.Response.WriteAsync(result);
         },

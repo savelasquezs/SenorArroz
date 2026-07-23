@@ -8,6 +8,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
     {
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+        public string? DeviceInstallationId { get; set; }
         public string IpAddress { get; set; } = string.Empty;
     }
 }

@@ -84,6 +84,8 @@ No usar excepciones genéricas para reglas de negocio.
 ## Base de datos
 
 - Este repositorio no utiliza migraciones EF para cambios de esquema. Crear y mantener scripts SQL idempotentes en `SenorArroz.Infrastructure/Scripts`.
+- Los scripts destinados a Railway se deben ejecutar desde Bash, con el repositorio `SenorArroz` como directorio actual, abriendo la conexión interactiva con `railway connect MainDatabase`. Una vez dentro de `psql`, ejecutar `\i SenorArroz.Infrastructure/Scripts/<script>.sql` y salir con `\q`.
+- No desplegar código que dependa de columnas o tablas nuevas hasta que el script correspondiente haya terminado correctamente en Railway.
 
 - PostgreSQL usa `snake_case`.
 - C# usa PascalCase/camelCase.

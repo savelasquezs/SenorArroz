@@ -20,6 +20,9 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
             .HasColumnName("user_id")
             .IsRequired();
 
+        builder.Property(rt => rt.SessionId)
+            .HasColumnName("session_id");
+
         builder.Property(rt => rt.Token)
             .HasColumnName("token")
             .HasMaxLength(500)
@@ -65,6 +68,9 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
 
         builder.HasIndex(rt => rt.UserId)
             .HasDatabaseName("idx_refresh_token_user_id");
+
+        builder.HasIndex(rt => rt.SessionId)
+            .HasDatabaseName("idx_refresh_token_session_id");
 
         builder.HasIndex(rt => rt.ExpiresAt)
             .HasDatabaseName("idx_refresh_token_expires_at");

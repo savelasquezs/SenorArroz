@@ -64,6 +64,14 @@ public class RecordDeliveryDeviceEventHandler : IRequestHandler<RecordDeliveryDe
                 cancellationToken);
         if (workSession is null)
             throw new BusinessException("La jornada laboral indicada no pertenece al domiciliario.");
+        if (!string.IsNullOrWhiteSpace(_currentUser.DeviceInstallationId)
+            && !string.Equals(
+                _currentUser.DeviceInstallationId,
+                workSession.DeviceInstallationId,
+                StringComparison.Ordinal))
+        {
+            throw new SessionReplacedException();
+        }
 
         var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
         _db.DeliveryDeviceEvents.Add(new DeliveryDeviceEvent

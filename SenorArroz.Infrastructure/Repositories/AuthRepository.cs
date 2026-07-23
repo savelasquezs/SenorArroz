@@ -33,6 +33,34 @@ public class AuthRepository : IAuthRepository
             .FirstOrDefaultAsync(u => u.Id == userId && u.Active, cancellationToken);
     }
 
+    public Task<bool> IsSessionCurrentAsync(
+        int userId,
+        Guid? sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        return _context.Users.AsNoTracking().AnyAsync(
+            user => user.Id == userId
+                    && user.Active
+                    && user.Role == Domain.Enums.UserRole.Deliveryman
+                    && user.ActiveSessionId == sessionId,
+            cancellationToken);
+    }
+
+    public async Task EndSessionIfCurrentAsync(
+        int userId,
+        Guid sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(
+            candidate => candidate.Id == userId
+                         && candidate.ActiveSessionId == sessionId,
+            cancellationToken);
+        if (user is null) return;
+
+        user.ActiveSessionId = null;
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<bool> ValidatePasswordAsync(User user, string password, CancellationToken cancellationToken = default)
     {
         return await Task.FromResult(_passwordService.VerifyPassword(password, user.PasswordHash));

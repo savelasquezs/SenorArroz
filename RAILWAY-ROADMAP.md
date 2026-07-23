@@ -5,7 +5,7 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
 
 ## Estructura de Servicios en Railway
 
-1. **PostgreSQL Service**: Base de datos usando Railway PostgreSQL ✅
+1. **PostgreSQL Service**: `MainDatabase`, alojado en Railway ✅
 2. **Backend Service**: API ASP.NET Core 9.0 (En progreso)
 3. **Frontend Service**: Aplicación Vue.js con Nginx
 
@@ -18,11 +18,13 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
 **Información del Proyecto:**
 - Nombre del Proyecto: señor arroz c# vue js
 - Project ID: 5cb08ee8-0129-4d5b-aba8-60b34cfeee58
-- Base de Datos: railway
+- Plataforma: Railway
+- Servicio PostgreSQL: `MainDatabase`
+- Nombre interno de la base: valor vigente de `PGDATABASE`
 
 **Connection String:**
-- Formato Railway: `postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@postgres.railway.internal:5432/railway`
-- Formato .NET: `Host=postgres.railway.internal;Port=5432;Database=railway;Username=postgres;Password=ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg`
+- Railway: referencia `DATABASE_URL` suministrada por `MainDatabase`
+- .NET: `ConnectionStrings__DefaultConnection`, construida con las variables vigentes de `MainDatabase`
 
 **Documentación creada:**
 - `RAILWAY-CONNECTION.md` - Guía de conexión
@@ -50,7 +52,7 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
 3. **Configurar Variables de Entorno:**
    - `ASPNETCORE_ENVIRONMENT=Production`
    - `ASPNETCORE_URLS=http://+:8080` (Railway asignará puerto automáticamente)
-   - `ConnectionStrings__DefaultConnection=Host=postgres.railway.internal;Port=5432;Database=railway;Username=postgres;Password=ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg`
+   - `ConnectionStrings__DefaultConnection=<valor construido con PGHOST, PGPORT, PGDATABASE, PGUSER y PGPASSWORD de MainDatabase>`
    - `JwtSettings__SecretKey=IsmaelHermoso2023andPaolaHermosaEsposa2024andSantiagoPapasitoTodoeltiempo`
    - `JwtSettings__ExpiryInHours=24`
    - `JwtSettings__AccessTokenExpirationMinutes=480`
@@ -94,16 +96,16 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
 
 ### 4. Migración de Base de Datos
 
-**IMPORTANTE:** La migración NO se ejecuta automáticamente. Se ejecuta manualmente usando el script SQL `railway-initial-utf8.sql` directamente en Railway PostgreSQL.
+**IMPORTANTE:** La migración NO se ejecuta automáticamente. Se ejecuta manualmente usando el script SQL `railway-initial-utf8.sql` en el servicio `MainDatabase`.
 
 **Proceso de Ejecución de la Migración:**
 
-1. **Conectarse a Railway PostgreSQL:**
+1. **Conectarse a `MainDatabase` desde Bash:**
 
    ```bash
-   # Desde el directorio senorArrozAPI
-   cd senorArrozAPI
-   railway connect postgres
+   # Desde Bash y la raíz del backend
+   cd SenorArroz
+   railway connect MainDatabase
    ```
 
    Esto abrirá una sesión interactiva de `psql`.
@@ -115,11 +117,7 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
    \i railway-initial-utf8.sql
    ```
 
-   **Alternativa: Ejecutar desde la línea de comandos:**
-
-   ```bash
-   railway run --service MainDatabase psql -U postgres -d railway -f railway-initial-utf8.sql
-   ```
+   No usar `railway run ... psql -f`; los scripts se ejecutan dentro de la sesión abierta con `railway connect MainDatabase`.
 
 3. **Verificar que la migración se aplicó:**
 
@@ -166,7 +164,7 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
 
 2. **Verificar migraciones aplicadas:**
    ```bash
-   railway connect postgres
+   railway connect MainDatabase
    # Dentro de psql:
    SELECT "MigrationId" FROM "__EFMigrationsHistory" ORDER BY "MigrationId";
    ```
@@ -178,7 +176,7 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
 
 4. **Verificar datos en la base de datos:**
    ```bash
-   railway connect postgres
+   railway connect MainDatabase
    # Dentro de psql:
    SELECT COUNT(*) FROM "user";
    SELECT COUNT(*) FROM neighborhood;
@@ -206,7 +204,7 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
 
 ## Consideraciones Importantes
 
-1. **Migración de Base de Datos**: Se ejecuta manualmente usando el script SQL `railway-initial-utf8.sql` directamente en Railway PostgreSQL usando Railway CLI. NO se ejecuta automáticamente al iniciar la aplicación.
+1. **Migración de Base de Datos**: Se ejecuta manualmente en el servicio PostgreSQL `MainDatabase`, alojado en Railway, usando Bash, `railway connect MainDatabase` y `\i railway-initial-utf8.sql`. NO se ejecuta automáticamente al iniciar la aplicación.
 
 2. **Variables de Entorno**: Todas las configuraciones sensibles deben estar en variables de entorno de Railway, no en archivos de configuración.
 

@@ -7,11 +7,16 @@ namespace SenorArroz.Application.Features.Auth.Commands
     public class LogoutHandler : IRequestHandler<LogoutCommand, bool>
     {
         private readonly IRefreshTokenRepository _refreshTokenRepository;
+        private readonly IAuthRepository _authRepository;
         private readonly IClock _clock;
 
-        public LogoutHandler(IRefreshTokenRepository refreshTokenRepository, IClock clock)
+        public LogoutHandler(
+            IRefreshTokenRepository refreshTokenRepository,
+            IAuthRepository authRepository,
+            IClock clock)
         {
             _refreshTokenRepository = refreshTokenRepository;
+            _authRepository = authRepository;
             _clock = clock;
         }
 
@@ -23,6 +28,13 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
             refreshToken.Revoke(request.IpAddress, _clock.UtcNow);
             await _refreshTokenRepository.UpdateAsync(refreshToken, cancellationToken);
+            if (refreshToken.SessionId.HasValue)
+            {
+                await _authRepository.EndSessionIfCurrentAsync(
+                    refreshToken.UserId,
+                    refreshToken.SessionId.Value,
+                    cancellationToken);
+            }
 
             return true;
         }

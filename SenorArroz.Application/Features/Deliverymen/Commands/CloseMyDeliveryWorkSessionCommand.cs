@@ -23,9 +23,16 @@ public class CloseMyDeliveryWorkSessionHandler : IRequestHandler<CloseMyDelivery
 
     public async Task Handle(CloseMyDeliveryWorkSessionCommand request, CancellationToken cancellationToken)
     {
-        var session = await _db.DeliveryWorkSessions
-            .FirstOrDefaultAsync(x => x.DeliverymanId == _currentUser.Id && x.Status == DeliveryWorkSessionStatus.Active,
-                cancellationToken);
+        var query = _db.DeliveryWorkSessions.Where(
+            x => x.DeliverymanId == _currentUser.Id
+                 && x.Status == DeliveryWorkSessionStatus.Active);
+        if (!string.IsNullOrWhiteSpace(_currentUser.DeviceInstallationId))
+        {
+            query = query.Where(
+                x => x.DeviceInstallationId == _currentUser.DeviceInstallationId);
+        }
+
+        var session = await query.FirstOrDefaultAsync(cancellationToken);
         if (session is null) return;
 
         session.Close(

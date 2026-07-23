@@ -69,6 +69,11 @@ public class GlobalExceptionMiddleware
 
         switch (exception)
         {
+            case SessionReplacedException:
+                response.StatusCode = (int)HttpStatusCode.Unauthorized;
+                errorResponse.Code = SessionReplacedException.ErrorCode;
+                break;
+
             case NotFoundException:
                 response.StatusCode = (int)HttpStatusCode.NotFound;
                 break;
@@ -133,6 +138,7 @@ public class GlobalExceptionMiddleware
     private class ErrorResponse
     {
         public bool Success { get; set; }
+        public string? Code { get; set; }
         public string Message { get; set; } = string.Empty;
         public string? Detail { get; set; }
         public IDictionary<string, string[]>? Errors { get; set; }

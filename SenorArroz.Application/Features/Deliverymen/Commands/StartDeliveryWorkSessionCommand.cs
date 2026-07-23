@@ -73,6 +73,15 @@ public class StartDeliveryWorkSessionHandler : IRequestHandler<StartDeliveryWork
                 $"No se puede iniciar una jornada después de las {branch.DeliveryTrackingAutoCloseTime:HH:mm}.");
 
         var installationId = request.DeviceInstallationId.Trim();
+        if (!string.IsNullOrWhiteSpace(_currentUser.DeviceInstallationId)
+            && !string.Equals(
+                _currentUser.DeviceInstallationId,
+                installationId,
+                StringComparison.Ordinal))
+        {
+            throw new SessionReplacedException();
+        }
+
         if (active is not null)
         {
             if (active.DeviceInstallationId == installationId)

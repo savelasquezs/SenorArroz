@@ -1,10 +1,35 @@
 # Migración de Base de Datos en Railway
 
+## Procedimiento obligatorio
+
+Todos los scripts SQL de este repositorio destinados a Railway deben ejecutarse desde **Bash** mediante la conexión del servicio `MainDatabase`. Desde la raíz del backend:
+
+```bash
+cd SenorArroz
+railway connect MainDatabase
+```
+
+La conexión abre una sesión interactiva de `psql`. Dentro de ella se ejecuta el script requerido con `\i`:
+
+```sql
+\i SenorArroz.Infrastructure/Scripts/<script>.sql
+\q
+```
+
+Por ejemplo, para instalar el esquema de sesión exclusiva de domiciliarios:
+
+```sql
+\i SenorArroz.Infrastructure/Scripts/add_exclusive_delivery_sessions.sql
+```
+
+Si el script está en la carpeta histórica `Scripts`, se conserva el mismo procedimiento y solo cambia la ruta usada con `\i`. El código que dependa del cambio de esquema debe desplegarse únicamente después de comprobar que el script terminó sin errores.
+
 ## Información del Proyecto
 
 - **Proyecto**: señor arroz c# vue js
 - **Project ID**: 5cb08ee8-0129-4d5b-aba8-60b34cfeee58
-- **Base de Datos**: railway
+- **Plataforma**: Railway
+- **Servicio PostgreSQL**: `MainDatabase`
 - **Scripts SQL**: 
   - `railway-initial-utf8.sql` - Migración inicial completa
   - `Scripts/deliveryman.sql` - Tabla `deliveryman_advance` para gestión de abonos
@@ -23,10 +48,10 @@ Proceso usado para **añadir `weight_grams`** a la tabla `product` en Railway si
    railway link
    ```
    Elegí el workspace, el proyecto (p. ej. *señor arroz c# vue js*), el entorno **production** y el servicio **PostgreSQL** (p. ej. *MainDatabase*).
-3. **Abrir `psql` conectado a la base de Railway** (desde la carpeta del API para que `\i` relativo funcione):
+3. **Abrir `psql` conectado a `MainDatabase`** (desde la carpeta del API para que `\i` relativo funcione):
    ```bash
    cd senorArrozAPI
-   railway connect postgres
+   railway connect MainDatabase
    ```
    Se abre una sesión interactiva de `psql` ya autenticada (sin exponer `DATABASE_URL` en la terminal).
 4. **Ejecutar el script** (ajustá la ruta si tu usuario o carpeta distintos):
@@ -41,8 +66,7 @@ Proceso usado para **añadir `weight_grams`** a la tabla `product` en Railway si
      ```
 5. Deberías ver `BEGIN` / `ALTER TABLE` / `COMMENT` / `COMMIT` sin errores. Salir con `\q`.
 
-**Alternativa:** copiar **`DATABASE_URL` pública** del panel (PostgreSQL → Variables) y ejecutar desde tu PC:
-`psql "$DATABASE_URL" -f Scripts/update-product-table.sql` (no uses el host `postgres.railway.internal` desde fuera de Railway).
+Para scripts en Railway no se usa una conexión pública directa: se aplica el procedimiento obligatorio con `railway connect MainDatabase`.
 
 ---
 
@@ -52,53 +76,23 @@ Proceso usado para **añadir `weight_grams`** a la tabla `product` en Railway si
 2. Tener el proyecto vinculado a Railway
 3. Tener acceso al servicio PostgreSQL en Railway
 
-## Connection String
+## Conexión
 
-### Formato Railway (DATABASE_URL - Host Interno)
-```
-postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@postgres.railway.internal:5432/railway
-```
-**Nota:** Este host solo funciona dentro de Railway (entre servicios).
-
-### Formato Railway (Host Público - Para migraciones desde local)
-```
-postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway
-```
-**Nota:** El host público puede cambiar. Obtén el actual desde Railway Dashboard → Variables → `DATABASE_URL` o `PUBLIC_URL`.
-
-### Formato .NET (para variables de entorno)
-```
-Host=postgres.railway.internal;Port=5432;Database=railway;Username=postgres;Password=ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg
-```
+Railway es la plataforma y `MainDatabase` es el servicio PostgreSQL. El nombre interno de la base se obtiene de `PGDATABASE`; no debe documentarse como `railway` ni inferirse del nombre del servicio. Los valores de conexión vigentes se consultan en las variables de `MainDatabase` y no se copian en el repositorio.
 
 ## Pasos para Ejecutar la Migración
 
-### Método Recomendado: Usando psql con Connection String Público
-
-Este es el método más confiable para ejecutar scripts SQL desde tu máquina local:
+### Método recomendado: sesión interactiva con Railway CLI desde Bash
 
 ```bash
-# Desde el directorio senorArrozAPI
-psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway" -f Scripts/deliveryman.sql
+# Desde la raíz del backend
+cd SenorArroz
+
+# Conectarse al servicio PostgreSQL MainDatabase alojado en Railway
+railway connect MainDatabase
 ```
 
-**Nota:** El host público (`centerbeam.proxy.rlwy.net:52635`) puede cambiar. Para obtener el connection string actualizado:
-
-1. Ve a Railway Dashboard → Tu proyecto → Servicio PostgreSQL
-2. Pestaña "Variables" → Busca `DATABASE_URL` o `PUBLIC_URL`
-3. Copia el connection string completo
-
-### Método Alternativo 1: Sesión Interactiva con Railway CLI
-
-```bash
-# Asegúrate de estar en el directorio correcto
-cd senorArrozAPI
-
-# Conectarse a PostgreSQL usando Railway CLI
-railway connect postgres
-```
-
-Esto abrirá una sesión interactiva de `psql` conectada a la base de datos Railway.
+Esto abrirá una sesión interactiva de `psql` conectada al servicio `MainDatabase`.
 
 Una vez dentro de `psql`, ejecuta el script:
 
@@ -107,14 +101,7 @@ Una vez dentro de `psql`, ejecuta el script:
 \i Scripts/deliveryman.sql
 ```
 
-### Método Alternativo 2: Usando Railway run (puede tener problemas de conexión)
-
-```bash
-# Desde el directorio senorArrozAPI
-railway run --service MainDatabase psql -U postgres -d railway -f Scripts/deliveryman.sql
-```
-
-**Nota:** Este método puede fallar con errores de resolución de hostname. Si ocurre, usa el método recomendado.
+`railway run ... psql -f` no es el procedimiento aprobado para aplicar scripts. Usar siempre la sesión abierta desde Bash con `railway connect MainDatabase` y ejecutar `\i` dentro de `psql`.
 
 ### Paso 3: Verificar la Ejecución
 
@@ -186,8 +173,12 @@ Deberías ver: 8 clientes
 Para agregar la tabla `deliveryman_advance` (gestión de abonos a domiciliarios):
 
 ```bash
-# Desde el directorio senorArrozAPI
-psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway" -f Scripts/deliveryman.sql
+# Desde Bash y la raíz del backend
+railway connect MainDatabase
+```
+
+```sql
+\i Scripts/deliveryman.sql
 ```
 
 **Verificar que se creó correctamente:**
@@ -212,15 +203,13 @@ SELECT "MigrationId" FROM "__EFMigrationsHistory" WHERE "MigrationId" = '2025112
 Para agregar la columna `created_by_id` a la tabla `expense_header`:
 
 ```bash
-# Desde el directorio senorArrozAPI
-# Nota: Reemplaza el connection string con el actual de Railway
-psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway" -f Scripts/add-created-by-id-to-expense-header.sql
+# Desde Bash y la raíz del backend
+railway connect MainDatabase
 ```
 
-**Obtener el connection string actualizado:**
-1. Ve a Railway Dashboard → Tu proyecto → Servicio PostgreSQL
-2. Pestaña "Variables" → Busca `DATABASE_URL` o `PUBLIC_URL`
-3. Copia el connection string completo
+```sql
+\i Scripts/add-created-by-id-to-expense-header.sql
+```
 
 **Verificar que se aplicó correctamente:**
 
@@ -251,8 +240,12 @@ Para convertir los proveedores en entidades por sucursal ejecuta el nuevo script
 **Railway (psql contra la base en la nube):**
 
 ```bash
-# Desde el directorio senorArrozAPI
-psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway" -f Scripts/add-branch-id-to-supplier.sql
+# Desde Bash y la raíz del backend
+railway connect MainDatabase
+```
+
+```sql
+\i Scripts/add-branch-id-to-supplier.sql
 ```
 
 **Docker / Postgres local (mismo script, connection string local):**
@@ -330,9 +323,8 @@ Todos los scripts SQL son **idempotentes**, lo que significa que:
 
 ### Error: "could not translate host name"
 
-- **Solución recomendada:** Usa el método con connection string público (ver Método Recomendado arriba)
-- Si usas `railway run`, puede fallar. Usa `psql` directamente con el connection string público
-- Para obtener el host público: Railway Dashboard → Variables → `DATABASE_URL` o `PUBLIC_URL`
+- **Solución recomendada:** confirma que Railway CLI esté autenticado y ejecuta `railway connect MainDatabase` desde Bash.
+- Si usas `railway run`, puede fallar por resolución del host; utiliza la conexión interactiva aprobada.
 - Asegúrate de que el proyecto esté vinculado: `railway link`
 
 ### Error: "password authentication failed"
@@ -342,8 +334,8 @@ Todos los scripts SQL son **idempotentes**, lo que significa que:
 
 ### Error: "database does not exist"
 
-- Verifica que el nombre de la base de datos sea `railway`
-- Railway usa `railway` por defecto
+- Verifica el valor vigente de `PGDATABASE` en `MainDatabase`.
+- Railway es la plataforma; no se debe usar `railway` como nombre de base por inferencia.
 
 ### Error: "relation already exists"
 

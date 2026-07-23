@@ -189,6 +189,11 @@ Reglas:
 - Las frecuencias, tolerancias y retenciones del seguimiento se configuran por sucursal.
 - La hora de cierre del seguimiento es una hora local de Colombia; los instantes de ubicación y sesión se persisten en UTC.
 - Un domiciliario solo puede tener una sesión laboral activa; un cambio de dispositivo cierra la anterior.
+- Un domiciliario solo puede tener una sesión autenticada vigente. Cada login nuevo reemplaza la anterior, invalida inmediatamente sus JWT/refresh tokens por `session_id` y cierra cualquier jornada laboral que estuviera activa.
+- Los usuarios distintos de domiciliario conservan el comportamiento de autenticación existente; la exclusividad por dispositivo aplica a la app de domiciliarios.
+- Un token previo al despliegue, sin `session_id`, se acepta únicamente mientras el domiciliario no haya realizado su primer login con el nuevo esquema. Esto permite desplegar el cambio sin cerrar todas las sesiones a la vez.
+- El cierre de sesión solo puede limpiar la sesión autenticada y la jornada pertenecientes al dispositivo que hace la solicitud; una sesión reemplazada no puede cerrar la jornada del dispositivo vigente.
+- Cuando el API responde `SESSION_REPLACED`, la app anterior debe detener el servicio GPS, descartar las colas locales de esa jornada y volver al login mostrando el motivo.
 - No se abre una nueva sesión laboral después de la hora de cierre configurada para la sucursal.
 - El backend rechaza ubicaciones que no correspondan a la sesión laboral activa del dispositivo.
 

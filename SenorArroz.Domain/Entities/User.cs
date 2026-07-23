@@ -14,6 +14,13 @@ public class User : BaseEntity
     public bool Active { get; set; } = true;
     public string? ProfileImageUrl { get; set; }
 
+    /// <summary>
+    /// Sesión exclusiva vigente para la app de domiciliarios. Los tokens sin
+    /// este identificador solo se aceptan mientras el usuario no haya iniciado
+    /// una sesión exclusiva después del despliegue de esta funcionalidad.
+    /// </summary>
+    public Guid? ActiveSessionId { get; set; }
+
     /// <summary>Ítem de catálogo <c>expense</c> usado solo para préstamos/gastos de quincena de esta persona.</summary>
     public int? PayrollExpenseId { get; set; }
 

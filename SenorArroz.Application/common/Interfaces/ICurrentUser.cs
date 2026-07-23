@@ -6,5 +6,7 @@
         string Role { get; }       // Rol del usuario (superadmin, admin, etc.)
         int BranchId { get; }      // Id de la sucursal del usuario (si aplica)
         bool IsAuthenticated { get; } // Indica si hay un usuario logueado
+        Guid? SessionId => null;
+        string? DeviceInstallationId => null;
     }
 }

@@ -74,29 +74,19 @@ docker exec senorarroz-postgres psql -U postgres -d senor_arroz -c "SELECT COUNT
 
 **Ejemplo de formato:**
 ```
-postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway
+postgresql://<usuario>:<contraseña>@<host>:<puerto>/<base>
 ```
 
 ⚠️ **Importante**: El host público puede cambiar. Siempre obtén el connection string actualizado desde Railway Dashboard.
 
 ### Paso 2: Ejecutar el Script
 
-#### Opción 1: Usando psql desde tu máquina local (Recomendado)
+#### Opción recomendada: Railway CLI desde Bash
 
-```powershell
-# Desde el directorio senorArrozAPI
-# Reemplaza el connection string con el actual de Railway
-psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway" -f Scripts/add-created-by-id-to-expense-header.sql
-```
-
-#### Opción 2: Usando Railway CLI
-
-```powershell
-# Asegúrate de estar en el directorio senorArrozAPI
-cd senorArrozAPI
-
-# Conectarse a PostgreSQL usando Railway CLI
-railway connect postgres
+```bash
+# Desde la raíz del backend
+cd SenorArroz
+railway connect MainDatabase
 ```
 
 Una vez dentro de `psql`, ejecuta:
@@ -105,14 +95,9 @@ Una vez dentro de `psql`, ejecuta:
 \i Scripts/add-created-by-id-to-expense-header.sql
 ```
 
-O si el archivo no está disponible en Railway, copia y pega el contenido del script directamente.
+#### Diagnóstico manual con psql
 
-#### Opción 3: Sesión interactiva con psql
-
-```powershell
-# Conectarse a Railway PostgreSQL
-psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway"
-```
+Una conexión directa con `psql` puede usarse para diagnóstico, pero los scripts en Railway se ejecutan mediante `railway connect MainDatabase`.
 
 Luego ejecuta:
 
@@ -164,7 +149,7 @@ Si la columna ya existe, el script es idempotente y no causará errores. Simplem
 
 ### Error: "database does not exist"
 
-- Verifica que el nombre de la base de datos sea `railway` (o el que uses en Railway)
+- Verifica el valor vigente de `PGDATABASE` en el servicio `MainDatabase`; Railway es la plataforma, no el nombre de la base.
 - Railway usa `railway` por defecto
 
 ### Error: "relation __EFMigrationsHistory does not exist"
@@ -209,7 +194,7 @@ Si después de ejecutar el script algunos registros aún tienen `created_by_id` 
    docker exec senorarroz-postgres pg_dump -U postgres senor_arroz > backup-$(Get-Date -Format "yyyyMMdd-HHmmss").sql
    
    # Railway (usando psql)
-   pg_dump "postgresql://postgres:...@centerbeam.proxy.rlwy.net:52635/railway" > backup-railway-$(Get-Date -Format "yyyyMMdd-HHmmss").sql
+   pg_dump "$DATABASE_URL" > backup-main-database-$(Get-Date -Format "yyyyMMdd-HHmmss").sql
    ```
 
 2. **Orden de ejecución**: Esta migración debe ejecutarse después de:

@@ -1,40 +1,29 @@
-# Conexión a Railway PostgreSQL
+# Conexión al servicio PostgreSQL `MainDatabase` en Railway
 
 ## Información del Proyecto
 
+- **Plataforma**: Railway
 - **Nombre del Proyecto**: señor arroz c# vue js
 - **Project ID**: 5cb08ee8-0129-4d5b-aba8-60b34cfeee58
-- **Base de Datos**: railway (nombre por defecto de Railway)
-- **Servicio**: PostgreSQL
+- **Servicio PostgreSQL**: `MainDatabase`
+- **Nombre interno de la base**: usar el valor vigente de `PGDATABASE`; no inferirlo del nombre de la plataforma ni del servicio.
 
 ## Connection String
 
-### Formato Railway (DATABASE_URL - Host Interno)
-```
-postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@postgres.railway.internal:5432/railway
-```
-**Nota:** Este host solo funciona dentro de Railway (entre servicios).
+La conexión del backend se configura con los valores vigentes del servicio `MainDatabase`. No se deben copiar credenciales ni connection strings reales en este repositorio.
 
-### Formato Railway (Host Público - Para conexiones externas)
-```
-postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway
-```
-**Nota:** El host público puede cambiar. Obtén el actual desde Railway Dashboard → Variables → `DATABASE_URL` o `PUBLIC_URL`.
-
-### Formato .NET (para variables de entorno)
-```
-Host=postgres.railway.internal;Port=5432;Database=railway;Username=postgres;Password=ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg
-```
+- Railway: usar la referencia o variable `DATABASE_URL` suministrada por `MainDatabase`.
+- .NET: configurar `ConnectionStrings__DefaultConnection` con `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER` y `PGPASSWORD`.
 
 ## Variables de PostgreSQL en Railway
 
-Las siguientes variables están disponibles en Railway y pueden modificarse:
+Consultar los valores vigentes en el servicio `MainDatabase`:
 
-- **PGPASSWORD**: `ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg` (puede modificarse)
-- **PGUSER**: `postgres` (puede modificarse)
-- **PGDATABASE**: `railway` (puede modificarse)
-- **PGHOST**: `postgres.railway.internal` (generado por Railway, no modificar)
-- **PGPORT**: `5432` (puerto estándar, no modificar)
+- `PGPASSWORD`
+- `PGUSER`
+- `PGDATABASE`
+- `PGHOST`
+- `PGPORT`
 
 ## Nota Importante: Host Interno vs Público
 
@@ -43,15 +32,9 @@ El connection string proporcionado usa `postgres.railway.internal`, que es el **
 ### Para conexiones internas (Backend → PostgreSQL)
 Usar: `postgres.railway.internal`
 
-### Para conexiones externas (Migraciones desde tu máquina local)
-Necesitas el **host público** de Railway. Para obtenerlo:
+### Para ejecutar scripts desde tu máquina local
 
-1. Ve al servicio PostgreSQL en Railway Dashboard
-2. Pestaña "Variables"
-3. Busca `PGHOST` o `PUBLIC_URL` (si está disponible)
-4. O usa Railway CLI: `railway variables`
-
-El host público generalmente tiene el formato: `containers-us-west-xxx.railway.app` o similar.
+Usar Bash y `railway connect MainDatabase`; Railway CLI resuelve la conexión al servicio sin que el operador tenga que copiar una URL.
 
 ## Cómo Obtener el Connection String
 
@@ -59,7 +42,7 @@ El host público generalmente tiene el formato: `containers-us-west-xxx.railway.
 2. Selecciona el proyecto: "señor arroz c# vue js"
 3. Haz clic en el servicio PostgreSQL
 4. Ve a la pestaña "Variables"
-5. Busca la variable `DATABASE_URL`
+5. Busca la variable `DATABASE_URL` suministrada por `MainDatabase`
 6. Copia el valor completo
 
 ## Conversión de Formato
@@ -80,12 +63,12 @@ Host=host;Port=port;Database=database;Username=username;Password=password
 
 **Entrada:**
 ```
-postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@postgres.railway.internal:5432/railway
+postgresql://<usuario>:<contraseña>@<host>:<puerto>/<base>
 ```
 
 **Salida:**
 ```
-Host=postgres.railway.internal;Port=5432;Database=railway;Username=postgres;Password=ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg
+Host=<host>;Port=<puerto>;Database=<base>;Username=<usuario>;Password=<contraseña>
 ```
 
 ## Conexión desde Herramientas Externas
@@ -102,40 +85,28 @@ railway login
 # Seleccionar proyecto
 railway link
 
-# Conectar a PostgreSQL
-railway connect postgres
+# Desde Bash, conectar al servicio PostgreSQL
+railway connect MainDatabase
 ```
 
-### Usando psql (desde terminal local) - Método Recomendado
+Esta es la conexión obligatoria para ejecutar scripts del repositorio en Railway. Una vez dentro de `psql`, usar `\i` con la ruta del script:
 
-Usa el connection string completo con el **host público** de Railway:
-
-```bash
-# Método recomendado: Connection string completo
-psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway" -f Scripts/deliveryman.sql
-
-# O para sesión interactiva
-psql "postgresql://postgres:ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg@centerbeam.proxy.rlwy.net:52635/railway"
+```sql
+\i SenorArroz.Infrastructure/Scripts/<script>.sql
+\q
 ```
 
-**Nota:** El host público (`centerbeam.proxy.rlwy.net:52635`) puede cambiar. Para obtener el actual:
-1. Railway Dashboard → Tu proyecto → Servicio PostgreSQL
-2. Pestaña "Variables" → Busca `DATABASE_URL` o `PUBLIC_URL`
-3. Copia el connection string completo
+### Usando psql directamente desde una terminal local
 
-**Alternativa con parámetros separados:**
-
-```bash
-psql -h centerbeam.proxy.rlwy.net -p 52635 -U postgres -d railway
-```
+Puede utilizarse para diagnóstico manual con credenciales vigentes obtenidas desde Railway, pero no es el procedimiento aprobado para ejecutar scripts. Para scripts, usar Bash y `railway connect MainDatabase`.
 
 ### Usando pgAdmin o DBeaver
 
 - **Host**: Host público de Railway (no `postgres.railway.internal`)
-- **Port**: `5432`
-- **Database**: `railway`
-- **Username**: `postgres`
-- **Password**: `ZkDOPtBUOrPPvmFgFQeCqoLZnfsBzZRg`
+- **Port**: valor de `PGPORT`
+- **Database**: valor de `PGDATABASE`
+- **Username**: valor de `PGUSER`
+- **Password**: valor de `PGPASSWORD`
 
 ## Seguridad
 
@@ -149,14 +120,13 @@ psql -h centerbeam.proxy.rlwy.net -p 52635 -U postgres -d railway
 
 ### Error: "could not connect to server" o "could not translate host name"
 
-- **Solución:** Usa el connection string con el host público (ver sección "Usando psql" arriba)
-- El host interno (`postgres.railway.internal`) solo funciona dentro de Railway
-- Para conexiones desde tu máquina local, necesitas el host público
-- Obtén el connection string actualizado desde Railway Dashboard → Variables → `DATABASE_URL` o `PUBLIC_URL`
+- **Solución para scripts:** usa Bash y `railway connect MainDatabase`.
+- El host interno solo funciona entre servicios dentro de Railway.
 - Verifica que el servicio PostgreSQL esté activo en Railway
 - Verifica las credenciales
 
 ### Error: "database does not exist"
 - Verifica el nombre de la base de datos en `PGDATABASE`
-- Railway usa `railway` por defecto, no `MainDatabase`
+- `MainDatabase` es el nombre del servicio usado por `railway connect`; no es necesariamente el valor de `PGDATABASE`.
+- Railway es la plataforma, no el nombre de la base de datos.
 

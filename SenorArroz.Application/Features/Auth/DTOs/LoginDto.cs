@@ -11,5 +11,8 @@ namespace SenorArroz.Application.Features.Auth.DTOs
         [Required(ErrorMessage = "La contraseña es requerida")]
         [MinLength(6, ErrorMessage = "La contraseña debe tener al menos 6 caracteres")]
         public string Password { get; set; } = string.Empty;
+
+        [MaxLength(64, ErrorMessage = "El identificador del dispositivo no puede superar 64 caracteres")]
+        public string? DeviceInstallationId { get; set; }
     }
 }
