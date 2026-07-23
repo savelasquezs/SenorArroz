@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS delivery_tracking_alert (
     work_session_id integer,
     incident_id bigint,
     source_device_event_id bigint,
+    recovery_device_event_id bigint,
     deduplication_key varchar(160) NOT NULL,
     alert_type varchar(50) NOT NULL,
     severity varchar(30) NOT NULL,
@@ -15,6 +16,14 @@ CREATE TABLE IF NOT EXISTS delivery_tracking_alert (
     message varchar(1000) NOT NULL,
     occurred_at timestamp with time zone NOT NULL,
     last_occurred_at timestamp with time zone NOT NULL,
+    recovered_at timestamp with time zone,
+    duration_seconds integer,
+    start_latitude numeric(10,6),
+    start_longitude numeric(10,6),
+    start_location_recorded_at timestamp with time zone,
+    end_latitude numeric(10,6),
+    end_longitude numeric(10,6),
+    end_location_recorded_at timestamp with time zone,
     occurrence_count integer NOT NULL DEFAULT 1,
     resolved_at timestamp with time zone,
     resolved_by_user_id integer,
@@ -37,6 +46,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_delivery_tracking_alert_dedup
 CREATE UNIQUE INDEX IF NOT EXISTS uq_delivery_tracking_alert_device_event
     ON delivery_tracking_alert(source_device_event_id)
     WHERE source_device_event_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_delivery_tracking_alert_recovery_event
+    ON delivery_tracking_alert(recovery_device_event_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_delivery_tracking_alert_incident
     ON delivery_tracking_alert(incident_id)
     WHERE incident_id IS NOT NULL;

@@ -175,12 +175,15 @@ Notas:
 | DeliveryWorkSession | Sí | Desde `User.TenantId` o `Branch.TenantId` |
 | DeliveryRoute | Sí | Desde `Branch.TenantId` |
 | DeliveryRouteStop | Sí | Desde `DeliveryRoute.TenantId` |
+| DeliveryTrackingAlert | Sí | Desde `Branch.TenantId` |
 
 Notas:
 
 - La app móvil no debe poder operar sobre tenant distinto al del domiciliario autenticado.
 - Cada ubicación nueva debe pertenecer a una sesión laboral activa del mismo domiciliario y dispositivo.
 - El JWT de un domiciliario incluye `session_id` y, para la app actualizada, `device_id`. El backend valida `session_id` en cada solicitud y compara `device_id` al iniciar, cerrar o reportar datos de una jornada.
+- `DeliveryTrackingAlert` conserva evidencia durable de cortes de GPS, permisos retirados y permanencias: inicio, fin o recuperación, duración y coordenadas inicial/final. Las coordenadas se copian a la alerta para que el registro sobreviva a la retención corta de `DeliverymanLocation`.
+- El esquema de evidencia de alertas se instala con el script idempotente `SenorArroz.Infrastructure/Scripts/add_delivery_tracking_alert_location_evidence.sql` antes de desplegar el backend que usa esas columnas.
 
 ### Impresión
 

@@ -35,6 +35,21 @@ public class DailyAuditTrackingAlertsEmailTests
                     Severity = "Advertencia",
                     EventCount = 3,
                     ActiveCount = 1,
+                    Details =
+                    [
+                        new DailyTrackingAlertEmailDetail
+                        {
+                            DeliverymanName = "Carlos Domiciliario",
+                            OccurredAt = new DateTime(2026, 7, 20, 18, 0, 0, DateTimeKind.Utc),
+                            EndedAt = new DateTime(2026, 7, 20, 18, 7, 30, DateTimeKind.Utc),
+                            DurationSeconds = 450,
+                            Description = "El GPS fue apagado durante la jornada.",
+                            StartLatitude = 4.600001m,
+                            StartLongitude = -74.080001m,
+                            EndLatitude = 4.610001m,
+                            EndLongitude = -74.090001m,
+                        }
+                    ],
                 }
             ],
         };
@@ -47,5 +62,9 @@ public class DailyAuditTrackingAlertsEmailTests
         Assert.Contains("Alertas de seguimiento de domiciliarios", email.Body);
         Assert.Contains("GPS apagado", email.Body);
         Assert.Contains(">3<", email.Body);
+        Assert.Contains("Carlos Domiciliario", email.Body);
+        Assert.Contains("7 min 30 s", email.Body);
+        Assert.Contains("https://www.google.com/maps?q=4.600001,-74.080001", email.Body);
+        Assert.Contains("https://www.google.com/maps?q=4.610001,-74.090001", email.Body);
     }
 }

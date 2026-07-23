@@ -121,7 +121,10 @@ public class EmailService : IEmailService
 <td style='padding:9px;border-bottom:1px solid #e5e5e5;'>{WebUtility.HtmlEncode(group.Severity)}</td>
 <td style='padding:9px;border-bottom:1px solid #e5e5e5;text-align:center;'>{group.EventCount}</td>
 <td style='padding:9px;border-bottom:1px solid #e5e5e5;text-align:center;'>{group.ActiveCount}</td>
-</tr>"));
+</tr>
+<tr><td colspan='4' style='padding:10px 14px 16px;border-bottom:2px solid #d4d4d4;background:#fafafa;'>
+{BuildTrackingDetailsHtml(group.Details)}
+</td></tr>"));
         var trackingSection = payload.TrackingAlertGroups.Count == 0
             ? "<div style='background:#ecfdf5;border-left:4px solid #10b981;padding:16px;'>No se generaron alertas de seguimiento durante este periodo.</div>"
             : $@"<table style='width:100%;border-collapse:collapse;border:1px solid #e5e5e5;'>
@@ -228,4 +231,71 @@ public class EmailService : IEmailService
     }
 
     private static string FormatMoney(decimal value) => $"${value.ToString("N0", ColombianCulture)}";
+
+    private static string BuildTrackingDetailsHtml(IReadOnlyCollection<DailyTrackingAlertEmailDetail> details)
+    {
+        if (details.Count == 0)
+            return "<span style='color:#737373;'>Sin detalle adicional.</span>";
+
+        return $"<ul style='margin:0;padding-left:20px;'>{string.Join("", details.Select(detail =>
+        {
+            var occurredAt = ColombiaTimeHelper.GetNowInColombiaFromUtc(detail.OccurredAt);
+            var endedAt = detail.EndedAt.HasValue
+                ? ColombiaTimeHelper.GetNowInColombiaFromUtc(detail.EndedAt.Value)
+                : (DateTime?)null;
+            var timeSummary = endedAt.HasValue
+                ? $"Inicio: {occurredAt:dd/MM/yyyy HH:mm:ss} · Fin: {endedAt:dd/MM/yyyy HH:mm:ss}"
+                : $"Inicio: {occurredAt:dd/MM/yyyy HH:mm:ss} · Sin recuperación registrada";
+            var duration = detail.DurationSeconds.HasValue
+                ? $" · Duración: {FormatDuration(detail.DurationSeconds.Value)}"
+                : string.Empty;
+            var locations = string.Join(" · ", new[]
+            {
+                BuildMapLink(
+                    detail.StartLocationLabel,
+                    detail.StartLatitude,
+                    detail.StartLongitude,
+                    detail.StartLocationRecordedAt),
+                BuildMapLink(
+                    detail.EndLocationLabel,
+                    detail.EndLatitude,
+                    detail.EndLongitude,
+                    detail.EndLocationRecordedAt),
+            }.Where(x => !string.IsNullOrEmpty(x)));
+            return $@"<li style='margin:0 0 12px;'>
+<strong>{WebUtility.HtmlEncode(detail.DeliverymanName)}</strong><br>
+<span>{WebUtility.HtmlEncode(timeSummary + duration)}</span><br>
+<span style='color:#525252;'>{WebUtility.HtmlEncode(detail.Description)}</span>
+{(string.IsNullOrEmpty(locations) ? string.Empty : $"<br>{locations}")}
+</li>";
+        }))}</ul>";
+    }
+
+    private static string BuildMapLink(
+        string label,
+        decimal? latitude,
+        decimal? longitude,
+        DateTime? recordedAt)
+    {
+        if (!latitude.HasValue || !longitude.HasValue)
+            return string.Empty;
+        var lat = latitude.Value.ToString("0.000000", CultureInfo.InvariantCulture);
+        var lng = longitude.Value.ToString("0.000000", CultureInfo.InvariantCulture);
+        var captured = recordedAt.HasValue
+            ? $" ({ColombiaTimeHelper.GetNowInColombiaFromUtc(recordedAt.Value):HH:mm:ss})"
+            : string.Empty;
+        return $"<a href='https://www.google.com/maps?q={lat},{lng}' " +
+            $"style='color:#047857;text-decoration:underline;' target='_blank'>" +
+            $"{WebUtility.HtmlEncode(label + captured)}</a>";
+    }
+
+    private static string FormatDuration(int totalSeconds)
+    {
+        var duration = TimeSpan.FromSeconds(Math.Max(0, totalSeconds));
+        if (duration.TotalHours >= 1)
+            return $"{(int)duration.TotalHours} h {duration.Minutes} min {duration.Seconds} s";
+        if (duration.TotalMinutes >= 1)
+            return $"{duration.Minutes} min {duration.Seconds} s";
+        return $"{duration.Seconds} s";
+    }
 }

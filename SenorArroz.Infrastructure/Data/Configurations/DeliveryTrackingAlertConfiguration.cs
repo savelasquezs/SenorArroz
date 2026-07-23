@@ -18,6 +18,7 @@ public class DeliveryTrackingAlertConfiguration : IEntityTypeConfiguration<Deliv
         builder.Property(x => x.WorkSessionId).HasColumnName("work_session_id");
         builder.Property(x => x.IncidentId).HasColumnName("incident_id");
         builder.Property(x => x.SourceDeviceEventId).HasColumnName("source_device_event_id");
+        builder.Property(x => x.RecoveryDeviceEventId).HasColumnName("recovery_device_event_id");
         builder.Property(x => x.DeduplicationKey).HasColumnName("deduplication_key").HasMaxLength(160).IsRequired();
         builder.Property(x => x.AlertType).HasColumnName("alert_type").HasMaxLength(50)
             .HasConversion(value => ToSnakeCase(value.ToString()), value => Parse<DeliveryTrackingAlertType>(value)).IsRequired();
@@ -29,6 +30,14 @@ public class DeliveryTrackingAlertConfiguration : IEntityTypeConfiguration<Deliv
         builder.Property(x => x.Message).HasColumnName("message").HasMaxLength(1000).IsRequired();
         builder.Property(x => x.OccurredAt).HasColumnName("occurred_at").IsRequired();
         builder.Property(x => x.LastOccurredAt).HasColumnName("last_occurred_at").IsRequired();
+        builder.Property(x => x.RecoveredAt).HasColumnName("recovered_at");
+        builder.Property(x => x.DurationSeconds).HasColumnName("duration_seconds");
+        builder.Property(x => x.StartLatitude).HasColumnName("start_latitude").HasColumnType("numeric(10,6)");
+        builder.Property(x => x.StartLongitude).HasColumnName("start_longitude").HasColumnType("numeric(10,6)");
+        builder.Property(x => x.StartLocationRecordedAt).HasColumnName("start_location_recorded_at");
+        builder.Property(x => x.EndLatitude).HasColumnName("end_latitude").HasColumnType("numeric(10,6)");
+        builder.Property(x => x.EndLongitude).HasColumnName("end_longitude").HasColumnType("numeric(10,6)");
+        builder.Property(x => x.EndLocationRecordedAt).HasColumnName("end_location_recorded_at");
         builder.Property(x => x.OccurrenceCount).HasColumnName("occurrence_count").IsRequired();
         builder.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
         builder.Property(x => x.ResolvedByUserId).HasColumnName("resolved_by_user_id");
@@ -40,6 +49,8 @@ public class DeliveryTrackingAlertConfiguration : IEntityTypeConfiguration<Deliv
         builder.HasIndex(x => x.DeduplicationKey).IsUnique().HasDatabaseName("uq_delivery_tracking_alert_dedup");
         builder.HasIndex(x => x.SourceDeviceEventId).IsUnique().HasFilter("source_device_event_id IS NOT NULL")
             .HasDatabaseName("uq_delivery_tracking_alert_device_event");
+        builder.HasIndex(x => x.RecoveryDeviceEventId)
+            .HasDatabaseName("idx_delivery_tracking_alert_recovery_event");
         builder.HasIndex(x => x.IncidentId).IsUnique().HasFilter("incident_id IS NOT NULL")
             .HasDatabaseName("uq_delivery_tracking_alert_incident");
         builder.HasIndex(x => new { x.BranchId, x.Status, x.Severity, x.OccurredAt })

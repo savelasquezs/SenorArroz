@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
@@ -48,7 +49,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             .ToListAsync(cancellationToken);
         if (events.Count == 0)
         {
-            return await ResolveRecoveredDeviceAlertsAsync(nowUtc, cancellationToken);
+            return await EnrichRecoveredDeviceAlertsAsync(nowUtc, cancellationToken);
         }
 
         var sessionIds = events.Select(x => x.WorkSessionId).Distinct().ToList();
@@ -59,6 +60,15 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             .Where(x => sessionIds.Contains(x.WorkSessionId)
                 && (x.EventType == DeliveryDeviceEventType.GpsEnabled
                     || x.EventType == DeliveryDeviceEventType.LocationPermissionRecovered))
+            .ToListAsync(cancellationToken);
+        var locationRows = await _db.DeliverymanLocations.AsNoTracking()
+            .Where(x => x.WorkSessionId.HasValue && sessionIds.Contains(x.WorkSessionId.Value))
+            .Select(x => new DeviceAlertLocation(
+                x.WorkSessionId!.Value,
+                x.Latitude,
+                x.Longitude,
+                x.RecordedAt,
+                x.Id))
             .ToListAsync(cancellationToken);
         var changes = 0;
         foreach (var deviceEvent in events)
@@ -86,22 +96,10 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             };
             if (alert is null)
                 continue;
-            var recoveryType = alert.AlertType switch
+            if (alert.AlertType == DeliveryTrackingAlertType.GpsDisabled
+                || alert.AlertType == DeliveryTrackingAlertType.LocationPermissionRevoked)
             {
-                DeliveryTrackingAlertType.GpsDisabled => DeliveryDeviceEventType.GpsEnabled,
-                DeliveryTrackingAlertType.LocationPermissionRevoked => DeliveryDeviceEventType.LocationPermissionRecovered,
-                _ => (DeliveryDeviceEventType?)null,
-            };
-            if (recoveryType.HasValue)
-            {
-                var recoveredAt = recoveryEvents
-                    .Where(x => x.WorkSessionId == deviceEvent.WorkSessionId
-                        && x.EventType == recoveryType.Value
-                        && x.RecordedAt >= deviceEvent.RecordedAt)
-                    .Select(x => (DateTime?)x.RecordedAt)
-                    .Min();
-                if (recoveredAt.HasValue)
-                    Resolve(alert, recoveredAt.Value, "Recuperada automáticamente por evento del dispositivo.");
+                ApplyDeviceEvidence(alert, recoveryEvents, locationRows);
             }
             alert.CreatedAt = nowUtc;
             alert.UpdatedAt = nowUtc;
@@ -109,46 +107,169 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             changes++;
         }
 
-        return changes + await ResolveRecoveredDeviceAlertsAsync(nowUtc, cancellationToken);
+        return changes + await EnrichRecoveredDeviceAlertsAsync(nowUtc, cancellationToken);
     }
 
-    private async Task<int> ResolveRecoveredDeviceAlertsAsync(DateTime nowUtc, CancellationToken cancellationToken)
+    private async Task<int> EnrichRecoveredDeviceAlertsAsync(DateTime nowUtc, CancellationToken cancellationToken)
     {
-        var active = await _db.DeliveryTrackingAlerts
-            .Where(x => x.Status == DeliveryTrackingAlertStatus.Active
-                && (x.AlertType == DeliveryTrackingAlertType.GpsDisabled
-                    || x.AlertType == DeliveryTrackingAlertType.LocationPermissionRevoked))
+        var alerts = await _db.DeliveryTrackingAlerts
+            .Where(x => (x.AlertType == DeliveryTrackingAlertType.GpsDisabled
+                    || x.AlertType == DeliveryTrackingAlertType.LocationPermissionRevoked)
+                && x.WorkSessionId.HasValue
+                && _db.DeliveryWorkSessions.Any(session =>
+                    session.Id == x.WorkSessionId.Value
+                    && session.Status == DeliveryWorkSessionStatus.Active)
+                && (x.RecoveredAt == null
+                    || x.StartLatitude == null
+                    || x.EndLatitude == null))
+            .OrderBy(x => x.OccurredAt)
+            .Take(BatchSize)
             .ToListAsync(cancellationToken);
-        if (active.Count == 0)
+        if (alerts.Count == 0)
             return 0;
 
-        var sessionIds = active.Where(x => x.WorkSessionId.HasValue)
+        var sessionIds = alerts.Where(x => x.WorkSessionId.HasValue)
             .Select(x => x.WorkSessionId!.Value).Distinct().ToList();
         var recoveryEvents = await _db.DeliveryDeviceEvents.AsNoTracking()
             .Where(x => sessionIds.Contains(x.WorkSessionId)
                 && (x.EventType == DeliveryDeviceEventType.GpsEnabled
                     || x.EventType == DeliveryDeviceEventType.LocationPermissionRecovered))
             .ToListAsync(cancellationToken);
+        var locationRows = await _db.DeliverymanLocations.AsNoTracking()
+            .Where(x => x.WorkSessionId.HasValue && sessionIds.Contains(x.WorkSessionId.Value))
+            .Select(x => new DeviceAlertLocation(
+                x.WorkSessionId!.Value,
+                x.Latitude,
+                x.Longitude,
+                x.RecordedAt,
+                x.Id))
+            .ToListAsync(cancellationToken);
         var changes = 0;
-        foreach (var alert in active)
+        foreach (var alert in alerts)
         {
-            var expectedRecovery = alert.AlertType == DeliveryTrackingAlertType.GpsDisabled
-                ? DeliveryDeviceEventType.GpsEnabled
-                : DeliveryDeviceEventType.LocationPermissionRecovered;
-            var recoveredAt = recoveryEvents
-                .Where(x => x.WorkSessionId == alert.WorkSessionId
-                    && x.EventType == expectedRecovery
-                    && x.RecordedAt >= alert.OccurredAt)
-                .Select(x => (DateTime?)x.RecordedAt)
-                .Min();
-            if (!recoveredAt.HasValue)
-                continue;
-            Resolve(alert, recoveredAt.Value, "Recuperada automáticamente por evento del dispositivo.");
-            alert.UpdatedAt = nowUtc;
-            changes++;
+            if (ApplyDeviceEvidence(alert, recoveryEvents, locationRows))
+            {
+                alert.UpdatedAt = nowUtc;
+                changes++;
+            }
         }
         return changes;
     }
+
+    private static bool ApplyDeviceEvidence(
+        DeliveryTrackingAlert alert,
+        IReadOnlyCollection<DeliveryDeviceEvent> recoveryEvents,
+        IReadOnlyCollection<DeviceAlertLocation> locations)
+    {
+        if (!alert.WorkSessionId.HasValue)
+            return false;
+
+        var changed = false;
+        var sessionId = alert.WorkSessionId.Value;
+        var occurrenceLocation = locations
+            .Where(x => x.WorkSessionId == sessionId && x.RecordedAt <= alert.OccurredAt)
+            .OrderByDescending(x => x.RecordedAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefault();
+        if (occurrenceLocation is not null && alert.StartLatitude is null)
+        {
+            alert.StartLatitude = occurrenceLocation.Latitude;
+            alert.StartLongitude = occurrenceLocation.Longitude;
+            alert.StartLocationRecordedAt = occurrenceLocation.RecordedAt;
+            changed = true;
+        }
+
+        var recoveryType = alert.AlertType == DeliveryTrackingAlertType.GpsDisabled
+            ? DeliveryDeviceEventType.GpsEnabled
+            : DeliveryDeviceEventType.LocationPermissionRecovered;
+        var recovery = recoveryEvents
+            .Where(x => x.WorkSessionId == sessionId
+                && x.EventType == recoveryType
+                && x.RecordedAt >= alert.OccurredAt)
+            .OrderBy(x => x.RecordedAt)
+            .ThenBy(x => x.Id)
+            .FirstOrDefault();
+        if (recovery is not null && alert.RecoveredAt is null)
+        {
+            alert.RecoveryDeviceEventId = recovery.Id;
+            alert.RecoveredAt = recovery.RecordedAt;
+            alert.DurationSeconds = Math.Max(
+                0,
+                (int)Math.Round((recovery.RecordedAt - alert.OccurredAt).TotalSeconds));
+            alert.LastOccurredAt = recovery.RecordedAt;
+            changed = true;
+        }
+
+        if (alert.RecoveredAt.HasValue && alert.EndLatitude is null)
+        {
+            var recoveryLocation = locations
+                .Where(x => x.WorkSessionId == sessionId && x.RecordedAt >= alert.RecoveredAt.Value)
+                .OrderBy(x => x.RecordedAt)
+                .ThenBy(x => x.Id)
+                .FirstOrDefault();
+            if (recoveryLocation is not null)
+            {
+                alert.EndLatitude = recoveryLocation.Latitude;
+                alert.EndLongitude = recoveryLocation.Longitude;
+                alert.EndLocationRecordedAt = recoveryLocation.RecordedAt;
+                changed = true;
+            }
+        }
+
+        var message = BuildDeviceEvidenceMessage(alert);
+        if (!string.Equals(alert.Message, message, StringComparison.Ordinal))
+        {
+            alert.Message = message;
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static string BuildDeviceEvidenceMessage(DeliveryTrackingAlert alert)
+    {
+        var eventName = alert.AlertType == DeliveryTrackingAlertType.GpsDisabled
+            ? "El GPS fue apagado durante la jornada."
+            : "El permiso de ubicación fue retirado durante la jornada.";
+        var occurrence = FormatLocationEvidence(
+            "Última ubicación antes del evento",
+            alert.StartLatitude,
+            alert.StartLongitude);
+        if (!alert.RecoveredAt.HasValue)
+            return $"{eventName} {occurrence} Aún no se ha registrado su recuperación.";
+
+        var recovery = FormatLocationEvidence(
+            "Primera ubicación después de recuperarlo",
+            alert.EndLatitude,
+            alert.EndLongitude);
+        return $"{eventName} Duración: {FormatDuration(alert.DurationSeconds)}. {occurrence} {recovery}";
+    }
+
+    private static string FormatLocationEvidence(string label, decimal? latitude, decimal? longitude)
+    {
+        if (!latitude.HasValue || !longitude.HasValue)
+            return $"{label}: no disponible.";
+        return $"{label}: {latitude.Value.ToString("0.000000", CultureInfo.InvariantCulture)}, " +
+            $"{longitude.Value.ToString("0.000000", CultureInfo.InvariantCulture)}.";
+    }
+
+    internal static string FormatDuration(int? totalSeconds)
+    {
+        if (!totalSeconds.HasValue)
+            return "pendiente";
+        var duration = TimeSpan.FromSeconds(Math.Max(0, totalSeconds.Value));
+        if (duration.TotalHours >= 1)
+            return $"{(int)duration.TotalHours} h {duration.Minutes} min {duration.Seconds} s";
+        if (duration.TotalMinutes >= 1)
+            return $"{duration.Minutes} min {duration.Seconds} s";
+        return $"{duration.Seconds} s";
+    }
+
+    private sealed record DeviceAlertLocation(
+        int WorkSessionId,
+        decimal Latitude,
+        decimal Longitude,
+        DateTime RecordedAt,
+        long Id);
 
     private async Task<int> ProcessUnexpectedStaysAsync(DateTime nowUtc, CancellationToken cancellationToken)
     {
@@ -172,9 +293,16 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                 Severity = DeliveryTrackingAlertSeverity.RequiresReview,
                 Status = DeliveryTrackingAlertStatus.Active,
                 Title = "Permanencia en lugar no esperado",
-                Message = $"Permaneció {Math.Max(1, incident.DurationSeconds / 60)} minutos fuera de lugares operativos conocidos.",
+                Message = $"Permaneció {FormatDuration(incident.DurationSeconds)} en " +
+                    $"{incident.CenterLatitude.ToString("0.000000", CultureInfo.InvariantCulture)}, " +
+                    $"{incident.CenterLongitude.ToString("0.000000", CultureInfo.InvariantCulture)} " +
+                    "fuera de lugares operativos conocidos.",
                 OccurredAt = incident.StartedAt,
                 LastOccurredAt = incident.EndedAt,
+                DurationSeconds = incident.DurationSeconds,
+                StartLatitude = incident.CenterLatitude,
+                StartLongitude = incident.CenterLongitude,
+                StartLocationRecordedAt = incident.StartedAt,
                 CreatedAt = nowUtc,
                 UpdatedAt = nowUtc,
             });

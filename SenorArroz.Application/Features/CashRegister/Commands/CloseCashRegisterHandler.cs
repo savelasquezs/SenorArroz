@@ -23,6 +23,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
     private readonly IClock _clock;
     private readonly IUserRepository _userRepository;
     private readonly IEmailService _emailService;
+    private readonly IDeliveryTrackingAlertService _trackingAlertService;
 
     public CloseCashRegisterHandler(
         ICashRegisterClosureRepository closureRepository,
@@ -31,7 +32,8 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         IMediator mediator,
         IClock clock,
         IUserRepository userRepository,
-        IEmailService emailService)
+        IEmailService emailService,
+        IDeliveryTrackingAlertService trackingAlertService)
     {
         _closureRepository = closureRepository;
         _context = context;
@@ -40,6 +42,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         _clock = clock;
         _userRepository = userRepository;
         _emailService = emailService;
+        _trackingAlertService = trackingAlertService;
     }
 
     public async Task<CashClosureDto> Handle(CloseCashRegisterCommand request, CancellationToken cancellationToken)
@@ -211,11 +214,18 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 .OrderBy(x => x.Title)
                 .ToList();
 
+            // Process pending device/stay evidence immediately so the end-of-day
+            // email cannot race the one-minute background alert worker.
+            await _trackingAlertService.ProcessAsync(cancellationToken);
             var trackingAlerts = await _context.DeliveryTrackingAlerts.AsNoTracking()
                 .Where(x => x.BranchId == branchId
                     && x.OccurredAt > periodStartUtc
                     && x.OccurredAt <= saved.ClosedAt)
                 .ToListAsync(cancellationToken);
+            var trackingDeliverymanIds = trackingAlerts.Select(x => x.DeliverymanId).Distinct().ToList();
+            var trackingDeliverymanNames = await _context.Users.AsNoTracking()
+                .Where(x => trackingDeliverymanIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
             var trackingAlertGroups = trackingAlerts
                 .GroupBy(x => new { x.AlertType, x.Severity })
                 .Select(group => new DailyTrackingAlertEmailGroup
@@ -224,6 +234,29 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                     Severity = TrackingAlertSeverityLabel(group.Key.Severity),
                     EventCount = group.Count(),
                     ActiveCount = group.Count(x => x.Status == DeliveryTrackingAlertStatus.Active),
+                    Details = group.OrderBy(x => x.OccurredAt)
+                        .Select(x => new DailyTrackingAlertEmailDetail
+                        {
+                            DeliverymanName = trackingDeliverymanNames.GetValueOrDefault(
+                                x.DeliverymanId,
+                                $"Domiciliario #{x.DeliverymanId}"),
+                            OccurredAt = x.OccurredAt,
+                            EndedAt = x.RecoveredAt
+                                ?? (x.DurationSeconds.HasValue ? x.LastOccurredAt : null),
+                            DurationSeconds = x.DurationSeconds,
+                            Description = x.Message,
+                            StartLatitude = x.StartLatitude,
+                            StartLongitude = x.StartLongitude,
+                            StartLocationRecordedAt = x.StartLocationRecordedAt,
+                            StartLocationLabel = x.AlertType == DeliveryTrackingAlertType.UnexpectedStay
+                                ? "Ver lugar de permanencia"
+                                : "Ver última ubicación antes del corte",
+                            EndLatitude = x.EndLatitude,
+                            EndLongitude = x.EndLongitude,
+                            EndLocationRecordedAt = x.EndLocationRecordedAt,
+                            EndLocationLabel = "Ver primera ubicación después de la recuperación",
+                        })
+                        .ToList(),
                 })
                 .OrderByDescending(x => TrackingAlertSeverityOrder(x.Severity))
                 .ThenBy(x => x.Title)

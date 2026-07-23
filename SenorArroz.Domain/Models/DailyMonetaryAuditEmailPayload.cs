@@ -17,6 +17,24 @@ public class DailyTrackingAlertEmailGroup
     public string Severity { get; set; } = string.Empty;
     public int EventCount { get; set; }
     public int ActiveCount { get; set; }
+    public IReadOnlyCollection<DailyTrackingAlertEmailDetail> Details { get; set; } = Array.Empty<DailyTrackingAlertEmailDetail>();
+}
+
+public class DailyTrackingAlertEmailDetail
+{
+    public string DeliverymanName { get; set; } = string.Empty;
+    public DateTime OccurredAt { get; set; }
+    public DateTime? EndedAt { get; set; }
+    public int? DurationSeconds { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public decimal? StartLatitude { get; set; }
+    public decimal? StartLongitude { get; set; }
+    public DateTime? StartLocationRecordedAt { get; set; }
+    public string StartLocationLabel { get; set; } = "Ver ubicación inicial";
+    public decimal? EndLatitude { get; set; }
+    public decimal? EndLongitude { get; set; }
+    public DateTime? EndLocationRecordedAt { get; set; }
+    public string EndLocationLabel { get; set; } = "Ver ubicación final";
 }
 
 public class DailyMonetaryAuditEmailGroup
