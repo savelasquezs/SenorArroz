@@ -184,6 +184,8 @@ Notas:
 - El JWT de un domiciliario incluye `session_id` y, para la app actualizada, `device_id`. El backend valida `session_id` en cada solicitud y compara `device_id` al iniciar, cerrar o reportar datos de una jornada.
 - `DeliveryTrackingAlert` conserva evidencia durable de cortes de GPS, permisos retirados y permanencias: inicio, fin o recuperación, duración y coordenadas inicial/final. Las coordenadas se copian a la alerta para que el registro sobreviva a la retención corta de `DeliverymanLocation`.
 - El esquema de evidencia de alertas se instala con el script idempotente `SenorArroz.Infrastructure/Scripts/add_delivery_tracking_alert_location_evidence.sql` antes de desplegar el backend que usa esas columnas.
+- `DeliveryTrackingIncident` admite el tipo `location_disabled` y usa `SourceDeviceEventId` como vínculo único con el evento `gps_disabled`. Sus coordenadas centrales son opcionales porque puede confirmarse el apagado aun cuando no exista un punto GPS utilizable.
+- El esquema para casos de revisión por ubicación apagada se instala con `SenorArroz.Infrastructure/Scripts/add_gps_disabled_review_incidents.sql` antes de desplegar el backend correspondiente.
 
 ### Impresión
 

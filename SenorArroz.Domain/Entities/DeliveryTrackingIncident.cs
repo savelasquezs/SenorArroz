@@ -14,6 +14,7 @@ public class DeliveryTrackingIncident
     public int DeliverymanId { get; set; }
     public int WorkSessionId { get; set; }
     public long? DeliveryStayId { get; set; }
+    public long? SourceDeviceEventId { get; set; }
     public int? DeliveryRouteId { get; set; }
     public int? OrderId { get; set; }
     public DeliveryStayClassification? StayClassification { get; set; }
@@ -21,8 +22,8 @@ public class DeliveryTrackingIncident
     public DateTime StartedAt { get; set; }
     public DateTime EndedAt { get; set; }
     public int DurationSeconds { get; set; }
-    public decimal CenterLatitude { get; set; }
-    public decimal CenterLongitude { get; set; }
+    public decimal? CenterLatitude { get; set; }
+    public decimal? CenterLongitude { get; set; }
     public double RadiusMeters { get; set; }
     public double AverageAccuracyMeters { get; set; }
     public double? DistanceToBranchMeters { get; set; }

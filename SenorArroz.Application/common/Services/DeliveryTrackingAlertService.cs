@@ -28,7 +28,10 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         changes += await ProcessActiveSessionsAsync(nowUtc, cancellationToken);
         if (changes > 0)
             await _db.SaveChangesAsync(cancellationToken);
-        return changes;
+        var incidentChanges = await ProcessGpsDisabledIncidentsAsync(nowUtc, cancellationToken);
+        if (incidentChanges > 0)
+            await _db.SaveChangesAsync(cancellationToken);
+        return changes + incidentChanges;
     }
 
     private async Task<int> ProcessDeviceEventsAsync(DateTime nowUtc, CancellationToken cancellationToken)
@@ -271,6 +274,183 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         DateTime RecordedAt,
         long Id);
 
+    private async Task<int> ProcessGpsDisabledIncidentsAsync(
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var alerts = await _db.DeliveryTrackingAlerts.AsNoTracking()
+            .Where(alert => alert.AlertType == DeliveryTrackingAlertType.GpsDisabled
+                && alert.SourceDeviceEventId.HasValue
+                && !_db.DeliveryTrackingIncidents.Any(incident =>
+                    incident.SourceDeviceEventId == alert.SourceDeviceEventId
+                    && incident.SourceUpdatedAt >= alert.UpdatedAt))
+            .OrderBy(alert => alert.OccurredAt)
+            .Take(BatchSize)
+            .ToListAsync(cancellationToken);
+        if (alerts.Count == 0)
+            return 0;
+
+        var sourceEventIds = alerts.Select(x => x.SourceDeviceEventId!.Value).ToList();
+        var recoveryEventIds = alerts.Where(x => x.RecoveryDeviceEventId.HasValue)
+            .Select(x => x.RecoveryDeviceEventId!.Value)
+            .ToList();
+        var eventIds = sourceEventIds.Concat(recoveryEventIds).Distinct().ToList();
+        var events = await _db.DeliveryDeviceEvents.AsNoTracking()
+            .Where(x => eventIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+        var sessionIds = alerts.Where(x => x.WorkSessionId.HasValue)
+            .Select(x => x.WorkSessionId!.Value)
+            .Distinct()
+            .ToList();
+        var locationsBySession = (await _db.DeliverymanLocations.AsNoTracking()
+                .Where(x => x.WorkSessionId.HasValue && sessionIds.Contains(x.WorkSessionId.Value))
+                .OrderBy(x => x.RecordedAt)
+                .ThenBy(x => x.Id)
+                .ToListAsync(cancellationToken))
+            .GroupBy(x => x.WorkSessionId!.Value)
+            .ToDictionary(x => x.Key, x => x.ToList());
+        var existingIncidents = await _db.DeliveryTrackingIncidents
+            .Where(x => x.SourceDeviceEventId.HasValue
+                && sourceEventIds.Contains(x.SourceDeviceEventId.Value))
+            .ToDictionaryAsync(x => x.SourceDeviceEventId!.Value, cancellationToken);
+        var existingIncidentIds = existingIncidents.Values.Select(x => x.Id).ToList();
+        var existingLocationEvidence = existingIncidentIds.Count == 0
+            ? []
+            : await _db.DeliveryIncidentLocationEvidence.AsNoTracking()
+                .Where(x => existingIncidentIds.Contains(x.IncidentId))
+                .Select(x => new { x.IncidentId, x.SourceLocationId })
+                .ToListAsync(cancellationToken);
+        var existingEventEvidence = existingIncidentIds.Count == 0
+            ? []
+            : await _db.DeliveryIncidentDeviceEventEvidence.AsNoTracking()
+                .Where(x => existingIncidentIds.Contains(x.IncidentId))
+                .Select(x => new { x.IncidentId, x.SourceDeviceEventId })
+                .ToListAsync(cancellationToken);
+
+        var changes = 0;
+        foreach (var alert in alerts)
+        {
+            if (!alert.WorkSessionId.HasValue
+                || !events.TryGetValue(alert.SourceDeviceEventId!.Value, out var sourceEvent))
+            {
+                continue;
+            }
+
+            var isNew = !existingIncidents.TryGetValue(sourceEvent.Id, out var incident);
+            if (isNew)
+            {
+                incident = new DeliveryTrackingIncident
+                {
+                    IncidentType = DeliveryTrackingIncidentType.LocationDisabled,
+                    SourceDeviceEventId = sourceEvent.Id,
+                    ReviewStatus = DeliveryIncidentReviewStatus.Pending,
+                    CreatedAt = nowUtc,
+                };
+                _db.DeliveryTrackingIncidents.Add(incident);
+                existingIncidents[sourceEvent.Id] = incident;
+            }
+
+            var sessionLocations = locationsBySession.GetValueOrDefault(alert.WorkSessionId.Value, []);
+            var startLocation = sessionLocations
+                .Where(x => x.RecordedAt <= alert.OccurredAt)
+                .OrderByDescending(x => x.RecordedAt)
+                .ThenByDescending(x => x.Id)
+                .FirstOrDefault();
+            var endLocation = alert.RecoveredAt.HasValue
+                ? sessionLocations
+                    .Where(x => x.RecordedAt >= alert.RecoveredAt.Value)
+                    .OrderBy(x => x.RecordedAt)
+                    .ThenBy(x => x.Id)
+                    .FirstOrDefault()
+                : null;
+            var evidenceLocations = new[] { startLocation, endLocation }
+                .Where(x => x is not null)
+                .Cast<DeliverymanLocation>()
+                .GroupBy(x => x.Id)
+                .Select(x => x.First())
+                .ToList();
+
+            incident!.BranchId = alert.BranchId;
+            incident.DeliverymanId = alert.DeliverymanId;
+            incident.WorkSessionId = alert.WorkSessionId.Value;
+            incident.StartedAt = alert.OccurredAt;
+            incident.EndedAt = alert.RecoveredAt ?? alert.OccurredAt;
+            incident.DurationSeconds = alert.DurationSeconds ?? 0;
+            incident.CenterLatitude = alert.StartLatitude ?? alert.EndLatitude;
+            incident.CenterLongitude = alert.StartLongitude ?? alert.EndLongitude;
+            incident.RadiusMeters = 0;
+            incident.AverageAccuracyMeters = evidenceLocations
+                .Where(x => x.AccuracyMeters.HasValue)
+                .Select(x => x.AccuracyMeters!.Value)
+                .DefaultIfEmpty(0)
+                .Average();
+            incident.StayClassification = null;
+            incident.ClassificationReason = "gps_disabled_during_work_session";
+            incident.SourceUpdatedAt = alert.UpdatedAt;
+            incident.EvidenceCapturedAt = nowUtc;
+            incident.EvidenceComplete = alert.RecoveredAt.HasValue;
+            incident.UpdatedAt = nowUtc;
+
+            var knownLocationIds = isNew
+                ? new HashSet<long>()
+                : existingLocationEvidence
+                    .Where(x => x.IncidentId == incident.Id)
+                    .Select(x => x.SourceLocationId)
+                    .ToHashSet();
+            foreach (var location in evidenceLocations.Where(x => knownLocationIds.Add(x.Id)))
+                incident.LocationEvidence.Add(CopyIncidentLocation(location));
+
+            var knownEventIds = isNew
+                ? new HashSet<long>()
+                : existingEventEvidence
+                    .Where(x => x.IncidentId == incident.Id)
+                    .Select(x => x.SourceDeviceEventId)
+                    .ToHashSet();
+            var incidentEvents = new List<DeliveryDeviceEvent> { sourceEvent };
+            if (alert.RecoveryDeviceEventId.HasValue
+                && events.TryGetValue(alert.RecoveryDeviceEventId.Value, out var recoveryEvent))
+            {
+                incidentEvents.Add(recoveryEvent);
+            }
+            foreach (var deviceEvent in incidentEvents.Where(x => knownEventIds.Add(x.Id)))
+                incident.DeviceEventEvidence.Add(CopyIncidentDeviceEvent(deviceEvent));
+
+            changes++;
+        }
+        return changes;
+    }
+
+    private static DeliveryIncidentLocationEvidence CopyIncidentLocation(DeliverymanLocation source) => new()
+    {
+        SourceLocationId = source.Id,
+        ClientPointId = source.ClientPointId,
+        IsCorePoint = true,
+        Latitude = source.Latitude,
+        Longitude = source.Longitude,
+        AccuracyMeters = source.AccuracyMeters,
+        HeadingDegrees = source.HeadingDegrees,
+        BatteryLevelPercent = source.BatteryLevelPercent,
+        InternetAvailable = source.InternetAvailable,
+        GpsEnabled = source.GpsEnabled,
+        TrackingMode = source.TrackingMode,
+        RecordedAt = source.RecordedAt,
+        SyncedAt = source.SyncedAt,
+    };
+
+    private static DeliveryIncidentDeviceEventEvidence CopyIncidentDeviceEvent(DeliveryDeviceEvent source) => new()
+    {
+        SourceDeviceEventId = source.Id,
+        ClientEventId = source.ClientEventId,
+        EventType = source.EventType,
+        BatteryLevelPercent = source.BatteryLevelPercent,
+        InternetAvailable = source.InternetAvailable,
+        GpsEnabled = source.GpsEnabled,
+        LocationPermissionGranted = source.LocationPermissionGranted,
+        Details = source.Details,
+        RecordedAt = source.RecordedAt,
+        SyncedAt = source.SyncedAt,
+    };
+
     private async Task<int> ProcessUnexpectedStaysAsync(DateTime nowUtc, CancellationToken cancellationToken)
     {
         var incidents = await _db.DeliveryTrackingIncidents.AsNoTracking()
@@ -293,10 +473,8 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                 Severity = DeliveryTrackingAlertSeverity.RequiresReview,
                 Status = DeliveryTrackingAlertStatus.Active,
                 Title = "Permanencia en lugar no esperado",
-                Message = $"Permaneció {FormatDuration(incident.DurationSeconds)} en " +
-                    $"{incident.CenterLatitude.ToString("0.000000", CultureInfo.InvariantCulture)}, " +
-                    $"{incident.CenterLongitude.ToString("0.000000", CultureInfo.InvariantCulture)} " +
-                    "fuera de lugares operativos conocidos.",
+                Message = $"Permaneció {FormatDuration(incident.DurationSeconds)} fuera de lugares " +
+                    $"operativos conocidos. {FormatLocationEvidence("Lugar", incident.CenterLatitude, incident.CenterLongitude)}",
                 OccurredAt = incident.StartedAt,
                 LastOccurredAt = incident.EndedAt,
                 DurationSeconds = incident.DurationSeconds,

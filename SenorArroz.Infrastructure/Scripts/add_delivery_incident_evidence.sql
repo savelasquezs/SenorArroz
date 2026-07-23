@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS delivery_tracking_incident (
     deliveryman_id integer NOT NULL,
     work_session_id integer NOT NULL,
     delivery_stay_id bigint,
+    source_device_event_id bigint,
     delivery_route_id integer,
     order_id integer,
     stay_classification varchar(40),
@@ -14,8 +15,8 @@ CREATE TABLE IF NOT EXISTS delivery_tracking_incident (
     started_at timestamp with time zone NOT NULL,
     ended_at timestamp with time zone NOT NULL,
     duration_seconds integer NOT NULL,
-    center_latitude numeric(10,6) NOT NULL,
-    center_longitude numeric(10,6) NOT NULL,
+    center_latitude numeric(10,6),
+    center_longitude numeric(10,6),
     radius_meters double precision NOT NULL,
     average_accuracy_meters double precision NOT NULL,
     distance_to_branch_meters double precision,
@@ -30,7 +31,7 @@ CREATE TABLE IF NOT EXISTS delivery_tracking_incident (
     created_at timestamp with time zone NOT NULL DEFAULT now(),
     updated_at timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT ck_delivery_tracking_incident_type
-        CHECK (incident_type IN ('stay', 'route_deviation')),
+        CHECK (incident_type IN ('stay', 'route_deviation', 'location_disabled')),
     CONSTRAINT ck_delivery_tracking_incident_classification
         CHECK (stay_classification IS NULL OR stay_classification IN (
             'branch', 'order_destination', 'authorized_place', 'traffic_or_route',
@@ -48,6 +49,9 @@ CREATE TABLE IF NOT EXISTS delivery_tracking_incident (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_delivery_tracking_incident_stay
     ON delivery_tracking_incident(delivery_stay_id)
     WHERE delivery_stay_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_delivery_tracking_incident_device_event
+    ON delivery_tracking_incident(source_device_event_id)
+    WHERE source_device_event_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_delivery_tracking_incident_branch_started
     ON delivery_tracking_incident(branch_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_delivery_tracking_incident_session_started

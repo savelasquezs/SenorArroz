@@ -65,6 +65,50 @@ public class DeliveryTrackingIncidentsControllerTests
         Assert.Equal(reviewedAt, saved.ReviewedAt);
     }
 
+    [Fact]
+    public async Task LocationDisabled_IsListedAsItsOwnPendingCaseAndDoesNotAcceptStayClassification()
+    {
+        await using var db = CreateDb();
+        SeedNames(db);
+        var incident = Incident(1, branchId: 7, deliverymanId: 11);
+        incident.IncidentType = DeliveryTrackingIncidentType.LocationDisabled;
+        incident.DeliveryStayId = null;
+        incident.SourceDeviceEventId = 501;
+        incident.StayClassification = null;
+        incident.CenterLatitude = null;
+        incident.CenterLongitude = null;
+        incident.EvidenceComplete = false;
+        db.DeliveryTrackingIncidents.Add(incident);
+        db.DeliveryIncidentDeviceEventEvidence.Add(new DeliveryIncidentDeviceEventEvidence
+        {
+            IncidentId = 1,
+            SourceDeviceEventId = 501,
+            EventType = DeliveryDeviceEventType.GpsDisabled,
+            GpsEnabled = false,
+            RecordedAt = BaseTime,
+            SyncedAt = BaseTime.AddSeconds(2),
+        });
+        await db.SaveChangesAsync();
+        var controller = Controller(db, role: "admin", branchId: 7);
+
+        var listAction = await controller.GetAll(cancellationToken: default);
+
+        var ok = Assert.IsType<OkObjectResult>(listAction.Result);
+        var response = Assert.IsType<ApiResponse<PagedResult<DeliveryTrackingIncidentListItemDto>>>(ok.Value);
+        var item = Assert.Single(response.Data!.Items);
+        Assert.Equal(DeliveryTrackingIncidentType.LocationDisabled, item.IncidentType);
+        Assert.False(item.GpsEnabled);
+        Assert.Equal(DeliveryIncidentReviewStatus.Pending, item.ReviewStatus);
+
+        await controller.Review(1, new ReviewDeliveryTrackingIncidentRequest
+        {
+            ReviewStatus = DeliveryIncidentReviewStatus.NotJustified,
+            FinalClassification = DeliveryStayClassification.UnexpectedPlace,
+        }, default);
+
+        Assert.Null(db.DeliveryTrackingIncidents.Single().FinalClassification);
+    }
+
     private static DeliveryTrackingIncident Incident(long id, int branchId, int deliverymanId) => new()
     {
         Id = id,

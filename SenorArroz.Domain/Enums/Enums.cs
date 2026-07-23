@@ -212,6 +212,7 @@ namespace SenorArroz.Domain.Enums
     {
         Stay,
         RouteDeviation,
+        LocationDisabled,
     }
 
     public enum DeliveryIncidentReviewStatus

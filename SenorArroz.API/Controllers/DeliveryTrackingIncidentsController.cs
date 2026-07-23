@@ -68,11 +68,25 @@ public class DeliveryTrackingIncidentsController : ControllerBase
         var names = await LoadNamesAsync(incidents.Select(x => x.DeliverymanId), cancellationToken);
         var branches = await LoadBranchNamesAsync(incidents.Select(x => x.BranchId), cancellationToken);
         var incidentIds = incidents.Select(x => x.Id).ToList();
-        var evidenceStates = await _db.DeliveryIncidentLocationEvidence.AsNoTracking()
+        var locationStates = await _db.DeliveryIncidentLocationEvidence.AsNoTracking()
             .Where(x => incidentIds.Contains(x.IncidentId))
-            .Select(x => new { x.IncidentId, x.Id, x.RecordedAt, x.GpsEnabled, x.InternetAvailable })
+            .Select(x => new IncidentStateRow(
+                x.IncidentId,
+                x.Id,
+                x.RecordedAt,
+                x.GpsEnabled,
+                x.InternetAvailable))
             .ToListAsync(cancellationToken);
-        var lastStates = evidenceStates.GroupBy(x => x.IncidentId)
+        var deviceStates = await _db.DeliveryIncidentDeviceEventEvidence.AsNoTracking()
+            .Where(x => incidentIds.Contains(x.IncidentId))
+            .Select(x => new IncidentStateRow(
+                x.IncidentId,
+                x.Id,
+                x.RecordedAt,
+                x.GpsEnabled,
+                x.InternetAvailable))
+            .ToListAsync(cancellationToken);
+        var lastStates = locationStates.Concat(deviceStates).GroupBy(x => x.IncidentId)
             .ToDictionary(
                 group => group.Key,
                 group => group.OrderByDescending(x => x.RecordedAt).ThenByDescending(x => x.Id)
@@ -86,6 +100,7 @@ public class DeliveryTrackingIncidentsController : ControllerBase
                 lastStates.TryGetValue(incident.Id, out var state);
                 return new DeliveryTrackingIncidentListItemDto(
                     incident.Id,
+                    incident.IncidentType,
                     incident.BranchId,
                     branches.GetValueOrDefault(incident.BranchId, $"Sucursal #{incident.BranchId}"),
                     incident.DeliverymanId,
@@ -221,7 +236,9 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             return Forbid();
 
         incident.ReviewStatus = request.ReviewStatus;
-        incident.FinalClassification = request.FinalClassification;
+        incident.FinalClassification = incident.IncidentType == DeliveryTrackingIncidentType.Stay
+            ? request.FinalClassification
+            : null;
         incident.AdminNotes = Clean(request.AdminNotes);
         incident.DeliverymanExplanation = Clean(request.DeliverymanExplanation);
         incident.ReviewedByUserId = _currentUser.Id;
@@ -289,10 +306,17 @@ public class DeliveryTrackingIncidentsController : ControllerBase
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private sealed record IncidentLastState(long IncidentId, bool? GpsEnabled, bool? InternetAvailable);
+    private sealed record IncidentStateRow(
+        long IncidentId,
+        long Id,
+        DateTime RecordedAt,
+        bool? GpsEnabled,
+        bool? InternetAvailable);
 }
 
 public record DeliveryTrackingIncidentListItemDto(
     long Id,
+    DeliveryTrackingIncidentType IncidentType,
     int BranchId,
     string BranchName,
     int DeliverymanId,
@@ -329,8 +353,8 @@ public record DeliveryTrackingIncidentDetailDto(
     DateTime StartedAt,
     DateTime EndedAt,
     int DurationSeconds,
-    decimal CenterLatitude,
-    decimal CenterLongitude,
+    decimal? CenterLatitude,
+    decimal? CenterLongitude,
     double RadiusMeters,
     double AverageAccuracyMeters,
     double? DistanceToBranchMeters,

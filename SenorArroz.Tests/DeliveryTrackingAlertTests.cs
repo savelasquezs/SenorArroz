@@ -97,6 +97,16 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(4.61m, gpsAlert.EndLatitude);
         Assert.Equal(-74.09m, gpsAlert.EndLongitude);
         Assert.Contains("1 min 0 s", gpsAlert.Message);
+        var gpsReview = db.DeliveryTrackingIncidents.Single(
+            x => x.IncidentType == DeliveryTrackingIncidentType.LocationDisabled);
+        Assert.Equal(DeliveryIncidentReviewStatus.Pending, gpsReview.ReviewStatus);
+        Assert.Equal(201, gpsReview.SourceDeviceEventId);
+        Assert.Equal(BaseTime.AddMinutes(1), gpsReview.StartedAt);
+        Assert.Equal(BaseTime.AddMinutes(2), gpsReview.EndedAt);
+        Assert.Equal(60, gpsReview.DurationSeconds);
+        Assert.True(gpsReview.EvidenceComplete);
+        Assert.Equal(2, db.DeliveryIncidentLocationEvidence.Count(x => x.IncidentId == gpsReview.Id));
+        Assert.Equal(2, db.DeliveryIncidentDeviceEventEvidence.Count(x => x.IncidentId == gpsReview.Id));
         Assert.Equal(DeliveryTrackingAlertStatus.Active,
             db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.LocationPermissionRevoked).Status);
         var queued = db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.OfflineLocationsQueued);
@@ -112,7 +122,8 @@ public class DeliveryTrackingAlertTests
             .Single(x => x.AlertType == DeliveryTrackingAlertType.NoCommunication).Message);
         Assert.Equal(0, await service.ProcessAsync());
 
-        var incident = db.DeliveryTrackingIncidents.Single();
+        var incident = db.DeliveryTrackingIncidents.Single(
+            x => x.IncidentType == DeliveryTrackingIncidentType.Stay);
         incident.ReviewStatus = DeliveryIncidentReviewStatus.Justified;
         db.DeliveryWorkSessions.Single().LastCommunicationAt = BaseTime.AddMinutes(11);
         await db.SaveChangesAsync();

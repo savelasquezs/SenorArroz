@@ -197,6 +197,7 @@ Reglas:
 - No se abre una nueva sesión laboral después de la hora de cierre configurada para la sucursal.
 - El backend rechaza ubicaciones que no correspondan a la sesión laboral activa del dispositivo.
 - Apagar el GPS o retirar el permiso de ubicación durante una jornada crea un registro que no se resuelve automáticamente al recuperar el servicio. La recuperación completa el registro con hora, duración, última ubicación anterior al corte y primera ubicación posterior; un administrador puede cerrarlo manualmente después de revisarlo.
+- Un evento confirmado `gps_disabled` también crea un caso pendiente de tipo `location_disabled` en Revisión de seguimiento, porque corresponde a un incumplimiento expresamente revisable. El caso permanece pendiente aunque el GPS se recupere; solo una decisión administrativa cambia su estado. La falta de comunicación, de internet o el cierre de la aplicación no crean este tipo de caso.
 - Las permanencias no esperadas registran domiciliario, hora inicial/final, duración y coordenada central.
 - El correo de auditoría diaria identifica al domiciliario y contiene enlaces de Google Maps para las ubicaciones disponibles de cortes de GPS/permisos y permanencias. Antes de construirlo, el cierre de caja procesa los eventos pendientes para no competir con el trabajador periódico.
 
