@@ -9,6 +9,12 @@ public interface IPrintQueueService
 
     Task<PrintJob> EnqueueAsync(int branchId, PrintJobKind kind, IReadOnlyList<int> orderIds, CancellationToken cancellationToken = default);
 
+    Task<PrintJob> EnqueueDeliveryAsync(
+        int branchId,
+        IReadOnlyList<int> orderIds,
+        int? deliverymanUserId = null,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Encola un trabajo con payload sintético (cocina o domicilio) para probar el agente sin pedido real.</summary>
     Task<PrintJob> EnqueueTestPrintAsync(int branchId, PrintJobKind kind, CancellationToken cancellationToken = default);
 
@@ -26,6 +32,17 @@ public interface IPrintQueueService
         int take,
         CancellationToken cancellationToken = default);
 
+    Task<PrintJobAgentItemDto?> ClaimSpecificForAgentAsync(
+        int branchId,
+        long jobId,
+        CancellationToken cancellationToken = default);
+
+    Task<PrintJobStatusDto?> GetJobStatusAsync(
+        int branchId,
+        long jobId,
+        int? deliverymanUserId = null,
+        CancellationToken cancellationToken = default);
+
     Task<bool> TryCompleteJobAsync(int branchId, long jobId, CancellationToken cancellationToken = default);
 
     Task<bool> TryFailJobAsync(int branchId, long jobId, string message, CancellationToken cancellationToken = default);
@@ -33,7 +50,11 @@ public interface IPrintQueueService
 
 public interface IPrintAgentNotifier
 {
-    Task NotifyJobsAvailableAsync(int branchId, CancellationToken cancellationToken = default);
+    Task NotifyJobsAvailableAsync(
+        int branchId,
+        long jobId,
+        PrintJobKind kind,
+        CancellationToken cancellationToken = default);
 }
 
 public record PrintJobAgentItemDto(
@@ -42,3 +63,12 @@ public record PrintJobAgentItemDto(
     string OrderIdsJson,
     string PayloadJson,
     short PayloadVersion);
+
+public record PrintJobStatusDto(
+    long JobId,
+    string Status,
+    string Kind,
+    DateTime CreatedAt,
+    DateTime? StartedAt,
+    DateTime? CompletedAt,
+    string? ErrorMessage);

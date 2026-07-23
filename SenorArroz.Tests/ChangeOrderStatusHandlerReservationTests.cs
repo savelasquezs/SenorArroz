@@ -55,11 +55,17 @@ public class ChangeOrderStatusHandlerReservationTests
         public Task<bool> IsAgentTokenValidAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<PrintJob> EnqueueAsync(int branchId, PrintJobKind kind, IReadOnlyList<int> orderIds, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PrintJob { Id = 1, BranchId = branchId, Kind = kind, Status = PrintJobStatus.Pending });
+        public Task<PrintJob> EnqueueDeliveryAsync(int branchId, IReadOnlyList<int> orderIds, int? deliverymanUserId = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PrintJob { Id = 1, BranchId = branchId, Kind = PrintJobKind.Delivery, Status = PrintJobStatus.Pending });
         public Task<PrintJob> EnqueueTestPrintAsync(int branchId, PrintJobKind kind, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PrintJob { Id = 1, BranchId = branchId, Kind = kind, Status = PrintJobStatus.Pending });
         public Task ValidateDeliverymanDeliveryEnqueueAsync(int branchId, int deliverymanUserId, IReadOnlyList<int> orderIds, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<IReadOnlyList<PrintJobAgentItemDto>> ClaimPendingForAgentAsync(int branchId, IReadOnlyList<PrintJobKind> kinds, int take, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<PrintJobAgentItemDto>>(Array.Empty<PrintJobAgentItemDto>());
+        public Task<PrintJobAgentItemDto?> ClaimSpecificForAgentAsync(int branchId, long jobId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<PrintJobAgentItemDto?>(null);
+        public Task<PrintJobStatusDto?> GetJobStatusAsync(int branchId, long jobId, int? deliverymanUserId = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult<PrintJobStatusDto?>(null);
         public Task<bool> TryCompleteJobAsync(int branchId, long jobId, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> TryFailJobAsync(int branchId, long jobId, string message, CancellationToken cancellationToken = default) => Task.FromResult(false);
     }

@@ -110,4 +110,102 @@ public class PrintTicketPayloadBuilderTests
         Assert.Equal("Entregar con cubiertos", back?.Orders[0].OrderNotes);
         Assert.Equal("Entregar con cubiertos", back?.Orders[0].OrderLevelNotes);
     }
+
+    [Fact]
+    public void Delivery_payload_preserves_operational_fields_and_cash_to_collect()
+    {
+        var reservedFor = new DateTime(2026, 7, 24, 18, 0, 0, DateTimeKind.Utc);
+        var snapshot = new DeliveryPrintSnapshot
+        {
+            Id = 123,
+            BranchId = 1,
+            Status = OrderStatus.OnTheWay,
+            Type = OrderType.Reservation,
+            DeliveryManId = 7,
+            CustomerName = "Cliente",
+            CustomerPhone1 = "3000000000",
+            AddressDescription = "Calle 1 # 2-3",
+            AddressAdditionalInfo = "Casa azul",
+            NeighborhoodName = "Centro",
+            Subtotal = 40000,
+            Total = 45000,
+            DeliveryFee = 5000,
+            Notes = "Nota general",
+            ReservedFor = reservedFor,
+            CreatedAt = reservedFor.AddHours(-2),
+            Lines =
+            [
+                new DeliveryPrintLineSnapshot
+                {
+                    Id = 1,
+                    ProductName = "Arroz",
+                    Quantity = 2,
+                    UnitPrice = 20000,
+                    Subtotal = 40000,
+                    Notes = "Sin cebolla",
+                },
+            ],
+            BankPayments =
+            [
+                new DeliveryPrintBankPaymentSnapshot
+                {
+                    BankName = "Banco",
+                    Amount = 10000,
+                    IsVerified = true,
+                },
+            ],
+            AppPayments =
+            [
+                new DeliveryPrintAppPaymentSnapshot
+                {
+                    AppName = "App",
+                    Amount = 5000,
+                },
+            ],
+        };
+
+        var order = DeliveryPrintPayloadBuilder
+            .BuildBatch([snapshot], DateTime.UtcNow)
+            .Orders
+            .Single();
+
+        Assert.Equal("Calle 1 # 2-3", order.Customer?.AddressDescription);
+        Assert.Equal("Casa azul", order.Customer?.AddressAdditionalInfo);
+        Assert.Equal("Centro", order.Customer?.NeighborhoodName);
+        Assert.Equal("Sin cebolla", order.Lines.Single().Notes);
+        Assert.Equal("Nota general", order.OrderNotes);
+        Assert.Equal(reservedFor, order.ReservedFor);
+        Assert.Equal(30000, order.Totals.CashToCollect);
+    }
+
+    [Fact]
+    public void Delivery_payload_omits_loyalty_logo_and_commercial_fields()
+    {
+        var order = DeliveryPrintPayloadBuilder.BuildBatch(
+            [
+                new DeliveryPrintSnapshot
+                {
+                    Id = 1,
+                    BranchId = 1,
+                    Status = OrderStatus.OnTheWay,
+                    Type = OrderType.Delivery,
+                    Total = 1000,
+                    CreatedAt = DateTime.UtcNow,
+                },
+            ],
+            DateTime.UtcNow).Orders.Single();
+
+        Assert.Null(order.LoyaltyDeliveredCount);
+        Assert.Null(order.LoyaltyOrdersUntilCycleEnd);
+        Assert.Null(order.LoyaltyNextRewardLabel);
+        Assert.Null(order.LoyaltyThisOrderGiftLabel);
+        Assert.Null(order.LoyaltyRuleName);
+        Assert.Null(order.ReceiptLogoPath);
+        Assert.Null(order.ReceiptLogoUrl);
+        Assert.Null(order.BusinessName);
+        Assert.Null(order.BranchNit);
+        Assert.Null(order.BranchPhone);
+        Assert.Null(order.BranchAddress);
+        Assert.Null(order.KitchenFooterMessage);
+    }
 }

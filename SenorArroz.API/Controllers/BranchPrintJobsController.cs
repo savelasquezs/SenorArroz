@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Common.Interfaces;
@@ -15,13 +16,16 @@ public class BranchPrintJobsController : ControllerBase
 
     private readonly IPrintQueueService _printQueue;
     private readonly ICurrentUser _currentUser;
+    private readonly ILogger<BranchPrintJobsController> _logger;
 
     public BranchPrintJobsController(
         IPrintQueueService printQueue,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        ILogger<BranchPrintJobsController> logger)
     {
         _printQueue = printQueue;
         _currentUser = currentUser;
+        _logger = logger;
     }
 
     /// <summary>Encola un trabajo de impresión con snapshot del ticket (usuarios de sucursal).</summary>
@@ -32,24 +36,17 @@ public class BranchPrintJobsController : ControllerBase
         [FromBody] EnqueuePrintJobsRequest request,
         CancellationToken cancellationToken)
     {
+        var totalWatch = Stopwatch.StartNew();
+        var validationWatch = Stopwatch.StartNew();
+        int? deliverymanUserId = null;
+
         // Domiciliario: la sucursal en la URL debe coincidir con la del pedido, no con user.branch_id
         // (puede trabajar rutas de otra sucursal; antes Forbid() bloqueaba toda la reimpresión desde el celular).
         if (Roles.IsDeliveryman(_currentUser.Role))
         {
             if (request.Kind != PrintJobKind.Delivery)
                 return Forbid();
-            try
-            {
-                await _printQueue.ValidateDeliverymanDeliveryEnqueueAsync(
-                    branchId,
-                    _currentUser.Id,
-                    request.OrderIds,
-                    cancellationToken);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(ApiResponse<EnqueuePrintJobResponse>.ErrorResponse(ex.Message));
-            }
+            deliverymanUserId = _currentUser.Id;
         }
         else
         {
@@ -60,10 +57,29 @@ public class BranchPrintJobsController : ControllerBase
         if (Roles.IsKitchen(_currentUser.Role)
             && request.Kind != PrintJobKind.Kitchen)
             return Forbid();
+        validationWatch.Stop();
 
         try
         {
-            var job = await _printQueue.EnqueueAsync(branchId, request.Kind, request.OrderIds, cancellationToken);
+            var job = request.Kind == PrintJobKind.Delivery
+                ? await _printQueue.EnqueueDeliveryAsync(
+                    branchId,
+                    request.OrderIds,
+                    deliverymanUserId,
+                    cancellationToken)
+                : await _printQueue.EnqueueAsync(
+                    branchId,
+                    request.Kind,
+                    request.OrderIds,
+                    cancellationToken);
+            totalWatch.Stop();
+            _logger.LogInformation(
+                "Print enqueue endpoint completed. PrintJobId={PrintJobId} BranchId={BranchId} Kind={PrintJobKind} RequestValidationElapsedMs={ValidationElapsedMs} EndpointTotalElapsedMs={TotalElapsedMs}.",
+                job.Id,
+                branchId,
+                request.Kind.ToString().ToLowerInvariant(),
+                validationWatch.Elapsed.TotalMilliseconds,
+                totalWatch.Elapsed.TotalMilliseconds);
             return Ok(ApiResponse<EnqueuePrintJobResponse>.SuccessResponse(
                 new EnqueuePrintJobResponse(job.Id),
                 "Trabajo de impresión encolado."));
@@ -124,6 +140,54 @@ public class BranchPrintJobsController : ControllerBase
 
         var jobs = await _printQueue.ClaimPendingForAgentAsync(branchId, kindList, take, cancellationToken);
         return Ok(ApiResponse<IReadOnlyList<PrintJobAgentItemDto>>.SuccessResponse(jobs, "OK"));
+    }
+
+    /// <summary>Reclama atomically un trabajo pendiente concreto (agente local).</summary>
+    [HttpGet("{jobId:long}/claim")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<PrintJobAgentItemDto>>> ClaimSpecific(
+        int branchId,
+        long jobId,
+        CancellationToken cancellationToken)
+    {
+        var token = Request.Headers[PrintAgentTokenHeader].FirstOrDefault();
+        if (!await _printQueue.IsAgentTokenValidAsync(branchId, token, cancellationToken))
+            return Unauthorized(ApiResponse<PrintJobAgentItemDto>.ErrorResponse("Token de agente invalido o no configurado."));
+
+        var job = await _printQueue.ClaimSpecificForAgentAsync(branchId, jobId, cancellationToken);
+        if (job is null)
+            return NotFound(ApiResponse<PrintJobAgentItemDto>.ErrorResponse("Trabajo no encontrado o ya reclamado."));
+
+        return Ok(ApiResponse<PrintJobAgentItemDto>.SuccessResponse(job, "OK"));
+    }
+
+    /// <summary>Consulta segura del estado de un trabajo, sin exponer el payload.</summary>
+    [HttpGet("{jobId:long}")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier, Deliveryman")]
+    public async Task<ActionResult<ApiResponse<PrintJobStatusDto>>> GetStatus(
+        int branchId,
+        long jobId,
+        CancellationToken cancellationToken)
+    {
+        int? deliverymanUserId = null;
+        if (Roles.IsDeliveryman(_currentUser.Role))
+        {
+            deliverymanUserId = _currentUser.Id;
+        }
+        else if (!CanAccessBranch(branchId))
+        {
+            return Forbid();
+        }
+
+        var status = await _printQueue.GetJobStatusAsync(
+            branchId,
+            jobId,
+            deliverymanUserId,
+            cancellationToken);
+        if (status is null)
+            return NotFound(ApiResponse<PrintJobStatusDto>.ErrorResponse("Trabajo no encontrado o no autorizado."));
+
+        return Ok(ApiResponse<PrintJobStatusDto>.SuccessResponse(status, "OK"));
     }
 
     [HttpPost("{jobId:long}/complete")]

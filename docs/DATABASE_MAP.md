@@ -188,6 +188,10 @@ Notas:
 
 - El print agent debe autenticarse contra una sucursal y tenant concretos.
 - Nunca debe leer trabajos de otra sucursal/tenant.
+- La recuperación de pendientes usa el índice parcial
+  `ix_print_job_pending_branch_kind_created (branch_id, kind, created_at, id)
+  WHERE status = 'pending'`. Los scripts de alta y rollback se ejecutan fuera
+  de una transacción porque usan `CONCURRENTLY`.
 
 ## Tablas técnicas
 

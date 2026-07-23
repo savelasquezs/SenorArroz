@@ -40,6 +40,10 @@ public class PrintJobConfiguration : IEntityTypeConfiguration<PrintJob>
             .WithMany()
             .HasForeignKey(j => j.BranchId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(j => new { j.BranchId, j.Kind, j.CreatedAt, j.Id })
+            .HasDatabaseName("ix_print_job_pending_branch_kind_created")
+            .HasFilter("status = 'pending'");
     }
 
     private static string KindToDb(PrintJobKind k) => k switch
