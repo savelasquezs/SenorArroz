@@ -672,6 +672,7 @@ public class OrderRepository : IOrderRepository
             OrderStatus.Taken => newStatus == OrderStatus.InPreparation || newStatus == OrderStatus.Cancelled,
             OrderStatus.InPreparation => newStatus == OrderStatus.Ready || newStatus == OrderStatus.Cancelled,
             OrderStatus.Ready => newStatus == OrderStatus.OnTheWay ||
+                               newStatus == OrderStatus.InPreparation ||
                                newStatus == OrderStatus.Cancelled ||
                                (newStatus == OrderStatus.Delivered && order.Type == OrderType.Onsite),
             OrderStatus.OnTheWay => newStatus == OrderStatus.Delivered || newStatus == OrderStatus.Ready,

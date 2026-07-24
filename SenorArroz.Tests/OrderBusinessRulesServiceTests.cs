@@ -113,6 +113,29 @@ public class OrderBusinessRulesServiceTests
     }
 
     [Theory]
+    [InlineData(Roles.Admin)]
+    [InlineData(Roles.Superadmin)]
+    public void IsStatusTransitionValid_allows_admins_to_return_ready_to_in_preparation(string role)
+    {
+        var sut = new OrderBusinessRulesService(new FakeClock(DateTime.UtcNow));
+        var order = new Order { Status = OrderStatus.Ready };
+
+        Assert.True(sut.IsStatusTransitionValid(order, OrderStatus.InPreparation, role));
+    }
+
+    [Theory]
+    [InlineData(Roles.Cashier)]
+    [InlineData(Roles.Kitchen)]
+    [InlineData(Roles.Deliveryman)]
+    public void IsStatusTransitionValid_blocks_non_admins_from_returning_ready_to_in_preparation(string role)
+    {
+        var sut = new OrderBusinessRulesService(new FakeClock(DateTime.UtcNow));
+        var order = new Order { Status = OrderStatus.Ready };
+
+        Assert.False(sut.IsStatusTransitionValid(order, OrderStatus.InPreparation, role));
+    }
+
+    [Theory]
     [InlineData(Roles.Cashier)]
     [InlineData(Roles.Kitchen)]
     [InlineData(Roles.Deliveryman)]

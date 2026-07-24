@@ -77,6 +77,61 @@ public class OrderRepositoryStatusTransitionTests
         Assert.Equal(utcNow, statusTimes["ready"]);
     }
 
+    [Fact]
+    public async Task ChangeStatusAsync_allows_ready_to_return_to_in_preparation()
+    {
+        using var ctx = CreateCtx(nameof(ChangeStatusAsync_allows_ready_to_return_to_in_preparation));
+        var utcNow = new DateTime(2026, 7, 24, 16, 30, 0, DateTimeKind.Utc);
+
+        var branch = new Branch
+        {
+            Name = "Test",
+            Address = "-",
+            Phone1 = "-",
+            CreatedAt = utcNow,
+        };
+        ctx.Branches.Add(branch);
+        await ctx.SaveChangesAsync();
+
+        var user = new User
+        {
+            Name = "Admin",
+            Email = $"admin_{Guid.NewGuid()}@test.com",
+            PasswordHash = "hash",
+            Role = UserRole.Admin,
+            BranchId = branch.Id,
+            Active = true,
+            CreatedAt = utcNow,
+        };
+        ctx.Users.Add(user);
+        await ctx.SaveChangesAsync();
+
+        var order = new Order
+        {
+            BranchId = branch.Id,
+            TakenById = user.Id,
+            Type = OrderType.Onsite,
+            Status = OrderStatus.Ready,
+            StatusTimes = "{}",
+            Subtotal = 10000,
+            Total = 10000,
+            CreatedAt = utcNow,
+            UpdatedAt = utcNow,
+        };
+        ctx.Orders.Add(order);
+        await ctx.SaveChangesAsync();
+
+        var repo = new OrderRepository(ctx, new FakeClock(utcNow));
+
+        var updated = await repo.ChangeStatusAsync(order.Id, OrderStatus.InPreparation);
+
+        Assert.Equal(OrderStatus.InPreparation, updated.Status);
+        Assert.Equal(
+            utcNow,
+            (await ctx.Orders.AsNoTracking().SingleAsync(o => o.Id == order.Id))
+                .GetStatusTimes()["inpreparation"]);
+    }
+
     [Theory]
     [InlineData(OrderStatus.Taken)]
     [InlineData(OrderStatus.InPreparation)]
