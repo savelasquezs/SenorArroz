@@ -56,7 +56,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         tracked.DeliveryRouteId = null;
         var colombiaTodayStartUtc = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(_clock.UtcNow);
 
-        var route = await _db.DeliveryRoutes
+        var activeRoutes = await _db.DeliveryRoutes
             .Where(r =>
                     r.DeliverymanId == tracked.DeliveryManId.Value
                     && r.BranchId == tracked.BranchId
@@ -66,7 +66,42 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
                             && r.LastAssignmentAtUtc >= colombiaTodayStartUtc)))
             .OrderByDescending(r => r.Status == DeliveryRouteStatus.InProgress)
             .ThenByDescending(r => r.LastAssignmentAtUtc)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
+
+        var activeRouteIds = activeRoutes.Select(r => r.Id).ToList();
+        var routeOrderStates = activeRouteIds.Count == 0
+            ? []
+            : await _db.DeliveryRouteStops
+                .AsNoTracking()
+                .Where(s => activeRouteIds.Contains(s.DeliveryRouteId)
+                            && s.OrderId != tracked.Id)
+                .Join(
+                    _db.Orders.AsNoTracking(),
+                    stop => stop.OrderId,
+                    routeOrder => routeOrder.Id,
+                    (stop, routeOrder) => new RouteOrderState(
+                        stop.DeliveryRouteId,
+                        routeOrder.Status))
+                .ToListAsync(cancellationToken);
+
+        var statesByRoute = routeOrderStates
+            .GroupBy(x => x.RouteId)
+            .ToDictionary(x => x.Key, x => x.Select(y => y.Status).ToList());
+
+        foreach (var terminalRoute in activeRoutes.Where(r =>
+                     statesByRoute.TryGetValue(r.Id, out var states)
+                     && states.Count > 0
+                     && states.All(IsTerminalOrderStatus)))
+        {
+            await FinalizeTerminalRouteForNewAssignmentAsync(
+                terminalRoute,
+                tracked.Id,
+                cancellationToken);
+        }
+
+        var route = activeRoutes.FirstOrDefault(r =>
+            statesByRoute.TryGetValue(r.Id, out var states)
+            && states.Any(status => status == OrderStatus.OnTheWay));
 
         if (route is null)
         {
@@ -140,6 +175,80 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         foreach (var rid in oldRouteIds.Where(id => id != route.Id))
             await PruneEmptyOpenRouteAsync(rid, cancellationToken);
     }
+
+    private async Task FinalizeTerminalRouteForNewAssignmentAsync(
+        DeliveryRoute route,
+        int assignedOrderId,
+        CancellationToken cancellationToken)
+    {
+        var stopList = await _db.DeliveryRouteStops
+            .Where(s => s.DeliveryRouteId == route.Id && s.OrderId != assignedOrderId)
+            .OrderBy(s => s.StopSequence)
+            .ToListAsync(cancellationToken);
+        if (stopList.Count == 0)
+            return;
+
+        var orderIds = stopList.Select(s => s.OrderId).ToList();
+        var orders = await _db.Orders
+            .Include(o => o.Address)
+            .Where(o => orderIds.Contains(o.Id))
+            .ToListAsync(cancellationToken);
+        if (orders.Count != orderIds.Count || orders.Any(o => !IsTerminalOrderStatus(o.Status)))
+            return;
+
+        var completedAtUtc = _clock.UtcNow;
+        if (orders.All(o => o.Status == OrderStatus.Cancelled))
+        {
+            route.Status = DeliveryRouteStatus.Cancelled;
+            route.CompletedAtUtc = completedAtUtc;
+            await _db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        if (route.Status == DeliveryRouteStatus.Open)
+        {
+            try
+            {
+                await ApplyRoutePlanningCoreAsync(
+                    route,
+                    stopList,
+                    orders.ToDictionary(o => o.Id),
+                    cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                route.RouteStartedAtUtc ??=
+                    route.LastAssignmentAtUtc.AddSeconds(_opt.ConsolidationDelaySeconds);
+                _logger.LogWarning(
+                    ex,
+                    "No fue posible calcular las metricas de la ruta terminal {RouteId} antes de iniciar una nueva.",
+                    route.Id);
+            }
+
+            route.ConsolidatedAtUtc = completedAtUtc;
+        }
+
+        await TrySetReturnToBranchMetersAsync(route, orders, cancellationToken);
+
+        route.CompletedAtUtc = completedAtUtc;
+        if (route.RouteStartedAtUtc.HasValue)
+        {
+            route.ActualDurationSeconds = (int)Math.Max(
+                0,
+                (completedAtUtc - route.RouteStartedAtUtc.Value).TotalSeconds);
+            route.MetSla = route.MetaDurationSeconds.HasValue
+                ? route.ActualDurationSeconds <= route.MetaDurationSeconds.Value
+                : null;
+        }
+
+        route.Status = DeliveryRouteStatus.Completed;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static bool IsTerminalOrderStatus(OrderStatus status) =>
+        status is OrderStatus.Delivered or OrderStatus.Cancelled;
+
+    private sealed record RouteOrderState(int RouteId, OrderStatus Status);
 
     public async Task OnOrderUnassignedAsync(int orderId, CancellationToken cancellationToken = default)
     {

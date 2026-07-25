@@ -169,13 +169,217 @@ public class DeliveryRouteAssignmentTests
         Assert.Equal(2, routes[0].StopCount);
     }
 
-    private static Order DeliveryOrder(int id, int deliverymanId, int? routeId = null) => new()
+    [Fact]
+    public async Task Assignment_CompletesTerminalInProgressRoute_AndCreatesNewOpenRoute()
+    {
+        await using var db = CreateDb();
+        var originalStart = new DateTime(2026, 7, 21, 15, 0, 0, DateTimeKind.Utc);
+        var now = originalStart.AddMinutes(20);
+
+        db.Branches.Add(new Branch { Id = 1, Name = "Centro", Address = "Sucursal" });
+        db.Orders.AddRange(
+            DeliveryOrder(10, deliverymanId: 7, routeId: 30, status: OrderStatus.Delivered),
+            DeliveryOrder(11, deliverymanId: 7));
+        db.DeliveryRoutes.Add(new DeliveryRoute
+        {
+            Id = 30,
+            DeliverymanId = 7,
+            BranchId = 1,
+            Status = DeliveryRouteStatus.InProgress,
+            LastAssignmentAtUtc = originalStart.AddMinutes(-3),
+            RouteStartedAtUtc = originalStart,
+            MetaDurationSeconds = 900,
+        });
+        db.DeliveryRouteStops.Add(new DeliveryRouteStop
+        {
+            Id = 40,
+            DeliveryRouteId = 30,
+            OrderId = 10,
+            StopSequence = 1,
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, now);
+
+        await service.OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 11));
+
+        var routes = await db.DeliveryRoutes
+            .Include(r => r.Stops)
+            .OrderBy(r => r.Id)
+            .ToListAsync();
+        var oldRoute = routes.Single(r => r.Id == 30);
+        var newRoute = routes.Single(r => r.Id != 30);
+        var newOrder = await db.Orders.SingleAsync(o => o.Id == 11);
+
+        Assert.Equal(DeliveryRouteStatus.Completed, oldRoute.Status);
+        Assert.Equal(now, oldRoute.CompletedAtUtc);
+        Assert.Equal(1200, oldRoute.ActualDurationSeconds);
+        Assert.False(oldRoute.MetSla);
+        Assert.Single(oldRoute.Stops);
+        Assert.Equal(10, oldRoute.Stops.Single().OrderId);
+
+        Assert.Equal(DeliveryRouteStatus.Open, newRoute.Status);
+        Assert.Single(newRoute.Stops);
+        Assert.Equal(11, newRoute.Stops.Single().OrderId);
+        Assert.Equal(newRoute.Id, newOrder.DeliveryRouteId);
+    }
+
+    [Fact]
+    public async Task Assignment_AppendsToMixedRoute_WhenAnotherOrderIsOnTheWay()
+    {
+        await using var db = CreateDb();
+        var originalStart = new DateTime(2026, 7, 21, 15, 0, 0, DateTimeKind.Utc);
+        var now = originalStart.AddMinutes(20);
+
+        db.Branches.Add(new Branch { Id = 1, Name = "Centro", Address = "Sucursal" });
+        db.Orders.AddRange(
+            DeliveryOrder(10, deliverymanId: 7, routeId: 30, status: OrderStatus.Delivered),
+            DeliveryOrder(11, deliverymanId: 7),
+            DeliveryOrder(12, deliverymanId: 7, routeId: 30));
+        db.DeliveryRoutes.Add(new DeliveryRoute
+        {
+            Id = 30,
+            DeliverymanId = 7,
+            BranchId = 1,
+            Status = DeliveryRouteStatus.InProgress,
+            LastAssignmentAtUtc = originalStart.AddMinutes(-3),
+            RouteStartedAtUtc = originalStart,
+        });
+        db.DeliveryRouteStops.AddRange(
+            new DeliveryRouteStop
+            {
+                Id = 40,
+                DeliveryRouteId = 30,
+                OrderId = 10,
+                StopSequence = 1,
+            },
+            new DeliveryRouteStop
+            {
+                Id = 41,
+                DeliveryRouteId = 30,
+                OrderId = 12,
+                StopSequence = 2,
+            });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, now);
+
+        await service.OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 11));
+
+        var route = await db.DeliveryRoutes.Include(r => r.Stops).SingleAsync();
+        var assigned = await db.Orders.SingleAsync(o => o.Id == 11);
+        Assert.Equal(DeliveryRouteStatus.InProgress, route.Status);
+        Assert.Equal(30, assigned.DeliveryRouteId);
+        Assert.Equal(3, route.Stops.Count);
+        Assert.Equal(originalStart, route.RouteStartedAtUtc);
+        Assert.Equal(now, route.LastAssignmentAtUtc);
+    }
+
+    [Fact]
+    public async Task Assignment_LeavesFullyCancelledRouteCancelled_AndCreatesNewRoute()
+    {
+        await using var db = CreateDb();
+        var originalStart = new DateTime(2026, 7, 21, 15, 0, 0, DateTimeKind.Utc);
+        var now = originalStart.AddMinutes(20);
+
+        db.Branches.Add(new Branch { Id = 1, Name = "Centro", Address = "Sucursal" });
+        db.Orders.AddRange(
+            DeliveryOrder(10, deliverymanId: 7, routeId: 30, status: OrderStatus.Cancelled),
+            DeliveryOrder(11, deliverymanId: 7));
+        db.DeliveryRoutes.Add(new DeliveryRoute
+        {
+            Id = 30,
+            DeliverymanId = 7,
+            BranchId = 1,
+            Status = DeliveryRouteStatus.InProgress,
+            LastAssignmentAtUtc = originalStart.AddMinutes(-3),
+            RouteStartedAtUtc = originalStart,
+        });
+        db.DeliveryRouteStops.Add(new DeliveryRouteStop
+        {
+            Id = 40,
+            DeliveryRouteId = 30,
+            OrderId = 10,
+            StopSequence = 1,
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, now);
+
+        await service.OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 11));
+
+        var routes = await db.DeliveryRoutes.Include(r => r.Stops).ToListAsync();
+        var oldRoute = routes.Single(r => r.Id == 30);
+        var newRoute = routes.Single(r => r.Id != 30);
+        Assert.Equal(DeliveryRouteStatus.Cancelled, oldRoute.Status);
+        Assert.Equal(now, oldRoute.CompletedAtUtc);
+        Assert.Single(oldRoute.Stops);
+        Assert.Equal(DeliveryRouteStatus.Open, newRoute.Status);
+        Assert.Equal(11, newRoute.Stops.Single().OrderId);
+    }
+
+    [Fact]
+    public async Task ConsecutiveAssignments_GroupNewOrdersInSingleNewRoute()
+    {
+        await using var db = CreateDb();
+        var originalStart = new DateTime(2026, 7, 21, 15, 0, 0, DateTimeKind.Utc);
+        var now = originalStart.AddMinutes(20);
+
+        db.Branches.Add(new Branch { Id = 1, Name = "Centro", Address = "Sucursal" });
+        db.Orders.AddRange(
+            DeliveryOrder(10, deliverymanId: 7, routeId: 30, status: OrderStatus.Delivered),
+            DeliveryOrder(11, deliverymanId: 7),
+            DeliveryOrder(12, deliverymanId: 7));
+        db.DeliveryRoutes.Add(new DeliveryRoute
+        {
+            Id = 30,
+            DeliverymanId = 7,
+            BranchId = 1,
+            Status = DeliveryRouteStatus.InProgress,
+            LastAssignmentAtUtc = originalStart.AddMinutes(-3),
+            RouteStartedAtUtc = originalStart,
+        });
+        db.DeliveryRouteStops.Add(new DeliveryRouteStop
+        {
+            Id = 40,
+            DeliveryRouteId = 30,
+            OrderId = 10,
+            StopSequence = 1,
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, now);
+
+        await service.OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 11));
+        await service.OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 12));
+
+        var routes = await db.DeliveryRoutes.Include(r => r.Stops).ToListAsync();
+        var oldRoute = routes.Single(r => r.Id == 30);
+        var newRoute = routes.Single(r => r.Id != 30);
+        Assert.Equal(DeliveryRouteStatus.Completed, oldRoute.Status);
+        Assert.Equal(DeliveryRouteStatus.Open, newRoute.Status);
+        Assert.Equal(new[] { 11, 12 }, newRoute.Stops.OrderBy(s => s.StopSequence).Select(s => s.OrderId));
+    }
+
+    private static DeliveryRouteWorkflowService CreateService(ApplicationDbContext db, DateTime now) =>
+        new(
+            db,
+            Mock.Of<IGoogleRoutesDrivingMetricsService>(),
+            Options.Create(new DeliveryRouteOptions()),
+            NullLogger<DeliveryRouteWorkflowService>.Instance,
+            new FakeClock(now));
+
+    private static Order DeliveryOrder(
+        int id,
+        int deliverymanId,
+        int? routeId = null,
+        OrderStatus status = OrderStatus.OnTheWay) => new()
     {
         Id = id,
         BranchId = 1,
         TakenById = 1,
         Type = OrderType.Delivery,
-        Status = OrderStatus.OnTheWay,
+        Status = status,
         DeliveryManId = deliverymanId,
         DeliveryRouteId = routeId,
     };
