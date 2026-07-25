@@ -215,7 +215,7 @@ BEGIN
             OLD.branch_id, 'order', OLD.id, 'deleted', v_changed_at,
             format('Pedido #%s eliminado. Total anterior: %s', OLD.id, to_char(COALESCE(OLD.total, 0), 'FM999G999G999G990')),
             jsonb_build_object('total_before', COALESCE(OLD.total, 0), 'total_after', 0, 'difference', -COALESCE(OLD.total, 0), 'lines_affected', '[]'::jsonb),
-            v_before, NULL, jsonb_build_object('trigger', TG_NAME)
+            v_before, NULL, jsonb_build_object('trigger', TG_NAME, 'operation_id', txid_current()::text)
         );
         RETURN OLD;
     END IF;
@@ -228,7 +228,7 @@ BEGIN
             NEW.branch_id, 'order', NEW.id, 'cancelled', v_changed_at,
             format('Pedido #%s cancelado. Total afectado: %s', NEW.id, to_char(COALESCE(OLD.total, 0), 'FM999G999G999G990')),
             jsonb_build_object('total_before', COALESCE(OLD.total, 0), 'total_after', COALESCE(NEW.total, 0), 'difference', COALESCE(NEW.total, 0) - COALESCE(OLD.total, 0), 'lines_affected', '[]'::jsonb, 'impact_type', 'removed_from_sales'),
-            v_before, v_after, jsonb_build_object('trigger', TG_NAME, 'cancelled_reason', NEW.cancelled_reason)
+            v_before, v_after, jsonb_build_object('trigger', TG_NAME, 'operation_id', txid_current()::text, 'cancelled_reason', NEW.cancelled_reason)
         );
         RETURN NEW;
     END IF;
@@ -243,7 +243,7 @@ BEGIN
             NEW.branch_id, 'order', NEW.id, 'modified', v_changed_at,
             format('Pedido #%s modificado monetariamente. %s -> %s', NEW.id, COALESCE(OLD.total, 0), COALESCE(NEW.total, 0)),
             jsonb_build_object('total_before', COALESCE(OLD.total, 0), 'total_after', COALESCE(NEW.total, 0), 'difference', COALESCE(NEW.total, 0) - COALESCE(OLD.total, 0), 'lines_affected', '[]'::jsonb),
-            v_before, v_after, jsonb_build_object('trigger', TG_NAME)
+            v_before, v_after, jsonb_build_object('trigger', TG_NAME, 'operation_id', txid_current()::text)
         );
     END IF;
 
@@ -280,6 +280,8 @@ BEGIN
         v_summary := format('Pedido #%s: producto %s agregado. Cantidad %s, subtotal %s', v_order_id, NEW.product_id, NEW.quantity, COALESCE(NEW.subtotal, 0));
     ELSIF TG_OP = 'DELETE' THEN
         v_summary := format('Pedido #%s: producto %s eliminado. Cantidad %s, subtotal %s', v_order_id, OLD.product_id, OLD.quantity, COALESCE(OLD.subtotal, 0));
+    ELSIF OLD.product_id IS DISTINCT FROM NEW.product_id THEN
+        v_summary := format('Pedido #%s: producto %s cambiado por %s', v_order_id, OLD.product_id, NEW.product_id);
     ELSIF OLD.quantity IS DISTINCT FROM NEW.quantity THEN
         v_summary := format('Pedido #%s: producto %s cambio cantidad %s->%s', v_order_id, NEW.product_id, OLD.quantity, NEW.quantity);
     ELSIF OLD.unit_price IS DISTINCT FROM NEW.unit_price THEN
@@ -298,6 +300,8 @@ BEGIN
             'difference', v_after_total - v_before_total,
             'lines_affected', jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
                 'product_id', COALESCE(NEW.product_id, OLD.product_id),
+                'product_id_before', CASE WHEN TG_OP <> 'INSERT' THEN OLD.product_id END,
+                'product_id_after', CASE WHEN TG_OP <> 'DELETE' THEN NEW.product_id END,
                 'quantity_before', CASE WHEN TG_OP <> 'INSERT' THEN OLD.quantity END,
                 'quantity_after', CASE WHEN TG_OP <> 'DELETE' THEN NEW.quantity END,
                 'unit_price_before', CASE WHEN TG_OP <> 'INSERT' THEN OLD.unit_price END,
@@ -310,7 +314,7 @@ BEGIN
         ),
         jsonb_build_object('id', v_order_id, 'total', v_before_total),
         v_after,
-        jsonb_build_object('trigger', TG_NAME, 'detail_operation', TG_OP)
+        jsonb_build_object('trigger', TG_NAME, 'operation_id', txid_current()::text, 'detail_operation', TG_OP)
     );
 
     RETURN COALESCE(NEW, OLD);

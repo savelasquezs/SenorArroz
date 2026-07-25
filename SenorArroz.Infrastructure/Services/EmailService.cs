@@ -126,7 +126,7 @@ public class EmailService : IEmailService
 {BuildTrackingDetailsHtml(group.Details)}
 </td></tr>"));
         var trackingSection = payload.TrackingAlertGroups.Count == 0
-            ? "<div style='background:#ecfdf5;border-left:4px solid #10b981;padding:16px;'>No se generaron alertas de seguimiento durante este periodo.</div>"
+            ? "<div style='background:#ecfdf5;border-left:4px solid #10b981;padding:16px;'>No se generaron alertas delicadas de seguimiento incluidas en la auditoría durante este periodo.</div>"
             : $@"<table style='width:100%;border-collapse:collapse;border:1px solid #e5e5e5;'>
 <thead><tr style='background:#f5f5f5;'><th style='padding:9px;text-align:left;'>Tipo</th><th style='padding:9px;text-align:left;'>Nivel</th><th style='padding:9px;'>Eventos</th><th style='padding:9px;'>Activas</th></tr></thead>
 <tbody>{trackingGroupsHtml}</tbody></table>";

@@ -172,18 +172,12 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 .OrderByDescending(x => x.ChangedAt)
                 .ToListAsync(cancellationToken);
 
-            var relevantLogs = logs
-                .Where(CashClosureAuditMapper.ShouldIncludeInDailyEmail)
-                .ToList();
-            var referencedProductIds = relevantLogs
-                .SelectMany(x => CashClosureAuditMapper.ParseDelta(x.MoneyDeltaJson).ProductIds)
-                .Distinct()
-                .ToList();
+            var referencedProductIds = CashClosureAuditMapper.ReferencedProductIds(logs);
             var productNames = await _context.Products
                 .AsNoTracking()
                 .Where(x => referencedProductIds.Contains(x.Id))
                 .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
-            var cancelledOrderIds = relevantLogs
+            var cancelledOrderIds = logs
                 .Where(x => x.OperationType == "cancelled")
                 .Select(x => x.EntityId)
                 .Distinct()
@@ -199,16 +193,20 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                     g => g.Key,
                     g => (IReadOnlyList<string>)g.Select(x => x.Name).Distinct().ToList());
 
-            var groups = relevantLogs
+            var relevantEvents = CashClosureAuditMapper
+                .Consolidate(logs, productNames, cancelledOrderProductNames)
+                .Where(CashClosureAuditMapper.ShouldIncludeInDailyEmail)
+                .ToList();
+            var groups = relevantEvents
                 .GroupBy(CashClosureAuditMapper.GroupKey)
                 .Select(g => new CashClosureAuditGroupDto
                 {
                     Key = g.Key,
                     Title = CashClosureAuditMapper.GroupTitle(g.Key),
                     EventCount = g.Count(),
-                    NetDifference = g.Sum(x => CashClosureAuditMapper.ParseDelta(x.MoneyDeltaJson).Difference ?? 0),
+                    NetDifference = g.Sum(x => x.Difference),
                     Details = g.OrderByDescending(x => x.ChangedAt)
-                        .Select(x => CashClosureAuditMapper.FormatDailyEmailDetail(x, productNames, cancelledOrderProductNames))
+                        .Select(x => x.DetailText)
                         .ToList()
                 })
                 .OrderBy(x => x.Title)
@@ -220,7 +218,8 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
             var trackingAlerts = await _context.DeliveryTrackingAlerts.AsNoTracking()
                 .Where(x => x.BranchId == branchId
                     && x.OccurredAt > periodStartUtc
-                    && x.OccurredAt <= saved.ClosedAt)
+                    && x.OccurredAt <= saved.ClosedAt
+                    && CashClosureAuditMapper.IncludedTrackingAlertTypes.Contains(x.AlertType))
                 .ToListAsync(cancellationToken);
             var trackingDeliverymanIds = trackingAlerts.Select(x => x.DeliverymanId).Distinct().ToList();
             var trackingDeliverymanNames = await _context.Users.AsNoTracking()

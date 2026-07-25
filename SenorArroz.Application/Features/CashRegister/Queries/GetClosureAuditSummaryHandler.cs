@@ -53,21 +53,42 @@ public class GetClosureAuditSummaryHandler : IRequestHandler<GetClosureAuditSumm
             .ThenByDescending(x => x.Id)
             .ToListAsync(cancellationToken);
 
-        var events = logs.Select(CashClosureAuditMapper.ToDto).ToList();
-        var groups = logs
+        var referencedProductIds = CashClosureAuditMapper.ReferencedProductIds(logs);
+        var productNames = await _context.Products
+            .AsNoTracking()
+            .Where(x => referencedProductIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var cancelledOrderIds = logs
+            .Where(x => x.EntityType == "order" && x.OperationType == "cancelled")
+            .Select(x => x.EntityId)
+            .Distinct()
+            .ToList();
+        var cancelledOrderProductRows = await _context.OrderDetails
+            .AsNoTracking()
+            .Where(x => cancelledOrderIds.Contains(x.OrderId))
+            .Select(x => new { x.OrderId, x.Product.Name })
+            .ToListAsync(cancellationToken);
+        var cancelledOrderProductNames = cancelledOrderProductRows
+            .GroupBy(x => x.OrderId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<string>)g.Select(x => x.Name).Distinct().ToList());
+
+        var auditEvents = CashClosureAuditMapper
+            .Consolidate(logs, productNames, cancelledOrderProductNames)
+            .Where(CashClosureAuditMapper.ShouldIncludeInClosureAudit)
+            .ToList();
+        var events = auditEvents.Select(CashClosureAuditMapper.ToDto).ToList();
+        var groups = auditEvents
             .GroupBy(CashClosureAuditMapper.GroupKey)
             .Select(g => new CashClosureAuditGroupDto
             {
                 Key = g.Key,
                 Title = CashClosureAuditMapper.GroupTitle(g.Key),
                 EventCount = g.Count(),
-                NetDifference = g.Sum(x => CashClosureAuditMapper.ParseDelta(x.MoneyDeltaJson).Difference ?? 0),
+                NetDifference = g.Sum(x => x.Difference),
                 Details = g.OrderByDescending(x => x.ChangedAt)
-                    .Select(x =>
-                    {
-                        var eventDto = CashClosureAuditMapper.ToDto(x);
-                        return $"{eventDto.ChangedAt:HH:mm} - {eventDto.UserName} - {eventDto.SummaryText}";
-                    })
+                    .Select(x => x.DetailText)
                     .ToList()
             })
             .OrderBy(x => x.Title)
