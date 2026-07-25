@@ -304,6 +304,7 @@ public class WhatsAppAiDiagnosticsTests
         return new WhatsAppAiDiagnosticsController(
             db,
             currentUser.Object,
+            new TestBranchContext(branchId),
             new FakeClock(now ?? DateTime.UtcNow),
             Options.Create(new WhatsAppAiOrchestratorOptions { MaxPersistentAttempts = 3 }));
     }

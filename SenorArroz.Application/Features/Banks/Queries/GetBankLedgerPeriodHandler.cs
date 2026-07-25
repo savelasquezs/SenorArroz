@@ -12,15 +12,18 @@ public class GetBankLedgerPeriodHandler : IRequestHandler<GetBankLedgerPeriodQue
     private readonly IBankRepository _bankRepository;
     private readonly IBankLedgerService _bankLedgerService;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public GetBankLedgerPeriodHandler(
         IBankRepository bankRepository,
         IBankLedgerService bankLedgerService,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _bankRepository = bankRepository;
         _bankLedgerService = bankLedgerService;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<BankBalanceBreakdownDto?> Handle(GetBankLedgerPeriodQuery request, CancellationToken cancellationToken)
@@ -28,6 +31,7 @@ public class GetBankLedgerPeriodHandler : IRequestHandler<GetBankLedgerPeriodQue
         var bank = await _bankRepository.GetByIdAsync(request.BankId, cancellationToken);
         if (bank == null)
             return null;
+        _branchContext.EnsureAccess(bank.BranchId);
 
         if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)
             return null;

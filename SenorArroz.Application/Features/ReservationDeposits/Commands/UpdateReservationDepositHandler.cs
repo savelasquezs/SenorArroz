@@ -12,13 +12,16 @@ public class UpdateReservationDepositHandler : IRequestHandler<UpdateReservation
 {
     private readonly IApplicationDbContext _context;
     private readonly IReservationDepositRepository _depositRepository;
+    private readonly IBranchContext _branchContext;
 
     public UpdateReservationDepositHandler(
         IApplicationDbContext context,
-        IReservationDepositRepository depositRepository)
+        IReservationDepositRepository depositRepository,
+        IBranchContext branchContext)
     {
         _context = context;
         _depositRepository = depositRepository;
+        _branchContext = branchContext;
     }
 
     public async Task<ReservationDepositDto> Handle(UpdateReservationDepositCommand request, CancellationToken cancellationToken)
@@ -36,6 +39,7 @@ public class UpdateReservationDepositHandler : IRequestHandler<UpdateReservation
 
             if (deposit == null)
                 throw new BusinessException("El abono no existe");
+            _branchContext.EnsureAccess(deposit.BranchId);
 
             var order = deposit.Order;
             if (order == null)

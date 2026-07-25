@@ -99,7 +99,7 @@ public class AppPaymentUnsettleHandlerTests
         };
 
     private static UnsettleAppPaymentHandler BuildHandler(ApplicationDbContext db) =>
-        new(new AppPaymentRepository(db), db, new TestCurrentUser());
+        new(new AppPaymentRepository(db), db, new TestCurrentUser(), new TestBranchContext());
 
     [Fact]
     public async Task Unsettle_single_app_settlement_deletes_bank_payment_and_marks_app_pending()

@@ -7,6 +7,7 @@ using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Application.Features.Users.Queries;
 using SenorArroz.Shared.Models;
 using System.Security.Claims;
+using SenorArroz.Application.Common.Interfaces;
 
 namespace SenorArroz.API.Controllers;
 
@@ -16,10 +17,12 @@ namespace SenorArroz.API.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly IBranchContext _branchContext;
 
-    public UsersController(IMediator mediator)
+    public UsersController(IMediator mediator, IBranchContext branchContext)
     {
         _mediator = mediator;
+        _branchContext = branchContext;
     }
 
     private int GetCurrentUserId() =>
@@ -58,6 +61,7 @@ public class UsersController : ControllerBase
     {
         var query = new GetUserByIdQuery(id);
         var user = await _mediator.Send(query);
+        _branchContext.EnsureAccess(user.BranchId);
         return Ok(user);
     }
 
@@ -91,6 +95,7 @@ public class UsersController : ControllerBase
     {
         var command = new CreateUserCommand(createUserDto);
         var user = await _mediator.Send(command);
+        _branchContext.EnsureAccess(user.BranchId);
         return CreatedAtAction(nameof(GetUser), new { id = user.Id }, user);
     }
 
@@ -103,6 +108,7 @@ public class UsersController : ControllerBase
     {
         var command = new UpdateUserCommand(id, updateUserDto);
         var user = await _mediator.Send(command);
+        _branchContext.EnsureAccess(user.BranchId);
         return Ok(user);
     }
     /// <summary>
@@ -114,6 +120,7 @@ public class UsersController : ControllerBase
     {
         var command = new ToggleStatusCommand(id);
         var user = await _mediator.Send(command);
+        _branchContext.EnsureAccess(user.BranchId);
         return Ok(user);
     }
 
@@ -124,6 +131,8 @@ public class UsersController : ControllerBase
     [Authorize(Roles = "Superadmin")]
     public async Task<ActionResult> DeleteUser(int id)
     {
+        var existing = await _mediator.Send(new GetUserByIdQuery(id));
+        _branchContext.EnsureAccess(existing.BranchId);
         var command = new DeleteUserCommand(id);
         await _mediator.Send(command);
         return NoContent();

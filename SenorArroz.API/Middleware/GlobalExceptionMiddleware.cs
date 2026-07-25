@@ -69,6 +69,21 @@ public class GlobalExceptionMiddleware
 
         switch (exception)
         {
+            case BranchContextRequiredException:
+                response.StatusCode = (int)HttpStatusCode.BadRequest;
+                errorResponse.Code = BranchContextRequiredException.ErrorCode;
+                break;
+
+            case BranchScopeMismatchException:
+                response.StatusCode = (int)HttpStatusCode.Conflict;
+                errorResponse.Code = BranchScopeMismatchException.ErrorCode;
+                break;
+
+            case BranchAccessDeniedException:
+                response.StatusCode = (int)HttpStatusCode.Forbidden;
+                errorResponse.Code = BranchAccessDeniedException.ErrorCode;
+                break;
+
             case SessionReplacedException:
                 response.StatusCode = (int)HttpStatusCode.Unauthorized;
                 errorResponse.Code = SessionReplacedException.ErrorCode;

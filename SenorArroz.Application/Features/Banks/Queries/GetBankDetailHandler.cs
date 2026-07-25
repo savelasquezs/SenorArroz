@@ -14,17 +14,20 @@ public class GetBankDetailHandler : IRequestHandler<GetBankDetailQuery, BankDeta
     private readonly IBankLedgerService _bankLedgerService;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public GetBankDetailHandler(
         IBankRepository bankRepository,
         IBankLedgerService bankLedgerService,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _bankRepository = bankRepository;
         _bankLedgerService = bankLedgerService;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<BankDetailDto?> Handle(GetBankDetailQuery request, CancellationToken cancellationToken)
@@ -33,6 +36,7 @@ public class GetBankDetailHandler : IRequestHandler<GetBankDetailQuery, BankDeta
         
         if (bank == null)
             return null;
+        _branchContext.EnsureAccess(bank.BranchId);
 
         // Check if user has access to this bank's branch
         if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)

@@ -15,20 +15,22 @@ namespace SenorArroz.Application.Features.Users.Queries
         private readonly IUserRepository _userRepository;
         private readonly IMapper _mapper;
         private readonly ICurrentUser _currentUser;
+        private readonly IBranchContext _branchContext;
         private readonly ILogger<GetUsersHandler> _logger;
 
-        public GetUsersHandler(IUserRepository userRepository, IMapper mapper, ICurrentUser currentUser, ILogger<GetUsersHandler> logger)
+        public GetUsersHandler(IUserRepository userRepository, IMapper mapper, ICurrentUser currentUser, IBranchContext branchContext, ILogger<GetUsersHandler> logger)
         {
             _userRepository = userRepository;
             _mapper = mapper;
             _currentUser = currentUser;
+            _branchContext = branchContext;
             _logger = logger;
         }
 
         public async Task<PagedResult<UserDto>> Handle(GetUsersQuery request, CancellationToken cancellationToken)
         {
             // Determinar filtro de sucursal según rol del usuario actual
-            int? branchFilter = null;
+            int? branchFilter = _branchContext.ResolveOptional(request.BranchId);
             if (!Roles.IsSuperadmin(_currentUser.Role))
             {
                 // Usuarios normales solo ven usuarios de su sucursal

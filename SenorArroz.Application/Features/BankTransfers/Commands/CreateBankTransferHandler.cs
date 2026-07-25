@@ -14,17 +14,20 @@ public class CreateBankTransferHandler : IRequestHandler<CreateBankTransferComma
     private readonly IBankRepository _bankRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public CreateBankTransferHandler(
         IBankTransferRepository bankTransferRepository,
         IBankRepository bankRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _bankTransferRepository = bankTransferRepository;
         _bankRepository = bankRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<BankTransferDto> Handle(CreateBankTransferCommand request, CancellationToken cancellationToken)
@@ -62,6 +65,7 @@ public class CreateBankTransferHandler : IRequestHandler<CreateBankTransferComma
             throw new BusinessException("Los bancos deben pertenecer a la misma sucursal");
 
         var branchIdForPerm = fromBank?.BranchId ?? toBank!.BranchId;
+        _branchContext.EnsureAccess(branchIdForPerm);
         if (!Roles.IsSuperadmin(_currentUser.Role) && branchIdForPerm != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para realizar transferencias en esta sucursal");
 

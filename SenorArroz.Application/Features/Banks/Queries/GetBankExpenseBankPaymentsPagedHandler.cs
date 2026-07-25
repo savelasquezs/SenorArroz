@@ -15,15 +15,18 @@ public class GetBankExpenseBankPaymentsPagedHandler
     private readonly IApplicationDbContext _context;
     private readonly IBankRepository _bankRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public GetBankExpenseBankPaymentsPagedHandler(
         IApplicationDbContext context,
         IBankRepository bankRepository,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _context = context;
         _bankRepository = bankRepository;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<PagedResult<ExpenseBankPaymentLineDto>?> Handle(
@@ -33,6 +36,10 @@ public class GetBankExpenseBankPaymentsPagedHandler
         var bank = await _bankRepository.GetByIdAsync(request.BankId, cancellationToken);
         if (bank == null)
             return null;
+        var branchId = _branchContext.RequireBranch(request.BranchId);
+        _branchContext.EnsureAccess(bank.BranchId);
+        if (bank.BranchId != branchId)
+            throw new SenorArroz.Domain.Exceptions.BranchScopeMismatchException();
 
         if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)
             return null;
@@ -47,10 +54,7 @@ public class GetBankExpenseBankPaymentsPagedHandler
             .Where(ebp => ebp.BankId == request.BankId
                 && ebp.CreatedAt >= fromUtc && ebp.CreatedAt <= toUtc);
 
-        if (!Roles.IsSuperadmin(_currentUser.Role))
-            query = query.Where(ebp => ebp.ExpenseHeader.BranchId == _currentUser.BranchId);
-        else if (request.BranchId.HasValue && request.BranchId.Value > 0)
-            query = query.Where(ebp => ebp.ExpenseHeader.BranchId == request.BranchId.Value);
+        query = query.Where(ebp => ebp.ExpenseHeader.BranchId == branchId);
 
         var totalCount = await query.CountAsync(cancellationToken);
 

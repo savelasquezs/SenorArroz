@@ -15,17 +15,20 @@ public class CreateAppHandler : IRequestHandler<CreateAppCommand, AppDto>
     private readonly IBankRepository _bankRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public CreateAppHandler(
         IAppRepository appRepository,
         IBankRepository bankRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _appRepository = appRepository;
         _bankRepository = bankRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<AppDto> Handle(CreateAppCommand request, CancellationToken cancellationToken)
@@ -36,8 +39,7 @@ public class CreateAppHandler : IRequestHandler<CreateAppCommand, AppDto>
             throw new BusinessException("El banco especificado no existe");
 
         // Check if user has access to this bank's branch
-        if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para crear apps en este banco");
+        _branchContext.EnsureAccess(bank.BranchId);
 
         // Check if app name already exists in this bank
         if (await _appRepository.NameExistsInBankAsync(request.Name, request.BankId))

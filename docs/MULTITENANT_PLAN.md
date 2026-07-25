@@ -92,6 +92,11 @@ Slug = senor-arroz
 
 ### Fase 2 - Asociar Branch a Tenant
 
+Estado previo implementado: existe `IBranchContext` y el selector de Superadmin usa
+`X-Branch-Id`. Este header solo selecciona una sucursal operativa; nunca es autoridad
+de tenant. Al implementar esta fase, el tenant deberá provenir del JWT/contexto seguro
+y `IBranchContext` deberá validar que la sucursal seleccionada pertenezca a ese tenant.
+
 Agregar `TenantId` a `Branch` primero.
 
 Backfill:

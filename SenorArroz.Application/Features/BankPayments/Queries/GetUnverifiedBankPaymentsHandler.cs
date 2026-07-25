@@ -11,13 +11,16 @@ public class GetUnverifiedBankPaymentsHandler : IRequestHandler<GetUnverifiedBan
 {
     private readonly IBankPaymentRepository _bankPaymentRepository;
     private readonly IMapper _mapper;
-    private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public GetUnverifiedBankPaymentsHandler(IBankPaymentRepository bankPaymentRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetUnverifiedBankPaymentsHandler(
+        IBankPaymentRepository bankPaymentRepository,
+        IMapper mapper,
+        IBranchContext branchContext)
     {
         _bankPaymentRepository = bankPaymentRepository;
         _mapper = mapper;
-        _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<IEnumerable<BankPaymentDto>> Handle(GetUnverifiedBankPaymentsQuery request, CancellationToken cancellationToken)
@@ -26,12 +29,9 @@ public class GetUnverifiedBankPaymentsHandler : IRequestHandler<GetUnverifiedBan
         
         var bankPaymentDtos = new List<BankPaymentDto>();
 
-        foreach (var bankPayment in unverifiedPayments)
+        var branchId = _branchContext.RequireBranch();
+        foreach (var bankPayment in unverifiedPayments.Where(x => x.Bank.BranchId == branchId))
         {
-            // Check if user has access to this bank payment's branch
-            if (!Roles.IsSuperadmin(_currentUser.Role) && bankPayment.Bank.BranchId != _currentUser.BranchId)
-                continue;
-
             var bankPaymentDto = _mapper.Map<BankPaymentDto>(bankPayment);
             bankPaymentDtos.Add(bankPaymentDto);
         }

@@ -2,11 +2,11 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.Commands;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Application.Features.Customers.Queries;
 using SenorArroz.Shared.Models;
-using System.Security.Claims;
 
 namespace SenorArroz.API.Controllers;
 
@@ -17,11 +17,13 @@ public class CustomersController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IMapper _mapper;
+    private readonly IBranchContext _branchContext;
 
-    public CustomersController(IMediator mediator, IMapper mapper)
+    public CustomersController(IMediator mediator, IMapper mapper, IBranchContext branchContext)
     {
         _mediator = mediator;
         _mapper = mapper;
+        _branchContext = branchContext;
     }
 
     /// <summary>
@@ -32,12 +34,8 @@ public class CustomersController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<ApiResponse<PagedResult<CustomerDto>>>> GetCustomers([FromQuery] CustomerSearchDto searchDto)
     {
-        var branchId = GetCurrentUserBranchId();
-        if (branchId == null)
-            return Unauthorized();
-
         var query = _mapper.Map<GetCustomersQuery>(searchDto);
-        query.BranchId = branchId.Value;
+        query.BranchId = _branchContext.RequireBranch(searchDto.BranchId);
 
         var result = await _mediator.Send(query);
         return Ok(ApiResponse<PagedResult<CustomerDto>>.SuccessResponse(result, "Clientes obtenidos exitosamente"));
@@ -56,6 +54,7 @@ public class CustomersController : ControllerBase
 
         if (result == null)
             return NotFound(ApiResponse<CustomerDto>.ErrorResponse("Cliente no encontrado"));
+        _branchContext.EnsureAccess(result.BranchId);
 
         return Ok(ApiResponse<CustomerDto>.SuccessResponse(result, "Cliente obtenido exitosamente"));
     }
@@ -68,14 +67,10 @@ public class CustomersController : ControllerBase
     [HttpGet("by-phone/{phone}")]
     public async Task<ActionResult<ApiResponse<CustomerDto>>> GetCustomerByPhone(string phone)
     {
-        var branchId = GetCurrentUserBranchId();
-        if (branchId == null)
-            return Unauthorized();
-
         var query = new GetCustomerByPhoneQuery
         {
             Phone = phone,
-            BranchId = branchId.Value
+            BranchId = _branchContext.RequireBranch()
         };
 
         var result = await _mediator.Send(query);
@@ -95,15 +90,8 @@ public class CustomersController : ControllerBase
     [Authorize(Roles ="Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<CustomerDto>>> CreateCustomer([FromBody] CreateCustomerDto createDto)
     {
-        var branchId = GetCurrentUserBranchId();
-        string? currentUserRole = GetCurrentUserRole();
-        
-        if (branchId == null)
-            return Unauthorized();
-
         var command = _mapper.Map<CreateCustomerCommand>(createDto);
-        if (!Roles.IsSuperadmin(currentUserRole))
-            command.BranchId = branchId.Value;
+        command.BranchId = _branchContext.RequireBranch(command.BranchId);
         
         var result = await _mediator.Send(command);
         return CreatedAtAction(
@@ -126,6 +114,7 @@ public class CustomersController : ControllerBase
         command.Id = id;
 
         var result = await _mediator.Send(command);
+        _branchContext.EnsureAccess(result.BranchId);
         return Ok(ApiResponse<CustomerDto>.SuccessResponse(result, "Cliente actualizado exitosamente"));
     }
 
@@ -138,6 +127,10 @@ public class CustomersController : ControllerBase
     [Authorize(Roles = "Superadmin,Admin")]
     public async Task<ActionResult<ApiResponse>> DeleteCustomer(int id)
     {
+        var existing = await _mediator.Send(new GetCustomerByIdQuery { Id = id });
+        if (existing == null)
+            return NotFound(ApiResponse.Error("Cliente no encontrado"));
+        _branchContext.EnsureAccess(existing.BranchId);
         var command = new DeleteCustomerCommand { Id = id };
         var result = await _mediator.Send(command);
 
@@ -267,11 +260,7 @@ public class CustomersController : ControllerBase
     [HttpGet("neighborhoods")]
     public async Task<ActionResult<ApiResponse<IEnumerable<NeighborhoodDto>>>> GetNeighborhoods()
     {
-        var branchId = GetCurrentUserBranchId();
-        if (branchId == null)
-            return Unauthorized();
-
-        var query = new GetNeighborhoodsQuery { BranchId = branchId.Value };
+        var query = new GetNeighborhoodsQuery { BranchId = _branchContext.RequireBranch() };
         var result = await _mediator.Send(query);
 
         var neighborhoods = result.Select(n => new NeighborhoodDto
@@ -285,18 +274,4 @@ public class CustomersController : ControllerBase
                   .SuccessResponse(neighborhoods, "Barrios obtenidos exitosamente"));
     }
 
-    #region Private Methods
-
-    private int? GetCurrentUserBranchId()
-    {
-        var branchIdClaim = User.FindFirst("branch_id");
-        return branchIdClaim != null && int.TryParse(branchIdClaim.Value, out var branchId) ? branchId : null;
-    }
-
-    private string? GetCurrentUserRole()
-    {
-        return User.FindFirst(ClaimTypes.Role)?.Value;
-    }
-
-    #endregion
 }

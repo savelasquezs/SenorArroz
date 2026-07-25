@@ -10,6 +10,7 @@ using Microsoft.OpenApi.Models;
 using SenorArroz.API.Extensions;
 using SenorArroz.API.Hosting;
 using SenorArroz.API.Middleware;
+using SenorArroz.API.Filters;
 using SenorArroz.Application;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
@@ -27,7 +28,11 @@ var builder = WebApplication.CreateBuilder(args);
 GoogleCredentialBootstrap.ApplyFromConfiguration(builder.Configuration);
 
 // Add services to the container
-builder.Services.AddControllers().AddJsonOptions(options =>
+builder.Services.AddScoped<BranchScopeActionFilter>();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.AddService<BranchScopeActionFilter>();
+}).AddJsonOptions(options =>
 {
     options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
     options.JsonSerializerOptions.Converters.Add(

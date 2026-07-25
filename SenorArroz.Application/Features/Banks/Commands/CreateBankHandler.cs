@@ -15,42 +15,29 @@ public class CreateBankHandler : IRequestHandler<CreateBankCommand, BankDto>
     private readonly IBranchRepository _branchRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public CreateBankHandler(
         IBankRepository bankRepository,
         IBranchRepository branchRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _bankRepository = bankRepository;
         _branchRepository = branchRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<BankDto> Handle(CreateBankCommand request, CancellationToken cancellationToken)
     {
-        // Determine branch
-        int branchId;
-
-        if (Roles.IsSuperadmin(_currentUser.Role))
-        {
-            // Superadmin can specify branch or needs to provide it
-            if (request.BranchId <= 0)
-            {
-                throw new BusinessException("Superadmin debe especificar la sucursal");
-            }
-            branchId = request.BranchId;
-        }
-        else if (Roles.IsAdmin(_currentUser.Role))
-        {
-            // Admin uses their branch
-            branchId = _currentUser.BranchId;
-        }
-        else
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para crear bancos");
         }
+        var branchId = _branchContext.RequireBranch(request.BranchId);
 
         // Validate branch exists
         if (!await _branchRepository.ExistsAsync(branchId))

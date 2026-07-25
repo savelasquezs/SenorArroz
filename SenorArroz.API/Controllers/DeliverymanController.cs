@@ -26,15 +26,18 @@ public class DeliverymanController : ControllerBase
     private readonly IMediator _mediator;
     private readonly IUserRepository _userRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public DeliverymanController(
         IMediator mediator,
         IUserRepository userRepository,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _mediator = mediator;
         _userRepository = userRepository;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     /// <summary>
@@ -410,15 +413,17 @@ public class DeliverymanController : ControllerBase
     [ProducesResponseType(typeof(DeliverymanLastLocationDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<DeliverymanLastLocationDto?>> GetLastLocation(int id)
     {
+        var deliveryman = await _userRepository.GetByIdAsync(id, HttpContext.RequestAborted);
+        if (deliveryman == null)
+            return NotFound();
+        if (deliveryman.Role != UserRole.Deliveryman)
+            return Forbid();
+        _branchContext.EnsureAccess(deliveryman.BranchId);
+
         var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
         if (!Roles.IsSuperadmin(role))
         {
-            var dm = await _userRepository.GetByIdAsync(id, HttpContext.RequestAborted);
-            if (dm == null)
-                return NotFound();
-            if (dm.Role != UserRole.Deliveryman)
-                return Forbid();
-            if (dm.BranchId != _currentUser.BranchId)
+            if (deliveryman.BranchId != _currentUser.BranchId)
                 return Forbid();
         }
 

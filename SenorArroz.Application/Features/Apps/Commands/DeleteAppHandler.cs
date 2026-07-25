@@ -10,11 +10,13 @@ public class DeleteAppHandler : IRequestHandler<DeleteAppCommand, bool>
 {
     private readonly IAppRepository _appRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public DeleteAppHandler(IAppRepository appRepository, ICurrentUser currentUser)
+    public DeleteAppHandler(IAppRepository appRepository, ICurrentUser currentUser, IBranchContext branchContext)
     {
         _appRepository = appRepository;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<bool> Handle(DeleteAppCommand request, CancellationToken cancellationToken)
@@ -23,6 +25,7 @@ public class DeleteAppHandler : IRequestHandler<DeleteAppCommand, bool>
         var existingApp = await _appRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingApp == null)
             return false;
+        _branchContext.EnsureAccess(existingApp.Bank.BranchId);
 
         // Check if user has access to this app's branch
         if (!Roles.IsSuperadmin(_currentUser.Role) && existingApp.Bank.BranchId != _currentUser.BranchId)

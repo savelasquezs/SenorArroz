@@ -13,28 +13,24 @@ public class GetBanksHandler : IRequestHandler<GetBanksQuery, PagedResult<BankDt
     private readonly IBankRepository _bankRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public GetBanksHandler(IBankRepository bankRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetBanksHandler(
+        IBankRepository bankRepository,
+        IMapper mapper,
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _bankRepository = bankRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<PagedResult<BankDto>> Handle(GetBanksQuery request, CancellationToken cancellationToken)
     {
         // Determine branch filter based on user role
-        int? branchFilter = null;
-        if (!Roles.IsSuperadmin(_currentUser.Role))
-        {
-            branchFilter = _currentUser.BranchId;
-        }
-        else if (request.BranchId > 0)
-        {
-            // Superadmin can optionally filter by specific branch
-            branchFilter = request.BranchId;
-        }
-        // If branchFilter is null, superadmin gets all banks from all branches
+        var branchFilter = _branchContext.ResolveOptional(request.BranchId);
 
         // Cashier cannot see hidden banks (CashVault, RealVault)
         var excludeHidden = !Roles.IsAdminOrSuperadmin(_currentUser.Role);

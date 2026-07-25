@@ -12,17 +12,20 @@ public class DeleteAppPaymentHandler : IRequestHandler<DeleteAppPaymentCommand, 
     private readonly IOrderRepository _orderRepository;
     private readonly IOrderBusinessRulesService _businessRules;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public DeleteAppPaymentHandler(
         IAppPaymentRepository appPaymentRepository,
         IOrderRepository orderRepository,
         IOrderBusinessRulesService businessRules,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _appPaymentRepository = appPaymentRepository;
         _orderRepository = orderRepository;
         _businessRules = businessRules;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<bool> Handle(DeleteAppPaymentCommand request, CancellationToken cancellationToken)
@@ -34,6 +37,8 @@ public class DeleteAppPaymentHandler : IRequestHandler<DeleteAppPaymentCommand, 
         var order = await _orderRepository.GetByIdAsync(appPayment.OrderId, cancellationToken);
         if (order == null)
             throw new BusinessException("Pedido asociado no encontrado");
+        _branchContext.EnsureAccess(order.BranchId);
+        _branchContext.EnsureAccess(appPayment.App.Bank.BranchId);
 
         if (!_businessRules.CanModifyPayments(order, _currentUser.Role))
             throw new BusinessException("No tienes permisos para eliminar pagos de este pedido");

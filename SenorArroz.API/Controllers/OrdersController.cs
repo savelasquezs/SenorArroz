@@ -23,17 +23,20 @@ public class OrdersController : ControllerBase
     private readonly IClock _clock;
     private readonly IUserRepository _userRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public OrdersController(
         IMediator mediator,
         IClock clock,
         IUserRepository userRepository,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _mediator = mediator;
         _clock = clock;
         _userRepository = userRepository;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     /// <summary>
@@ -65,7 +68,7 @@ public class OrdersController : ControllerBase
             PageSize = pageSize,
             SortBy = sortBy,
             SortOrder = sortOrder,
-            BranchId = branchId,
+            BranchId = _branchContext.ResolveOptional(branchId),
             FromDate = fromDate,
             ToDate = toDate,
             ForKitchen = forKitchen
@@ -86,7 +89,7 @@ public class OrdersController : ControllerBase
         
         if (result == null)
             return NotFound();
-            
+        _branchContext.EnsureAccess(result.BranchId);
         return Ok(result);
     }
 
@@ -101,7 +104,7 @@ public class OrdersController : ControllerBase
         
         if (result == null)
             return NotFound();
-            
+        _branchContext.EnsureAccess(result.BranchId);
         return Ok(result);
     }
 
@@ -120,7 +123,7 @@ public class OrdersController : ControllerBase
         var query = new GetOrdersByStatusQuery
         {
             Status = status,
-            BranchId = branchId,
+            BranchId = _branchContext.ResolveOptional(branchId),
             Page = page,
             PageSize = pageSize,
             SortBy = sortBy,
@@ -141,7 +144,7 @@ public class OrdersController : ControllerBase
         var query = new SearchOrdersQuery
         {
             SearchTerm = searchDto.SearchTerm,
-            BranchId = searchDto.BranchId,
+            BranchId = _branchContext.ResolveOptional(searchDto.BranchId),
             CustomerId = searchDto.CustomerId,
             DeliveryManId = searchDto.DeliveryManId,
             BankId = searchDto.BankId,
@@ -176,6 +179,7 @@ public class OrdersController : ControllerBase
     [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult<OrderDto>> CreateOrder([FromBody] CreateOrderDto orderDto)
     {
+        orderDto.BranchId = _branchContext.RequireBranch(orderDto.BranchId);
         var command = new CreateOrderCommand { Order = orderDto };
         var result = await _mediator.Send(command);
         
@@ -196,6 +200,7 @@ public class OrdersController : ControllerBase
         };
         
         var result = await _mediator.Send(command);
+        _branchContext.EnsureAccess(result.BranchId);
         return Ok(result);
     }
 
@@ -213,6 +218,7 @@ public class OrdersController : ControllerBase
         };
         
         var result = await _mediator.Send(command);
+        _branchContext.EnsureAccess(result.BranchId);
         return Ok(result);
     }
 
@@ -230,6 +236,7 @@ public class OrdersController : ControllerBase
         };
         
         var result = await _mediator.Send(command);
+        _branchContext.EnsureAccess(result.BranchId);
         return Ok(result);
     }
 
@@ -242,6 +249,7 @@ public class OrdersController : ControllerBase
     {
         var command = new UnassignDeliveryManCommand { Id = id };
         var result = await _mediator.Send(command);
+        _branchContext.EnsureAccess(result.BranchId);
         return Ok(result);
     }
 
@@ -259,6 +267,7 @@ public class OrdersController : ControllerBase
             PaidInStoreCashAmount = body.PaidInStoreCashAmount
         };
         var result = await _mediator.Send(command);
+        _branchContext.EnsureAccess(result.BranchId);
         return Ok(result);
     }
 
@@ -276,6 +285,7 @@ public class OrdersController : ControllerBase
         };
         
         var result = await _mediator.Send(command);
+        _branchContext.EnsureAccess(result.BranchId);
         return Ok(result);
     }
 
@@ -286,6 +296,10 @@ public class OrdersController : ControllerBase
     [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult> DeleteOrder(int id)
     {
+        var existing = await _mediator.Send(new GetOrderByIdQuery { Id = id });
+        if (existing == null)
+            return NotFound();
+        _branchContext.EnsureAccess(existing.BranchId);
         var command = new DeleteOrderCommand { Id = id };
         await _mediator.Send(command);
         return NoContent();
@@ -305,7 +319,7 @@ public class OrdersController : ControllerBase
         var query = new GetOrdersByStatusQuery
         {
             Status = OrderStatus.InPreparation,
-            BranchId = branchId,
+            BranchId = _branchContext.ResolveOptional(branchId),
             Page = page,
             PageSize = pageSize
         };
@@ -329,7 +343,7 @@ public class OrdersController : ControllerBase
         {
             Status = OrderStatus.Ready,
             TypeFilter = OrderType.Delivery, // Solo mostrar pedidos de tipo Delivery
-            BranchId = branchId,
+            BranchId = _branchContext.ResolveOptional(branchId),
             Page = page,
             PageSize = pageSize
         };
@@ -500,7 +514,7 @@ public class OrdersController : ControllerBase
             Type = OrderType.Reservation,
             FromDate = date.Date,
             ToDate = date.Date.AddDays(1).AddTicks(-1),
-            BranchId = branchId,
+            BranchId = _branchContext.ResolveOptional(branchId),
             Page = page,
             PageSize = pageSize
         };
@@ -525,7 +539,7 @@ public class OrdersController : ControllerBase
             Type = OrderType.Reservation,
             FromDate = _clock.UtcNow,
             ToDate = _clock.UtcNow.AddHours(hours),
-            BranchId = branchId,
+            BranchId = _branchContext.ResolveOptional(branchId),
             Page = page,
             PageSize = pageSize
         };

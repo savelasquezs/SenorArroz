@@ -158,6 +158,7 @@ public class DeliveryTrackingIncidentsControllerTests
         return new DeliveryTrackingIncidentsController(
             db,
             current.Object,
+            new TestBranchContext(branchId),
             new FakeClock(now ?? BaseTime.AddHours(1)));
     }
 

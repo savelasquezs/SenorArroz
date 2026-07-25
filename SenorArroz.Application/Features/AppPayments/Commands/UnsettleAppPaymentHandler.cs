@@ -12,15 +12,18 @@ public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentComma
     private readonly IAppPaymentRepository _appPaymentRepository;
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public UnsettleAppPaymentHandler(
         IAppPaymentRepository appPaymentRepository,
         IApplicationDbContext context,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _appPaymentRepository = appPaymentRepository;
         _context = context;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<bool> Handle(UnsettleAppPaymentCommand request, CancellationToken cancellationToken)
@@ -29,6 +32,7 @@ public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentComma
         var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (appPayment == null)
             return false;
+        _branchContext.EnsureAccess(appPayment.App.Bank.BranchId);
 
         // Check if user has access to this app payment's branch
         if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)

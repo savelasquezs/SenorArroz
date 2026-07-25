@@ -11,13 +11,16 @@ public class GetAppsByBankHandler : IRequestHandler<GetAppsByBankQuery, IEnumera
 {
     private readonly IAppRepository _appRepository;
     private readonly IMapper _mapper;
-    private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public GetAppsByBankHandler(IAppRepository appRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetAppsByBankHandler(
+        IAppRepository appRepository,
+        IMapper mapper,
+        IBranchContext branchContext)
     {
         _appRepository = appRepository;
         _mapper = mapper;
-        _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<IEnumerable<AppDto>> Handle(GetAppsByBankQuery request, CancellationToken cancellationToken)
@@ -26,12 +29,9 @@ public class GetAppsByBankHandler : IRequestHandler<GetAppsByBankQuery, IEnumera
         
         var appDtos = new List<AppDto>();
 
-        foreach (var app in apps)
+        var branchId = _branchContext.RequireBranch();
+        foreach (var app in apps.Where(x => x.Bank.BranchId == branchId))
         {
-            // Check if user has access to this app's branch
-            if (!Roles.IsSuperadmin(_currentUser.Role) && app.Bank.BranchId != _currentUser.BranchId)
-                continue;
-
             var appDto = _mapper.Map<AppDto>(app);
             appDtos.Add(appDto);
         }

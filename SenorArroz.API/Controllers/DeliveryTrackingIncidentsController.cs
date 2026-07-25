@@ -16,15 +16,18 @@ public class DeliveryTrackingIncidentsController : ControllerBase
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IClock _clock;
 
     public DeliveryTrackingIncidentsController(
         IApplicationDbContext db,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IClock clock)
     {
         _db = db;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _clock = clock;
     }
 
@@ -251,19 +254,15 @@ public class DeliveryTrackingIncidentsController : ControllerBase
 
     private bool TryResolveBranch(int? requestedBranchId, out int? branchId)
     {
-        if (Roles.IsSuperadmin(_currentUser.Role))
-        {
-            branchId = requestedBranchId;
-            return true;
-        }
-        branchId = _currentUser.BranchId;
-        return Roles.IsAdmin(_currentUser.Role)
-            && (!requestedBranchId.HasValue || requestedBranchId.Value == branchId.Value);
+        branchId = _branchContext.RequireBranch(requestedBranchId);
+        return true;
     }
 
-    private bool CanAccessBranch(int branchId) =>
-        Roles.IsSuperadmin(_currentUser.Role)
-        || (Roles.IsAdmin(_currentUser.Role) && _currentUser.BranchId == branchId);
+    private bool CanAccessBranch(int branchId)
+    {
+        _branchContext.EnsureAccess(branchId);
+        return true;
+    }
 
     private static bool TryParseReviewStatus(
         string? value,

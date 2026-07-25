@@ -146,6 +146,15 @@ Buscar primero:
 
 La sucursal hoy es el aislamiento operativo principal. En la migración SaaS, la sucursal debe quedar debajo de un tenant.
 
+Contexto operativo actual de sucursal:
+
+- `IBranchContext` resuelve la sucursal efectiva sin cambiar `ICurrentUser.BranchId`, que sigue representando el claim del JWT.
+- Superadmin selecciona la sucursal mediante `X-Branch-Id`; los demás roles siempre quedan limitados al claim.
+- `GET /api/Branches/options` alimenta el selector global sin paginación ni estadísticas.
+- `BranchScopeActionFilter` rechaza valores explícitos de ruta, query o body que contradigan el contexto.
+- Productos, categorías y documentos corporativos permanecen compartidos en esta fase.
+- El dashboard puede omitir el header exclusivamente para lecturas agregadas.
+
 ### Usuarios y autenticación
 
 Buscar primero:

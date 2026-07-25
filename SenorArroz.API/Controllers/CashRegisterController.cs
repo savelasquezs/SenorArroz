@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Features.CashRegister.Commands;
 using SenorArroz.Application.Features.CashRegister.DTOs;
 using SenorArroz.Application.Features.CashRegister.Queries;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
@@ -14,10 +15,12 @@ namespace SenorArroz.API.Controllers;
 public class CashRegisterController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly IBranchContext _branchContext;
 
-    public CashRegisterController(IMediator mediator)
+    public CashRegisterController(IMediator mediator, IBranchContext branchContext)
     {
         _mediator = mediator;
+        _branchContext = branchContext;
     }
 
     /// <summary>
@@ -26,7 +29,7 @@ public class CashRegisterController : ControllerBase
     [HttpGet("last-closure")]
     public async Task<ActionResult<CashClosureDto>> GetLastClosure([FromQuery] int? branchId = null)
     {
-        var result = await _mediator.Send(new GetLastClosureQuery { BranchId = branchId });
+        var result = await _mediator.Send(new GetLastClosureQuery { BranchId = _branchContext.RequireBranch(branchId) });
         if (result == null) return NotFound();
         return Ok(result);
     }
@@ -37,7 +40,7 @@ public class CashRegisterController : ControllerBase
     [HttpGet("expected")]
     public async Task<ActionResult<CashRegisterExpectedDto>> GetExpected([FromQuery] int? branchId = null)
     {
-        var result = await _mediator.Send(new GetCashRegisterExpectedQuery { BranchId = branchId });
+        var result = await _mediator.Send(new GetCashRegisterExpectedQuery { BranchId = _branchContext.RequireBranch(branchId) });
         return Ok(result);
     }
 
@@ -50,7 +53,7 @@ public class CashRegisterController : ControllerBase
         [FromBody] CreateCashVaultMovementDto dto,
         [FromQuery] int? branchId = null)
     {
-        var result = await _mediator.Send(new CreateCashVaultMovementCommand { BranchId = branchId, Dto = dto });
+        var result = await _mediator.Send(new CreateCashVaultMovementCommand { BranchId = _branchContext.RequireBranch(branchId), Dto = dto });
         return StatusCode(StatusCodes.Status201Created, result);
     }
 
@@ -66,7 +69,7 @@ public class CashRegisterController : ControllerBase
     {
         var result = await _mediator.Send(new GetCashVaultMovementsQuery
         {
-            BranchId = branchId,
+            BranchId = _branchContext.RequireBranch(branchId),
             Page = page,
             PageSize = pageSize
         });
@@ -79,7 +82,7 @@ public class CashRegisterController : ControllerBase
     [HttpGet("delivery-advance/orders")]
     public async Task<ActionResult<List<DeliveryAdvanceOrderRowDto>>> GetDeliveryAdvanceOrders([FromQuery] int? branchId = null)
     {
-        var result = await _mediator.Send(new GetDeliveryAdvanceOrdersQuery { BranchId = branchId });
+        var result = await _mediator.Send(new GetDeliveryAdvanceOrdersQuery { BranchId = _branchContext.RequireBranch(branchId) });
         return Ok(result);
     }
 
@@ -89,7 +92,7 @@ public class CashRegisterController : ControllerBase
     [HttpGet("delivery-advance/liquidated-deliverymen")]
     public async Task<ActionResult<List<LiquidatedDeliverymanOptionDto>>> GetLiquidatedDeliverymen([FromQuery] int? branchId = null)
     {
-        var result = await _mediator.Send(new GetLiquidatedFullBlockedDeliverymenQuery { BranchId = branchId });
+        var result = await _mediator.Send(new GetLiquidatedFullBlockedDeliverymenQuery { BranchId = _branchContext.RequireBranch(branchId) });
         return Ok(result);
     }
 
@@ -101,7 +104,7 @@ public class CashRegisterController : ControllerBase
         [FromQuery] int? branchId = null,
         [FromQuery] string scope = "active")
     {
-        var result = await _mediator.Send(new GetBranchInformalLoansQuery { BranchId = branchId, Scope = scope });
+        var result = await _mediator.Send(new GetBranchInformalLoansQuery { BranchId = _branchContext.RequireBranch(branchId), Scope = scope });
         return Ok(result);
     }
 
@@ -115,7 +118,7 @@ public class CashRegisterController : ControllerBase
     {
         try
         {
-            var result = await _mediator.Send(new CreateBranchInformalLoanCommand { BranchId = branchId, Dto = dto });
+            var result = await _mediator.Send(new CreateBranchInformalLoanCommand { BranchId = _branchContext.RequireBranch(branchId), Dto = dto });
             return StatusCode(StatusCodes.Status201Created, result);
         }
         catch (InvalidOperationException ex)
@@ -138,7 +141,7 @@ public class CashRegisterController : ControllerBase
             var result = await _mediator.Send(new UpdateBranchInformalLoanCommand
             {
                 Id = id,
-                BranchId = branchId,
+                BranchId = _branchContext.RequireBranch(branchId),
                 Dto = dto
             });
             return Ok(result);
@@ -163,7 +166,7 @@ public class CashRegisterController : ControllerBase
             var result = await _mediator.Send(new DeactivateBranchInformalLoanCommand
             {
                 Id = id,
-                BranchId = branchId,
+                BranchId = _branchContext.RequireBranch(branchId),
                 Dto = dto ?? new DeactivateBranchInformalLoanDto()
             });
             return Ok(result);
@@ -182,7 +185,7 @@ public class CashRegisterController : ControllerBase
     {
         try
         {
-            var result = await _mediator.Send(new CloseCashRegisterCommand { BranchId = branchId, Dto = dto });
+            var result = await _mediator.Send(new CloseCashRegisterCommand { BranchId = _branchContext.RequireBranch(branchId), Dto = dto });
             return CreatedAtAction(nameof(GetClosureById), new { id = result.Id }, result);
         }
         catch (InvalidOperationException ex)
@@ -201,7 +204,7 @@ public class CashRegisterController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10)
     {
-        var result = await _mediator.Send(new GetClosuresQuery { BranchId = branchId, Page = page, PageSize = pageSize });
+        var result = await _mediator.Send(new GetClosuresQuery { BranchId = _branchContext.RequireBranch(branchId), Page = page, PageSize = pageSize });
         return Ok(result);
     }
 
@@ -214,6 +217,7 @@ public class CashRegisterController : ControllerBase
     {
         var result = await _mediator.Send(new GetClosureByIdQuery { Id = id });
         if (result == null) return NotFound();
+        _branchContext.EnsureAccess(result.BranchId);
         return Ok(result);
     }
 
@@ -223,6 +227,7 @@ public class CashRegisterController : ControllerBase
     {
         var result = await _mediator.Send(new GetClosureAuditSummaryQuery { Id = id });
         if (result == null) return NotFound();
+        _branchContext.EnsureAccess(result.BranchId);
         return Ok(result);
     }
 }

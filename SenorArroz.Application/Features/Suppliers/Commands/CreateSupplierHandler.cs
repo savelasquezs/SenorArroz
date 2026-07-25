@@ -14,17 +14,20 @@ public class CreateSupplierHandler : IRequestHandler<CreateSupplierCommand, Supp
     private readonly IBranchRepository _branchRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public CreateSupplierHandler(
         ISupplierRepository supplierRepository,
         IBranchRepository branchRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _supplierRepository = supplierRepository;
         _branchRepository = branchRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<SupplierDto> Handle(CreateSupplierCommand request, CancellationToken cancellationToken)
@@ -35,7 +38,7 @@ public class CreateSupplierHandler : IRequestHandler<CreateSupplierCommand, Supp
             throw new BusinessException("No tienes permisos para crear proveedores.");
         }
 
-        var branchId = await ResolveBranchIdAsync(request.BranchId);
+        var branchId = _branchContext.RequireBranch(request.BranchId);
 
         // Validaciones de unicidad
         if (await _supplierRepository.NameExistsAsync(request.Supplier.Name, branchId))

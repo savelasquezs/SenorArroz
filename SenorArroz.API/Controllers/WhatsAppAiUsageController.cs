@@ -8,15 +8,16 @@ using SenorArroz.Shared.Models;
 namespace SenorArroz.API.Controllers;
 
 [ApiController, Authorize(Roles = "Superadmin, Admin, Cashier"), Route("api/whatsapp/ai-usage")]
-public class WhatsAppAiUsageController(IApplicationDbContext db, ICurrentUser currentUser) : ControllerBase
+public class WhatsAppAiUsageController(
+    IApplicationDbContext db,
+    IBranchContext branchContext) : ControllerBase
 {
     private static readonly TimeZoneInfo Colombia = ResolveColombia();
 
     [HttpGet]
     public async Task<ActionResult<ApiResponse<WhatsAppAiUsageDto>>> Get(int? branchId, DateOnly? fromDate, DateOnly? toDate, string? provider, string? model, string? contextStrategy, CancellationToken ct)
     {
-        if (!Roles.IsSuperadmin(currentUser.Role)) { if (branchId.HasValue && branchId != currentUser.BranchId) return Forbid(); branchId = currentUser.BranchId; }
-        if (branchId is <= 0) return BadRequest(ApiResponse<WhatsAppAiUsageDto>.ErrorResponse("La sucursal no es válida."));
+        branchId = branchContext.RequireBranch(branchId);
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Colombia));
         var from = fromDate ?? today.AddDays(-29); var to = toDate ?? today;
         if (from > to || to.DayNumber - from.DayNumber > 365) return BadRequest(ApiResponse<WhatsAppAiUsageDto>.ErrorResponse("El rango debe ser válido y no superar 366 días."));

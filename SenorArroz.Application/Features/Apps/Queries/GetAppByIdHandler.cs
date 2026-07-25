@@ -12,12 +12,14 @@ public class GetAppByIdHandler : IRequestHandler<GetAppByIdQuery, AppDto?>
     private readonly IAppRepository _appRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public GetAppByIdHandler(IAppRepository appRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetAppByIdHandler(IAppRepository appRepository, IMapper mapper, ICurrentUser currentUser, IBranchContext branchContext)
     {
         _appRepository = appRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<AppDto?> Handle(GetAppByIdQuery request, CancellationToken cancellationToken)
@@ -26,6 +28,7 @@ public class GetAppByIdHandler : IRequestHandler<GetAppByIdQuery, AppDto?>
         
         if (app == null)
             return null;
+        _branchContext.EnsureAccess(app.Bank.BranchId);
 
         // Check if user has access to this app's branch
         if (!Roles.IsSuperadmin(_currentUser.Role) && app.Bank.BranchId != _currentUser.BranchId)

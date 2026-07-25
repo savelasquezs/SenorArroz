@@ -12,17 +12,20 @@ public class UnlockDeliverymanDayHandler : IRequestHandler<UnlockDeliverymanDayC
     private readonly IApplicationDbContext _context;
     private readonly IUserRepository _userRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IClock _clock;
 
     public UnlockDeliverymanDayHandler(
         IApplicationDbContext context,
         IUserRepository userRepository,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IClock clock)
     {
         _context = context;
         _userRepository = userRepository;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _clock = clock;
     }
 
@@ -34,6 +37,7 @@ public class UnlockDeliverymanDayHandler : IRequestHandler<UnlockDeliverymanDayC
         var deliveryman = await _userRepository.GetByIdAsync(request.DeliverymanId, cancellationToken);
         if (deliveryman == null)
             throw new BusinessException("El domiciliario no existe");
+        _branchContext.EnsureAccess(deliveryman.BranchId);
         if (deliveryman.Role != UserRole.Deliveryman)
             throw new BusinessException("El usuario no es un domiciliario");
 

@@ -18,6 +18,7 @@ public class GetDeliverymanOrdersHandler : IRequestHandler<GetDeliverymanOrdersQ
     private readonly IOrderRepository _orderRepository;
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IMapper _mapper;
 
     public GetDeliverymanOrdersHandler(
@@ -25,12 +26,14 @@ public class GetDeliverymanOrdersHandler : IRequestHandler<GetDeliverymanOrdersQ
         IOrderRepository orderRepository,
         IApplicationDbContext db,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IMapper mapper)
     {
         _userRepository = userRepository;
         _orderRepository = orderRepository;
         _db = db;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _mapper = mapper;
     }
 
@@ -39,6 +42,7 @@ public class GetDeliverymanOrdersHandler : IRequestHandler<GetDeliverymanOrdersQ
         var deliveryman = await _userRepository.GetByIdAsync(request.DeliverymanId, cancellationToken);
         if (deliveryman == null)
             throw new BusinessException("El domiciliario no existe");
+        _branchContext.EnsureAccess(deliveryman.BranchId);
         if (deliveryman.Role != UserRole.Deliveryman)
             throw new BusinessException("El usuario no es un domiciliario");
         if (!deliveryman.Active)

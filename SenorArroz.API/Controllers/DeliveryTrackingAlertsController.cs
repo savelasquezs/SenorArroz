@@ -16,12 +16,18 @@ public class DeliveryTrackingAlertsController : ControllerBase
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IClock _clock;
 
-    public DeliveryTrackingAlertsController(IApplicationDbContext db, ICurrentUser currentUser, IClock clock)
+    public DeliveryTrackingAlertsController(
+        IApplicationDbContext db,
+        ICurrentUser currentUser,
+        IBranchContext branchContext,
+        IClock clock)
     {
         _db = db;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _clock = clock;
     }
 
@@ -117,19 +123,15 @@ public class DeliveryTrackingAlertsController : ControllerBase
 
     private bool TryResolveBranch(int? requested, out int? branchId)
     {
-        if (Roles.IsSuperadmin(_currentUser.Role))
-        {
-            branchId = requested;
-            return true;
-        }
-        branchId = _currentUser.BranchId;
-        return Roles.IsAdmin(_currentUser.Role)
-            && branchId.HasValue
-            && (!requested.HasValue || requested.Value == branchId.Value);
+        branchId = _branchContext.RequireBranch(requested);
+        return true;
     }
 
-    private bool CanAccessBranch(int branchId) => Roles.IsSuperadmin(_currentUser.Role)
-        || (Roles.IsAdmin(_currentUser.Role) && _currentUser.BranchId == branchId);
+    private bool CanAccessBranch(int branchId)
+    {
+        _branchContext.EnsureAccess(branchId);
+        return true;
+    }
 
     private static bool TryParse<T>(string? value, out T? parsed) where T : struct, Enum
     {

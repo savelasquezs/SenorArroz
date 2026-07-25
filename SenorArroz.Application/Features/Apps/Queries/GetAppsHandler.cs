@@ -13,28 +13,24 @@ public class GetAppsHandler : IRequestHandler<GetAppsQuery, PagedResult<AppDto>>
     private readonly IAppRepository _appRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public GetAppsHandler(IAppRepository appRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetAppsHandler(
+        IAppRepository appRepository,
+        IMapper mapper,
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _appRepository = appRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<PagedResult<AppDto>> Handle(GetAppsQuery request, CancellationToken cancellationToken)
     {
         // Determine branch filter based on user role
-        int? branchFilter = null;
-        if (!Roles.IsSuperadmin(_currentUser.Role))
-        {
-            branchFilter = _currentUser.BranchId;
-        }
-        else if (request.BranchId > 0)
-        {
-            // Superadmin can optionally filter by specific branch
-            branchFilter = request.BranchId;
-        }
-        // If branchFilter is null, superadmin gets all apps from all branches
+        var branchFilter = _branchContext.ResolveOptional(request.BranchId);
 
         var pagedApps = await _appRepository.GetPagedAsync(
             request.BankId,
@@ -52,7 +48,7 @@ public class GetAppsHandler : IRequestHandler<GetAppsQuery, PagedResult<AppDto>>
             var appDto = _mapper.Map<AppDto>(app);
 
             // Check if user has access to this app's branch
-            if (!Roles.IsSuperadmin(_currentUser.Role) && app.Bank.BranchId != _currentUser.BranchId)
+            if (branchFilter.HasValue && app.Bank.BranchId != branchFilter.Value)
                 continue;
 
             // Add additional data

@@ -11,38 +11,21 @@ public class GetSuppliersByBranchHandler : IRequestHandler<GetSuppliersByBranchQ
 {
     private readonly ISupplierRepository _supplierRepository;
     private readonly IMapper _mapper;
-    private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public GetSuppliersByBranchHandler(
         ISupplierRepository supplierRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        IBranchContext branchContext)
     {
         _supplierRepository = supplierRepository;
         _mapper = mapper;
-        _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<List<SupplierDto>> Handle(GetSuppliersByBranchQuery request, CancellationToken cancellationToken)
     {
-        int branchId;
-
-        if (Roles.IsSuperadmin(_currentUser.Role))
-        {
-            if (!request.BranchId.HasValue || request.BranchId <= 0)
-            {
-                throw new BusinessException("Debes especificar la sucursal para obtener los proveedores.");
-            }
-            branchId = request.BranchId.Value;
-        }
-        else
-        {
-            branchId = _currentUser.BranchId;
-            if (branchId <= 0)
-            {
-                throw new BusinessException("El usuario no tiene una sucursal asociada.");
-            }
-        }
+        var branchId = _branchContext.RequireBranch(request.BranchId);
 
         var suppliers = await _supplierRepository.GetByBranchAsync(branchId, cancellationToken);
         return _mapper.Map<List<SupplierDto>>(suppliers);

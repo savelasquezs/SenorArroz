@@ -12,29 +12,21 @@ public class GetBankTransfersHandler : IRequestHandler<GetBankTransfersQuery, Pa
 {
     private readonly IBankTransferRepository _bankTransferRepository;
     private readonly IMapper _mapper;
-    private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public GetBankTransfersHandler(
         IBankTransferRepository bankTransferRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        IBranchContext branchContext)
     {
         _bankTransferRepository = bankTransferRepository;
         _mapper = mapper;
-        _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<PagedResult<BankTransferDto>> Handle(GetBankTransfersQuery request, CancellationToken cancellationToken)
     {
-        int? branchFilter = null;
-        if (!Roles.IsSuperadmin(_currentUser.Role))
-        {
-            branchFilter = _currentUser.BranchId;
-        }
-        else if (request.BranchId.HasValue && request.BranchId > 0)
-        {
-            branchFilter = request.BranchId;
-        }
+        var branchFilter = _branchContext.RequireBranch(request.BranchId);
 
         var (fromUtc, toUtc) = ColombiaTimeHelper.NormalizeApiDateFiltersToUtc(request.FromDate, request.ToDate);
 

@@ -17,6 +17,7 @@ public class CreateBankPaymentHandler : IRequestHandler<CreateBankPaymentCommand
     private readonly IOrderBusinessRulesService _businessRules;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public CreateBankPaymentHandler(
         IBankPaymentRepository bankPaymentRepository,
@@ -24,7 +25,8 @@ public class CreateBankPaymentHandler : IRequestHandler<CreateBankPaymentCommand
         IOrderRepository orderRepository,
         IOrderBusinessRulesService businessRules,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _bankPaymentRepository = bankPaymentRepository;
         _bankRepository = bankRepository;
@@ -32,6 +34,7 @@ public class CreateBankPaymentHandler : IRequestHandler<CreateBankPaymentCommand
         _businessRules = businessRules;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<BankPaymentDto> Handle(CreateBankPaymentCommand request, CancellationToken cancellationToken)
@@ -39,6 +42,7 @@ public class CreateBankPaymentHandler : IRequestHandler<CreateBankPaymentCommand
         var bank = await _bankRepository.GetByIdAsync(request.BankId, cancellationToken);
         if (bank == null)
             throw new BusinessException("El banco especificado no existe");
+        _branchContext.EnsureAccess(bank.BranchId);
 
         if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para crear pagos en este banco");
@@ -46,6 +50,7 @@ public class CreateBankPaymentHandler : IRequestHandler<CreateBankPaymentCommand
         var order = await _orderRepository.GetByIdAsync(request.OrderId, cancellationToken);
         if (order == null)
             throw new BusinessException("El pedido especificado no existe");
+        _branchContext.EnsureAccess(order.BranchId);
 
         if (!Roles.IsSuperadmin(_currentUser.Role) && order.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pagos de este pedido");

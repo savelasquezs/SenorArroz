@@ -11,13 +11,16 @@ public class GetUnsettledAppPaymentsHandler : IRequestHandler<GetUnsettledAppPay
 {
     private readonly IAppPaymentRepository _appPaymentRepository;
     private readonly IMapper _mapper;
-    private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public GetUnsettledAppPaymentsHandler(IAppPaymentRepository appPaymentRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetUnsettledAppPaymentsHandler(
+        IAppPaymentRepository appPaymentRepository,
+        IMapper mapper,
+        IBranchContext branchContext)
     {
         _appPaymentRepository = appPaymentRepository;
         _mapper = mapper;
-        _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<IEnumerable<AppPaymentDto>> Handle(GetUnsettledAppPaymentsQuery request, CancellationToken cancellationToken)
@@ -49,12 +52,9 @@ public class GetUnsettledAppPaymentsHandler : IRequestHandler<GetUnsettledAppPay
         
         var appPaymentDtos = new List<AppPaymentDto>();
 
-        foreach (var appPayment in unsettledPayments)
+        var branchId = _branchContext.RequireBranch();
+        foreach (var appPayment in unsettledPayments.Where(x => x.App.Bank.BranchId == branchId))
         {
-            // Check if user has access to this app payment's branch
-            if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
-                continue;
-
             var appPaymentDto = _mapper.Map<AppPaymentDto>(appPayment);
             appPaymentDtos.Add(appPaymentDto);
         }

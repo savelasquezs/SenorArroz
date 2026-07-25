@@ -157,6 +157,7 @@ public class UpdateExpenseHeaderBankPaymentsTests
             db,
             CreateMapper(),
             new TestCurrentUser(),
+            new TestBranchContext(),
             new FakeClock(now));
 
         var result = await handler.Handle(new UpdateExpenseHeaderCommand
@@ -296,6 +297,7 @@ public class UpdateExpenseHeaderBankPaymentsTests
             db,
             CreateMapper(),
             new TestCurrentUser(),
+            new TestBranchContext(),
             new FakeClock(now));
 
         var result = await handler.Handle(new UpdateExpenseHeaderCommand
@@ -441,6 +443,7 @@ public class UpdateExpenseHeaderBankPaymentsTests
             db,
             CreateMapper(),
             new TestCurrentUser(),
+            new TestBranchContext(),
             new FakeClock(now));
 
         var result = await handler.Handle(new UpdateExpenseHeaderCommand

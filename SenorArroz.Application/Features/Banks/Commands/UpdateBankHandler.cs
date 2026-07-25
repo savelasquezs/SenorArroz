@@ -14,15 +14,18 @@ public class UpdateBankHandler : IRequestHandler<UpdateBankCommand, BankDto>
     private readonly IBankRepository _bankRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public UpdateBankHandler(
         IBankRepository bankRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _bankRepository = bankRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<BankDto> Handle(UpdateBankCommand request, CancellationToken cancellationToken)
@@ -31,6 +34,7 @@ public class UpdateBankHandler : IRequestHandler<UpdateBankCommand, BankDto>
         var existingBank = await _bankRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingBank == null)
             throw new BusinessException("El banco especificado no existe");
+        _branchContext.EnsureAccess(existingBank.BranchId);
 
         // Check if user has access to this bank's branch
         if (!Roles.IsSuperadmin(_currentUser.Role) && existingBank.BranchId != _currentUser.BranchId)

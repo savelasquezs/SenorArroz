@@ -13,17 +13,20 @@ public class UpdateAdvanceHandler : IRequestHandler<UpdateAdvanceCommand, Delive
     private readonly IDeliverymanAdvanceRepository _advanceRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IClock _clock;
 
     public UpdateAdvanceHandler(
         IDeliverymanAdvanceRepository advanceRepository,
         IMapper mapper,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IClock clock)
     {
         _advanceRepository = advanceRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _clock = clock;
     }
 
@@ -33,6 +36,7 @@ public class UpdateAdvanceHandler : IRequestHandler<UpdateAdvanceCommand, Delive
         var advance = await _advanceRepository.GetByIdAsync(request.Id, cancellationToken);
         if (advance == null)
             throw new BusinessException("El abono no existe");
+        _branchContext.EnsureAccess(advance.BranchId);
 
         // 2. Validar acceso a sucursal
         if (!Roles.IsSuperadmin(_currentUser.Role) && advance.BranchId != _currentUser.BranchId)

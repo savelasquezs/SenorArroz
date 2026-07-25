@@ -13,16 +13,23 @@ public class GetAppPaymentsHandler : IRequestHandler<GetAppPaymentsQuery, PagedR
     private readonly IAppPaymentRepository _appPaymentRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public GetAppPaymentsHandler(IAppPaymentRepository appPaymentRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetAppPaymentsHandler(
+        IAppPaymentRepository appPaymentRepository,
+        IMapper mapper,
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _appPaymentRepository = appPaymentRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<PagedResult<AppPaymentDto>> Handle(GetAppPaymentsQuery request, CancellationToken cancellationToken)
     {
+        var branchFilter = _branchContext.ResolveOptional(request.BranchId);
         var pagedAppPayments = await _appPaymentRepository.GetPagedAsync(
             request.OrderId,
             request.AppId,
@@ -39,7 +46,7 @@ public class GetAppPaymentsHandler : IRequestHandler<GetAppPaymentsQuery, PagedR
         foreach (var appPayment in pagedAppPayments.Items)
         {
             // Check if user has access to this app payment's branch
-            if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
+            if (branchFilter.HasValue && appPayment.App.Bank.BranchId != branchFilter.Value)
                 continue;
 
             var appPaymentDto = _mapper.Map<AppPaymentDto>(appPayment);

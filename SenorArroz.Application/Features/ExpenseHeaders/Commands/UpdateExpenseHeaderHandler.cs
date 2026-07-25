@@ -19,6 +19,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
     private readonly IApplicationDbContext _context;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IClock _clock;
 
     public UpdateExpenseHeaderHandler(
@@ -27,6 +28,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         IApplicationDbContext context,
         IMapper mapper,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IClock clock)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
@@ -34,6 +36,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         _context = context;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _clock = clock;
     }
 
@@ -45,6 +48,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         {
             throw new NotFoundException($"Gasto con ID {request.Id} no encontrado");
         }
+        _branchContext.EnsureAccess(expenseHeader.BranchId);
 
         // Validar acceso
         if (!Roles.IsSuperadmin(_currentUser.Role))
@@ -68,6 +72,9 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             {
                 throw new NotFoundException($"Proveedor con ID {request.ExpenseHeader.SupplierId.Value} no encontrado");
             }
+            _branchContext.EnsureAccess(supplier.BranchId);
+            if (supplier.BranchId != expenseHeader.BranchId)
+                throw new BranchScopeMismatchException();
             expenseHeader.SupplierId = request.ExpenseHeader.SupplierId.Value;
         }
 

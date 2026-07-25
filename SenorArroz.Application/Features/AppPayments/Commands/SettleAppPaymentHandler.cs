@@ -12,15 +12,18 @@ public class SettleAppPaymentHandler : IRequestHandler<SettleAppPaymentCommand, 
     private readonly IAppPaymentRepository _appPaymentRepository;
     private readonly IBankPaymentRepository _bankPaymentRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public SettleAppPaymentHandler(
         IAppPaymentRepository appPaymentRepository,
         IBankPaymentRepository bankPaymentRepository,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _appPaymentRepository = appPaymentRepository;
         _bankPaymentRepository = bankPaymentRepository;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<bool> Handle(SettleAppPaymentCommand request, CancellationToken cancellationToken)
@@ -29,6 +32,7 @@ public class SettleAppPaymentHandler : IRequestHandler<SettleAppPaymentCommand, 
         var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (appPayment == null)
             return false;
+        _branchContext.EnsureAccess(appPayment.App.Bank.BranchId);
 
         // Check if user has access to this app payment's branch
         if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)

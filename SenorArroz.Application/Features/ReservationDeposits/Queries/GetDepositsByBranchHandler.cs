@@ -9,17 +9,19 @@ namespace SenorArroz.Application.Features.ReservationDeposits.Queries;
 public class GetDepositsByBranchHandler : IRequestHandler<GetDepositsByBranchQuery, PagedResult<ReservationDepositDto>>
 {
     private readonly IReservationDepositRepository _depositRepository;
-    private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public GetDepositsByBranchHandler(IReservationDepositRepository depositRepository, ICurrentUser currentUser)
+    public GetDepositsByBranchHandler(
+        IReservationDepositRepository depositRepository,
+        IBranchContext branchContext)
     {
         _depositRepository = depositRepository;
-        _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<PagedResult<ReservationDepositDto>> Handle(GetDepositsByBranchQuery request, CancellationToken cancellationToken)
     {
-        int branchId = request.BranchId ?? _currentUser.BranchId;
+        var branchId = _branchContext.RequireBranch(request.BranchId);
 
         var result = await _depositRepository.GetPagedAsync(
             branchId,

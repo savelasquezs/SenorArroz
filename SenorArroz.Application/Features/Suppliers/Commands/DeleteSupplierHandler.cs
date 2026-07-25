@@ -9,13 +9,16 @@ public class DeleteSupplierHandler : IRequestHandler<DeleteSupplierCommand, bool
 {
     private readonly ISupplierRepository _supplierRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public DeleteSupplierHandler(
         ISupplierRepository supplierRepository,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _supplierRepository = supplierRepository;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<bool> Handle(DeleteSupplierCommand request, CancellationToken cancellationToken)
@@ -28,6 +31,7 @@ public class DeleteSupplierHandler : IRequestHandler<DeleteSupplierCommand, bool
 
         var supplier = await _supplierRepository.GetByIdAsync(request.Id)
             ?? throw new NotFoundException("Proveedor no encontrado.");
+        _branchContext.EnsureAccess(supplier.BranchId);
 
         if (!Roles.IsSuperadmin(_currentUser.Role) && supplier.BranchId != _currentUser.BranchId)
         {

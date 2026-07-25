@@ -13,6 +13,8 @@ public class OrderHub : Hub
     {
         var branchId = Context.User?.FindFirst("branch_id")?.Value;
         var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
+        if (role == "Superadmin")
+            branchId = ResolveSelectedBranchId();
         
         if (!string.IsNullOrEmpty(branchId))
         {
@@ -41,6 +43,8 @@ public class OrderHub : Hub
     {
         var branchId = Context.User?.FindFirst("branch_id")?.Value;
         var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
+        if (role == "Superadmin")
+            branchId = ResolveSelectedBranchId();
         
         if (!string.IsNullOrEmpty(branchId))
         {
@@ -61,6 +65,14 @@ public class OrderHub : Hub
         }
         
         await base.OnDisconnectedAsync(exception);
+    }
+
+    private string? ResolveSelectedBranchId()
+    {
+        var raw = Context.GetHttpContext()?.Request.Query["branchId"].FirstOrDefault();
+        return int.TryParse(raw, out var branchId) && branchId > 0
+            ? branchId.ToString()
+            : null;
     }
 }
 

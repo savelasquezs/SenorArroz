@@ -17,6 +17,7 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
     private readonly IExpenseHeaderRepository _expenseHeaderRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public CreateAdvanceHandler(
         IDeliverymanAdvanceRepository advanceRepository,
@@ -24,7 +25,8 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
         IBankRepository bankRepository,
         IExpenseHeaderRepository expenseHeaderRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _advanceRepository = advanceRepository;
         _userRepository = userRepository;
@@ -32,6 +34,7 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
         _expenseHeaderRepository = expenseHeaderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<DeliverymanAdvanceDto> Handle(CreateAdvanceCommand request, CancellationToken cancellationToken)
@@ -39,6 +42,7 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
         var deliveryman = await _userRepository.GetByIdAsync(request.Advance.DeliverymanId, cancellationToken);
         if (deliveryman == null)
             throw new BusinessException("El domiciliario no existe");
+        _branchContext.EnsureAccess(deliveryman.BranchId);
 
         if (deliveryman.Role != UserRole.Deliveryman)
             throw new BusinessException("El usuario especificado no es un domiciliario");

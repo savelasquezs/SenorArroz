@@ -25,6 +25,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
     private readonly IBankRepository _bankRepository;
     private readonly IExpenseHeaderRepository _expenseHeaderRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IMapper _mapper;
     private readonly IClock _clock;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
@@ -39,6 +40,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         IBankRepository bankRepository,
         IExpenseHeaderRepository expenseHeaderRepository,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IMapper mapper,
         IClock clock,
         IRefreshTokenRepository refreshTokenRepository,
@@ -52,6 +54,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         _bankRepository = bankRepository;
         _expenseHeaderRepository = expenseHeaderRepository;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _mapper = mapper;
         _clock = clock;
         _refreshTokenRepository = refreshTokenRepository;
@@ -75,6 +78,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         var deliveryman = await _userRepository.GetByIdAsync(request.DeliverymanId, cancellationToken);
         if (deliveryman == null)
             throw new BusinessException("El domiciliario no existe");
+        _branchContext.EnsureAccess(deliveryman.BranchId);
         if (deliveryman.Role != UserRole.Deliveryman)
             throw new BusinessException("El usuario no es un domiciliario");
         if (!deliveryman.Active)

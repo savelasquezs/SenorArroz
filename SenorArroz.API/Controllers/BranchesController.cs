@@ -6,6 +6,7 @@ using SenorArroz.Application.Features.Branches.Commands;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Application.Features.Branches.Queries;
 using SenorArroz.Application.Features.Customers.DTOs;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
@@ -17,11 +18,26 @@ public class BranchesController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IMapper _mapper;
+    private readonly IBranchContext _branchContext;
 
-    public BranchesController(IMediator mediator, IMapper mapper)
+    public BranchesController(IMediator mediator, IMapper mapper, IBranchContext branchContext)
     {
         _mediator = mediator;
         _mapper = mapper;
+        _branchContext = branchContext;
+    }
+
+    /// <summary>
+    /// Obtener opciones ligeras para el selector global de sucursal.
+    /// </summary>
+    [HttpGet("options")]
+    [Authorize(Roles = "Superadmin")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<BranchOptionDto>>>> GetBranchOptions()
+    {
+        var result = await _mediator.Send(new GetBranchOptionsQuery());
+        return Ok(ApiResponse<IReadOnlyList<BranchOptionDto>>.SuccessResponse(
+            result,
+            "Opciones de sucursal obtenidas exitosamente"));
     }
 
     /// <summary>
@@ -60,6 +76,7 @@ public class BranchesController : ControllerBase
     [Authorize(Roles = "Superadmin, Admin")]
     public async Task<ActionResult<ApiResponse<BranchDto>>> GetBranch(int id)
     {
+        _branchContext.EnsureAccess(id);
         var query = new GetBranchByIdQuery { Id = id };
         var result = await _mediator.Send(query);
 
@@ -78,6 +95,7 @@ public class BranchesController : ControllerBase
     [Authorize(Roles = "Superadmin")]
     public async Task<ActionResult<ApiResponse<BranchStatsDto>>> GetBranchStats(int id)
     {
+        _branchContext.EnsureAccess(id);
         var query = new GetBranchStatsQuery { BranchId = id };
         var result = await _mediator.Send(query);
         return Ok(ApiResponse<BranchStatsDto>.SuccessResponse(result, "Estadísticas obtenidas exitosamente"));
@@ -110,6 +128,7 @@ public class BranchesController : ControllerBase
     [Authorize(Roles = "Superadmin, Admin")]
     public async Task<ActionResult<ApiResponse<BranchDto>>> UpdateBranch(int id, [FromBody] UpdateBranchDto updateDto)
     {
+        _branchContext.EnsureAccess(id);
         var command = _mapper.Map<UpdateBranchCommand>(updateDto);
         command.Id = id;
 

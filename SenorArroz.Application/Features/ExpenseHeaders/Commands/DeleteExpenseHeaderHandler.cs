@@ -9,11 +9,16 @@ public class DeleteExpenseHeaderHandler : IRequestHandler<DeleteExpenseHeaderCom
 {
     private readonly IExpenseHeaderRepository _expenseHeaderRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public DeleteExpenseHeaderHandler(IExpenseHeaderRepository expenseHeaderRepository, ICurrentUser currentUser)
+    public DeleteExpenseHeaderHandler(
+        IExpenseHeaderRepository expenseHeaderRepository,
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<bool> Handle(DeleteExpenseHeaderCommand request, CancellationToken cancellationToken)
@@ -24,6 +29,7 @@ public class DeleteExpenseHeaderHandler : IRequestHandler<DeleteExpenseHeaderCom
         {
             throw new NotFoundException($"Gasto con ID {request.Id} no encontrado");
         }
+        _branchContext.EnsureAccess(expenseHeader.BranchId);
 
         // Validar acceso
         if (!Roles.IsSuperadmin(_currentUser.Role))

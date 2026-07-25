@@ -12,15 +12,18 @@ public class UpdateSupplierHandler : IRequestHandler<UpdateSupplierCommand, Supp
     private readonly ISupplierRepository _supplierRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public UpdateSupplierHandler(
         ISupplierRepository supplierRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _supplierRepository = supplierRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<SupplierDto> Handle(UpdateSupplierCommand request, CancellationToken cancellationToken)
@@ -33,6 +36,7 @@ public class UpdateSupplierHandler : IRequestHandler<UpdateSupplierCommand, Supp
 
         var supplier = await _supplierRepository.GetByIdAsync(request.Id)
             ?? throw new NotFoundException("Proveedor no encontrado.");
+        _branchContext.EnsureAccess(supplier.BranchId);
 
         if (!Roles.IsSuperadmin(_currentUser.Role) && supplier.BranchId != _currentUser.BranchId)
         {

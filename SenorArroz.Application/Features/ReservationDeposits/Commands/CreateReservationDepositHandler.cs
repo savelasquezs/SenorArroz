@@ -14,17 +14,20 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
     private readonly IReservationDepositRepository _depositRepository;
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IClock _clock;
 
     public CreateReservationDepositHandler(
         IReservationDepositRepository depositRepository,
         IApplicationDbContext context,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IClock clock)
     {
         _depositRepository = depositRepository;
         _context = context;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _clock = clock;
     }
 
@@ -41,6 +44,27 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
 
         if (order == null)
             throw new BusinessException("El pedido no existe");
+        _branchContext.EnsureAccess(order.BranchId);
+
+        if (request.BankId.HasValue)
+        {
+            var bankBranchId = await _context.Banks
+                .Where(x => x.Id == request.BankId.Value)
+                .Select(x => (int?)x.BranchId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (bankBranchId != order.BranchId)
+                throw new BranchScopeMismatchException();
+        }
+
+        if (request.AppId.HasValue)
+        {
+            var appBranchId = await _context.Apps
+                .Where(x => x.Id == request.AppId.Value)
+                .Select(x => (int?)x.Bank.BranchId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (appBranchId != order.BranchId)
+                throw new BranchScopeMismatchException();
+        }
 
         if (order.Type != OrderType.Reservation)
             throw new BusinessException("Solo se pueden registrar abonos para pedidos de tipo reserva");

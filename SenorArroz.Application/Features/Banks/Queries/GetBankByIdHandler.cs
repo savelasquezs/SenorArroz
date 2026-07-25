@@ -13,12 +13,14 @@ public class GetBankByIdHandler : IRequestHandler<GetBankByIdQuery, BankDto?>
     private readonly IBankRepository _bankRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public GetBankByIdHandler(IBankRepository bankRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetBankByIdHandler(IBankRepository bankRepository, IMapper mapper, ICurrentUser currentUser, IBranchContext branchContext)
     {
         _bankRepository = bankRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<BankDto?> Handle(GetBankByIdQuery request, CancellationToken cancellationToken)
@@ -27,6 +29,7 @@ public class GetBankByIdHandler : IRequestHandler<GetBankByIdQuery, BankDto?>
         
         if (bank == null)
             return null;
+        _branchContext.EnsureAccess(bank.BranchId);
 
         // Check if user has access to this bank's branch
         if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)

@@ -14,6 +14,7 @@ public class UpdateBankPaymentHandler : IRequestHandler<UpdateBankPaymentCommand
     private readonly IOrderRepository _orderRepository;
     private readonly IOrderBusinessRulesService _businessRules;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IMapper _mapper;
     private readonly IApplicationDbContext _context;
 
@@ -22,6 +23,7 @@ public class UpdateBankPaymentHandler : IRequestHandler<UpdateBankPaymentCommand
         IOrderRepository orderRepository,
         IOrderBusinessRulesService businessRules,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IMapper mapper,
         IApplicationDbContext context)
     {
@@ -29,6 +31,7 @@ public class UpdateBankPaymentHandler : IRequestHandler<UpdateBankPaymentCommand
         _orderRepository = orderRepository;
         _businessRules = businessRules;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _mapper = mapper;
         _context = context;
     }
@@ -44,6 +47,8 @@ public class UpdateBankPaymentHandler : IRequestHandler<UpdateBankPaymentCommand
         var order = await _orderRepository.GetByIdAsync(bankPayment.OrderId, cancellationToken);
         if (order == null)
             throw new BusinessException("Pedido asociado no encontrado");
+        _branchContext.EnsureAccess(order.BranchId);
+        _branchContext.EnsureAccess(bankPayment.Bank.BranchId);
 
         // Validar permisos para modificar pagos
         if (!_businessRules.CanModifyPayments(order, _currentUser.Role))

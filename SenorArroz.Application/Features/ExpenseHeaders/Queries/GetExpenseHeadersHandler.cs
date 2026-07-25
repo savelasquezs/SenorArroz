@@ -15,22 +15,25 @@ public class GetExpenseHeadersHandler : IRequestHandler<GetExpenseHeadersQuery, 
     private readonly IApplicationDbContext _context;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public GetExpenseHeadersHandler(
         IExpenseHeaderRepository expenseHeaderRepository,
         IApplicationDbContext context,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
         _context = context;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<PagedResult<ExpenseHeaderDto>> Handle(GetExpenseHeadersQuery request, CancellationToken cancellationToken)
     {
-        int? branchFilter = null;
+        int? branchFilter = _branchContext.ResolveOptional(request.BranchId);
         int? createdByIdFilter = null;
 
         if (!Roles.IsSuperadmin(_currentUser.Role))

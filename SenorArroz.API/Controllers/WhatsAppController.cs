@@ -22,6 +22,7 @@ public class WhatsAppController : ControllerBase
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IClock _clock;
     private readonly IWhatsAppCloudClient _whatsAppCloudClient;
     private readonly IWhatsAppNotificationService _whatsAppNotificationService;
@@ -36,6 +37,7 @@ public class WhatsAppController : ControllerBase
     public WhatsAppController(
         IApplicationDbContext db,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IClock clock,
         IWhatsAppCloudClient whatsAppCloudClient,
         IWhatsAppNotificationService whatsAppNotificationService,
@@ -49,6 +51,7 @@ public class WhatsAppController : ControllerBase
     {
         _db = db;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _clock = clock;
         _whatsAppCloudClient = whatsAppCloudClient;
         _whatsAppNotificationService = whatsAppNotificationService;
@@ -118,18 +121,13 @@ public class WhatsAppController : ControllerBase
         [FromQuery] WhatsAppQuickReplySearchDto search,
         CancellationToken cancellationToken)
     {
-        if (search.BranchId.HasValue && !CanAccessBranch(search.BranchId.Value))
-            return Forbid();
-
         var query = _db.WhatsAppQuickReplies
             .AsNoTracking()
             .Include(x => x.Branch)
             .AsQueryable();
 
-        if (!Roles.IsSuperadmin(_currentUser.Role))
-            query = query.Where(x => x.BranchId == _currentUser.BranchId);
-        else if (search.BranchId.HasValue)
-            query = query.Where(x => x.BranchId == search.BranchId.Value);
+        var branchId = _branchContext.RequireBranch(search.BranchId);
+        query = query.Where(x => x.BranchId == branchId);
 
         if (search.ActiveOnly)
             query = query.Where(x => x.IsActive);
@@ -227,18 +225,13 @@ public class WhatsAppController : ControllerBase
         [FromQuery] WhatsAppTemplateSearchDto search,
         CancellationToken cancellationToken)
     {
-        if (search.BranchId.HasValue && !CanAccessBranch(search.BranchId.Value))
-            return Forbid();
-
         var query = _db.WhatsAppTemplates
             .AsNoTracking()
             .Include(x => x.Branch)
             .AsQueryable();
 
-        if (!Roles.IsSuperadmin(_currentUser.Role))
-            query = query.Where(x => x.BranchId == _currentUser.BranchId || x.BranchId == null);
-        else if (search.BranchId.HasValue)
-            query = query.Where(x => x.BranchId == search.BranchId.Value || x.BranchId == null);
+        var branchId = _branchContext.RequireBranch(search.BranchId);
+        query = query.Where(x => x.BranchId == branchId || x.BranchId == null);
 
         if (!string.IsNullOrWhiteSpace(search.Status))
         {
@@ -1308,16 +1301,15 @@ public class WhatsAppController : ControllerBase
             .AsNoTracking()
             .Where(x => x.IsActive && x.IsVerified);
 
-        if (!Roles.IsSuperadmin(_currentUser.Role))
-            query = query.Where(x => x.BranchId == _currentUser.BranchId);
+        var branchId = _branchContext.RequireBranch();
+        query = query.Where(x => x.BranchId == branchId);
 
         return query.Select(x => x.BranchId).Distinct();
     }
 
     private async Task<bool> CanAccessVerifiedBranchAsync(int branchId, CancellationToken cancellationToken)
     {
-        if (!Roles.IsSuperadmin(_currentUser.Role) && _currentUser.BranchId != branchId)
-            return false;
+        _branchContext.EnsureAccess(branchId);
 
         return await _db.WhatsAppBranchSettings
             .AsNoTracking()
@@ -1329,6 +1321,8 @@ public class WhatsAppController : ControllerBase
         bool requireBusinessAccount,
         CancellationToken cancellationToken)
     {
+        branchId = _branchContext.RequireBranch(branchId);
+
         if (branchId.HasValue || !Roles.IsSuperadmin(_currentUser.Role))
         {
             var resolvedBranchId = branchId ?? _currentUser.BranchId;
@@ -1534,7 +1528,8 @@ public class WhatsAppController : ControllerBase
 
     private bool CanAccessBranch(int branchId)
     {
-        return Roles.IsSuperadmin(_currentUser.Role) || _currentUser.BranchId == branchId;
+        _branchContext.EnsureAccess(branchId);
+        return true;
     }
 
     private async Task<(ActionResult<ApiResponse<WhatsAppQuickReplyDto>>? Error, int BranchId, string Shortcut)> ValidateQuickReplyPayloadAsync(
@@ -1542,9 +1537,7 @@ public class WhatsAppController : ControllerBase
         int? currentId,
         CancellationToken cancellationToken)
     {
-        var branchId = Roles.IsSuperadmin(_currentUser.Role)
-            ? dto.BranchId.GetValueOrDefault()
-            : _currentUser.BranchId;
+        var branchId = _branchContext.RequireBranch(dto.BranchId);
 
         if (branchId <= 0)
             return (BadRequest(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse("Debe seleccionar una sucursal.")), 0, string.Empty);

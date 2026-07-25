@@ -14,19 +14,23 @@ public class GetBankPaymentsHandler : IRequestHandler<GetBankPaymentsQuery, Page
     private readonly IBankPaymentRepository _bankPaymentRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public GetBankPaymentsHandler(IBankPaymentRepository bankPaymentRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetBankPaymentsHandler(
+        IBankPaymentRepository bankPaymentRepository,
+        IMapper mapper,
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _bankPaymentRepository = bankPaymentRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<PagedResult<BankPaymentDto>> Handle(GetBankPaymentsQuery request, CancellationToken cancellationToken)
     {
-        int? restrictBranch = !Roles.IsSuperadmin(_currentUser.Role)
-            ? _currentUser.BranchId
-            : request.BranchId;
+        var restrictBranch = _branchContext.ResolveOptional(request.BranchId);
 
         var (fromUtc, toUtc) = ColombiaTimeHelper.NormalizeApiDateFiltersToUtc(request.FromDate, request.ToDate);
 

@@ -12,12 +12,14 @@ public class GetAppPaymentByIdHandler : IRequestHandler<GetAppPaymentByIdQuery, 
     private readonly IAppPaymentRepository _appPaymentRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
-    public GetAppPaymentByIdHandler(IAppPaymentRepository appPaymentRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetAppPaymentByIdHandler(IAppPaymentRepository appPaymentRepository, IMapper mapper, ICurrentUser currentUser, IBranchContext branchContext)
     {
         _appPaymentRepository = appPaymentRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<AppPaymentDto?> Handle(GetAppPaymentByIdQuery request, CancellationToken cancellationToken)
@@ -26,6 +28,7 @@ public class GetAppPaymentByIdHandler : IRequestHandler<GetAppPaymentByIdQuery, 
         
         if (appPayment == null)
             return null;
+        _branchContext.EnsureAccess(appPayment.App.Bank.BranchId);
 
         // Check if user has access to this app payment's branch
         if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)

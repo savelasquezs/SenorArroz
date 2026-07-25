@@ -19,6 +19,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
     private readonly IApplicationDbContext _context;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IClock _clock;
 
     public CreateExpenseHeaderHandler(
@@ -27,6 +28,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
         IApplicationDbContext context,
         IMapper mapper,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IClock clock)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
@@ -34,6 +36,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
         _context = context;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _clock = clock;
     }
 
@@ -60,7 +63,8 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             throw new NotFoundException($"Gastos con IDs {string.Join(", ", missingIds)} no encontrados");
         }
 
-        var branchId = _currentUser.BranchId;
+        var branchId = _branchContext.RequireBranch();
+        _branchContext.EnsureAccess(supplier.BranchId);
         var subtotal = ExpenseInvoiceTotalsHelper.SubtotalFromCreateDetails(request.ExpenseHeader.ExpenseDetails);
         var vatAmount = ExpenseInvoiceTotalsHelper.ComputeVatAmount(subtotal, request.ExpenseHeader.IncludeVat);
         var grossTotal = ExpenseInvoiceTotalsHelper.GrossTotal(subtotal, vatAmount);

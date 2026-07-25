@@ -13,17 +13,20 @@ public class GetExpenseHeaderByIdHandler : IRequestHandler<GetExpenseHeaderByIdQ
     private readonly IApplicationDbContext _context;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public GetExpenseHeaderByIdHandler(
         IExpenseHeaderRepository expenseHeaderRepository,
         IApplicationDbContext context,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
         _context = context;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<ExpenseHeaderDto?> Handle(GetExpenseHeaderByIdQuery request, CancellationToken cancellationToken)
@@ -34,6 +37,7 @@ public class GetExpenseHeaderByIdHandler : IRequestHandler<GetExpenseHeaderByIdQ
         {
             return null;
         }
+        _branchContext.EnsureAccess(expenseHeader.BranchId);
 
         // Validar acceso
         if (!Roles.IsSuperadmin(_currentUser.Role))

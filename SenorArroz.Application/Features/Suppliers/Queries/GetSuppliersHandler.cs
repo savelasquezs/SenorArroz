@@ -12,20 +12,23 @@ public class GetSuppliersHandler : IRequestHandler<GetSuppliersQuery, PagedResul
     private readonly ISupplierRepository _supplierRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public GetSuppliersHandler(
         ISupplierRepository supplierRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _supplierRepository = supplierRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<PagedResult<SupplierDto>> Handle(GetSuppliersQuery request, CancellationToken cancellationToken)
     {
-        int? branchFilter = null;
+        int? branchFilter = _branchContext.ResolveOptional(request.BranchId);
 
         if (!Roles.IsSuperadmin(_currentUser.Role))
         {

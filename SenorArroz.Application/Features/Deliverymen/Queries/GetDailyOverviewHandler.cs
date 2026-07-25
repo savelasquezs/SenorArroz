@@ -22,6 +22,7 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
     private readonly IDeliverymanAdvanceRepository _advanceRepository;
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IMapper _mapper;
 
     public GetDailyOverviewHandler(
@@ -30,6 +31,7 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
         IDeliverymanAdvanceRepository advanceRepository,
         IApplicationDbContext db,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IMapper mapper)
     {
         _userRepository = userRepository;
@@ -37,6 +39,7 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
         _advanceRepository = advanceRepository;
         _db = db;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _mapper = mapper;
     }
 
@@ -233,9 +236,7 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
 
     private int? ResolveBranchId(GetDailyOverviewQuery request)
     {
-        if (!Roles.IsSuperadmin(_currentUser.Role))
-            return _currentUser.BranchId;
-        return request.BranchId;
+        return _branchContext.RequireBranch(request.BranchId);
     }
 
     private static int CalculateAverageDeliveryTimeMinutes(List<Order> orders)

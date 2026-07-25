@@ -10,15 +10,18 @@ public class DeleteAdvanceHandler : IRequestHandler<DeleteAdvanceCommand, bool>
 {
     private readonly IDeliverymanAdvanceRepository _advanceRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
     private readonly IClock _clock;
 
     public DeleteAdvanceHandler(
         IDeliverymanAdvanceRepository advanceRepository,
         ICurrentUser currentUser,
+        IBranchContext branchContext,
         IClock clock)
     {
         _advanceRepository = advanceRepository;
         _currentUser = currentUser;
+        _branchContext = branchContext;
         _clock = clock;
     }
 
@@ -28,6 +31,7 @@ public class DeleteAdvanceHandler : IRequestHandler<DeleteAdvanceCommand, bool>
         var advance = await _advanceRepository.GetByIdAsync(request.Id, cancellationToken);
         if (advance == null)
             throw new BusinessException("El abono no existe");
+        _branchContext.EnsureAccess(advance.BranchId);
 
         // 2. Validar acceso a sucursal
         if (!Roles.IsSuperadmin(_currentUser.Role) && advance.BranchId != _currentUser.BranchId)

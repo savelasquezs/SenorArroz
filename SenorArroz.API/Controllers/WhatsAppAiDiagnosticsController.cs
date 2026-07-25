@@ -18,6 +18,7 @@ namespace SenorArroz.API.Controllers;
 public class WhatsAppAiDiagnosticsController(
     IApplicationDbContext db,
     ICurrentUser currentUser,
+    IBranchContext branchContext,
     IClock clock,
     IOptions<WhatsAppAiOrchestratorOptions> options) : ControllerBase
 {
@@ -32,8 +33,7 @@ public class WhatsAppAiDiagnosticsController(
     {
         if (branchId <= 0)
             return BadRequest(ApiResponse<WhatsAppAiDiagnosticsDto>.ErrorResponse("La sucursal es requerida."));
-        if (!CanAccessBranch(branchId))
-            return Forbid();
+        branchContext.EnsureAccess(branchId);
         if (!await db.Branches.AsNoTracking().AnyAsync(x => x.Id == branchId, cancellationToken))
             return NotFound(ApiResponse<WhatsAppAiDiagnosticsDto>.ErrorResponse("Sucursal no encontrada."));
 
@@ -225,9 +225,6 @@ public class WhatsAppAiDiagnosticsController(
 
     private static bool IsPending(string status) => status is
         "pending" or "processing" or "responseGenerated" or "sending" or "sent";
-
-    private bool CanAccessBranch(int branchId) =>
-        Roles.IsSuperadmin(currentUser.Role) || currentUser.BranchId == branchId;
 
     private static string ToAttentionMode(WhatsAppAttentionMode mode) => mode switch
     {

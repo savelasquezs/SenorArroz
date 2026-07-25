@@ -14,17 +14,20 @@ public class UpdateAppHandler : IRequestHandler<UpdateAppCommand, AppDto>
     private readonly IBankRepository _bankRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IBranchContext _branchContext;
 
     public UpdateAppHandler(
         IAppRepository appRepository,
         IBankRepository bankRepository,
         IMapper mapper,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IBranchContext branchContext)
     {
         _appRepository = appRepository;
         _bankRepository = bankRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<AppDto> Handle(UpdateAppCommand request, CancellationToken cancellationToken)
@@ -33,6 +36,7 @@ public class UpdateAppHandler : IRequestHandler<UpdateAppCommand, AppDto>
         var existingApp = await _appRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingApp == null)
             throw new BusinessException("La app especificada no existe");
+        _branchContext.EnsureAccess(existingApp.Bank.BranchId);
 
         // Check if user has access to this app's branch
         if (!Roles.IsSuperadmin(_currentUser.Role) && existingApp.Bank.BranchId != _currentUser.BranchId)
@@ -42,6 +46,7 @@ public class UpdateAppHandler : IRequestHandler<UpdateAppCommand, AppDto>
         var bank = await _bankRepository.GetByIdAsync(request.BankId, cancellationToken);
         if (bank == null)
             throw new BusinessException("El banco especificado no existe");
+        _branchContext.EnsureAccess(bank.BranchId);
 
         // Check if user has access to the new bank's branch
         if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)

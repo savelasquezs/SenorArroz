@@ -18,6 +18,7 @@ namespace SenorArroz.Application.Features.Users.Commands
         private readonly IPasswordService _passwordService;
         private readonly IMapper _mapper;
         private readonly ICurrentUser _currentUser;
+        private readonly IBranchContext _branchContext;
         private readonly IApplicationDbContext _db;
 
         public CreateUserHandler(
@@ -25,12 +26,14 @@ namespace SenorArroz.Application.Features.Users.Commands
             IPasswordService passwordService,
             IMapper mapper,
             ICurrentUser currentUser,
+            IBranchContext branchContext,
             IApplicationDbContext db)
         {
             _userRepository = userRepository;
             _passwordService = passwordService;
             _mapper = mapper;
             _currentUser = currentUser;
+            _branchContext = branchContext;
             _db = db;
         }
 
@@ -39,6 +42,7 @@ namespace SenorArroz.Application.Features.Users.Commands
 
             string creatorRole = _currentUser.Role;
             int creatorBranchId= _currentUser.BranchId;
+            request.UserData.BranchId = _branchContext.RequireBranch(request.UserData.BranchId);
        
             // 1. Validar que el email no exista
             if (await _userRepository.EmailExistsAsync(request.UserData.Email, cancellationToken: cancellationToken))
