@@ -203,6 +203,20 @@ Notas:
   WHERE status = 'pending'`. Los scripts de alta y rollback se ejecutan fuera
   de una transacción porque usan `CONCURRENTLY`.
 
+### Documentos corporativos
+
+| Entidad | Alcance actual | Tenant-owned futuro |
+|---|---|---:|
+| BusinessDocument | Biblioteca única del negocio, compartida entre sucursales | Sí |
+
+Notas:
+
+- `business_document` conserva el nombre visible, URL de descarga Firebase, nombre interno del objeto y metadatos del PDF.
+- `public_id` es un UUID no enumerable usado por el enlace público estable de los códigos QR.
+- La lectura del catálogo exige autenticación; solo Superadmin administra registros. El enlace individual de descarga es público para permitir QR en cocina.
+- Esta tabla es una excepción corporativa temporal mientras no exista la entidad `Tenant`. Al introducir tenants debe recibir `tenant_id`, backfill al tenant inicial y filtro garantizado por tenant.
+- El esquema se instala con `SenorArroz.Infrastructure/Scripts/add_business_documents.sql` antes de desplegar el backend que lo consulta.
+
 ## Tablas técnicas
 
 Incluso las tablas técnicas relacionadas con usuarios o sucursales deben tener tenant cuando puedan contener datos operativos o credenciales por cliente.

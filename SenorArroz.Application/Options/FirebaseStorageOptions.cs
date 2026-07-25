@@ -20,6 +20,9 @@ public class FirebaseStorageOptions
     /// <summary>Prefijo de objetos para archivos de WhatsApp (sin / inicial ni final).</summary>
     public string WhatsAppMediaPrefix { get; set; } = "whatsapp-media";
 
+    /// <summary>Prefijo de objetos para documentos corporativos (sin / inicial ni final).</summary>
+    public string BusinessDocumentsPrefix { get; set; } = "business-documents";
+
     /// <summary>
     /// Si es true, sube con ACL de objeto público. Con acceso uniforme (UBLA) puede fallar; usar false y lectura pública vía IAM del bucket.
     /// </summary>

@@ -35,6 +35,8 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<BranchPrintSettings> BranchPrintSettings { get; set; }
 
+        DbSet<BusinessDocument> BusinessDocuments { get; set; }
+
         DbSet<WhatsAppBranchSetting> WhatsAppBranchSettings { get; set; }
 
         DbSet<WhatsAppConversation> WhatsAppConversations { get; set; }

@@ -44,6 +44,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<BranchPrintSettings> BranchPrintSettings { get; set; }
 
+        public virtual DbSet<BusinessDocument> BusinessDocuments { get; set; }
+
         public virtual DbSet<WhatsAppBranchSetting> WhatsAppBranchSettings { get; set; }
 
         public virtual DbSet<WhatsAppConversation> WhatsAppConversations { get; set; }
@@ -142,6 +144,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new BranchBusinessHourConfiguration());
             modelBuilder.ApplyConfiguration(new BranchAiSettingConfiguration());
             modelBuilder.ApplyConfiguration(new BranchPrintSettingsConfiguration());
+            modelBuilder.ApplyConfiguration(new BusinessDocumentConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppBranchSettingConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppConversationConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppMessageConfiguration());

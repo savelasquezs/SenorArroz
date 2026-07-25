@@ -48,6 +48,7 @@ public static class DependencyInjection
             options.GraphApiVersion = FirstNonEmpty(configuration["GRAPH_API_VERSION"], options.GraphApiVersion) ?? options.GraphApiVersion;
         });
         services.AddSingleton<IFirebaseGcsStorage, FirebaseGcsStorageService>();
+        services.AddScoped<IBusinessDocumentStorage, BusinessDocumentStorage>();
 
         // FCM Push Notifications
         services.AddHttpClient<FcmPushService>();
@@ -95,6 +96,7 @@ public static class DependencyInjection
 
         // Repositories
         services.AddScoped<IBranchRepository, BranchRepository>();
+        services.AddScoped<IBusinessDocumentRepository, BusinessDocumentRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IAuthRepository, AuthRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
