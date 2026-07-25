@@ -21,6 +21,12 @@ public class AppPaymentMappingProfile : Profile
                     ? src.App.Bank.Branch.Name
                     : string.Empty));
 
-        CreateMap<CreateAppPaymentDto, AppPayment>();
+        CreateMap<CreateAppPaymentDto, AppPayment>()
+            .ForMember(dest => dest.IsSetted, opt => opt.Ignore())
+            .ForMember(dest => dest.Order, opt => opt.Ignore())
+            .ForMember(dest => dest.App, opt => opt.Ignore())
+            .ForMember(dest => dest.Id, opt => opt.Ignore())
+            .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+            .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
     }
 }

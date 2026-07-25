@@ -17,8 +17,31 @@ public class BankPaymentMappingProfile : Profile
                 src.Bank != null && src.Bank.Branch != null ? src.Bank.Branch.Name : string.Empty))
             .ForMember(dest => dest.SourceReservationDepositId, opt => opt.MapFrom(src => src.SourceReservationDepositId));
 
-        CreateMap<CreateBankPaymentDto, BankPayment>();
+        CreateMap<CreateBankPaymentDto, BankPayment>()
+            .ForMember(dest => dest.SourceReservationDepositId, opt => opt.Ignore())
+            .ForMember(dest => dest.IsAppSettlement, opt => opt.Ignore())
+            .ForMember(dest => dest.AppSettlementSourcePaymentIds, opt => opt.Ignore())
+            .ForMember(dest => dest.IsVerified, opt => opt.Ignore())
+            .ForMember(dest => dest.VerifiedAt, opt => opt.Ignore())
+            .ForMember(dest => dest.Order, opt => opt.Ignore())
+            .ForMember(dest => dest.Bank, opt => opt.Ignore())
+            .ForMember(dest => dest.Id, opt => opt.Ignore())
+            .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+            .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
+
         CreateMap<VerifyBankPaymentDto, BankPayment>()
-            .ForMember(dest => dest.VerifiedAt, opt => opt.MapFrom(src => src.VerifiedAt));
+            .ForMember(dest => dest.VerifiedAt, opt => opt.MapFrom(src => src.VerifiedAt))
+            .ForMember(dest => dest.OrderId, opt => opt.Ignore())
+            .ForMember(dest => dest.BankId, opt => opt.Ignore())
+            .ForMember(dest => dest.Amount, opt => opt.Ignore())
+            .ForMember(dest => dest.SourceReservationDepositId, opt => opt.Ignore())
+            .ForMember(dest => dest.IsAppSettlement, opt => opt.Ignore())
+            .ForMember(dest => dest.AppSettlementSourcePaymentIds, opt => opt.Ignore())
+            .ForMember(dest => dest.IsVerified, opt => opt.Ignore())
+            .ForMember(dest => dest.Order, opt => opt.Ignore())
+            .ForMember(dest => dest.Bank, opt => opt.Ignore())
+            .ForMember(dest => dest.Id, opt => opt.Ignore())
+            .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
+            .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
     }
 }

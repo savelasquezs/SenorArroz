@@ -12,9 +12,13 @@ public class SupplierMappingProfile : Profile
         CreateMap<Supplier, SupplierDto>()
             .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Branch.Name));
 
-        CreateMap<CreateSupplierDto, CreateSupplierCommand>();
+        CreateMap<CreateSupplierDto, CreateSupplierCommand>()
+            .ForMember(dest => dest.Supplier, opt => opt.Ignore())
+            .ForMember(dest => dest.BranchId, opt => opt.Ignore());
+
         CreateMap<UpdateSupplierDto, UpdateSupplierCommand>()
-            .ForMember(dest => dest.Id, opt => opt.Ignore());
+            .ForMember(dest => dest.Id, opt => opt.Ignore())
+            .ForMember(dest => dest.Supplier, opt => opt.Ignore());
     }
 }
 

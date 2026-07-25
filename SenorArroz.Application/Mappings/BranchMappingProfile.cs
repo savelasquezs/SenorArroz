@@ -31,16 +31,23 @@ public class BranchMappingProfile : Profile
             .ForMember(d => d.PaperWidthMm, o => o.MapFrom(s => s.PaperWidthMmKitchen));
 
         // Neighborhood -> BranchNeighborhoodDto
-        CreateMap<Neighborhood, BranchNeighborhoodDto>();
-        CreateMap<CreateNeighborhoodDto, CreateNeighborhoodCommand>();
-        CreateMap<UpdateNeighborhoodDto, UpdateNeighborhoodCommand>();
+        CreateMap<Neighborhood, BranchNeighborhoodDto>()
+            .ForMember(dest => dest.TotalCustomers, opt => opt.Ignore())
+            .ForMember(dest => dest.TotalAddresses, opt => opt.Ignore());
+
+        CreateMap<CreateNeighborhoodDto, CreateNeighborhoodCommand>()
+            .ForMember(dest => dest.BranchId, opt => opt.Ignore());
+
+        CreateMap<UpdateNeighborhoodDto, UpdateNeighborhoodCommand>()
+            .ForMember(dest => dest.Id, opt => opt.Ignore());
 
         // User -> BranchUserDto
         CreateMap<User, BranchUserDto>()
             .ForMember(dest => dest.Role, opt => opt.MapFrom(src => src.Role.ToString()))
             .ForMember(dest => dest.Active, opt => opt.MapFrom(src => src.Active))
             .ForMember(dest => dest.PayrollExpenseName,
-                opt => opt.MapFrom(src => src.PayrollExpense != null ? src.PayrollExpense.Name : null));
+                opt => opt.MapFrom(src => src.PayrollExpense != null ? src.PayrollExpense.Name : null))
+            .ForMember(dest => dest.LastLogin, opt => opt.Ignore());
 
         // Commands
         CreateMap<CreateBranchDto, CreateBranchCommand>();

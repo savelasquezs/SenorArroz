@@ -17,7 +17,13 @@ public class CustomerMappingProfile : Profile
             .ForMember(dest => dest.TotalOrders, opt => opt.Ignore()) // Will be set manually
             .ForMember(dest => dest.FirstOrderDate, opt => opt.Ignore())
             .ForMember(dest => dest.LastOrderDate, opt => opt.Ignore()) // Will be set manually
-            .ForMember(dest => dest.TotalAccumulated, opt => opt.Ignore());
+            .ForMember(dest => dest.TotalAccumulated, opt => opt.Ignore())
+            .ForMember(dest => dest.LoyaltyDeliveredCount, opt => opt.Ignore())
+            .ForMember(dest => dest.LoyaltyNextStepIndex, opt => opt.Ignore())
+            .ForMember(dest => dest.LoyaltyNextRewardLabel, opt => opt.Ignore())
+            .ForMember(dest => dest.LoyaltyDeliveriesUntilNextReward, opt => opt.Ignore())
+            .ForMember(dest => dest.LoyaltyRewardDueOnCurrentOrder, opt => opt.Ignore())
+            .ForMember(dest => dest.LoyaltyNextRewardMessage, opt => opt.Ignore());
 
         CreateMap<CreateCustomerDto, CreateCustomerCommand>();
         CreateMap<UpdateCustomerDto, UpdateCustomerCommand>()

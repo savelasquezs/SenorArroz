@@ -24,6 +24,11 @@ namespace SenorArroz.Application.Mappings
                 .ForMember(dest => dest.Branch, opt => opt.Ignore())
                 .ForMember(dest => dest.PasswordHash, opt => opt.Ignore())
                 .ForMember(dest => dest.PayrollExpense, opt => opt.Ignore())
+                .ForMember(dest => dest.ProfileImageUrl, opt => opt.Ignore())
+                .ForMember(dest => dest.ActiveSessionId, opt => opt.Ignore())
+                .ForMember(dest => dest.TakenOrders, opt => opt.Ignore())
+                .ForMember(dest => dest.DeliveryOrders, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedExpenseHeaders, opt => opt.Ignore())
                 .ForMember(dest => dest.Active, opt => opt.MapFrom(src => true));
 
             // UpdateUserDto -> User (para actualizar)
@@ -34,7 +39,12 @@ namespace SenorArroz.Application.Mappings
                 .ForMember(dest => dest.Branch, opt => opt.Ignore())
                 .ForMember(dest => dest.BranchId, opt => opt.Ignore())
                 .ForMember(dest => dest.PasswordHash, opt => opt.Ignore())
-                .ForMember(dest => dest.PayrollExpense, opt => opt.Ignore());
+                .ForMember(dest => dest.PayrollExpense, opt => opt.Ignore())
+                .ForMember(dest => dest.ProfileImageUrl, opt => opt.Ignore())
+                .ForMember(dest => dest.ActiveSessionId, opt => opt.Ignore())
+                .ForMember(dest => dest.TakenOrders, opt => opt.Ignore())
+                .ForMember(dest => dest.DeliveryOrders, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedExpenseHeaders, opt => opt.Ignore());
         }
     }
 }
