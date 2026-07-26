@@ -415,6 +415,13 @@ BEGIN
 
     v_header_id := COALESCE(NEW.header_id, OLD.header_id);
     SELECT eh.branch_id INTO v_branch_id FROM public.expense_header eh WHERE eh.id = v_header_id;
+    -- PostgreSQL can execute the child DELETE trigger after the parent row is
+    -- no longer visible, even when pg_trigger_depth() is 1. In that case the
+    -- complete BEFORE DELETE snapshot already exists and this child event
+    -- must not try to insert an audit row with a null branch.
+    IF v_branch_id IS NULL THEN
+        RETURN COALESCE(NEW, OLD);
+    END IF;
     v_after := public.audit_expense_snapshot(v_header_id);
     IF TG_OP <> 'INSERT' THEN
         v_old_total := COALESCE(OLD.total, 0);
@@ -480,6 +487,9 @@ BEGIN
 
     v_header_id := COALESCE(NEW.expense_header_id, OLD.expense_header_id);
     SELECT eh.branch_id, COALESCE(eh.total, 0) INTO v_branch_id, v_total FROM public.expense_header eh WHERE eh.id = v_header_id;
+    IF v_branch_id IS NULL THEN
+        RETURN COALESCE(NEW, OLD);
+    END IF;
     v_after := public.audit_expense_snapshot(v_header_id);
 
     IF TG_OP = 'UPDATE'
