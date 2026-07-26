@@ -136,6 +136,9 @@ public class CashClosureAuditEmailTests
               ],
               "payments": [
                 { "bank_id": 4, "bank_name": "Bancolombia", "amount": 25840 }
+              ],
+              "linked_deliveryman_advances": [
+                { "id": 374, "amount": 25840, "payment_method": 2 }
               ]
             }
             """;
@@ -149,6 +152,7 @@ public class CashClosureAuditEmailTests
         Assert.Contains("2 × Arroz [Insumos] a $10.000 = $20.000 (Bulto pequeño)", auditEvent.SummaryText);
         Assert.Contains("1 × Transporte [Logística] a $2.800 = $2.800", auditEvent.SummaryText);
         Assert.Contains("Pagos: Bancolombia: $25.840", auditEvent.SummaryText);
+        Assert.Contains("Abonos de domiciliario vinculados eliminados: #374: $25.840", auditEvent.SummaryText);
         Assert.Contains("Notas: Compra urgente", auditEvent.SummaryText);
     }
 

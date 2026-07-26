@@ -277,6 +277,9 @@ internal static class CashClosureAuditMapper
             var payments = FormatDeletedExpensePayments(snapshot);
             if (payments.Count > 0)
                 parts.Add($"Pagos: {string.Join("; ", payments)}.");
+            var linkedAdvances = FormatDeletedExpenseLinkedAdvances(snapshot);
+            if (linkedAdvances.Count > 0)
+                parts.Add($"Abonos de domiciliario vinculados eliminados: {string.Join("; ", linkedAdvances)}.");
             if (!string.IsNullOrWhiteSpace(notes))
                 parts.Add($"Notas: {notes}.");
 
@@ -322,6 +325,24 @@ internal static class CashClosureAuditMapper
                     ?? (TryGetInt(payment, "bank_id") is int id ? $"Banco #{id}" : "Banco");
                 var amount = TryGetDecimal(payment, "amount") ?? 0;
                 return $"{name}: {FormatMoney(amount)}";
+            })
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> FormatDeletedExpenseLinkedAdvances(JsonElement snapshot)
+    {
+        if (!snapshot.TryGetProperty("linked_deliveryman_advances", out var advances)
+            || advances.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return advances.EnumerateArray()
+            .Select(advance =>
+            {
+                var id = TryGetInt(advance, "id");
+                var amount = TryGetDecimal(advance, "amount") ?? 0;
+                return $"{(id.HasValue ? $"#{id.Value}" : "sin identificador")}: {FormatMoney(amount)}";
             })
             .ToList();
     }

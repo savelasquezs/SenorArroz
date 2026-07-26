@@ -149,6 +149,20 @@ AS $$
             FROM public.expense_bank_payment ebp
             JOIN public.bank b ON b.id = ebp.bank_id
             WHERE ebp.expense_header_id = eh.id
+        ), '[]'::jsonb),
+        'linked_deliveryman_advances', COALESCE((
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'id', da.id,
+                    'amount', da.amount,
+                    'payment_method', da.payment_method,
+                    'notes', da.notes,
+                    'created_at', da.created_at
+                )
+                ORDER BY da.id
+            )
+            FROM public.deliveryman_advance da
+            WHERE da.expense_header_id = eh.id
         ), '[]'::jsonb)
     )
     FROM public.expense_header eh
@@ -357,6 +371,11 @@ BEGIN
             jsonb_build_object('total_before', COALESCE(OLD.total, 0), 'total_after', 0, 'difference', -COALESCE(OLD.total, 0), 'lines_affected', '[]'::jsonb),
             v_before, NULL, jsonb_build_object('trigger', TG_NAME)
         );
+        -- The linked expense-offset advance belongs to this invoice. Removing
+        -- it here keeps the deletion atomic and satisfies the restrictive FK;
+        -- its identifying data is already preserved in v_before.
+        DELETE FROM public.deliveryman_advance
+        WHERE expense_header_id = OLD.id;
         RETURN OLD;
     END IF;
 
