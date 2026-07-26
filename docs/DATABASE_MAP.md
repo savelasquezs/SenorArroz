@@ -187,6 +187,20 @@ Notas:
 - `DeliveryTrackingIncident` admite el tipo `location_disabled` y usa `SourceDeviceEventId` como vínculo único con el evento `gps_disabled`. Sus coordenadas centrales son opcionales porque puede confirmarse el apagado aun cuando no exista un punto GPS utilizable.
 - El esquema para casos de revisión por ubicación apagada se instala con `SenorArroz.Infrastructure/Scripts/add_gps_disabled_review_incidents.sql` antes de desplegar el backend correspondiente.
 
+### WhatsApp
+
+| Entidad | Tenant-owned | Backfill sugerido |
+|---|---:|---|
+| WhatsAppBranchSetting | Sí | Desde `Branch.TenantId` |
+| WhatsAppConversation | Sí | Desde `Branch.TenantId` |
+| WhatsAppMessage | Sí | Desde la conversación y sucursal |
+
+Notas:
+
+- `WhatsAppBranchSetting` guarda por sucursal la activación y plantilla del mensaje de ausencia.
+- El esquema se amplía con `SenorArroz.Infrastructure/Scripts/add_whatsapp_away_message.sql`; debe instalarse antes del backend que consulta esas columnas.
+- Los avisos usan `WhatsAppMessage.AgentDispatchKey` para garantizar como máximo un envío por conversación y periodo de cierre.
+
 ### Impresión
 
 | Entidad | Tenant-owned | Backfill sugerido |

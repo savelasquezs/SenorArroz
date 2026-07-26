@@ -14,6 +14,8 @@ public class WhatsAppBranchSettingDto
     public bool IsActive { get; set; }
     public bool IsVerified { get; set; }
     public DateTime? LastVerifiedAt { get; set; }
+    public bool AwayMessageEnabled { get; set; }
+    public string? AwayMessageText { get; set; }
     public DateTime? CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public string Status { get; set; } = "not_configured";
@@ -28,6 +30,8 @@ public class UpsertWhatsAppBranchSettingDto
     public string WebhookVerifyToken { get; set; } = string.Empty;
     public string? AppSecret { get; set; }
     public bool IsActive { get; set; }
+    public bool? AwayMessageEnabled { get; set; }
+    public string? AwayMessageText { get; set; }
 }
 
 public class WhatsAppTestConnectionResultDto

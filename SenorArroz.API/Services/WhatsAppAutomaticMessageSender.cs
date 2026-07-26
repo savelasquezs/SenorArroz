@@ -28,6 +28,40 @@ public class WhatsAppAutomaticMessageSender(ApplicationDbContext db,IWhatsAppClo
   await db.SaveChangesAsync(ct);var conversationDto=new WhatsAppConversationDto{Id=c.Id,BranchId=c.BranchId,BranchName=c.Branch.Name,CustomerId=c.CustomerId,CustomerName=c.Customer?.Name,PhoneNumber=c.PhoneNumber,ContactName=c.ContactName,Status="open",AttentionMode="ai",LastMessageAt=c.LastMessageAt,LastMessagePreview=c.LastMessagePreview,UnreadCount=c.UnreadCount,CreatedAt=c.CreatedAt,UpdatedAt=c.UpdatedAt,AttentionModeUpdatedAt=c.AttentionModeUpdatedAt};var messageDto=new WhatsAppMessageDto{Id=m.Id,ConversationId=c.Id,WhatsAppMessageId=m.WhatsAppMessageId,Direction="outbound",Type="text",TextBody=text,Status=result.Success?"sent":"failed",Timestamp=now,CreatedAt=m.CreatedAt};await notifications.NotifyMessageCreatedAsync(c.BranchId,conversationDto,messageDto,ct);
   return new(result.Success,!result.Success&&IsRetrySafeTransient(result.ErrorMessage),result.WhatsAppMessageId,result.ErrorMessage);
  }
+ public async Task<WhatsAppAutomaticSendResult> SendAwayTextAsync(int conversationId,string dispatchKey,string text,CancellationToken ct)
+ {
+  if(string.IsNullOrWhiteSpace(dispatchKey)||dispatchKey.Length>180)return new(false,false,null,"Clave de envío inválida.");
+  var existing=await db.WhatsAppMessages.AsNoTracking().FirstOrDefaultAsync(x=>x.AgentDispatchKey==dispatchKey,ct);
+  if(existing!=null)return existing.Status==WhatsAppMessageStatus.Sent?new(true,false,existing.WhatsAppMessageId,null):new(false,false,existing.WhatsAppMessageId,"El aviso de ausencia ya fue intentado durante este cierre.");
+  var c=await db.WhatsAppConversations.Include(x=>x.Branch).Include(x=>x.Customer).FirstOrDefaultAsync(x=>x.Id==conversationId,ct);
+  if(c==null)return new(false,false,null,"Conversación no encontrada.");
+  var setting=await db.WhatsAppBranchSettings.AsNoTracking().FirstOrDefaultAsync(x=>x.BranchId==c.BranchId&&x.IsActive&&x.IsVerified&&x.AwayMessageEnabled,ct);
+  if(setting==null)return new(false,false,null,"El mensaje de ausencia no está disponible.");
+  var now=clock.UtcNow;
+  var message=new WhatsAppMessage{ConversationId=c.Id,Direction=WhatsAppMessageDirection.Outbound,Type=WhatsAppMessageType.Text,TextBody=text,Status=WhatsAppMessageStatus.Failed,Timestamp=now,SentByAi=false,AgentDispatchKey=dispatchKey,RawPayload=JsonSerializer.Serialize(new{origin="away_message",dispatchKey})};
+  db.WhatsAppMessages.Add(message);
+  try
+  {
+   await db.SaveChangesAsync(ct);
+  }
+  catch(DbUpdateException)
+  {
+   db.Entry(message).State=EntityState.Detached;
+   var duplicate=await db.WhatsAppMessages.AsNoTracking().FirstAsync(x=>x.AgentDispatchKey==dispatchKey,ct);
+   return duplicate.Status==WhatsAppMessageStatus.Sent?new(true,false,duplicate.WhatsAppMessageId,null):new(false,false,duplicate.WhatsAppMessageId,"El aviso de ausencia ya está siendo procesado.");
+  }
+  var result=await cloud.SendTextMessageAsync(setting.PhoneNumberId,setting.AccessToken,c.PhoneNumber,text,ct);
+  message.WhatsAppMessageId=result.WhatsAppMessageId;
+  message.Status=result.Success?WhatsAppMessageStatus.Sent:WhatsAppMessageStatus.Failed;
+  message.RawPayload=JsonSerializer.Serialize(new{origin="away_message",dispatchKey,result.Success,result.ErrorMessage});
+  if(result.Success){c.LastMessageAt=now;c.LastMessagePreview=text;}
+  await db.SaveChangesAsync(ct);
+  var attentionMode=c.AttentionMode switch{WhatsAppAttentionMode.Ai=>"ai",WhatsAppAttentionMode.Human=>"human",WhatsAppAttentionMode.WaitingForHuman=>"waitingForHuman",WhatsAppAttentionMode.Paused=>"paused",WhatsAppAttentionMode.Closed=>"closed",_=>"human"};
+  var cd=new WhatsAppConversationDto{Id=c.Id,BranchId=c.BranchId,BranchName=c.Branch.Name,CustomerId=c.CustomerId,CustomerName=c.Customer?.Name,PhoneNumber=c.PhoneNumber,ContactName=c.ContactName,Status=c.Status==WhatsAppConversationStatus.Closed?"closed":"open",AttentionMode=attentionMode,LastMessageAt=c.LastMessageAt,LastMessagePreview=c.LastMessagePreview,UnreadCount=c.UnreadCount,CreatedAt=c.CreatedAt,UpdatedAt=c.UpdatedAt,AttentionModeUpdatedAt=c.AttentionModeUpdatedAt};
+  var md=new WhatsAppMessageDto{Id=message.Id,ConversationId=c.Id,WhatsAppMessageId=message.WhatsAppMessageId,Direction="outbound",Type="text",TextBody=text,Status=result.Success?"sent":"failed",Timestamp=now,CreatedAt=message.CreatedAt};
+  await notifications.NotifyMessageCreatedAsync(c.BranchId,cd,md,ct);
+  return new(result.Success,false,result.WhatsAppMessageId,result.ErrorMessage);
+ }
  private static bool IsRetrySafeTransient(string? error)
  {
   const string prefix="Meta WhatsApp HTTP ";

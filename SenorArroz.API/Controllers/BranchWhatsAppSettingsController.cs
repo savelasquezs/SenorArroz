@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Shared.Models;
@@ -17,6 +18,8 @@ public class BranchWhatsAppSettingsController : ControllerBase
     private readonly ICurrentUser _currentUser;
     private readonly IClock _clock;
     private readonly IWhatsAppCloudClient _whatsAppCloudClient;
+    private readonly IBranchBusinessHoursService _businessHoursService;
+    private readonly WhatsAppAwayMessageService _awayMessageService;
     private readonly ILogger<BranchWhatsAppSettingsController> _logger;
 
     public BranchWhatsAppSettingsController(
@@ -24,12 +27,16 @@ public class BranchWhatsAppSettingsController : ControllerBase
         ICurrentUser currentUser,
         IClock clock,
         IWhatsAppCloudClient whatsAppCloudClient,
+        IBranchBusinessHoursService businessHoursService,
+        WhatsAppAwayMessageService awayMessageService,
         ILogger<BranchWhatsAppSettingsController> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _whatsAppCloudClient = whatsAppCloudClient;
+        _businessHoursService = businessHoursService;
+        _awayMessageService = awayMessageService;
         _logger = logger;
     }
 
@@ -70,6 +77,16 @@ public class BranchWhatsAppSettingsController : ControllerBase
         var validationError = Validate(dto, requireToken: false);
         if (validationError is not null)
             return BadRequest(ApiResponse<WhatsAppBranchSettingDto>.ErrorResponse(validationError));
+        if (dto.AwayMessageEnabled == true)
+        {
+            var awayValidationError = _awayMessageService.ValidateTemplate(dto.AwayMessageText);
+            if (awayValidationError is not null)
+                return BadRequest(ApiResponse<WhatsAppBranchSettingDto>.ErrorResponse(awayValidationError));
+            var schedule = await _businessHoursService.Evaluate(branchId, _clock.UtcNow, cancellationToken);
+            if (!schedule.IsConfigured)
+                return BadRequest(ApiResponse<WhatsAppBranchSettingDto>.ErrorResponse(
+                    "Configura los siete días del horario de atención y al menos un día abierto antes de activar el mensaje de ausencia."));
+        }
 
         var setting = await _db.WhatsAppBranchSettings
             .FirstOrDefaultAsync(x => x.BranchId == branchId, cancellationToken);
@@ -101,6 +118,13 @@ public class BranchWhatsAppSettingsController : ControllerBase
         setting.WebhookVerifyToken = dto.WebhookVerifyToken.Trim();
         setting.AppSecret = string.IsNullOrWhiteSpace(dto.AppSecret) ? null : dto.AppSecret.Trim();
         setting.IsActive = dto.IsActive;
+        if (dto.AwayMessageEnabled.HasValue)
+        {
+            setting.AwayMessageEnabled = dto.AwayMessageEnabled.Value;
+            setting.AwayMessageText = string.IsNullOrWhiteSpace(dto.AwayMessageText)
+                ? null
+                : dto.AwayMessageText.Trim();
+        }
         if (hasCriticalChanges)
         {
             setting.IsVerified = false;
@@ -203,6 +227,8 @@ public class BranchWhatsAppSettingsController : ControllerBase
             IsActive = setting.IsActive,
             IsVerified = setting.IsVerified,
             LastVerifiedAt = setting.LastVerifiedAt,
+            AwayMessageEnabled = setting.AwayMessageEnabled,
+            AwayMessageText = setting.AwayMessageText,
             CreatedAt = setting.CreatedAt,
             UpdatedAt = setting.UpdatedAt,
             Status = !setting.IsActive

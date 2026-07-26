@@ -206,6 +206,15 @@ Reglas:
 - Las modificaciones de pedidos se consolidan por edición completa. Una sustitución o conjunto de cambios solo entra como reducción monetaria cuando el total final es menor al inicial; el detalle informa hora Colombia, actor, productos y cantidades afectados. Los pasos intermedios negativos de una edición cuyo total final aumentó o quedó igual no se reportan como merma.
 - El identificador transaccional y los productos anterior/nuevo del audit log se habilitan con el script idempotente `SenorArroz.Infrastructure/Scripts/improve_order_monetary_audit_operations.sql`, que debe ejecutarse antes de desplegar el backend; los logs anteriores siguen agrupándose por su marca temporal transaccional.
 
+## WhatsApp y horarios de atención
+
+- Cada sucursal puede activar y personalizar su mensaje de ausencia.
+- La disponibilidad usa el horario semanal de la sucursal y la hora local de Colombia; apertura es inclusiva y cierre es exclusivo.
+- Fuera del horario, el mensaje entrante queda no leído, se excluye de la cola de IA y recibe como máximo un aviso durante el periodo continuo de cierre.
+- El aviso no cambia el modo de atención de la conversación y se aplica tanto a atención humana como a IA.
+- Si el horario está ausente o es inválido, se conserva el flujo normal de atención automática y se registra una advertencia.
+- Los mensajes ignorados por cierre no se reprocesan ni reciben una respuesta retroactiva al abrir.
+
 ## Impresión POS
 
 Reglas:

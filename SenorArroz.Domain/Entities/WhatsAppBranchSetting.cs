@@ -14,6 +14,8 @@ public class WhatsAppBranchSetting : BaseEntity
     public bool IsActive { get; set; }
     public bool IsVerified { get; set; }
     public DateTime? LastVerifiedAt { get; set; }
+    public bool AwayMessageEnabled { get; set; }
+    public string? AwayMessageText { get; set; }
 
     public virtual Branch Branch { get; set; } = null!;
 }

@@ -23,6 +23,8 @@ public class WhatsAppBranchSettingConfiguration : IEntityTypeConfiguration<Whats
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(false);
         builder.Property(x => x.IsVerified).HasColumnName("is_verified").HasDefaultValue(false);
         builder.Property(x => x.LastVerifiedAt).HasColumnName("last_verified_at");
+        builder.Property(x => x.AwayMessageEnabled).HasColumnName("away_message_enabled").HasDefaultValue(false);
+        builder.Property(x => x.AwayMessageText).HasColumnName("away_message_text").HasMaxLength(3500);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

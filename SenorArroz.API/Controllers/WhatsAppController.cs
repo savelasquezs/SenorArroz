@@ -20,6 +20,11 @@ namespace SenorArroz.API.Controllers;
 [Route("api/whatsapp")]
 public class WhatsAppController : ControllerBase
 {
+    private sealed record WhatsAppAwayMessageDispatch(
+        WhatsAppMessage Message,
+        DateTime ClosedPeriodStartedAtUtc,
+        string Text);
+
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IBranchContext _branchContext;
@@ -32,6 +37,9 @@ public class WhatsAppController : ControllerBase
     private readonly ILogger<WhatsAppController> _logger;
     private readonly WhatsAppAttentionService _attentionService;
     private readonly IWhatsAppAiWorkQueue _aiWorkQueue;
+    private readonly IWhatsAppAutomaticMessageSender _automaticMessageSender;
+    private readonly IBranchBusinessHoursService _businessHoursService;
+    private readonly WhatsAppAwayMessageService _awayMessageService;
     private readonly int _aiMaxPersistentAttempts;
 
     public WhatsAppController(
@@ -47,7 +55,10 @@ public class WhatsAppController : ControllerBase
         IOptions<WhatsAppAiOrchestratorOptions> aiOptions,
         ILogger<WhatsAppController> logger,
         WhatsAppAttentionService attentionService,
-        IWhatsAppAiWorkQueue aiWorkQueue)
+        IWhatsAppAiWorkQueue aiWorkQueue,
+        IWhatsAppAutomaticMessageSender automaticMessageSender,
+        IBranchBusinessHoursService businessHoursService,
+        WhatsAppAwayMessageService awayMessageService)
     {
         _db = db;
         _currentUser = currentUser;
@@ -62,6 +73,9 @@ public class WhatsAppController : ControllerBase
         _logger = logger;
         _attentionService = attentionService;
         _aiWorkQueue = aiWorkQueue;
+        _automaticMessageSender = automaticMessageSender;
+        _businessHoursService = businessHoursService;
+        _awayMessageService = awayMessageService;
     }
 
     [HttpGet("status")]
@@ -489,6 +503,7 @@ public class WhatsAppController : ControllerBase
         _db.WhatsAppWebhookEvents.Add(webhookEvent);
         var createdMessages = new List<WhatsAppMessage>();
         var aiProcessingChanges = new List<WhatsAppMessage>();
+        var awayMessageDispatches = new List<WhatsAppAwayMessageDispatch>();
 
         try
         {
@@ -498,6 +513,7 @@ public class WhatsAppController : ControllerBase
                 webhookEvent,
                 createdMessages,
                 aiProcessingChanges,
+                awayMessageDispatches,
                 cancellationToken);
             webhookEvent.Processed = processedAny;
             await _db.SaveChangesAsync(cancellationToken);
@@ -505,6 +521,27 @@ public class WhatsAppController : ControllerBase
             foreach (var message in createdMessages.Where(x => x.Id > 0))
             {
                 await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
+                var awayDispatch = awayMessageDispatches.FirstOrDefault(x => ReferenceEquals(x.Message, message));
+                if (awayDispatch is not null)
+                {
+                    var dispatchKey = WhatsAppAwayMessageService.BuildDispatchKey(
+                        message.ConversationId,
+                        awayDispatch.ClosedPeriodStartedAtUtc);
+                    var sendResult = await _automaticMessageSender.SendAwayTextAsync(
+                        message.ConversationId,
+                        dispatchKey,
+                        awayDispatch.Text,
+                        cancellationToken);
+                    if (!sendResult.Success)
+                    {
+                        _logger.LogWarning(
+                            "WhatsApp away message could not be sent. ConversationId={ConversationId} MessageId={MessageId} Error={Error}",
+                            message.ConversationId,
+                            message.Id,
+                            sendResult.Error);
+                    }
+                    continue;
+                }
                 if (!_aiWorkQueue.TryEnqueue(message.ConversationId, message.Id))
                     _logger.LogWarning("WhatsApp AI queue full; message remains pending. ConversationId={ConversationId} MessageId={MessageId}", message.ConversationId, message.Id);
             }
@@ -1619,6 +1656,7 @@ public class WhatsAppController : ControllerBase
         WhatsAppWebhookEvent webhookEvent,
         List<WhatsAppMessage> createdMessages,
         List<WhatsAppMessage> aiProcessingChanges,
+        List<WhatsAppAwayMessageDispatch> awayMessageDispatches,
         CancellationToken cancellationToken)
     {
         var processedAny = false;
@@ -1649,7 +1687,7 @@ public class WhatsAppController : ControllerBase
                     continue;
                 }
 
-                processedAny |= await ProcessInboundMessagesAsync(value, setting, webhookEvent, createdMessages, cancellationToken);
+                processedAny |= await ProcessInboundMessagesAsync(value, setting, webhookEvent, createdMessages, awayMessageDispatches, cancellationToken);
                 processedAny |= await ProcessStatusesAsync(value, webhookEvent, aiProcessingChanges, cancellationToken);
             }
         }
@@ -1662,6 +1700,7 @@ public class WhatsAppController : ControllerBase
         WhatsAppBranchSetting setting,
         WhatsAppWebhookEvent webhookEvent,
         List<WhatsAppMessage> createdMessages,
+        List<WhatsAppAwayMessageDispatch> awayMessageDispatches,
         CancellationToken cancellationToken)
     {
         if (!value.TryGetProperty("messages", out var messages) || messages.ValueKind != JsonValueKind.Array)
@@ -1722,6 +1761,54 @@ public class WhatsAppController : ControllerBase
                 ? null
                 : await DownloadAndStoreInboundMediaAsync(setting, conversation.BranchId, conversation.Id, mediaPayload.Value, messageType, cancellationToken);
 
+            var aiProcessingStatus = WhatsAppAiProcessingStatus.Pending;
+            DateTime? aiProcessedAt = null;
+            string? aiProcessingError = null;
+            DateTime? awayClosedPeriodStartedAtUtc = null;
+            string? awayText = null;
+            if (setting.AwayMessageEnabled)
+            {
+                var receivedAtUtc = _clock.UtcNow;
+                var evaluation = await _businessHoursService.Evaluate(setting.BranchId, receivedAtUtc, cancellationToken);
+                if (!evaluation.IsConfigured)
+                {
+                    _logger.LogWarning(
+                        "WhatsApp away message skipped because branch business hours are missing or invalid. BranchId={BranchId}",
+                        setting.BranchId);
+                }
+                else if (!evaluation.IsOpen
+                    && evaluation.ClosedPeriodStartedAtUtc.HasValue
+                    && evaluation.NextOpeningAtUtc.HasValue)
+                {
+                    var template = setting.AwayMessageText;
+                    var validationError = _awayMessageService.ValidateTemplate(template);
+                    if (validationError is not null)
+                    {
+                        _logger.LogWarning(
+                            "WhatsApp away message skipped because its template is invalid. BranchId={BranchId} Error={Error}",
+                            setting.BranchId,
+                            validationError);
+                    }
+                    else
+                    {
+                        var branchName = await _db.Branches.AsNoTracking()
+                            .Where(x => x.Id == setting.BranchId)
+                            .Select(x => x.Name)
+                            .FirstAsync(cancellationToken);
+                        var rendered = _awayMessageService.Render(
+                            template!,
+                            branchName,
+                            receivedAtUtc,
+                            evaluation.NextOpeningAtUtc.Value);
+                        aiProcessingStatus = WhatsAppAiProcessingStatus.Ignored;
+                        aiProcessedAt = receivedAtUtc;
+                        aiProcessingError = "outside_business_hours";
+                        awayClosedPeriodStartedAtUtc = evaluation.ClosedPeriodStartedAtUtc.Value;
+                        awayText = rendered;
+                    }
+                }
+            }
+
             var message = new WhatsAppMessage
             {
                 Conversation = conversation,
@@ -1737,11 +1824,18 @@ public class WhatsAppController : ControllerBase
                 MediaSha256 = inboundMedia?.Sha256 ?? mediaPayload?.Sha256,
                 Status = WhatsAppMessageStatus.Received,
                 Timestamp = timestamp,
-                RawPayload = messageElement.GetRawText()
-                ,AiProcessingStatus = WhatsAppAiProcessingStatus.Pending
+                RawPayload = messageElement.GetRawText(),
+                AiProcessingStatus = aiProcessingStatus,
+                AiProcessedAt = aiProcessedAt,
+                AiProcessingError = aiProcessingError
             };
             _db.WhatsAppMessages.Add(message);
             createdMessages.Add(message);
+            if (awayClosedPeriodStartedAtUtc.HasValue && awayText is not null)
+                awayMessageDispatches.Add(new WhatsAppAwayMessageDispatch(
+                    message,
+                    awayClosedPeriodStartedAtUtc.Value,
+                    awayText));
 
             webhookEvent.EventType = "message";
             webhookEvent.WhatsAppMessageId ??= messageId;
