@@ -54,6 +54,12 @@ internal static class CashClosureAuditMapper
 
     public static bool ShouldIncludeInDailyEmail(CashClosureAuditLogicalEvent auditEvent)
     {
+        if (string.Equals(auditEvent.EntityType, "expense_header", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(auditEvent.OperationType, "deleted", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         if (!string.Equals(auditEvent.EntityType, "order", StringComparison.OrdinalIgnoreCase))
             return false;
 
@@ -214,6 +220,11 @@ internal static class CashClosureAuditMapper
                 : string.Empty;
             summary = $"Pedido #{log.EntityId} cancelado.{totalText}{productText}";
         }
+        else if (string.Equals(log.EntityType, "expense_header", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(log.OperationType, "deleted", StringComparison.OrdinalIgnoreCase))
+        {
+            summary = FormatDeletedExpense(log, delta);
+        }
 
         return new CashClosureAuditLogicalEvent
         {
@@ -230,6 +241,89 @@ internal static class CashClosureAuditMapper
             Difference = delta.Difference ?? 0,
             HasProductChanges = delta.ProductChanges.Count > 0,
         };
+    }
+
+    private static string FormatDeletedExpense(EntityAuditLog log, AuditMoneyDelta delta)
+    {
+        if (string.IsNullOrWhiteSpace(log.BeforeJson))
+            return log.SummaryText;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(log.BeforeJson);
+            var snapshot = doc.RootElement;
+            var total = TryGetDecimal(snapshot, "total") ?? delta.TotalBefore ?? 0;
+            var vat = TryGetDecimal(snapshot, "vat_amount") ?? 0;
+            var supplier = TryGetString(snapshot, "supplier_name");
+            var deliveryman = TryGetString(snapshot, "deliveryman_name");
+            var notes = TryGetString(snapshot, "notes");
+
+            var parts = new List<string>
+            {
+                $"Gasto #{log.EntityId} eliminado.",
+                $"Total: {FormatMoney(total)}.",
+            };
+            if (!string.IsNullOrWhiteSpace(supplier))
+                parts.Add($"Proveedor: {supplier}.");
+            if (vat > 0)
+                parts.Add($"IVA incluido: {FormatMoney(vat)}.");
+            if (!string.IsNullOrWhiteSpace(deliveryman))
+                parts.Add($"Domiciliario: {deliveryman}.");
+
+            var lines = FormatDeletedExpenseLines(snapshot);
+            if (lines.Count > 0)
+                parts.Add($"Detalle: {string.Join("; ", lines)}.");
+
+            var payments = FormatDeletedExpensePayments(snapshot);
+            if (payments.Count > 0)
+                parts.Add($"Pagos: {string.Join("; ", payments)}.");
+            if (!string.IsNullOrWhiteSpace(notes))
+                parts.Add($"Notas: {notes}.");
+
+            return string.Join(" ", parts);
+        }
+        catch (JsonException)
+        {
+            return log.SummaryText;
+        }
+    }
+
+    private static IReadOnlyList<string> FormatDeletedExpenseLines(JsonElement snapshot)
+    {
+        if (!snapshot.TryGetProperty("lines", out var lines) || lines.ValueKind != JsonValueKind.Array)
+            return [];
+
+        return lines.EnumerateArray()
+            .Select(line =>
+            {
+                var name = TryGetString(line, "expense_name")
+                    ?? (TryGetInt(line, "expense_id") is int id ? $"Gasto de catálogo #{id}" : "Línea");
+                var category = TryGetString(line, "category_name");
+                var quantity = TryGetDecimal(line, "quantity") ?? 0;
+                var amount = TryGetDecimal(line, "amount") ?? 0;
+                var total = TryGetDecimal(line, "total") ?? quantity * amount;
+                var notes = TryGetString(line, "notes");
+                var categoryText = string.IsNullOrWhiteSpace(category) ? string.Empty : $" [{category}]";
+                var notesText = string.IsNullOrWhiteSpace(notes) ? string.Empty : $" ({notes})";
+                return $"{FormatQuantity(quantity)} × {name}{categoryText} a {FormatMoney(amount)} = {FormatMoney(total)}{notesText}";
+            })
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> FormatDeletedExpensePayments(JsonElement snapshot)
+    {
+        if (!snapshot.TryGetProperty("payments", out var payments) || payments.ValueKind != JsonValueKind.Array)
+            return [];
+
+        return payments.EnumerateArray()
+            .Select(payment =>
+            {
+                var name = TryGetString(payment, "bank_name")
+                    ?? (TryGetInt(payment, "bank_id") is int id ? $"Banco #{id}" : "Banco");
+                var amount = TryGetDecimal(payment, "amount") ?? 0;
+                return $"{name}: {FormatMoney(amount)}";
+            })
+            .ToList();
     }
 
     private static string FormatProductChanges(
@@ -400,6 +494,17 @@ internal static class CashClosureAuditMapper
             JsonValueKind.String when decimal.TryParse(element.GetString(), out var value) => value,
             _ => null,
         };
+    }
+
+    private static string? TryGetString(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var element)
+            || element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        return element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString();
     }
 }
 

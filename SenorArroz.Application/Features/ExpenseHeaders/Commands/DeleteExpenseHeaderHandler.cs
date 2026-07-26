@@ -31,17 +31,16 @@ public class DeleteExpenseHeaderHandler : IRequestHandler<DeleteExpenseHeaderCom
         }
         _branchContext.EnsureAccess(expenseHeader.BranchId);
 
-        // Validar acceso
+        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
+        {
+            throw new BusinessException("Solo un administrador o superadministrador puede eliminar gastos");
+        }
+
         if (!Roles.IsSuperadmin(_currentUser.Role))
         {
             if (expenseHeader.BranchId != _currentUser.BranchId)
             {
                 throw new BusinessException("No tienes acceso a este gasto");
-            }
-
-            if (Roles.IsCashier(_currentUser.Role) && expenseHeader.CreatedById != _currentUser.Id)
-            {
-                throw new BusinessException("Solo puedes eliminar tus propios gastos");
             }
         }
 

@@ -108,34 +108,53 @@ LANGUAGE sql
 AS $$
     SELECT jsonb_build_object(
         'id', eh.id,
+        'created_at', eh.created_at,
+        'supplier_id', eh.supplier_id,
+        'supplier_name', s.name,
+        'created_by_id', eh.created_by_id,
+        'created_by_name', creator.name,
+        'deliveryman_id', eh.deliveryman_id,
+        'deliveryman_name', deliveryman.name,
         'total', COALESCE(eh.total, 0),
         'vat_amount', COALESCE(eh.vat_amount, 0),
+        'notes', eh.notes,
         'lines', COALESCE((
             SELECT jsonb_agg(
                 jsonb_build_object(
                     'expense_id', ed.expense_id,
+                    'expense_name', e.name,
+                    'category_name', ec.name,
+                    'unit', e.unit,
                     'quantity', ed.quantity,
                     'amount', ed.amount,
-                    'total', COALESCE(ed.total, 0)
+                    'total', COALESCE(ed.total, 0),
+                    'notes', ed.notes
                 )
                 ORDER BY ed.id
             )
             FROM public.expense_detail ed
+            JOIN public.expense e ON e.id = ed.expense_id
+            JOIN public.expense_category ec ON ec.id = e.category_id
             WHERE ed.header_id = eh.id
         ), '[]'::jsonb),
         'payments', COALESCE((
             SELECT jsonb_agg(
                 jsonb_build_object(
                     'bank_id', ebp.bank_id,
+                    'bank_name', b.name,
                     'amount', ebp.amount
                 )
                 ORDER BY ebp.id
             )
             FROM public.expense_bank_payment ebp
+            JOIN public.bank b ON b.id = ebp.bank_id
             WHERE ebp.expense_header_id = eh.id
         ), '[]'::jsonb)
     )
     FROM public.expense_header eh
+    JOIN public.supplier s ON s.id = eh.supplier_id
+    JOIN public."user" creator ON creator.id = eh.created_by_id
+    LEFT JOIN public."user" deliveryman ON deliveryman.id = eh.deliveryman_id
     WHERE eh.id = p_header_id;
 $$;
 
@@ -329,7 +348,9 @@ DECLARE
     v_after jsonb;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        v_before := jsonb_build_object('id', OLD.id, 'total', COALESCE(OLD.total, 0), 'vat_amount', COALESCE(OLD.vat_amount, 0), 'lines', '[]'::jsonb, 'payments', '[]'::jsonb);
+        -- This function runs BEFORE DELETE so related lines and bank payments
+        -- are still available for the immutable audit snapshot.
+        v_before := public.audit_expense_snapshot(OLD.id);
         PERFORM public.audit_insert_log(
             OLD.branch_id, 'expense_header', OLD.id, 'deleted', v_changed_at,
             format('Gasto #%s eliminado. Total anterior: %s', OLD.id, to_char(COALESCE(OLD.total, 0), 'FM999G999G999G990')),
@@ -367,6 +388,12 @@ DECLARE
     v_new_total numeric := 0;
     v_summary text;
 BEGIN
+    -- Ignore child deletes caused by deleting the header. The complete
+    -- header snapshot is already stored by audit_expense_header_changes.
+    IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1 THEN
+        RETURN OLD;
+    END IF;
+
     v_header_id := COALESCE(NEW.header_id, OLD.header_id);
     SELECT eh.branch_id INTO v_branch_id FROM public.expense_header eh WHERE eh.id = v_header_id;
     v_after := public.audit_expense_snapshot(v_header_id);
@@ -426,6 +453,12 @@ DECLARE
     v_total numeric;
     v_summary text;
 BEGIN
+    -- Ignore child deletes caused by deleting the header. The complete
+    -- header snapshot is already stored by audit_expense_header_changes.
+    IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1 THEN
+        RETURN OLD;
+    END IF;
+
     v_header_id := COALESCE(NEW.expense_header_id, OLD.expense_header_id);
     SELECT eh.branch_id, COALESCE(eh.total, 0) INTO v_branch_id, v_total FROM public.expense_header eh WHERE eh.id = v_header_id;
     v_after := public.audit_expense_snapshot(v_header_id);
@@ -479,7 +512,7 @@ CREATE TRIGGER zz_audit_order_detail_on_delete AFTER DELETE ON public.order_deta
 DROP TRIGGER IF EXISTS zz_audit_expense_header_on_update ON public.expense_header;
 CREATE TRIGGER zz_audit_expense_header_on_update AFTER UPDATE ON public.expense_header FOR EACH ROW EXECUTE FUNCTION public.audit_expense_header_changes();
 DROP TRIGGER IF EXISTS zz_audit_expense_header_on_delete ON public.expense_header;
-CREATE TRIGGER zz_audit_expense_header_on_delete AFTER DELETE ON public.expense_header FOR EACH ROW EXECUTE FUNCTION public.audit_expense_header_changes();
+CREATE TRIGGER zz_audit_expense_header_on_delete BEFORE DELETE ON public.expense_header FOR EACH ROW EXECUTE FUNCTION public.audit_expense_header_changes();
 DROP TRIGGER IF EXISTS zz_audit_expense_detail_on_insert ON public.expense_detail;
 CREATE TRIGGER zz_audit_expense_detail_on_insert AFTER INSERT ON public.expense_detail FOR EACH ROW EXECUTE FUNCTION public.audit_expense_detail_changes();
 DROP TRIGGER IF EXISTS zz_audit_expense_detail_on_update ON public.expense_detail;

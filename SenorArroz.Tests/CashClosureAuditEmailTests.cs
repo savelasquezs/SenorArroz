@@ -98,6 +98,61 @@ public class CashClosureAuditEmailTests
     }
 
     [Fact]
+    public void DeletedExpense_IsIncludedWithItsCompleteSnapshot()
+    {
+        var deletedExpense = Audit(
+            id: 10,
+            operationType: "deleted",
+            moneyDelta: """{"total_before":25840,"total_after":0,"difference":-25840,"lines_affected":[]}""");
+        deletedExpense.EntityType = "expense_header";
+        deletedExpense.EntityId = 321;
+        deletedExpense.BeforeJson =
+            """
+            {
+              "id": 321,
+              "supplier_name": "Distribuciones Centro",
+              "deliveryman_name": "Carlos Pérez",
+              "total": 25840,
+              "vat_amount": 3040,
+              "notes": "Compra urgente",
+              "lines": [
+                {
+                  "expense_id": 8,
+                  "expense_name": "Arroz",
+                  "category_name": "Insumos",
+                  "quantity": 2,
+                  "amount": 10000,
+                  "total": 20000,
+                  "notes": "Bulto pequeño"
+                },
+                {
+                  "expense_id": 9,
+                  "expense_name": "Transporte",
+                  "category_name": "Logística",
+                  "quantity": 1,
+                  "amount": 2800,
+                  "total": 2800
+                }
+              ],
+              "payments": [
+                { "bank_id": 4, "bank_name": "Bancolombia", "amount": 25840 }
+              ]
+            }
+            """;
+
+        var auditEvent = Assert.Single(Consolidate(deletedExpense));
+
+        Assert.True(CashClosureAuditMapper.ShouldIncludeInDailyEmail(auditEvent));
+        Assert.Equal("expenses_deleted", CashClosureAuditMapper.GroupKey(auditEvent));
+        Assert.Contains("Gasto #321 eliminado", auditEvent.SummaryText);
+        Assert.Contains("Proveedor: Distribuciones Centro", auditEvent.SummaryText);
+        Assert.Contains("2 × Arroz [Insumos] a $10.000 = $20.000 (Bulto pequeño)", auditEvent.SummaryText);
+        Assert.Contains("1 × Transporte [Logística] a $2.800 = $2.800", auditEvent.SummaryText);
+        Assert.Contains("Pagos: Bancolombia: $25.840", auditEvent.SummaryText);
+        Assert.Contains("Notas: Compra urgente", auditEvent.SummaryText);
+    }
+
+    [Fact]
     public void DailyTrackingAudit_IncludesOnlyDelicateLocationAlerts()
     {
         Assert.Equal(
