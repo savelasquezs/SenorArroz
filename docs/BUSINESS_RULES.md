@@ -6,6 +6,13 @@ Este documento resume reglas funcionales que Codex debe respetar antes de modifi
 
 El sistema ya opera con clientes reales. Todo cambio debe ser pequeño, seguro y compatible con datos existentes.
 
+## Reproducción histórica de recorridos
+
+- Solo Admin y Superadmin pueden consultar recorridos históricos.
+- Admin queda limitado a su sucursal; Superadmin debe operar con una sucursal efectiva.
+- El eje temporal es `RecordedAt`; `SyncedAt` solo informa recepción tardía.
+- Cada consulta admite máximo 24 horas y 20.000 ubicaciones, sin truncamiento silencioso.
+
 Antes de tocar código:
 
 1. Leer `AGENTS.md`.
