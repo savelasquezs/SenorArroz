@@ -44,7 +44,9 @@ public class AppPaymentRepository : IAppPaymentRepository
             query = query.Where(ap => ap.AppId == appId.Value);
 
         if (settled.HasValue)
-            query = query.Where(ap => ap.IsSetted == settled.Value);
+            query = settled.Value
+                ? query.Where(ap => ap.IsSetted)
+                : query.Where(ap => !ap.IsSetted && !ap.IsReversed);
 
         if (fromDate.HasValue)
             query = query.Where(ap => ap.CreatedAt >= fromDate.Value);
@@ -95,7 +97,7 @@ public class AppPaymentRepository : IAppPaymentRepository
             .ThenInclude(a => a.Bank)
             .ThenInclude(b => b.Branch)
             .Include(ap => ap.Order)
-            .Where(ap => !ap.IsSetted)
+            .Where(ap => !ap.IsSetted && !ap.IsReversed)
             .OrderBy(ap => ap.CreatedAt)
             .ToListAsync(cancellationToken);
     }
@@ -108,7 +110,7 @@ public class AppPaymentRepository : IAppPaymentRepository
             .ThenInclude(a => a.Bank)
             .ThenInclude(b => b.Branch)
             .Include(ap => ap.Order)
-            .Where(ap => ap.AppId == appId && !ap.IsSetted)
+            .Where(ap => ap.AppId == appId && !ap.IsSetted && !ap.IsReversed)
             .OrderBy(ap => ap.CreatedAt)
             .ToListAsync(cancellationToken);
     }
@@ -121,7 +123,10 @@ public class AppPaymentRepository : IAppPaymentRepository
             .ThenInclude(a => a.Bank)
             .ThenInclude(b => b.Branch)
             .Include(ap => ap.Order)
-            .Where(ap => !ap.IsSetted && ap.CreatedAt >= fromDate && ap.CreatedAt <= toDate)
+            .Where(ap => !ap.IsSetted
+                         && !ap.IsReversed
+                         && ap.CreatedAt >= fromDate
+                         && ap.CreatedAt <= toDate)
             .OrderBy(ap => ap.CreatedAt)
             .ToListAsync(cancellationToken);
     }
@@ -172,7 +177,7 @@ public class AppPaymentRepository : IAppPaymentRepository
     public async Task<bool> SettlePaymentsAsync(IEnumerable<int> paymentIds, CancellationToken cancellationToken = default)
     {
         var payments = await _context.AppPayments
-            .Where(ap => paymentIds.Contains(ap.Id))
+            .Where(ap => paymentIds.Contains(ap.Id) && !ap.IsReversed)
             .ToListAsync(cancellationToken);
 
         if (!payments.Any())
@@ -188,7 +193,7 @@ public class AppPaymentRepository : IAppPaymentRepository
     public async Task<bool> UnsettlePaymentsAsync(IEnumerable<int> paymentIds, CancellationToken cancellationToken = default)
     {
         var payments = await _context.AppPayments
-            .Where(ap => paymentIds.Contains(ap.Id))
+            .Where(ap => paymentIds.Contains(ap.Id) && !ap.IsReversed)
             .ToListAsync(cancellationToken);
 
         if (!payments.Any())
@@ -224,8 +229,8 @@ public class AppPaymentRepository : IAppPaymentRepository
     public async Task<decimal> GetUnsettledAmountByAppAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
-            .Where(ap => ap.AppId == appId && !ap.IsSetted)
-            .SumAsync(ap => ap.Amount, cancellationToken);
+            .Where(ap => ap.AppId == appId && !ap.IsSetted && !ap.IsReversed)
+            .SumAsync(ap => ap.ExpectedNetAmount ?? ap.Amount, cancellationToken);
     }
 
     public async Task<int> GetTotalCountByAppAsync(int appId, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default)
@@ -244,6 +249,6 @@ public class AppPaymentRepository : IAppPaymentRepository
     public async Task<int> GetUnsettledCountByAppAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
-            .CountAsync(ap => ap.AppId == appId && !ap.IsSetted, cancellationToken);
+            .CountAsync(ap => ap.AppId == appId && !ap.IsSetted && !ap.IsReversed, cancellationToken);
     }
 }

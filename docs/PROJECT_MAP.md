@@ -244,3 +244,23 @@ Evitar:
 - Cambios amplios en varias features a la vez.
 - Mezclar refactor con cambio funcional.
 - Cambiar esquema sin documentarlo.
+### Integración Rappi API v2
+
+Buscar primero:
+
+- `SenorArroz.API/Controllers/RappiIntegrationsController.cs`
+- `SenorArroz.Infrastructure/Integrations/RappiDeliveryProvider.cs`
+- `SenorArroz.Infrastructure/Integrations/RappiOrderProcessor.cs`
+- `SenorArroz.Infrastructure/Integrations/RappiIntegrationWorker.cs`
+- `SenorArroz.Infrastructure/Integrations/ExternalDeliveryStatusSyncService.cs`
+- `SenorArroz.Domain/Entities/IntegrationEntities.cs`
+- `SenorArroz.Infrastructure/Data/Configurations/IntegrationConfigurations.cs`
+- `SenorArroz.Infrastructure/Scripts/upgrade_rappi_v2_sandbox.sql`
+- `docs/RAPPI_INTEGRATION.md`
+
+Frontend:
+
+- `src/components/branches/BranchDeliveryAppsSection.vue`
+- `src/views/RappiOrdersView.vue`
+- `src/services/MainAPI/integrationApi.ts`
+- `src/types/integrations.ts`

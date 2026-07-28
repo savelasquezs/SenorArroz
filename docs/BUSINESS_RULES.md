@@ -265,3 +265,24 @@ Cuando una tarea toque una regla funcional:
 - ¿No se rompieron pagos/caja?
 - ¿Los filtros de fecha y sucursal siguen funcionando?
 - ¿Los índices únicos futuros deben ser por tenant?
+## Integración Rappi API v2
+
+Reglas:
+
+- La integración Rappi pertenece a Santander, usa credenciales globales del ambiente y nunca persiste `client_id` ni `client_secret`.
+- La tienda `900173116` es padre y la `900173117` hereda su menú. Solo se publica el menú al padre.
+- Cada webhook tiene un secreto distinto, cifrado en base de datos. La firma usa HMAC-SHA256 sobre `timestamp.rawPayload` y comparación en tiempo constante.
+- Todo webhook se persiste antes de procesarse y es idempotente por integración y evento.
+- El catálogo Rappi es una selección uno a uno de productos internos. Los SKU `product-{ProductId}` y categorías `category-{ProductCategoryId}` son inmutables.
+- El Sprint 1 publica únicamente productos simples, sin toppings ni modificadores.
+- La disponibilidad deriva del producto seleccionado, activo y disponible según las reglas internas, y se sincroniza en ambas tiendas.
+- Solo se admiten órdenes `delivery` con courier Rappi.
+- Una orden válida se toma automáticamente y se crea en estado `Taken`. SKU, precio, stock, modificadores o totales inconsistentes la dejan retenida.
+- Las órdenes retenidas solo permiten revalidar y aceptar o rechazar; no se permiten sustituciones particulares.
+- La recuperación de `SENT` consulta la ventana oficial de 10 minutos y deduplica por conexión y `order_id`.
+- `total_order` es el total autoritativo. Descuentos Rappi, descuentos del aliado, cargos, comisión estimada, neto esperado, consignación real y diferencia se conservan por separado.
+- Una cancelación previa a liquidación revierte el pago por app sin borrarlo. Una cancelación entregada o liquidada crea una incidencia financiera.
+- La consignación real de un lote se prorratea por neto esperado; el residuo monetario se asigna a la última orden.
+- `READY_FOR_PICKUP` permanece deshabilitado por tienda hasta confirmación expresa de Rappi.
+- La información personal y el payload crudo se anonimizan después de 90 días.
+- Deshabilitar la integración conserva configuración, eventos, pedidos e historial financiero.

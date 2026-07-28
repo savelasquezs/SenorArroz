@@ -352,3 +352,29 @@ Cuando modifiques una entidad:
 - Mantener índices únicos globales que bloqueen datos repetidos entre restaurantes.
 - Permitir que frontend mande `TenantId` como autoridad.
 - No asociar tokens, dispositivos y print agents al tenant correcto.
+## Integración Rappi API v2
+
+Tablas:
+
+- `delivery_app_connection`: configuración global de Rappi por sucursal; referencia cliente, app financiera y actor técnico.
+- `delivery_app_store`: tiendas externas, relación padre/hija, `store_integration_id`, PING, conectividad y habilitación manual de Listo.
+- `delivery_app_webhook_subscription`: secreto cifrado y estado por tipo de evento.
+- `delivery_app_product_mapping`: selección uno a uno de `product`, overrides y último snapshot publicado.
+- `external_delivery_order`: inbox funcional de órdenes, validación, totales, descuentos, PII y vínculo con el pedido interno.
+- `integration_webhook_event`: inbox idempotente y outbox de estados externos.
+- `rappi_menu_publication`: payload, hash y estado de cada publicación al padre.
+- `rappi_availability_state`: estado deseado y último estado sincronizado por tienda y producto.
+- `app_payment`: comisión estimada, neto esperado, valor liquidado, diferencia y reversión.
+- `order`: referencia externa y snapshot operativo/financiero visible sin crear clientes individuales.
+
+Unicidades:
+
+- conexión: `(branch_id, provider)` y `public_id`;
+- tienda: `(connection_id, rappi_store_id)`;
+- webhook: `(connection_id, event_type)`;
+- producto: `(connection_id, product_id)` y `(connection_id, sku)`;
+- orden externa: `(connection_id, external_order_id)`;
+- evento: `(connection_id, event_key)`;
+- disponibilidad: `(store_id, product_mapping_id)`.
+
+El esquema se aplica con `SenorArroz.Infrastructure/Scripts/upgrade_rappi_v2_sandbox.sql`; no se usan migraciones EF para esta integración.

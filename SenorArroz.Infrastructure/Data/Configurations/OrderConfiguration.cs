@@ -28,6 +28,13 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.ExternalOrderId).HasColumnName("external_order_id").HasMaxLength(160);
         builder.Property(o => o.OrderSource).HasColumnName("order_source").HasMaxLength(40);
         builder.Property(o => o.ExternalFulfillmentProvider).HasColumnName("external_fulfillment_provider").HasMaxLength(40);
+        builder.Property(o => o.ExternalStoreName).HasColumnName("external_store_name").HasMaxLength(200);
+        builder.Property(o => o.ExternalCustomerPhone).HasColumnName("external_customer_phone").HasMaxLength(50);
+        builder.Property(o => o.ExternalDeliveryAddress).HasColumnName("external_delivery_address").HasMaxLength(600);
+        builder.Property(o => o.ExternalTotalDiscounts).HasColumnName("external_total_discounts");
+        builder.Property(o => o.ExternalDiscountByRappi).HasColumnName("external_discount_by_rappi");
+        builder.Property(o => o.ExternalDiscountByPartner).HasColumnName("external_discount_by_partner");
+        builder.Property(o => o.ExternalCharges).HasColumnName("external_charges");
 
         // Enum conversions
         builder.Property(o => o.Type).HasColumnName("type").HasConversion(

@@ -156,7 +156,8 @@ public class AppPaymentsController : ControllerBase
     {
         var command = new SettleMultipleAppPaymentsCommand
         {
-            PaymentIds = settleDto.PaymentIds
+            PaymentIds = settleDto.PaymentIds,
+            ActualAmount = settleDto.ActualAmount
         };
 
         var result = await _mediator.Send(command);

@@ -301,8 +301,11 @@ var globalPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Glob
 var globalWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Global:WindowSeconds", 60));
 var authPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Auth:PermitLimit", 10));
 var authWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Auth:WindowSeconds", 60));
+var rappiWebhookPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:RappiWebhook:PermitLimit", 600));
+var rappiWebhookWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:RappiWebhook:WindowSeconds", 60));
 var globalWindow = TimeSpan.FromSeconds(globalWindowSec);
 var authWindow = TimeSpan.FromSeconds(authWindowSec);
+var rappiWebhookWindow = TimeSpan.FromSeconds(rappiWebhookWindowSec);
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -338,6 +341,20 @@ builder.Services.AddRateLimiter(options =>
             });
     });
 
+    options.AddPolicy("rappi-webhook", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"rappi:{ip}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = rappiWebhookPermit,
+                Window = rappiWebhookWindow,
+                QueueLimit = 0
+            });
+    });
+
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
     {
         var path = httpContext.Request.Path;
@@ -345,6 +362,7 @@ builder.Services.AddRateLimiter(options =>
         if (path.StartsWithSegments("/swagger")
             || path.StartsWithSegments("/swagger-ui")
             || path.StartsWithSegments("/hubs")
+            || path.StartsWithSegments("/api/integrations/rappi/webhooks")
             || string.Equals(pv, "/", StringComparison.Ordinal)
             || string.Equals(pv, "/index.html", StringComparison.OrdinalIgnoreCase))
         {

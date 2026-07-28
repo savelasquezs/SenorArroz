@@ -51,7 +51,9 @@ namespace SenorArroz.Domain.Enums
         Accepted,
         Rejected,
         Cancelled,
-        SyncError
+        SyncError,
+        Expired,
+        ReconciliationRequired
     }
 
     public enum DailyPromotionType

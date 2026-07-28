@@ -25,6 +25,13 @@ public class Order : BaseEntity
     public string? ExternalOrderId { get; set; }
     public string? OrderSource { get; set; }
     public string? ExternalFulfillmentProvider { get; set; }
+    public string? ExternalStoreName { get; set; }
+    public string? ExternalCustomerPhone { get; set; }
+    public string? ExternalDeliveryAddress { get; set; }
+    public int? ExternalTotalDiscounts { get; set; }
+    public int? ExternalDiscountByRappi { get; set; }
+    public int? ExternalDiscountByPartner { get; set; }
+    public int? ExternalCharges { get; set; }
 
     public OrderType? Type { get; set; }
     public int? DeliveryFee { get; set; }

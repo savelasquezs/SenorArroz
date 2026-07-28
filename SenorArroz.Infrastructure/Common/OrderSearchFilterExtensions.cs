@@ -77,8 +77,9 @@ public static class OrderSearchFilterExtensions
             return query.Where(o => o.AppPayments.Any(ap => ap.AppId == appId.Value));
 
         if (!appId.HasValue && unsettledOnly)
-            return query.Where(o => o.AppPayments.Any(ap => !ap.IsSetted));
+            return query.Where(o => o.AppPayments.Any(ap => !ap.IsSetted && !ap.IsReversed));
 
-        return query.Where(o => o.AppPayments.Any(ap => ap.AppId == appId!.Value && !ap.IsSetted));
+        return query.Where(o => o.AppPayments.Any(ap =>
+            ap.AppId == appId!.Value && !ap.IsSetted && !ap.IsReversed));
     }
 }

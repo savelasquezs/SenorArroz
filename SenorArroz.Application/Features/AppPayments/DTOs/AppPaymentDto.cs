@@ -12,7 +12,15 @@ public class AppPaymentDto
     public int BranchId { get; set; }
     public string BranchName { get; set; } = string.Empty;
     public decimal Amount { get; set; }
+    public decimal? EstimatedCommissionRate { get; set; }
+    public decimal? EstimatedCommissionAmount { get; set; }
+    public decimal? ExpectedNetAmount { get; set; }
+    public decimal? ActualSettledAmount { get; set; }
+    public decimal? SettlementVariance { get; set; }
     public bool IsSetted { get; set; }
+    public bool IsReversed { get; set; }
+    public DateTime? ReversedAt { get; set; }
+    public string? ReversalReason { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

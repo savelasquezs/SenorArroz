@@ -37,6 +37,8 @@ public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentComma
         // Check if user has access to this app payment's branch
         if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para desliquidar este pago");
+        if (appPayment.IsReversed)
+            throw new BusinessException("No se puede desliquidar un pago revertido.");
 
         // Check if not settled
         if (!appPayment.IsSetted)
@@ -59,20 +61,23 @@ public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentComma
             .Where(id => id != appPayment.Id)
             .ToList();
 
-        if (settlementBankPayment.Amount < appPayment.Amount)
+        var settledAmount = appPayment.ActualSettledAmount ?? appPayment.Amount;
+        if (settlementBankPayment.Amount < settledAmount)
             throw new BusinessException("El ingreso bancario de la liquidación es menor al pago que se intenta desliquidar.");
 
-        if (settlementBankPayment.Amount == appPayment.Amount)
+        if (settlementBankPayment.Amount == settledAmount)
         {
             _context.BankPayments.Remove(settlementBankPayment);
         }
         else
         {
-            settlementBankPayment.Amount -= appPayment.Amount;
+            settlementBankPayment.Amount -= settledAmount;
             settlementBankPayment.AppSettlementSourcePaymentIds = AppSettlementBankPaymentSourceIds.Serialize(remainingSourceIds);
         }
 
         trackedAppPayment.IsSetted = false;
+        trackedAppPayment.ActualSettledAmount = null;
+        trackedAppPayment.SettlementVariance = null;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
