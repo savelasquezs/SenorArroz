@@ -96,26 +96,39 @@ public sealed class RappiDeliveryProvider(
         try
         {
             using var document = JsonDocument.Parse(response.Body!);
-            var root = document.RootElement;
-            if (root.ValueKind == JsonValueKind.Object
-                && root.TryGetProperty("stores", out var stores))
-                root = stores;
-            var enabled = root.ValueKind == JsonValueKind.Array
-                ? root.EnumerateArray()
-                    .Where(x => string.Equals(
-                        GetString(x, "state"),
-                        "ENABLE",
-                        StringComparison.OrdinalIgnoreCase))
-                    .Select(x => GetString(x, "store_id"))
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Cast<string>()
-                    .ToList()
-                : [];
+            var enabled = new List<string>();
+            CollectEnabledStoreIds(document.RootElement, enabled);
             return new(true, enabled);
         }
         catch (JsonException)
         {
             return new(false, Error: $"Rappi devolvió una configuración inválida para {eventType}.");
+        }
+    }
+
+    public async Task<RappiWebhookResult> ResetWebhookSecretAsync(
+        string eventType,
+        CancellationToken ct)
+    {
+        var response = await SendAuthorizedAsync(
+            () => new HttpRequestMessage(
+                HttpMethod.Put,
+                BuildUrl($"webhook/{Uri.EscapeDataString(eventType)}/reset-secret")),
+            ct);
+        if (!response.Success)
+            return new(false, Error: response.Error);
+
+        try
+        {
+            using var document = JsonDocument.Parse(response.Body!);
+            var secret = FindString(document.RootElement, "secret");
+            return string.IsNullOrWhiteSpace(secret)
+                ? new(false, Error: $"Rappi no devolvió el nuevo secreto del webhook {eventType}.")
+                : new(true, secret);
+        }
+        catch (JsonException)
+        {
+            return new(false, Error: $"Rappi devolvió una respuesta inválida al renovar {eventType}.");
         }
     }
 
@@ -457,6 +470,32 @@ public sealed class RappiDeliveryProvider(
         && element.TryGetProperty(name, out var value)
             ? value.ToString()
             : null;
+
+    private static void CollectEnabledStoreIds(JsonElement element, ICollection<string> result)
+    {
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+                CollectEnabledStoreIds(item, result);
+            return;
+        }
+
+        if (element.ValueKind != JsonValueKind.Object)
+            return;
+
+        if (element.TryGetProperty("stores", out var stores))
+        {
+            CollectEnabledStoreIds(stores, result);
+            return;
+        }
+
+        var state = GetString(element, "state");
+        var storeId = GetString(element, "store_id");
+        if (string.Equals(state, "ENABLE", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(storeId)
+            && !result.Contains(storeId))
+            result.Add(storeId);
+    }
 
     private record RappiTokenResult(bool Success, string? Token, string? Error);
     private record RappiHttpResult(bool Success, int? StatusCode, string? Body, string? Error);

@@ -20,6 +20,9 @@ public interface IRappiDeliveryProvider
     Task<RappiWebhookConfigurationResult> GetWebhookAsync(
         string eventType,
         CancellationToken cancellationToken);
+    Task<RappiWebhookResult> ResetWebhookSecretAsync(
+        string eventType,
+        CancellationToken cancellationToken);
     Task<RappiOperationResult> PublishMenuAsync(RappiMenuRequest menu, CancellationToken cancellationToken);
     Task<RappiOperationResult> GetMenuApprovalAsync(string storeId, CancellationToken cancellationToken);
     Task<RappiOperationResult> SetAvailabilityAsync(

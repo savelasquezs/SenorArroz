@@ -273,6 +273,7 @@ Reglas:
 - La tienda `900173116` es padre y la `900173117` hereda su menú. Solo se publica el menú al padre.
 - En sandbox `store_integration_id` es `900173116` para la tienda padre y `900173117` para la hija; en POS Tester se selecciona `POS=SeñorArrozDevV2` e `INTEGRACIÓN=SENORARROZDEVV2`.
 - Cada webhook tiene un secreto distinto, cifrado en base de datos. La firma usa HMAC-SHA256 sobre `timestamp.rawPayload` y comparación en tiempo constante.
+- Si Rappi ya tiene un webhook activo pero el secreto local falta, se rota mediante `reset-secret` y se guarda cifrado antes de continuar; no se intenta crear un duplicado.
 - Todo webhook se persiste antes de procesarse y es idempotente por integración y evento.
 - El catálogo Rappi es una selección uno a uno de productos internos. Los SKU `product-{ProductId}` y categorías `category-{ProductCategoryId}` son inmutables.
 - El Sprint 1 publica únicamente productos simples, sin toppings ni modificadores.

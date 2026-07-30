@@ -79,6 +79,8 @@ Las rutas públicas tienen el formato:
 
 Solo estas rutas son anónimas y todas exigen una firma válida.
 
+El registro es recuperable: si el webhook ya existe en Rappi pero el secreto local no fue persistido, el sistema usa `PUT webhook/{event}/reset-secret`, cifra el nuevo secreto y continúa sin crear un webhook duplicado.
+
 ## Fase 3 — Menú automático
 
 1. Seleccionar un catálogo pequeño de productos simples.

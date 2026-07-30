@@ -224,16 +224,18 @@ public sealed class RappiIntegrationsController(
             var subscription = connection.WebhookSubscriptions
                 .FirstOrDefault(x => x.EventType == eventType);
             var remote = await rappi.GetWebhookAsync(eventType, ct);
-            var alreadyConfigured = remote.Success
+            var remoteConfigured = remote.Success
                 && remote.EnabledStoreIds is not null
-                && storeIds.All(remote.EnabledStoreIds.Contains)
-                && !string.IsNullOrWhiteSpace(subscription?.EncryptedSecret);
-            var result = alreadyConfigured
+                && storeIds.All(remote.EnabledStoreIds.Contains);
+            var hasLocalSecret = !string.IsNullOrWhiteSpace(subscription?.EncryptedSecret);
+            var result = remoteConfigured && hasLocalSecret
                 ? new RappiWebhookResult(
                     true,
                     protector.Unprotect(subscription!.EncryptedSecret))
-                : await rappi.ConfigureWebhookAsync(eventType, webhookUrl, storeIds, ct);
-            if (!alreadyConfigured && result.Success)
+                : remoteConfigured
+                    ? await rappi.ResetWebhookSecretAsync(eventType, ct)
+                    : await rappi.ConfigureWebhookAsync(eventType, webhookUrl, storeIds, ct);
+            if (!(remoteConfigured && hasLocalSecret) && result.Success)
                 remote = await rappi.GetWebhookAsync(eventType, ct);
             var missingStores = remote.EnabledStoreIds is null
                 ? storeIds

@@ -60,6 +60,9 @@ public sealed class RappiDeliveryProviderTests
         var configuredWebhook = await provider.GetWebhookAsync(
             "NEW_ORDER",
             CancellationToken.None);
+        var rotatedWebhook = await provider.ResetWebhookSecretAsync(
+            "NEW_ORDER",
+            CancellationToken.None);
         var menuApproval = await provider.GetMenuApprovalAsync(
             "900173116",
             CancellationToken.None);
@@ -72,9 +75,11 @@ public sealed class RappiDeliveryProviderTests
         Assert.True(availability.Success);
         Assert.True(webhook.Success);
         Assert.True(configuredWebhook.Success);
+        Assert.True(rotatedWebhook.Success);
         Assert.Equal(["900173116", "900173117"], configuredWebhook.EnabledStoreIds);
         Assert.True(menuApproval.Success);
         Assert.Equal("webhook-secret", webhook.Secret);
+        Assert.Equal("rotated-webhook-secret", rotatedWebhook.Secret);
         Assert.Equal(1, handler.AuthRequests);
         Assert.All(
             handler.ApiRequests,
@@ -142,9 +147,12 @@ public sealed class RappiDeliveryProviderTests
                     """[{"integrationId":"900173116","rappiId":"900173116","name":"Señor Arroz Dev1"},{"integrationId":"900173117","rappiId":"900173117","name":"Señor Arroz Dev2"}]""");
             if (path.EndsWith("/webhook"))
                 return Json("""{"event":"NEW_ORDER","secret":"webhook-secret"}""");
+            if (path.EndsWith("/webhook/NEW_ORDER/reset-secret"))
+                return Json(
+                    """{"event":"NEW_ORDER","stores":[{"store_id":"900173116","state":"ENABLE"},{"store_id":"900173117","state":"ENABLE"}],"secret":"rotated-webhook-secret"}""");
             if (path.EndsWith("/webhook/NEW_ORDER"))
                 return Json(
-                    """{"event":"NEW_ORDER","stores":[{"store_id":"900173116","state":"ENABLE"},{"store_id":"900173117","state":"ENABLE"}]}""");
+                    """[{"event":"NEW_ORDER","stores":[{"store_id":"900173116","state":"ENABLE"},{"store_id":"900173117","state":"ENABLE"}]}]""");
             return Json("""{"message":"OK"}""");
         }
 
