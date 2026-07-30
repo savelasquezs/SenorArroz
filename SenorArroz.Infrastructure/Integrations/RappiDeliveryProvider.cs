@@ -332,9 +332,7 @@ public sealed class RappiDeliveryProvider(
             using var response = await httpClient.PostAsJsonAsync(options.AuthUrl, new
             {
                 client_id = options.ClientId,
-                client_secret = options.ClientSecret,
-                audience = options.Audience,
-                grant_type = options.GrantType
+                client_secret = options.ClientSecret
             }, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
             if (!response.IsSuccessStatusCode)

@@ -869,12 +869,14 @@ public sealed class RappiIntegrationsController(
                 new UpsertRappiStoreDto
                 {
                     RappiStoreId = "900173116",
+                    StoreIntegrationId = "900173116",
                     Name = "Señor Arroz Dev1",
                     IsParent = true
                 },
                 new UpsertRappiStoreDto
                 {
                     RappiStoreId = "900173117",
+                    StoreIntegrationId = "900173117",
                     Name = "Señor Arroz Dev2",
                     IsParent = false
                 }

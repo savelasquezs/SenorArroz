@@ -271,6 +271,7 @@ Reglas:
 
 - La integración Rappi pertenece a Santander, usa credenciales globales del ambiente y nunca persiste `client_id` ni `client_secret`.
 - La tienda `900173116` es padre y la `900173117` hereda su menú. Solo se publica el menú al padre.
+- En sandbox `store_integration_id` es `900173116` para la tienda padre y `900173117` para la hija; en POS Tester se selecciona `POS=SeñorArrozDevV2` e `INTEGRACIÓN=SENORARROZDEVV2`.
 - Cada webhook tiene un secreto distinto, cifrado en base de datos. La firma usa HMAC-SHA256 sobre `timestamp.rawPayload` y comparación en tiempo constante.
 - Todo webhook se persiste antes de procesarse y es idempotente por integración y evento.
 - El catálogo Rappi es una selección uno a uno de productos internos. Los SKU `product-{ProductId}` y categorías `category-{ProductCategoryId}` son inmutables.

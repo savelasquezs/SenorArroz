@@ -11,20 +11,19 @@ namespace SenorArroz.Tests;
 public sealed class RappiDeliveryProviderTests
 {
     [Fact]
-    public async Task Provider_UsesOfficialSandboxContracts()
+    public async Task Provider_UsesValidatedSandboxContracts()
     {
         var handler = new ContractHandler();
         var provider = new RappiDeliveryProvider(
             new HttpClient(handler),
             Options.Create(new RappiOptions
             {
-                AuthUrl = "https://rests-integrations-dev.auth0.com/oauth/token",
+                AuthUrl =
+                    "https://api.dev.rappi.com/restaurants/auth/v1/token/login/integrations",
                 ApiBaseUrl =
                     "https://microservices.dev.rappi.com/api/v2/restaurants-integrations-public-api",
                 ClientId = "client-id",
-                ClientSecret = "client-secret",
-                Audience = "https://int-public-api-v2/api",
-                GrantType = "client_credentials"
+                ClientSecret = "client-secret"
             }));
 
         var connection = await provider.TestConnectionAsync(CancellationToken.None);
@@ -48,7 +47,7 @@ public sealed class RappiDeliveryProviderTests
         var availability = await provider.SetAvailabilityAsync(
             [
                 new RappiAvailabilityRequest(
-                    "external-parent",
+                    "900173116",
                     ["product-9"],
                     ["product-10"])
             ],
@@ -68,7 +67,7 @@ public sealed class RappiDeliveryProviderTests
         Assert.True(connection.Success);
         Assert.True(repeatedConnection.Success);
         Assert.Equal("900173116", connection.Stores![0].StoreId);
-        Assert.Equal("external-parent", connection.Stores[0].IntegrationId);
+        Assert.Equal("900173116", connection.Stores[0].IntegrationId);
         Assert.True(menu.Success);
         Assert.True(availability.Success);
         Assert.True(webhook.Success);
@@ -81,11 +80,12 @@ public sealed class RappiDeliveryProviderTests
             handler.ApiRequests,
             request => Assert.Equal("bearer sandbox-token", request.Authorization));
 
-        using var tokenBody = JsonDocument.Parse(handler.Requests.Single(x => x.Path == "/oauth/token").Body);
+        using var tokenBody = JsonDocument.Parse(
+            handler.Requests.Single(x => x.Path.EndsWith("/token/login/integrations")).Body);
         Assert.Equal("client-id", tokenBody.RootElement.GetProperty("client_id").GetString());
         Assert.Equal("client-secret", tokenBody.RootElement.GetProperty("client_secret").GetString());
-        Assert.Equal("https://int-public-api-v2/api", tokenBody.RootElement.GetProperty("audience").GetString());
-        Assert.Equal("client_credentials", tokenBody.RootElement.GetProperty("grant_type").GetString());
+        Assert.False(tokenBody.RootElement.TryGetProperty("audience", out _));
+        Assert.False(tokenBody.RootElement.TryGetProperty("grant_type", out _));
 
         using var menuBody = JsonDocument.Parse(handler.Requests.Single(x => x.Path.EndsWith("/menu")).Body);
         Assert.Equal("900173116", menuBody.RootElement.GetProperty("storeId").GetString());
@@ -98,7 +98,7 @@ public sealed class RappiDeliveryProviderTests
         using var availabilityBody = JsonDocument.Parse(
             handler.Requests.Single(x => x.Path.EndsWith("/availability/stores/items")).Body);
         Assert.Equal(
-            "external-parent",
+            "900173116",
             availabilityBody.RootElement[0].GetProperty("store_integration_id").GetString());
         Assert.Equal(
             "product-9",
@@ -114,7 +114,7 @@ public sealed class RappiDeliveryProviderTests
     {
         public List<CapturedRequest> Requests { get; } = [];
         public IEnumerable<CapturedRequest> ApiRequests =>
-            Requests.Where(x => x.Path != "/oauth/token");
+            Requests.Where(x => !x.Path.EndsWith("/token/login/integrations"));
         public int AuthRequests { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -130,7 +130,7 @@ public sealed class RappiDeliveryProviderTests
                 : null;
             Requests.Add(new(path, body, authorization));
 
-            if (path == "/oauth/token")
+            if (path.EndsWith("/token/login/integrations"))
             {
                 AuthRequests++;
                 return Json(
@@ -139,7 +139,7 @@ public sealed class RappiDeliveryProviderTests
 
             if (path.EndsWith("/stores-pa"))
                 return Json(
-                    """[{"integrationId":"external-parent","rappiId":"900173116","name":"Señor Arroz Dev1"},{"integrationId":"external-child","rappiId":"900173117","name":"Señor Arroz Dev2"}]""");
+                    """[{"integrationId":"900173116","rappiId":"900173116","name":"Señor Arroz Dev1"},{"integrationId":"900173117","rappiId":"900173117","name":"Señor Arroz Dev2"}]""");
             if (path.EndsWith("/webhook"))
                 return Json("""{"event":"NEW_ORDER","secret":"webhook-secret"}""");
             if (path.EndsWith("/webhook/NEW_ORDER"))

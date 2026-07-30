@@ -4,17 +4,23 @@
 
 La implementación usa el ambiente sandbox y no contiene credenciales. Los secretos de OAuth se leen exclusivamente desde variables de entorno. Los secretos entregados al registrar webhooks se cifran antes de persistirse.
 
+Autenticación sandbox validada:
+
+- `POST https://api.dev.rappi.com/restaurants/auth/v1/token/login/integrations`.
+- Cuerpo JSON únicamente con `client_id` y `client_secret`.
+- El token se envía a API v2 mediante `x-authorization: bearer {access_token}`.
+
 Tiendas de prueba:
 
 - Padre: `900173116`, Señor Arroz Dev1.
 - Hija: `900173117`, Señor Arroz Dev2.
 - Ambas pertenecen a Santander.
+- La padre usa `store_integration_id=900173116` y la hija `store_integration_id=900173117`, según la respuesta real de `stores-pa`.
+- En POS Tester usar `POS=SeñorArrozDevV2` e `INTEGRACIÓN=SENORARROZDEVV2`.
 - El menú se publica únicamente a la tienda padre.
 
-Valores pendientes que no deben inferirse:
+Valor pendiente:
 
-- POS e INTEGRACIÓN para usar el POS Tester.
-- `external_id/store_integration_id` de cada tienda. La prueba de conexión puede completarlos únicamente si Rappi los devuelve.
 - Confirmación de Rappi para habilitar manualmente `READY_FOR_PICKUP`.
 
 ## Fase 0 — Base de datos y Railway
@@ -49,7 +55,7 @@ No continuar si una credencial aparece en la base de datos, respuesta del API, f
 
 1. Pulsar **Probar conexión**.
 2. Verificar que el panel muestre exactamente `900173116` y `900173117`.
-3. Confirmar el `store_integration_id` devuelto para cada una.
+3. Confirmar `integrationId=900173116` para la padre y `integrationId=900173117` para la hija.
 
 Detener el proceso si falta una tienda o si Rappi no entrega los identificadores necesarios para disponibilidad.
 
@@ -89,8 +95,6 @@ Solo estas rutas son anónimas y todas exigen una firma válida.
 Los SKU son inmutables: `product-{ProductId}`. Las categorías usan `category-{ProductCategoryId}`. El Sprint 1 no publica toppings ni modificadores.
 
 ## Fase 4 — Disponibilidad
-
-Esta fase queda bloqueada hasta confirmar `store_integration_id` para ambas tiendas.
 
 1. Apagar un producto seleccionado desde Señor Arroz.
 2. Verificar el stockout en padre e hija.
