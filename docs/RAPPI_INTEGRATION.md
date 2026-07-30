@@ -81,6 +81,8 @@ Solo estas rutas son anónimas y todas exigen una firma válida.
 
 El registro es recuperable: si el webhook ya existe en Rappi pero el secreto local no fue persistido, el sistema usa `PUT webhook/{event}/reset-secret`, cifra el nuevo secreto y continúa sin crear un webhook duplicado.
 
+El Sandbox Tester envía `STORE_CONNECTIVITY` con `store_id`, `online` y `checked_at`; el backend también conserva compatibilidad con `external_store_id`, `enabled` y `message`, que es el formato documentado.
+
 ## Fase 3 — Menú automático
 
 1. Seleccionar un catálogo pequeño de productos simples.

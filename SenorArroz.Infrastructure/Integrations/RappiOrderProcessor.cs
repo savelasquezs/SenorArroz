@@ -526,12 +526,14 @@ public sealed class RappiOrderProcessor(
     private void ApplyConnectivity(DeliveryAppConnection connection, string payload)
     {
         using var document = JsonDocument.Parse(payload);
-        var storeId = FindString(document.RootElement, "external_store_id");
+        var storeId = FindString(document.RootElement, "external_store_id")
+            ?? FindString(document.RootElement, "store_id");
         var store = connection.Stores.FirstOrDefault(x =>
             x.StoreIntegrationId == storeId || x.RappiStoreId == storeId);
         if (store is null)
             return;
-        store.ConnectivityEnabled = FindBoolean(document.RootElement, "enabled");
+        store.ConnectivityEnabled = FindBoolean(document.RootElement, "enabled")
+            ?? FindBoolean(document.RootElement, "online");
         store.LastConnectivityAt = clock.UtcNow;
         store.LastError = FindString(document.RootElement, "message");
     }
