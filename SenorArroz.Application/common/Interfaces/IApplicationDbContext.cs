@@ -50,9 +50,13 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<WhatsAppWebhookEvent> WhatsAppWebhookEvents { get; set; }
         DbSet<DeliveryAppConnection> DeliveryAppConnections { get; set; }
+        DbSet<DeliveryAppStore> DeliveryAppStores { get; set; }
+        DbSet<DeliveryAppWebhookSubscription> DeliveryAppWebhookSubscriptions { get; set; }
         DbSet<DeliveryAppProductMapping> DeliveryAppProductMappings { get; set; }
         DbSet<ExternalDeliveryOrder> ExternalDeliveryOrders { get; set; }
         DbSet<IntegrationWebhookEvent> IntegrationWebhookEvents { get; set; }
+        DbSet<RappiMenuPublication> RappiMenuPublications { get; set; }
+        DbSet<RappiAvailabilityState> RappiAvailabilityStates { get; set; }
 
         DbSet<PrintJob> PrintJobs { get; set; }
 

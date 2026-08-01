@@ -8,4 +8,7 @@ public class SettleAppPaymentsDto
     [Required(ErrorMessage = "Se requiere al menos un ID de pago")]
     [MinLength(1, ErrorMessage = "Se requiere al menos un ID de pago")]
     public List<int> PaymentIds { get; set; } = new();
+
+    [Range(0.01, double.MaxValue, ErrorMessage = "El valor consignado debe ser mayor que cero")]
+    public decimal? ActualAmount { get; set; }
 }

@@ -59,9 +59,13 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<WhatsAppWebhookEvent> WhatsAppWebhookEvents { get; set; }
         public virtual DbSet<DeliveryAppConnection> DeliveryAppConnections { get; set; }
+        public virtual DbSet<DeliveryAppStore> DeliveryAppStores { get; set; }
+        public virtual DbSet<DeliveryAppWebhookSubscription> DeliveryAppWebhookSubscriptions { get; set; }
         public virtual DbSet<DeliveryAppProductMapping> DeliveryAppProductMappings { get; set; }
         public virtual DbSet<ExternalDeliveryOrder> ExternalDeliveryOrders { get; set; }
         public virtual DbSet<IntegrationWebhookEvent> IntegrationWebhookEvents { get; set; }
+        public virtual DbSet<RappiMenuPublication> RappiMenuPublications { get; set; }
+        public virtual DbSet<RappiAvailabilityState> RappiAvailabilityStates { get; set; }
 
         public virtual DbSet<PrintJob> PrintJobs { get; set; }
 
@@ -153,9 +157,13 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new WhatsAppTemplateConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppWebhookEventConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryAppConnectionConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryAppStoreConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryAppWebhookSubscriptionConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryAppProductMappingConfiguration());
             modelBuilder.ApplyConfiguration(new ExternalDeliveryOrderConfiguration());
             modelBuilder.ApplyConfiguration(new IntegrationWebhookEventConfiguration());
+            modelBuilder.ApplyConfiguration(new RappiMenuPublicationConfiguration());
+            modelBuilder.ApplyConfiguration(new RappiAvailabilityStateConfiguration());
             modelBuilder.ApplyConfiguration(new PrintJobConfiguration());
             modelBuilder.ApplyConfiguration(new UserConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerConfiguration());

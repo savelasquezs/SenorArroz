@@ -1,332 +1,1020 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
-using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
 
 [ApiController]
-public class RappiIntegrationsController : ControllerBase
+public sealed class RappiIntegrationsController(
+    IApplicationDbContext db,
+    ICurrentUser currentUser,
+    IClock clock,
+    IIntegrationSecretProtector protector,
+    IRappiDeliveryProvider rappi,
+    IRappiOrderProcessor orderProcessor,
+    IOptions<ApiPublicOptions> apiPublicOptions) : ControllerBase
 {
-    private readonly IApplicationDbContext _db;
-    private readonly ICurrentUser _currentUser;
-    private readonly IClock _clock;
-    private readonly IIntegrationSecretProtector _protector;
-    private readonly IRappiDeliveryProvider _rappi;
-    private readonly IOrderRepository _orders;
-    private readonly IMapper _mapper;
-    private readonly IOrderNotificationService _notifications;
-
-    public RappiIntegrationsController(IApplicationDbContext db, ICurrentUser currentUser, IClock clock,
-        IIntegrationSecretProtector protector, IRappiDeliveryProvider rappi, IOrderRepository orders,
-        IMapper mapper, IOrderNotificationService notifications)
-    {
-        _db = db; _currentUser = currentUser; _clock = clock; _protector = protector; _rappi = rappi;
-        _orders = orders; _mapper = mapper; _notifications = notifications;
-    }
+    private static readonly string[] WebhookEvents =
+    [
+        "NEW_ORDER",
+        "ORDER_EVENT_CANCEL",
+        "ORDER_OTHER_EVENT",
+        "MENU_APPROVED",
+        "MENU_REJECTED",
+        "PING",
+        "STORE_CONNECTIVITY"
+    ];
 
     [Authorize(Roles = "Superadmin, Admin")]
     [HttpGet("api/branches/{branchId:int}/integrations/apps")]
     public async Task<ActionResult<ApiResponse<object>>> GetApps(int branchId, CancellationToken ct)
     {
-        if (!CanAccess(branchId)) return Forbid();
-        var connection = await ConnectionQuery().FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
-        var data = new
+        if (!CanAdminister(branchId))
+            return Forbid();
+        var connection = await ConnectionQuery()
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+        return Ok(ApiResponse<object>.SuccessResponse(new
         {
             providers = new object[]
             {
-                new { key = "rappi", name = "Rappi", available = true, connection = connection is null ? null : ToDto(connection) },
+                new
+                {
+                    key = "rappi",
+                    name = "Rappi",
+                    available = true,
+                    connection = connection is null ? null : ToDto(connection)
+                },
                 new { key = "didi_food", name = "DiDi Food", available = false, connection = (object?)null }
             }
-        };
-        return Ok(ApiResponse<object>.SuccessResponse(data));
+        }));
     }
 
     [Authorize(Roles = "Superadmin, Admin")]
     [HttpPut("api/branches/{branchId:int}/integrations/apps/rappi")]
-    public async Task<ActionResult<ApiResponse<object>>> Upsert(int branchId, [FromBody] UpsertRappiConnectionDto dto, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse<object>>> Upsert(
+        int branchId,
+        [FromBody] UpsertRappiConnectionDto dto,
+        CancellationToken ct)
     {
-        if (!CanAccess(branchId)) return Forbid();
-        if (!await _db.Branches.AnyAsync(x => x.Id == branchId, ct)) return NotFound();
-        var appValid = await _db.Apps.AsNoTracking().AnyAsync(x => x.Id == dto.FinancialAppId && x.Bank.BranchId == branchId && x.Active, ct);
-        if (!appValid) return BadRequest(ApiResponse<object>.ErrorResponse("Selecciona una App financiera activa de esta sucursal."));
-        if (dto.Environment is not ("sandbox" or "production" or "simulator")) return BadRequest(ApiResponse<object>.ErrorResponse("Ambiente inválido."));
-        if (string.IsNullOrWhiteSpace(dto.ClientId) || string.IsNullOrWhiteSpace(dto.ExternalStoreId)) return BadRequest(ApiResponse<object>.ErrorResponse("Client ID y Store ID son obligatorios."));
+        if (!CanAdminister(branchId))
+            return Forbid();
+        if (!await db.Branches.AnyAsync(x => x.Id == branchId, ct))
+            return NotFound();
+        if (!await db.Apps.AnyAsync(x =>
+                x.Id == dto.FinancialAppId
+                && x.Bank.BranchId == branchId
+                && x.Active, ct))
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Selecciona una app financiera activa de esta sucursal."));
+        if (!await db.Customers.AnyAsync(x =>
+                x.Id == dto.CustomerId
+                && x.BranchId == branchId
+                && x.Active, ct))
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Selecciona el cliente interno Rappi de esta sucursal."));
+        if (dto.EstimatedCommissionRate is < 0 or > 1)
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "La comisión estimada debe estar entre 0 y 1."));
+        if (dto.Stores.Count > 0 && dto.Stores.Count(x => x.IsParent) != 1)
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Debe existir exactamente una tienda padre."));
 
-        var entity = await _db.DeliveryAppConnections.FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
-        if (entity is null)
+        var technicalUserId = dto.TechnicalUserId
+            ?? await db.Users
+                .Where(x =>
+                    x.BranchId == branchId
+                    && x.Email == "integracion-rappi@senorarroz.internal")
+                .Select(x => (int?)x.Id)
+                .FirstOrDefaultAsync(ct);
+        if (!technicalUserId.HasValue
+            || !await db.Users.AnyAsync(x => x.Id == technicalUserId && x.BranchId == branchId, ct))
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Ejecuta el script Rappi v2 para crear el usuario técnico de la sucursal."));
+
+        var connection = await db.DeliveryAppConnections
+            .Include(x => x.Stores)
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+        if (connection is null)
         {
-            if (string.IsNullOrWhiteSpace(dto.ClientSecret)) return BadRequest(ApiResponse<object>.ErrorResponse("Client Secret es obligatorio al crear Rappi."));
-            entity = new DeliveryAppConnection { BranchId = branchId, Provider = "rappi", CreatedAt = _clock.UtcNow };
-            _db.DeliveryAppConnections.Add(entity);
+            connection = new DeliveryAppConnection
+            {
+                BranchId = branchId,
+                Provider = "rappi",
+                Environment = "sandbox",
+                PublicId = Guid.NewGuid(),
+                CreatedAt = clock.UtcNow
+            };
+            db.DeliveryAppConnections.Add(connection);
         }
-        var criticalChange = entity.ClientId != dto.ClientId.Trim() || entity.ExternalStoreId != dto.ExternalStoreId.Trim()
-            || entity.Environment != dto.Environment || !string.IsNullOrWhiteSpace(dto.ClientSecret);
-        entity.DisplayName = string.IsNullOrWhiteSpace(dto.DisplayName) ? "Rappi" : dto.DisplayName.Trim();
-        entity.Environment = dto.Environment; entity.ClientId = dto.ClientId.Trim(); entity.ExternalStoreId = dto.ExternalStoreId.Trim();
-        entity.FinancialAppId = dto.FinancialAppId; entity.DefaultCookingTimeMinutes = Math.Clamp(dto.DefaultCookingTimeMinutes, 5, 180);
-        entity.IsActive = dto.IsActive; entity.UpdatedAt = _clock.UtcNow;
-        if (!string.IsNullOrWhiteSpace(dto.ClientSecret)) entity.EncryptedClientSecret = _protector.Protect(dto.ClientSecret.Trim());
-        if (criticalChange) { entity.IsVerified = false; entity.WebhookConfigured = false; entity.LastError = null; }
-        await _db.SaveChangesAsync(ct);
-        return Ok(ApiResponse<object>.SuccessResponse(ToDto(await ConnectionQuery().SingleAsync(x => x.Id == entity.Id, ct)), "Configuración Rappi guardada."));
+
+        connection.DisplayName = string.IsNullOrWhiteSpace(dto.DisplayName)
+            ? "Rappi"
+            : dto.DisplayName.Trim();
+        connection.FinancialAppId = dto.FinancialAppId;
+        connection.CustomerId = dto.CustomerId;
+        connection.TechnicalUserId = technicalUserId;
+        connection.DefaultCookingTimeMinutes = Math.Clamp(dto.DefaultCookingTimeMinutes, 5, 180);
+        connection.EstimatedCommissionRate = dto.EstimatedCommissionRate;
+        connection.PiiRetentionDays = 90;
+        connection.IsActive = dto.IsActive;
+        connection.UpdatedAt = clock.UtcNow;
+        UpsertStores(connection, dto.Stores);
+        await db.SaveChangesAsync(ct);
+
+        var saved = await ConnectionQuery().FirstAsync(x => x.Id == connection.Id, ct);
+        return Ok(ApiResponse<object>.SuccessResponse(ToDto(saved), "Configuración Rappi guardada."));
     }
 
     [Authorize(Roles = "Superadmin, Admin")]
     [HttpDelete("api/branches/{branchId:int}/integrations/apps/rappi")]
-    public async Task<ActionResult<ApiResponse<string>>> Delete(int branchId, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse<string>>> Disable(int branchId, CancellationToken ct)
     {
-        if (!CanAccess(branchId)) return Forbid();
-        var entity = await _db.DeliveryAppConnections.FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
-        if (entity is null) return NotFound();
-        if (await _db.ExternalDeliveryOrders.AnyAsync(x => x.ConnectionId == entity.Id && x.InternalOrderId != null, ct))
-            return BadRequest(ApiResponse<string>.ErrorResponse("Rappi ya tiene pedidos vinculados. Desactívalo en lugar de eliminarlo."));
-        _db.DeliveryAppConnections.Remove(entity); await _db.SaveChangesAsync(ct);
-        return Ok(ApiResponse<string>.SuccessResponse("Rappi eliminado."));
+        if (!CanAdminister(branchId))
+            return Forbid();
+        var connection = await db.DeliveryAppConnections
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+        if (connection is null)
+            return NotFound();
+        connection.IsActive = false;
+        connection.UpdatedAt = clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return Ok(ApiResponse<string>.SuccessResponse(
+            "Integración desactivada. Se conservaron configuración e historial."));
     }
 
     [Authorize(Roles = "Superadmin, Admin")]
     [HttpPost("api/branches/{branchId:int}/integrations/apps/rappi/test-connection")]
     public async Task<ActionResult<ApiResponse<object>>> TestConnection(int branchId, CancellationToken ct)
     {
-        if (!CanAccess(branchId)) return Forbid();
-        var entity = await _db.DeliveryAppConnections.FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
-        if (entity is null) return NotFound();
-        var secret = _protector.Unprotect(entity.EncryptedClientSecret);
-        var result = await _rappi.TestConnectionAsync(entity, secret, ct);
-        if (result.Success)
+        if (!CanAdminister(branchId))
+            return Forbid();
+        var connection = await db.DeliveryAppConnections
+            .Include(x => x.Stores)
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+        if (connection is null)
+            return NotFound();
+
+        var result = await rappi.TestConnectionAsync(ct);
+        var expectedIds = connection.Stores.Select(x => x.RappiStoreId).ToHashSet();
+        var returnedIds = result.Stores?.Select(x => x.StoreId).ToHashSet() ?? [];
+        var missing = expectedIds.Except(returnedIds).ToList();
+        if (!result.Success || missing.Count > 0)
         {
-            var webhookUrl = $"{Request.Scheme}://{Request.Host}/api/integrations/rappi/webhook/{entity.Id}";
-            var webhook = await _rappi.ConfigureWebhookAsync(entity, secret, webhookUrl, ct);
-            entity.WebhookConfigured = webhook.Success;
-            if (webhook.Success && !string.IsNullOrWhiteSpace(webhook.Secret)) entity.EncryptedWebhookSecret = _protector.Protect(webhook.Secret);
-            entity.IsVerified = webhook.Success; entity.LastVerifiedAt = webhook.Success ? _clock.UtcNow : null; entity.LastError = webhook.Error;
+            connection.IsVerified = false;
+            connection.LastError = result.Error
+                ?? $"Las credenciales no devolvieron las tiendas: {string.Join(", ", missing)}.";
+            await db.SaveChangesAsync(ct);
+            return BadRequest(ApiResponse<object>.ErrorResponse(connection.LastError));
         }
-        else { entity.IsVerified = false; entity.LastError = result.Error; }
-        await _db.SaveChangesAsync(ct);
-        if (!entity.IsVerified) return BadRequest(ApiResponse<object>.ErrorResponse(entity.LastError ?? "No se pudo verificar Rappi."));
-        return Ok(ApiResponse<object>.SuccessResponse(ToDto(await ConnectionQuery().SingleAsync(x => x.Id == entity.Id, ct)), "Rappi conectado y webhook configurado."));
+
+        foreach (var store in connection.Stores)
+        {
+            var remote = result.Stores!.First(x => x.StoreId == store.RappiStoreId);
+            if (!string.IsNullOrWhiteSpace(remote.IntegrationId))
+                store.StoreIntegrationId = remote.IntegrationId;
+        }
+        connection.IsVerified = true;
+        connection.LastVerifiedAt = clock.UtcNow;
+        connection.LastError = null;
+        await db.SaveChangesAsync(ct);
+        var saved = await ConnectionQuery().FirstAsync(x => x.Id == connection.Id, ct);
+        return Ok(ApiResponse<object>.SuccessResponse(
+            ToDto(saved),
+            "Credenciales válidas y ambas tiendas verificadas."));
     }
 
     [Authorize(Roles = "Superadmin, Admin")]
-    [HttpPost("api/branches/{branchId:int}/integrations/apps/rappi/sync-catalog")]
-    public async Task<ActionResult<ApiResponse<object>>> SyncCatalog(int branchId, CancellationToken ct)
+    [HttpPost("api/branches/{branchId:int}/integrations/apps/rappi/webhooks/configure")]
+    public async Task<ActionResult<ApiResponse<object>>> ConfigureWebhooks(
+        int branchId,
+        CancellationToken ct)
     {
-        if (!CanAccess(branchId)) return Forbid();
-        var entity = await _db.DeliveryAppConnections.Include(x => x.ProductMappings).FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
-        if (entity is null) return NotFound();
-        try
+        if (!CanAdminister(branchId))
+            return Forbid();
+        var connection = await db.DeliveryAppConnections
+            .Include(x => x.Stores)
+            .Include(x => x.WebhookSubscriptions)
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+        if (connection is null)
+            return NotFound();
+        if (!connection.IsVerified || !connection.IsActive)
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Activa y verifica la conexión antes de registrar webhooks."));
+
+        var baseUrl = apiPublicOptions.Value.BaseUrl?.Trim().TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Configura ApiPublic__BaseUrl antes de registrar webhooks."));
+        var storeIds = connection.Stores.Select(x => x.RappiStoreId).ToArray();
+        foreach (var eventType in WebhookEvents)
         {
-            var catalog = await _rappi.GetCatalogAsync(entity, _protector.Unprotect(entity.EncryptedClientSecret), ct);
-            foreach (var item in catalog)
+            var webhookUrl =
+                $"{baseUrl}/api/integrations/rappi/webhooks/{connection.PublicId:D}/{eventType}";
+            var subscription = connection.WebhookSubscriptions
+                .FirstOrDefault(x => x.EventType == eventType);
+            var remote = await rappi.GetWebhookAsync(eventType, ct);
+            var remoteConfigured = remote.Success
+                && remote.EnabledStoreIds is not null
+                && storeIds.All(remote.EnabledStoreIds.Contains);
+            var hasLocalSecret = !string.IsNullOrWhiteSpace(subscription?.EncryptedSecret);
+            var result = remoteConfigured && hasLocalSecret
+                ? new RappiWebhookResult(
+                    true,
+                    protector.Unprotect(subscription!.EncryptedSecret))
+                : remoteConfigured
+                    ? await rappi.ResetWebhookSecretAsync(eventType, ct)
+                    : await rappi.ConfigureWebhookAsync(eventType, webhookUrl, storeIds, ct);
+            if (!(remoteConfigured && hasLocalSecret) && result.Success)
+                remote = await rappi.GetWebhookAsync(eventType, ct);
+            var missingStores = remote.EnabledStoreIds is null
+                ? storeIds
+                : storeIds.Except(remote.EnabledStoreIds).ToArray();
+            if (result.Success && (!remote.Success || missingStores.Length > 0))
             {
-                var existing = entity.ProductMappings.FirstOrDefault(x => x.ExternalProductId == item.ExternalProductId && x.ItemType == item.ItemType);
-                if (existing is null) entity.ProductMappings.Add(new DeliveryAppProductMapping { ExternalProductId = item.ExternalProductId, CreatedAt = _clock.UtcNow, ItemType = item.ItemType });
-                existing ??= entity.ProductMappings.Last();
-                existing.ExternalSku = item.Sku; existing.ExternalName = item.Name; existing.IsActive = item.IsActive; existing.UpdatedAt = _clock.UtcNow;
+                result = new RappiWebhookResult(
+                    false,
+                    Error: remote.Error
+                        ?? $"Rappi no confirmó {eventType} para: {string.Join(", ", missingStores)}.");
             }
-            entity.LastCatalogSyncAt = _clock.UtcNow; entity.LastError = null; await _db.SaveChangesAsync(ct);
-            return Ok(ApiResponse<object>.SuccessResponse(await MappingResponse(entity.Id, branchId, ct), $"Catálogo sincronizado: {catalog.Count} elementos."));
+            if (subscription is null)
+            {
+                subscription = new DeliveryAppWebhookSubscription
+                {
+                    EventType = eventType,
+                    CreatedAt = clock.UtcNow
+                };
+                connection.WebhookSubscriptions.Add(subscription);
+            }
+            subscription.IsActive = result.Success;
+            subscription.EncryptedSecret = result.Success
+                ? protector.Protect(result.Secret!)
+                : string.Empty;
+            subscription.LastError = result.Error;
+            subscription.UpdatedAt = clock.UtcNow;
+            if (!result.Success)
+            {
+                connection.WebhookConfigured = false;
+                connection.LastError = $"No se pudo registrar {eventType}: {result.Error}";
+                await db.SaveChangesAsync(ct);
+                return BadRequest(ApiResponse<object>.ErrorResponse(connection.LastError));
+            }
         }
-        catch (Exception ex) { entity.LastError = ex.Message; await _db.SaveChangesAsync(ct); return BadRequest(ApiResponse<object>.ErrorResponse(ex.Message)); }
+
+        connection.WebhookConfigured = true;
+        connection.LastError = null;
+        await db.SaveChangesAsync(ct);
+        var saved = await ConnectionQuery().FirstAsync(x => x.Id == connection.Id, ct);
+        return Ok(ApiResponse<object>.SuccessResponse(
+            ToDto(saved),
+            "Webhooks Rappi registrados para ambas tiendas."));
     }
 
     [Authorize(Roles = "Superadmin, Admin")]
-    [HttpGet("api/branches/{branchId:int}/integrations/apps/rappi/mappings")]
-    public async Task<ActionResult<ApiResponse<object>>> GetMappings(int branchId, CancellationToken ct)
+    [HttpGet("api/branches/{branchId:int}/integrations/apps/rappi/catalog")]
+    public async Task<ActionResult<ApiResponse<object>>> GetCatalog(int branchId, CancellationToken ct)
     {
-        if (!CanAccess(branchId)) return Forbid();
-        var id = await _db.DeliveryAppConnections.Where(x => x.BranchId == branchId && x.Provider == "rappi").Select(x => (int?)x.Id).FirstOrDefaultAsync(ct);
-        if (id is null) return NotFound();
-        return Ok(ApiResponse<object>.SuccessResponse(await MappingResponse(id.Value, branchId, ct)));
+        if (!CanAdminister(branchId))
+            return Forbid();
+        var connection = await db.DeliveryAppConnections
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+        if (connection is null)
+            return NotFound();
+        return Ok(ApiResponse<object>.SuccessResponse(await CatalogResponse(connection.Id, branchId, ct)));
     }
 
     [Authorize(Roles = "Superadmin, Admin")]
-    [HttpPut("api/branches/{branchId:int}/integrations/apps/rappi/mappings/{mappingId:int}")]
-    public async Task<ActionResult<ApiResponse<object>>> MapProduct(int branchId, int mappingId, [FromBody] MapProductDto dto, CancellationToken ct)
+    [HttpPut("api/branches/{branchId:int}/integrations/apps/rappi/catalog/{productId:int}")]
+    public async Task<ActionResult<ApiResponse<object>>> UpdateCatalogProduct(
+        int branchId,
+        int productId,
+        [FromBody] UpdateRappiCatalogProductDto dto,
+        CancellationToken ct)
     {
-        if (!CanAccess(branchId)) return Forbid();
-        var mapping = await _db.DeliveryAppProductMappings.Include(x => x.Connection).FirstOrDefaultAsync(x => x.Id == mappingId && x.Connection.BranchId == branchId, ct);
-        if (mapping is null) return NotFound();
-        if (!await _db.Products.AnyAsync(x => x.Id == dto.ProductId && x.Category.BranchId == branchId && x.Active, ct)) return BadRequest(ApiResponse<object>.ErrorResponse("Producto interno inválido."));
-        mapping.ProductId = dto.ProductId; mapping.UpdatedAt = _clock.UtcNow; await _db.SaveChangesAsync(ct);
-        return Ok(ApiResponse<object>.SuccessResponse(await MappingResponse(mapping.ConnectionId, branchId, ct)));
+        if (!CanAdminister(branchId))
+            return Forbid();
+        var connection = await db.DeliveryAppConnections
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+        var product = await db.Products
+            .Include(x => x.Category)
+            .FirstOrDefaultAsync(x => x.Id == productId && x.Category.BranchId == branchId, ct);
+        if (connection is null || product is null)
+            return NotFound();
+        if (dto.OverridePrice is <= 0)
+            return BadRequest(ApiResponse<object>.ErrorResponse("El precio Rappi debe ser mayor que cero."));
+
+        var mapping = await db.DeliveryAppProductMappings
+            .FirstOrDefaultAsync(x => x.ConnectionId == connection.Id && x.ProductId == productId, ct);
+        if (mapping is null)
+        {
+            mapping = new DeliveryAppProductMapping
+            {
+                ConnectionId = connection.Id,
+                ProductId = productId,
+                Sku = $"product-{productId}",
+                CategorySku = $"category-{product.CategoryId}",
+                CreatedAt = clock.UtcNow
+            };
+            db.DeliveryAppProductMappings.Add(mapping);
+        }
+        mapping.IsSelected = dto.IsSelected;
+        mapping.OverrideName = Clean(dto.OverrideName, 300);
+        mapping.OverrideDescription = Clean(dto.OverrideDescription, 1000);
+        mapping.OverrideImageUrl = Clean(dto.OverrideImageUrl, 1000);
+        mapping.OverridePrice = dto.OverridePrice;
+        mapping.UpdatedAt = clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return Ok(ApiResponse<object>.SuccessResponse(
+            await CatalogResponse(connection.Id, branchId, ct)));
+    }
+
+    [Authorize(Roles = "Superadmin, Admin")]
+    [HttpGet("api/branches/{branchId:int}/integrations/apps/rappi/menu/preview")]
+    public async Task<ActionResult<ApiResponse<object>>> PreviewMenu(int branchId, CancellationToken ct)
+    {
+        if (!CanAdminister(branchId))
+            return Forbid();
+        var build = await BuildMenuAsync(branchId, ct);
+        if (build.Error is not null)
+            return BadRequest(ApiResponse<object>.ErrorResponse(build.Error));
+        return Ok(ApiResponse<object>.SuccessResponse(build.Menu!));
+    }
+
+    [Authorize(Roles = "Superadmin, Admin")]
+    [HttpPost("api/branches/{branchId:int}/integrations/apps/rappi/menu/publish")]
+    public async Task<ActionResult<ApiResponse<object>>> PublishMenu(int branchId, CancellationToken ct)
+    {
+        if (!CanAdminister(branchId))
+            return Forbid();
+        var build = await BuildMenuAsync(branchId, ct);
+        if (build.Error is not null)
+            return BadRequest(ApiResponse<object>.ErrorResponse(build.Error));
+
+        var serialized = JsonSerializer.Serialize(build.Menu, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(serialized))).ToLowerInvariant();
+        var publication = new RappiMenuPublication
+        {
+            ConnectionId = build.Connection!.Id,
+            StoreId = build.Menu!.StoreId,
+            PayloadHash = hash,
+            PayloadJson = serialized,
+            Status = "submitting",
+            CreatedAt = clock.UtcNow,
+            UpdatedAt = clock.UtcNow
+        };
+        db.RappiMenuPublications.Add(publication);
+        await db.SaveChangesAsync(ct);
+        var result = await rappi.PublishMenuAsync(build.Menu, ct);
+        publication.Status = result.Success ? "submitted" : "failed";
+        publication.Error = result.Error;
+        build.Connection.LastError = result.Success ? null : result.Error;
+        await db.SaveChangesAsync(ct);
+        if (!result.Success)
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                result.Error ?? "Rappi rechazó la publicación del menú."));
+        return Ok(ApiResponse<object>.SuccessResponse(new
+        {
+            publication.Id,
+            publication.Status,
+            publication.PayloadHash
+        }, "Menú enviado a Rappi y pendiente de aprobación."));
+    }
+
+    [Authorize(Roles = "Superadmin, Admin")]
+    [HttpPost("api/branches/{branchId:int}/integrations/apps/rappi/availability/reconcile")]
+    public async Task<ActionResult<ApiResponse<object>>> ReconcileAvailability(
+        int branchId,
+        CancellationToken ct)
+    {
+        if (!CanAdminister(branchId))
+            return Forbid();
+        var connection = await db.DeliveryAppConnections
+            .Include(x => x.Stores)
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+        if (connection is null)
+            return NotFound();
+        var missingIds = connection.Stores
+            .Where(x => string.IsNullOrWhiteSpace(x.StoreIntegrationId))
+            .Select(x => x.Name)
+            .ToList();
+        if (missingIds.Count > 0)
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                $"Falta store_integration_id para: {string.Join(", ", missingIds)}."));
+
+        await db.RappiAvailabilityStates
+            .Where(x => x.ConnectionId == connection.Id)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, "pending")
+                .SetProperty(x => x.NextAttemptAt, (DateTime?)null), ct);
+        return Ok(ApiResponse<object>.SuccessResponse(new { queued = true },
+            "Disponibilidad programada para reconciliación."));
     }
 
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     [HttpGet("api/integrations/apps/status")]
-    public async Task<ActionResult<ApiResponse<object>>> OperationalStatus([FromQuery] int? branchId, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse<object>>> OperationalStatus(
+        [FromQuery] int? branchId,
+        CancellationToken ct)
     {
-        var resolved = ResolveBranch(branchId); if (resolved is null) return Forbid();
-        var connection = await ConnectionQuery().FirstOrDefaultAsync(x => x.BranchId == resolved && x.Provider == "rappi", ct);
-        var pending = connection is null ? 0 : await _db.ExternalDeliveryOrders.CountAsync(x => x.ConnectionId == connection.Id && (x.Status == ExternalOrderStatus.PendingAcceptance || x.Status == ExternalOrderStatus.BlockedMapping), ct);
-        return Ok(ApiResponse<object>.SuccessResponse(new { rappi = connection is null ? null : ToDto(connection), pending }));
+        var resolved = ResolveBranch(branchId);
+        if (!resolved.HasValue)
+            return Forbid();
+        var connection = await ConnectionQuery()
+            .FirstOrDefaultAsync(x => x.BranchId == resolved && x.Provider == "rappi", ct);
+        var pending = connection is null
+            ? 0
+            : await db.ExternalDeliveryOrders.CountAsync(x =>
+                x.ConnectionId == connection.Id
+                && (x.Status == ExternalOrderStatus.PendingAcceptance
+                    || x.Status == ExternalOrderStatus.BlockedMapping
+                    || x.Status == ExternalOrderStatus.SyncError
+                    || x.Status == ExternalOrderStatus.ReconciliationRequired), ct);
+        return Ok(ApiResponse<object>.SuccessResponse(new
+        {
+            rappi = connection is null ? null : ToDto(connection),
+            pending
+        }));
     }
 
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     [HttpGet("api/integrations/apps/rappi/orders")]
-    public async Task<ActionResult<ApiResponse<object>>> GetOrders([FromQuery] int? branchId, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse<object>>> GetOrders(
+        [FromQuery] int? branchId,
+        CancellationToken ct)
     {
-        var resolved = ResolveBranch(branchId); if (resolved is null) return Forbid();
-        var rows = await _db.ExternalDeliveryOrders.AsNoTracking().Where(x => x.BranchId == resolved)
-            .OrderByDescending(x => x.CreatedAt).Take(100).ToListAsync(ct);
-        return Ok(ApiResponse<object>.SuccessResponse(rows.Select(x => new { x.Id, x.ExternalOrderId, x.Status, x.CustomerName, x.CustomerPhone, x.DeliveryAddress, x.DeliveryMethod, x.PaymentMethod, x.Total, x.CookingTimeMinutes, lines = JsonSerializer.Deserialize<List<ExternalDeliveryOrderLine>>(x.LinesJson) ?? [], x.InternalOrderId, x.LastError, x.CreatedAt })));
+        var resolved = ResolveBranch(branchId);
+        if (!resolved.HasValue)
+            return Forbid();
+        var rows = await db.ExternalDeliveryOrders
+            .AsNoTracking()
+            .Include(x => x.Store)
+            .Where(x => x.BranchId == resolved)
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(100)
+            .ToListAsync(ct);
+        return Ok(ApiResponse<object>.SuccessResponse(rows.Select(x => new
+        {
+            x.Id,
+            x.ExternalOrderId,
+            x.Status,
+            storeName = x.Store == null ? x.ExternalStoreId : x.Store.Name,
+            x.CustomerName,
+            x.CustomerPhone,
+            x.DeliveryAddress,
+            x.DeliveryMethod,
+            x.PaymentMethod,
+            x.Total,
+            x.TotalProducts,
+            x.TotalDiscounts,
+            x.TotalDiscountByPartner,
+            x.TotalDiscountByRappi,
+            x.TotalCharges,
+            x.CookingTimeMinutes,
+            lines = DeserializeLines(x.LinesJson),
+            discounts = DeserializeDiscounts(x.DiscountsJson),
+            validationErrors = DeserializeStrings(x.ValidationErrorsJson),
+            x.InternalOrderId,
+            x.LastError,
+            x.AcceptedAt,
+            x.PiiPurgedAt,
+            x.CreatedAt
+        })));
     }
 
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
-    [HttpPost("api/integrations/apps/rappi/orders/{id:int}/accept")]
-    public async Task<ActionResult<ApiResponse<object>>> Accept(int id, CancellationToken ct)
+    [HttpPost("api/integrations/apps/rappi/orders/{id:int}/revalidate-and-accept")]
+    public async Task<ActionResult<ApiResponse<object>>> RevalidateAndAccept(
+        int id,
+        CancellationToken ct)
     {
-        var external = await _db.ExternalDeliveryOrders.Include(x => x.Connection).FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (external is null) return NotFound(); if (!CanOperate(external.BranchId)) return Forbid();
-        if (external.InternalOrderId.HasValue) return Ok(ApiResponse<object>.SuccessResponse(new { external.InternalOrderId }, "El pedido ya fue aceptado."));
-        var lines = JsonSerializer.Deserialize<List<ExternalDeliveryOrderLine>>(external.LinesJson) ?? [];
-        var mappingRows = await _db.DeliveryAppProductMappings.Where(x => x.ConnectionId == external.ConnectionId && x.ProductId != null).ToListAsync(ct);
-        var mappings = mappingRows
-            .GroupBy(x => MappingKey(x.ItemType, x.ExternalProductId), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
-        var missing = lines.Where(x => !mappings.ContainsKey(MappingKey(x.ItemType, x.ExternalProductId))).Select(x => x.Name).Distinct().ToList();
-        if (missing.Count > 0) { external.Status = ExternalOrderStatus.BlockedMapping; external.LastError = $"Productos sin mapear: {string.Join(", ", missing)}"; await _db.SaveChangesAsync(ct); return BadRequest(ApiResponse<object>.ErrorResponse(external.LastError)); }
-        external.Status = ExternalOrderStatus.Processing; external.AcceptedByUserId = _currentUser.Id; await _db.SaveChangesAsync(ct);
-        var result = await _rappi.AcceptOrderAsync(external.Connection, _protector.Unprotect(external.Connection.EncryptedClientSecret), external.ExternalOrderId, external.CookingTimeMinutes, ct);
-        if (!result.Success) { external.Status = ExternalOrderStatus.SyncError; external.LastError = result.Error; await _db.SaveChangesAsync(ct); return BadRequest(ApiResponse<object>.ErrorResponse(result.Error ?? "Rappi rechazó la operación.")); }
-
-        var order = new Order { BranchId = external.BranchId, TakenById = _currentUser.Id, GuestName = external.CustomerName, Type = OrderType.Delivery, Status = OrderStatus.Taken,
-            Notes = $"Rappi #{external.ExternalOrderId}", DeliveryAppConnectionId = external.ConnectionId, ExternalOrderId = external.ExternalOrderId, OrderSource = "rappi", ExternalFulfillmentProvider = "rappi", CreatedAt = _clock.UtcNow, UpdatedAt = _clock.UtcNow };
-        foreach (var line in lines) order.OrderDetails.Add(new OrderDetail { ProductId = mappings[MappingKey(line.ItemType, line.ExternalProductId)].ProductId!.Value, Quantity = line.Quantity, UnitPrice = line.UnitPrice, Discount = 0, Notes = line.Notes });
-        OrderTotalsHelper.RecalculateFromOrderDetails(order); order.AddStatusTime(OrderStatus.Taken, _clock.UtcNow);
-        var created = await _orders.CreateAsync(order, ct);
-        _db.AppPayments.Add(new AppPayment { OrderId = created.Id, AppId = external.Connection.FinancialAppId, Amount = external.Total > 0 ? external.Total : created.Total, IsSetted = false });
-        external.InternalOrderId = created.Id; external.Status = ExternalOrderStatus.Accepted; external.AcceptedAt = _clock.UtcNow; external.LastError = null; await _db.SaveChangesAsync(ct);
-        var full = await _orders.GetByIdWithFullDetailsAsync(created.Id, ct);
-        if (full is not null) await _notifications.NotifyNewOrderToKitchen(_mapper.Map<SenorArroz.Application.Features.Orders.DTOs.OrderDto>(full));
-        return Ok(ApiResponse<object>.SuccessResponse(new { internalOrderId = created.Id }, "Pedido Rappi aceptado y enviado a cocina."));
+        var external = await db.ExternalDeliveryOrders.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (external is null)
+            return NotFound();
+        if (!CanOperate(external.BranchId))
+            return Forbid();
+        var result = await orderProcessor.RevalidateAndAcceptAsync(id, currentUser.Id, ct);
+        if (!result.Success)
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                result.Error ?? "La orden no superó la revalidación."));
+        return Ok(ApiResponse<object>.SuccessResponse(new
+        {
+            externalOrderId = result.ExternalOrderId,
+            internalOrderId = result.InternalOrderId
+        }, "Orden Rappi aceptada y enviada a cocina."));
     }
 
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     [HttpPost("api/integrations/apps/rappi/orders/{id:int}/reject")]
-    public async Task<ActionResult<ApiResponse<string>>> Reject(int id, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse<string>>> Reject(
+        int id,
+        [FromBody] RejectRappiOrderDto dto,
+        CancellationToken ct)
     {
-        var external = await _db.ExternalDeliveryOrders.Include(x => x.Connection).FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (external is null) return NotFound(); if (!CanOperate(external.BranchId)) return Forbid();
-        var result = await _rappi.RejectOrderAsync(external.Connection, _protector.Unprotect(external.Connection.EncryptedClientSecret), external.ExternalOrderId, ct);
-        external.Status = result.Success ? ExternalOrderStatus.Rejected : ExternalOrderStatus.SyncError; external.LastError = result.Error; await _db.SaveChangesAsync(ct);
-        return result.Success ? Ok(ApiResponse<string>.SuccessResponse("Pedido rechazado.")) : BadRequest(ApiResponse<string>.ErrorResponse(result.Error ?? "No se pudo rechazar."));
+        var external = await db.ExternalDeliveryOrders.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (external is null)
+            return NotFound();
+        if (!CanOperate(external.BranchId))
+            return Forbid();
+        if (string.IsNullOrWhiteSpace(dto.Reason) || dto.Reason.Trim().Length > 200)
+            return BadRequest(ApiResponse<string>.ErrorResponse(
+                "Escribe un motivo de rechazo válido."));
+        var result = await orderProcessor.RejectAsync(id, dto.Reason.Trim(), ct);
+        return result.Success
+            ? Ok(ApiResponse<string>.SuccessResponse("Pedido rechazado."))
+            : BadRequest(ApiResponse<string>.ErrorResponse(
+                result.Error ?? "No se pudo rechazar el pedido."));
     }
 
     [AllowAnonymous]
-    [HttpPost("api/integrations/rappi/webhook/{connectionId:int}")]
-    public async Task<IActionResult> Webhook(int connectionId, CancellationToken ct)
+    [EnableRateLimiting("rappi-webhook")]
+    [HttpPost("api/integrations/rappi/webhooks/{publicId:guid}/{eventType}")]
+    public async Task<IActionResult> Webhook(
+        Guid publicId,
+        string eventType,
+        CancellationToken ct)
     {
-        var connection = await _db.DeliveryAppConnections.FirstOrDefaultAsync(x => x.Id == connectionId && x.Provider == "rappi" && x.IsActive, ct);
-        if (connection is null) return NotFound();
-        using var reader = new StreamReader(Request.Body, Encoding.UTF8); var payload = await reader.ReadToEndAsync(ct);
-        if (!ValidateSignature(connection, payload)) return Unauthorized();
+        var normalizedEvent = eventType.Trim().ToUpperInvariant();
+        if (!WebhookEvents.Contains(normalizedEvent))
+            return NotFound();
+        var connection = await db.DeliveryAppConnections
+            .Include(x => x.Stores)
+            .Include(x => x.WebhookSubscriptions)
+            .FirstOrDefaultAsync(x =>
+                x.PublicId == publicId
+                && x.Provider == "rappi"
+                && x.IsActive, ct);
+        var subscription = connection?.WebhookSubscriptions
+            .FirstOrDefault(x => x.EventType == normalizedEvent && x.IsActive);
+        if (connection is null || subscription is null)
+            return NotFound();
+
+        using var reader = new StreamReader(Request.Body, Encoding.UTF8);
+        var payload = await reader.ReadToEndAsync(ct);
+        var signatureHeader = Request.Headers["Rappi-Signature"].FirstOrDefault();
+        if (!RappiWebhookSignature.IsValid(
+                signatureHeader,
+                payload,
+                protector.Unprotect(subscription.EncryptedSecret)))
+            return Unauthorized();
         try
         {
-            using var doc = JsonDocument.Parse(payload); var root = doc.RootElement;
-            var detail = root.TryGetProperty("order_detail", out var od) ? od : root;
-            var externalId = Value(detail, "order_id") ?? Value(root, "order_id") ?? throw new InvalidOperationException("order_id ausente");
-            var eventType = Value(root, "event") ?? Value(root, "event_type") ?? "NEW_ORDER";
-            var eventKey = Value(root, "event_id") ?? $"{eventType}:{externalId}";
-            if (await _db.IntegrationWebhookEvents.AnyAsync(x => x.ConnectionId == connectionId && x.EventKey == eventKey, ct)) return Ok();
-            var lines = ParseLines(detail);
-            var mappedItems = await _db.DeliveryAppProductMappings.Where(x => x.ConnectionId == connectionId && x.ProductId != null)
-                .Select(x => new { x.ItemType, x.ExternalProductId }).ToListAsync(ct);
-            var mappedKeys = mappedItems.Select(x => MappingKey(x.ItemType, x.ExternalProductId)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var status = lines.All(x => mappedKeys.Contains(MappingKey(x.ItemType, x.ExternalProductId))) ? ExternalOrderStatus.PendingAcceptance : ExternalOrderStatus.BlockedMapping;
-            var external = await _db.ExternalDeliveryOrders.FirstOrDefaultAsync(x => x.ConnectionId == connectionId && x.ExternalOrderId == externalId, ct);
-            external ??= new ExternalDeliveryOrder { ConnectionId = connectionId, BranchId = connection.BranchId, ExternalOrderId = externalId, CreatedAt = _clock.UtcNow };
-            if (external.Id == 0) _db.ExternalDeliveryOrders.Add(external);
-            var customer = root.TryGetProperty("customer", out var c) ? c : default;
-            var delivery = detail.TryGetProperty("delivery_information", out var d) ? d : default;
-            external.ExternalStoreId = connection.ExternalStoreId; external.Status = status; external.CustomerName = $"{Value(customer, "first_name")} {Value(customer, "last_name")}".Trim();
-            external.CustomerPhone = Value(customer, "phone_number"); external.DeliveryAddress = Value(delivery, "complete_address"); external.DeliveryMethod = Value(detail, "delivery_method") ?? "delivery";
-            external.PaymentMethod = Value(detail, "payment_method") ?? "unknown"; external.Total = IntValue(detail, "total") ?? NestedInt(detail, "totals", "total_order") ?? lines.Sum(x => x.UnitPrice * x.Quantity);
-            external.CookingTimeMinutes = IntValue(detail, "cooking_time") ?? connection.DefaultCookingTimeMinutes; external.RawPayloadJson = payload; external.LinesJson = JsonSerializer.Serialize(lines); external.UpdatedAt = _clock.UtcNow;
-            if (eventType.Contains("CANCEL", StringComparison.OrdinalIgnoreCase))
-            {
-                external.Status = ExternalOrderStatus.Cancelled;
-                if (external.InternalOrderId.HasValue)
-                {
-                    var internalOrder = await _db.Orders.FirstOrDefaultAsync(x => x.Id == external.InternalOrderId.Value, ct);
-                    if (internalOrder is not null && internalOrder.Status != OrderStatus.Delivered)
-                    {
-                        internalOrder.Status = OrderStatus.Cancelled;
-                        internalOrder.CancelledReason = "Cancelado desde Rappi";
-                        internalOrder.AddStatusTime(OrderStatus.Cancelled, _clock.UtcNow);
-                    }
-                }
-            }
-            _db.IntegrationWebhookEvents.Add(new IntegrationWebhookEvent { ConnectionId = connectionId, Provider = "rappi", EventKey = eventKey, EventType = eventType, PayloadJson = payload, Status = "processed", ProcessedAt = _clock.UtcNow, CreatedAt = _clock.UtcNow, UpdatedAt = _clock.UtcNow });
-            await _db.SaveChangesAsync(ct); return Accepted();
+            using var _ = JsonDocument.Parse(payload);
         }
-        catch (Exception ex) { return BadRequest(new { error = ex.Message }); }
+        catch (JsonException)
+        {
+            return BadRequest();
+        }
+
+        var payloadHash = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+        var timestamp = RappiWebhookSignature.GetTimestamp(signatureHeader) ?? "unknown";
+        var eventKey = $"{normalizedEvent}:{timestamp}:{payloadHash}";
+        var exists = await db.IntegrationWebhookEvents.AnyAsync(x =>
+            x.ConnectionId == connection.Id && x.EventKey == eventKey, ct);
+        if (exists)
+            return normalizedEvent == "PING"
+                ? Ok(new { status = "OK", description = "Tienda prendida" })
+                : Accepted();
+
+        var storedEvent = new IntegrationWebhookEvent
+        {
+            ConnectionId = connection.Id,
+            Provider = "rappi",
+            EventKey = eventKey,
+            EventType = normalizedEvent,
+            PayloadHash = payloadHash,
+            PayloadJson = payload,
+            Status = normalizedEvent == "PING" ? "processed" : "received",
+            ProcessedAt = normalizedEvent == "PING" ? clock.UtcNow : null,
+            CreatedAt = clock.UtcNow,
+            UpdatedAt = clock.UtcNow
+        };
+        db.IntegrationWebhookEvents.Add(storedEvent);
+        subscription.LastReceivedAt = clock.UtcNow;
+        subscription.LastError = null;
+        connection.LastWebhookAt = clock.UtcNow;
+
+        if (normalizedEvent == "PING")
+        {
+            using var document = JsonDocument.Parse(payload);
+            var storeId = document.RootElement.TryGetProperty("store_id", out var storeNode)
+                ? storeNode.ToString()
+                : null;
+            var store = connection.Stores.FirstOrDefault(x =>
+                x.RappiStoreId == storeId || x.StoreIntegrationId == storeId);
+            if (store is not null)
+                store.LastPingAt = clock.UtcNow;
+        }
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            var duplicate = await db.IntegrationWebhookEvents
+                .AsNoTracking()
+                .AnyAsync(x =>
+                    x.ConnectionId == connection.Id
+                    && x.EventKey == eventKey, ct);
+            if (!duplicate)
+                throw;
+            return normalizedEvent == "PING"
+                ? Ok(new { status = "OK", description = "Tienda prendida" })
+                : Accepted();
+        }
+        return normalizedEvent == "PING"
+            ? Ok(new { status = "OK", description = "Tienda prendida" })
+            : Accepted();
     }
 
-    private IQueryable<DeliveryAppConnection> ConnectionQuery() => _db.DeliveryAppConnections.AsNoTracking().Include(x => x.FinancialApp).Include(x => x.ProductMappings);
-    private object ToDto(DeliveryAppConnection x)
+    private IQueryable<DeliveryAppConnection> ConnectionQuery() =>
+        db.DeliveryAppConnections
+            .AsNoTracking()
+            .Include(x => x.FinancialApp)
+            .Include(x => x.Customer)
+            .Include(x => x.TechnicalUser)
+            .Include(x => x.Stores)
+            .Include(x => x.WebhookSubscriptions)
+            .Include(x => x.ProductMappings)
+                .ThenInclude(x => x.Product)
+                    .ThenInclude(x => x.CommercialProfile);
+
+    private object ToDto(DeliveryAppConnection connection)
     {
-        var mappingComplete = x.ProductMappings.Where(m => m.IsActive).All(m => m.ProductId != null) && x.ProductMappings.Any();
-        var ready = x.IsActive && x.IsVerified && x.WebhookConfigured && mappingComplete && string.IsNullOrWhiteSpace(x.LastError);
-        return new { x.Id, x.BranchId, x.Provider, x.Environment, x.DisplayName, x.ClientId, clientSecretConfigured = !string.IsNullOrWhiteSpace(x.EncryptedClientSecret), x.ExternalStoreId, x.FinancialAppId, financialAppName = x.FinancialApp?.Name, x.DefaultCookingTimeMinutes, x.IsActive, x.IsVerified, x.WebhookConfigured, x.LastVerifiedAt, x.LastCatalogSyncAt, x.LastError, mappingComplete, ready, mappedCount = x.ProductMappings.Count(m => m.IsActive && m.ProductId != null), mappingCount = x.ProductMappings.Count(m => m.IsActive), webhookUrl = $"{Request.Scheme}://{Request.Host}/api/integrations/rappi/webhook/{x.Id}" };
+        var requiredSubscriptions = WebhookEvents.All(eventType =>
+            connection.WebhookSubscriptions.Any(x => x.EventType == eventType && x.IsActive));
+        var selectedMappings = connection.ProductMappings.Where(x => x.IsSelected).ToList();
+        var menuApproved = selectedMappings.Count > 0
+            && selectedMappings.All(x => x.PublishedAt.HasValue);
+        var catalogDirty = selectedMappings.Count == 0
+            || connection.ProductMappings.Any(x => !x.IsSelected && x.PublishedAt.HasValue)
+            || selectedMappings.Any(x =>
+                x.PublishedName != EffectiveName(x)
+                || x.PublishedDescription != EffectiveDescription(x)
+                || x.PublishedImageUrl != EffectiveImageUrl(x)
+                || x.PublishedPrice != EffectivePrice(x));
+        var storeIdsComplete = connection.Stores.Count > 0
+            && connection.Stores.All(x => !string.IsNullOrWhiteSpace(x.StoreIntegrationId));
+        var ready = connection.IsActive
+            && connection.IsVerified
+            && requiredSubscriptions
+            && menuApproved
+            && storeIdsComplete
+            && string.IsNullOrWhiteSpace(connection.LastError);
+
+        return new
+        {
+            connection.Id,
+            connection.BranchId,
+            connection.Provider,
+            connection.Environment,
+            connection.DisplayName,
+            credentialsConfigured = rappi.CredentialsConfigured,
+            connection.FinancialAppId,
+            financialAppName = connection.FinancialApp?.Name,
+            connection.CustomerId,
+            customerName = connection.Customer?.Name,
+            connection.TechnicalUserId,
+            technicalUserName = connection.TechnicalUser?.Name,
+            connection.DefaultCookingTimeMinutes,
+            connection.EstimatedCommissionRate,
+            connection.IsActive,
+            connection.IsVerified,
+            webhookConfigured = requiredSubscriptions,
+            menuApproved,
+            catalogDirty,
+            storeIdsComplete,
+            ready,
+            connection.LastVerifiedAt,
+            connection.LastMenuPublishedAt,
+            connection.LastAvailabilitySyncAt,
+            connection.LastWebhookAt,
+            connection.LastError,
+            stores = connection.Stores
+                .OrderByDescending(x => x.IsParent)
+                .Select(x => new
+                {
+                    x.Id,
+                    x.RappiStoreId,
+                    x.StoreIntegrationId,
+                    x.Name,
+                    x.IsParent,
+                    x.ManualReadyForPickupEnabled,
+                    x.ConnectivityEnabled,
+                    x.LastPingAt,
+                    x.LastConnectivityAt,
+                    x.LastError
+                }),
+            subscriptions = WebhookEvents.Select(eventType =>
+            {
+                var subscription = connection.WebhookSubscriptions
+                    .FirstOrDefault(x => x.EventType == eventType);
+                return new
+                {
+                    eventType,
+                    active = subscription?.IsActive == true,
+                    subscription?.LastReceivedAt,
+                    subscription?.LastError
+                };
+            }),
+            selectedProductCount = selectedMappings.Count,
+            publishedProductCount = selectedMappings.Count(x => x.PublishedAt.HasValue),
+            webhookBaseUrl =
+                $"{apiPublicOptions.Value.BaseUrl?.TrimEnd('/')}/api/integrations/rappi/webhooks/{connection.PublicId:D}"
+        };
     }
 
-    private async Task<object> MappingResponse(int connectionId, int branchId, CancellationToken ct)
+    private async Task<object> CatalogResponse(int connectionId, int branchId, CancellationToken ct)
     {
-        var mappings = await _db.DeliveryAppProductMappings.AsNoTracking().Where(x => x.ConnectionId == connectionId).Include(x => x.Product).OrderBy(x => x.ExternalName).ToListAsync(ct);
-        var products = await _db.Products.AsNoTracking().Where(x => x.Active && x.Category.BranchId == branchId).OrderBy(x => x.Name).Select(x => new { x.Id, x.Name }).ToListAsync(ct);
-        return new { mappings = mappings.Select(x => new { x.Id, x.ExternalProductId, x.ExternalSku, x.ExternalName, x.ItemType, x.IsActive, x.ProductId, productName = x.Product == null ? null : x.Product.Name }), products, complete = mappings.Any() && mappings.Where(x => x.IsActive).All(x => x.ProductId != null) };
+        var mappings = await db.DeliveryAppProductMappings
+            .AsNoTracking()
+            .Where(x => x.ConnectionId == connectionId)
+            .ToListAsync(ct);
+        var byProduct = mappings.ToDictionary(x => x.ProductId);
+        var products = await db.Products
+            .AsNoTracking()
+            .Include(x => x.Category)
+            .Include(x => x.CommercialProfile)
+            .Where(x => x.Category.BranchId == branchId)
+            .OrderBy(x => x.Category.Name)
+            .ThenBy(x => x.Name)
+            .ToListAsync(ct);
+        return new
+        {
+            products = products.Select(product =>
+            {
+                byProduct.TryGetValue(product.Id, out var mapping);
+                return new
+                {
+                    product.Id,
+                    product.Name,
+                    product.Price,
+                    product.Active,
+                    product.Stock,
+                    categoryName = product.Category.Name,
+                    sku = mapping?.Sku ?? $"product-{product.Id}",
+                    categorySku = mapping?.CategorySku ?? $"category-{product.CategoryId}",
+                    isSelected = mapping?.IsSelected == true,
+                    mapping?.OverrideName,
+                    mapping?.OverrideDescription,
+                    mapping?.OverrideImageUrl,
+                    mapping?.OverridePrice,
+                    mapping?.PublishedName,
+                    mapping?.PublishedDescription,
+                    mapping?.PublishedImageUrl,
+                    mapping?.PublishedPrice,
+                    mapping?.PublishedAt,
+                    effectiveName = mapping?.OverrideName ?? product.Name,
+                    effectiveDescription = mapping?.OverrideDescription
+                        ?? product.CommercialProfile?.Description,
+                    effectiveImageUrl = mapping?.OverrideImageUrl
+                        ?? product.CommercialProfile?.PhotoUrl,
+                    effectivePrice = mapping?.OverridePrice ?? product.Price
+                };
+            }),
+            selectedCount = mappings.Count(x => x.IsSelected),
+            publishedCount = mappings.Count(x => x.IsSelected && x.PublishedAt.HasValue)
+        };
     }
 
-    private bool CanAccess(int branchId) => Roles.IsSuperadmin(_currentUser.Role) || (Roles.IsAdmin(_currentUser.Role) && _currentUser.BranchId == branchId);
-    private bool CanOperate(int branchId) => Roles.IsSuperadmin(_currentUser.Role) || (Roles.IsAdminOrCashier(_currentUser.Role) && _currentUser.BranchId == branchId);
-    private int? ResolveBranch(int? requested) => Roles.IsSuperadmin(_currentUser.Role) ? requested : _currentUser.BranchId;
-    private bool ValidateSignature(DeliveryAppConnection c, string payload)
+    private async Task<MenuBuildResult> BuildMenuAsync(int branchId, CancellationToken ct)
     {
-        if (c.Environment == "simulator") return true;
-        if (string.IsNullOrWhiteSpace(c.EncryptedWebhookSecret)) return false;
-        var supplied = Request.Headers["X-Rappi-Signature"].FirstOrDefault() ?? Request.Headers["X-Signature"].FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(supplied)) return false;
-        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(_protector.Unprotect(c.EncryptedWebhookSecret)));
-        var digest = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
-        var normalized = supplied.StartsWith("sha256=", StringComparison.OrdinalIgnoreCase) ? supplied[7..] : supplied;
-        var expectedHex = Convert.ToHexString(digest).ToLowerInvariant();
-        var expectedBase64 = Convert.ToBase64String(digest);
-        return FixedEquals(expectedHex, normalized.ToLowerInvariant()) || FixedEquals(expectedBase64, normalized);
+        var connection = await db.DeliveryAppConnections
+            .Include(x => x.Stores)
+            .Include(x => x.ProductMappings)
+                .ThenInclude(x => x.Product)
+                    .ThenInclude(x => x.Category)
+            .Include(x => x.ProductMappings)
+                .ThenInclude(x => x.Product)
+                    .ThenInclude(x => x.CommercialProfile)
+            .FirstOrDefaultAsync(x =>
+                x.BranchId == branchId
+                && x.Provider == "rappi", ct);
+        if (connection is null)
+            return new(null, null, "La integración Rappi no existe.");
+        if (!connection.IsVerified || !connection.IsActive)
+            return new(connection, null, "Activa y verifica la conexión antes de publicar.");
+        var parent = connection.Stores.SingleOrDefault(x => x.IsParent);
+        if (parent is null)
+            return new(connection, null, "Debe existir exactamente una tienda padre.");
+        var selected = connection.ProductMappings
+            .Where(x => x.IsSelected)
+            .OrderBy(x => x.Product.Category.Name)
+            .ThenBy(x => x.Product.Name)
+            .ToList();
+        if (selected.Count == 0)
+            return new(connection, null, "Selecciona al menos un producto para Rappi.");
+
+        var categoryPositions = selected
+            .Select(x => x.Product.Category)
+            .DistinctBy(x => x.Id)
+            .OrderBy(x => x.Name)
+            .Select((category, index) => new { category.Id, Position = index })
+            .ToDictionary(x => x.Id, x => x.Position);
+        var itemPositions = new Dictionary<int, int>();
+        var items = new List<RappiMenuItem>();
+        foreach (var mapping in selected)
+        {
+            var name = EffectiveName(mapping);
+            var price = EffectivePrice(mapping);
+            var description = EffectiveDescription(mapping);
+            if (string.IsNullOrWhiteSpace(name) || price <= 0)
+                return new(connection, null,
+                    $"El producto {mapping.Product.Name} tiene nombre o precio inválido.");
+            if (string.IsNullOrWhiteSpace(description))
+                return new(connection, null,
+                    $"El producto {mapping.Product.Name} requiere descripción para Rappi.");
+            var position = itemPositions.TryGetValue(mapping.Product.CategoryId, out var current)
+                ? current + 1
+                : 0;
+            itemPositions[mapping.Product.CategoryId] = position;
+            items.Add(new RappiMenuItem(
+                new RappiMenuCategory(
+                    mapping.CategorySku,
+                    0,
+                    0,
+                    mapping.Product.Category.Name,
+                    categoryPositions[mapping.Product.CategoryId]),
+                [],
+                name,
+                description,
+                price,
+                mapping.Sku,
+                position,
+                "PRODUCT",
+                mapping.OverrideImageUrl ?? mapping.Product.CommercialProfile?.PhotoUrl));
+        }
+        return new(connection, new RappiMenuRequest(parent.RappiStoreId, items), null);
     }
-    private static bool FixedEquals(string expected, string supplied) => expected.Length == supplied.Length && CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(expected), Encoding.ASCII.GetBytes(supplied));
-    private static string MappingKey(string itemType, string externalProductId) => $"{itemType.Trim().ToLowerInvariant()}:{externalProductId.Trim()}";
-    private static List<ExternalDeliveryOrderLine> ParseLines(JsonElement detail)
+
+    private static void UpsertStores(
+        DeliveryAppConnection connection,
+        IReadOnlyCollection<UpsertRappiStoreDto>? input)
     {
-        if (!detail.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return [];
-        var result = new List<ExternalDeliveryOrderLine>();
-        foreach (var item in items.EnumerateArray()) result.Add(new(Value(item, "id") ?? Value(item, "sku") ?? Guid.NewGuid().ToString(), Value(item, "sku") ?? "", Value(item, "name") ?? "Producto Rappi", Value(item, "type") ?? "product", IntValue(item, "quantity") ?? 1, IntValue(item, "price") ?? IntValue(item, "unit_price_with_discount") ?? 0, Value(item, "comments")));
-        return result;
+        var requested = input is { Count: > 0 }
+            ? input
+            :
+            [
+                new UpsertRappiStoreDto
+                {
+                    RappiStoreId = "900173116",
+                    StoreIntegrationId = "900173116",
+                    Name = "Señor Arroz Dev1",
+                    IsParent = true
+                },
+                new UpsertRappiStoreDto
+                {
+                    RappiStoreId = "900173117",
+                    StoreIntegrationId = "900173117",
+                    Name = "Señor Arroz Dev2",
+                    IsParent = false
+                }
+            ];
+        if (requested.Count(x => x.IsParent) != 1)
+            throw new ArgumentException("Debe existir exactamente una tienda padre.");
+        foreach (var dto in requested)
+        {
+            var store = connection.Stores.FirstOrDefault(x => x.RappiStoreId == dto.RappiStoreId);
+            if (store is null)
+            {
+                store = new DeliveryAppStore
+                {
+                    RappiStoreId = dto.RappiStoreId.Trim(),
+                    CreatedAt = DateTime.UtcNow
+                };
+                connection.Stores.Add(store);
+            }
+            store.Name = dto.Name.Trim();
+            store.StoreIntegrationId = Clean(dto.StoreIntegrationId, 120);
+            store.IsParent = dto.IsParent;
+            store.ManualReadyForPickupEnabled = dto.ManualReadyForPickupEnabled;
+            store.UpdatedAt = DateTime.UtcNow;
+        }
     }
-    private static string? Value(JsonElement e, string name) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) ? v.ToString() : null;
-    private static int? IntValue(JsonElement e, string name) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.TryGetInt32(out var n) ? n : null;
-    private static int? NestedInt(JsonElement e, string obj, string name) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(obj, out var nested) ? IntValue(nested, name) : null;
+
+    private bool CanAdminister(int branchId) =>
+        Roles.IsSuperadmin(currentUser.Role)
+        || (Roles.IsAdmin(currentUser.Role) && currentUser.BranchId == branchId);
+
+    private bool CanOperate(int branchId) =>
+        Roles.IsSuperadmin(currentUser.Role)
+        || (Roles.IsAdminOrCashier(currentUser.Role) && currentUser.BranchId == branchId);
+
+    private int? ResolveBranch(int? requested) =>
+        Roles.IsSuperadmin(currentUser.Role) ? requested : currentUser.BranchId;
+
+    private static string EffectiveName(DeliveryAppProductMapping mapping) =>
+        mapping.OverrideName ?? mapping.Product.Name;
+
+    private static int EffectivePrice(DeliveryAppProductMapping mapping) =>
+        mapping.OverridePrice ?? mapping.Product.Price;
+
+    private static string? EffectiveDescription(DeliveryAppProductMapping mapping) =>
+        mapping.OverrideDescription ?? mapping.Product.CommercialProfile?.Description;
+
+    private static string? EffectiveImageUrl(DeliveryAppProductMapping mapping) =>
+        mapping.OverrideImageUrl ?? mapping.Product.CommercialProfile?.PhotoUrl;
+
+    private static string? Clean(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
+    }
+
+    private static IReadOnlyList<ExternalDeliveryOrderLine> DeserializeLines(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<List<ExternalDeliveryOrderLine>>(
+                json,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static IReadOnlyList<ExternalDeliveryDiscount> DeserializeDiscounts(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<List<ExternalDeliveryDiscount>>(
+                json,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static IReadOnlyList<string> DeserializeStrings(string? json)
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(json)
+                ? []
+                : JsonSerializer.Deserialize<List<string>>(json) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private record MenuBuildResult(
+        DeliveryAppConnection? Connection,
+        RappiMenuRequest? Menu,
+        string? Error);
 }
 
 public sealed class UpsertRappiConnectionDto
 {
     public string DisplayName { get; set; } = "Rappi";
-    public string Environment { get; set; } = "sandbox";
-    public string ClientId { get; set; } = string.Empty;
-    public string? ClientSecret { get; set; }
-    public string ExternalStoreId { get; set; } = string.Empty;
     public int FinancialAppId { get; set; }
+    public int CustomerId { get; set; }
+    public int? TechnicalUserId { get; set; }
     public int DefaultCookingTimeMinutes { get; set; } = 30;
+    public decimal EstimatedCommissionRate { get; set; } = 0.25m;
     public bool IsActive { get; set; }
+    public List<UpsertRappiStoreDto> Stores { get; set; } = [];
 }
-public sealed class MapProductDto { public int ProductId { get; set; } }
+
+public sealed class UpsertRappiStoreDto
+{
+    public string RappiStoreId { get; set; } = string.Empty;
+    public string? StoreIntegrationId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool IsParent { get; set; }
+    public bool ManualReadyForPickupEnabled { get; set; }
+}
+
+public sealed class UpdateRappiCatalogProductDto
+{
+    public bool IsSelected { get; set; }
+    public string? OverrideName { get; set; }
+    public string? OverrideDescription { get; set; }
+    public string? OverrideImageUrl { get; set; }
+    public int? OverridePrice { get; set; }
+}
+
+public sealed class RejectRappiOrderDto
+{
+    public string Reason { get; set; } = "The order has invalid items";
+}

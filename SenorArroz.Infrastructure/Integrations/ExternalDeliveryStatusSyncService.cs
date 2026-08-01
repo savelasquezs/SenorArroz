@@ -1,31 +1,44 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
-using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Entities;
 
 namespace SenorArroz.Infrastructure.Integrations;
 
 public sealed class ExternalDeliveryStatusSyncService(
     IApplicationDbContext db,
-    IIntegrationSecretProtector protector,
-    IRappiDeliveryProvider rappi,
-    ILogger<ExternalDeliveryStatusSyncService> logger) : IExternalDeliveryStatusSyncService
+    IClock clock) : IExternalDeliveryStatusSyncService
 {
     public async Task SyncReadyForPickupAsync(int internalOrderId, CancellationToken ct)
     {
-        var external = await db.ExternalDeliveryOrders.Include(x => x.Connection)
-            .FirstOrDefaultAsync(x => x.InternalOrderId == internalOrderId && x.Connection.Provider == "rappi", ct);
-        if (external is null) return;
-        try
+        var external = await db.ExternalDeliveryOrders
+            .Include(x => x.Store)
+            .FirstOrDefaultAsync(x => x.InternalOrderId == internalOrderId, ct);
+        if (external?.Store?.ManualReadyForPickupEnabled != true)
+            return;
+
+        var eventKey = $"READY_FOR_PICKUP:{external.ConnectionId}:{external.ExternalOrderId}";
+        if (await db.IntegrationWebhookEvents.AnyAsync(x =>
+                x.ConnectionId == external.ConnectionId
+                && x.EventKey == eventKey, ct))
+            return;
+
+        db.IntegrationWebhookEvents.Add(new IntegrationWebhookEvent
         {
-            var result = await rappi.ReadyForPickupAsync(external.Connection, protector.Unprotect(external.Connection.EncryptedClientSecret), external.ExternalOrderId, ct);
-            if (!result.Success)
+            ConnectionId = external.ConnectionId,
+            Provider = "rappi",
+            EventKey = eventKey,
+            EventType = "READY_FOR_PICKUP_OUTBOX",
+            PayloadHash = string.Empty,
+            PayloadJson = JsonSerializer.Serialize(new
             {
-                external.Status = ExternalOrderStatus.SyncError; external.LastError = result.Error;
-                await db.SaveChangesAsync(ct);
-                logger.LogWarning("Rappi ready-for-pickup failed for external order {OrderId}: {Error}", external.ExternalOrderId, result.Error);
-            }
-        }
-        catch (Exception ex) { logger.LogError(ex, "Rappi ready-for-pickup failed for internal order {OrderId}", internalOrderId); }
+                externalOrderId = external.ExternalOrderId,
+                externalDeliveryOrderId = external.Id
+            }),
+            Status = "outbox_pending",
+            CreatedAt = clock.UtcNow,
+            UpdatedAt = clock.UtcNow
+        });
+        await db.SaveChangesAsync(ct);
     }
 }

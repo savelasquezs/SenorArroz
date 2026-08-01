@@ -147,7 +147,7 @@ public class AppRepository : IAppRepository
     public async Task<decimal> GetUnsettledAppPaymentsAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
-            .Where(ap => ap.AppId == appId && !ap.IsSetted)
+            .Where(ap => ap.AppId == appId && !ap.IsSetted && !ap.IsReversed)
             .SumAsync(ap => ap.Amount, cancellationToken);
     }
 
@@ -160,6 +160,6 @@ public class AppRepository : IAppRepository
     public async Task<int> GetUnsettledAppPaymentsCountAsync(int appId, CancellationToken cancellationToken = default)
     {
         return await _context.AppPayments
-            .CountAsync(ap => ap.AppId == appId && !ap.IsSetted, cancellationToken);
+            .CountAsync(ap => ap.AppId == appId && !ap.IsSetted && !ap.IsReversed, cancellationToken);
     }
 }

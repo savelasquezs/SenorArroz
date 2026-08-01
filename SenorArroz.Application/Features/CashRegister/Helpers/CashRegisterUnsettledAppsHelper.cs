@@ -25,9 +25,15 @@ public static class CashRegisterUnsettledAppsHelper
         var raw = await context.AppPayments
             .AsNoTracking()
             .Where(ap => !ap.IsSetted
+                         && !ap.IsReversed
                          && ap.Order.BranchId == branchId
                          && ap.Order.Status == OrderStatus.Delivered)
-            .Select(ap => new { ap.AppId, AppName = ap.App.Name, ap.Amount })
+            .Select(ap => new
+            {
+                ap.AppId,
+                AppName = ap.App.Name,
+                Amount = ap.ExpectedNetAmount ?? ap.Amount
+            })
             .ToListAsync(cancellationToken);
 
         var lines = raw

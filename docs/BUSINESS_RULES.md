@@ -6,6 +6,13 @@ Este documento resume reglas funcionales que Codex debe respetar antes de modifi
 
 El sistema ya opera con clientes reales. Todo cambio debe ser pequeño, seguro y compatible con datos existentes.
 
+## Reproducción histórica de recorridos
+
+- Solo Admin y Superadmin pueden consultar recorridos históricos.
+- Admin queda limitado a su sucursal; Superadmin debe operar con una sucursal efectiva.
+- El eje temporal es `RecordedAt`; `SyncedAt` solo informa recepción tardía.
+- Cada consulta admite máximo 24 horas y 20.000 ubicaciones, sin truncamiento silencioso.
+
 Antes de tocar código:
 
 1. Leer `AGENTS.md`.
@@ -265,3 +272,27 @@ Cuando una tarea toque una regla funcional:
 - ¿No se rompieron pagos/caja?
 - ¿Los filtros de fecha y sucursal siguen funcionando?
 - ¿Los índices únicos futuros deben ser por tenant?
+## Integración Rappi API v2
+
+Reglas:
+
+- La integración Rappi pertenece a Santander, usa credenciales globales del ambiente y nunca persiste `client_id` ni `client_secret`.
+- La tienda `900173116` es padre y la `900173117` hereda su menú. Solo se publica el menú al padre.
+- En sandbox `store_integration_id` es `900173116` para la tienda padre y `900173117` para la hija; en POS Tester se selecciona `POS=SeñorArrozDevV2` e `INTEGRACIÓN=SENORARROZDEVV2`.
+- Cada webhook tiene un secreto distinto, cifrado en base de datos. La firma usa HMAC-SHA256 sobre `timestamp.rawPayload` y comparación en tiempo constante.
+- Si Rappi ya tiene un webhook activo pero el secreto local falta, se rota mediante `reset-secret` y se guarda cifrado antes de continuar; no se intenta crear un duplicado.
+- `STORE_CONNECTIVITY` acepta tanto el contrato documentado (`external_store_id`, `enabled`) como el contrato real del Sandbox Tester (`store_id`, `online`, `checked_at`); solo actualiza el estado operativo de la tienda.
+- Todo webhook se persiste antes de procesarse y es idempotente por integración y evento.
+- El catálogo Rappi es una selección uno a uno de productos internos. Los SKU `product-{ProductId}` y categorías `category-{ProductCategoryId}` son inmutables.
+- El Sprint 1 publica únicamente productos simples, sin toppings ni modificadores.
+- La disponibilidad deriva del producto seleccionado, activo y disponible según las reglas internas, y se sincroniza en ambas tiendas.
+- Solo se admiten órdenes `delivery` con courier Rappi.
+- Una orden válida se toma automáticamente y se crea en estado `Taken`. SKU, precio, stock, modificadores o totales inconsistentes la dejan retenida.
+- Las órdenes retenidas solo permiten revalidar y aceptar o rechazar; no se permiten sustituciones particulares.
+- La recuperación de `SENT` consulta la ventana oficial de 10 minutos y deduplica por conexión y `order_id`.
+- `total_order` es el total autoritativo. Descuentos Rappi, descuentos del aliado, cargos, comisión estimada, neto esperado, consignación real y diferencia se conservan por separado.
+- Una cancelación previa a liquidación revierte el pago por app sin borrarlo. Una cancelación entregada o liquidada crea una incidencia financiera.
+- La consignación real de un lote se prorratea por neto esperado; el residuo monetario se asigna a la última orden.
+- `READY_FOR_PICKUP` permanece deshabilitado por tienda hasta confirmación expresa de Rappi.
+- La información personal y el payload crudo se anonimizan después de 90 días.
+- Deshabilitar la integración conserva configuración, eventos, pedidos e historial financiero.

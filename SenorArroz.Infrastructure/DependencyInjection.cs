@@ -34,6 +34,7 @@ public static class DependencyInjection
                 options.RoutesApiKey);
         });
         services.Configure<ApiPublicOptions>(configuration.GetSection(ApiPublicOptions.SectionName));
+        services.Configure<RappiOptions>(configuration.GetSection(RappiOptions.SectionName));
         services.Configure<BrandingOptions>(configuration.GetSection(BrandingOptions.SectionName));
         services.Configure<DeliveryPayrollOptions>(configuration.GetSection(DeliveryPayrollOptions.SectionName));
         services.Configure<FirebaseStorageOptions>(configuration.GetSection(FirebaseStorageOptions.SectionName));
@@ -70,6 +71,7 @@ public static class DependencyInjection
         services.AddHttpClient<IWhatsAppCloudClient, WhatsAppCloudClient>();
         services.AddSingleton<IIntegrationSecretProtector, IntegrationSecretProtector>();
         services.AddHttpClient<IRappiDeliveryProvider, RappiDeliveryProvider>(client => client.Timeout = TimeSpan.FromSeconds(20));
+        services.AddScoped<IRappiOrderProcessor, RappiOrderProcessor>();
         services.AddScoped<IExternalDeliveryStatusSyncService, ExternalDeliveryStatusSyncService>();
         services.AddHttpClient<OpenAiProvider>();
         services.AddHttpClient<GeminiProvider>();
@@ -155,6 +157,7 @@ public static class DependencyInjection
         services.AddHostedService<DeliveryWorkSessionAutoCloseService>();
         services.AddHostedService<DeliveryStayDetectionWorker>();
         services.AddHostedService<DeliveryTrackingAlertWorker>();
+        services.AddHostedService<RappiIntegrationWorker>();
 
         return services;
     }

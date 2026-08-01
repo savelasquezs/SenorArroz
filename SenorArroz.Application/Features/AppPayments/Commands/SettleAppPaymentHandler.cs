@@ -41,6 +41,11 @@ public class SettleAppPaymentHandler : IRequestHandler<SettleAppPaymentCommand, 
         // Check if already settled
         if (appPayment.IsSetted)
             return true; // Already settled
+        if (appPayment.IsReversed)
+            throw new BusinessException("No se puede liquidar un pago revertido.");
+        if (appPayment.ExpectedNetAmount.HasValue)
+            throw new BusinessException(
+                "Los pagos Rappi deben liquidarse indicando el valor real consignado.");
 
         // Mark app payment as settled
         var settled = await _appPaymentRepository.SettlePaymentsAsync(new[] { request.Id }, cancellationToken);

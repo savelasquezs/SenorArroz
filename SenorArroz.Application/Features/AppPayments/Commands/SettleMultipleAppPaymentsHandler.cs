@@ -1,89 +1,87 @@
-// SenorArroz.Application/Features/AppPayments/Commands/SettleMultipleAppPaymentsHandler.cs
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
-using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Application.Features.AppPayments.Commands;
 
-public class SettleMultipleAppPaymentsHandler : IRequestHandler<SettleMultipleAppPaymentsCommand, bool>
+public sealed class SettleMultipleAppPaymentsHandler(
+    IApplicationDbContext db,
+    ICurrentUser currentUser,
+    IBranchContext branchContext)
+    : IRequestHandler<SettleMultipleAppPaymentsCommand, bool>
 {
-    private readonly IAppPaymentRepository _appPaymentRepository;
-    private readonly IBankPaymentRepository _bankPaymentRepository;
-    private readonly ICurrentUser _currentUser;
-    private readonly IBranchContext _branchContext;
-
-    public SettleMultipleAppPaymentsHandler(
-        IAppPaymentRepository appPaymentRepository,
-        IBankPaymentRepository bankPaymentRepository,
-        ICurrentUser currentUser,
-        IBranchContext branchContext)
+    public async Task<bool> Handle(
+        SettleMultipleAppPaymentsCommand request,
+        CancellationToken ct)
     {
-        _appPaymentRepository = appPaymentRepository;
-        _bankPaymentRepository = bankPaymentRepository;
-        _currentUser = currentUser;
-        _branchContext = branchContext;
-    }
+        var ids = request.PaymentIds.Distinct().ToList();
+        if (ids.Count == 0)
+            throw new BusinessException("Se requiere al menos un pago.");
 
-    public async Task<bool> Handle(SettleMultipleAppPaymentsCommand request, CancellationToken cancellationToken)
-    {
-        if (request.PaymentIds == null || !request.PaymentIds.Any())
-            throw new BusinessException("Se requiere al menos un ID de pago");
+        var payments = await db.AppPayments
+            .Include(x => x.App)
+                .ThenInclude(x => x.Bank)
+            .Include(x => x.Order)
+            .Where(x => ids.Contains(x.Id))
+            .OrderBy(x => x.Id)
+            .ToListAsync(ct);
+        if (payments.Count != ids.Count)
+            throw new BusinessException("Uno o más pagos seleccionados no existen.");
+        if (payments.Any(x => x.IsSetted))
+            throw new BusinessException("Uno o más pagos ya fueron liquidados.");
+        if (payments.Any(x => x.IsReversed))
+            throw new BusinessException("No se puede liquidar un pago revertido.");
 
-        var appPayments = new List<AppPayment>();
-        var totalAmount = 0m;
-        var firstOrderId = 0;
-        var firstBankId = 0;
+        var branchIds = payments.Select(x => x.Order.BranchId).Distinct().ToList();
+        var appIds = payments.Select(x => x.AppId).Distinct().ToList();
+        var bankIds = payments.Select(x => x.App.BankId).Distinct().ToList();
+        if (branchIds.Count != 1 || appIds.Count != 1 || bankIds.Count != 1)
+            throw new BusinessException(
+                "La liquidación debe contener pagos de una sola sucursal, app y banco.");
+        branchContext.EnsureAccess(branchIds[0]);
+        if (!Roles.IsSuperadmin(currentUser.Role) && currentUser.BranchId != branchIds[0])
+            throw new BusinessException("No tienes permisos para liquidar estos pagos.");
 
-        // Validate all app payments exist and user has access
-        foreach (var paymentId in request.PaymentIds)
+        var containsEstimatedNet = payments.Any(x => x.ExpectedNetAmount.HasValue);
+        if (containsEstimatedNet && !request.ActualAmount.HasValue)
+            throw new BusinessException(
+                "Ingresa el valor real consignado por la app para liquidar pedidos Rappi.");
+        var expectedTotal = payments.Sum(x => x.ExpectedNetAmount ?? x.Amount);
+        var actualTotal = request.ActualAmount ?? expectedTotal;
+        if (actualTotal <= 0 || expectedTotal <= 0)
+            throw new BusinessException("Los valores de la liquidación deben ser mayores que cero.");
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var allocated = 0m;
+        for (var index = 0; index < payments.Count; index++)
         {
-            var appPayment = await _appPaymentRepository.GetByIdAsync(paymentId, cancellationToken);
-            if (appPayment == null)
-                throw new BusinessException($"El pago con ID {paymentId} no existe");
-            _branchContext.EnsureAccess(appPayment.App.Bank.BranchId);
-
-            // Check if user has access to this app payment's branch
-            if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
-                throw new BusinessException($"No tienes permisos para liquidar el pago con ID {paymentId}");
-
-            // Check if already settled
-            if (appPayment.IsSetted)
-                continue; // Skip already settled payments
-
-            appPayments.Add(appPayment);
-            totalAmount += appPayment.Amount;
-            
-            // Set first order and bank for the bank payment
-            if (firstOrderId == 0)
-            {
-                firstOrderId = appPayment.OrderId;
-                firstBankId = appPayment.App.BankId;
-            }
+            var payment = payments[index];
+            var expected = payment.ExpectedNetAmount ?? payment.Amount;
+            var actual = index == payments.Count - 1
+                ? actualTotal - allocated
+                : decimal.Round(
+                    actualTotal * expected / expectedTotal,
+                    2,
+                    MidpointRounding.AwayFromZero);
+            allocated += actual;
+            payment.ActualSettledAmount = actual;
+            payment.SettlementVariance = actual - expected;
+            payment.IsSetted = true;
         }
 
-        if (!appPayments.Any())
-            return true; // All payments already settled
-
-        // Mark all app payments as settled
-        var settledPaymentIds = appPayments.Select(p => p.Id).ToArray();
-        var settled = await _appPaymentRepository.SettlePaymentsAsync(settledPaymentIds, cancellationToken);
-        if (!settled)
-            return false;
-
-        // Create single bank payment with total amount as per specifications
-        var bankPayment = new BankPayment
+        db.BankPayments.Add(new BankPayment
         {
-            OrderId = firstOrderId, // Use the first order ID as reference
-            BankId = firstBankId,   // Use the first bank ID (assuming all apps belong to same bank)
-            Amount = totalAmount,
+            OrderId = payments[0].OrderId,
+            BankId = bankIds[0],
+            Amount = actualTotal,
             IsAppSettlement = true,
-            AppSettlementSourcePaymentIds = AppSettlementBankPaymentSourceIds.Serialize(settledPaymentIds)
-        };
-
-        await _bankPaymentRepository.CreateAsync(bankPayment, cancellationToken);
-
+            AppSettlementSourcePaymentIds =
+                AppSettlementBankPaymentSourceIds.Serialize(payments.Select(x => x.Id))
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return true;
     }
 }
