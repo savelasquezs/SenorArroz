@@ -6,8 +6,10 @@ public class Customer : BaseEntity
 {
     public int BranchId { get; set; }
     public string Name { get; set; } = string.Empty;
-    public string Phone1 { get; set; } = string.Empty;
+    public string? Phone1 { get; set; }
     public string? Phone2 { get; set; }
+    public string? WhatsAppUserId { get; set; }
+    public string? WhatsAppUsername { get; set; }
     public bool Active { get; set; } = true;
     public bool WhatsAppTemplateOptIn { get; set; }
     public string? WhatsAppTemplateAuthorizationMessageId { get; set; }

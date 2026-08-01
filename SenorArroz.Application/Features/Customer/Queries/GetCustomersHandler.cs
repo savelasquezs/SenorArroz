@@ -48,8 +48,10 @@ namespace SenorArroz.Application.Features.Customers.Queries
 
             var pagedCustomers = await _customerRepository.GetPagedAsync(
                 branchFilter,
+                request.Search,
                 request.Name,
                 request.Phone,
+                request.WhatsAppUsername,
                 request.Active,
                 request.Page,
                 request.PageSize,

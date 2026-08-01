@@ -7,7 +7,9 @@ public class WhatsAppConversation : BaseEntity
 {
     public int BranchId { get; set; }
     public int? CustomerId { get; set; }
-    public string PhoneNumber { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string? WhatsAppUserId { get; set; }
+    public string? WhatsAppUsername { get; set; }
     public string? ContactName { get; set; }
     public WhatsAppConversationStatus Status { get; set; } = WhatsAppConversationStatus.Open;
     public DateTime? LastMessageAt { get; set; }

@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -32,7 +33,8 @@ namespace SenorArroz.Application.Features.Customers.Commands
             }
 
             // Validate phone doesn't exist for other customers
-            if (await _customerRepository.PhoneExistsAsync(request.Phone1, customer.BranchId, request.Id))
+            if (!string.IsNullOrWhiteSpace(request.Phone1)
+                && await _customerRepository.PhoneExistsAsync(request.Phone1, customer.BranchId, request.Id))
             {
                 throw new BusinessException($"Ya existe otro cliente con el teléfono {request.Phone1} en esta sucursal");
             }
@@ -45,8 +47,9 @@ namespace SenorArroz.Application.Features.Customers.Commands
 
             // Update customer
             customer.Name = request.Name.Trim();
-            customer.Phone1 = request.Phone1;
-            customer.Phone2 = request.Phone2;
+            customer.Phone1 = string.IsNullOrWhiteSpace(request.Phone1) ? null : request.Phone1.Trim();
+            customer.Phone2 = string.IsNullOrWhiteSpace(request.Phone2) ? null : request.Phone2.Trim();
+            customer.WhatsAppUsername = WhatsAppIdentityNormalizer.NormalizeUsername(request.WhatsAppUsername);
             customer.Active = request.Active;
 
             customer = await _customerRepository.UpdateAsync(customer, cancellationToken);

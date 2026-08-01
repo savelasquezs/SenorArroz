@@ -115,6 +115,8 @@ public class RequestHumanAssistanceAgentTool(
                         Id = conversation.Id,
                         BranchId = conversation.BranchId,
                         PhoneNumber = conversation.PhoneNumber,
+                        WhatsAppUsername = conversation.WhatsAppUsername,
+                        HasWhatsAppIdentity = !string.IsNullOrWhiteSpace(conversation.WhatsAppUserId),
                         Status = "open",
                         AttentionMode = "waitingForHuman",
                         AttentionReason = WhatsAppAiDiagnosticsMapper.SanitizeTechnicalDetail(

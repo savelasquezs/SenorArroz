@@ -172,6 +172,21 @@ public class CreateCustomerAgentToolTests
     }
 
     [Fact]
+    public async Task BsuidWithoutPhone_CreatesAndLinksCustomer()
+    {
+        await using var fixture = await Fixture.Create(phone: null, userId: "user.abc123", username: "@cliente_99");
+
+        var result = await fixture.Execute(new { name = "Cliente WhatsApp" }, phone: null);
+
+        Assert.True(result.Success);
+        var customer = Assert.Single(await fixture.Db.Customers.ToListAsync());
+        Assert.Null(customer.Phone1);
+        Assert.Equal("user.abc123", customer.WhatsAppUserId);
+        Assert.Equal("@cliente_99", customer.WhatsAppUsername);
+        Assert.Equal(customer.Id, (await fixture.Db.WhatsAppConversations.FindAsync(1))!.CustomerId);
+    }
+
+    [Fact]
     public async Task ToolSchema_ExposesNoSecureOrBackendFields()
     {
         await using var fixture = await Fixture.Create();
@@ -231,14 +246,18 @@ public class CreateCustomerAgentToolTests
         public WhatsAppSimpleOrderStateService State { get; }
         public CreateCustomerAgentTool Tool { get; }
 
-        public static async Task<Fixture> Create(Func<string, string>? response = null, string phone = "573001234567")
+        public static async Task<Fixture> Create(
+            Func<string, string>? response = null,
+            string? phone = "573001234567",
+            string? userId = null,
+            string? username = null)
         {
             response ??= address => Exact(address, "Santander");
             var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
             db.Branches.AddRange(new Branch { Id = 1, Name = "Centro" }, new Branch { Id = 2, Name = "Norte" });
             db.Neighborhoods.Add(new Neighborhood { Id = 100, BranchId = 1, Name = "Santander", Active = true, DeliveryFee = 7000 });
-            db.WhatsAppConversations.Add(new WhatsAppConversation { Id = 1, BranchId = 1, PhoneNumber = phone, AttentionMode = WhatsAppAttentionMode.Ai });
+            db.WhatsAppConversations.Add(new WhatsAppConversation { Id = 1, BranchId = 1, PhoneNumber = phone, WhatsAppUserId = userId, WhatsAppUsername = username, AttentionMode = WhatsAppAttentionMode.Ai });
             db.WhatsAppMessages.Add(new WhatsAppMessage { Id = 50, ConversationId = 1, Direction = WhatsAppMessageDirection.Inbound, Type = WhatsAppMessageType.Text, TextBody = "pedido", Status = WhatsAppMessageStatus.Received, Timestamp = DateTime.UtcNow });
             await db.SaveChangesAsync();
 
@@ -261,7 +280,7 @@ public class CreateCustomerAgentToolTests
             return new(db, state, new CreateCustomerAgentTool(db, resolver, state, human));
         }
 
-        public Task<AgentToolExecutionResult> Execute(object arguments, string phone = "573001234567") =>
+        public Task<AgentToolExecutionResult> Execute(object arguments, string? phone = "573001234567") =>
             Tool.ExecuteAsync(
                 new(1, 1, 50, PhoneNumber: phone, ExecutionId: "test"),
                 JsonSerializer.SerializeToElement(arguments),

@@ -19,8 +19,10 @@ public class CustomerRepository : ICustomerRepository
 
     public async Task<PagedResult<Customer>> GetPagedAsync(
         int? branchId,
+        string? search = null,
         string? name = null,
         string? phone = null,
+        string? whatsAppUsername = null,
         bool? active = null,
         int page = 1,
         int pageSize = 10,
@@ -38,12 +40,32 @@ public class CustomerRepository : ICustomerRepository
         if (branchId.HasValue)
             query = query.Where(c => c.BranchId == branchId.Value);
 
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            var usernameTerm = term.TrimStart('@');
+            var pattern = $"%{term}%";
+            var usernamePattern = $"%{usernameTerm}%";
+            query = query.Where(c =>
+                EF.Functions.ILike(c.Name, pattern)
+                || (c.Phone1 != null && EF.Functions.ILike(c.Phone1, pattern))
+                || (c.Phone2 != null && EF.Functions.ILike(c.Phone2, pattern))
+                || (c.WhatsAppUsername != null && EF.Functions.ILike(c.WhatsAppUsername, usernamePattern)));
+        }
+
         if (!string.IsNullOrWhiteSpace(name))
             query = query.Where(c => EF.Functions.ILike(c.Name, $"%{name}%"));
 
         if (!string.IsNullOrWhiteSpace(phone))
-            query = query.Where(c => c.Phone1.Contains(phone) ||
+            query = query.Where(c => (c.Phone1 != null && c.Phone1.Contains(phone)) ||
                                    (c.Phone2 != null && c.Phone2.Contains(phone)));
+
+        if (!string.IsNullOrWhiteSpace(whatsAppUsername))
+        {
+            var username = whatsAppUsername.Trim().TrimStart('@');
+            query = query.Where(c => c.WhatsAppUsername != null
+                && EF.Functions.ILike(c.WhatsAppUsername, $"%{username}%"));
+        }
 
         if (active.HasValue)
             query = query.Where(c => c.Active == active.Value);

@@ -16,8 +16,10 @@ public class CustomerConfiguration : IEntityTypeConfiguration<Customer>
 
         builder.Property(c => c.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(c => c.Name).HasColumnName("name").HasMaxLength(150).IsRequired();
-        builder.Property(c => c.Phone1).HasColumnName("phone1").HasMaxLength(10).IsRequired();
+        builder.Property(c => c.Phone1).HasColumnName("phone1").HasMaxLength(10);
         builder.Property(c => c.Phone2).HasColumnName("phone2").HasMaxLength(10);
+        builder.Property(c => c.WhatsAppUserId).HasColumnName("whatsapp_user_id").HasMaxLength(256);
+        builder.Property(c => c.WhatsAppUsername).HasColumnName("whatsapp_username").HasMaxLength(64);
         builder.Property(c => c.Active).HasColumnName("active").HasDefaultValue(true);
         builder.Property(c => c.WhatsAppTemplateOptIn)
             .HasColumnName("whatsapp_template_opt_in")
@@ -40,6 +42,12 @@ public class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         // Índices
         builder.HasIndex(c => c.BranchId).HasDatabaseName("idx_customer_branch");
         builder.HasIndex(c => c.Phone1).HasDatabaseName("idx_customer_phone");
+        builder.HasIndex(c => new { c.BranchId, c.WhatsAppUserId })
+            .IsUnique()
+            .HasFilter("whatsapp_user_id IS NOT NULL AND whatsapp_user_id <> ''")
+            .HasDatabaseName("uq_customer_branch_whatsapp_user_id");
+        builder.HasIndex(c => new { c.BranchId, c.WhatsAppUsername })
+            .HasDatabaseName("idx_customer_branch_whatsapp_username");
         builder.HasIndex(c => c.Active).HasDatabaseName("idx_customer_active").HasFilter("active = true");
         builder.HasIndex(c => c.WhatsAppTemplateOptIn).HasDatabaseName("idx_customer_whatsapp_template_opt_in");
     }

@@ -8,8 +8,10 @@ namespace SenorArroz.Domain.Interfaces.Repositories
     {
         Task<PagedResult<Customer>> GetPagedAsync(
             int? branchId,
+            string? search = null,
             string? name = null,
             string? phone = null,
+            string? whatsAppUsername = null,
             bool? active = null,
             int page = 1,
             int pageSize = 10,

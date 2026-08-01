@@ -8,8 +8,10 @@ namespace SenorArroz.Application.Features.Customers.DTOs
 {
     public class CustomerSearchDto
     {
+        public string? Search { get; set; }
         public string? Name { get; set; }
         public string? Phone { get; set; }
+        public string? WhatsAppUsername { get; set; }
         public int? BranchId { get; set; }
         public bool? Active { get; set; }
         public int Page { get; set; } = 1;

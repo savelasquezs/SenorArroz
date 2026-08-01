@@ -97,7 +97,9 @@ Notas:
 
 Notas:
 
-- Si un teléfono de cliente es único, debe pasar de `UNIQUE(phone)` a `UNIQUE(tenant_id, phone)`.
+- `Customer.Phone1` puede ser nulo cuando existe `WhatsAppUsername` o una identidad técnica de WhatsApp asociada.
+- `Customer.WhatsAppUserId` almacena el BSUID estable y no se expone para edición; `WhatsAppUsername` es visible, normalizado en minúsculas y con `@`.
+- La búsqueda de clientes combina nombre, teléfonos y username. El username no es único porque puede cambiar o reutilizarse.
 - Barrios pueden repetirse entre tenants.
 
 ### Productos y fidelización
@@ -200,6 +202,10 @@ Notas:
 - `WhatsAppBranchSetting` guarda por sucursal la activación y plantilla del mensaje de ausencia.
 - El esquema se amplía con `SenorArroz.Infrastructure/Scripts/add_whatsapp_away_message.sql`; debe instalarse antes del backend que consulta esas columnas.
 - Los avisos usan `WhatsAppMessage.AgentDispatchKey` para garantizar como máximo un envío por conversación y periodo de cierre.
+- `WhatsAppConversation` se identifica primero por `(BranchId, WhatsAppUserId)` y luego por `(BranchId, PhoneNumber)`; ambos campos son opcionales individualmente, pero al menos uno debe existir.
+- Los índices únicos parciales permiten conversaciones sin teléfono y protegen tanto el teléfono como el BSUID dentro de una sucursal. `WhatsAppUsername` solo tiene índice de búsqueda.
+- El esquema BSUID se instala con `SenorArroz.Infrastructure/Scripts/add_whatsapp_user_identity.sql` antes del backend y no realiza backfill especulativo; los historiales antiguos se enriquecen al recibir el siguiente webhook.
+- Si BSUID y teléfono resuelven a historiales diferentes no se fusionan mensajes automáticamente; se registra el conflicto y solo se comparte la asociación al cliente cuando es seguro.
 
 ### Impresión
 
@@ -325,7 +331,9 @@ UNIQUE (tenant_id, order_number)
 ```text
 orders: (tenant_id, branch_id, created_at)
 orders: (tenant_id, status)
-customers: (tenant_id, phone)
+customers: (tenant_id, branch_id, phone)
+customers: (tenant_id, branch_id, whatsapp_user_id)
+customers: (tenant_id, branch_id, whatsapp_username)
 products: (tenant_id, category_id, name)
 print_jobs: (tenant_id, branch_id, status, created_at)
 expenses: (tenant_id, branch_id, date)

@@ -164,6 +164,9 @@ Reglas:
 - Barrios pertenecen al tenant.
 - Teléfonos de clientes pueden repetirse entre tenants.
 - Si hay índice único por teléfono, debe ser compuesto por tenant.
+- Un cliente debe tener al menos `Phone1` o `WhatsAppUsername`; `Phone2` solo es válido cuando existe `Phone1`.
+- El username de WhatsApp se normaliza en minúsculas y con `@`, puede corregirse y no es único. El BSUID (`WhatsAppUserId`) es técnico, estable y solo lo administra el backend.
+- La búsqueda de clientes acepta un término combinado por nombre, cualquiera de los dos teléfonos o username, con o sin `@`.
 
 ## Productos
 
@@ -208,6 +211,10 @@ Reglas:
 
 ## WhatsApp y horarios de atención
 
+- Los webhooks resuelven primero por BSUID (`from_user_id`/`contacts[].user_id`) y después por teléfono (`from`/`wa_id`); `contacts[].profile.username` se conserva como dato visible.
+- Una conversación puede operar sin teléfono cuando tiene BSUID. Los envíos prefieren teléfono y usan BSUID como alternativa; las plantillas de autenticación continúan exigiendo teléfono.
+- Una asociación manual de cliente nunca se reemplaza por inferencia del webhook. Ante conflicto entre historial por BSUID e historial por teléfono se conservan ambos y no se fusionan mensajes.
+- Los clientes y conversaciones existentes por teléfono no reciben un BSUID inventado: se enriquecen únicamente con datos entregados por Meta.
 - Cada sucursal puede activar y personalizar su mensaje de ausencia.
 - La disponibilidad usa el horario semanal de la sucursal y la hora local de Colombia; apertura es inclusiva y cierre es exclusivo.
 - Fuera del horario, el mensaje entrante queda no leído, se excluye de la cola de IA y recibe como máximo un aviso durante el periodo continuo de cierre.

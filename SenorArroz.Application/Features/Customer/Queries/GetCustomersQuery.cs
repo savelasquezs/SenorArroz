@@ -12,8 +12,10 @@ namespace SenorArroz.Application.Features.Customers.Queries
     public class GetCustomersQuery : IRequest<PagedResult<CustomerDto>>
     {
         public int BranchId { get; set; }
+        public string? Search { get; set; }
         public string? Name { get; set; }
         public string? Phone { get; set; }
+        public string? WhatsAppUsername { get; set; }
         public bool? Active { get; set; }
         public int Page { get; set; } = 1;
         public int PageSize { get; set; } = 10;

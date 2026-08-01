@@ -145,7 +145,9 @@ public class WhatsAppConversationDto
     public string? BranchName { get; set; }
     public int? CustomerId { get; set; }
     public string? CustomerName { get; set; }
-    public string PhoneNumber { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string? WhatsAppUsername { get; set; }
+    public bool HasWhatsAppIdentity { get; set; }
     public string? ContactName { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime? LastMessageAt { get; set; }
@@ -245,7 +247,8 @@ public class WhatsAppOrderDraftDto
     public int BranchId { get; set; }
     public int? CustomerId { get; set; }
     public string? CustomerName { get; set; }
-    public string PhoneNumber { get; set; } = string.Empty;
+    public string? PhoneNumber { get; set; }
+    public string? WhatsAppUsername { get; set; }
     public string? OrderType { get; set; }
     public int? SelectedAddressId { get; set; }
     public WhatsAppOrderDraftAddressDto? SelectedAddress { get; set; }

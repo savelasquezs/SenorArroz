@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Models;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
@@ -45,17 +46,20 @@ public sealed class CreateCustomerAgentTool(
             return await Transfer(context, "El nombre o los datos proporcionados para crear el cliente no son válidos.", cancellationToken);
         }
 
-        var phone = NormalizePhone(context.PhoneNumber);
-        if (phone is null)
-            return await Transfer(context, "No fue posible validar el teléfono de la conversación.", cancellationToken);
-
-        var conversationIsValid = await db.WhatsAppConversations.AsNoTracking().AnyAsync(x =>
-            x.Id == context.ConversationId
-            && x.BranchId == context.BranchId
-            && x.PhoneNumber == context.PhoneNumber,
+        var conversation = await db.WhatsAppConversations.FirstOrDefaultAsync(x =>
+            x.Id == context.ConversationId && x.BranchId == context.BranchId,
             cancellationToken);
-        if (!conversationIsValid)
-            return await Transfer(context, "La conversación no coincide con el teléfono y la sucursal del contexto seguro.", cancellationToken);
+        if (conversation is null
+            || (!string.IsNullOrWhiteSpace(context.PhoneNumber)
+                && !string.Equals(conversation.PhoneNumber, context.PhoneNumber, StringComparison.Ordinal)))
+        {
+            return await Transfer(context, "La conversación no coincide con la identidad y la sucursal del contexto seguro.", cancellationToken);
+        }
+
+        var phone = NormalizePhone(conversation.PhoneNumber);
+        var userId = WhatsAppIdentityNormalizer.NormalizeUserId(conversation.WhatsAppUserId);
+        if (phone is null && userId is null)
+            return await Transfer(context, "La conversación no tiene una identidad de WhatsApp válida.", cancellationToken);
 
         ResolvedCustomerAddress? resolvedAddress = null;
         if (request.Address is not null)
@@ -72,15 +76,28 @@ public sealed class CreateCustomerAgentTool(
                 ? await db.Database.BeginTransactionAsync(cancellationToken)
                 : null;
 
-            var matches = await db.Customers
-                .Where(x => x.BranchId == context.BranchId && (x.Phone1 == phone || x.Phone2 == phone))
-                .OrderByDescending(x => x.Active)
-                .ThenBy(x => x.Id)
-                .ToListAsync(cancellationToken);
-            if (matches.Count > 1)
+            var customerByUserId = userId is null
+                ? null
+                : await db.Customers
+                    .Where(x => x.BranchId == context.BranchId && x.WhatsAppUserId == userId)
+                    .OrderByDescending(x => x.Active)
+                    .ThenBy(x => x.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+            var phoneMatches = phone is null
+                ? new List<Customer>()
+                : await db.Customers
+                    .Where(x => x.BranchId == context.BranchId && (x.Phone1 == phone || x.Phone2 == phone))
+                    .OrderByDescending(x => x.Active)
+                    .ThenBy(x => x.Id)
+                    .ToListAsync(cancellationToken);
+            if (phoneMatches.Count > 1)
                 throw new InvalidOperationException("Existe un conflicto entre clientes con el mismo teléfono en la sucursal.");
 
-            var customer = matches.SingleOrDefault();
+            var customerByPhone = phoneMatches.SingleOrDefault();
+            if (customerByUserId is not null && customerByPhone is not null && customerByUserId.Id != customerByPhone.Id)
+                throw new InvalidOperationException("El BSUID y el teléfono pertenecen a clientes diferentes.");
+
+            var customer = customerByUserId ?? customerByPhone;
             var created = customer is null;
             var reactivated = customer is { Active: false };
             if (customer is null)
@@ -90,6 +107,8 @@ public sealed class CreateCustomerAgentTool(
                     BranchId = context.BranchId,
                     Name = request.Name,
                     Phone1 = phone,
+                    WhatsAppUserId = userId,
+                    WhatsAppUsername = conversation.WhatsAppUsername,
                     Active = true
                 };
                 db.Customers.Add(customer);
@@ -100,11 +119,17 @@ public sealed class CreateCustomerAgentTool(
                 customer.Name = request.Name;
             }
 
-            await db.SaveChangesAsync(cancellationToken);
+            if (userId is not null
+                && (string.IsNullOrWhiteSpace(customer.WhatsAppUserId)
+                    || string.Equals(customer.WhatsAppUserId, userId, StringComparison.Ordinal)))
+            {
+                customer.WhatsAppUserId = userId;
+                customer.WhatsAppUsername = conversation.WhatsAppUsername ?? customer.WhatsAppUsername;
+            }
+            if (string.IsNullOrWhiteSpace(customer.Phone1) && phone is not null)
+                customer.Phone1 = phone;
 
-            var conversation = await db.WhatsAppConversations.FirstAsync(x =>
-                x.Id == context.ConversationId && x.BranchId == context.BranchId,
-                cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
             conversation.CustomerId = customer.Id;
             conversation.ContactName = customer.Name;
 

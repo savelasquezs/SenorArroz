@@ -150,6 +150,51 @@ public class WhatsAppAwayMessageTests
         Assert.Equal(WhatsAppAttentionMode.Human, (await db.WhatsAppConversations.FindAsync(7))!.AttentionMode);
     }
 
+    [Fact]
+    public async Task AwaySender_UsesBsuidWhenConversationHasNoPhone()
+    {
+        await using var db = Db();
+        db.Branches.Add(new Branch { Id = 1, Name = "Centro" });
+        db.WhatsAppConversations.Add(new WhatsAppConversation
+        {
+            Id = 8,
+            BranchId = 1,
+            WhatsAppUserId = "user.abc123",
+            WhatsAppUsername = "@cliente_99",
+            AttentionMode = WhatsAppAttentionMode.Human
+        });
+        db.WhatsAppBranchSettings.Add(new WhatsAppBranchSetting
+        {
+            Id = 2,
+            BranchId = 1,
+            PhoneNumberId = "phone-id",
+            BusinessAccountId = "business-id",
+            DisplayPhoneNumber = "3001234567",
+            AccessToken = "token",
+            WebhookVerifyToken = "verify",
+            IsActive = true,
+            IsVerified = true,
+            AwayMessageEnabled = true
+        });
+        await db.SaveChangesAsync();
+
+        var cloud = new Mock<IWhatsAppCloudClient>();
+        cloud.Setup(x => x.SendTextMessageAsync(
+                "phone-id", "token", "user.abc123", "Estamos cerrados", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid-bsuid", null));
+        var notifications = new Mock<IWhatsAppNotificationService>();
+        notifications.Setup(x => x.NotifyMessageCreatedAsync(
+                1, It.IsAny<WhatsAppConversationDto>(), It.IsAny<WhatsAppMessageDto>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var sender = new WhatsAppAutomaticMessageSender(
+            db, cloud.Object, notifications.Object, Mock.Of<IClock>(x => x.UtcNow == Utc(2026, 7, 27, 23, 5)));
+
+        var result = await sender.SendAwayTextAsync(8, "away:8:20260727230000", "Estamos cerrados", default);
+
+        Assert.True(result.Success);
+        cloud.VerifyAll();
+    }
+
     private static void AddWeeklySchedule(ApplicationDbContext db, bool includeWeekend)
     {
         foreach (var day in Enum.GetValues<DayOfWeek>())

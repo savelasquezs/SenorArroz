@@ -16,7 +16,9 @@ public class WhatsAppConversationConfiguration : IEntityTypeConfiguration<WhatsA
         builder.Property(x => x.Id).HasColumnName("id");
         builder.Property(x => x.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(x => x.CustomerId).HasColumnName("customer_id");
-        builder.Property(x => x.PhoneNumber).HasColumnName("phone_number").HasMaxLength(32).IsRequired();
+        builder.Property(x => x.PhoneNumber).HasColumnName("phone_number").HasMaxLength(32);
+        builder.Property(x => x.WhatsAppUserId).HasColumnName("whatsapp_user_id").HasMaxLength(256);
+        builder.Property(x => x.WhatsAppUsername).HasColumnName("whatsapp_username").HasMaxLength(64);
         builder.Property(x => x.ContactName).HasColumnName("contact_name").HasMaxLength(150);
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(20).IsRequired()
             .HasConversion(v => StatusToDb(v), v => StatusFromDb(v));
@@ -51,7 +53,16 @@ public class WhatsAppConversationConfiguration : IEntityTypeConfiguration<WhatsA
         builder.HasOne(x => x.AttentionModeUpdatedByUser).WithMany().HasForeignKey(x => x.AttentionModeUpdatedByUserId).OnDelete(DeleteBehavior.SetNull);
 
         builder.HasIndex(x => x.BranchId).HasDatabaseName("idx_whatsapp_conversation_branch");
-        builder.HasIndex(x => new { x.BranchId, x.PhoneNumber }).IsUnique().HasDatabaseName("idx_whatsapp_conversation_branch_phone");
+        builder.HasIndex(x => new { x.BranchId, x.PhoneNumber })
+            .IsUnique()
+            .HasFilter("phone_number IS NOT NULL AND phone_number <> ''")
+            .HasDatabaseName("idx_whatsapp_conversation_branch_phone");
+        builder.HasIndex(x => new { x.BranchId, x.WhatsAppUserId })
+            .IsUnique()
+            .HasFilter("whatsapp_user_id IS NOT NULL AND whatsapp_user_id <> ''")
+            .HasDatabaseName("uq_whatsapp_conversation_branch_user_id");
+        builder.HasIndex(x => new { x.BranchId, x.WhatsAppUsername })
+            .HasDatabaseName("idx_whatsapp_conversation_branch_username");
         builder.HasIndex(x => x.LastMessageAt).HasDatabaseName("idx_whatsapp_conversation_last_message_at");
         builder.HasIndex(x => x.AssignedUserId).HasDatabaseName("idx_whatsapp_conversation_assigned_user");
         builder.HasIndex(x => x.AttentionModeUpdatedByUserId).HasDatabaseName("idx_whatsapp_conversation_attention_updated_by");

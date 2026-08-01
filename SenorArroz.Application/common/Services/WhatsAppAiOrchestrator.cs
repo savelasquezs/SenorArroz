@@ -638,6 +638,8 @@ public class WhatsAppAiOrchestrator(
                         Id = conversation.Id,
                         BranchId = conversation.BranchId,
                         PhoneNumber = conversation.PhoneNumber,
+                        WhatsAppUsername = conversation.WhatsAppUsername,
+                        HasWhatsAppIdentity = !string.IsNullOrWhiteSpace(conversation.WhatsAppUserId),
                         Status = "open",
                         AttentionMode = "waitingForHuman",
                         LastMessageAt = conversation.LastMessageAt,
