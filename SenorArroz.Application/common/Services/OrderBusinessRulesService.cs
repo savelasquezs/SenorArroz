@@ -65,11 +65,13 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
         if (order.Status == newStatus)
             return true;
 
-        if (order.Status == OrderStatus.Cancelled)
-            return Roles.IsAdminOrSuperadmin(userRole) && newStatus == OrderStatus.Ready;
-
+        // Admin y Superadmin pueden corregir libremente el estado, incluso si el
+        // pedido ya fue entregado o cancelado.
         if (Roles.IsAdminOrSuperadmin(userRole))
             return true;
+
+        if (order.Status == OrderStatus.Cancelled)
+            return false;
 
         if (newStatus == OrderStatus.Cancelled)
             return false;

@@ -104,23 +104,19 @@ public class OrderBusinessRulesServiceTests
     [Theory]
     [InlineData(Roles.Admin)]
     [InlineData(Roles.Superadmin)]
-    public void IsStatusTransitionValid_allows_admins_to_uncancel_to_ready(string role)
+    public void IsStatusTransitionValid_allows_admins_to_change_between_all_statuses(string role)
     {
         var sut = new OrderBusinessRulesService(new FakeClock(DateTime.UtcNow));
-        var order = new Order { Status = OrderStatus.Cancelled };
+        var statuses = Enum.GetValues<OrderStatus>();
 
-        Assert.True(sut.IsStatusTransitionValid(order, OrderStatus.Ready, role));
-    }
-
-    [Theory]
-    [InlineData(Roles.Admin)]
-    [InlineData(Roles.Superadmin)]
-    public void IsStatusTransitionValid_allows_admins_to_return_ready_to_in_preparation(string role)
-    {
-        var sut = new OrderBusinessRulesService(new FakeClock(DateTime.UtcNow));
-        var order = new Order { Status = OrderStatus.Ready };
-
-        Assert.True(sut.IsStatusTransitionValid(order, OrderStatus.InPreparation, role));
+        foreach (var current in statuses)
+        foreach (var target in statuses)
+        {
+            var order = new Order { Status = current };
+            Assert.True(
+                sut.IsStatusTransitionValid(order, target, role),
+                $"Expected {role} to change status from {current} to {target}");
+        }
     }
 
     [Theory]
@@ -147,17 +143,4 @@ public class OrderBusinessRulesServiceTests
         Assert.False(sut.IsStatusTransitionValid(order, OrderStatus.Ready, role));
     }
 
-    [Theory]
-    [InlineData(OrderStatus.Taken)]
-    [InlineData(OrderStatus.InPreparation)]
-    [InlineData(OrderStatus.OnTheWay)]
-    [InlineData(OrderStatus.Delivered)]
-    public void IsStatusTransitionValid_blocks_other_admin_transitions_from_cancelled(OrderStatus target)
-    {
-        var sut = new OrderBusinessRulesService(new FakeClock(DateTime.UtcNow));
-        var order = new Order { Status = OrderStatus.Cancelled };
-
-        Assert.False(sut.IsStatusTransitionValid(order, target, Roles.Admin));
-        Assert.False(sut.IsStatusTransitionValid(order, target, Roles.Superadmin));
-    }
 }
