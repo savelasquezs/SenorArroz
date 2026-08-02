@@ -135,11 +135,12 @@ public class OrderRepositoryStatusTransitionTests
     [Theory]
     [InlineData(OrderStatus.Taken)]
     [InlineData(OrderStatus.InPreparation)]
+    [InlineData(OrderStatus.Ready)]
     [InlineData(OrderStatus.OnTheWay)]
     [InlineData(OrderStatus.Delivered)]
-    public async Task CanChangeStatusAsync_blocks_non_ready_targets_from_cancelled(OrderStatus target)
+    public async Task CanChangeStatusAsync_allows_targets_from_cancelled_after_application_authorization(OrderStatus target)
     {
-        using var ctx = CreateCtx($"{nameof(CanChangeStatusAsync_blocks_non_ready_targets_from_cancelled)}_{target}");
+        using var ctx = CreateCtx($"{nameof(CanChangeStatusAsync_allows_targets_from_cancelled_after_application_authorization)}_{target}");
         var utcNow = new DateTime(2026, 6, 1, 16, 30, 0, DateTimeKind.Utc);
 
         var branch = new Branch
@@ -182,6 +183,61 @@ public class OrderRepositoryStatusTransitionTests
 
         var repo = new OrderRepository(ctx, new FakeClock(utcNow));
 
-        Assert.False(await repo.CanChangeStatusAsync(order.Id, target));
+        Assert.True(await repo.CanChangeStatusAsync(order.Id, target));
+    }
+
+    [Fact]
+    public async Task ChangeStatusAsync_allows_delivered_to_ready_after_application_authorization()
+    {
+        using var ctx = CreateCtx(nameof(ChangeStatusAsync_allows_delivered_to_ready_after_application_authorization));
+        var utcNow = new DateTime(2026, 8, 2, 17, 30, 0, DateTimeKind.Utc);
+
+        var branch = new Branch
+        {
+            Name = "Test",
+            Address = "-",
+            Phone1 = "-",
+            CreatedAt = utcNow,
+        };
+        ctx.Branches.Add(branch);
+        await ctx.SaveChangesAsync();
+
+        var user = new User
+        {
+            Name = "Superadmin",
+            Email = $"superadmin_{Guid.NewGuid()}@test.com",
+            PasswordHash = "hash",
+            Role = UserRole.Superadmin,
+            BranchId = branch.Id,
+            Active = true,
+            CreatedAt = utcNow,
+        };
+        ctx.Users.Add(user);
+        await ctx.SaveChangesAsync();
+
+        var order = new Order
+        {
+            BranchId = branch.Id,
+            TakenById = user.Id,
+            Type = OrderType.Onsite,
+            Status = OrderStatus.Delivered,
+            StatusTimes = "{}",
+            Subtotal = 10000,
+            Total = 10000,
+            CreatedAt = utcNow,
+            UpdatedAt = utcNow,
+        };
+        ctx.Orders.Add(order);
+        await ctx.SaveChangesAsync();
+
+        var repo = new OrderRepository(ctx, new FakeClock(utcNow));
+
+        var updated = await repo.ChangeStatusAsync(order.Id, OrderStatus.Ready);
+
+        Assert.Equal(OrderStatus.Ready, updated.Status);
+        Assert.Equal(
+            utcNow,
+            (await ctx.Orders.AsNoTracking().SingleAsync(o => o.Id == order.Id))
+                .GetStatusTimes()["ready"]);
     }
 }

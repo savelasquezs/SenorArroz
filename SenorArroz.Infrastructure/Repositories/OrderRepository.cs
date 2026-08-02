@@ -661,25 +661,10 @@ public class OrderRepository : IOrderRepository
     public async Task<bool> CanChangeStatusAsync(int orderId, OrderStatus newStatus, CancellationToken cancellationToken = default)
     {
         var order = await _context.Orders.FindAsync([orderId], cancellationToken);
-        if (order == null)
-            return false;
-
-        if (newStatus == OrderStatus.Cancelled)
-            return order.Status != OrderStatus.Cancelled;
-
-        return order.Status switch
-        {
-            OrderStatus.Taken => newStatus == OrderStatus.InPreparation || newStatus == OrderStatus.Cancelled,
-            OrderStatus.InPreparation => newStatus == OrderStatus.Ready || newStatus == OrderStatus.Cancelled,
-            OrderStatus.Ready => newStatus == OrderStatus.OnTheWay ||
-                               newStatus == OrderStatus.InPreparation ||
-                               newStatus == OrderStatus.Cancelled ||
-                               (newStatus == OrderStatus.Delivered && order.Type == OrderType.Onsite),
-            OrderStatus.OnTheWay => newStatus == OrderStatus.Delivered || newStatus == OrderStatus.Ready,
-            OrderStatus.Delivered => false,
-            OrderStatus.Cancelled => newStatus == OrderStatus.Ready,
-            _ => false
-        };
+        // Las transiciones dependen del rol y se validan en
+        // OrderBusinessRulesService antes de llegar al repositorio. Esta capa no
+        // tiene contexto del usuario y no debe volver a imponer un flujo global.
+        return order != null && Enum.IsDefined(newStatus);
     }
 
     public async Task<bool> HasActiveOrdersAsync(int customerId, CancellationToken cancellationToken = default)
