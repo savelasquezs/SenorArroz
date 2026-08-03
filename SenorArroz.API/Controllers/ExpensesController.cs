@@ -63,10 +63,10 @@ public class ExpensesController : ControllerBase
     }
 
     /// <summary>
-    /// Crear nuevo gasto (Admin y Superadmin)
+    /// Crear nuevo gasto (Cajero, Admin y Superadmin)
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "Superadmin, Admin")]
+    [Authorize(Roles = "Superadmin,Admin,Cashier")]
     public async Task<ActionResult<ApiResponse<ExpenseDto>>> CreateExpense(
         [FromBody] CreateExpenseDto createDto)
     {

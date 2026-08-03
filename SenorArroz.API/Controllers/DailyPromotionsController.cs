@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.DailyPromotions.DTOs;
 using SenorArroz.Domain.Entities;
@@ -46,7 +47,7 @@ public class DailyPromotionsController : ControllerBase
             .FirstOrDefaultAsync(cancellationToken);
 
         return Ok(ApiResponse<DailyPromotionDto?>.SuccessResponse(
-            promotion is null ? null : ToDto(promotion, now),
+            promotion is null ? null : ToDto(promotion, now, CanManagePromotion(promotion, branchId)),
             promotion is null ? "No hay promocion activa vigente." : "Promocion activa obtenida."));
     }
 
@@ -59,19 +60,30 @@ public class DailyPromotionsController : ControllerBase
         if (!CanReadBranch(branchId))
             return Forbid();
 
-        var promotion = await BaseQuery()
+        var now = _clock.UtcNow;
+        var (todayStartUtc, tomorrowStartUtc) = TodayBounds(now);
+        var activeToday = await BaseQuery()
+            .AsNoTracking()
+            .Where(x => x.BranchId == branchId
+                && x.IsActive
+                && x.StartsAt < tomorrowStartUtc
+                && (x.EndsAt == null || x.EndsAt > todayStartUtc))
+            .OrderByDescending(x => x.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var promotion = activeToday ?? await BaseQuery()
             .AsNoTracking()
             .Where(x => x.BranchId == branchId)
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
         return Ok(ApiResponse<DailyPromotionDto?>.SuccessResponse(
-            promotion is null ? null : ToDto(promotion, _clock.UtcNow),
+            promotion is null ? null : ToDto(promotion, now, CanManagePromotion(activeToday, branchId)),
             promotion is null ? "No hay promocion configurada." : "Promocion obtenida."));
     }
 
     [HttpPut]
-    [Authorize(Roles = "Superadmin,Admin")]
+    [Authorize(Roles = "Superadmin,Admin,Cashier")]
     public async Task<ActionResult<ApiResponse<DailyPromotionDto>>> Upsert(
         int branchId,
         [FromBody] UpsertDailyPromotionDto dto,
@@ -91,26 +103,85 @@ public class DailyPromotionsController : ControllerBase
         if (validationError is not null)
             return BadRequest(ApiResponse<DailyPromotionDto>.ErrorResponse(validationError));
 
-        var promotion = await _db.DailyPromotions
-            .Include(x => x.DiscountProducts)
-            .Where(x => x.BranchId == branchId)
-            .OrderByDescending(x => x.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+        var now = _clock.UtcNow;
+        var (todayStartUtc, tomorrowStartUtc) = TodayBounds(now);
+        var isCashier = Roles.IsCashier(_currentUser.Role);
+
+        if (isCashier && !IsScheduleWithinToday(dto, todayStartUtc, tomorrowStartUtc))
+        {
+            return BadRequest(ApiResponse<DailyPromotionDto>.ErrorResponse(
+                "El cajero solo puede configurar promociones para el dia actual (hora Colombia)."));
+        }
+
+        DailyPromotion? promotion;
+        if (isCashier)
+        {
+            var activeToday = await ActiveForDayQuery(branchId, todayStartUtc, tomorrowStartUtc)
+                .Include(x => x.DiscountProducts)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (activeToday is not null && activeToday.CreatedByUserId != _currentUser.Id)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<DailyPromotionDto>.ErrorResponse(
+                    "Ya existe una promocion activa para hoy creada por otro usuario."));
+            }
+
+            promotion = activeToday ?? await _db.DailyPromotions
+                .Include(x => x.DiscountProducts)
+                .Where(x => x.BranchId == branchId
+                    && x.CreatedByUserId == _currentUser.Id
+                    && x.StartsAt < tomorrowStartUtc
+                    && (x.EndsAt == null || x.EndsAt > todayStartUtc))
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (promotion is null && !dto.IsActive)
+            {
+                return BadRequest(ApiResponse<DailyPromotionDto>.ErrorResponse(
+                    "La nueva promocion del cajero debe quedar activa."));
+            }
+        }
+        else
+        {
+            promotion = await ActiveForDayQuery(branchId, todayStartUtc, tomorrowStartUtc)
+                .Include(x => x.DiscountProducts)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? await _db.DailyPromotions
+                    .Include(x => x.DiscountProducts)
+                    .Where(x => x.BranchId == branchId)
+                    .OrderByDescending(x => x.CreatedAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+        }
 
         var isNewPromotion = promotion is null;
-        promotion ??= new DailyPromotion { BranchId = branchId };
+        promotion ??= new DailyPromotion
+        {
+            BranchId = branchId,
+            CreatedByUserId = _currentUser.Id
+        };
 
         if (dto.IsActive)
         {
-            var activePromotions = await _db.DailyPromotions
-                .Where(x => x.BranchId == branchId && x.IsActive && x.Id != promotion.Id)
-                .ToListAsync(cancellationToken);
-
-            if (activePromotions.Count > 0)
+            if (isCashier)
             {
+                var conflictingPromotionExists = await ActiveForDayQuery(branchId, todayStartUtc, tomorrowStartUtc)
+                    .AnyAsync(x => x.Id != promotion.Id, cancellationToken);
+                if (conflictingPromotionExists)
+                {
+                    return Conflict(ApiResponse<DailyPromotionDto>.ErrorResponse(
+                        "Ya existe una promocion activa para hoy."));
+                }
+            }
+            else
+            {
+                var activePromotions = await _db.DailyPromotions
+                    .Where(x => x.BranchId == branchId && x.IsActive && x.Id != promotion.Id)
+                    .ToListAsync(cancellationToken);
+
                 foreach (var active in activePromotions)
                     active.IsActive = false;
-                await _db.SaveChangesAsync(cancellationToken);
             }
         }
 
@@ -142,11 +213,11 @@ public class DailyPromotionsController : ControllerBase
             .AsNoTracking()
             .FirstAsync(x => x.Id == promotion.Id, cancellationToken);
 
-        return Ok(ApiResponse<DailyPromotionDto>.SuccessResponse(ToDto(saved, _clock.UtcNow), "Promocion del dia guardada."));
+        return Ok(ApiResponse<DailyPromotionDto>.SuccessResponse(ToDto(saved, _clock.UtcNow, true), "Promocion del dia guardada."));
     }
 
     [HttpDelete]
-    [Authorize(Roles = "Superadmin,Admin")]
+    [Authorize(Roles = "Superadmin,Admin,Cashier")]
     public async Task<ActionResult<ApiResponse<DailyPromotionDto?>>> Disable(
         int branchId,
         CancellationToken cancellationToken)
@@ -154,14 +225,26 @@ public class DailyPromotionsController : ControllerBase
         if (!CanManageBranch(branchId))
             return Forbid();
 
-        var promotion = await _db.DailyPromotions
-            .Where(x => x.BranchId == branchId && x.IsActive)
+        var now = _clock.UtcNow;
+        var (todayStartUtc, tomorrowStartUtc) = TodayBounds(now);
+        var isCashier = Roles.IsCashier(_currentUser.Role);
+        var promotion = await ActiveForDayQuery(branchId, todayStartUtc, tomorrowStartUtc)
             .OrderByDescending(x => x.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? await _db.DailyPromotions
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (promotion is not null && isCashier && promotion.CreatedByUserId != _currentUser.Id)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<DailyPromotionDto?>.ErrorResponse(
+                "Solo puedes desactivar una promocion creada por ti."));
+        }
+
+        if (promotion is null && !isCashier)
+        {
+            promotion = await _db.DailyPromotions
                 .Where(x => x.BranchId == branchId)
                 .OrderByDescending(x => x.CreatedAt)
                 .FirstOrDefaultAsync(cancellationToken);
+        }
 
         if (promotion is null)
             return Ok(ApiResponse<DailyPromotionDto?>.SuccessResponse(null, "No hay promocion para desactivar."));
@@ -173,7 +256,7 @@ public class DailyPromotionsController : ControllerBase
             .AsNoTracking()
             .FirstAsync(x => x.Id == promotion.Id, cancellationToken);
 
-        return Ok(ApiResponse<DailyPromotionDto?>.SuccessResponse(ToDto(saved, _clock.UtcNow), "Promocion del dia desactivada."));
+        return Ok(ApiResponse<DailyPromotionDto?>.SuccessResponse(ToDto(saved, now, true), "Promocion del dia desactivada."));
     }
 
     private IQueryable<DailyPromotion> BaseQuery() =>
@@ -182,6 +265,12 @@ public class DailyPromotionsController : ControllerBase
                 .ThenInclude(p => p!.Category)
             .Include(x => x.DiscountProducts)
                 .ThenInclude(x => x.Product);
+
+    private IQueryable<DailyPromotion> ActiveForDayQuery(int branchId, DateTime dayStartUtc, DateTime nextDayStartUtc) =>
+        _db.DailyPromotions.Where(x => x.BranchId == branchId
+            && x.IsActive
+            && x.StartsAt < nextDayStartUtc
+            && (x.EndsAt == null || x.EndsAt > dayStartUtc));
 
     private bool CanReadBranch(int branchId)
     {
@@ -196,7 +285,8 @@ public class DailyPromotionsController : ControllerBase
     {
         if (Roles.IsSuperadmin(_currentUser.Role))
             return true;
-        return Roles.IsAdmin(_currentUser.Role) && _currentUser.BranchId == branchId;
+        return (Roles.IsAdmin(_currentUser.Role) || Roles.IsCashier(_currentUser.Role))
+            && _currentUser.BranchId == branchId;
     }
 
     private static (DailyPromotionType? Type, DailyPromotionDiscountScope? Scope, string? Error) ParsePromotionInput(
@@ -305,12 +395,37 @@ public class DailyPromotionsController : ControllerBase
         return null;
     }
 
-    private static DailyPromotionDto ToDto(DailyPromotion promotion, DateTime now)
+    private static (DateTime TodayStartUtc, DateTime TomorrowStartUtc) TodayBounds(DateTime nowUtc) =>
+        (
+            ColombiaTimeHelper.GetTodayStartInUtcFromUtc(nowUtc),
+            ColombiaTimeHelper.GetColombiaStartOfTomorrowUtcFromUtc(nowUtc)
+        );
+
+    private static bool IsScheduleWithinToday(
+        UpsertDailyPromotionDto dto,
+        DateTime todayStartUtc,
+        DateTime tomorrowStartUtc) =>
+        dto.StartsAt >= todayStartUtc
+        && dto.StartsAt < tomorrowStartUtc
+        && dto.EndsAt.HasValue
+        && dto.EndsAt.Value <= tomorrowStartUtc;
+
+    private bool CanManagePromotion(DailyPromotion? activeToday, int branchId)
+    {
+        if (!CanManageBranch(branchId))
+            return false;
+        if (!Roles.IsCashier(_currentUser.Role))
+            return true;
+        return activeToday is null || activeToday.CreatedByUserId == _currentUser.Id;
+    }
+
+    private static DailyPromotionDto ToDto(DailyPromotion promotion, DateTime now, bool canManage)
     {
         return new DailyPromotionDto
         {
             Id = promotion.Id,
             BranchId = promotion.BranchId,
+            CreatedByUserId = promotion.CreatedByUserId,
             Type = promotion.Type.ToString(),
             GiftProductId = promotion.GiftProductId,
             GiftProductName = promotion.GiftProduct?.Name,
@@ -331,7 +446,8 @@ public class DailyPromotionsController : ControllerBase
             EndsAt = promotion.EndsAt,
             CreatedAt = promotion.CreatedAt,
             UpdatedAt = promotion.UpdatedAt,
-            Status = GetStatus(promotion, now)
+            Status = GetStatus(promotion, now),
+            CanManage = canManage
         };
     }
 

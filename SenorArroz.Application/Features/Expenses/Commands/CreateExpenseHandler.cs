@@ -40,7 +40,7 @@ public class CreateExpenseHandler : IRequestHandler<CreateExpenseCommand, Expens
 
     public async Task<ExpenseDto> Handle(CreateExpenseCommand request, CancellationToken cancellationToken)
     {
-        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
+        if (!Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))
             throw new BusinessException("No tienes permisos para crear gastos");
 
         if (!await _categoryRepository.ExistsAsync(request.CategoryId))

@@ -157,11 +157,19 @@ No modificar cierres de caja sin revisar efectos sobre:
 Reglas:
 
 - Gastos, encabezados, detalles, categorías, proveedores y pagos bancarios de gastos pertenecen al tenant.
+- El cajero puede crear comprobantes y nuevos conceptos del catálogo de gastos, pero no puede editar ni eliminar conceptos existentes. También puede crear barrios únicamente en su propia sucursal; la edición y eliminación de barrios continúa reservada a Admin y Superadmin.
 - Solo Admin y Superadmin pueden eliminar un comprobante de gasto.
 - El IVA 19 % de un comprobante puede aplicarse a todas las líneas o individualmente. `ExpenseHeader.VatAmount` es la suma calculada sobre la base gravable formada exclusivamente por las líneas marcadas; la selección se conserva en cada `ExpenseDetail` para futuras ediciones.
 - Antes del borrado en cascada, el trigger de auditoría conserva un snapshot del comprobante con proveedor, domiciliario, total, IVA, notas, líneas, pagos bancarios y abonos de domiciliario vinculados. Si existe un abono `ExpenseOffset` ligado exclusivamente a la factura, se elimina atómicamente con ella y también queda identificado en el snapshot. Los gastos eliminados durante el periodo se incluyen con ese detalle en el correo de auditoría del cierre de caja.
 - Las vistas tipo Excel pueden filtrar en frontend para agilidad, pero cambios de rango de fechas deben consultar backend si esa es la regla vigente.
 - El backend debe soportar filtros por fechas, sucursal y tenant.
+
+## Promoción del día
+
+- Admin y Superadmin conservan la administración completa de la promoción diaria de la sucursal autorizada.
+- El cajero puede crear una promoción únicamente para el día calendario actual de Colombia cuando no exista otra promoción activa que cubra ese día.
+- Si la promoción activa de hoy fue creada por el mismo cajero, puede modificarla o desactivarla. Una promoción creada por otro usuario es de solo lectura para él.
+- `DailyPromotion.CreatedByUserId` conserva al autor. Los registros anteriores sin autor no pueden ser modificados por cajeros.
 
 ## Clientes y direcciones
 

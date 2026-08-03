@@ -10,6 +10,7 @@ public class DailyPromotionDto
 {
     public int Id { get; set; }
     public int BranchId { get; set; }
+    public int? CreatedByUserId { get; set; }
     public string Type { get; set; } = string.Empty;
     public int? GiftProductId { get; set; }
     public string? GiftProductName { get; set; }
@@ -24,6 +25,7 @@ public class DailyPromotionDto
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public string Status { get; set; } = string.Empty;
+    public bool CanManage { get; set; }
 }
 
 public class UpsertDailyPromotionDto

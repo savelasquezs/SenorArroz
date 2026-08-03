@@ -30,4 +30,5 @@ public class User : BaseEntity
     public virtual ICollection<Order> TakenOrders { get; set; } = new List<Order>();
     public virtual ICollection<Order> DeliveryOrders { get; set; } = new List<Order>();
     public virtual ICollection<ExpenseHeader> CreatedExpenseHeaders { get; set; } = new List<ExpenseHeader>();
+    public virtual ICollection<DailyPromotion> CreatedDailyPromotions { get; set; } = new List<DailyPromotion>();
 }

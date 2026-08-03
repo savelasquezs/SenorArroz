@@ -109,11 +109,14 @@ Notas:
 | ProductCategory | Sí | Tenant inicial |
 | Product | Sí | Desde `ProductCategory.TenantId` o tenant inicial |
 | LoyaltyCycleStep | Sí | Desde `Product.TenantId` o tenant inicial |
+| DailyPromotion | Sí | Desde `Branch.TenantId` |
+| DailyPromotionProduct | Sí | Desde `DailyPromotion.TenantId` |
 
 Notas:
 
 - Productos y categorías NO deben compartirse entre restaurantes.
 - Nombres únicos deben ser por tenant, no globales.
+- `DailyPromotion.CreatedByUserId` registra quién creó la promoción para limitar las modificaciones del cajero a sus propios registros. La columna y la eliminación del índice histórico que impedía promociones activas no superpuestas se instalan con `SenorArroz.Infrastructure/Scripts/add_daily_promotion_cashier_permissions.sql` antes de desplegar el backend.
 
 ### Pedidos
 

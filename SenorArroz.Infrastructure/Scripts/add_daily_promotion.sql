@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS daily_promotion (
     id serial PRIMARY KEY,
     branch_id integer NOT NULL REFERENCES branch(id) ON DELETE CASCADE,
+    created_by_user_id integer NULL REFERENCES "user"(id) ON DELETE SET NULL,
     type varchar(40) NOT NULL,
     gift_product_id integer NULL REFERENCES product(id) ON DELETE RESTRICT,
     discount_percentage numeric(5,2) NULL,
@@ -22,15 +23,12 @@ CREATE TABLE IF NOT EXISTS daily_promotion_product (
 );
 
 CREATE INDEX IF NOT EXISTS idx_daily_promotion_branch ON daily_promotion(branch_id);
+CREATE INDEX IF NOT EXISTS idx_daily_promotion_created_by_user ON daily_promotion(created_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_daily_promotion_active ON daily_promotion(is_active);
 CREATE INDEX IF NOT EXISTS idx_daily_promotion_starts_at ON daily_promotion(starts_at);
 CREATE INDEX IF NOT EXISTS idx_daily_promotion_ends_at ON daily_promotion(ends_at);
 CREATE INDEX IF NOT EXISTS idx_daily_promotion_active_lookup
     ON daily_promotion(branch_id, is_active, starts_at, ends_at);
-
-CREATE UNIQUE INDEX IF NOT EXISTS ux_daily_promotion_one_active_per_branch
-    ON daily_promotion(branch_id)
-    WHERE is_active = true;
 
 CREATE INDEX IF NOT EXISTS idx_daily_promotion_product_promotion
     ON daily_promotion_product(daily_promotion_id);

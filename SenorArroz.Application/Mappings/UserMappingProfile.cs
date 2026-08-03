@@ -29,6 +29,7 @@ namespace SenorArroz.Application.Mappings
                 .ForMember(dest => dest.TakenOrders, opt => opt.Ignore())
                 .ForMember(dest => dest.DeliveryOrders, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedExpenseHeaders, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedDailyPromotions, opt => opt.Ignore())
                 .ForMember(dest => dest.Active, opt => opt.MapFrom(src => true));
 
             // UpdateUserDto -> User (para actualizar)
@@ -44,7 +45,8 @@ namespace SenorArroz.Application.Mappings
                 .ForMember(dest => dest.ActiveSessionId, opt => opt.Ignore())
                 .ForMember(dest => dest.TakenOrders, opt => opt.Ignore())
                 .ForMember(dest => dest.DeliveryOrders, opt => opt.Ignore())
-                .ForMember(dest => dest.CreatedExpenseHeaders, opt => opt.Ignore());
+                .ForMember(dest => dest.CreatedExpenseHeaders, opt => opt.Ignore())
+                .ForMember(dest => dest.CreatedDailyPromotions, opt => opt.Ignore());
         }
     }
 }

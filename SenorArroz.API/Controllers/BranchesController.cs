@@ -174,11 +174,12 @@ public class BranchesController : ControllerBase
     /// <param name="createNeighborhoodDto">Datos del barrio</param>
     /// <returns>Barrio creado</returns>
     [HttpPost("{branchId}/neighborhoods")]
-    [Authorize(Roles = "Superadmin,Admin")]
+    [Authorize(Roles = "Superadmin,Admin,Cashier")]
     public async Task<ActionResult<ApiResponse<NeighborhoodDto>>> CreateNeighborhood(
         int branchId,
         [FromBody] CreateNeighborhoodDto createNeighborhoodDto)
     {
+        _branchContext.EnsureAccess(branchId);
         var command = _mapper.Map<CreateNeighborhoodCommand>(createNeighborhoodDto);
         command.BranchId = branchId;
 

@@ -14,6 +14,7 @@ public class DailyPromotionConfiguration : IEntityTypeConfiguration<DailyPromoti
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id");
         builder.Property(x => x.BranchId).HasColumnName("branch_id").IsRequired();
+        builder.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id");
         builder.Property(x => x.Type).HasColumnName("type").HasConversion<string>().HasMaxLength(40).IsRequired();
         builder.Property(x => x.GiftProductId).HasColumnName("gift_product_id");
         builder.Property(x => x.DiscountPercentage).HasColumnName("discount_percentage").HasPrecision(5, 2);
@@ -39,15 +40,17 @@ public class DailyPromotionConfiguration : IEntityTypeConfiguration<DailyPromoti
             .HasForeignKey(x => x.GiftProductId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(x => x.CreatedByUser)
+            .WithMany(u => u.CreatedDailyPromotions)
+            .HasForeignKey(x => x.CreatedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasIndex(x => x.BranchId).HasDatabaseName("idx_daily_promotion_branch");
+        builder.HasIndex(x => x.CreatedByUserId).HasDatabaseName("idx_daily_promotion_created_by_user");
         builder.HasIndex(x => x.IsActive).HasDatabaseName("idx_daily_promotion_active");
         builder.HasIndex(x => x.StartsAt).HasDatabaseName("idx_daily_promotion_starts_at");
         builder.HasIndex(x => x.EndsAt).HasDatabaseName("idx_daily_promotion_ends_at");
         builder.HasIndex(x => new { x.BranchId, x.IsActive, x.StartsAt, x.EndsAt })
             .HasDatabaseName("idx_daily_promotion_active_lookup");
-        builder.HasIndex(x => x.BranchId)
-            .IsUnique()
-            .HasFilter("is_active = true")
-            .HasDatabaseName("ux_daily_promotion_one_active_per_branch");
     }
 }
