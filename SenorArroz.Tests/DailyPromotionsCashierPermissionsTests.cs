@@ -30,6 +30,8 @@ public class DailyPromotionsCashierPermissionsTests
         var saved = Assert.Single(db.DailyPromotions);
         Assert.Equal(11, saved.CreatedByUserId);
         Assert.True(saved.IsActive);
+        Assert.Equal(new DateTime(2026, 8, 3, 10, 0, 0, DateTimeKind.Utc), saved.StartsAt);
+        Assert.Equal(new DateTime(2026, 8, 4, 4, 59, 59, 999, DateTimeKind.Utc).AddTicks(9999), saved.EndsAt);
     }
 
     [Fact]
@@ -67,7 +69,7 @@ public class DailyPromotionsCashierPermissionsTests
     }
 
     [Fact]
-    public async Task Cashier_CannotSchedulePromotionOutsideCurrentColombiaDay()
+    public async Task Cashier_ScheduleIsNormalizedToTodaysFixedWindow()
     {
         await using var db = CreateDb();
         db.Branches.Add(Branch());
@@ -79,8 +81,10 @@ public class DailyPromotionsCashierPermissionsTests
 
         var action = await controller.Upsert(7, dto, default);
 
-        Assert.IsType<BadRequestObjectResult>(action.Result);
-        Assert.Empty(db.DailyPromotions);
+        Assert.IsType<OkObjectResult>(action.Result);
+        var saved = Assert.Single(db.DailyPromotions);
+        Assert.Equal(new DateTime(2026, 8, 3, 10, 0, 0, DateTimeKind.Utc), saved.StartsAt);
+        Assert.Equal(new DateTime(2026, 8, 4, 4, 59, 59, 999, DateTimeKind.Utc).AddTicks(9999), saved.EndsAt);
     }
 
     [Fact]

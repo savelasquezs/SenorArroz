@@ -167,9 +167,10 @@ Reglas:
 ## Promoción del día
 
 - Admin y Superadmin conservan la administración completa de la promoción diaria de la sucursal autorizada.
-- El cajero puede crear una promoción únicamente para el día calendario actual de Colombia cuando no exista otra promoción activa que cubra ese día.
+- El cajero puede crear una promoción únicamente para el día calendario actual de Colombia cuando no exista otra promoción activa que cubra ese día. El backend normaliza su vigencia a la ventana fija de 05:00 a 23:59:59 (hora Colombia), sin confiar en las fechas enviadas por el cliente.
 - Si la promoción activa de hoy fue creada por el mismo cajero, puede modificarla o desactivarla. Una promoción creada por otro usuario es de solo lectura para él.
 - `DailyPromotion.CreatedByUserId` conserva al autor. Los registros anteriores sin autor no pueden ser modificados por cajeros.
+- `StartsAt` y `EndsAt` se conservan en el contrato y la tabla para soportar una futura interfaz de programación; el modal actual no los expone y siempre trabaja sobre el día vigente.
 
 ## Clientes y direcciones
 

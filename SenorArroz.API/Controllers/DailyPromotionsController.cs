@@ -16,6 +16,7 @@ namespace SenorArroz.API.Controllers;
 [Route("api/branches/{branchId:int}/daily-promotion")]
 public class DailyPromotionsController : ControllerBase
 {
+    private const int CashierPromotionStartHourColombia = 5;
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IClock _clock;
@@ -95,6 +96,15 @@ public class DailyPromotionsController : ControllerBase
         if (!await _db.Branches.AsNoTracking().AnyAsync(x => x.Id == branchId, cancellationToken))
             return NotFound(ApiResponse<DailyPromotionDto>.ErrorResponse("Sucursal no encontrada."));
 
+        var now = _clock.UtcNow;
+        var (todayStartUtc, tomorrowStartUtc) = TodayBounds(now);
+        var isCashier = Roles.IsCashier(_currentUser.Role);
+        if (isCashier)
+        {
+            dto.StartsAt = todayStartUtc.AddHours(CashierPromotionStartHourColombia);
+            dto.EndsAt = tomorrowStartUtc.AddTicks(-1);
+        }
+
         var parsed = ParsePromotionInput(dto);
         if (parsed.Error is not null)
             return BadRequest(ApiResponse<DailyPromotionDto>.ErrorResponse(parsed.Error));
@@ -102,16 +112,6 @@ public class DailyPromotionsController : ControllerBase
         var validationError = await ValidateBusinessRules(branchId, dto, parsed.Type!.Value, parsed.Scope, cancellationToken);
         if (validationError is not null)
             return BadRequest(ApiResponse<DailyPromotionDto>.ErrorResponse(validationError));
-
-        var now = _clock.UtcNow;
-        var (todayStartUtc, tomorrowStartUtc) = TodayBounds(now);
-        var isCashier = Roles.IsCashier(_currentUser.Role);
-
-        if (isCashier && !IsScheduleWithinToday(dto, todayStartUtc, tomorrowStartUtc))
-        {
-            return BadRequest(ApiResponse<DailyPromotionDto>.ErrorResponse(
-                "El cajero solo puede configurar promociones para el dia actual (hora Colombia)."));
-        }
 
         DailyPromotion? promotion;
         if (isCashier)
@@ -400,15 +400,6 @@ public class DailyPromotionsController : ControllerBase
             ColombiaTimeHelper.GetTodayStartInUtcFromUtc(nowUtc),
             ColombiaTimeHelper.GetColombiaStartOfTomorrowUtcFromUtc(nowUtc)
         );
-
-    private static bool IsScheduleWithinToday(
-        UpsertDailyPromotionDto dto,
-        DateTime todayStartUtc,
-        DateTime tomorrowStartUtc) =>
-        dto.StartsAt >= todayStartUtc
-        && dto.StartsAt < tomorrowStartUtc
-        && dto.EndsAt.HasValue
-        && dto.EndsAt.Value <= tomorrowStartUtc;
 
     private bool CanManagePromotion(DailyPromotion? activeToday, int branchId)
     {
