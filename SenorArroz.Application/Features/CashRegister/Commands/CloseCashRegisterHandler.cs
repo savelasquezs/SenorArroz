@@ -372,7 +372,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         DeliveryTrackingAlertType.GpsDisabled => "GPS apagado",
         DeliveryTrackingAlertType.LocationPermissionRevoked => "Permiso de ubicación retirado",
         DeliveryTrackingAlertType.NoCommunication => "Sin comunicación",
-        DeliveryTrackingAlertType.UnexpectedStay => "Permanencia no esperada",
+        DeliveryTrackingAlertType.UnexpectedStay => "Permanencia",
         DeliveryTrackingAlertType.OfflineLocationsQueued => "Ubicaciones offline sincronizadas",
         DeliveryTrackingAlertType.SessionPastAutoClose => "Jornada después del cierre",
         _ => type.ToString(),

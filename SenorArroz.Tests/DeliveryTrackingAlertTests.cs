@@ -188,6 +188,40 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(BaseTime.AddSeconds(30), pastCutoff.OccurredAt);
     }
 
+    [Fact]
+    public async Task Process_AddsPendingReviewStayToAlertsConsumedByDailyAudit()
+    {
+        await using var db = CreateDb();
+        var pending = PendingReviewStay(300);
+        var reviewed = PendingReviewStay(301);
+        reviewed.ReviewStatus = DeliveryIncidentReviewStatus.Justified;
+        reviewed.ReviewedByUserId = 21;
+        reviewed.ReviewedAt = BaseTime.AddMinutes(14);
+        db.DeliveryTrackingIncidents.AddRange(pending, reviewed);
+        await db.SaveChangesAsync();
+        var service = new DeliveryTrackingAlertService(
+            db,
+            new FakeClock(BaseTime.AddMinutes(15)));
+
+        Assert.Equal(2, await service.ProcessAsync());
+
+        var alert = db.DeliveryTrackingAlerts.Single(x => x.IncidentId == pending.Id);
+        Assert.Equal(DeliveryTrackingAlertType.UnexpectedStay, alert.AlertType);
+        Assert.Equal(DeliveryTrackingAlertSeverity.RequiresReview, alert.Severity);
+        Assert.Equal(DeliveryTrackingAlertStatus.Active, alert.Status);
+        Assert.Equal("Permanencia pendiente de revisión", alert.Title);
+        Assert.Contains("requiere revisión administrativa", alert.Message);
+        Assert.Equal(720, alert.DurationSeconds);
+        Assert.Equal(4.6m, alert.StartLatitude);
+        Assert.Equal(-74.08m, alert.StartLongitude);
+
+        var reviewedAlert = db.DeliveryTrackingAlerts.Single(x => x.IncidentId == reviewed.Id);
+        Assert.Equal(DeliveryTrackingAlertStatus.Resolved, reviewedAlert.Status);
+        Assert.Equal(reviewed.ReviewedAt, reviewedAlert.ResolvedAt);
+        Assert.Equal(reviewed.ReviewedByUserId, reviewedAlert.ResolvedByUserId);
+        Assert.Equal(0, await service.ProcessAsync());
+    }
+
     private static DeliveryDeviceEvent DeviceEvent(
         long id,
         DeliveryDeviceEventType type,
@@ -201,6 +235,27 @@ public class DeliveryTrackingAlertTests
         Details = details,
         RecordedAt = BaseTime.AddMinutes(minute),
         SyncedAt = BaseTime.AddMinutes(minute).AddSeconds(2),
+    };
+
+    private static DeliveryTrackingIncident PendingReviewStay(long id) => new()
+    {
+        Id = id,
+        BranchId = 7,
+        DeliverymanId = 1,
+        WorkSessionId = 10,
+        IncidentType = DeliveryTrackingIncidentType.Stay,
+        StayClassification = DeliveryStayClassification.PendingReview,
+        StartedAt = BaseTime,
+        EndedAt = BaseTime.AddMinutes(12),
+        DurationSeconds = 720,
+        CenterLatitude = 4.6m,
+        CenterLongitude = -74.08m,
+        RadiusMeters = 10,
+        AverageAccuracyMeters = 8,
+        SourceUpdatedAt = BaseTime.AddMinutes(12),
+        EvidenceCapturedAt = BaseTime.AddMinutes(13),
+        EvidenceComplete = true,
+        UpdatedAt = BaseTime.AddMinutes(13),
     };
 
     private static ApplicationDbContext CreateDb() => new(

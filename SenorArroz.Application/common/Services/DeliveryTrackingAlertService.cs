@@ -24,7 +24,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
         var changes = 0;
         changes += await ProcessDeviceEventsAsync(nowUtc, cancellationToken);
-        changes += await ProcessUnexpectedStaysAsync(nowUtc, cancellationToken);
+        changes += await ProcessReviewableStaysAsync(nowUtc, cancellationToken);
         changes += await ProcessActiveSessionsAsync(nowUtc, cancellationToken);
         if (changes > 0)
             await _db.SaveChangesAsync(cancellationToken);
@@ -451,10 +451,12 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         SyncedAt = source.SyncedAt,
     };
 
-    private async Task<int> ProcessUnexpectedStaysAsync(DateTime nowUtc, CancellationToken cancellationToken)
+    private async Task<int> ProcessReviewableStaysAsync(DateTime nowUtc, CancellationToken cancellationToken)
     {
         var incidents = await _db.DeliveryTrackingIncidents.AsNoTracking()
-            .Where(incident => incident.StayClassification == DeliveryStayClassification.UnexpectedPlace
+            .Where(incident => incident.IncidentType == DeliveryTrackingIncidentType.Stay
+                && (incident.StayClassification == DeliveryStayClassification.PendingReview
+                    || incident.StayClassification == DeliveryStayClassification.UnexpectedPlace)
                 && !_db.DeliveryTrackingAlerts.Any(alert => alert.IncidentId == incident.Id))
             .OrderBy(x => x.StartedAt)
             .Take(BatchSize)
@@ -462,6 +464,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         var changes = 0;
         foreach (var incident in incidents)
         {
+            var alreadyReviewed = incident.ReviewStatus != DeliveryIncidentReviewStatus.Pending;
             _db.DeliveryTrackingAlerts.Add(new DeliveryTrackingAlert
             {
                 BranchId = incident.BranchId,
@@ -471,16 +474,26 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                 DeduplicationKey = $"incident:{incident.Id}:unexpected_stay",
                 AlertType = DeliveryTrackingAlertType.UnexpectedStay,
                 Severity = DeliveryTrackingAlertSeverity.RequiresReview,
-                Status = DeliveryTrackingAlertStatus.Active,
-                Title = "Permanencia en lugar no esperado",
-                Message = $"Permaneció {FormatDuration(incident.DurationSeconds)} fuera de lugares " +
-                    $"operativos conocidos. {FormatLocationEvidence("Lugar", incident.CenterLatitude, incident.CenterLongitude)}",
+                Status = alreadyReviewed
+                    ? DeliveryTrackingAlertStatus.Resolved
+                    : DeliveryTrackingAlertStatus.Active,
+                Title = incident.StayClassification == DeliveryStayClassification.PendingReview
+                    ? "Permanencia pendiente de revisión"
+                    : "Permanencia en lugar no esperado",
+                Message = incident.StayClassification == DeliveryStayClassification.PendingReview
+                    ? $"Permaneció {FormatDuration(incident.DurationSeconds)} en un lugar que requiere " +
+                        $"revisión administrativa. {FormatLocationEvidence("Lugar", incident.CenterLatitude, incident.CenterLongitude)}"
+                    : $"Permaneció {FormatDuration(incident.DurationSeconds)} fuera de lugares " +
+                        $"operativos conocidos. {FormatLocationEvidence("Lugar", incident.CenterLatitude, incident.CenterLongitude)}",
                 OccurredAt = incident.StartedAt,
                 LastOccurredAt = incident.EndedAt,
                 DurationSeconds = incident.DurationSeconds,
                 StartLatitude = incident.CenterLatitude,
                 StartLongitude = incident.CenterLongitude,
                 StartLocationRecordedAt = incident.StartedAt,
+                ResolvedAt = alreadyReviewed ? incident.ReviewedAt ?? nowUtc : null,
+                ResolvedByUserId = alreadyReviewed ? incident.ReviewedByUserId : null,
+                ResolutionReason = alreadyReviewed ? "El incidente relacionado fue revisado." : null,
                 CreatedAt = nowUtc,
                 UpdatedAt = nowUtc,
             });
