@@ -148,6 +148,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                             detailDto.Quantity,
                             detailDto.Amount,
                             detailDto.Total);
+                        existingDetail.IncludeVat = request.ExpenseHeader.IncludeVat || detailDto.IncludeVat;
                         existingDetail.Notes = NormalizeExpenseNote(detailDto.Notes, 1000);
                     }
                 }
@@ -163,6 +164,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                             detailDto.Quantity,
                             detailDto.Amount,
                             detailDto.Total),
+                        IncludeVat = request.ExpenseHeader.IncludeVat || detailDto.IncludeVat,
                         Notes = NormalizeExpenseNote(detailDto.Notes, 1000),
                     };
                     expenseHeader.ExpenseDetails.Add(newDetail);
@@ -171,10 +173,17 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             }
         }
 
+        if (request.ExpenseHeader.IncludeVat)
+        {
+            foreach (var detail in expenseHeader.ExpenseDetails)
+                detail.IncludeVat = true;
+        }
+
         var subtotalForVat = ExpenseInvoiceTotalsHelper.SubtotalFromTrackedDetails(expenseHeader.ExpenseDetails);
+        var taxableSubtotal = ExpenseInvoiceTotalsHelper.TaxableSubtotalFromTrackedDetails(expenseHeader.ExpenseDetails);
         expenseHeader.VatAmount = ExpenseInvoiceTotalsHelper.ComputeVatAmount(
-            subtotalForVat,
-            request.ExpenseHeader.IncludeVat);
+            taxableSubtotal,
+            taxableSubtotal > 0);
 
         // Manejar pagos: PUT reemplaza la lista completa; null equivale a sin pagos bancarios.
         var requestedBankPayments = request.ExpenseHeader.ExpenseBankPayments ?? new List<CreateExpenseBankPaymentDto>();

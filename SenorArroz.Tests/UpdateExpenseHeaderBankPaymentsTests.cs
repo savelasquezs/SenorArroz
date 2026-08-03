@@ -177,12 +177,16 @@ public class UpdateExpenseHeaderBankPaymentsTests
                         Quantity = 1,
                         Amount = 1000,
                         Total = 1000m,
+                        IncludeVat = true,
                     },
                 },
             },
         }, CancellationToken.None);
 
         Assert.Empty(result.ExpenseBankPayments);
+        Assert.Equal(190m, result.VatAmount);
+        Assert.Equal(1190m, result.Total);
+        Assert.True(Assert.Single(result.ExpenseDetails).IncludeVat);
         Assert.Empty(await db.ExpenseBankPayments.Where(p => p.ExpenseHeaderId == header.Id).ToListAsync());
     }
 

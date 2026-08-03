@@ -14,7 +14,7 @@ public class UpdateExpenseHeaderDto
     public List<UpdateExpenseDetailDto>? ExpenseDetails { get; set; }
     public List<CreateExpenseBankPaymentDto>? ExpenseBankPayments { get; set; }
 
-    /// <summary>Incluir IVA 19 % sobre el subtotal de las líneas.</summary>
+    /// <summary>Atajo para incluir IVA 19 % en todas las líneas.</summary>
     public bool IncludeVat { get; set; }
 }
 
@@ -27,6 +27,9 @@ public class UpdateExpenseDetailDto
     /// <summary>Total de línea según factura (prioridad sobre cantidad × unitario).</summary>
     [JsonPropertyName("total")]
     public decimal? Total { get; set; }
+
+    /// <summary>Aplicar IVA 19 % a esta línea.</summary>
+    public bool IncludeVat { get; set; }
 
     public string? Notes { get; set; }
 }

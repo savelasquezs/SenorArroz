@@ -24,11 +24,26 @@ public static class ExpenseInvoiceTotalsHelper
         details.Sum(ed =>
             ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero));
 
+    public static decimal TaxableSubtotalFromCreateDetails(
+        IEnumerable<CreateExpenseDetailDto> details,
+        bool includeVatForAll) =>
+        details.Where(ed => includeVatForAll || ed.IncludeVat)
+            .Sum(ed => ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero));
+
+    public static decimal TaxableSubtotalFromUpdateDetails(
+        IEnumerable<UpdateExpenseDetailDto> details,
+        bool includeVatForAll) =>
+        details.Where(ed => includeVatForAll || ed.IncludeVat)
+            .Sum(ed => ed.Total ?? Math.Round(ed.Quantity * ed.Amount, 2, MidpointRounding.AwayFromZero));
+
     public static decimal LineSubtotal(ExpenseDetail d) =>
         d.Total ?? Math.Round(d.Quantity * d.Amount, 2, MidpointRounding.AwayFromZero);
 
     public static decimal SubtotalFromTrackedDetails(IEnumerable<ExpenseDetail> details) =>
         details.Sum(LineSubtotal);
+
+    public static decimal TaxableSubtotalFromTrackedDetails(IEnumerable<ExpenseDetail> details) =>
+        details.Where(d => d.IncludeVat).Sum(LineSubtotal);
 
     public static decimal ComputeVatAmount(decimal subtotal, bool includeVat) =>
         includeVat ? Math.Round(subtotal * DefaultVatRate, 0, MidpointRounding.AwayFromZero) : 0m;

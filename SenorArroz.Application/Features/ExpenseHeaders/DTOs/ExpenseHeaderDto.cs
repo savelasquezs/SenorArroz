@@ -10,7 +10,7 @@ public class ExpenseHeaderDto
     public string? SupplierPhone { get; set; }
     public decimal? Total { get; set; }
 
-    /// <summary>IVA en pesos (19 % del subtotal de líneas cuando aplica).</summary>
+    /// <summary>IVA en pesos (19 % de las líneas gravadas).</summary>
     public decimal VatAmount { get; set; }
 
     /// <summary>Notas generales del comprobante.</summary>
@@ -34,5 +34,4 @@ public class ExpenseHeaderDto
     public List<string> BankNames { get; set; } = new(); // Bancos de los pagos
     public List<string> ExpenseNames { get; set; } = new(); // Nombres de gastos en detalles
 }
-
 

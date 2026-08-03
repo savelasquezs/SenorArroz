@@ -13,7 +13,7 @@ public class ExpenseHeader : BaseEntity
 
     public decimal? Total { get; set; } // Suma líneas + VatAmount (recalculado en BD)
 
-    /// <summary>IVA en pesos cuando aplica (p. ej. 19 % sobre subtotal de líneas).</summary>
+    /// <summary>IVA en pesos cuando aplica (19 % sobre las líneas gravadas).</summary>
     public decimal VatAmount { get; set; }
 
     /// <summary>Notas generales del comprobante (opcional).</summary>

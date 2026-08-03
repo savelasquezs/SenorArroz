@@ -11,6 +11,7 @@ public class ExpenseDetailDto
     public decimal Quantity { get; set; }
     public int Amount { get; set; }
     public decimal? Total { get; set; }
+    public bool IncludeVat { get; set; }
 
     public string? Notes { get; set; }
 

@@ -9,6 +9,8 @@ public class ExpenseDetail : BaseEntity
     public decimal Quantity { get; set; } = 1m;
     public int Amount { get; set; }
     public decimal? Total { get; set; } // Total por línea (cantidad × valor unitario)
+    /// <summary>Indica si esta línea hace parte de la base gravable del IVA del comprobante.</summary>
+    public bool IncludeVat { get; set; }
 
     /// <summary>Notas de la línea (opcional).</summary>
     public string? Notes { get; set; }

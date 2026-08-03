@@ -164,6 +164,8 @@ Notas:
 
 Notas:
 
+- `ExpenseDetail.IncludeVat` conserva qué líneas integran la base gravable del IVA 19 % del comprobante. El esquema y el backfill de comprobantes antiguos se instalan con `SenorArroz.Infrastructure/Scripts/add_expense_detail_individual_vat.sql` antes de desplegar el backend correspondiente.
+
 - Categorías de gasto y proveedores pertenecen a cada restaurante.
 - Facturas/headers deben ser aislados por tenant.
 

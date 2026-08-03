@@ -66,7 +66,10 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
         var branchId = _branchContext.RequireBranch();
         _branchContext.EnsureAccess(supplier.BranchId);
         var subtotal = ExpenseInvoiceTotalsHelper.SubtotalFromCreateDetails(request.ExpenseHeader.ExpenseDetails);
-        var vatAmount = ExpenseInvoiceTotalsHelper.ComputeVatAmount(subtotal, request.ExpenseHeader.IncludeVat);
+        var taxableSubtotal = ExpenseInvoiceTotalsHelper.TaxableSubtotalFromCreateDetails(
+            request.ExpenseHeader.ExpenseDetails,
+            request.ExpenseHeader.IncludeVat);
+        var vatAmount = ExpenseInvoiceTotalsHelper.ComputeVatAmount(taxableSubtotal, taxableSubtotal > 0);
         var grossTotal = ExpenseInvoiceTotalsHelper.GrossTotal(subtotal, vatAmount);
 
         if (request.ExpenseHeader.ExpenseBankPayments != null && request.ExpenseHeader.ExpenseBankPayments.Any())
@@ -113,6 +116,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
                 Quantity = ed.Quantity,
                 Amount = ed.Amount,
                 Total = ExpenseInvoiceTotalsHelper.ResolveLineTotal(ed.Quantity, ed.Amount, ed.Total),
+                IncludeVat = request.ExpenseHeader.IncludeVat || ed.IncludeVat,
                 Notes = NormalizeExpenseNote(ed.Notes, 1000),
             }).ToList(),
             ExpenseBankPayments = request.ExpenseHeader.ExpenseBankPayments?.Select(ebp => new ExpenseBankPayment

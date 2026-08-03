@@ -158,6 +158,7 @@ Reglas:
 
 - Gastos, encabezados, detalles, categorías, proveedores y pagos bancarios de gastos pertenecen al tenant.
 - Solo Admin y Superadmin pueden eliminar un comprobante de gasto.
+- El IVA 19 % de un comprobante puede aplicarse a todas las líneas o individualmente. `ExpenseHeader.VatAmount` es la suma calculada sobre la base gravable formada exclusivamente por las líneas marcadas; la selección se conserva en cada `ExpenseDetail` para futuras ediciones.
 - Antes del borrado en cascada, el trigger de auditoría conserva un snapshot del comprobante con proveedor, domiciliario, total, IVA, notas, líneas, pagos bancarios y abonos de domiciliario vinculados. Si existe un abono `ExpenseOffset` ligado exclusivamente a la factura, se elimina atómicamente con ella y también queda identificado en el snapshot. Los gastos eliminados durante el periodo se incluyen con ese detalle en el correo de auditoría del cierre de caja.
 - Las vistas tipo Excel pueden filtrar en frontend para agilidad, pero cambios de rango de fechas deben consultar backend si esa es la regla vigente.
 - El backend debe soportar filtros por fechas, sucursal y tenant.
