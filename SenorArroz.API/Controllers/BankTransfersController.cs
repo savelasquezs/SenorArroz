@@ -10,7 +10,7 @@ namespace SenorArroz.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin,Superadmin")]
+[Authorize(Roles = "Admin,Superadmin,Cashier")]
 public class BankTransfersController : ControllerBase
 {
     private readonly IMediator _mediator;

@@ -125,6 +125,8 @@ Reglas:
 - El sistema debe poder reflejar saldo retenido por app.
 - Cuando dinero retenido se libera, debe impactar el banco correspondiente según regla actual.
 - Vouchers/cupones de apps deben conservarse como parte de la lógica de pago si la feature los usa.
+- Cajero, Admin y Superadmin pueden verificar pagos bancarios de pedidos dentro de la sucursal efectiva; solo Admin y Superadmin pueden desverificarlos.
+- Los movimientos banco↔banco y banco↔efectivo se consultan y registran desde el cuadre de caja. Cajero, Admin y Superadmin pueden operar únicamente sobre la sucursal efectiva.
 
 Codex debe tener cuidado al tocar:
 

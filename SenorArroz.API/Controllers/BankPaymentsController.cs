@@ -120,7 +120,7 @@ public class BankPaymentsController : ControllerBase
     /// Verifica un pago bancario (usa fecha automática del trigger de base de datos)
     /// </summary>
     [HttpPost("{id}/verify")]
-    [Authorize(Roles = "Admin,Superadmin")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult> VerifyBankPayment(int id)
     {
         var command = new VerifyBankPaymentCommand
