@@ -1,6 +1,5 @@
 using AutoMapper;
 using MediatR;
-using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Suppliers.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -10,37 +9,18 @@ public class GetSupplierByIdHandler : IRequestHandler<GetSupplierByIdQuery, Supp
 {
     private readonly ISupplierRepository _supplierRepository;
     private readonly IMapper _mapper;
-    private readonly ICurrentUser _currentUser;
-    private readonly IBranchContext _branchContext;
 
     public GetSupplierByIdHandler(
         ISupplierRepository supplierRepository,
-        IMapper mapper,
-        ICurrentUser currentUser,
-        IBranchContext branchContext)
+        IMapper mapper)
     {
         _supplierRepository = supplierRepository;
         _mapper = mapper;
-        _currentUser = currentUser;
-        _branchContext = branchContext;
     }
 
     public async Task<SupplierDto?> Handle(GetSupplierByIdQuery request, CancellationToken cancellationToken)
     {
         var supplier = await _supplierRepository.GetByIdAsync(request.Id, cancellationToken);
-        if (supplier == null)
-        {
-            return null;
-        }
-        _branchContext.EnsureAccess(supplier.BranchId);
-
-        if (!Roles.IsSuperadmin(_currentUser.Role) && supplier.BranchId != _currentUser.BranchId)
-        {
-            return null;
-        }
-
-        return _mapper.Map<SupplierDto>(supplier);
+        return supplier == null ? null : _mapper.Map<SupplierDto>(supplier);
     }
 }
-
-

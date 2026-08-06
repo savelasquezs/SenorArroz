@@ -13,7 +13,7 @@ public class SupplierConfiguration : IEntityTypeConfiguration<Supplier>
         builder.HasKey(s => s.Id);
         builder.Property(s => s.Id).HasColumnName("id");
 
-        builder.Property(s => s.BranchId).HasColumnName("branch_id").IsRequired();
+        builder.Property(s => s.BranchId).HasColumnName("branch_id").IsRequired(false);
         builder.Property(s => s.Name).HasColumnName("name").HasMaxLength(100).IsRequired();
         builder.Property(s => s.Phone).HasColumnName("phone").HasMaxLength(10).IsRequired();
         builder.Property(s => s.Address).HasColumnName("address").HasMaxLength(200);
@@ -27,7 +27,10 @@ public class SupplierConfiguration : IEntityTypeConfiguration<Supplier>
             .HasForeignKey(s => s.BranchId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasIndex(s => new { s.BranchId, s.Name })
-            .HasDatabaseName("idx_supplier_branch_name");
+        builder.HasIndex(s => s.Name)
+            .HasDatabaseName("idx_supplier_name");
+
+        builder.HasIndex(s => s.Phone)
+            .HasDatabaseName("idx_supplier_phone");
     }
 }

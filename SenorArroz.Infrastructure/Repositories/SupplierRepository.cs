@@ -17,7 +17,6 @@ public class SupplierRepository : ISupplierRepository
     }
 
     public async Task<PagedResult<Supplier>> GetPagedAsync(
-        int? branchId,
         string? search,
         int page,
         int pageSize,
@@ -29,9 +28,6 @@ public class SupplierRepository : ISupplierRepository
             .AsNoTracking()
             .Include(s => s.Branch)
             .AsQueryable();
-
-        if (branchId.HasValue)
-            query = query.Where(s => s.BranchId == branchId.Value);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -47,12 +43,14 @@ public class SupplierRepository : ISupplierRepository
         return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
     }
 
-    public async Task<List<Supplier>> GetByBranchAsync(int branchId, CancellationToken cancellationToken = default)
+    public async Task<List<Supplier>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         return await _context.Suppliers
             .AsNoTracking()
-            .Where(s => s.BranchId == branchId)
+            .Include(s => s.Branch)
             .OrderBy(s => s.Name)
+            .ThenBy(s => s.Phone)
+            .ThenBy(s => s.Id)
             .ToListAsync(cancellationToken);
     }
 
@@ -92,32 +90,6 @@ public class SupplierRepository : ISupplierRepository
     public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
         return _context.Suppliers.AnyAsync(s => s.Id == id, cancellationToken);
-    }
-
-    public Task<bool> NameExistsAsync(string name, int branchId, int? excludeId = null, CancellationToken cancellationToken = default)
-    {
-        var normalized = name.Trim().ToLower();
-        var query = _context.Suppliers.Where(s =>
-            s.BranchId == branchId &&
-            s.Name.ToLower() == normalized);
-
-        if (excludeId.HasValue)
-            query = query.Where(s => s.Id != excludeId.Value);
-
-        return query.AnyAsync(cancellationToken);
-    }
-
-    public Task<bool> PhoneExistsAsync(string phone, int branchId, int? excludeId = null, CancellationToken cancellationToken = default)
-    {
-        var normalized = phone.Trim();
-        var query = _context.Suppliers.Where(s =>
-            s.BranchId == branchId &&
-            s.Phone == normalized);
-
-        if (excludeId.HasValue)
-            query = query.Where(s => s.Id != excludeId.Value);
-
-        return query.AnyAsync(cancellationToken);
     }
 
     private static IQueryable<Supplier> ApplySorting(

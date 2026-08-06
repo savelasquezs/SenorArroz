@@ -12,54 +12,36 @@ public class UpdateSupplierHandler : IRequestHandler<UpdateSupplierCommand, Supp
     private readonly ISupplierRepository _supplierRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
-    private readonly IBranchContext _branchContext;
 
     public UpdateSupplierHandler(
         ISupplierRepository supplierRepository,
         IMapper mapper,
-        ICurrentUser currentUser,
-        IBranchContext branchContext)
+        ICurrentUser currentUser)
     {
         _supplierRepository = supplierRepository;
         _mapper = mapper;
         _currentUser = currentUser;
-        _branchContext = branchContext;
     }
 
     public async Task<SupplierDto> Handle(UpdateSupplierCommand request, CancellationToken cancellationToken)
     {
-        // Solo Admin y Superadmin pueden editar proveedores
         if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para actualizar proveedores.");
         }
 
-        var supplier = await _supplierRepository.GetByIdAsync(request.Id)
+        var supplier = await _supplierRepository.GetByIdAsync(request.Id, cancellationToken)
             ?? throw new NotFoundException("Proveedor no encontrado.");
-        _branchContext.EnsureAccess(supplier.BranchId);
-
-        if (!Roles.IsSuperadmin(_currentUser.Role) && supplier.BranchId != _currentUser.BranchId)
-        {
-            throw new BusinessException("No puedes editar proveedores de otra sucursal.");
-        }
 
         if (!string.IsNullOrWhiteSpace(request.Supplier.Name) &&
             !string.Equals(request.Supplier.Name.Trim(), supplier.Name, StringComparison.OrdinalIgnoreCase))
         {
-            if (await _supplierRepository.NameExistsAsync(request.Supplier.Name, supplier.BranchId, supplier.Id))
-            {
-                throw new BusinessException("Ya existe un proveedor con ese nombre en la sucursal.");
-            }
             supplier.Name = request.Supplier.Name.Trim();
         }
 
         if (!string.IsNullOrWhiteSpace(request.Supplier.Phone) &&
             !string.Equals(request.Supplier.Phone.Trim(), supplier.Phone, StringComparison.OrdinalIgnoreCase))
         {
-            if (await _supplierRepository.PhoneExistsAsync(request.Supplier.Phone, supplier.BranchId, supplier.Id))
-            {
-                throw new BusinessException("Ya existe un proveedor con ese teléfono en la sucursal.");
-            }
             supplier.Phone = request.Supplier.Phone.Trim();
         }
 
@@ -67,19 +49,17 @@ public class UpdateSupplierHandler : IRequestHandler<UpdateSupplierCommand, Supp
         {
             supplier.Address = string.IsNullOrWhiteSpace(request.Supplier.Address)
                 ? null
-                : request.Supplier.Address;
+                : request.Supplier.Address.Trim();
         }
 
         if (request.Supplier.Email is not null)
         {
             supplier.Email = string.IsNullOrWhiteSpace(request.Supplier.Email)
                 ? null
-                : request.Supplier.Email;
+                : request.Supplier.Email.Trim();
         }
 
         var updated = await _supplierRepository.UpdateAsync(supplier, cancellationToken);
         return _mapper.Map<SupplierDto>(updated);
     }
 }
-
-

@@ -103,7 +103,6 @@ public class ILikeRegressionTests
         var repo = new SupplierRepository(ctx);
         // Sin filtro de búsqueda → no invoca ILike, funciona en InMemory
         var result = await repo.GetPagedAsync(
-            branchId: branch.Id,
             search: null,
             page: 1,
             pageSize: 10,
