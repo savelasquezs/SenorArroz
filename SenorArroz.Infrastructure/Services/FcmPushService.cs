@@ -46,7 +46,8 @@ public class FcmPushService : IFcmPushService
         string body,
         Dictionary<string, string>? data = null,
         CancellationToken cancellationToken = default,
-        string? correlationId = null)
+        string? correlationId = null,
+        string androidChannelId = "delivery_orders")
     {
         var tag = FormatCorrelation(correlationId);
 
@@ -95,7 +96,7 @@ public class FcmPushService : IFcmPushService
             i++;
             try
             {
-                var payload = BuildPayload(token, title, body, data);
+                var payload = BuildPayload(token, title, body, data, androidChannelId);
                 var json = JsonSerializer.Serialize(payload);
                 var request = new HttpRequestMessage(
                     HttpMethod.Post,
@@ -180,7 +181,8 @@ public class FcmPushService : IFcmPushService
     /// </summary>
     private static object BuildPayload(
         string token, string title, string body,
-        Dictionary<string, string>? data)
+        Dictionary<string, string>? data,
+        string androidChannelId)
     {
         var dataPayload = new Dictionary<string, string>
         {
@@ -206,7 +208,7 @@ public class FcmPushService : IFcmPushService
                 {
                     title,
                     body,
-                    channel_id = "delivery_orders",
+                    channel_id = androidChannelId,
                     sound = "default",
                 },
             },

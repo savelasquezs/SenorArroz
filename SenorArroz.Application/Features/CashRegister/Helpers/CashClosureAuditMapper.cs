@@ -11,11 +11,7 @@ internal static class CashClosureAuditMapper
 {
     private static readonly CultureInfo ColombianCulture = CultureInfo.GetCultureInfo("es-CO");
     public static readonly DeliveryTrackingAlertType[] IncludedTrackingAlertTypes =
-    [
-        DeliveryTrackingAlertType.GpsDisabled,
-        DeliveryTrackingAlertType.LocationPermissionRevoked,
-        DeliveryTrackingAlertType.UnexpectedStay,
-    ];
+        DeliveryTrackingReviewPolicy.IncludedAlertTypes;
 
     public static IReadOnlyList<CashClosureAuditLogicalEvent> Consolidate(
         IReadOnlyCollection<EntityAuditLog> logs,
