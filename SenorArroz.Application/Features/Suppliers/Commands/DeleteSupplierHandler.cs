@@ -9,37 +9,25 @@ public class DeleteSupplierHandler : IRequestHandler<DeleteSupplierCommand, bool
 {
     private readonly ISupplierRepository _supplierRepository;
     private readonly ICurrentUser _currentUser;
-    private readonly IBranchContext _branchContext;
 
     public DeleteSupplierHandler(
         ISupplierRepository supplierRepository,
-        ICurrentUser currentUser,
-        IBranchContext branchContext)
+        ICurrentUser currentUser)
     {
         _supplierRepository = supplierRepository;
         _currentUser = currentUser;
-        _branchContext = branchContext;
     }
 
     public async Task<bool> Handle(DeleteSupplierCommand request, CancellationToken cancellationToken)
     {
-        // Solo Admin y Superadmin pueden eliminar proveedores
         if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para eliminar proveedores.");
         }
 
-        var supplier = await _supplierRepository.GetByIdAsync(request.Id)
+        _ = await _supplierRepository.GetByIdAsync(request.Id, cancellationToken)
             ?? throw new NotFoundException("Proveedor no encontrado.");
-        _branchContext.EnsureAccess(supplier.BranchId);
-
-        if (!Roles.IsSuperadmin(_currentUser.Role) && supplier.BranchId != _currentUser.BranchId)
-        {
-            throw new BusinessException("No puedes eliminar proveedores de otra sucursal.");
-        }
 
         return await _supplierRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }
-
-

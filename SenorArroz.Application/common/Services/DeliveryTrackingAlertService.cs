@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
@@ -12,15 +13,25 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
     private const int BatchSize = 200;
     private readonly IApplicationDbContext _db;
     private readonly IClock _clock;
+    private readonly IFcmPushService _fcm;
+    private readonly ILogger<DeliveryTrackingAlertService> _logger;
+    private readonly List<DeliveryTrackingAlert> _newReviewAlerts = [];
 
-    public DeliveryTrackingAlertService(IApplicationDbContext db, IClock clock)
+    public DeliveryTrackingAlertService(
+        IApplicationDbContext db,
+        IClock clock,
+        IFcmPushService fcm,
+        ILogger<DeliveryTrackingAlertService> logger)
     {
         _db = db;
         _clock = clock;
+        _fcm = fcm;
+        _logger = logger;
     }
 
     public async Task<int> ProcessAsync(CancellationToken cancellationToken = default)
     {
+        _newReviewAlerts.Clear();
         var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
         var changes = 0;
         changes += await ProcessDeviceEventsAsync(nowUtc, cancellationToken);
@@ -31,7 +42,75 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         var incidentChanges = await ProcessGpsDisabledIncidentsAsync(nowUtc, cancellationToken);
         if (incidentChanges > 0)
             await _db.SaveChangesAsync(cancellationToken);
+        await NotifyDeliverymenAsync(_newReviewAlerts, cancellationToken);
         return changes + incidentChanges;
+    }
+
+    private void AddAlert(DeliveryTrackingAlert alert)
+    {
+        _db.DeliveryTrackingAlerts.Add(alert);
+        if (alert.Status == DeliveryTrackingAlertStatus.Active
+            && DeliveryTrackingReviewPolicy.Includes(alert.AlertType))
+        {
+            _newReviewAlerts.Add(alert);
+        }
+    }
+
+    private async Task NotifyDeliverymenAsync(
+        IReadOnlyCollection<DeliveryTrackingAlert> alerts,
+        CancellationToken cancellationToken)
+    {
+        if (alerts.Count == 0)
+            return;
+
+        var deliverymanIds = alerts.Select(alert => alert.DeliverymanId).Distinct().ToList();
+        var tokensByDeliveryman = (await _db.UserDeviceTokens.AsNoTracking()
+                .Where(token => deliverymanIds.Contains(token.UserId))
+                .Select(token => new { token.UserId, token.Token })
+                .ToListAsync(cancellationToken))
+            .GroupBy(token => token.UserId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group.Select(token => token.Token).Distinct().ToList());
+
+        foreach (var alert in alerts)
+        {
+            if (!tokensByDeliveryman.TryGetValue(alert.DeliverymanId, out var tokens)
+                || tokens.Count == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                await _fcm.SendToTokensAsync(
+                    tokens,
+                    DeliveryTrackingReviewPolicy.NotificationTitle,
+                    DeliveryTrackingReviewPolicy.NotificationBody(alert.AlertType),
+                    new Dictionary<string, string>
+                    {
+                        ["type"] = DeliveryTrackingReviewPolicy.NotificationType,
+                        ["alertId"] = alert.Id.ToString(CultureInfo.InvariantCulture),
+                        ["alertType"] = DeliveryTrackingReviewPolicy.AlertTypeCode(alert.AlertType),
+                        ["deliverymanId"] = alert.DeliverymanId.ToString(CultureInfo.InvariantCulture),
+                    },
+                    cancellationToken,
+                    $"tracking-review-{alert.Id}",
+                    DeliveryTrackingReviewPolicy.NotificationChannelId);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "No fue posible enviar el aviso de revisión de seguimiento {AlertId} al domiciliario {DeliverymanId}.",
+                    alert.Id,
+                    alert.DeliverymanId);
+            }
+        }
     }
 
     private async Task<int> ProcessDeviceEventsAsync(DateTime nowUtc, CancellationToken cancellationToken)
@@ -106,7 +185,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             }
             alert.CreatedAt = nowUtc;
             alert.UpdatedAt = nowUtc;
-            _db.DeliveryTrackingAlerts.Add(alert);
+            AddAlert(alert);
             changes++;
         }
 
@@ -465,7 +544,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         foreach (var incident in incidents)
         {
             var alreadyReviewed = incident.ReviewStatus != DeliveryIncidentReviewStatus.Pending;
-            _db.DeliveryTrackingAlerts.Add(new DeliveryTrackingAlert
+            AddAlert(new DeliveryTrackingAlert
             {
                 BranchId = incident.BranchId,
                 DeliverymanId = incident.DeliverymanId,
@@ -556,7 +635,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                 var key = $"session:{session.Id}:no_communication:{session.LastCommunicationAt.Ticks}";
                 if (!keys.Contains(key))
                 {
-                    _db.DeliveryTrackingAlerts.Add(new DeliveryTrackingAlert
+                    AddAlert(new DeliveryTrackingAlert
                     {
                         BranchId = session.BranchId,
                         DeliverymanId = session.DeliverymanId,
@@ -582,7 +661,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                 var key = $"session:{session.Id}:past_auto_close";
                 if (!keys.Contains(key))
                 {
-                    _db.DeliveryTrackingAlerts.Add(new DeliveryTrackingAlert
+                    AddAlert(new DeliveryTrackingAlert
                     {
                         BranchId = session.BranchId,
                         DeliverymanId = session.DeliverymanId,

@@ -10,11 +10,10 @@ public class SupplierMappingProfile : Profile
     public SupplierMappingProfile()
     {
         CreateMap<Supplier, SupplierDto>()
-            .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Branch.Name));
+            .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Branch != null ? src.Branch.Name : null));
 
         CreateMap<CreateSupplierDto, CreateSupplierCommand>()
-            .ForMember(dest => dest.Supplier, opt => opt.Ignore())
-            .ForMember(dest => dest.BranchId, opt => opt.Ignore());
+            .ForMember(dest => dest.Supplier, opt => opt.Ignore());
 
         CreateMap<UpdateSupplierDto, UpdateSupplierCommand>()
             .ForMember(dest => dest.Id, opt => opt.Ignore())

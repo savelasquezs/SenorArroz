@@ -11,83 +11,36 @@ namespace SenorArroz.Application.Features.Suppliers.Commands;
 public class CreateSupplierHandler : IRequestHandler<CreateSupplierCommand, SupplierDto>
 {
     private readonly ISupplierRepository _supplierRepository;
-    private readonly IBranchRepository _branchRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
-    private readonly IBranchContext _branchContext;
 
     public CreateSupplierHandler(
         ISupplierRepository supplierRepository,
-        IBranchRepository branchRepository,
         IMapper mapper,
-        ICurrentUser currentUser,
-        IBranchContext branchContext)
+        ICurrentUser currentUser)
     {
         _supplierRepository = supplierRepository;
-        _branchRepository = branchRepository;
         _mapper = mapper;
         _currentUser = currentUser;
-        _branchContext = branchContext;
     }
 
     public async Task<SupplierDto> Handle(CreateSupplierCommand request, CancellationToken cancellationToken)
     {
-        // Permissions: Superadmin/Admin/Cashier pueden crear proveedores
         if (!Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para crear proveedores.");
         }
 
-        var branchId = _branchContext.RequireBranch(request.BranchId);
-
-        // Validaciones de unicidad
-        if (await _supplierRepository.NameExistsAsync(request.Supplier.Name, branchId))
-        {
-            throw new BusinessException("Ya existe un proveedor con ese nombre en la sucursal.");
-        }
-
-        if (await _supplierRepository.PhoneExistsAsync(request.Supplier.Phone, branchId))
-        {
-            throw new BusinessException("Ya existe un proveedor con ese teléfono en la sucursal.");
-        }
-
         var supplier = new Supplier
         {
-            BranchId = branchId,
+            BranchId = null,
             Name = request.Supplier.Name.Trim(),
             Phone = request.Supplier.Phone.Trim(),
-            Address = request.Supplier.Address,
-            Email = request.Supplier.Email
+            Address = string.IsNullOrWhiteSpace(request.Supplier.Address) ? null : request.Supplier.Address.Trim(),
+            Email = string.IsNullOrWhiteSpace(request.Supplier.Email) ? null : request.Supplier.Email.Trim()
         };
 
         var created = await _supplierRepository.CreateAsync(supplier, cancellationToken);
         return _mapper.Map<SupplierDto>(created);
     }
-
-    private async Task<int> ResolveBranchIdAsync(int? requestedBranchId)
-    {
-        if (Roles.IsSuperadmin(_currentUser.Role))
-        {
-            if (!requestedBranchId.HasValue || requestedBranchId <= 0)
-            {
-                throw new BusinessException("Superadmin debe especificar la sucursal.");
-            }
-
-            if (!await _branchRepository.ExistsAsync(requestedBranchId.Value))
-            {
-                throw new BusinessException("La sucursal indicada no existe.");
-            }
-
-            return requestedBranchId.Value;
-        }
-
-        if (_currentUser.BranchId <= 0)
-        {
-            throw new BusinessException("El usuario no tiene una sucursal asociada.");
-        }
-
-        return _currentUser.BranchId;
-    }
 }
-
-

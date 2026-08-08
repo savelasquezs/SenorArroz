@@ -18,11 +18,13 @@ public class UsersController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IBranchContext _branchContext;
+    private readonly ICurrentUser _currentUser;
 
-    public UsersController(IMediator mediator, IBranchContext branchContext)
+    public UsersController(IMediator mediator, IBranchContext branchContext, ICurrentUser currentUser)
     {
         _mediator = mediator;
         _branchContext = branchContext;
+        _currentUser = currentUser;
     }
 
     private int GetCurrentUserId() =>
@@ -106,9 +108,14 @@ public class UsersController : ControllerBase
     [Authorize(Roles = "Superadmin,Admin")]
     public async Task<ActionResult<UserDto>> UpdateUser(int id, [FromBody] UpdateUserDto updateUserDto)
     {
+        var existing = await _mediator.Send(new GetUserByIdQuery(id));
+        _branchContext.EnsureAccess(existing.BranchId);
+
         var command = new UpdateUserCommand(id, updateUserDto);
         var user = await _mediator.Send(command);
-        _branchContext.EnsureAccess(user.BranchId);
+        if (!Roles.IsSuperadmin(_currentUser.Role))
+            _branchContext.EnsureAccess(user.BranchId);
+
         return Ok(user);
     }
     /// <summary>

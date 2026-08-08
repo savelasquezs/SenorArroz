@@ -32,7 +32,6 @@ public class SuppliersController : ControllerBase
         var query = new GetSuppliersQuery
         {
             Search = search,
-            BranchId = branchId,
             Page = page,
             PageSize = pageSize,
             SortBy = sortBy,
@@ -46,7 +45,7 @@ public class SuppliersController : ControllerBase
     [HttpGet("by-branch")]
     public async Task<ActionResult<List<SupplierDto>>> GetSuppliersByBranch([FromQuery] int? branchId = null)
     {
-        var query = new GetSuppliersByBranchQuery { BranchId = branchId };
+        var query = new GetSuppliersByBranchQuery();
         var result = await _mediator.Send(query);
         return Ok(result);
     }
@@ -77,8 +76,7 @@ public class SuppliersController : ControllerBase
     {
         var command = new CreateSupplierCommand
         {
-            Supplier = dto,
-            BranchId = branchId
+            Supplier = dto
         };
 
         var result = await _mediator.Send(command);

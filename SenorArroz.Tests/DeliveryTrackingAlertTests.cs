@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using SenorArroz.Application.Common.Helpers;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -61,6 +64,9 @@ public class DeliveryTrackingAlertTests
             DeviceEvent(202, DeliveryDeviceEventType.GpsEnabled, 2),
             DeviceEvent(203, DeliveryDeviceEventType.LocationPermissionRevoked, 3),
             DeviceEvent(204, DeliveryDeviceEventType.InternetRecovered, 4, "queued_location_count=4"));
+        db.UserDeviceTokens.AddRange(
+            new UserDeviceToken { Id = 1, UserId = 1, Token = "deliveryman-token" },
+            new UserDeviceToken { Id = 2, UserId = 2, Token = "other-token" });
         db.DeliveryTrackingIncidents.Add(new DeliveryTrackingIncident
         {
             Id = 300,
@@ -83,7 +89,8 @@ public class DeliveryTrackingAlertTests
         });
         await db.SaveChangesAsync();
         var clock = new FakeClock(BaseTime.AddMinutes(10));
-        var service = new DeliveryTrackingAlertService(db, clock);
+        var fcm = new FakeFcmPushService();
+        var service = CreateService(db, clock, fcm);
 
         await service.ProcessAsync();
 
@@ -120,7 +127,22 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(-74.08m, stay.StartLongitude);
         Assert.Contains("300 segundos", db.DeliveryTrackingAlerts
             .Single(x => x.AlertType == DeliveryTrackingAlertType.NoCommunication).Message);
+        Assert.Equal(3, fcm.Sends.Count);
+        Assert.All(fcm.Sends, send => Assert.Equal(["deliveryman-token"], send.Tokens));
+        Assert.All(fcm.Sends, send =>
+        {
+            Assert.Equal(DeliveryTrackingReviewPolicy.NotificationTitle, send.Title);
+            Assert.Equal(DeliveryTrackingReviewPolicy.NotificationType, send.Data!["type"]);
+            Assert.Equal("1", send.Data["deliverymanId"]);
+            Assert.Equal(DeliveryTrackingReviewPolicy.NotificationChannelId, send.AndroidChannelId);
+        });
+        Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "gps_disabled");
+        Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "location_permission_revoked");
+        Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "unexpected_stay");
+        Assert.Contains(fcm.Sends, send => send.Body.Contains("lugar no autorizado"));
+        Assert.Contains(fcm.Sends, send => send.Body.Contains("apagaste la ubicación"));
         Assert.Equal(0, await service.ProcessAsync());
+        Assert.Equal(3, fcm.Sends.Count);
 
         var incident = db.DeliveryTrackingIncidents.Single(
             x => x.IncidentType == DeliveryTrackingIncidentType.Stay);
@@ -172,9 +194,8 @@ public class DeliveryTrackingAlertTests
             RecordedAt = BaseTime,
         });
         await db.SaveChangesAsync();
-        var service = new DeliveryTrackingAlertService(
-            db,
-            new FakeClock(BaseTime.AddSeconds(61)));
+        var fcm = new FakeFcmPushService();
+        var service = CreateService(db, new FakeClock(BaseTime.AddSeconds(61)), fcm);
 
         await service.ProcessAsync();
 
@@ -186,6 +207,7 @@ public class DeliveryTrackingAlertTests
             x => x.AlertType == DeliveryTrackingAlertType.SessionPastAutoClose);
         Assert.Equal(DeliveryTrackingAlertSeverity.Critical, pastCutoff.Severity);
         Assert.Equal(BaseTime.AddSeconds(30), pastCutoff.OccurredAt);
+        Assert.Empty(fcm.Sends);
     }
 
     [Fact]
@@ -198,10 +220,15 @@ public class DeliveryTrackingAlertTests
         reviewed.ReviewedByUserId = 21;
         reviewed.ReviewedAt = BaseTime.AddMinutes(14);
         db.DeliveryTrackingIncidents.AddRange(pending, reviewed);
+        db.UserDeviceTokens.Add(new UserDeviceToken
+        {
+            Id = 1,
+            UserId = 1,
+            Token = "deliveryman-token",
+        });
         await db.SaveChangesAsync();
-        var service = new DeliveryTrackingAlertService(
-            db,
-            new FakeClock(BaseTime.AddMinutes(15)));
+        var fcm = new FakeFcmPushService();
+        var service = CreateService(db, new FakeClock(BaseTime.AddMinutes(15)), fcm);
 
         Assert.Equal(2, await service.ProcessAsync());
 
@@ -219,7 +246,31 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(DeliveryTrackingAlertStatus.Resolved, reviewedAlert.Status);
         Assert.Equal(reviewed.ReviewedAt, reviewedAlert.ResolvedAt);
         Assert.Equal(reviewed.ReviewedByUserId, reviewedAlert.ResolvedByUserId);
+        Assert.Single(fcm.Sends);
+        Assert.Equal("unexpected_stay", fcm.Sends[0].Data!["alertType"]);
         Assert.Equal(0, await service.ProcessAsync());
+        Assert.Single(fcm.Sends);
+    }
+
+    [Fact]
+    public async Task Process_PersistsReviewAlertWhenFcmFails()
+    {
+        await using var db = CreateDb();
+        db.DeliveryTrackingIncidents.Add(PendingReviewStay(300));
+        db.UserDeviceTokens.Add(new UserDeviceToken
+        {
+            Id = 1,
+            UserId = 1,
+            Token = "deliveryman-token",
+        });
+        await db.SaveChangesAsync();
+        var fcm = new FakeFcmPushService { Exception = new InvalidOperationException("FCM unavailable") };
+        var service = CreateService(db, new FakeClock(BaseTime.AddMinutes(15)), fcm);
+
+        await service.ProcessAsync();
+
+        Assert.Equal(DeliveryTrackingAlertStatus.Active, db.DeliveryTrackingAlerts.Single().Status);
+        Assert.Single(fcm.Sends);
     }
 
     private static DeliveryDeviceEvent DeviceEvent(
@@ -261,4 +312,39 @@ public class DeliveryTrackingAlertTests
     private static ApplicationDbContext CreateDb() => new(
         new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+
+    private static DeliveryTrackingAlertService CreateService(
+        ApplicationDbContext db,
+        FakeClock clock,
+        IFcmPushService? fcm = null) => new(
+            db,
+            clock,
+            fcm ?? new FakeFcmPushService(),
+            NullLogger<DeliveryTrackingAlertService>.Instance);
+
+    private sealed class FakeFcmPushService : IFcmPushService
+    {
+        public List<PushSend> Sends { get; } = [];
+        public Exception? Exception { get; init; }
+
+        public Task SendToTokensAsync(
+            IReadOnlyList<string> tokens,
+            string title,
+            string body,
+            Dictionary<string, string>? data = null,
+            CancellationToken cancellationToken = default,
+            string? correlationId = null,
+            string androidChannelId = "delivery_orders")
+        {
+            Sends.Add(new PushSend(tokens, title, body, data, androidChannelId));
+            return Exception is null ? Task.CompletedTask : Task.FromException(Exception);
+        }
+    }
+
+    private sealed record PushSend(
+        IReadOnlyList<string> Tokens,
+        string Title,
+        string Body,
+        Dictionary<string, string>? Data,
+        string AndroidChannelId);
 }

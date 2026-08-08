@@ -72,9 +72,6 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             {
                 throw new NotFoundException($"Proveedor con ID {request.ExpenseHeader.SupplierId.Value} no encontrado");
             }
-            _branchContext.EnsureAccess(supplier.BranchId);
-            if (supplier.BranchId != expenseHeader.BranchId)
-                throw new BranchScopeMismatchException();
             expenseHeader.SupplierId = request.ExpenseHeader.SupplierId.Value;
         }
 
@@ -200,7 +197,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
 
         if (requestedBankPayments.Any())
         {
-            var branchId = _currentUser.BranchId;
+            var branchId = expenseHeader.BranchId;
             var bankIds = requestedBankPayments.Select(ebp => ebp.BankId).Distinct().ToList();
             var banks = await _context.Banks
                 .Where(b => bankIds.Contains(b.Id) && b.BranchId == branchId)

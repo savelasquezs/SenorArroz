@@ -63,13 +63,36 @@ public class UserRepository : IUserRepository
 
     public async Task<User> UpdateAsync(User user, CancellationToken cancellationToken = default)
     {
-        _context.Users.Update(user);
+        var existing = await _context.Users
+            .Include(u => u.Branch)
+            .Include(u => u.PayrollExpense)
+            .FirstOrDefaultAsync(u => u.Id == user.Id, cancellationToken)
+            ?? throw new InvalidOperationException($"Usuario con ID {user.Id} no encontrado");
+
+        if (existing.BranchId != user.BranchId)
+            existing.Branch = null!;
+
+        if (existing.PayrollExpenseId != user.PayrollExpenseId)
+            existing.PayrollExpense = null;
+
+        existing.BranchId = user.BranchId;
+        existing.Role = user.Role;
+        existing.Name = user.Name;
+        existing.Email = user.Email;
+        existing.Phone = user.Phone;
+        existing.PasswordHash = user.PasswordHash;
+        existing.Active = user.Active;
+        existing.ProfileImageUrl = user.ProfileImageUrl;
+        existing.ActiveSessionId = user.ActiveSessionId;
+        existing.PayrollExpenseId = user.PayrollExpenseId;
+
         await _context.SaveChangesAsync(cancellationToken);
 
-        // Asegurar que Branch esté cargado
-        await _context.Users.Entry(user).Reference(u => u.Branch).LoadAsync(cancellationToken);
-
-        return user;
+        return await _context.Users
+            .AsNoTracking()
+            .Include(u => u.Branch)
+            .Include(u => u.PayrollExpense)
+            .FirstAsync(u => u.Id == user.Id, cancellationToken);
     }
 
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)

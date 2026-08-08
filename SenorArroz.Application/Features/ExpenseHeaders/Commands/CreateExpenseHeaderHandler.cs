@@ -64,7 +64,6 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
         }
 
         var branchId = _branchContext.RequireBranch();
-        _branchContext.EnsureAccess(supplier.BranchId);
         var subtotal = ExpenseInvoiceTotalsHelper.SubtotalFromCreateDetails(request.ExpenseHeader.ExpenseDetails);
         var taxableSubtotal = ExpenseInvoiceTotalsHelper.TaxableSubtotalFromCreateDetails(
             request.ExpenseHeader.ExpenseDetails,

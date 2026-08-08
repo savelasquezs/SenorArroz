@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc.Filters;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.Users.DTOs;
 
 namespace SenorArroz.API.Filters;
 
@@ -36,6 +37,9 @@ public sealed class BranchScopeActionFilter : IAsyncActionFilter
                     System.Reflection.BindingFlags.Public
                     | System.Reflection.BindingFlags.Instance
                     | System.Reflection.BindingFlags.IgnoreCase);
+
+                if (value is UpdateUserDto)
+                    continue;
 
                 if (property is not null
                     && TryGetPositiveBranchId(property.GetValue(value), out var payloadBranchId))
