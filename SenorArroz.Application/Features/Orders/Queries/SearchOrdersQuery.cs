@@ -19,6 +19,8 @@ public class SearchOrdersQuery : IRequest<PagedResult<OrderDto>>
     /// <summary>Si true, exige al menos un pago por app no liquidado (opcionalmente filtrado por <see cref="AppId"/>).</summary>
     public bool AppPaymentsUnsettledOnly { get; set; }
 
+    public bool TransferVerificationMode { get; set; }
+
     /// <summary>Solo dígitos: prefijo del total del pedido como texto decimal.</summary>
     public string? TotalDigitsPrefix { get; set; }
 

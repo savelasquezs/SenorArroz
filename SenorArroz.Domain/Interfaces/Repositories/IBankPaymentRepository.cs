@@ -31,6 +31,12 @@ public interface IBankPaymentRepository
     // Verification methods
     Task<bool> VerifyPaymentAsync(int id, CancellationToken cancellationToken = default);
     Task<bool> UnverifyPaymentAsync(int id, CancellationToken cancellationToken = default);
+    Task<int> UnverifyPaymentsForBankInPeriodAsync(
+        int bankId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int? restrictToBankBranchId = null,
+        CancellationToken cancellationToken = default);
 
     // Statistics
     Task<decimal> GetTotalAmountByBankAsync(int bankId, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default);

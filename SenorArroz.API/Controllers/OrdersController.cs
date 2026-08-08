@@ -150,6 +150,7 @@ public class OrdersController : ControllerBase
             BankId = searchDto.BankId,
             AppId = searchDto.AppId,
             AppPaymentsUnsettledOnly = searchDto.AppPaymentsUnsettledOnly,
+            TransferVerificationMode = searchDto.TransferVerificationMode,
             TotalDigitsPrefix = searchDto.TotalDigitsPrefix,
             Status = searchDto.Status,
             Type = searchDto.Type,

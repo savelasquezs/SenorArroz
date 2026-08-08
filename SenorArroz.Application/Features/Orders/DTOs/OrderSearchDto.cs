@@ -17,6 +17,12 @@ public class OrderSearchDto
     /// <summary>Si true, exige al menos un <c>AppPayment</c> no liquidado; si <see cref="AppId"/> está definido, solo líneas de esa app.</summary>
     public bool AppPaymentsUnsettledOnly { get; set; }
 
+    /// <summary>
+    /// Cola de verificación: el banco debe tener al menos una transferencia no verificada
+    /// creada dentro del rango solicitado.
+    /// </summary>
+    public bool TransferVerificationMode { get; set; }
+
     /// <summary>Solo dígitos: el total del pedido como entero, en texto, debe empezar por este prefijo.</summary>
     public string? TotalDigitsPrefix { get; set; }
 

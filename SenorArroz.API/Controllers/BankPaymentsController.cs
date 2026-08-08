@@ -140,7 +140,7 @@ public class BankPaymentsController : ControllerBase
     /// Desverifica un pago bancario
     /// </summary>
     [HttpPost("{id}/unverify")]
-    [Authorize(Roles = "Admin,Superadmin")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult> UnverifyBankPayment(int id)
     {
         var command = new UnverifyBankPaymentCommand { Id = id };
@@ -150,6 +150,26 @@ public class BankPaymentsController : ControllerBase
             return NotFound();
             
         return Ok(new { message = "Pago bancario desverificado exitosamente" });
+    }
+
+    /// <summary>
+    /// Desverifica todas las transferencias verificadas creadas durante el día actual en Colombia.
+    /// </summary>
+    [HttpPost("unverify-today")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
+    public async Task<ActionResult> UnverifyTodayBankPayments(
+        [FromBody] UnverifyTodayBankPaymentsDto dto)
+    {
+        var result = await _mediator.Send(new UnverifyTodayBankPaymentsCommand
+        {
+            BankId = dto.BankId,
+        });
+
+        return Ok(new
+        {
+            count = result,
+            message = $"{result} pago(s) bancario(s) desverificado(s) exitosamente",
+        });
     }
 
     /// <summary>

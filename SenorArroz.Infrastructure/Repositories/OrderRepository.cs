@@ -763,6 +763,7 @@ public class OrderRepository : IOrderRepository
         string? totalDigitsPrefix = null,
         int? appId = null,
         bool appPaymentsUnsettledOnly = false,
+        bool transferVerificationMode = false,
         CancellationToken cancellationToken = default)
     {
         // PostgreSQL timestamp with time zone requiere UTC
@@ -801,7 +802,7 @@ public class OrderRepository : IOrderRepository
         if (type.HasValue)
             query = query.Where(o => o.Type == type.Value);
 
-        if (fromDate.HasValue && toDate.HasValue)
+        if (!transferVerificationMode && fromDate.HasValue && toDate.HasValue)
         {
             var fromUtc = fromDate.Value.Kind == DateTimeKind.Utc ? fromDate.Value : DateTime.SpecifyKind(fromDate.Value, DateTimeKind.Utc);
             var toUtc = toDate.Value.Kind == DateTimeKind.Utc ? toDate.Value : DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
@@ -809,12 +810,12 @@ public class OrderRepository : IOrderRepository
                 (o.CreatedAt >= fromUtc && o.CreatedAt <= toUtc)
                 || (o.ReservedFor.HasValue && o.ReservedFor.Value >= fromUtc && o.ReservedFor.Value <= toUtc));
         }
-        else if (fromDate.HasValue)
+        else if (!transferVerificationMode && fromDate.HasValue)
         {
             var fromUtc = fromDate.Value.Kind == DateTimeKind.Utc ? fromDate.Value : DateTime.SpecifyKind(fromDate.Value, DateTimeKind.Utc);
             query = query.Where(o => o.CreatedAt >= fromUtc);
         }
-        else if (toDate.HasValue)
+        else if (!transferVerificationMode && toDate.HasValue)
         {
             var toUtc = toDate.Value.Kind == DateTimeKind.Utc ? toDate.Value : DateTime.SpecifyKind(toDate.Value, DateTimeKind.Utc);
             query = query.Where(o => o.CreatedAt <= toUtc);
@@ -832,7 +833,7 @@ public class OrderRepository : IOrderRepository
             query = query.Where(o => o.ReservedFor <= rtUtc);
         }
 
-        if (excludeFutureReservations)
+        if (!transferVerificationMode && excludeFutureReservations)
         {
             var startOfTomorrowColombiaUtc = ColombiaTimeHelper.GetColombiaStartOfTomorrowUtcFromUtc(_clock.UtcNow);
             query = query.Where(o =>
@@ -848,12 +849,40 @@ public class OrderRepository : IOrderRepository
             query = query.Where(o => o.Total <= maxAmount.Value);
 
         if (bankId.HasValue)
-            query = query.Where(o => o.BankPayments.Any(bp => bp.BankId == bankId.Value));
+        {
+            if (transferVerificationMode && fromDate.HasValue && toDate.HasValue)
+            {
+                query = query.Where(o => o.BankPayments.Any(bp =>
+                    bp.BankId == bankId.Value
+                    && !bp.IsVerified
+                    && bp.CreatedAt >= fromDate.Value
+                    && bp.CreatedAt <= toDate.Value));
+            }
+            else
+            {
+                query = query.Where(o => o.BankPayments.Any(bp => bp.BankId == bankId.Value));
+            }
+        }
 
         if (neighborhoodId.HasValue)
             query = query.Where(o => o.Address != null && o.Address.NeighborhoodId == neighborhoodId.Value);
 
-        query = ApplySorting(query, sortBy, sortOrder);
+        if (transferVerificationMode && bankId.HasValue && fromDate.HasValue && toDate.HasValue)
+        {
+            query = query
+                .OrderByDescending(o => o.BankPayments
+                    .Where(bp => bp.BankId == bankId.Value
+                        && !bp.IsVerified
+                        && bp.CreatedAt >= fromDate.Value
+                        && bp.CreatedAt <= toDate.Value)
+                    .Select(bp => (decimal?)bp.Amount)
+                    .Max() ?? 0m)
+                .ThenByDescending(o => o.Id);
+        }
+        else
+        {
+            query = ApplySorting(query, sortBy, sortOrder);
+        }
 
         var safePage = Math.Max(1, page);
         var safePageSize = Math.Max(1, pageSize);

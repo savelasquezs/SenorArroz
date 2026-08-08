@@ -59,9 +59,9 @@ public class BankPaymentRepository : IBankPaymentRepository
         if (verified.HasValue)
         {
             if (verified.Value)
-                query = query.Where(bp => bp.VerifiedAt.HasValue);
+                query = query.Where(bp => bp.IsVerified);
             else
-                query = query.Where(bp => !bp.VerifiedAt.HasValue);
+                query = query.Where(bp => !bp.IsVerified);
         }
 
         if (fromDate.HasValue)
@@ -116,7 +116,7 @@ public class BankPaymentRepository : IBankPaymentRepository
             .Include(bp => bp.Bank)
             .ThenInclude(b => b.Branch)
             .Include(bp => bp.Order)
-            .Where(bp => !bp.VerifiedAt.HasValue)
+            .Where(bp => !bp.IsVerified)
             .OrderBy(bp => bp.CreatedAt)
             .ToListAsync(cancellationToken);
     }
@@ -170,6 +170,7 @@ public class BankPaymentRepository : IBankPaymentRepository
             return false;
 
         bankPayment.IsVerified = true;
+        bankPayment.VerifiedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
@@ -181,8 +182,35 @@ public class BankPaymentRepository : IBankPaymentRepository
             return false;
 
         bankPayment.IsVerified = false;
+        bankPayment.VerifiedAt = null;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
+    }
+
+    public async Task<int> UnverifyPaymentsForBankInPeriodAsync(
+        int bankId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        int? restrictToBankBranchId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var from = AsUtcQueryParameter(fromUtc);
+        var to = AsUtcQueryParameter(toUtc);
+
+        var query = _context.BankPayments
+            .Where(bp => bp.BankId == bankId
+                && bp.IsVerified
+                && bp.CreatedAt >= from
+                && bp.CreatedAt <= to);
+
+        if (restrictToBankBranchId.HasValue)
+            query = query.Where(bp => bp.Bank.BranchId == restrictToBankBranchId.Value);
+
+        return await query.ExecuteUpdateAsync(
+            updates => updates
+                .SetProperty(bp => bp.IsVerified, false)
+                .SetProperty(bp => bp.VerifiedAt, (DateTime?)null),
+            cancellationToken);
     }
 
     public async Task<decimal> GetTotalAmountByBankAsync(int bankId, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default)
@@ -221,6 +249,6 @@ public class BankPaymentRepository : IBankPaymentRepository
     public async Task<int> GetUnverifiedCountByBankAsync(int bankId, CancellationToken cancellationToken = default)
     {
         return await _context.BankPayments
-            .CountAsync(bp => bp.BankId == bankId && !bp.VerifiedAt.HasValue, cancellationToken);
+            .CountAsync(bp => bp.BankId == bankId && !bp.IsVerified, cancellationToken);
     }
 }

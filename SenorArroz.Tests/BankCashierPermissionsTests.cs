@@ -36,12 +36,48 @@ public sealed class BankCashierPermissionsTests
         var unverifyRoles = typeof(BankPaymentsController)
             .GetMethod(nameof(BankPaymentsController.UnverifyBankPayment))!
             .GetCustomAttribute<AuthorizeAttribute>()?.Roles;
+        var bulkUnverifyRoles = typeof(BankPaymentsController)
+            .GetMethod(nameof(BankPaymentsController.UnverifyTodayBankPayments))!
+            .GetCustomAttribute<AuthorizeAttribute>()?.Roles;
 
         Assert.Contains("Cashier", transfersRoles ?? string.Empty);
         Assert.Contains("Cashier", verifyRoles ?? string.Empty);
-        Assert.DoesNotContain("Cashier", unverifyRoles ?? string.Empty);
+        Assert.Contains("Cashier", unverifyRoles ?? string.Empty);
+        Assert.Contains("Cashier", bulkUnverifyRoles ?? string.Empty);
         Assert.Contains("Admin", unverifyRoles ?? string.Empty);
         Assert.Contains("Superadmin", unverifyRoles ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task Cashier_CanUnverifyTodayPaymentsFromAssignedBranch()
+    {
+        var bank = new Bank { Id = 4, BranchId = 7, Name = "Banco" };
+        var banks = new Mock<IBankRepository>();
+        banks.Setup(x => x.GetByIdAsync(4, It.IsAny<CancellationToken>())).ReturnsAsync(bank);
+
+        var payments = new Mock<IBankPaymentRepository>();
+        var clock = new FakeClock(new DateTime(2026, 8, 7, 17, 0, 0, DateTimeKind.Utc));
+        payments
+            .Setup(x => x.UnverifyPaymentsForBankInPeriodAsync(
+                4,
+                new DateTime(2026, 8, 7, 5, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 8, 8, 5, 0, 0, DateTimeKind.Utc).AddTicks(-1),
+                7,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3);
+
+        var handler = new UnverifyTodayBankPaymentsHandler(
+            payments.Object,
+            banks.Object,
+            new TestBranchContext(7),
+            clock);
+
+        var result = await handler.Handle(
+            new UnverifyTodayBankPaymentsCommand { BankId = 4 },
+            CancellationToken.None);
+
+        Assert.Equal(3, result);
+        payments.VerifyAll();
     }
 
     [Fact]

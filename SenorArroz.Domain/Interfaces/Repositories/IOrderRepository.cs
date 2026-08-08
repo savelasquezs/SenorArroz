@@ -81,6 +81,7 @@ public interface IOrderRepository
         string? totalDigitsPrefix = null,
         int? appId = null,
         bool appPaymentsUnsettledOnly = false,
+        bool transferVerificationMode = false,
         CancellationToken cancellationToken = default
     );
 

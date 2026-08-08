@@ -86,7 +86,8 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             request.IncludeOnsiteActiveInAssignedHistory,
             request.TotalDigitsPrefix,
             request.AppId,
-            request.AppPaymentsUnsettledOnly);
+            request.AppPaymentsUnsettledOnly,
+            request.TransferVerificationMode);
 
         var dtos = _mapper.Map<List<OrderDto>>(result.Items);
 
