@@ -870,14 +870,14 @@ public class OrderRepository : IOrderRepository
         if (transferVerificationMode && bankId.HasValue && fromDate.HasValue && toDate.HasValue)
         {
             query = query
-                .OrderByDescending(o => o.BankPayments
+                .OrderBy(o => o.BankPayments
                     .Where(bp => bp.BankId == bankId.Value
                         && !bp.IsVerified
                         && bp.CreatedAt >= fromDate.Value
                         && bp.CreatedAt <= toDate.Value)
                     .Select(bp => (decimal?)bp.Amount)
                     .Max() ?? 0m)
-                .ThenByDescending(o => o.Id);
+                .ThenBy(o => o.Id);
         }
         else
         {

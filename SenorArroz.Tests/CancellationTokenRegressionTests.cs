@@ -227,7 +227,7 @@ public class CancellationTokenRegressionTests
             cancellationToken: default);
 
         Assert.Equal(2, result.Items.Count());
-        Assert.Equal(highestOrder.Id, result.Items.First().Id);
-        Assert.Equal(firstOrder.Id, result.Items.Skip(1).Single().Id);
+        Assert.Equal(firstOrder.Id, result.Items.First().Id);
+        Assert.Equal(highestOrder.Id, result.Items.Skip(1).Single().Id);
     }
 }
