@@ -24,7 +24,7 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
             if (Roles.IsSuperadmin(userRole))
                 return true;
 
-            return Roles.IsAdmin(userRole) && IsSameDay(order.CreatedAt);
+            return (Roles.IsAdminOrCashier(userRole)) && IsSameDay(order.CreatedAt);
         }
 
         return Roles.IsSuperadminOrAdminOrCashier(userRole);
@@ -40,7 +40,7 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
             if (Roles.IsSuperadmin(userRole))
                 return true;
 
-            return Roles.IsAdmin(userRole) && IsSameDay(order.CreatedAt);
+            return (Roles.IsAdminOrCashier(userRole)) && IsSameDay(order.CreatedAt);
         }
 
         return Roles.IsSuperadminOrAdminOrCashier(userRole);
@@ -102,6 +102,7 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
             (OrderStatus.Ready, OrderStatus.OnTheWay) => true,
             (OrderStatus.Ready, OrderStatus.Delivered) => order.Type == OrderType.Onsite,
             (OrderStatus.OnTheWay, OrderStatus.Delivered) => true,
+            (OrderStatus.Delivered, OrderStatus.OnTheWay) => true,
             _ => false
         };
     }

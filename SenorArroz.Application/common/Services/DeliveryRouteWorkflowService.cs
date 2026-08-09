@@ -255,15 +255,17 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         var stops = await _db.DeliveryRouteStops
             .Where(s => s.OrderId == orderId)
             .ToListAsync(cancellationToken);
-        if (stops.Count == 0)
-            return;
-
         var routeIds = stops.Select(s => s.DeliveryRouteId).Distinct().ToList();
-        _db.DeliveryRouteStops.RemoveRange(stops);
 
         var order = await _db.Orders.FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
-        if (order is not null)
+        if (stops.Count > 0)
+            _db.DeliveryRouteStops.RemoveRange(stops);
+
+        if (order is not null && order.DeliveryRouteId.HasValue)
             order.DeliveryRouteId = null;
+
+        if (stops.Count == 0 && order is null)
+            return;
 
         await _db.SaveChangesAsync(cancellationToken);
 

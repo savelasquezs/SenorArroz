@@ -147,6 +147,12 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             var routeIdSnapshot = existingOrder.DeliveryRouteId;
             var previousStatus = existingOrder.Status;
 
+            if (previousStatus == OrderStatus.Delivered
+                && request.StatusChange.Status == OrderStatus.Ready)
+            {
+                await ClearDeliveryAssignmentAsync(request.Id, cancellationToken);
+            }
+
             var order = await _orderRepository.ChangeStatusAsync(
                 request.Id,
                 request.StatusChange.Status,
@@ -268,6 +274,12 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         var routeIdSnapshot = existingOrder.DeliveryRouteId;
         var previousStatus = existingOrder.Status;
 
+        if (previousStatus == OrderStatus.Delivered
+            && request.StatusChange.Status == OrderStatus.Ready)
+        {
+            await ClearDeliveryAssignmentAsync(request.Id, cancellationToken);
+        }
+
         var order = await _orderRepository.ChangeStatusAsync(
             request.Id,
             request.StatusChange.Status,
@@ -327,6 +339,12 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
                 cancellationToken);
 
         return orderDto;
+    }
+
+    private async Task ClearDeliveryAssignmentAsync(int orderId, CancellationToken cancellationToken)
+    {
+        await _deliveryRouteWorkflow.OnOrderUnassignedAsync(orderId, cancellationToken);
+        await _orderRepository.UnassignDeliveryManAsync(orderId, cancellationToken);
     }
 
     private async Task PromoteReservationDepositsToBankPaymentsAsync(int orderId, CancellationToken cancellationToken)
