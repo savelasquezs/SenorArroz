@@ -370,11 +370,11 @@ public async Task<Order> CancelOrderAsync(int orderId, string reason)
 ```
 
 **Reglas**:
-- ✅ Solo Admin y Superadmin pueden cancelar
+- ✅ Admin, Superadmin y Cajero pueden cancelar
 - ✅ Razón de cancelación obligatoria
 - ✅ Cancela automáticamente todos los pagos asociados
 - ✅ Si es una reserva, también elimina todos los abonos asociados
-- ✅ Admin/Superadmin pueden cancelar pedidos (incluyendo reservas) en cualquier momento, salvo que ya estén cancelados.
+- ✅ Admin/Superadmin/Cajero pueden cancelar pedidos (incluyendo reservas) en cualquier momento, salvo que ya estén cancelados.
 
 ---
 

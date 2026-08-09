@@ -381,7 +381,7 @@ Handler marca el refresh token como revocado en la BD.
 | POST /orders | ✅ | ✅ | ✅ | ❌ | ❌ |
 | PUT /orders/{id} | ✅ | ✅ | ✅* | ❌ | ❌ |
 | PUT /orders/{id}/status | ✅ | ✅ | ⚠️ | ⚠️ | ❌ |
-| PUT /orders/{id}/cancel | ✅ | ✅ | ❌ | ❌ | ❌ |
+| PUT /orders/{id}/cancel | ✅ | ✅ | ✅ | ❌ | ❌ |
 | DELETE /orders/{id} | ✅ | ✅ | ❌ | ❌ | ❌ |
 
 *Con restricciones según estado del pedido

@@ -59,8 +59,8 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
-        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
-            throw new BusinessException("Solo administradores pueden cancelar pedidos");
+        if (!Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))
+            throw new BusinessException("Solo administradores o cajeros pueden cancelar pedidos");
 
         if (existingOrder.Status == OrderStatus.Cancelled)
             throw new BusinessException("El pedido ya está cancelado");
