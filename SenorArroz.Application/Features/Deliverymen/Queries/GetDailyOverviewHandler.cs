@@ -62,14 +62,7 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
 
         var stateByBranchAndDm = dayStatesForBranchDate.ToDictionary(s => (s.BranchId, s.DeliverymanId));
 
-        // 1. Obtener domiciliarios activos de la sucursal
-        var allUsers = await _userRepository.GetAllAsync(branchId, cancellationToken);
-        var deliverymen = allUsers
-            .Where(u => u.Role == UserRole.Deliveryman && u.Active)
-            .OrderBy(u => u.Name)
-            .ToList();
-
-        // 2. Pedidos entregados en el rango por instante real de entrega (status_times.delivered)
+        // 1. Pedidos entregados en el rango por instante real de entrega (status_times.delivered)
         var deliveredInRange = await DeliverymanDeliveredOrdersQuery.LoadAllDeliveredInRangeAsync(
             _orderRepository,
             branchId,
@@ -118,6 +111,17 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             .GroupBy(o => o.DeliveryManId!.Value)
             .ToDictionary(g => g.Key, g => g.Count());
 
+        // La lista representa la actividad histórica de la sucursal, no la
+        // asignación actual del usuario. Incluye trasladados e inactivos.
+        var referencedDeliverymanIds = ordersByDeliveryman.Keys
+            .Concat(onTheWayCountByDeliveryman.Keys)
+            .ToHashSet();
+        var allUsers = await _userRepository.GetAllAsync(null, cancellationToken);
+        var deliverymen = allUsers
+            .Where(u => u.Role == UserRole.Deliveryman && referencedDeliverymanIds.Contains(u.Id))
+            .OrderBy(u => u.Name)
+            .ToList();
+
         // 3. Obtener abonos del período
         var advancesResult = await _advanceRepository.GetPagedAsync(
             deliverymanId: null,
@@ -140,7 +144,8 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
         {
             DateTime? lastLiq = null;
             if (isSingleCalendarDay
-                && stateByBranchAndDm.TryGetValue((dm.BranchId, dm.Id), out var dmState))
+                && branchId.HasValue
+                && stateByBranchAndDm.TryGetValue((branchId.Value, dm.Id), out var dmState))
                 lastLiq = dmState.LastLiquidationAtUtc;
 
             var rawOrders = ordersByDeliveryman.GetValueOrDefault(dm.Id, new List<Order>());
@@ -186,7 +191,8 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             {
                 if (!dmById.TryGetValue(st.DeliverymanId, out var dmUser))
                     continue;
-                if (stateByBranchAndDm.TryGetValue((dmUser.BranchId, st.DeliverymanId), out var ds))
+                if (branchId.HasValue
+                    && stateByBranchAndDm.TryGetValue((branchId.Value, st.DeliverymanId), out var ds))
                 {
                     st.DayBlocked = ds.Blocked;
                     st.LiquidationMode = ds.LiquidationMode;

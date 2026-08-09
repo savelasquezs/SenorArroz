@@ -97,7 +97,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             {
                 Token = accessToken,
                 RefreshToken = refreshToken,
-                ExpiresAt = _clock.UtcNow.AddMinutes(60), // Access token expira en 1 hora
+                ExpiresAt = _clock.UtcNow.AddMinutes(720), // Access token expira en 12 horas
                 User = userInfo
             };
         }

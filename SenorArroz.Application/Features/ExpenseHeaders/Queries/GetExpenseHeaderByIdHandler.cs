@@ -48,11 +48,6 @@ public class GetExpenseHeaderByIdHandler : IRequestHandler<GetExpenseHeaderByIdQ
                 return null; // No tiene acceso
             }
 
-            // Si es cashier, solo puede ver sus propios gastos
-            if (Roles.IsCashier(_currentUser.Role) && expenseHeader.CreatedById != _currentUser.Id)
-            {
-                return null; // No tiene acceso
-            }
         }
 
         var dto = _mapper.Map<ExpenseHeaderDto>(expenseHeader);

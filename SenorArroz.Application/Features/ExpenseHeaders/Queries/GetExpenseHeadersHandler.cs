@@ -40,10 +40,6 @@ public class GetExpenseHeadersHandler : IRequestHandler<GetExpenseHeadersQuery, 
         {
             branchFilter = _currentUser.BranchId;
 
-            if (Roles.IsCashier(_currentUser.Role))
-            {
-                createdByIdFilter = _currentUser.Id;
-            }
         }
         else if (request.BranchId > 0)
         {

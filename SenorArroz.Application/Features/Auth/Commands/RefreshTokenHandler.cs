@@ -80,7 +80,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             {
                 Token = newAccessToken,
                 RefreshToken = newRefreshToken,
-                ExpiresAt = _clock.UtcNow.AddMinutes(60),
+                ExpiresAt = _clock.UtcNow.AddMinutes(720),
                 User = userInfo
             };
         }
