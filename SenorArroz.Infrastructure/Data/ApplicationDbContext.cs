@@ -97,6 +97,12 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<DeliveryRouteStop> DeliveryRouteStops { get; set; }
 
+        public virtual DbSet<DeliveryRoutingPlan> DeliveryRoutingPlans { get; set; }
+
+        public virtual DbSet<DeliveryRouteProposal> DeliveryRouteProposals { get; set; }
+
+        public virtual DbSet<DeliveryRouteProposalStop> DeliveryRouteProposalStops { get; set; }
+
         public virtual DbSet<DailyAuditDispatch> DailyAuditDispatches { get; set; }
         public virtual DbSet<DailyPromotion> DailyPromotions { get; set; }
         public virtual DbSet<DailyPromotionProduct> DailyPromotionProducts { get; set; }
@@ -199,6 +205,9 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new DeliveryWorkSessionConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteStopConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryRoutingPlanConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryRouteProposalConfiguration());
+            modelBuilder.ApplyConfiguration(new DeliveryRouteProposalStopConfiguration());
             modelBuilder.ApplyConfiguration(new DailyAuditDispatchConfiguration());
             modelBuilder.ApplyConfiguration(new DailyPromotionConfiguration());
             modelBuilder.ApplyConfiguration(new DailyPromotionProductConfiguration());

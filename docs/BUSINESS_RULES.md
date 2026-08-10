@@ -201,6 +201,14 @@ Reglas:
 
 Reglas:
 
+- El enrutador dinámico V1 agrupa por sucursal pedidos internos Delivery y reservas con dirección en Tomado, En preparación o Listo, sin domiciliario ni ruta asignados.
+- La matriz de optimización V1 es local y aproximada (Haversine, factor vial y velocidad configurables); Google Route Matrix no es una dependencia de esta versión.
+- OR-Tools decide orden, agrupación y visitas opcionales sin imponer un máximo fijo de paradas. La capacidad se modela con domiciliarios libres ahora o próximos a regresar.
+- Google Compute Routes solo valida propuestas finales. Si Google falla, la propuesta conserva métricas aproximadas, queda marcada como degradada y nunca presenta ceros como validación exitosa.
+- Solo los pedidos actualmente Listos de una propuesta pueden reclamarse. Tomado y En preparación son informativos y se mantienen como espera sugerida.
+- La toma desde una propuesta exige versión de plan y se ejecuta en una transacción serializable; ante una carrera responde `ROUTING_PLAN_STALE` sin asignación parcial.
+- La selección manual de pedidos continúa disponible como respaldo operativo.
+
 - Domiciliarios son usuarios o entidades asociadas al tenant.
 - La app móvil no debe operar fuera del tenant y sucursal autorizados.
 - Los domicilios en estado Tomado o En preparación solo se muestran al domiciliario cuando una ubicación GPS actual está dentro de `DeliveryTrackingAllowedDistanceMeters` respecto a las coordenadas de su sucursal.

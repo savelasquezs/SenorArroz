@@ -182,9 +182,16 @@ Notas:
 | DeliveryWorkSession | Sí | Desde `User.TenantId` o `Branch.TenantId` |
 | DeliveryRoute | Sí | Desde `Branch.TenantId` |
 | DeliveryRouteStop | Sí | Desde `DeliveryRoute.TenantId` |
+| DeliveryRoutingPlan | Sí | Desde `Branch.TenantId` |
+| DeliveryRouteProposal | Sí | Desde `DeliveryRoutingPlan` |
+| DeliveryRouteProposalStop | Sí | Desde `DeliveryRoutingPlan` y `Order` |
 | DeliveryTrackingAlert | Sí | Desde `Branch.TenantId` |
 
 Notas:
+
+- `DeliveryRoutingPlan` conserva una versión incremental y solo admite un plan `active` por sucursal mediante índice parcial.
+- Las propuestas y sus paradas son snapshots operativos; el claim valida nuevamente estado, sucursal, asignación y versión dentro de una transacción serializable.
+- El esquema V1 se instala con `SenorArroz.Infrastructure/Scripts/add_delivery_routing_v1.sql` antes de desplegar el API que consulta estas tablas.
 
 - La app móvil no debe poder operar sobre tenant distinto al del domiciliario autenticado.
 - Cada ubicación nueva debe pertenecer a una sesión laboral activa del mismo domiciliario y dispositivo.

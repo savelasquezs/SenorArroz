@@ -79,6 +79,11 @@ public class GlobalExceptionMiddleware
                 errorResponse.Code = BranchScopeMismatchException.ErrorCode;
                 break;
 
+            case RoutingPlanStaleException:
+                response.StatusCode = (int)HttpStatusCode.Conflict;
+                errorResponse.Code = RoutingPlanStaleException.ErrorCode;
+                break;
+
             case BranchAccessDeniedException:
                 response.StatusCode = (int)HttpStatusCode.Forbidden;
                 errorResponse.Code = BranchAccessDeniedException.ErrorCode;

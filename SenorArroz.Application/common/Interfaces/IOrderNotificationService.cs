@@ -8,6 +8,8 @@ public interface IOrderNotificationService
     Task NotifyOrderReadyToDelivery(OrderDto order);
     Task NotifyReservationToKitchen(OrderDto order);
     Task NotifyOrderAssignedToDelivery(OrderDto order);
+    Task NotifyDeliveryRoutingPlanChanged(int branchId, int planId, long version) => Task.CompletedTask;
+    Task NotifyRouteProposalClaimed(int branchId, int proposalId, int deliverymanId) => Task.CompletedTask;
 
     /// <summary>
     /// Cocina: pedido modificado (horario, notas, productos) en taken o in_preparation.

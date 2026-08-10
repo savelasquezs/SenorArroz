@@ -8,6 +8,8 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
 using System.Reflection;
 using SenorArroz.Domain.Services;
+using SenorArroz.Application.Features.DeliveryRouting.DTOs;
+using SenorArroz.Application.Features.DeliveryRouting.Services;
 
 namespace SenorArroz.Application
 {
@@ -54,6 +56,9 @@ namespace SenorArroz.Application
             services.AddScoped<IDeliveryStayClassificationService, DeliveryStayClassificationService>();
             services.AddScoped<IDeliveryIncidentEvidenceService, DeliveryIncidentEvidenceService>();
             services.AddScoped<IDeliveryTrackingAlertService, DeliveryTrackingAlertService>();
+            services.AddScoped<IKitchenPreparationEstimator, KitchenPreparationEstimator>();
+            services.AddScoped<IDeliverymanAvailabilityService, DeliverymanAvailabilityService>();
+            services.AddScoped<IDeliveryRoutingPlanService, DeliveryRoutingPlanService>();
             services.AddScoped<IWhatsAppSystemPromptBuilder, WhatsAppSystemPromptBuilder>();
 
             return services;

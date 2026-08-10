@@ -23,6 +23,7 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<DeliveryRouteOptions>(configuration.GetSection(DeliveryRouteOptions.SectionName));
+        services.Configure<DeliveryRoutingOptions>(configuration.GetSection(DeliveryRoutingOptions.SectionName));
         services.Configure<GoogleMapsRouteOptions>(configuration.GetSection(GoogleMapsRouteOptions.SectionName));
         services.PostConfigure<GoogleMapsRouteOptions>(options =>
         {
@@ -68,6 +69,8 @@ public static class DependencyInjection
         services.AddHttpClient<GoogleRoutesDrivingMetricsService>();
         services.AddScoped<IGoogleRoutesDrivingMetricsService>(sp => sp.GetRequiredService<GoogleRoutesDrivingMetricsService>());
         services.AddScoped<IDeliveryRouteWorkflowService, DeliveryRouteWorkflowService>();
+        services.AddSingleton<IRoutingCostMatrixProvider, ApproximateRoutingCostMatrixProvider>();
+        services.AddSingleton<IDeliveryRouteOptimizer, OrToolsDeliveryRouteOptimizer>();
         services.AddHttpClient<IWhatsAppCloudClient, WhatsAppCloudClient>();
         services.AddSingleton<IIntegrationSecretProtector, IntegrationSecretProtector>();
         services.AddHttpClient<IRappiDeliveryProvider, RappiDeliveryProvider>(client => client.Timeout = TimeSpan.FromSeconds(20));

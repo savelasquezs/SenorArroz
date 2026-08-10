@@ -218,6 +218,16 @@ Buscar primero:
 - `DeliverymanLocation`
 - `DeliveryRoute`
 - `DeliveryRouteStop`
+- `DeliveryRoutingPlan`
+- `DeliveryRouteProposal`
+- `DeliveryRouteProposalStop`
+
+Enrutador dinámico V1:
+
+- API: `SenorArroz.API/Controllers/DeliveryRoutingController.cs`
+- Orquestación: `SenorArroz.Application/Features/DeliveryRouting`
+- Matriz local y solver: `SenorArroz.Infrastructure/Services/ApproximateRoutingCostMatrixProvider.cs` y `OrToolsDeliveryRouteOptimizer.cs`
+- Esquema: `SenorArroz.Infrastructure/Scripts/add_delivery_routing_v1.sql`
 
 ### Impresión POS
 

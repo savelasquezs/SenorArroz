@@ -55,6 +55,22 @@ public class OrderNotificationService : IOrderNotificationService
             .SendAsync("OrderAssigned", order);
     }
 
+    public async Task NotifyDeliveryRoutingPlanChanged(int branchId, int planId, long version)
+    {
+        var payload = new { branchId, planId, version };
+        await Task.WhenAll(
+            _hubContext.Clients.Group($"Branch_{branchId}_Delivery").SendAsync("DeliveryRoutingPlanChanged", payload),
+            _hubContext.Clients.Group($"Branch_{branchId}_Admin").SendAsync("DeliveryRoutingPlanChanged", payload));
+    }
+
+    public async Task NotifyRouteProposalClaimed(int branchId, int proposalId, int deliverymanId)
+    {
+        var payload = new { branchId, proposalId, deliverymanId };
+        await Task.WhenAll(
+            _hubContext.Clients.Group($"Branch_{branchId}_Delivery").SendAsync("RouteProposalClaimed", payload),
+            _hubContext.Clients.Group($"Branch_{branchId}_Admin").SendAsync("RouteProposalClaimed", payload));
+    }
+
     public async Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null)
     {
         await _hubContext.Clients

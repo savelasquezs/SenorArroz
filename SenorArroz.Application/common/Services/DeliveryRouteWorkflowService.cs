@@ -33,7 +33,9 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
 
     public async Task OnOrderAssignedToDeliverymanAsync(Order order, CancellationToken cancellationToken = default)
     {
-        if (order.Type != OrderType.Delivery || order.DeliveryManId is null)
+        if ((order.Type != OrderType.Delivery
+             && !(order.Type == OrderType.Reservation && order.AddressId.HasValue))
+            || order.DeliveryManId is null)
             return;
 
         var tracked = await _db.Orders
