@@ -203,7 +203,9 @@ Reglas:
 
 - La app de domiciliarios se distribuye exclusivamente mediante Google Play.
 - Todo `Deliveryman` debe informar el package oficial, la versión visible exacta y un build igual o mayor al mínimo configurado. La política se valida antes de efectos de login, antes de rotar refresh tokens y en cada request autenticado; una incompatibilidad responde HTTP 426.
-- Admin, Superadmin, Cashier, Kitchen y el frontend web identificado con `X-Senor-Arroz-Client: web` no están sujetos al control de versión Flutter.
+- Admin, Superadmin, Cashier y Kitchen conservan acceso web y no están sujetos al control de versión Flutter.
+- Un `Deliveryman` tiene el acceso web deshabilitado por defecto. Solo Superadmin puede habilitarlo individualmente; el permiso se valida en login, refresh y cada request web autenticado, y su revocación responde HTTP 403 desde la siguiente solicitud.
+- El frontend web se identifica con `X-Senor-Arroz-Client: web`; SignalR usa `client=web`. Un domiciliario no identificado como cliente web debe cumplir siempre la versión Flutter exigida.
 
 - El enrutador dinámico V1 agrupa por sucursal pedidos internos Delivery y reservas con dirección en Tomado, En preparación o Listo, sin domiciliario ni ruta asignados.
 - La matriz de optimización V1 es local y aproximada (Haversine, factor vial y velocidad configurables); Google Route Matrix no es una dependencia de esta versión.

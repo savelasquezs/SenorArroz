@@ -83,6 +83,7 @@ Notas:
 - `Branch` contiene la configuración operativa del seguimiento de domiciliarios: hora local de cierre, frecuencias, permanencias, tolerancia geográfica y retenciones.
 - `User` debe quedar asociado a tenant aunque sea superadmin. Si hay superadmin global, documentar excepción.
 - `User.ActiveSessionId` contiene la sesión exclusiva vigente de un domiciliario.
+- `User.WebAccessEnabled` (`user.web_access_enabled`) permite excepcionalmente a un domiciliario usar el portal web. Los domiciliarios quedan deshabilitados al crearse o al cambiar a ese rol; los demás roles conservan el valor activo.
 - `RefreshToken.SessionId` vincula cada refresh token con la sesión que lo creó. Un token anterior puede conservarse para auditoría, pero deja de ser válido cuando no coincide con `User.ActiveSessionId`.
 - El esquema de sesión exclusiva se instala con el script idempotente `SenorArroz.Infrastructure/Scripts/add_exclusive_delivery_sessions.sql`, que debe ejecutarse antes de desplegar el backend que usa estas columnas.
 - En Railway, abrir Bash desde la raíz del backend, ejecutar `railway connect MainDatabase` y, dentro de `psql`, ejecutar `\i SenorArroz.Infrastructure/Scripts/add_exclusive_delivery_sessions.sql`.

@@ -12,6 +12,7 @@ public class User : BaseEntity
     public string Phone { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public bool Active { get; set; } = true;
+    public bool WebAccessEnabled { get; set; } = true;
     public string? ProfileImageUrl { get; set; }
 
     /// <summary>

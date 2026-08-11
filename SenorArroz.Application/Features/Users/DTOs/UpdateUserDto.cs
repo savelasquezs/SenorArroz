@@ -15,4 +15,9 @@ namespace SenorArroz.Application.Features.Users.DTOs
 
         public int? PayrollExpenseId { get; set; }
     }
+
+    public sealed class SetDeliverymanWebAccessDto
+    {
+        public bool Enabled { get; set; }
+    }
 }

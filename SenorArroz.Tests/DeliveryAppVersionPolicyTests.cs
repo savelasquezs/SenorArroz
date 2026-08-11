@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
+using Moq;
 using SenorArroz.API.Infrastructure;
 using SenorArroz.API.Middleware;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Exceptions;
+using SenorArroz.Domain.Interfaces.Repositories;
 using System.Security.Claims;
 
 namespace SenorArroz.Tests;
@@ -58,7 +60,7 @@ public class DeliveryAppVersionPolicyTests
         var middleware = new DeliveryAppVersionMiddleware(_ => Task.CompletedTask);
 
         await Assert.ThrowsAsync<DeliveryAppUpdateRequiredException>(
-            () => middleware.InvokeAsync(context, CreatePolicy()));
+            () => middleware.InvokeAsync(context, CreatePolicy(), CreateAuthRepository()));
     }
 
     [Fact]
@@ -74,9 +76,21 @@ public class DeliveryAppVersionPolicyTests
             return Task.CompletedTask;
         });
 
-        await middleware.InvokeAsync(context, CreatePolicy());
+        await middleware.InvokeAsync(context, CreatePolicy(), CreateAuthRepository(true));
 
         Assert.True(called);
+    }
+
+    [Fact]
+    public async Task Middleware_WebDeliverymanWithoutPermission_IsForbidden()
+    {
+        var context = AuthenticatedContext("Deliveryman");
+        context.Request.Headers[DeliveryAppVersionHeaders.Client] =
+            DeliveryAppVersionHeaders.WebClient;
+        var middleware = new DeliveryAppVersionMiddleware(_ => Task.CompletedTask);
+
+        await Assert.ThrowsAsync<DeliverymanWebAccessDeniedException>(
+            () => middleware.InvokeAsync(context, CreatePolicy(), CreateAuthRepository()));
     }
 
     [Theory]
@@ -94,7 +108,7 @@ public class DeliveryAppVersionPolicyTests
             return Task.CompletedTask;
         });
 
-        await middleware.InvokeAsync(context, CreatePolicy());
+        await middleware.InvokeAsync(context, CreatePolicy(), CreateAuthRepository());
 
         Assert.True(called);
     }
@@ -108,8 +122,17 @@ public class DeliveryAppVersionPolicyTests
     {
         var context = new DefaultHttpContext();
         context.User = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Role, role)],
+            [new Claim(ClaimTypes.Role, role), new Claim(ClaimTypes.NameIdentifier, "7")],
             "test"));
         return context;
+    }
+
+    private static IAuthRepository CreateAuthRepository(bool webAccessEnabled = false)
+    {
+        var repository = new Mock<IAuthRepository>();
+        repository
+            .Setup(candidate => candidate.CanDeliverymanAccessWebAsync(7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(webAccessEnabled);
+        return repository.Object;
     }
 }

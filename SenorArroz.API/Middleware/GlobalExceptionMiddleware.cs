@@ -97,6 +97,11 @@ public class GlobalExceptionMiddleware
                 errorResponse.Code = BranchAccessDeniedException.ErrorCode;
                 break;
 
+            case DeliverymanWebAccessDeniedException:
+                response.StatusCode = (int)HttpStatusCode.Forbidden;
+                errorResponse.Code = DeliverymanWebAccessDeniedException.ErrorCode;
+                break;
+
             case SessionReplacedException:
                 response.StatusCode = (int)HttpStatusCode.Unauthorized;
                 errorResponse.Code = SessionReplacedException.ErrorCode;

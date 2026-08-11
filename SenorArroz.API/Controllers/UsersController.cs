@@ -131,6 +131,16 @@ public class UsersController : ControllerBase
         return Ok(user);
     }
 
+    [HttpPut("{id:int}/web-access")]
+    [Authorize(Roles = "Superadmin")]
+    public async Task<ActionResult<UserDto>> SetDeliverymanWebAccess(
+        int id,
+        [FromBody] SetDeliverymanWebAccessDto dto)
+    {
+        var user = await _mediator.Send(new SetDeliverymanWebAccessCommand(id, dto.Enabled));
+        return Ok(user);
+    }
+
     /// <summary>
     /// Elimina un usuario (soft delete)
     /// </summary>

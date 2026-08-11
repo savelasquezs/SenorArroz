@@ -3,8 +3,10 @@
 El backend es la única autoridad de compatibilidad para la app Flutter de
 domiciliarios. Vue no participa en esta validación.
 
-El portal Vue identifica sus requests con `X-Senor-Arroz-Client: web`. Esa
-marca excluye únicamente al cliente web del control de versión móvil; no es un
+El portal Vue identifica sus requests con `X-Senor-Arroz-Client: web` y sus
+conexiones SignalR con `client=web`. Esa marca excluye únicamente al cliente web
+del control de versión móvil; para `Deliveryman` exige además que Superadmin haya
+habilitado `web_access_enabled`. El permiso se comprueba en cada solicitud y no es un
 mecanismo de autenticación ni reemplaza la autorización por rol.
 
 ## Configuración

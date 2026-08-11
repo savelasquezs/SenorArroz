@@ -82,6 +82,7 @@ public class UserRepository : IUserRepository
         existing.Phone = user.Phone;
         existing.PasswordHash = user.PasswordHash;
         existing.Active = user.Active;
+        existing.WebAccessEnabled = user.WebAccessEnabled;
         existing.ProfileImageUrl = user.ProfileImageUrl;
         existing.ActiveSessionId = user.ActiveSessionId;
         existing.PayrollExpenseId = user.PayrollExpenseId;

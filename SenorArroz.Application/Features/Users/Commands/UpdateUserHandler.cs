@@ -6,6 +6,7 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Users;
 using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Domain.Exceptions;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Application.Features.Users.Commands
@@ -51,7 +52,12 @@ namespace SenorArroz.Application.Features.Users.Commands
                 cancellationToken);
 
             // 3. Mapear los cambios al usuario existente (BranchId se ignora en el perfil de AutoMapper)
+            var previousRole = existingUser.Role;
             _mapper.Map(request.UserData, existingUser);
+            if (existingUser.Role != UserRole.Deliveryman)
+                existingUser.WebAccessEnabled = true;
+            else if (previousRole != UserRole.Deliveryman)
+                existingUser.WebAccessEnabled = false;
 
             // 4. Cambio de sucursal: solo superadmin
             if (request.UserData.BranchId.HasValue)

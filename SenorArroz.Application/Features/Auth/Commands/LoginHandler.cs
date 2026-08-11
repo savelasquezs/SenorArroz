@@ -38,8 +38,18 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 throw new BusinessException("Credenciales inválidas");
 
             var isDeliveryman = user.Role == UserRole.Deliveryman;
-            if (isDeliveryman && !request.IsWebClient)
-                _deliveryAppVersionPolicy.EnsureCompatible(request.DeliveryAppVersion);
+            if (isDeliveryman)
+            {
+                if (request.IsWebClient)
+                {
+                    if (!user.WebAccessEnabled)
+                        throw new DeliverymanWebAccessDeniedException();
+                }
+                else
+                {
+                    _deliveryAppVersionPolicy.EnsureCompatible(request.DeliveryAppVersion);
+                }
+            }
 
             var sessionId = isDeliveryman ? Guid.NewGuid() : (Guid?)null;
             var deviceInstallationId = NormalizeDeviceId(request.DeviceInstallationId);

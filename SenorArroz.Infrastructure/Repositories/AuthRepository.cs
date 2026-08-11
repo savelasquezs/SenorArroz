@@ -46,6 +46,16 @@ public class AuthRepository : IAuthRepository
             cancellationToken);
     }
 
+    public Task<bool> CanDeliverymanAccessWebAsync(
+        int userId,
+        CancellationToken cancellationToken = default) =>
+        _context.Users.AsNoTracking().AnyAsync(
+            user => user.Id == userId
+                    && user.Active
+                    && user.Role == Domain.Enums.UserRole.Deliveryman
+                    && user.WebAccessEnabled,
+            cancellationToken);
+
     public async Task EndSessionIfCurrentAsync(
         int userId,
         Guid sessionId,

@@ -14,6 +14,10 @@ public static class DeliveryAppVersionHeaders
         string.Equals(
             request.Headers[Client].FirstOrDefault(),
             WebClient,
+            StringComparison.OrdinalIgnoreCase)
+        || string.Equals(
+            request.Query["client"].FirstOrDefault(),
+            WebClient,
             StringComparison.OrdinalIgnoreCase);
 
     public static DeliveryAppClientVersion Read(HttpRequest request, bool allowQuery = false)

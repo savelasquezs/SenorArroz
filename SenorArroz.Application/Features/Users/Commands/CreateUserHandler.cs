@@ -121,6 +121,7 @@ namespace SenorArroz.Application.Features.Users.Commands
 
             // 2. Mapear DTO a entidad
             var user = _mapper.Map<User>(request.UserData);
+            user.WebAccessEnabled = user.Role != UserRole.Deliveryman;
 
             // 3. Hashear la contraseña
             user.PasswordHash = _passwordService.HashPassword(request.UserData.Password);

@@ -48,8 +48,18 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
             // Obtener usuario actualizado
             var user = await _authRepository.GetUserByIdWithBranchAsync(userId, cancellationToken) ?? throw new BusinessException("Usuario no encontrado");
-            if (user.Role == Domain.Enums.UserRole.Deliveryman && !request.IsWebClient)
-                _deliveryAppVersionPolicy.EnsureCompatible(request.DeliveryAppVersion);
+            if (user.Role == Domain.Enums.UserRole.Deliveryman)
+            {
+                if (request.IsWebClient)
+                {
+                    if (!user.WebAccessEnabled)
+                        throw new DeliverymanWebAccessDeniedException();
+                }
+                else
+                {
+                    _deliveryAppVersionPolicy.EnsureCompatible(request.DeliveryAppVersion);
+                }
+            }
 
             if (user.Role == Domain.Enums.UserRole.Deliveryman
                 && (user.ActiveSessionId != sessionId || refreshToken.SessionId != sessionId))
