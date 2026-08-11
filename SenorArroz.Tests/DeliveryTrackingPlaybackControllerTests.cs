@@ -66,7 +66,7 @@ public class DeliveryTrackingPlaybackControllerTests
     }
 
     [Fact]
-    public async Task Get_ReturnsActivePersistedStayWithChronologicalOrderContext()
+    public async Task Get_ReturnsActivePersistedStayWithAllCurrentRouteOrders()
     {
         await using var db = CreateDb();
         Seed(db);
@@ -93,9 +93,9 @@ public class DeliveryTrackingPlaybackControllerTests
         db.Addresses.AddRange(
             new Address { Id = 101, AddressText = "Anterior", Latitude = 6.24m, Longitude = -75.57m },
             new Address { Id = 102, AddressText = "Relacionado", Latitude = 6.25m, Longitude = -75.58m });
-        var previous = DeliveredOrder(201, 101, 10);
-        var relatedAndNext = DeliveredOrder(202, 102, 40);
-        db.Orders.AddRange(previous, relatedAndNext);
+        var firstRouteOrder = RouteOrder(201, 101, 30, OrderStatus.OnTheWay);
+        var relatedRouteOrder = RouteOrder(202, 102, 30, OrderStatus.Ready);
+        db.Orders.AddRange(firstRouteOrder, relatedRouteOrder);
         db.DeliveryRouteStops.AddRange(
             new DeliveryRouteStop { Id = 301, DeliveryRouteId = 30, OrderId = 201, StopSequence = 1 },
             new DeliveryRouteStop { Id = 302, DeliveryRouteId = 30, OrderId = 202, StopSequence = 2 });
@@ -135,13 +135,92 @@ public class DeliveryTrackingPlaybackControllerTests
         Assert.Null(stay.EndedAt);
         Assert.Equal(2400, stay.DurationSeconds);
         Assert.Equal(2, stay.Orders.Count);
-        Assert.Contains(stay.Orders, x => x.OrderId == 201 && x.Roles.SequenceEqual(["previous"]));
-        Assert.Contains(stay.Orders, x => x.OrderId == 202 && x.Roles.SequenceEqual(["related", "next"]));
+        Assert.Contains(stay.Orders, x => x.OrderId == 201 && x.Roles.SequenceEqual(["current_route"]));
+        Assert.Contains(stay.Orders, x => x.OrderId == 202 && x.Roles.SequenceEqual(["current_route", "related"]));
 
         var laterAction = await Controller(db, 7).Get([11], From.AddMinutes(26), From.AddHours(1));
         var laterResponse = Assert.IsType<ApiResponse<DeliveryTrackingPlaybackDto>>(
             Assert.IsType<OkObjectResult>(laterAction.Result).Value);
         Assert.Single(laterResponse.Data!.Deliverymen[0].Stays);
+    }
+
+    [Fact]
+    public async Task Get_UsesPreviousRouteOrdersWhenStayRouteHasNoStops()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 21,
+            DeliverymanId = 11,
+            BranchId = 7,
+            DeviceInstallationId = "device-11",
+            DevicePlatform = "android",
+            StartedAt = From,
+            AutoCloseAt = From.AddHours(8),
+            LastCommunicationAt = From.AddMinutes(35),
+            Status = DeliveryWorkSessionStatus.Closed,
+        });
+        db.DeliveryRoutes.AddRange(
+            new DeliveryRoute
+            {
+                Id = 31,
+                DeliverymanId = 11,
+                BranchId = 7,
+                LastAssignmentAtUtc = From.AddMinutes(5),
+                CompletedAtUtc = From.AddMinutes(15),
+                Status = DeliveryRouteStatus.Completed,
+            },
+            new DeliveryRoute
+            {
+                Id = 32,
+                DeliverymanId = 11,
+                BranchId = 7,
+                LastAssignmentAtUtc = From.AddMinutes(20),
+                Status = DeliveryRouteStatus.InProgress,
+            });
+        db.Addresses.Add(new Address
+        {
+            Id = 103,
+            AddressText = "Ruta anterior",
+            Latitude = 6.26m,
+            Longitude = -75.59m,
+        });
+        db.Orders.Add(RouteOrder(203, 103, 31, OrderStatus.Delivered, 12));
+        db.DeliveryRouteStops.Add(new DeliveryRouteStop
+        {
+            Id = 303,
+            DeliveryRouteId = 31,
+            OrderId = 203,
+            StopSequence = 1,
+        });
+        db.DeliveryStays.Add(new DeliveryStay
+        {
+            Id = 402,
+            DeliverymanId = 11,
+            WorkSessionId = 21,
+            DeliveryRouteId = 32,
+            FirstLocationId = 600,
+            LastLocationId = 602,
+            StartedAt = From.AddMinutes(25),
+            EndedAt = From.AddMinutes(35),
+            DurationSeconds = 600,
+            CenterLatitude = 6.25m,
+            CenterLongitude = -75.58m,
+            RadiusMeters = 20,
+            AverageAccuracyMeters = 7,
+            PointCount = 3,
+            Classification = DeliveryStayClassification.PendingReview,
+        });
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 7).Get([11], From, From.AddHours(1));
+        var response = Assert.IsType<ApiResponse<DeliveryTrackingPlaybackDto>>(
+            Assert.IsType<OkObjectResult>(action.Result).Value);
+        var order = Assert.Single(Assert.Single(response.Data!.Deliverymen[0].Stays).Orders);
+
+        Assert.Equal(203, order.OrderId);
+        Assert.Equal(["previous_route"], order.Roles);
     }
 
     private static DeliveryTrackingPlaybackController Controller(ApplicationDbContext db, int branchId) =>
@@ -154,7 +233,12 @@ public class DeliveryTrackingPlaybackControllerTests
         InternetAvailable = minute != 0,
     };
 
-    private static Order DeliveredOrder(int id, int addressId, int minute)
+    private static Order RouteOrder(
+        int id,
+        int addressId,
+        int routeId,
+        OrderStatus status,
+        int? deliveredMinute = null)
     {
         var order = new Order
         {
@@ -162,12 +246,13 @@ public class DeliveryTrackingPlaybackControllerTests
             BranchId = 7,
             TakenById = 11,
             AddressId = addressId,
-            DeliveryRouteId = 30,
+            DeliveryRouteId = routeId,
             DeliveryManId = 11,
             Type = OrderType.Delivery,
-            Status = OrderStatus.Delivered,
+            Status = status,
         };
-        order.AddStatusTime(OrderStatus.Delivered, From.AddMinutes(minute));
+        if (deliveredMinute.HasValue)
+            order.AddStatusTime(OrderStatus.Delivered, From.AddMinutes(deliveredMinute.Value));
         return order;
     }
 

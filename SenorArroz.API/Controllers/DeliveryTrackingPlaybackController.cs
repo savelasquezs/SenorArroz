@@ -138,15 +138,38 @@ public class DeliveryTrackingPlaybackController : ControllerBase
                 x => x.OrderByDescending(point => point.RecordedAt).ThenByDescending(point => point.Id).First().Id);
         var activeSessionSet = activeSessionIds.ToHashSet();
 
-        var routeIds = stayRows.Where(x => x.DeliveryRouteId.HasValue)
-            .Select(x => x.DeliveryRouteId!.Value).Distinct().ToList();
-        var routeOrders = routeIds.Count == 0
+        var routeHeaders = await _db.DeliveryRoutes.AsNoTracking()
+            .Where(x => ids.Contains(x.DeliverymanId)
+                && x.BranchId == resolvedBranchId
+                && x.LastAssignmentAtUtc <= toUtc)
+            .Select(x => new PlaybackRouteRow(
+                x.Id,
+                x.DeliverymanId,
+                x.LastAssignmentAtUtc,
+                x.CompletedAtUtc))
+            .ToListAsync(cancellationToken);
+        var routesByDeliveryman = routeHeaders
+            .GroupBy(x => x.DeliverymanId)
+            .ToDictionary(
+                x => x.Key,
+                x => x.OrderBy(route => route.LastAssignmentAtUtc).ThenBy(route => route.Id).ToList());
+        var contextRoutesByStay = stayRows.ToDictionary(
+            x => x.Id,
+            x => ResolveContextRoutes(x, routesByDeliveryman));
+        var contextRouteIds = contextRoutesByStay.Values
+            .SelectMany(x => new int?[] { x.CurrentRouteId, x.PreviousRouteId })
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .Distinct()
+            .ToList();
+        var routeOrders = contextRouteIds.Count == 0
             ? []
             : await _db.DeliveryRouteStops.AsNoTracking()
-                .Where(x => routeIds.Contains(x.DeliveryRouteId))
+                .Where(x => contextRouteIds.Contains(x.DeliveryRouteId))
                 .Select(x => new PlaybackOrderRow(
                     x.DeliveryRouteId,
                     x.OrderId,
+                    x.StopSequence,
                     x.AddressSnapshotText ?? (x.Order.Address == null ? null : x.Order.Address.AddressText),
                     x.Order.Address == null ? null : x.Order.Address.Latitude,
                     x.Order.Address == null ? null : x.Order.Address.Longitude,
@@ -166,7 +189,10 @@ public class DeliveryTrackingPlaybackController : ControllerBase
         {
             var isActive = activeSessionSet.Contains(stay.WorkSessionId)
                 && latestLocationBySession.GetValueOrDefault(stay.WorkSessionId) == stay.LastLocationId;
-            var contextOrders = BuildContextOrders(stay, ordersByRoute);
+            var contextOrders = BuildContextOrders(
+                stay,
+                contextRoutesByStay[stay.Id],
+                ordersByRoute);
             return (stay.DeliverymanId, Stay: new DeliveryTrackingPlaybackStayDto(
                 stay.Id,
                 stay.WorkSessionId,
@@ -211,48 +237,55 @@ public class DeliveryTrackingPlaybackController : ControllerBase
 
     private static IReadOnlyList<DeliveryTrackingPlaybackOrderDto> BuildContextOrders(
         PlaybackStayRow stay,
+        PlaybackStayRouteContext routes,
         IReadOnlyDictionary<int, List<PlaybackOrderRow>> ordersByRoute)
     {
-        if (!stay.DeliveryRouteId.HasValue
-            || !ordersByRoute.TryGetValue(stay.DeliveryRouteId.Value, out var routeOrders))
+        var routeId = routes.CurrentRouteId;
+        var role = "current_route";
+        if (!routeId.HasValue
+            || !ordersByRoute.TryGetValue(routeId.Value, out var routeOrders)
+            || routeOrders.Count == 0)
+        {
+            routeId = routes.PreviousRouteId;
+            role = "previous_route";
+        }
+        if (!routeId.HasValue
+            || !ordersByRoute.TryGetValue(routeId.Value, out routeOrders)
+            || routeOrders.Count == 0)
             return [];
 
-        var selected = new Dictionary<int, (PlaybackOrderRow Order, HashSet<string> Roles)>();
-        void Add(PlaybackOrderRow? order, string role)
-        {
-            if (order is null)
-                return;
-            if (!selected.TryGetValue(order.OrderId, out var value))
-                value = (order, []);
-            value.Roles.Add(role);
-            selected[order.OrderId] = value;
-        }
-
-        Add(routeOrders.FirstOrDefault(x => x.OrderId == stay.NearestOrderId), "related");
-        Add(routeOrders.Where(x => x.DeliveredAt.HasValue && x.DeliveredAt <= stay.StartedAt)
-            .OrderByDescending(x => x.DeliveredAt).FirstOrDefault(), "previous");
-        Add(routeOrders.Where(x => x.DeliveredAt.HasValue && x.DeliveredAt >= stay.EndedAt)
-            .OrderBy(x => x.DeliveredAt).FirstOrDefault(), "next");
-
-        return selected.Values.Select(x => new DeliveryTrackingPlaybackOrderDto(
-            x.Order.OrderId,
-            x.Order.DeliveredAt,
-            x.Order.Address,
-            x.Order.Latitude,
-            x.Order.Longitude,
-            x.Roles.OrderBy(RoleOrder).ToList()))
-            .OrderBy(x => x.DeliveredAt ?? DateTime.MaxValue)
-            .ThenBy(x => x.OrderId)
+        return routeOrders
+            .OrderBy(order => order.StopSequence)
+            .ThenBy(order => order.OrderId)
+            .Select(order => new DeliveryTrackingPlaybackOrderDto(
+                order.OrderId,
+                order.DeliveredAt,
+                order.Address,
+                order.Latitude,
+                order.Longitude,
+                order.OrderId == stay.NearestOrderId ? [role, "related"] : [role]))
             .ToList();
     }
 
-    private static int RoleOrder(string role) => role switch
+    private static PlaybackStayRouteContext ResolveContextRoutes(
+        PlaybackStayRow stay,
+        IReadOnlyDictionary<int, List<PlaybackRouteRow>> routesByDeliveryman)
     {
-        "previous" => 0,
-        "related" => 1,
-        "next" => 2,
-        _ => 3,
-    };
+        if (!routesByDeliveryman.TryGetValue(stay.DeliverymanId, out var routes))
+            return new PlaybackStayRouteContext(null, null);
+
+        var current = stay.DeliveryRouteId.HasValue
+            ? routes.FirstOrDefault(x => x.Id == stay.DeliveryRouteId.Value)
+            : routes.LastOrDefault(x =>
+                x.LastAssignmentAtUtc <= stay.EndedAt
+                && (!x.CompletedAtUtc.HasValue || x.CompletedAtUtc >= stay.StartedAt));
+        var previous = current is null
+            ? routes.LastOrDefault(x => x.LastAssignmentAtUtc <= stay.StartedAt)
+            : routes.LastOrDefault(x =>
+                x.LastAssignmentAtUtc < current.LastAssignmentAtUtc
+                || (x.LastAssignmentAtUtc == current.LastAssignmentAtUtc && x.Id < current.Id));
+        return new PlaybackStayRouteContext(current?.Id, previous?.Id);
+    }
 
     private static DateTime? DeliveredAt(string statusTimes)
     {
@@ -270,6 +303,12 @@ public class DeliveryTrackingPlaybackController : ControllerBase
     }
 
     private sealed record LatestLocationRow(long Id, int WorkSessionId, DateTime RecordedAt);
+    private sealed record PlaybackRouteRow(
+        int Id,
+        int DeliverymanId,
+        DateTime LastAssignmentAtUtc,
+        DateTime? CompletedAtUtc);
+    private sealed record PlaybackStayRouteContext(int? CurrentRouteId, int? PreviousRouteId);
     private sealed record PlaybackStayRow(
         long Id,
         int DeliverymanId,
@@ -292,6 +331,7 @@ public class DeliveryTrackingPlaybackController : ControllerBase
     private sealed record PlaybackOrderRow(
         int DeliveryRouteId,
         int OrderId,
+        int StopSequence,
         string? Address,
         decimal? Latitude,
         decimal? Longitude,
