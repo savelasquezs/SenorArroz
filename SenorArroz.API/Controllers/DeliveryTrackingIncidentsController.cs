@@ -186,6 +186,9 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             ? await _db.Users.AsNoTracking().Where(x => x.Id == incident.ReviewedByUserId.Value)
                 .Select(x => x.Name).FirstOrDefaultAsync(cancellationToken)
             : null;
+        var isActive = incident.IncidentType == DeliveryTrackingIncidentType.Stay
+            && await IsActiveStayAsync(incident.WorkSessionId, incident.DeliveryStayId, cancellationToken);
+        var pointCount = locations.Count(x => x.IsCorePoint);
 
         var dto = new DeliveryTrackingIncidentDetailDto(
             incident.Id,
@@ -202,8 +205,13 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             incident.FinalClassification,
             incident.ReviewStatus,
             incident.StartedAt,
-            incident.EndedAt,
-            incident.DurationSeconds,
+            isActive ? null : incident.EndedAt,
+            isActive,
+            pointCount,
+            isActive
+                ? Math.Max(0, checked((int)Math.Min(int.MaxValue,
+                    (ColombiaTimeHelper.EnsureUtc(_clock.UtcNow) - incident.StartedAt).TotalSeconds)))
+                : incident.DurationSeconds,
             incident.CenterLatitude,
             incident.CenterLongitude,
             incident.RadiusMeters,
@@ -301,6 +309,32 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
     }
 
+    private async Task<bool> IsActiveStayAsync(
+        int workSessionId,
+        long? deliveryStayId,
+        CancellationToken cancellationToken)
+    {
+        if (!deliveryStayId.HasValue)
+            return false;
+        var stay = await _db.DeliveryStays.AsNoTracking()
+            .Where(x => x.Id == deliveryStayId.Value)
+            .Select(x => new { x.LastLocationId })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (stay is null)
+            return false;
+        var sessionIsActive = await _db.DeliveryWorkSessions.AsNoTracking()
+            .AnyAsync(x => x.Id == workSessionId && x.Status == DeliveryWorkSessionStatus.Active, cancellationToken);
+        if (!sessionIsActive)
+            return false;
+        var latestLocationId = await _db.DeliverymanLocations.AsNoTracking()
+            .Where(x => x.WorkSessionId == workSessionId)
+            .OrderByDescending(x => x.RecordedAt)
+            .ThenByDescending(x => x.Id)
+            .Select(x => (long?)x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        return latestLocationId == stay.LastLocationId;
+    }
+
     private static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -350,7 +384,9 @@ public record DeliveryTrackingIncidentDetailDto(
     DeliveryStayClassification? FinalClassification,
     DeliveryIncidentReviewStatus ReviewStatus,
     DateTime StartedAt,
-    DateTime EndedAt,
+    DateTime? EndedAt,
+    bool IsActive,
+    int PointCount,
     int DurationSeconds,
     decimal? CenterLatitude,
     decimal? CenterLongitude,

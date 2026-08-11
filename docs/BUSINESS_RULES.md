@@ -12,6 +12,9 @@ El sistema ya opera con clientes reales. Todo cambio debe ser pequeño, seguro y
 - Admin queda limitado a su sucursal; Superadmin debe operar con una sucursal efectiva.
 - El eje temporal es `RecordedAt`; `SyncedAt` solo informa recepción tardía.
 - Cada consulta admite máximo 24 horas y 20.000 ubicaciones, sin truncamiento silencioso.
+- Las estadías del recorrido provienen de `delivery_stay`; el cliente no debe reconstruirlas desde puntos GPS.
+- Una estadía está activa únicamente si su jornada permanece activa y su último punto sigue siendo el último punto registrado de la jornada. En ese caso el contrato expone `endedAt = null` y duración calculada hasta el reloj del servidor.
+- El contexto cronológico de una estadía incluye el último pedido entregado antes de su inicio y el primero entregado después de su fin dentro de la misma ruta, usando `status_times.delivered`. El pedido espacialmente más cercano se identifica por separado y se deduplica por pedido.
 
 Antes de tocar código:
 

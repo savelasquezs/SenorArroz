@@ -109,6 +109,67 @@ public class DeliveryTrackingIncidentsControllerTests
         Assert.Null(db.DeliveryTrackingIncidents.Single().FinalClassification);
     }
 
+    [Fact]
+    public async Task GetById_ReportsActiveStayAndCountsOnlyGroupedPoints()
+    {
+        await using var db = CreateDb();
+        SeedNames(db);
+        db.DeliveryTrackingIncidents.Add(Incident(1, branchId: 7, deliverymanId: 11));
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 30,
+            DeliverymanId = 11,
+            BranchId = 7,
+            DeviceInstallationId = "device",
+            DevicePlatform = "android",
+            StartedAt = BaseTime,
+            AutoCloseAt = BaseTime.AddHours(8),
+            LastCommunicationAt = BaseTime.AddMinutes(12),
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        db.DeliveryStays.Add(new DeliveryStay
+        {
+            Id = 101,
+            DeliverymanId = 11,
+            WorkSessionId = 30,
+            FirstLocationId = 501,
+            LastLocationId = 503,
+            StartedAt = BaseTime,
+            EndedAt = BaseTime.AddMinutes(12),
+            DurationSeconds = 720,
+            CenterLatitude = 4.609710m,
+            CenterLongitude = -74.081750m,
+            RadiusMeters = 20,
+            AverageAccuracyMeters = 8,
+            PointCount = 3,
+        });
+        db.DeliverymanLocations.Add(new DeliverymanLocation
+        {
+            Id = 503,
+            DeliverymanId = 11,
+            WorkSessionId = 30,
+            Latitude = 4.609710m,
+            Longitude = -74.081750m,
+            RecordedAt = BaseTime.AddMinutes(12),
+            SyncedAt = BaseTime.AddMinutes(12),
+        });
+        db.DeliveryIncidentLocationEvidence.AddRange(
+            Evidence(1, 501, true, 0),
+            Evidence(1, 502, true, 5),
+            Evidence(1, 503, true, 12),
+            Evidence(1, 504, false, 13));
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, role: "admin", branchId: 7).GetById(1, default);
+        var response = Assert.IsType<ApiResponse<DeliveryTrackingIncidentDetailDto>>(
+            Assert.IsType<OkObjectResult>(action.Result).Value);
+
+        Assert.True(response.Data!.IsActive);
+        Assert.Null(response.Data.EndedAt);
+        Assert.Equal(3, response.Data.PointCount);
+        Assert.Equal(3600, response.Data.DurationSeconds);
+    }
+
     private static DeliveryTrackingIncident Incident(long id, int branchId, int deliverymanId) => new()
     {
         Id = id,
@@ -130,6 +191,16 @@ public class DeliveryTrackingIncidentsControllerTests
         EvidenceComplete = true,
         CreatedAt = BaseTime.AddMinutes(13),
         UpdatedAt = BaseTime.AddMinutes(13),
+    };
+
+    private static DeliveryIncidentLocationEvidence Evidence(long incidentId, long sourceId, bool core, int minute) => new()
+    {
+        IncidentId = incidentId,
+        SourceLocationId = sourceId,
+        IsCorePoint = core,
+        Latitude = 4.609710m,
+        Longitude = -74.081750m,
+        RecordedAt = BaseTime.AddMinutes(minute),
     };
 
     private static void SeedNames(ApplicationDbContext db)
