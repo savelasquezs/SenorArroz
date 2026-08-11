@@ -56,18 +56,26 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         int branchId,
         CancellationToken cancellationToken = default)
     {
-        return await RecalculateAsync(branchId, cancellationToken);
+        return await ExecuteCalculationAsync(branchId, false, cancellationToken);
     }
 
     public async Task<DeliveryRoutingPlanDto> RecalculateAsync(
         int branchId,
         CancellationToken cancellationToken = default)
     {
+        return await ExecuteCalculationAsync(branchId, true, cancellationToken);
+    }
+
+    private async Task<DeliveryRoutingPlanDto> ExecuteCalculationAsync(
+        int branchId,
+        bool force,
+        CancellationToken cancellationToken)
+    {
         var branchLock = BranchLocks.GetOrAdd(branchId, _ => new SemaphoreSlim(1, 1));
         await branchLock.WaitAsync(cancellationToken);
         try
         {
-            return await RecalculateCoreAsync(branchId, cancellationToken);
+            return await RecalculateCoreAsync(branchId, force, cancellationToken);
         }
         finally
         {
@@ -77,6 +85,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
 
     private async Task<DeliveryRoutingPlanDto> RecalculateCoreAsync(
         int branchId,
+        bool force,
         CancellationToken cancellationToken)
     {
         if (!_options.Enabled)
@@ -154,6 +163,14 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
             warnings.AddRange(optimization.Warnings);
         }
 
+        var fingerprint = Fingerprint(branch, orders, capacity, estimates, nowUtc);
+        if (!force)
+        {
+            var activePlan = await LoadPlanEntityAsync(branchId, cancellationToken);
+            if (activePlan?.InputFingerprint == fingerprint)
+                return Map(activePlan);
+        }
+
         await using var transaction = _db.Database.IsRelational()
             ? await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
             : null;
@@ -167,7 +184,6 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         var generation = (await _db.DeliveryRoutingPlans
             .Where(x => x.BranchId == branchId)
             .MaxAsync(x => (long?)x.GenerationNumber, cancellationToken) ?? 0) + 1;
-        var fingerprint = Fingerprint(orders, capacity, estimates);
         var plan = new DeliveryRoutingPlan
         {
             BranchId = branchId,
@@ -554,13 +570,20 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
     }
 
     private static string Fingerprint(
+        Branch branch,
         IReadOnlyList<Order> orders,
         DeliveryRoutingCapacity capacity,
-        IReadOnlyDictionary<int, KitchenPreparationEstimate> estimates)
+        IReadOnlyDictionary<int, KitchenPreparationEstimate> estimates,
+        DateTime nowUtc)
     {
         var raw = string.Join('|', orders.Select(x =>
-            $"{x.Id}:{x.Status}:{x.Type}:{x.Address?.Latitude}:{x.Address?.Longitude}:{estimates.GetValueOrDefault(x.Id)?.EstimatedReadyAtUtc:O}"))
-                  + $"|{capacity.AvailableNow}:{capacity.AvailableSoon}";
+        {
+            var estimatedReadyAt = estimates.GetValueOrDefault(x.Id)?.EstimatedReadyAtUtc;
+            var readiness = estimatedReadyAt is null || estimatedReadyAt <= nowUtc
+                ? "due"
+                : estimatedReadyAt.Value.ToString("O");
+            return $"{x.Id}:{x.Status}:{x.Type}:{x.CreatedAt:O}:{x.PrepareAt:O}:{x.Address?.Latitude}:{x.Address?.Longitude}:{readiness}";
+        })) + $"|{branch.Latitude}:{branch.Longitude}:{capacity.AvailableNow}:{capacity.AvailableSoon}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw))).ToLowerInvariant();
     }
 
