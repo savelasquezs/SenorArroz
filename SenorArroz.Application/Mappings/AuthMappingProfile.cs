@@ -20,10 +20,14 @@ namespace SenorArroz.Application.Mappings
                 .ForMember(dest => dest.BranchLongitude, opt => opt.MapFrom(src => src.Branch.Longitude));
 
             CreateMap<LoginDto, LoginCommand>()
-                .ForMember(dest => dest.IpAddress, opt => opt.Ignore());
+                .ForMember(dest => dest.IpAddress, opt => opt.Ignore())
+                .ForMember(dest => dest.DeliveryAppVersion, opt => opt.Ignore())
+                .ForMember(dest => dest.IsWebClient, opt => opt.Ignore());
             CreateMap<RefreshTokenDto, RefreshTokenCommand>()
                 .ForMember(dest => dest.Token, opt => opt.Ignore())
-                .ForMember(dest => dest.IpAddress, opt => opt.Ignore());
+                .ForMember(dest => dest.IpAddress, opt => opt.Ignore())
+                .ForMember(dest => dest.DeliveryAppVersion, opt => opt.Ignore())
+                .ForMember(dest => dest.IsWebClient, opt => opt.Ignore());
             CreateMap<ChangePasswordDto, ChangePasswordCommand>()
                 .ForMember(dest => dest.UserId, opt => opt.Ignore());
             CreateMap<ForgotPasswordDto, ForgotPasswordCommand>()

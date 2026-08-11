@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using SenorArroz.Application.Features.Auth.Commands;
 using SenorArroz.Application.Features.Auth.Queries;
 using SenorArroz.Application.Features.Auth.DTOs;
+using SenorArroz.API.Infrastructure;
+using SenorArroz.Application.Common.Interfaces;
 
 using System.Security.Claims;
 
@@ -18,11 +20,24 @@ public class AuthController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IMapper _mapper;
+    private readonly IDeliveryAppVersionPolicy _deliveryAppVersionPolicy;
 
-    public AuthController(IMediator mediator, IMapper mapper)
+    public AuthController(
+        IMediator mediator,
+        IMapper mapper,
+        IDeliveryAppVersionPolicy deliveryAppVersionPolicy)
     {
         _mediator = mediator;
         _mapper = mapper;
+        _deliveryAppVersionPolicy = deliveryAppVersionPolicy;
+    }
+
+    [HttpGet("delivery-app-version")]
+    [AllowAnonymous]
+    public ActionResult<DeliveryAppVersionEvaluation> GetDeliveryAppVersion()
+    {
+        return Ok(_deliveryAppVersionPolicy.Evaluate(
+            DeliveryAppVersionHeaders.Read(Request, allowQuery: true)));
     }
 
     /// <summary>
@@ -37,6 +52,8 @@ public class AuthController : ControllerBase
     {
         var command = _mapper.Map<LoginCommand>(loginDto);
         command.IpAddress = GetIpAddress();
+        command.DeliveryAppVersion = DeliveryAppVersionHeaders.Read(Request);
+        command.IsWebClient = DeliveryAppVersionHeaders.IsWebClient(Request);
 
         var result = await _mediator.Send(command);
         return Ok(result);
@@ -63,7 +80,9 @@ public class AuthController : ControllerBase
         {
             Token = token,
             RefreshToken = refreshTokenDto.RefreshToken,
-            IpAddress = GetIpAddress()
+            IpAddress = GetIpAddress(),
+            DeliveryAppVersion = DeliveryAppVersionHeaders.Read(Request),
+            IsWebClient = DeliveryAppVersionHeaders.IsWebClient(Request)
         };
 
         var result = await _mediator.Send(command);

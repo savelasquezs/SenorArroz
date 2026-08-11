@@ -69,6 +69,14 @@ public class GlobalExceptionMiddleware
 
         switch (exception)
         {
+            case DeliveryAppUpdateRequiredException updateRequired:
+                response.StatusCode = StatusCodes.Status426UpgradeRequired;
+                errorResponse.Code = DeliveryAppUpdateRequiredException.ErrorCode;
+                errorResponse.RequiredVersion = updateRequired.RequiredVersion;
+                errorResponse.MinimumBuild = updateRequired.MinimumBuild;
+                errorResponse.PlayStoreUrl = updateRequired.PlayStoreUrl;
+                break;
+
             case BranchContextRequiredException:
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
                 errorResponse.Code = BranchContextRequiredException.ErrorCode;
@@ -163,5 +171,8 @@ public class GlobalExceptionMiddleware
         public string? Detail { get; set; }
         public IDictionary<string, string[]>? Errors { get; set; }
         public DateTime Timestamp { get; set; }
+        public string? RequiredVersion { get; set; }
+        public int? MinimumBuild { get; set; }
+        public string? PlayStoreUrl { get; set; }
     }
 }

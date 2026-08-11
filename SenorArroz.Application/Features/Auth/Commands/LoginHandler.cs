@@ -17,7 +17,8 @@ namespace SenorArroz.Application.Features.Auth.Commands
         IJwtService jwtService,
         IMapper mapper,
         IClock clock,
-        IApplicationDbContext db) : IRequestHandler<LoginCommand, AuthResponseDto>
+        IApplicationDbContext db,
+        IDeliveryAppVersionPolicy deliveryAppVersionPolicy) : IRequestHandler<LoginCommand, AuthResponseDto>
     {
         private readonly IAuthRepository _authRepository = authRepository;
         private readonly IRefreshTokenRepository _refreshTokenRepository = refreshTokenRepository;
@@ -25,6 +26,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
         private readonly IMapper _mapper = mapper;
         private readonly IClock _clock = clock;
         private readonly IApplicationDbContext _db = db;
+        private readonly IDeliveryAppVersionPolicy _deliveryAppVersionPolicy = deliveryAppVersionPolicy;
 
         public async Task<AuthResponseDto> Handle(LoginCommand request, CancellationToken cancellationToken)
         {
@@ -36,6 +38,9 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 throw new BusinessException("Credenciales inválidas");
 
             var isDeliveryman = user.Role == UserRole.Deliveryman;
+            if (isDeliveryman && !request.IsWebClient)
+                _deliveryAppVersionPolicy.EnsureCompatible(request.DeliveryAppVersion);
+
             var sessionId = isDeliveryman ? Guid.NewGuid() : (Guid?)null;
             var deviceInstallationId = NormalizeDeviceId(request.DeviceInstallationId);
 

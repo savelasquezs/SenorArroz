@@ -16,19 +16,22 @@ namespace SenorArroz.Application.Features.Auth.Commands
         private readonly IJwtService _jwtService;
         private readonly IMapper _mapper;
         private readonly IClock _clock;
+        private readonly IDeliveryAppVersionPolicy _deliveryAppVersionPolicy;
 
         public RefreshTokenHandler(
             IAuthRepository authRepository,
             IRefreshTokenRepository refreshTokenRepository,
             IJwtService jwtService,
             IMapper mapper,
-            IClock clock)
+            IClock clock,
+            IDeliveryAppVersionPolicy deliveryAppVersionPolicy)
         {
             _authRepository = authRepository;
             _refreshTokenRepository = refreshTokenRepository;
             _jwtService = jwtService;
             _mapper = mapper;
             _clock = clock;
+            _deliveryAppVersionPolicy = deliveryAppVersionPolicy;
         }
 
         public async Task<AuthResponseDto> Handle(RefreshTokenCommand request, CancellationToken cancellationToken)
@@ -45,6 +48,9 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
             // Obtener usuario actualizado
             var user = await _authRepository.GetUserByIdWithBranchAsync(userId, cancellationToken) ?? throw new BusinessException("Usuario no encontrado");
+            if (user.Role == Domain.Enums.UserRole.Deliveryman && !request.IsWebClient)
+                _deliveryAppVersionPolicy.EnsureCompatible(request.DeliveryAppVersion);
+
             if (user.Role == Domain.Enums.UserRole.Deliveryman
                 && (user.ActiveSessionId != sessionId || refreshToken.SessionId != sessionId))
             {

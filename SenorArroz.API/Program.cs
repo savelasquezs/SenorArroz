@@ -118,6 +118,8 @@ builder.Services.AddSwaggerGen(c =>
 // Add Application and Infrastructure services
 builder.Services.AddApplication();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.Configure<DeliveryAppVersionOptions>(
+    builder.Configuration.GetSection(DeliveryAppVersionOptions.SectionName));
 
 builder.Services.AddScoped<IBranchReceiptLogoStorage>(sp =>
 {
@@ -404,6 +406,7 @@ app.UseCors("AllowAll");
 
 // Authentication & Authorization
 app.UseAuthentication();
+app.UseMiddleware<DeliveryAppVersionMiddleware>();
 app.UseAuthorization();
 
 app.UseRateLimiter();

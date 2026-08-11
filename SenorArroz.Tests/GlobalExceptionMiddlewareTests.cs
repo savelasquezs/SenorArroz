@@ -87,6 +87,23 @@ public class GlobalExceptionMiddlewareTests
         Assert.Equal("Recurso no encontrado", messageProp.GetString());
     }
 
+    [Fact]
+    public async Task DeliveryAppUpdateRequired_Returns426_WithPolicyPayload()
+    {
+        var (status, doc) = await InvokeAsync(
+            new DeliveryAppUpdateRequiredException(
+                "1.2.5",
+                11,
+                "https://play.google.com/store/apps/details?id=com.senorarroz.delivery_app"));
+
+        Assert.Equal(StatusCodes.Status426UpgradeRequired, status);
+        var root = doc.RootElement;
+        Assert.Equal("DELIVERY_APP_UPDATE_REQUIRED", root.GetProperty("code").GetString());
+        Assert.Equal("1.2.5", root.GetProperty("requiredVersion").GetString());
+        Assert.Equal(11, root.GetProperty("minimumBuild").GetInt32());
+        Assert.Contains("play.google.com", root.GetProperty("playStoreUrl").GetString());
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // 3. Excepción genérica en producción → HTTP 500, mensaje genérico, sin detail
     // ─────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,13 @@
 # SenorArroz API
 
+## App Flutter de domiciliarios
+
+La app se publica exclusivamente mediante
+`delivery_app/.github/workflows/publish-play-internal.yml`: un push a `main`
+calcula el siguiente `versionCode`, genera un App Bundle firmado y lo publica en
+Google Play Internal. El backend exige la versión configurada para
+domiciliarios. Consulta [la política completa](docs/DELIVERY_APP_VERSION_POLICY.md).
+
 Sistema de gestión para restaurantes construido con ASP.NET Core 8, Entity Framework Core y PostgreSQL.
 
 ## 🚀 Inicio Rápido

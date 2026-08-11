@@ -1,5 +1,10 @@
 # Enrutador dinámico V1
 
+La app Flutter se publica exclusivamente mediante
+`publish-play-internal.yml`. Un push a `main` genera y publica automáticamente
+el App Bundle en Google Play Internal. Este proceso no modifica la lógica del
+enrutador.
+
 ## Flujo
 
 1. `GET /api/delivery-routing/plan` toma los pedidos elegibles de la sucursal efectiva.

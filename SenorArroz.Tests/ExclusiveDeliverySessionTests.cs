@@ -96,7 +96,8 @@ public class ExclusiveDeliverySessionTests
             jwt.Object,
             mapper.Object,
             new FakeClock(now),
-            db);
+            db,
+            Mock.Of<IDeliveryAppVersionPolicy>());
 
         var result = await handler.Handle(new LoginCommand
         {
@@ -104,6 +105,10 @@ public class ExclusiveDeliverySessionTests
             Password = "secret",
             DeviceInstallationId = "device-b",
             IpAddress = "127.0.0.1",
+            DeliveryAppVersion = new DeliveryAppClientVersion(
+                "1.2.5",
+                11,
+                "com.senorarroz.delivery_app"),
         }, default);
 
         var persistedUser = await db.Users.SingleAsync();
@@ -157,7 +162,8 @@ public class ExclusiveDeliverySessionTests
             refreshTokens.Object,
             jwt.Object,
             Mock.Of<IMapper>(),
-            new FakeClock(now));
+            new FakeClock(now),
+            Mock.Of<IDeliveryAppVersionPolicy>());
 
         await Assert.ThrowsAsync<SessionReplacedException>(() => handler.Handle(
             new RefreshTokenCommand
@@ -167,6 +173,178 @@ public class ExclusiveDeliverySessionTests
                 IpAddress = "127.0.0.1",
             },
             default));
+        refreshTokens.Verify(
+            x => x.UpdateAsync(It.IsAny<RefreshToken>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Login_IncompatibleDeliveryApp_HasNoSessionSideEffects()
+    {
+        await using var db = CreateDb();
+        var user = new User
+        {
+            Id = 1,
+            BranchId = 7,
+            Role = UserRole.Deliveryman,
+            Name = "Domiciliario",
+            Email = "delivery@example.com",
+            Phone = "3000000000",
+            PasswordHash = "hash",
+            Active = true,
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var auth = new Mock<IAuthRepository>();
+        auth.Setup(x => x.GetUserByEmailAsync(user.Email, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        auth.Setup(x => x.ValidatePasswordAsync(user, "secret", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var policy = new Mock<IDeliveryAppVersionPolicy>();
+        policy.Setup(x => x.EnsureCompatible(It.IsAny<DeliveryAppClientVersion?>()))
+            .Throws(new DeliveryAppUpdateRequiredException("1.2.5", 11, "play"));
+        var refreshTokens = new Mock<IRefreshTokenRepository>();
+        var handler = new LoginHandler(
+            auth.Object,
+            refreshTokens.Object,
+            Mock.Of<IJwtService>(),
+            Mock.Of<IMapper>(),
+            new FakeClock(DateTime.UtcNow),
+            db,
+            policy.Object);
+
+        await Assert.ThrowsAsync<DeliveryAppUpdateRequiredException>(() => handler.Handle(
+            new LoginCommand
+            {
+                Email = user.Email,
+                Password = "secret",
+                DeliveryAppVersion = new DeliveryAppClientVersion(
+                    "1.2.4",
+                    11,
+                    "com.senorarroz.delivery_app"),
+            },
+            default));
+
+        Assert.Null((await db.Users.SingleAsync()).ActiveSessionId);
+        refreshTokens.Verify(
+            x => x.AddAsync(It.IsAny<RefreshToken>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Theory]
+    [InlineData(UserRole.Admin)]
+    [InlineData(UserRole.Superadmin)]
+    [InlineData(UserRole.Cashier)]
+    [InlineData(UserRole.Kitchen)]
+    public async Task Login_NonDeliveryRoles_DoNotRequireFlutterHeaders(UserRole role)
+    {
+        await using var db = CreateDb();
+        var user = new User
+        {
+            Id = 1,
+            BranchId = 7,
+            Role = role,
+            Name = "Usuario",
+            Email = $"{role}@example.com",
+            Phone = "3000000000",
+            PasswordHash = "hash",
+            Active = true,
+        };
+        var auth = new Mock<IAuthRepository>();
+        auth.Setup(x => x.GetUserByEmailAsync(user.Email, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        auth.Setup(x => x.ValidatePasswordAsync(user, "secret", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var refreshTokens = new Mock<IRefreshTokenRepository>();
+        refreshTokens.Setup(x => x.RevokeAllByUserIdAsync(
+                user.Id,
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        refreshTokens.Setup(x => x.AddAsync(
+                It.IsAny<RefreshToken>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var jwt = new Mock<IJwtService>();
+        jwt.Setup(x => x.GenerateAccessToken(user, null, null)).Returns("access");
+        jwt.Setup(x => x.GenerateRefreshToken()).Returns("refresh");
+        var mapper = new Mock<IMapper>();
+        mapper.Setup(x => x.Map<UserInfoDto>(user)).Returns(new UserInfoDto());
+        var policy = new Mock<IDeliveryAppVersionPolicy>();
+        var handler = new LoginHandler(
+            auth.Object,
+            refreshTokens.Object,
+            jwt.Object,
+            mapper.Object,
+            new FakeClock(DateTime.UtcNow),
+            db,
+            policy.Object);
+
+        var result = await handler.Handle(new LoginCommand
+        {
+            Email = user.Email,
+            Password = "secret",
+            IpAddress = "127.0.0.1",
+        }, default);
+
+        Assert.Equal("access", result.Token);
+        policy.Verify(
+            x => x.EnsureCompatible(It.IsAny<DeliveryAppClientVersion?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Refresh_IncompatibleDeliveryApp_DoesNotRevokeToken()
+    {
+        var now = DateTime.UtcNow;
+        var sessionId = Guid.NewGuid();
+        var refreshToken = new RefreshToken
+        {
+            UserId = 1,
+            SessionId = sessionId,
+            Token = "refresh",
+            ExpiresAt = now.AddDays(1),
+        };
+        var refreshTokens = new Mock<IRefreshTokenRepository>();
+        refreshTokens.Setup(x => x.GetByTokenAsync("refresh", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(refreshToken);
+        var jwt = new Mock<IJwtService>();
+        jwt.Setup(x => x.GetUserIdFromExpiredToken("access")).Returns(1);
+        jwt.Setup(x => x.GetSessionIdFromExpiredToken("access")).Returns(sessionId);
+        var auth = new Mock<IAuthRepository>();
+        auth.Setup(x => x.GetUserByIdWithBranchAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User
+            {
+                Id = 1,
+                Role = UserRole.Deliveryman,
+                ActiveSessionId = sessionId,
+                Active = true,
+            });
+        var policy = new Mock<IDeliveryAppVersionPolicy>();
+        policy.Setup(x => x.EnsureCompatible(It.IsAny<DeliveryAppClientVersion?>()))
+            .Throws(new DeliveryAppUpdateRequiredException("1.2.5", 11, "play"));
+        var handler = new RefreshTokenHandler(
+            auth.Object,
+            refreshTokens.Object,
+            jwt.Object,
+            Mock.Of<IMapper>(),
+            new FakeClock(now),
+            policy.Object);
+
+        await Assert.ThrowsAsync<DeliveryAppUpdateRequiredException>(() => handler.Handle(
+            new RefreshTokenCommand
+            {
+                Token = "access",
+                RefreshToken = "refresh",
+                DeliveryAppVersion = new DeliveryAppClientVersion(
+                    "1.2.4",
+                    11,
+                    "com.senorarroz.delivery_app"),
+            },
+            default));
+
+        Assert.Null(refreshToken.RevokedAt);
         refreshTokens.Verify(
             x => x.UpdateAsync(It.IsAny<RefreshToken>(), It.IsAny<CancellationToken>()),
             Times.Never);

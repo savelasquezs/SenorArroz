@@ -56,6 +56,7 @@ namespace SenorArroz.Application
             services.AddScoped<IDeliveryStayClassificationService, DeliveryStayClassificationService>();
             services.AddScoped<IDeliveryIncidentEvidenceService, DeliveryIncidentEvidenceService>();
             services.AddScoped<IDeliveryTrackingAlertService, DeliveryTrackingAlertService>();
+            services.AddScoped<IDeliveryAppVersionPolicy, DeliveryAppVersionPolicy>();
             services.AddScoped<IKitchenPreparationEstimator, KitchenPreparationEstimator>();
             services.AddScoped<IDeliverymanAvailabilityService, DeliverymanAvailabilityService>();
             services.AddScoped<IDeliveryRoutingPlanService, DeliveryRoutingPlanService>();

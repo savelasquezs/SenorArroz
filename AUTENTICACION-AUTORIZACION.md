@@ -1,5 +1,16 @@
 # Autenticación y Autorización
 
+## Control obligatorio de la app de domiciliarios
+
+La autenticación de `Deliveryman` exige versión visible exacta, build mínimo y
+package oficial informados por Flutter. La política se aplica a preflight,
+login, refresh y requests autenticados; una incompatibilidad responde HTTP 426
+antes de crear o rotar sesiones. Los demás roles y el frontend web no están
+sujetos a este control.
+
+Configuración, semántica y publicación:
+[Política de versión de la app](docs/DELIVERY_APP_VERSION_POLICY.md).
+
 ## Sistema de Autenticación JWT
 
 El proyecto usa **JSON Web Tokens (JWT)** para autenticación stateless.
@@ -186,9 +197,10 @@ app.UseMiddleware<GlobalExceptionMiddleware>();  // 1. Captura errores
 app.UseHttpsRedirection();                       // 2. Redirect HTTPS
 app.UseCors("AllowAll");                         // 3. CORS
 app.UseAuthentication();                         // 4. JWT Authentication
-app.UseAuthorization();                          // 5. Autorización por roles
-app.UseMiddleware<JwtMiddleware>();              // 6. Cargar CurrentUser
-app.MapControllers();                            // 7. Routing a controllers
+app.UseMiddleware<DeliveryAppVersionMiddleware>(); // 5. Versión Deliveryman
+app.UseAuthorization();                          // 6. Autorización por roles
+app.UseMiddleware<JwtMiddleware>();              // 7. Cargar CurrentUser
+app.MapControllers();                            // 8. Routing a controllers
 ```
 
 ### JwtMiddleware (Custom)
