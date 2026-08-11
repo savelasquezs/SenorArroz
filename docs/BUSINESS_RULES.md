@@ -213,6 +213,7 @@ Reglas:
 - Google Compute Routes solo valida propuestas finales. Si Google falla, la propuesta conserva métricas aproximadas, queda marcada como degradada y nunca presenta ceros como validación exitosa.
 - Solo los pedidos actualmente Listos de una propuesta pueden reclamarse. Tomado y En preparación son informativos y se mantienen como espera sugerida.
 - La toma desde una propuesta exige versión de plan y se ejecuta en una transacción serializable; ante una carrera responde `ROUTING_PLAN_STALE` sin asignación parcial.
+- La consulta del plan es idempotente para una misma huella operativa: reutiliza la versión activa y no publica `DeliveryRoutingPlanChanged` si pedidos elegibles, coordenadas y capacidad permanecen iguales. El recálculo explícito conserva su semántica forzada.
 - La selección manual de pedidos continúa disponible como respaldo operativo.
 
 - Domiciliarios son usuarios o entidades asociadas al tenant.

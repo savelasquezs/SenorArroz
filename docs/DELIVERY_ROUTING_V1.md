@@ -7,7 +7,7 @@ enrutador.
 
 ## Flujo
 
-1. `GET /api/delivery-routing/plan` toma los pedidos elegibles de la sucursal efectiva.
+1. `GET /api/delivery-routing/plan` toma los pedidos elegibles de la sucursal efectiva y reutiliza el plan activo cuando la huella operativa no cambió.
 2. El estimador de cocina calcula disponibilidad esperada con historia reciente y fallback configurable.
 3. La disponibilidad GPS produce vehículos abstractos libres ahora o próximos.
 4. `ApproximateRoutingCostMatrixProvider` calcula costos locales sin Google Route Matrix.
@@ -15,6 +15,8 @@ enrutador.
 6. Google Compute Routes valida únicamente las propuestas finales configuradas.
 7. Web y Flutter reciben el plan y sus cambios por SignalR.
 8. `POST /api/orders/delivery/self-assign` reclama los pedidos Listos con `proposalId` y `expectedPlanVersion`.
+
+El `GET` solo persiste y notifica una nueva versión cuando cambia la huella de pedidos, coordenadas o capacidad. `POST /api/delivery-routing/recalculate` fuerza una generación por decisión operativa. Los instantes estimados que ya vencieron se normalizan para que el avance del reloj no produzca versiones ni eventos repetidos.
 
 ## Configuración
 
