@@ -92,7 +92,15 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
             routeIdSnapshot,
             cancellationToken);
 
-        return _mapper.Map<OrderDto>(order);
+        var orderDto = _mapper.Map<OrderDto>(order);
+        if (previousStatus == OrderStatus.OnTheWay)
+        {
+            await _notificationService.NotifyOrderModifiedToDelivery(
+                orderDto,
+                "status");
+        }
+
+        return orderDto;
     }
 
     private async Task CancelAssociatedPaymentsAsync(int orderId, CancellationToken cancellationToken = default)

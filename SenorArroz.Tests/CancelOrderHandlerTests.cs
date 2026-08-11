@@ -27,6 +27,11 @@ public class CancelOrderHandlerTests
 
     private sealed class NullOrderNotifications : IOrderNotificationService
     {
+        public int DeliveryModifiedCalls { get; private set; }
+        public OrderDto? LastDeliveryModifiedOrder { get; private set; }
+        public string? LastDeliveryModificationKind { get; private set; }
+        public KitchenOrderModificationSummary? LastDeliveryKitchenChanges { get; private set; }
+
         public Task NotifyNewOrderToKitchen(OrderDto order) => Task.CompletedTask;
 
         public Task NotifyOrderReadyToDelivery(OrderDto order) => Task.CompletedTask;
@@ -38,8 +43,14 @@ public class CancelOrderHandlerTests
         public Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null) =>
             Task.CompletedTask;
 
-        public Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null) =>
-            Task.CompletedTask;
+        public Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null)
+        {
+            DeliveryModifiedCalls++;
+            LastDeliveryModifiedOrder = order;
+            LastDeliveryModificationKind = modificationKind;
+            LastDeliveryKitchenChanges = kitchenChanges;
+            return Task.CompletedTask;
+        }
 
         public Task NotifyOrderCancelledToKitchen(int branchId, int orderId, string? reasonPreview = null) => Task.CompletedTask;
 
@@ -99,7 +110,8 @@ public class CancelOrderHandlerTests
     private static CancelOrderHandler BuildHandler(
         IOrderRepository orderRepo,
         IClock clock,
-        ICurrentUser? user = null)
+        ICurrentUser? user = null,
+        IOrderNotificationService? notifications = null)
     {
         var bank = new Mock<IBankPaymentRepository>();
         bank.Setup(r => r.GetByOrderIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
@@ -124,7 +136,7 @@ public class CancelOrderHandlerTests
             new NullLoyaltyCycle(),
             new NullDeliveryRouteWorkflow(),
             clock,
-            new NullOrderNotifications());
+            notifications ?? new NullOrderNotifications());
     }
 
     private static Order ScheduledReservation(int id, DateTime createdAt, DateTime prepareAt, DateTime reservedFor) =>
@@ -208,5 +220,46 @@ public class CancelOrderHandlerTests
             CancellationToken.None);
 
         orderRepo.Verify(r => r.CancelOrderAsync(7, It.Is<string>(s => !string.IsNullOrWhiteSpace(s)), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Cancelling_on_the_way_order_notifies_delivery_route_update()
+    {
+        var utcNow = new DateTime(2026, 8, 10, 15, 0, 0, DateTimeKind.Utc);
+        var order = ScheduledReservation(91, utcNow, utcNow, utcNow);
+        order.Type = OrderType.Delivery;
+        order.Status = OrderStatus.OnTheWay;
+        order.DeliveryManId = 12;
+
+        var orderRepo = new Mock<IOrderRepository>();
+        orderRepo.Setup(r => r.GetByIdAsync(91, It.IsAny<CancellationToken>())).ReturnsAsync(order);
+        orderRepo
+            .Setup(r => r.CancelOrderAsync(91, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                order.Status = OrderStatus.Cancelled;
+                order.CancelledReason = "Cancelado por la sucursal";
+                return order;
+            });
+        var notifications = new NullOrderNotifications();
+        var handler = BuildHandler(
+            orderRepo.Object,
+            new FakeClock(utcNow),
+            notifications: notifications);
+
+        var result = await handler.Handle(
+            new CancelOrderCommand
+            {
+                Id = 91,
+                Cancellation = new CancelOrderDto { Reason = "Cliente canceló" },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(OrderStatus.Cancelled, result.Status);
+        Assert.Equal(1, notifications.DeliveryModifiedCalls);
+        Assert.Equal(91, notifications.LastDeliveryModifiedOrder?.Id);
+        Assert.Equal(OrderStatus.Cancelled, notifications.LastDeliveryModifiedOrder?.Status);
+        Assert.Equal("status", notifications.LastDeliveryModificationKind);
+        Assert.Null(notifications.LastDeliveryKitchenChanges);
     }
 }

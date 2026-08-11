@@ -204,6 +204,15 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             if (request.StatusChange.Status == OrderStatus.OnTheWay)
                 await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
 
+            if (previousStatus == OrderStatus.OnTheWay
+                && request.StatusChange.Status != OrderStatus.OnTheWay
+                && Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))
+            {
+                await _notificationService.NotifyOrderModifiedToDelivery(
+                    orderDto,
+                    "status");
+            }
+
             if (request.StatusChange.Status == OrderStatus.Cancelled)
                 await _deliveryRouteWorkflow.OnOrderCancelledWhileRouteOpenAsync(request.Id, cancellationToken);
 
@@ -328,6 +337,15 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
 
         if (request.StatusChange.Status == OrderStatus.OnTheWay)
             await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
+
+        if (previousStatus == OrderStatus.OnTheWay
+            && request.StatusChange.Status != OrderStatus.OnTheWay
+            && Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))
+        {
+            await _notificationService.NotifyOrderModifiedToDelivery(
+                orderDto,
+                "status");
+        }
 
         if (request.StatusChange.Status == OrderStatus.Cancelled)
             await _deliveryRouteWorkflow.OnOrderCancelledWhileRouteOpenAsync(request.Id, cancellationToken);

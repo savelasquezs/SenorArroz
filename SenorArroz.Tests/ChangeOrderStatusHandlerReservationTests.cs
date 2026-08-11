@@ -21,20 +21,39 @@ public class ChangeOrderStatusHandlerReservationTests
 {
     private sealed class TestCurrentUser : ICurrentUser
     {
+        private readonly string _role;
+
+        public TestCurrentUser(string role = Roles.Kitchen)
+        {
+            _role = role;
+        }
+
         public int Id => 1;
-        public string Role => Roles.Kitchen;
+        public string Role => _role;
         public int BranchId => 1;
         public bool IsAuthenticated => true;
     }
 
     private sealed class NullOrderNotifications : IOrderNotificationService
     {
+        public int DeliveryModifiedCalls { get; private set; }
+        public OrderDto? LastDeliveryModifiedOrder { get; private set; }
+        public string? LastDeliveryModificationKind { get; private set; }
+        public KitchenOrderModificationSummary? LastDeliveryKitchenChanges { get; private set; }
+
         public Task NotifyNewOrderToKitchen(OrderDto order) => Task.CompletedTask;
         public Task NotifyOrderReadyToDelivery(OrderDto order) => Task.CompletedTask;
         public Task NotifyReservationToKitchen(OrderDto order) => Task.CompletedTask;
         public Task NotifyOrderAssignedToDelivery(OrderDto order) => Task.CompletedTask;
         public Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null) => Task.CompletedTask;
-        public Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null) => Task.CompletedTask;
+        public Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null)
+        {
+            DeliveryModifiedCalls++;
+            LastDeliveryModifiedOrder = order;
+            LastDeliveryModificationKind = modificationKind;
+            LastDeliveryKitchenChanges = kitchenChanges;
+            return Task.CompletedTask;
+        }
         public Task NotifyOrderCancelledToKitchen(int branchId, int orderId, string? reasonPreview = null) => Task.CompletedTask;
         public Task NotifyDeliverymanLocation(int branchId, int deliverymanId, int? deliveryRouteId, double latitude, double longitude, DateTime recordedAt) => Task.CompletedTask;
     }
@@ -79,7 +98,9 @@ public class ChangeOrderStatusHandlerReservationTests
 
     private static ChangeOrderStatusHandler BuildHandler(
         IOrderRepository repo,
-        IClock clock)
+        IClock clock,
+        ICurrentUser? user = null,
+        IOrderNotificationService? notifications = null)
     {
         var mapper = new MapperConfiguration(cfg =>
         {
@@ -89,9 +110,9 @@ public class ChangeOrderStatusHandlerReservationTests
         return new ChangeOrderStatusHandler(
             repo,
             mapper,
-            new TestCurrentUser(),
+            user ?? new TestCurrentUser(),
             businessRules,
-            new NullOrderNotifications(),
+            notifications ?? new NullOrderNotifications(),
             new NullDeliveryRouteWorkflow(),
             new NullPrintQueue(),
             new NullLoyaltyCycle(),
@@ -255,5 +276,53 @@ public class ChangeOrderStatusHandlerReservationTests
         mock.Verify(r => r.UpdateAsync(
             It.Is<Order>(o => o.Type == OrderType.Delivery && o.OrderDetails.Count == 1),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Admin_delivery_change_from_on_the_way_notifies_only_the_affected_order()
+    {
+        const int orderId = 87;
+        var utc = new DateTime(2026, 8, 10, 15, 0, 0, DateTimeKind.Utc);
+        var order = new Order
+        {
+            Id = orderId,
+            BranchId = 1,
+            TakenById = 1,
+            Type = OrderType.Delivery,
+            Status = OrderStatus.OnTheWay,
+            DeliveryManId = 24,
+            StatusTimes = "{}",
+            CreatedAt = utc,
+            UpdatedAt = utc,
+        };
+        var repo = new Mock<IOrderRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(orderId, It.IsAny<CancellationToken>())).ReturnsAsync(order);
+        repo.Setup(r => r.ChangeStatusAsync(orderId, OrderStatus.Delivered, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                order.Status = OrderStatus.Delivered;
+                return order;
+            });
+        var notifications = new NullOrderNotifications();
+        var handler = BuildHandler(
+            repo.Object,
+            new FakeClock(utc),
+            new TestCurrentUser(Roles.Admin),
+            notifications);
+
+        var result = await handler.Handle(
+            new ChangeOrderStatusCommand
+            {
+                Id = orderId,
+                StatusChange = new ChangeOrderStatusDto { Status = OrderStatus.Delivered },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(OrderStatus.Delivered, result.Status);
+        Assert.Equal(1, notifications.DeliveryModifiedCalls);
+        Assert.Equal(orderId, notifications.LastDeliveryModifiedOrder?.Id);
+        Assert.Equal(OrderStatus.Delivered, notifications.LastDeliveryModifiedOrder?.Status);
+        Assert.Equal("status", notifications.LastDeliveryModificationKind);
+        Assert.Null(notifications.LastDeliveryKitchenChanges);
     }
 }
