@@ -54,6 +54,8 @@ Reglas esperadas:
 - En el modelo multitenant, incluso superadmin debe operar con tenant explícito o contexto administrativo controlado.
 - Los detalles del pedido deben copiar `TenantId` desde el pedido, no desde el frontend.
 - Los cambios de estado deben conservar trazabilidad cuando aplique.
+- Admin, Superadmin y Cajero pueden cancelar pedidos mediante el flujo de cancelación. El Cajero solo puede cancelar pedidos de su propia sucursal.
+- Toda cancelación requiere motivo, no admite pedidos ya cancelados y aplica la gestión vigente de pagos, fidelización, rutas y notificaciones asociadas.
 
 ### Estados de pedido
 

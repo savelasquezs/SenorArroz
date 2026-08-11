@@ -1,6 +1,9 @@
 using AutoMapper;
+using System.Reflection;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using SenorArroz.API.Controllers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Kitchen;
 using SenorArroz.Application.Features.Customers.DTOs;
@@ -17,11 +20,13 @@ namespace SenorArroz.Tests;
 /// <summary>Cancelación de reservas: Admin puede cancelar en cualquier momento mientras no esté cancelado.</summary>
 public class CancelOrderHandlerTests
 {
-    private sealed class TestCurrentUser : ICurrentUser
+    private sealed class TestCurrentUser(
+        string role = Roles.Admin,
+        int branchId = 1) : ICurrentUser
     {
         public int Id => 1;
-        public string Role => Roles.Admin;
-        public int BranchId => 1;
+        public string Role => role;
+        public int BranchId => branchId;
         public bool IsAuthenticated => true;
     }
 
@@ -155,6 +160,51 @@ public class CancelOrderHandlerTests
             DiscountTotal = 0,
             StatusTimes = "{}",
         };
+
+    [Fact]
+    public void Cancel_endpoint_authorizes_cashier()
+    {
+        var method = typeof(OrdersController).GetMethod(nameof(OrdersController.CancelOrder))
+            ?? throw new InvalidOperationException("CancelOrder method not found.");
+        var authorize = method.GetCustomAttribute<AuthorizeAttribute>();
+
+        Assert.NotNull(authorize);
+        Assert.Equal("Admin,Superadmin,Cashier", authorize!.Roles);
+    }
+
+    [Fact]
+    public async Task Cashier_can_cancel_order_from_own_branch()
+    {
+        var utcNow = new DateTime(2026, 8, 11, 15, 0, 0, DateTimeKind.Utc);
+        var order = ScheduledReservation(43, utcNow, utcNow, utcNow);
+        var orderRepo = new Mock<IOrderRepository>();
+        orderRepo.Setup(r => r.GetByIdAsync(43, It.IsAny<CancellationToken>())).ReturnsAsync(order);
+        orderRepo
+            .Setup(r => r.CancelOrderAsync(43, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                order.Status = OrderStatus.Cancelled;
+                order.CancelledReason = "Cliente canceló";
+                return order;
+            });
+        var handler = BuildHandler(
+            orderRepo.Object,
+            new FakeClock(utcNow),
+            new TestCurrentUser(Roles.Cashier));
+
+        var result = await handler.Handle(
+            new CancelOrderCommand
+            {
+                Id = 43,
+                Cancellation = new CancelOrderDto { Reason = "Cliente canceló" },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(OrderStatus.Cancelled, result.Status);
+        orderRepo.Verify(
+            r => r.CancelOrderAsync(43, "Cliente canceló", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
 
     [Fact]
     public async Task Scheduled_reservation_allows_cancel_even_when_dates_do_not_match_today()

@@ -273,10 +273,10 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// Cancela un pedido (Admin/Superadmin), requiere razón y elimina pagos asociados vía repositorio.
+    /// Cancela un pedido (Admin/Superadmin/Cashier), requiere razón y elimina pagos asociados vía repositorio.
     /// </summary>
     [HttpPut("{id}/cancel")]
-    [Authorize(Roles = "Admin,Superadmin")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult<OrderDto>> CancelOrder(int id, [FromBody] CancelOrderDto cancellationDto)
     {
         var command = new CancelOrderCommand
