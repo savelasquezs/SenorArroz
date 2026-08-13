@@ -555,7 +555,10 @@ public sealed class RappiIntegrationsController(
             .FirstOrDefaultAsync(x =>
                 x.PublicId == publicId
                 && x.Provider == "rappi"
-                && x.IsActive, ct);
+                && x.IsActive
+                && x.TenantId.HasValue
+                && db.Tenants.Any(tenant => tenant.Id == x.TenantId && tenant.Status == TenantStatus.Active)
+                && db.TenantAddons.Any(addon => addon.TenantId == x.TenantId && addon.Active && addon.Addon.Active && addon.Addon.Code == "rappi"), ct);
         var subscription = connection?.WebhookSubscriptions
             .FirstOrDefault(x => x.EventType == normalizedEvent && x.IsActive);
         if (connection is null || subscription is null)
@@ -591,6 +594,7 @@ public sealed class RappiIntegrationsController(
 
         var storedEvent = new IntegrationWebhookEvent
         {
+            TenantId = connection.TenantId,
             ConnectionId = connection.Id,
             Provider = "rappi",
             EventKey = eventKey,

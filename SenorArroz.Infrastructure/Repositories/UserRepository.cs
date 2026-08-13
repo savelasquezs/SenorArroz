@@ -11,10 +11,12 @@ namespace SenorArroz.Infrastructure.Repositories;
 public class UserRepository : IUserRepository
 {
     private readonly IApplicationDbContext _context;
+    private readonly ITenantExecutionContext? _tenantExecutionContext;
 
-    public UserRepository(IApplicationDbContext context)
+    public UserRepository(IApplicationDbContext context, ITenantExecutionContext? tenantExecutionContext = null)
     {
         _context = context;
+        _tenantExecutionContext = tenantExecutionContext;
     }
 
     public async Task<User?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
@@ -113,7 +115,8 @@ public class UserRepository : IUserRepository
 
     public async Task<bool> EmailExistsAsync(string email, int? excludeUserId = null, CancellationToken cancellationToken = default)
     {
-        var query = _context.Users.Where(u => u.Email.ToLower() == email.ToLower() );
+        using var scope = _tenantExecutionContext?.BeginSystemScope();
+        var query = _context.Users.IgnoreQueryFilters().Where(u => u.Email.ToLower() == email.ToLower() );
 
         // Excluir usuario actual en caso de actualización
         if (excludeUserId.HasValue)

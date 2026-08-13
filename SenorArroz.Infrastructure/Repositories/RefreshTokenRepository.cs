@@ -10,18 +10,23 @@ public class RefreshTokenRepository : IRefreshTokenRepository
 {
     private readonly ApplicationDbContext _context;
     private readonly IClock _clock;
+    private readonly ITenantExecutionContext? _tenantExecutionContext;
 
-    public RefreshTokenRepository(ApplicationDbContext context, IClock clock)
+    public RefreshTokenRepository(ApplicationDbContext context, IClock clock, ITenantExecutionContext? tenantExecutionContext = null)
     {
         _context = context;
         _clock = clock;
+        _tenantExecutionContext = tenantExecutionContext;
     }
 
     public async Task<RefreshToken?> GetByTokenAsync(string token, CancellationToken cancellationToken = default)
     {
+        using var scope = _tenantExecutionContext?.BeginSystemScope();
         return await _context.RefreshTokens
+            .IgnoreQueryFilters()
             .Include(rt => rt.User)
             .ThenInclude(u => u.Branch)
+            .Include(rt => rt.User).ThenInclude(u => u.Tenant)
             .FirstOrDefaultAsync(rt => rt.Token == token, cancellationToken);
     }
 
@@ -47,6 +52,7 @@ public class RefreshTokenRepository : IRefreshTokenRepository
 
     public async Task AddAsync(RefreshToken refreshToken, CancellationToken cancellationToken = default)
     {
+        using var scope = _tenantExecutionContext?.BeginSystemScope();
         await _context.RefreshTokens.AddAsync(refreshToken, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
     }
@@ -59,6 +65,7 @@ public class RefreshTokenRepository : IRefreshTokenRepository
 
     public async Task RevokeAllByUserIdAsync(int userId, string ipAddress, CancellationToken cancellationToken = default)
     {
+        using var scope = _tenantExecutionContext?.BeginSystemScope();
         var activeTokens = await _context.RefreshTokens
             .Where(rt => rt.UserId == userId && !rt.IsRevoked)
             .ToListAsync(cancellationToken);

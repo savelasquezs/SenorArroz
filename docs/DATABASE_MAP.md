@@ -15,6 +15,22 @@ Una sola base de datos PostgreSQL
 + índices compuestos por tenant
 ```
 
+## Estado SaaS implementado
+
+`Tenant` esta implementado como raiz con `PublicId`, datos de contacto/legales, estado y `AccessVersion`.
+
+Tablas globales: `tenant`, `platform_user`, `platform_session`, `platform_otp_challenge`, `platform_trusted_device`, `platform_setting`, `saas_module`, `saas_addon`, `saas_plan`, `saas_plan_version`, `saas_plan_version_module`, `tenant_subscription`, `tenant_addon`, `tenant_invitation`, `platform_audit_log` y `tenant_usage_monthly`.
+
+Todas las tablas funcionales reciben `tenant_id NOT NULL`, FK a `tenant`, indice por tenant, filtro global EF Core y RLS `tenant_isolation` con `FORCE ROW LEVEL SECURITY`. Relaciones hacia `branch` y `user` agregan FKs compuestas `(id, tenant_id)`.
+
+Scripts vigentes:
+
+- `SenorArroz.Infrastructure/Scripts/add_saas_multitenancy.sql`: migracion idempotente, backfill, catalogos, cuotas, mediciones y RLS.
+- `SenorArroz.Infrastructure/Scripts/verify_saas_multitenancy.sql`: invariantes estructurales posteriores.
+- `SenorArroz.Infrastructure/Scripts/disable_saas_portal.sql`: rollback funcional sin borrar datos.
+
+`local-init-completo.sql` incluye la migracion SaaS al final.
+
 ## Fuente principal
 
 DbContext:

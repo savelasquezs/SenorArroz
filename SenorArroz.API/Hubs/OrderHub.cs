@@ -2,37 +2,54 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Domain.Constants;
 
 namespace SenorArroz.API.Hubs;
 
 [Authorize]
 [DisableRateLimiting]
-public class OrderHub : Hub
+public class OrderHub(
+    IApplicationDbContext db,
+    ITenantCapabilityService capabilities,
+    ITenantConnectionRegistry connections) : Hub
 {
+    private IDisposable? _registration;
+
     public override async Task OnConnectedAsync()
     {
+        if (!await capabilities.HasModuleAsync(TenantModules.Pos, Context.ConnectionAborted))
+        {
+            Context.Abort();
+            return;
+        }
+
         var branchId = Context.User?.FindFirst("branch_id")?.Value;
+        var tenantId = Context.User?.FindFirst("tenant_id")?.Value;
         var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
         if (role == "Superadmin")
             branchId = ResolveSelectedBranchId();
         
-        if (!string.IsNullOrEmpty(branchId))
+        if (int.TryParse(branchId, out var parsedBranchId) && int.TryParse(tenantId, out var parsedTenantId)
+            && await db.Branches.AsNoTracking().AnyAsync(x => x.Id == parsedBranchId, Context.ConnectionAborted))
         {
+            _registration = connections.Register(parsedTenantId, Context.ConnectionId, Context.Abort);
             // Agregar usuario a grupo de su sucursal
-            await Groups.AddToGroupAsync(Context.ConnectionId, $"Branch_{branchId}");
+            await Groups.AddToGroupAsync(Context.ConnectionId, TenantHubGroups.Branch(parsedTenantId, parsedBranchId));
             
             // Agregar a grupo específico de rol
             if (role == "Kitchen")
             {
-                await Groups.AddToGroupAsync(Context.ConnectionId, $"Branch_{branchId}_Kitchen");
+                await Groups.AddToGroupAsync(Context.ConnectionId, TenantHubGroups.Branch(parsedTenantId, parsedBranchId, "Kitchen"));
             }
             else if (role == "Deliveryman")
             {
-                await Groups.AddToGroupAsync(Context.ConnectionId, $"Branch_{branchId}_Delivery");
+                await Groups.AddToGroupAsync(Context.ConnectionId, TenantHubGroups.Branch(parsedTenantId, parsedBranchId, "Delivery"));
             }
             else if (role == "Admin" || role == "Superadmin" || role == "Cashier")
             {
-                await Groups.AddToGroupAsync(Context.ConnectionId, $"Branch_{branchId}_Admin");
+                await Groups.AddToGroupAsync(Context.ConnectionId, TenantHubGroups.Branch(parsedTenantId, parsedBranchId, "Admin"));
             }
         }
         
@@ -41,26 +58,28 @@ public class OrderHub : Hub
     
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        _registration?.Dispose();
         var branchId = Context.User?.FindFirst("branch_id")?.Value;
+        var tenantId = Context.User?.FindFirst("tenant_id")?.Value;
         var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
         if (role == "Superadmin")
             branchId = ResolveSelectedBranchId();
         
-        if (!string.IsNullOrEmpty(branchId))
+        if (int.TryParse(branchId, out var parsedBranchId) && int.TryParse(tenantId, out var parsedTenantId))
         {
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Branch_{branchId}");
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantHubGroups.Branch(parsedTenantId, parsedBranchId));
             
             if (role == "Kitchen")
             {
-                await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Branch_{branchId}_Kitchen");
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantHubGroups.Branch(parsedTenantId, parsedBranchId, "Kitchen"));
             }
             else if (role == "Deliveryman")
             {
-                await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Branch_{branchId}_Delivery");
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantHubGroups.Branch(parsedTenantId, parsedBranchId, "Delivery"));
             }
             else if (role == "Admin" || role == "Superadmin" || role == "Cashier")
             {
-                await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Branch_{branchId}_Admin");
+                await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantHubGroups.Branch(parsedTenantId, parsedBranchId, "Admin"));
             }
         }
         

@@ -62,6 +62,14 @@ public class WhatsAppAiBackgroundService(
             try
             {
                 using var scope = scopes.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var tenantId = await db.WhatsAppMessages.AsNoTracking()
+                    .Where(message => message.Id == item.MessageId && message.TenantId.HasValue
+                                      && db.TenantAddons.Any(addon => addon.TenantId == message.TenantId && addon.Active && addon.Addon.Code == "whatsapp_ai"))
+                    .Select(message => message.TenantId!.Value)
+                    .SingleOrDefaultAsync(stoppingToken);
+                if (tenantId <= 0) continue;
+                using var tenantScope = scope.ServiceProvider.GetRequiredService<ITenantExecutionContext>().BeginTenantScope(tenantId);
                 await scope.ServiceProvider
                     .GetRequiredService<IWhatsAppAiOrchestrator>()
                     .ProcessIncomingMessageAsync(item.ConversationId, item.MessageId, stoppingToken);
@@ -127,6 +135,8 @@ public class WhatsAppAiRecoveryService(
 
         var interrupted = await db.WhatsAppMessages
             .Where(message =>
+                message.TenantId.HasValue
+                && db.TenantAddons.Any(addon => addon.TenantId == message.TenantId && addon.Active && addon.Addon.Code == "whatsapp_ai") &&
                 message.Direction == WhatsAppMessageDirection.Inbound &&
                 (message.AiProcessingStatus == WhatsAppAiProcessingStatus.Processing ||
                  message.AiProcessingStatus == WhatsAppAiProcessingStatus.ResponseGenerated ||

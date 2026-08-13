@@ -14,6 +14,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
 
         builder.HasKey(u => u.Id);
         builder.Property(u => u.Id).HasColumnName("id");
+        builder.Property(u => u.TenantId).HasColumnName("tenant_id").IsRequired(false);
 
         builder.Property(u => u.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(u => u.Role)
@@ -42,12 +43,19 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasForeignKey(u => u.BranchId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(u => u.Tenant)
+            .WithMany(t => t.Users)
+            .HasForeignKey(u => u.TenantId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasOne(u => u.PayrollExpense)
             .WithMany()
             .HasForeignKey(u => u.PayrollExpenseId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasIndex(u => u.BranchId).HasDatabaseName("idx_user_branch");
+        builder.HasIndex(u => new { u.TenantId, u.BranchId }).HasDatabaseName("idx_user_tenant_branch");
         builder.HasIndex(u => u.PayrollExpenseId)
             .IsUnique()
             .HasFilter("payroll_expense_id IS NOT NULL")

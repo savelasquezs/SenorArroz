@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.API.Controllers;
 
@@ -14,8 +15,10 @@ public class BranchMenuController : ControllerBase
     private readonly ApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IFirebaseGcsStorage _storage;
-    public BranchMenuController(ApplicationDbContext db, ICurrentUser currentUser, IFirebaseGcsStorage storage)
-    { _db = db; _currentUser = currentUser; _storage = storage; }
+    private readonly ICurrentTenant _currentTenant;
+    private readonly ITenantUsageMeter _usage;
+    public BranchMenuController(ApplicationDbContext db, ICurrentUser currentUser, IFirebaseGcsStorage storage, ICurrentTenant currentTenant, ITenantUsageMeter usage)
+    { _db = db; _currentUser = currentUser; _storage = storage; _currentTenant = currentTenant; _usage = usage; }
 
     [HttpGet("api/branches/{branchId:int}/menu")]
     [Authorize(Roles = "Superadmin, Admin")]
@@ -38,9 +41,12 @@ public class BranchMenuController : ControllerBase
             return BadRequest(ApiResponse<BranchMenuDto>.ErrorResponse("Selecciona una imagen válida."));
         var branch = await _db.Branches.FirstOrDefaultAsync(x => x.Id == branchId, ct); if (branch is null) return NotFound();
         await using var input = file.OpenReadStream(); using var ms = new MemoryStream(); await input.CopyToAsync(ms, ct);
-        await _storage.DeleteObjectsWithPrefixAsync($"branch-menu/{branchId}/slot-{slot}/", ct);
+        var prefix = TenantPrefix($"branch-menu/{branchId}/slot-{slot}");
+        await _storage.DeleteObjectsWithPrefixAsync($"{prefix}/", ct);
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var url = await _storage.UploadPublicObjectAsync(ms.ToArray(), $"branch-menu/{branchId}/slot-{slot}/{Guid.NewGuid():N}{ext}", file.ContentType, ct);
+        var content = ms.ToArray();
+        var url = await _storage.UploadPublicObjectAsync(content, $"{prefix}/{Guid.NewGuid():N}{ext}", file.ContentType, ct);
+        await _usage.AddStorageBytesAsync(content.LongLength, ct);
         if (slot == 1) branch.MenuImageUrl1 = url; else branch.MenuImageUrl2 = url;
         await _db.SaveChangesAsync(ct);
         return Ok(ApiResponse<BranchMenuDto>.SuccessResponse(new(branch.Id, branch.Name, branch.MenuImageUrl1, branch.MenuImageUrl2)));
@@ -52,7 +58,7 @@ public class BranchMenuController : ControllerBase
     {
         if (!CanAccess(branchId)) return Forbid(); if (slot is < 1 or > 2) return BadRequest();
         var branch = await _db.Branches.FirstOrDefaultAsync(x => x.Id == branchId, ct); if (branch is null) return NotFound();
-        await _storage.DeleteObjectsWithPrefixAsync($"branch-menu/{branchId}/slot-{slot}/", ct);
+        await _storage.DeleteObjectsWithPrefixAsync($"{TenantPrefix($"branch-menu/{branchId}/slot-{slot}")}/", ct);
         if (slot == 1) branch.MenuImageUrl1 = null; else branch.MenuImageUrl2 = null;
         await _db.SaveChangesAsync(ct); return NoContent();
     }
@@ -62,7 +68,7 @@ public class BranchMenuController : ControllerBase
     [Produces("text/html")]
     public async Task<ContentResult> PublicMenu([FromQuery] int? branchId, CancellationToken ct)
     {
-        var query = _db.Branches.AsNoTracking().Where(x => x.MenuImageUrl1 != null || x.MenuImageUrl2 != null);
+        var query = _db.Branches.AsNoTracking().Where(x => x.Tenant.Status == TenantStatus.Active && (x.MenuImageUrl1 != null || x.MenuImageUrl2 != null));
         if (branchId.HasValue) query = query.Where(x => x.Id == branchId.Value);
         var menu = await query.OrderBy(x => x.Id).Select(x => new BranchMenuDto(x.Id, x.Name, x.MenuImageUrl1, x.MenuImageUrl2)).FirstOrDefaultAsync(ct);
         if (menu is null) return Content("<!doctype html><html><meta name=viewport content='width=device-width'><body><p>La carta aún no está disponible.</p></body></html>", "text/html");
@@ -73,6 +79,7 @@ public class BranchMenuController : ControllerBase
     }
 
     private bool CanAccess(int branchId) => _currentUser.Role.Equals("superadmin", StringComparison.OrdinalIgnoreCase) || _currentUser.BranchId == branchId;
+    private string TenantPrefix(string path) => $"tenants/{(_currentTenant.TenantPublicId ?? throw new InvalidOperationException("No existe un tenant autenticado.")):D}/{path}";
 }
 
 public record BranchMenuDto(int BranchId, string BranchName, string? ImageUrl1, string? ImageUrl2);

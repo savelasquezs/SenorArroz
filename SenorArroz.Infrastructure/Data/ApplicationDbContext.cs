@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using System.Linq.Expressions;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Infrastructure.Data.Configurations;
 
 namespace SenorArroz.Infrastructure.Data
@@ -9,12 +11,37 @@ namespace SenorArroz.Infrastructure.Data
     public class ApplicationDbContext : DbContext, IApplicationDbContext
     {
         private readonly ICurrentUser? _currentUser;
+        private readonly ICurrentTenant? _currentTenant;
 
-        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ICurrentUser? currentUser = null)
+        public ApplicationDbContext(
+            DbContextOptions<ApplicationDbContext> options,
+            ICurrentUser? currentUser = null,
+            ICurrentTenant? currentTenant = null)
             : base(options)
         {
             _currentUser = currentUser;
+            _currentTenant = currentTenant;
         }
+
+        public bool IsTenantFilterBypassed => _currentTenant is null || _currentTenant.CanAccessAllTenants;
+        public int? CurrentTenantIdForFilter => _currentTenant?.HasTenant == true ? _currentTenant.TenantId : null;
+
+        public virtual DbSet<Tenant> Tenants { get; set; }
+        public virtual DbSet<PlatformUser> PlatformUsers { get; set; }
+        public virtual DbSet<PlatformSession> PlatformSessions { get; set; }
+        public virtual DbSet<PlatformOtpChallenge> PlatformOtpChallenges { get; set; }
+        public virtual DbSet<PlatformTrustedDevice> PlatformTrustedDevices { get; set; }
+        public virtual DbSet<PlatformSetting> PlatformSettings { get; set; }
+        public virtual DbSet<SaasModule> SaasModules { get; set; }
+        public virtual DbSet<SaasAddon> SaasAddons { get; set; }
+        public virtual DbSet<SaasPlan> SaasPlans { get; set; }
+        public virtual DbSet<SaasPlanVersion> SaasPlanVersions { get; set; }
+        public virtual DbSet<SaasPlanVersionModule> SaasPlanVersionModules { get; set; }
+        public virtual DbSet<TenantSubscription> TenantSubscriptions { get; set; }
+        public virtual DbSet<TenantAddon> TenantAddons { get; set; }
+        public virtual DbSet<TenantInvitation> TenantInvitations { get; set; }
+        public virtual DbSet<PlatformAuditLog> PlatformAuditLogs { get; set; }
+        public virtual DbSet<TenantUsageMonthly> TenantUsageMonthly { get; set; }
 
         public virtual DbSet<Address> Addresses { get; set; }
 
@@ -226,12 +253,15 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new RefreshTokenConfiguration());
             modelBuilder.ApplyConfiguration(new PasswordResetTokenConfiguration());
             modelBuilder.ApplyConfiguration(new UserDeviceTokenConfiguration());
+            modelBuilder.ConfigureSaas();
+            ApplyTenantOwnership(modelBuilder);
 
             base.OnModelCreating(modelBuilder);
         }
         public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             ConvertDateTimesToUtc();
+            ApplyAndValidateTenantIds();
             await ApplyAuditSessionContextAsync(cancellationToken);
             return await base.SaveChangesAsync(cancellationToken);
         }
@@ -239,6 +269,7 @@ namespace SenorArroz.Infrastructure.Data
         public override int SaveChanges()
         {
             ConvertDateTimesToUtc();
+            ApplyAndValidateTenantIds();
             ApplyAuditSessionContext();
             return base.SaveChanges();
         }
@@ -250,10 +281,14 @@ namespace SenorArroz.Infrastructure.Data
 
             var userId = _currentUser?.IsAuthenticated == true ? _currentUser.Id.ToString() : string.Empty;
             var branchId = _currentUser?.BranchId > 0 ? _currentUser.BranchId.ToString() : string.Empty;
+            var tenantId = _currentTenant?.HasTenant == true ? _currentTenant.TenantId.ToString() : string.Empty;
+            var bypass = _currentTenant?.CanAccessAllTenants == true ? "true" : "false";
 
             await Database.ExecuteSqlRawAsync("select set_config('app.current_user_id', {0}, true);", [userId], cancellationToken);
             await Database.ExecuteSqlRawAsync("select set_config('app.current_user_name', {0}, true);", [string.Empty], cancellationToken);
             await Database.ExecuteSqlRawAsync("select set_config('app.current_branch_id', {0}, true);", [branchId], cancellationToken);
+            await Database.ExecuteSqlRawAsync("select set_config('app.current_tenant_id', {0}, true);", [tenantId], cancellationToken);
+            await Database.ExecuteSqlRawAsync("select set_config('app.tenant_bypass', {0}, true);", [bypass], cancellationToken);
         }
 
         private void ApplyAuditSessionContext()
@@ -263,10 +298,63 @@ namespace SenorArroz.Infrastructure.Data
 
             var userId = _currentUser?.IsAuthenticated == true ? _currentUser.Id.ToString() : string.Empty;
             var branchId = _currentUser?.BranchId > 0 ? _currentUser.BranchId.ToString() : string.Empty;
+            var tenantId = _currentTenant?.HasTenant == true ? _currentTenant.TenantId.ToString() : string.Empty;
+            var bypass = _currentTenant?.CanAccessAllTenants == true ? "true" : "false";
 
             Database.ExecuteSqlRaw("select set_config('app.current_user_id', {0}, true);", userId);
             Database.ExecuteSqlRaw("select set_config('app.current_user_name', {0}, true);", string.Empty);
             Database.ExecuteSqlRaw("select set_config('app.current_branch_id', {0}, true);", branchId);
+            Database.ExecuteSqlRaw("select set_config('app.current_tenant_id', {0}, true);", tenantId);
+            Database.ExecuteSqlRaw("select set_config('app.tenant_bypass', {0}, true);", bypass);
+        }
+
+        private void ApplyAndValidateTenantIds()
+        {
+            if (_currentTenant is null || _currentTenant.CanAccessAllTenants || !_currentTenant.HasTenant)
+                return;
+
+            foreach (var entry in ChangeTracker.Entries().Where(IsTenantOwnedEntry))
+            {
+                var tenantProperty = entry.Property("TenantId");
+                if (entry.State == EntityState.Added && tenantProperty.CurrentValue is null)
+                    tenantProperty.CurrentValue = _currentTenant.TenantId;
+
+                if (tenantProperty.CurrentValue is not int tenantId || tenantId != _currentTenant.TenantId)
+                    throw new InvalidOperationException("La operación intenta acceder a datos de otro tenant.");
+            }
+        }
+
+        private static bool IsTenantOwnedEntry(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry) =>
+            entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
+            && entry.Metadata.FindProperty("TenantId") is not null
+            && !SaasConfigurations.ControlPlaneEntityTypes.Contains(entry.Metadata.ClrType);
+
+        private void ApplyTenantOwnership(ModelBuilder modelBuilder)
+        {
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes().ToArray())
+            {
+                if (entityType.BaseType is not null
+                    || entityType.IsOwned()
+                    || entityType.FindPrimaryKey() is null
+                    || SaasConfigurations.ControlPlaneEntityTypes.Contains(entityType.ClrType))
+                    continue;
+
+                var builder = modelBuilder.Entity(entityType.ClrType);
+                builder.Property<int?>(nameof(BaseEntity.TenantId)).HasColumnName("tenant_id");
+
+                var parameter = Expression.Parameter(entityType.ClrType, "entity");
+                var tenantProperty = Expression.Call(
+                    typeof(EF),
+                    nameof(EF.Property),
+                    [typeof(int?)],
+                    parameter,
+                    Expression.Constant(nameof(BaseEntity.TenantId)));
+                var context = Expression.Constant(this);
+                var bypass = Expression.Property(context, nameof(IsTenantFilterBypassed));
+                var currentTenant = Expression.Property(context, nameof(CurrentTenantIdForFilter));
+                var body = Expression.OrElse(bypass, Expression.Equal(tenantProperty, currentTenant));
+                builder.HasQueryFilter(Expression.Lambda(body, parameter));
+            }
         }
 
         private void ConvertDateTimesToUtc()

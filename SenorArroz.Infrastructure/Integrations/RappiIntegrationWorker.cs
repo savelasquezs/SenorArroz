@@ -34,25 +34,34 @@ public sealed class RappiIntegrationWorker(
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 var rappi = scope.ServiceProvider.GetRequiredService<IRappiDeliveryProvider>();
                 var clock = scope.ServiceProvider.GetRequiredService<IClock>();
+                var executionContext = scope.ServiceProvider.GetRequiredService<ITenantExecutionContext>();
 
-                await processor.ProcessPendingWebhookEventsAsync(stoppingToken);
-                await ProcessReadyOutboxAsync(db, rappi, clock, stoppingToken);
-                await ReconcileAvailabilityStateAsync(db, clock, stoppingToken);
-                await ProcessAvailabilityAsync(db, rappi, clock, stoppingToken);
+                var tenantIds = await db.TenantAddons.AsNoTracking()
+                    .Where(x => x.Active && x.Addon.Active && x.Addon.Code == "rappi" && x.Tenant.Status == TenantStatus.Active)
+                    .Select(x => x.TenantId)
+                    .Distinct()
+                    .ToListAsync(stoppingToken);
+                foreach (var tenantId in tenantIds)
+                {
+                    using var tenantScope = executionContext.BeginTenantScope(tenantId);
+                    await processor.ProcessPendingWebhookEventsAsync(stoppingToken);
+                    await ProcessReadyOutboxAsync(db, rappi, clock, stoppingToken);
+                    await ReconcileAvailabilityStateAsync(db, clock, stoppingToken);
+                    await ProcessAvailabilityAsync(db, rappi, clock, stoppingToken);
 
-                var now = DateTimeOffset.UtcNow;
-                if (now >= nextRecovery)
-                {
-                    await RecoverSentOrdersAsync(db, rappi, processor, stoppingToken);
-                    await RecoverAcceptedOrdersAsync(db, processor, stoppingToken);
-                    await RecoverMenuApprovalsAsync(db, rappi, clock, stoppingToken);
-                    nextRecovery = now.AddSeconds(Math.Max(15, options.RecoveryIntervalSeconds));
+                    var now = DateTimeOffset.UtcNow;
+                    if (now >= nextRecovery)
+                    {
+                        await RecoverSentOrdersAsync(db, rappi, processor, stoppingToken);
+                        await RecoverAcceptedOrdersAsync(db, processor, stoppingToken);
+                        await RecoverMenuApprovalsAsync(db, rappi, clock, stoppingToken);
+                    }
+                    if (now >= nextCleanup)
+                        await PurgePiiAsync(db, clock, stoppingToken);
                 }
-                if (now >= nextCleanup)
-                {
-                    await PurgePiiAsync(db, clock, stoppingToken);
-                    nextCleanup = now.AddHours(Math.Max(1, options.PiiCleanupIntervalHours));
-                }
+                var cycleNow = DateTimeOffset.UtcNow;
+                if (cycleNow >= nextRecovery) nextRecovery = cycleNow.AddSeconds(Math.Max(15, options.RecoveryIntervalSeconds));
+                if (cycleNow >= nextCleanup) nextCleanup = cycleNow.AddHours(Math.Max(1, options.PiiCleanupIntervalHours));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -75,6 +84,7 @@ public sealed class RappiIntegrationWorker(
         CancellationToken ct)
     {
         var rows = await db.IntegrationWebhookEvents
+            .WhereAddonEnabled(db, "rappi")
             .Where(x =>
                 x.Provider == "rappi"
                 && x.EventType == "READY_FOR_PICKUP_OUTBOX"
@@ -114,6 +124,7 @@ public sealed class RappiIntegrationWorker(
         CancellationToken ct)
     {
         var connections = await db.DeliveryAppConnections
+            .WhereAddonEnabled(db, "rappi")
             .Include(x => x.Stores)
             .Include(x => x.ProductMappings)
                 .ThenInclude(x => x.Product)
@@ -172,6 +183,7 @@ public sealed class RappiIntegrationWorker(
     {
         var now = clock.UtcNow;
         var states = await db.RappiAvailabilityStates
+            .WhereAddonEnabled(db, "rappi")
             .Include(x => x.Store)
             .Include(x => x.ProductMapping)
             .Where(x =>
@@ -231,6 +243,7 @@ public sealed class RappiIntegrationWorker(
         CancellationToken ct)
     {
         var connections = await db.DeliveryAppConnections
+            .WhereAddonEnabled(db, "rappi")
             .AsNoTracking()
             .Include(x => x.Stores)
             .Where(x => x.Provider == "rappi" && x.IsActive && x.IsVerified)
@@ -258,6 +271,7 @@ public sealed class RappiIntegrationWorker(
         CancellationToken ct)
     {
         var pendingIds = await db.ExternalDeliveryOrders
+            .WhereAddonEnabled(db, "rappi")
             .AsNoTracking()
             .Where(x =>
                 !x.InternalOrderId.HasValue
@@ -278,6 +292,7 @@ public sealed class RappiIntegrationWorker(
         CancellationToken ct)
     {
         var publications = await db.RappiMenuPublications
+            .WhereAddonEnabled(db, "rappi")
             .AsNoTracking()
             .Where(x => x.Status == "submitted")
             .OrderBy(x => x.CreatedAt)
@@ -316,6 +331,7 @@ public sealed class RappiIntegrationWorker(
         CancellationToken ct)
     {
         var connections = await db.DeliveryAppConnections
+            .WhereAddonEnabled(db, "rappi")
             .AsNoTracking()
             .Select(x => new { x.Id, x.PiiRetentionDays })
             .ToListAsync(ct);

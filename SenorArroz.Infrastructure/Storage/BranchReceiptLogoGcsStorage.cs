@@ -9,29 +9,39 @@ public sealed class BranchReceiptLogoGcsStorage : IBranchReceiptLogoStorage
 {
     private readonly IFirebaseGcsStorage _gcs;
     private readonly FirebaseStorageOptions _opt;
+    private readonly ICurrentTenant _currentTenant;
+    private readonly ITenantUsageMeter _usage;
 
-    public BranchReceiptLogoGcsStorage(IFirebaseGcsStorage gcs, IOptions<FirebaseStorageOptions> options)
+    public BranchReceiptLogoGcsStorage(
+        IFirebaseGcsStorage gcs,
+        IOptions<FirebaseStorageOptions> options,
+        ICurrentTenant currentTenant,
+        ITenantUsageMeter usage)
     {
         _gcs = gcs;
         _opt = options.Value;
+        _currentTenant = currentTenant;
+        _usage = usage;
     }
 
     public async Task<string> SaveAndReplaceAsync(int branchId, byte[] content, string fileExtension, CancellationToken cancellationToken = default)
     {
         var ext = NormalizeExtension(fileExtension);
-        var prefix = _opt.BranchPrintPrefix.Trim().TrimStart('/').TrimEnd('/');
+        var prefix = TenantPrefix();
         var folderPrefix = $"{prefix}/{branchId}/";
 
         await _gcs.DeleteObjectsWithPrefixAsync(folderPrefix, cancellationToken).ConfigureAwait(false);
 
         var objectName = $"{prefix}/{branchId}/logo{ext}";
         var contentType = ContentTypeForExtension(ext);
-        return await _gcs.UploadPublicObjectAsync(content, objectName, contentType, cancellationToken).ConfigureAwait(false);
+        var url = await _gcs.UploadPublicObjectAsync(content, objectName, contentType, cancellationToken).ConfigureAwait(false);
+        await _usage.AddStorageBytesAsync(content.LongLength, cancellationToken).ConfigureAwait(false);
+        return url;
     }
 
     public Task ClearAsync(int branchId, CancellationToken cancellationToken = default)
     {
-        var prefix = _opt.BranchPrintPrefix.Trim().TrimStart('/').TrimEnd('/');
+        var prefix = TenantPrefix();
         var folderPrefix = $"{prefix}/{branchId}/";
         return _gcs.DeleteObjectsWithPrefixAsync(folderPrefix, cancellationToken);
     }
@@ -52,5 +62,14 @@ public sealed class BranchReceiptLogoGcsStorage : IBranchReceiptLogoStorage
         if (!e.StartsWith('.'))
             e = "." + e;
         return e is ".png" or ".jpg" or ".jpeg" or ".webp" or ".gif" ? e : ".png";
+    }
+
+    private string TenantPrefix()
+    {
+        var tenantPublicId = _currentTenant.TenantPublicId
+            ?? throw new InvalidOperationException("No existe un tenant autenticado para almacenar el logo.");
+        var configured = _opt.BranchPrintPrefix.Trim().Trim('/');
+        var prefix = string.IsNullOrWhiteSpace(configured) ? "branch-print" : configured;
+        return $"tenants/{tenantPublicId:D}/{prefix}";
     }
 }

@@ -3,6 +3,7 @@ namespace SenorArroz.Domain.Entities;
 public class WhatsAppAiInvocation
 {
     public long Id { get; set; }
+    public int? TenantId { get; set; }
     public int BranchId { get; set; }
     public int ConversationId { get; set; }
     public int IncomingMessageId { get; set; }

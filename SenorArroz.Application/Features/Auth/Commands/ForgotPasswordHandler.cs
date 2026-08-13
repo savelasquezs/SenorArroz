@@ -12,13 +12,15 @@ namespace SenorArroz.Application.Features.Auth.Commands
         IPasswordResetRepository passwordResetRepository,
         IEmailService emailService,
         ILogger<ForgotPasswordHandler> logger,
-        IClock clock) : IRequestHandler<ForgotPasswordCommand, bool>
+        IClock clock,
+        ITenantExecutionContext tenantExecutionContext) : IRequestHandler<ForgotPasswordCommand, bool>
     {
         private readonly IAuthRepository _authRepository = authRepository;
         private readonly IPasswordResetRepository _passwordResetRepository = passwordResetRepository;
         private readonly IEmailService _emailService = emailService;
         private readonly ILogger<ForgotPasswordHandler> _logger = logger;
         private readonly IClock _clock = clock;
+        private readonly ITenantExecutionContext _tenantExecutionContext = tenantExecutionContext;
 
         public async Task<bool> Handle(ForgotPasswordCommand request, CancellationToken cancellationToken)
         {
@@ -32,6 +34,8 @@ namespace SenorArroz.Application.Features.Auth.Commands
                     _logger.LogWarning("Password reset requested for non-existent user: {Email}", request.Email);
                     return true; // Return true to prevent email enumeration
                 }
+
+                using var tenantScope = _tenantExecutionContext.BeginTenantScope(user.TenantId!.Value, user.Tenant.PublicId);
 
                 // Invalidate existing tokens
                 await _passwordResetRepository.InvalidateAllUserTokensAsync(user.Id, cancellationToken);

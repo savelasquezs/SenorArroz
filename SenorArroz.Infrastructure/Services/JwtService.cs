@@ -45,6 +45,9 @@ public class JwtService : IJwtService
             new(ClaimTypes.Name, user.Name),
             new(ClaimTypes.Role, user.Role?.ToString() ?? string.Empty),
             new("branch_id", user.BranchId.ToString()),
+            new("tenant_id", user.TenantId?.ToString() ?? throw new InvalidOperationException("El usuario no tiene tenant.")),
+            new("tenant_public_id", user.Tenant.PublicId.ToString("D")),
+            new("tenant_access_version", user.Tenant.AccessVersion.ToString()),
             new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
         };
@@ -85,6 +88,12 @@ public class JwtService : IJwtService
     {
         var value = GetPrincipalFromExpiredToken(token)?.FindFirst("session_id")?.Value;
         return Guid.TryParse(value, out var sessionId) ? sessionId : null;
+    }
+
+    public int? GetTenantIdFromExpiredToken(string token)
+    {
+        var value = GetPrincipalFromExpiredToken(token)?.FindFirst("tenant_id")?.Value;
+        return int.TryParse(value, out var tenantId) && tenantId > 0 ? tenantId : null;
     }
 
     public string? GetDeviceInstallationIdFromExpiredToken(string token) =>

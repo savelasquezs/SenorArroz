@@ -7,6 +7,22 @@ namespace SenorArroz.Application.Common.Interfaces
     public interface IApplicationDbContext
     {
         DatabaseFacade Database { get; }
+        DbSet<Tenant> Tenants { get; set; }
+        DbSet<PlatformUser> PlatformUsers { get; set; }
+        DbSet<PlatformSession> PlatformSessions { get; set; }
+        DbSet<PlatformOtpChallenge> PlatformOtpChallenges { get; set; }
+        DbSet<PlatformTrustedDevice> PlatformTrustedDevices { get; set; }
+        DbSet<PlatformSetting> PlatformSettings { get; set; }
+        DbSet<SaasModule> SaasModules { get; set; }
+        DbSet<SaasAddon> SaasAddons { get; set; }
+        DbSet<SaasPlan> SaasPlans { get; set; }
+        DbSet<SaasPlanVersion> SaasPlanVersions { get; set; }
+        DbSet<SaasPlanVersionModule> SaasPlanVersionModules { get; set; }
+        DbSet<TenantSubscription> TenantSubscriptions { get; set; }
+        DbSet<TenantAddon> TenantAddons { get; set; }
+        DbSet<TenantInvitation> TenantInvitations { get; set; }
+        DbSet<PlatformAuditLog> PlatformAuditLogs { get; set; }
+        DbSet<TenantUsageMonthly> TenantUsageMonthly { get; set; }
         DbSet<Address> Addresses { get; set; }
 
         DbSet<App> Apps { get; set; }

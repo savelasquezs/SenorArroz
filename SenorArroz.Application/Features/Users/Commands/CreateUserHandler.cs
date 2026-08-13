@@ -20,6 +20,7 @@ namespace SenorArroz.Application.Features.Users.Commands
         private readonly ICurrentUser _currentUser;
         private readonly IBranchContext _branchContext;
         private readonly IApplicationDbContext _db;
+        private readonly ITenantCapabilityService _capabilities;
 
         public CreateUserHandler(
             IUserRepository userRepository,
@@ -27,7 +28,8 @@ namespace SenorArroz.Application.Features.Users.Commands
             IMapper mapper,
             ICurrentUser currentUser,
             IBranchContext branchContext,
-            IApplicationDbContext db)
+            IApplicationDbContext db,
+            ITenantCapabilityService capabilities)
         {
             _userRepository = userRepository;
             _passwordService = passwordService;
@@ -35,10 +37,12 @@ namespace SenorArroz.Application.Features.Users.Commands
             _currentUser = currentUser;
             _branchContext = branchContext;
             _db = db;
+            _capabilities = capabilities;
         }
 
         public async Task<UserDto> Handle(CreateUserCommand request, CancellationToken cancellationToken)
         {
+            await _capabilities.EnsureCanCreateUserAsync(cancellationToken);
 
             string creatorRole = _currentUser.Role;
             int creatorBranchId= _currentUser.BranchId;
@@ -85,7 +89,7 @@ namespace SenorArroz.Application.Features.Users.Commands
                     bool superadminExists = await _userRepository.RoleExistsAsync(UserRole.Superadmin, cancellationToken);
                     if (superadminExists)
                     {
-                        throw new BusinessException("Solo puede existir un Superadmin en la aplicación.");
+                        throw new BusinessException("Solo puede existir un Superadmin por tenant.");
                     }
                 }
 
@@ -103,7 +107,7 @@ namespace SenorArroz.Application.Features.Users.Commands
                     bool  kitchenExists = await _userRepository.KitchenExistsInBranchAsync(request.UserData.BranchId, cancellationToken);
                     if (kitchenExists)
                     {
-                        throw new BusinessException("Solo puede existir un usuario con rol Cocina en la aplicación.");
+                        throw new BusinessException("Solo puede existir un usuario con rol Cocina por tenant.");
                     }
                 }
             }

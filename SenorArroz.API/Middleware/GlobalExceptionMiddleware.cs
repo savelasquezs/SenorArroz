@@ -115,6 +115,14 @@ public class GlobalExceptionMiddleware
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
                 break;
 
+            case KeyNotFoundException:
+                response.StatusCode = (int)HttpStatusCode.NotFound;
+                break;
+
+            case InvalidOperationException:
+                response.StatusCode = (int)HttpStatusCode.BadRequest;
+                break;
+
             case ValidationException validationEx:
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
                 errorResponse.Message = "Errores de validaci?n";

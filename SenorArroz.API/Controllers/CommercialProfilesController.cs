@@ -16,9 +16,11 @@ public class CommercialProfilesController : ControllerBase
     private readonly ApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IFirebaseGcsStorage _storage;
+    private readonly ICurrentTenant _currentTenant;
+    private readonly ITenantUsageMeter _usage;
 
-    public CommercialProfilesController(ApplicationDbContext db, ICurrentUser currentUser, IFirebaseGcsStorage storage)
-    { _db = db; _currentUser = currentUser; _storage = storage; }
+    public CommercialProfilesController(ApplicationDbContext db, ICurrentUser currentUser, IFirebaseGcsStorage storage, ICurrentTenant currentTenant, ITenantUsageMeter usage)
+    { _db = db; _currentUser = currentUser; _storage = storage; _currentTenant = currentTenant; _usage = usage; }
 
     [HttpGet]
     public async Task<ActionResult<ApiResponse<List<CommercialProfileDto>>>> Get([FromQuery] int branchId, CancellationToken ct)
@@ -61,7 +63,9 @@ public class CommercialProfilesController : ControllerBase
             return BadRequest(ApiResponse<CommercialProfileDto>.ErrorResponse("Selecciona una imagen válida."));
         await using var stream = file.OpenReadStream(); using var ms = new MemoryStream(); await stream.CopyToAsync(ms, ct);
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        row.PhotoUrl = await _storage.UploadPublicObjectAsync(ms.ToArray(), $"commercial-profiles/{row.BranchId}/{row.Id}/{Guid.NewGuid():N}{ext}", file.ContentType, ct);
+        var content = ms.ToArray();
+        row.PhotoUrl = await _storage.UploadPublicObjectAsync(content, $"{TenantPrefix()}/{row.BranchId}/{row.Id}/{Guid.NewGuid():N}{ext}", file.ContentType, ct);
+        await _usage.AddStorageBytesAsync(content.LongLength, ct);
         await _db.SaveChangesAsync(ct);
         return Ok(ApiResponse<CommercialProfileDto>.SuccessResponse(ToDto(row)));
     }
@@ -71,7 +75,7 @@ public class CommercialProfilesController : ControllerBase
     {
         var row = await _db.CommercialProfiles.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (row is null) return NotFound(); if (!CanAccess(row.BranchId)) return Forbid();
-        await _storage.DeleteObjectsWithPrefixAsync($"commercial-profiles/{row.BranchId}/{row.Id}/", ct);
+        await _storage.DeleteObjectsWithPrefixAsync($"{TenantPrefix()}/{row.BranchId}/{row.Id}/", ct);
         row.PhotoUrl = null; await _db.SaveChangesAsync(ct); return NoContent();
     }
 
@@ -102,6 +106,7 @@ public class CommercialProfilesController : ControllerBase
     }
 
     private bool CanAccess(int branchId) => _currentUser.Role.Equals("superadmin", StringComparison.OrdinalIgnoreCase) || _currentUser.BranchId == branchId;
+    private string TenantPrefix() => $"tenants/{(_currentTenant.TenantPublicId ?? throw new InvalidOperationException("No existe un tenant autenticado.")):D}/commercial-profiles";
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static CommercialProfileDto ToDto(CommercialProfile x) => new(x.Id, x.BranchId, x.Name, x.Description, x.Ingredients, x.PhotoUrl);
 }

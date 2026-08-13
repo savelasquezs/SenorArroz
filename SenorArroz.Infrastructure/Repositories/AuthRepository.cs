@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Domain.Interfaces.Services;
@@ -10,27 +11,35 @@ public class AuthRepository : IAuthRepository
 {
     private readonly ApplicationDbContext _context;
     private readonly IPasswordService _passwordService;
+    private readonly ITenantExecutionContext? _tenantExecutionContext;
 
-    public AuthRepository(ApplicationDbContext context, IPasswordService passwordService)
+    public AuthRepository(ApplicationDbContext context, IPasswordService passwordService, ITenantExecutionContext? tenantExecutionContext = null)
     {
         _context = context;
         _passwordService = passwordService;
+        _tenantExecutionContext = tenantExecutionContext;
     }
 
     public async Task<User?> GetUserByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
+        using var scope = _tenantExecutionContext?.BeginSystemScope();
         return await _context.Users
+            .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(u => u.Branch)
-            .FirstOrDefaultAsync(u => u.Email == email && u.Active, cancellationToken);
+            .Include(u => u.Tenant)
+            .FirstOrDefaultAsync(u => u.Email == email && u.Active && u.Tenant.Status == Domain.Enums.TenantStatus.Active, cancellationToken);
     }
 
     public async Task<User?> GetUserByIdWithBranchAsync(int userId, CancellationToken cancellationToken = default)
     {
+        using var scope = _tenantExecutionContext?.BeginSystemScope();
         return await _context.Users
+            .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(u => u.Branch)
-            .FirstOrDefaultAsync(u => u.Id == userId && u.Active, cancellationToken);
+            .Include(u => u.Tenant)
+            .FirstOrDefaultAsync(u => u.Id == userId && u.Active && u.Tenant.Status == Domain.Enums.TenantStatus.Active, cancellationToken);
     }
 
     public Task<bool> IsSessionCurrentAsync(

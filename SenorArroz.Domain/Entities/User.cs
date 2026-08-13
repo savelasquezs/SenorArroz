@@ -26,6 +26,7 @@ public class User : BaseEntity
     public int? PayrollExpenseId { get; set; }
 
     // Navigation Properties
+    public virtual Tenant Tenant { get; set; } = null!;
     public virtual Branch Branch { get; set; } = null!;
     public virtual Expense? PayrollExpense { get; set; }
     public virtual ICollection<Order> TakenOrders { get; set; } = new List<Order>();

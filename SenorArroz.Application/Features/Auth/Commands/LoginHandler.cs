@@ -97,6 +97,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             // Crear refresh token entity
             var refreshTokenEntity = new RefreshToken
             {
+                TenantId = user.TenantId,
                 UserId = user.Id,
                 SessionId = sessionId,
                 Token = refreshToken,

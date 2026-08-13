@@ -15,16 +15,19 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
     private readonly IBranchRepository _branchRepository;
     private readonly IApplicationDbContext _db;
     private readonly IMapper _mapper;
+    private readonly ITenantCapabilityService _capabilities;
 
-    public CreateBranchHandler(IBranchRepository branchRepository, IApplicationDbContext db, IMapper mapper)
+    public CreateBranchHandler(IBranchRepository branchRepository, IApplicationDbContext db, IMapper mapper, ITenantCapabilityService capabilities)
     {
         _branchRepository = branchRepository;
         _db = db;
         _mapper = mapper;
+        _capabilities = capabilities;
     }
 
     public async Task<BranchDto> Handle(CreateBranchCommand request, CancellationToken cancellationToken)
     {
+        await _capabilities.EnsureCanCreateBranchAsync(cancellationToken);
         // Validate name doesn't exist
         if (await _branchRepository.NameExistsAsync(request.Name))
         {

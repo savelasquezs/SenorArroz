@@ -5,6 +5,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SenorArroz.API.Extensions;
@@ -29,6 +30,8 @@ GoogleCredentialBootstrap.ApplyFromConfiguration(builder.Configuration);
 
 // Add services to the container
 builder.Services.AddScoped<BranchScopeActionFilter>();
+builder.Services.AddScoped<PlatformSessionFilter>();
+builder.Services.AddScoped<TenantCapabilityFilter>();
 builder.Services.AddControllers(options =>
 {
     options.Filters.AddService<BranchScopeActionFilter>();
@@ -127,10 +130,12 @@ builder.Services.AddScoped<IBranchReceiptLogoStorage>(sp =>
     if (opts.Enabled && !string.IsNullOrWhiteSpace(opts.Bucket))
         return new BranchReceiptLogoGcsStorage(
             sp.GetRequiredService<IFirebaseGcsStorage>(),
-            sp.GetRequiredService<IOptions<FirebaseStorageOptions>>());
+            sp.GetRequiredService<IOptions<FirebaseStorageOptions>>(),
+            sp.GetRequiredService<ICurrentTenant>(),
+            sp.GetRequiredService<ITenantUsageMeter>());
     var env = sp.GetRequiredService<IWebHostEnvironment>();
     var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
-    return new BranchReceiptLogoStorage(root);
+    return new BranchReceiptLogoStorage(root, sp.GetRequiredService<ICurrentTenant>(), sp.GetRequiredService<ITenantUsageMeter>());
 });
 
 builder.Services.AddScoped<IUserProfileImageStorage>(sp =>
@@ -139,14 +144,17 @@ builder.Services.AddScoped<IUserProfileImageStorage>(sp =>
     if (opts.Enabled && !string.IsNullOrWhiteSpace(opts.Bucket))
         return new UserProfileImageGcsStorage(
             sp.GetRequiredService<IFirebaseGcsStorage>(),
-            sp.GetRequiredService<IOptions<FirebaseStorageOptions>>());
+            sp.GetRequiredService<IOptions<FirebaseStorageOptions>>(),
+            sp.GetRequiredService<ICurrentTenant>(),
+            sp.GetRequiredService<ITenantUsageMeter>());
     var env = sp.GetRequiredService<IWebHostEnvironment>();
     var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
-    return new UserProfileImageDiskStorage(root);
+    return new UserProfileImageDiskStorage(root, sp.GetRequiredService<ICurrentTenant>(), sp.GetRequiredService<ITenantUsageMeter>());
 });
 
 // SignalR
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<ITenantConnectionRegistry, SenorArroz.API.Services.TenantConnectionRegistry>();
 
 // Register SignalR-based notification service (after SignalR is configured)
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IOrderNotificationService, SenorArroz.API.Services.OrderNotificationService>();
@@ -161,6 +169,7 @@ builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppAiBackgroundSe
 builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppAiRecoveryService>();
 builder.Services.AddScoped<IWhatsAppAutomaticMessageSender, SenorArroz.API.Services.WhatsAppAutomaticMessageSender>();
 builder.Services.AddScoped<SenorArroz.API.Services.IPrintAgentNotificationService, SenorArroz.API.Services.PrintAgentNotificationService>();
+builder.Services.AddScoped<SenorArroz.API.Services.TenantHubGroupResolver>();
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IPrintAgentNotifier>(
     sp => sp.GetRequiredService<SenorArroz.API.Services.IPrintAgentNotificationService>());
 
@@ -207,6 +216,24 @@ builder.Services.AddAuthentication(options =>
         OnTokenValidated = async context =>
         {
             var principal = context.Principal;
+            var tenantValue = principal?.FindFirst("tenant_id")?.Value;
+            var accessVersionValue = principal?.FindFirst("tenant_access_version")?.Value;
+            if (!int.TryParse(tenantValue, out var tenantId) || tenantId <= 0 || !long.TryParse(accessVersionValue, out var accessVersion))
+            {
+                context.Fail("TENANT_CONTEXT_REQUIRED");
+                return;
+            }
+            var database = context.HttpContext.RequestServices.GetRequiredService<IApplicationDbContext>();
+            var tenantAllowed = await database.Tenants.AsNoTracking().AnyAsync(
+                tenant => tenant.Id == tenantId
+                          && tenant.Status == SenorArroz.Domain.Enums.TenantStatus.Active
+                          && tenant.AccessVersion == accessVersion,
+                context.HttpContext.RequestAborted);
+            if (!tenantAllowed)
+            {
+                context.Fail("TENANT_INACTIVE");
+                return;
+            }
             var role = principal?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
             if (!string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase))
                 return;
@@ -397,6 +424,7 @@ app.UseSwaggerUI(c =>
 
 // Global exception handling middleware
 app.UseMiddleware<GlobalExceptionMiddleware>();
+app.UseMiddleware<PlatformPortalAvailabilityMiddleware>();
 
 app.UseHttpsRedirection();
 
@@ -406,6 +434,7 @@ app.UseCors("AllowAll");
 
 // Authentication & Authorization
 app.UseAuthentication();
+app.UseMiddleware<PublicAssociationScopeMiddleware>();
 app.UseMiddleware<DeliveryAppVersionMiddleware>();
 app.UseAuthorization();
 
@@ -413,6 +442,7 @@ app.UseRateLimiter();
 
 // Custom JWT middleware for additional user context
 app.UseMiddleware<JwtMiddleware>();
+app.UseMiddleware<TenantCapabilityMiddleware>();
 
 app.MapControllers();
 

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Infrastructure.Services;
 
@@ -41,10 +42,35 @@ public class EmailOutboxWorker : BackgroundService
 
     private async Task ProcessPendingEmailsAsync(CancellationToken cancellationToken)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
-        var sender = scope.ServiceProvider.GetRequiredService<ResendEmailDeliveryService>();
-        var clock = scope.ServiceProvider.GetRequiredService<IClock>();
+        IReadOnlyList<(int Id, Guid PublicId)> tenants;
+        using (var discoveryScope = _scopeFactory.CreateScope())
+        {
+            var context = discoveryScope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
+            tenants = await context.Tenants.AsNoTracking()
+                .Where(x => x.Status == TenantStatus.Active)
+                .Select(x => new ValueTuple<int, Guid>(x.Id, x.PublicId))
+                .ToListAsync(cancellationToken);
+        }
+
+        foreach (var tenant in tenants)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var execution = scope.ServiceProvider.GetRequiredService<ITenantExecutionContext>();
+            using var tenantScope = execution.BeginTenantScope(tenant.Id, tenant.PublicId);
+            await ProcessTenantEmailsAsync(
+                scope.ServiceProvider.GetRequiredService<IApplicationDbContext>(),
+                scope.ServiceProvider.GetRequiredService<ResendEmailDeliveryService>(),
+                scope.ServiceProvider.GetRequiredService<IClock>(),
+                cancellationToken);
+        }
+    }
+
+    private static async Task ProcessTenantEmailsAsync(
+        IApplicationDbContext context,
+        ResendEmailDeliveryService sender,
+        IClock clock,
+        CancellationToken cancellationToken)
+    {
         var now = clock.UtcNow;
 
         var staleProcessingMessages = await context.EmailOutboxMessages

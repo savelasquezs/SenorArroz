@@ -10,13 +10,16 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
 {
     private readonly IHubContext<WhatsAppHub> _hubContext;
     private readonly ILogger<WhatsAppNotificationService> _logger;
+    private readonly TenantHubGroupResolver _groups;
 
     public WhatsAppNotificationService(
         IHubContext<WhatsAppHub> hubContext,
-        ILogger<WhatsAppNotificationService> logger)
+        ILogger<WhatsAppNotificationService> logger,
+        TenantHubGroupResolver groups)
     {
         _hubContext = hubContext;
         _logger = logger;
+        _groups = groups;
     }
 
     public async Task NotifyMessageCreatedAsync(
@@ -33,7 +36,7 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
         };
 
         await _hubContext.Clients
-            .Group($"Branch_{branchId}_WhatsApp")
+            .Group(TenantHubGroups.Branch(await _groups.TenantIdAsync(branchId, cancellationToken), branchId, "WhatsApp"))
             .SendAsync("WhatsAppMessageCreated", payload, cancellationToken);
 
         _logger.LogInformation(
@@ -46,7 +49,7 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
     public async Task NotifyAttentionChangedAsync(int branchId, WhatsAppConversationDto conversation, CancellationToken cancellationToken = default)
     {
         var payload = new { branchId, conversation };
-        await _hubContext.Clients.Group($"Branch_{branchId}_WhatsApp").SendAsync("WhatsAppAttentionChanged", payload, cancellationToken);
+        await _hubContext.Clients.Group(TenantHubGroups.Branch(await _groups.TenantIdAsync(branchId, cancellationToken), branchId, "WhatsApp")).SendAsync("WhatsAppAttentionChanged", payload, cancellationToken);
     }
 
     public async Task NotifyAiProcessingChangedAsync(
@@ -77,7 +80,7 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
         };
         var payload = new { branchId, processing = realtimeProcessing };
         await _hubContext.Clients
-            .Group($"Branch_{branchId}_WhatsApp")
+            .Group(TenantHubGroups.Branch(await _groups.TenantIdAsync(branchId, cancellationToken), branchId, "WhatsApp"))
             .SendAsync("WhatsAppAiProcessingChanged", payload, cancellationToken);
         _logger.LogInformation(
             "WhatsApp AI processing update emitted. BranchId={BranchId} ConversationId={ConversationId} IncomingMessageId={IncomingMessageId} Status={Status} Attempts={Attempts}",

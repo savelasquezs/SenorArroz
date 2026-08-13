@@ -10,16 +10,20 @@ public class PasswordResetRepository : IPasswordResetRepository
 {
     private readonly ApplicationDbContext _context;
     private readonly IClock _clock;
+    private readonly ITenantExecutionContext? _tenantExecutionContext;
 
-    public PasswordResetRepository(ApplicationDbContext context, IClock clock)
+    public PasswordResetRepository(ApplicationDbContext context, IClock clock, ITenantExecutionContext? tenantExecutionContext = null)
     {
         _context = context;
         _clock = clock;
+        _tenantExecutionContext = tenantExecutionContext;
     }
 
     public async Task<PasswordResetToken?> GetByTokenAsync(string token, CancellationToken cancellationToken = default)
     {
+        using var scope = _tenantExecutionContext?.BeginSystemScope();
         return await _context.PasswordResetTokens
+            .IgnoreQueryFilters()
             .AsNoTracking()
             .Include(prt => prt.User)
             .FirstOrDefaultAsync(prt => prt.Token == token, cancellationToken);
@@ -56,6 +60,7 @@ public class PasswordResetRepository : IPasswordResetRepository
 
     public async Task UpdateAsync(PasswordResetToken passwordResetToken, CancellationToken cancellationToken = default)
     {
+        using var scope = _tenantExecutionContext?.BeginSystemScope();
         // GetByTokenAsync returns a detached graph that includes User. Attaching that
         // graph with Update() can conflict with another tracked User instance during
         // the password-reset flow. Update only the token's mutable scalar fields.
@@ -71,6 +76,7 @@ public class PasswordResetRepository : IPasswordResetRepository
 
     public async Task InvalidateAllUserTokensAsync(int userId, CancellationToken cancellationToken = default)
     {
+        using var scope = _tenantExecutionContext?.BeginSystemScope();
         var tokens = await _context.PasswordResetTokens
             .Where(prt => prt.UserId == userId && !prt.IsUsed)
             .ToListAsync(cancellationToken);

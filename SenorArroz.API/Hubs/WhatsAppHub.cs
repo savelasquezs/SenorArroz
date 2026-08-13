@@ -2,25 +2,42 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Domain.Constants;
 
 namespace SenorArroz.API.Hubs;
 
 [Authorize]
 [DisableRateLimiting]
-public class WhatsAppHub : Hub
+public class WhatsAppHub(
+    IApplicationDbContext db,
+    ITenantCapabilityService capabilities,
+    ITenantConnectionRegistry connections) : Hub
 {
+    private IDisposable? _registration;
+
     public override async Task OnConnectedAsync()
     {
+        if (!await capabilities.HasAddonAsync(TenantAddons.WhatsAppAi, Context.ConnectionAborted))
+        {
+            Context.Abort();
+            return;
+        }
+
         var branchId = Context.User?.FindFirst("branch_id")?.Value;
+        var tenantId = Context.User?.FindFirst("tenant_id")?.Value;
         var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
 
         if (role == "Superadmin")
             branchId = ResolveSelectedBranchId();
 
-        if (!string.IsNullOrEmpty(branchId)
+        if (int.TryParse(branchId, out var parsedBranchId) && int.TryParse(tenantId, out var parsedTenantId)
+            && await db.Branches.AsNoTracking().AnyAsync(x => x.Id == parsedBranchId, Context.ConnectionAborted)
             && (role == "Admin" || role == "Cashier" || role == "Superadmin"))
         {
-            await Groups.AddToGroupAsync(Context.ConnectionId, $"Branch_{branchId}_WhatsApp");
+            _registration = connections.Register(parsedTenantId, Context.ConnectionId, Context.Abort);
+            await Groups.AddToGroupAsync(Context.ConnectionId, TenantHubGroups.Branch(parsedTenantId, parsedBranchId, "WhatsApp"));
         }
 
         await base.OnConnectedAsync();
@@ -28,16 +45,18 @@ public class WhatsAppHub : Hub
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        _registration?.Dispose();
         var branchId = Context.User?.FindFirst("branch_id")?.Value;
+        var tenantId = Context.User?.FindFirst("tenant_id")?.Value;
         var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
 
         if (role == "Superadmin")
             branchId = ResolveSelectedBranchId();
 
-        if (!string.IsNullOrEmpty(branchId)
+        if (int.TryParse(branchId, out var parsedBranchId) && int.TryParse(tenantId, out var parsedTenantId)
             && (role == "Admin" || role == "Cashier" || role == "Superadmin"))
         {
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Branch_{branchId}_WhatsApp");
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantHubGroups.Branch(parsedTenantId, parsedBranchId, "WhatsApp"));
         }
 
         await base.OnDisconnectedAsync(exception);

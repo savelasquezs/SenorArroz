@@ -2,6 +2,14 @@
 
 Este mapa existe para que Codex encuentre rápido dónde modificar sin escanear todo el repositorio.
 
+## Plano de control SaaS
+
+- API: `PlatformAuthController`, `PlatformTenantsController`, `PlatformPlansController`, `PlatformAuthorization`, `TenantCapabilityMiddleware` y `PlatformPortalAvailabilityMiddleware`.
+- Aplicacion: `Features/Saas`, `ICurrentTenant`, `IPlatformService`, `ITenantCapabilityService`, `ITenantConnectionRegistry` e `ITenantUsageMeter`.
+- Dominio: `SaasEntities`, `SaasEnums` y `TenantCapabilities`.
+- Infraestructura: `CurrentTenantService`, `PlatformAuthService`, `PlatformService`, `TenantCapabilityService`, `TenantUsageMeter`, `TenantDbConnectionInterceptor` y `SaasConfigurations`.
+- SQL: `add_saas_multitenancy.sql`, `verify_saas_multitenancy.sql` y `disable_saas_portal.sql`.
+
 ## Tipo de repo
 
 Backend principal de Señor Arroz.

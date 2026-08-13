@@ -41,6 +41,9 @@ public class WhatsAppController : ControllerBase
     private readonly IBranchBusinessHoursService _businessHoursService;
     private readonly WhatsAppAwayMessageService _awayMessageService;
     private readonly int _aiMaxPersistentAttempts;
+    private readonly ITenantExecutionContext _tenantExecution;
+    private readonly ICurrentTenant _currentTenant;
+    private readonly ITenantUsageMeter _usage;
 
     public WhatsAppController(
         IApplicationDbContext db,
@@ -58,7 +61,10 @@ public class WhatsAppController : ControllerBase
         IWhatsAppAiWorkQueue aiWorkQueue,
         IWhatsAppAutomaticMessageSender automaticMessageSender,
         IBranchBusinessHoursService businessHoursService,
-        WhatsAppAwayMessageService awayMessageService)
+        WhatsAppAwayMessageService awayMessageService,
+        ITenantExecutionContext tenantExecution,
+        ICurrentTenant currentTenant,
+        ITenantUsageMeter usage)
     {
         _db = db;
         _currentUser = currentUser;
@@ -76,6 +82,9 @@ public class WhatsAppController : ControllerBase
         _automaticMessageSender = automaticMessageSender;
         _businessHoursService = businessHoursService;
         _awayMessageService = awayMessageService;
+        _tenantExecution = tenantExecution;
+        _currentTenant = currentTenant;
+        _usage = usage;
     }
 
     [HttpGet("status")]
@@ -474,7 +483,10 @@ public class WhatsAppController : ControllerBase
 
         var exists = await _db.WhatsAppBranchSettings
             .AsNoTracking()
-            .AnyAsync(x => x.WebhookVerifyToken == verifyToken, cancellationToken);
+            .AnyAsync(x => x.WebhookVerifyToken == verifyToken
+                           && x.TenantId.HasValue
+                           && _db.Tenants.Any(tenant => tenant.Id == x.TenantId && tenant.Status == TenantStatus.Active)
+                           && _db.TenantAddons.Any(addon => addon.TenantId == x.TenantId && addon.Active && addon.Addon.Active && addon.Addon.Code == "whatsapp_ai"), cancellationToken);
 
         if (!exists)
         {
@@ -501,7 +513,6 @@ public class WhatsAppController : ControllerBase
             RawPayload = rawPayload,
             Processed = false
         };
-        _db.WhatsAppWebhookEvents.Add(webhookEvent);
         var createdMessages = new List<WhatsAppMessage>();
         var aiProcessingChanges = new List<WhatsAppMessage>();
         var awayMessageDispatches = new List<WhatsAppAwayMessageDispatch>();
@@ -509,6 +520,15 @@ public class WhatsAppController : ControllerBase
         try
         {
             using var document = JsonDocument.Parse(rawPayload);
+            var tenantId = await ResolveWebhookTenantAsync(document.RootElement, cancellationToken);
+            if (!tenantId.HasValue)
+                return Ok();
+            var tenantPublicId = await _db.Tenants.AsNoTracking()
+                .Where(x => x.Id == tenantId.Value)
+                .Select(x => x.PublicId)
+                .SingleAsync(cancellationToken);
+            using var tenantScope = _tenantExecution.BeginTenantScope(tenantId.Value, tenantPublicId);
+            webhookEvent.TenantId = tenantId;
             var processedAny = await ProcessWebhookPayloadAsync(
                 document.RootElement,
                 webhookEvent,
@@ -517,6 +537,8 @@ public class WhatsAppController : ControllerBase
                 awayMessageDispatches,
                 cancellationToken);
             webhookEvent.Processed = processedAny;
+            if (webhookEvent.TenantId.HasValue)
+                _db.WhatsAppWebhookEvents.Add(webhookEvent);
             await _db.SaveChangesAsync(cancellationToken);
 
             foreach (var message in createdMessages.Where(x => x.Id > 0))
@@ -561,6 +583,28 @@ public class WhatsAppController : ControllerBase
         }
 
         return Ok();
+    }
+
+    private async Task<int?> ResolveWebhookTenantAsync(JsonElement root, CancellationToken cancellationToken)
+    {
+        var phoneNumberIds = new HashSet<string>(StringComparer.Ordinal);
+        if (root.TryGetProperty("entry", out var entries) && entries.ValueKind == JsonValueKind.Array)
+            foreach (var entry in entries.EnumerateArray())
+                if (entry.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Array)
+                    foreach (var change in changes.EnumerateArray())
+                        if (change.TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.Object)
+                        {
+                            var phoneNumberId = TryGetPhoneNumberId(value);
+                            if (!string.IsNullOrWhiteSpace(phoneNumberId)) phoneNumberIds.Add(phoneNumberId);
+                        }
+        if (phoneNumberIds.Count == 0) return null;
+        var tenantIds = await _db.WhatsAppBranchSettings.AsNoTracking()
+            .Where(x => phoneNumberIds.Contains(x.PhoneNumberId) && x.IsActive && x.IsVerified && x.TenantId.HasValue
+                        && _db.Tenants.Any(tenant => tenant.Id == x.TenantId && tenant.Status == TenantStatus.Active)
+                        && _db.TenantAddons.Any(addon => addon.TenantId == x.TenantId && addon.Active && addon.Addon.Active && addon.Addon.Code == "whatsapp_ai"))
+            .Select(x => x.TenantId!.Value).Distinct().ToListAsync(cancellationToken);
+        if (tenantIds.Count > 1) throw new InvalidOperationException("Un webhook no puede mezclar tenants.");
+        return tenantIds.SingleOrDefault() is var id && id > 0 ? id : null;
     }
 
     [HttpGet("conversations")]
@@ -1756,13 +1800,19 @@ public class WhatsAppController : ControllerBase
 
                 var setting = await _db.WhatsAppBranchSettings
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.PhoneNumberId == phoneNumberId && x.IsActive && x.IsVerified, cancellationToken);
+                    .FirstOrDefaultAsync(x => x.PhoneNumberId == phoneNumberId && x.IsActive && x.IsVerified
+                                              && x.TenantId.HasValue
+                                              && _db.TenantAddons.Any(addon => addon.TenantId == x.TenantId && addon.Active && addon.Addon.Code == "whatsapp_ai"), cancellationToken);
 
                 if (setting is null)
                 {
                     _logger.LogWarning("WhatsApp webhook ignored because phone number id {PhoneNumberId} is not configured.", phoneNumberId);
                     continue;
                 }
+
+                if (webhookEvent.TenantId.HasValue && webhookEvent.TenantId != setting.TenantId)
+                    throw new InvalidOperationException("Un webhook no puede mezclar tenants.");
+                webhookEvent.TenantId = setting.TenantId;
 
                 processedAny |= await ProcessInboundMessagesAsync(value, setting, webhookEvent, createdMessages, awayMessageDispatches, cancellationToken);
                 processedAny |= await ProcessStatusesAsync(value, webhookEvent, aiProcessingChanges, cancellationToken);
@@ -2424,8 +2474,12 @@ public class WhatsAppController : ControllerBase
         var ext = Path.GetExtension(fileName);
         if (string.IsNullOrWhiteSpace(ext))
             ext = ExtensionFromContentType(contentType, MediaTypeFromContentType(contentType, fileName));
-        var objectName = $"{prefix}/{branchId}/{conversationId}/{_clock.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}{ext}";
-        return await _firebaseStorage.UploadPublicObjectAsync(content, objectName, contentType, cancellationToken);
+        var tenantPublicId = _currentTenant.TenantPublicId
+            ?? throw new InvalidOperationException("No existe un tenant autenticado para almacenar el archivo.");
+        var objectName = $"tenants/{tenantPublicId:D}/{prefix}/{branchId}/{conversationId}/{_clock.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}{ext}";
+        var url = await _firebaseStorage.UploadPublicObjectAsync(content, objectName, contentType, cancellationToken);
+        await _usage.AddStorageBytesAsync(content.LongLength, cancellationToken);
+        return url;
     }
 
     private static string? NormalizeCustomerPhone(string? value)

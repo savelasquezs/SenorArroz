@@ -13,6 +13,33 @@ Una sola base de datos PostgreSQL compartida
 
 No usar una base de datos por cliente en esta etapa. No usar schema por cliente salvo que exista una razón fuerte futura.
 
+## Estado de implementacion
+
+Implementado para v1:
+
+- Plano de control, tenant inicial `senor-arroz`, planes, add-ons y cuenta global `santyvano@outlook.com` copiada desde el hash operativo.
+- Autenticacion `/api/platform/auth/*` independiente con OTP 10 minutos/5 intentos, cookie+CSRF y dispositivos confiables por 30 dias.
+- Portal Vue `/platform` para clientes, planes, configuracion, auditoria y dispositivos.
+- JWT operativo con `tenant_id`, `tenant_public_id` y `tenant_access_version`; verificacion de estado en cada token.
+- Filtros globales EF Core, validacion de escrituras, claves compuestas y RLS forzado.
+- Policies de modulos/add-ons en API, hubs y workers; cuotas transaccionales en aplicacion y PostgreSQL.
+- Prefijos de archivos, grupos SignalR, webhooks, print agent y outbox aislados por tenant.
+- Medicion mensual de pedidos, almacenamiento y consumo/costo estimado de IA.
+- Invitaciones de un uso por 72 horas, planes publicados inmutables y downgrade validado.
+
+Fuera de v1: pagos/facturacion SaaS, autoservicio, trials, dominios personalizados, impersonacion y borrado de tenants.
+
+## Despliegue de produccion
+
+1. Tomar backup y ejecutar `add_saas_multitenancy.sql` con un rol de migracion propietario durante ventana controlada. El script crea tablas/columnas, hace backfill, valida huerfanos/FKs y despues impone `NOT NULL`, cuotas y RLS.
+2. Ejecutar `verify_saas_multitenancy.sql` y comprobar que el 100 % de filas operativas pertenece a `senor-arroz`.
+3. Ejecutar la API con un rol PostgreSQL dedicado, no propietario, `NOSUPERUSER NOBYPASSRLS`. Nunca usar `postgres` como usuario de runtime.
+4. Configurar secretos solo por variables de entorno, HTTPS, `Saas:PortalEnabled=true` y `FrontendSettings:TenantInvitationUrl` con el dominio real.
+5. Probar pedidos, cocina, caja, domicilios, WhatsApp, Rappi, documentos e impresion del tenant inicial.
+6. No crear el segundo tenant real hasta aprobar pruebas cruzadas de API y SQL bajo el rol runtime.
+
+Rollback funcional: ejecutar `disable_saas_portal.sql`, detener altas y mantener intactos backfill/columnas.
+
 ## Contexto importante
 
 El sistema ya tiene clientes reales. Por eso la migración debe ser progresiva y segura.

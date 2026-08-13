@@ -40,6 +40,7 @@ public sealed class RappiOrderProcessor(
         }
 
         var connection = await db.DeliveryAppConnections
+            .WhereAddonEnabled(db, "rappi")
             .Include(x => x.Stores)
             .Include(x => x.ProductMappings)
                 .ThenInclude(x => x.Product)
@@ -324,6 +325,7 @@ public sealed class RappiOrderProcessor(
     public async Task ProcessPendingWebhookEventsAsync(CancellationToken ct)
     {
         var pendingIds = await db.IntegrationWebhookEvents
+            .WhereAddonEnabled(db, "rappi")
             .AsNoTracking()
             .Where(x => x.Provider == "rappi" && x.Status == "received")
             .OrderBy(x => x.CreatedAt)
@@ -365,6 +367,7 @@ public sealed class RappiOrderProcessor(
     private async Task ProcessWebhookEventAsync(IntegrationWebhookEvent webhookEvent, CancellationToken ct)
     {
         var connection = await db.DeliveryAppConnections
+            .WhereAddonEnabled(db, "rappi")
             .Include(x => x.Stores)
             .FirstOrDefaultAsync(x => x.Id == webhookEvent.ConnectionId, ct)
             ?? throw new InvalidOperationException("La conexión del webhook no existe.");

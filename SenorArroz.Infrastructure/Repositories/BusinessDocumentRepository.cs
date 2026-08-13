@@ -56,7 +56,8 @@ public sealed class BusinessDocumentRepository : IBusinessDocumentRepository
 
     public Task<BusinessDocument?> GetByPublicIdAsync(Guid publicId, CancellationToken cancellationToken = default) =>
         _context.BusinessDocuments.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.PublicId == publicId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.PublicId == publicId
+                && _context.Tenants.Any(tenant => tenant.Id == EF.Property<int?>(x, "TenantId") && tenant.Status == Domain.Enums.TenantStatus.Active), cancellationToken);
 
     public async Task<BusinessDocument> CreateAsync(
         BusinessDocument document,

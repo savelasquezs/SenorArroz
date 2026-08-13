@@ -57,10 +57,18 @@ public static class DependencyInjection
         services.AddScoped<IFcmPushService, FcmPushService>();
 
         // Database
-        services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
-        services.AddDbContextFactory<ApplicationDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+        services.AddHttpContextAccessor();
+        services.AddSingleton<CurrentTenantService>();
+        services.AddSingleton<ICurrentTenant>(sp => sp.GetRequiredService<CurrentTenantService>());
+        services.AddSingleton<ITenantExecutionContext>(sp => sp.GetRequiredService<CurrentTenantService>());
+        services.AddSingleton<TenantDbConnectionInterceptor>();
+        services.AddScoped<IPlatformCurrentUser, PlatformCurrentUser>();
+        services.AddDbContext<ApplicationDbContext>((sp, options) =>
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+                .AddInterceptors(sp.GetRequiredService<TenantDbConnectionInterceptor>()));
+        services.AddDbContextFactory<ApplicationDbContext>((sp, options) =>
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+                .AddInterceptors(sp.GetRequiredService<TenantDbConnectionInterceptor>()));
 
         services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
 
@@ -142,13 +150,16 @@ public static class DependencyInjection
         services.AddScoped<ICashRegisterClosureRepository, CashRegisterClosureRepository>();
 
         // Services
-        services.AddHttpContextAccessor();
         services.AddScoped<IPasswordService, PasswordService>();
         services.AddScoped<IJwtService, JwtService>();
         services.AddScoped<ICurrentUser, CurrentUserService>();
         services.AddScoped<IBranchContext, BranchContextService>();
         services.AddHttpClient<ResendEmailDeliveryService>();
         services.AddScoped<IEmailService, EmailService>();
+        services.AddScoped<IPlatformAuthService, PlatformAuthService>();
+        services.AddScoped<IPlatformService, PlatformService>();
+        services.AddScoped<ITenantCapabilityService, TenantCapabilityService>();
+        services.AddScoped<ITenantUsageMeter, TenantUsageMeter>();
         // OrderNotificationService will be registered in Program.cs after SignalR setup
 
         // Background Services

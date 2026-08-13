@@ -94,6 +94,24 @@ public class EmailService : IEmailService
             isHtml: true);
     }
 
+    public Task<EmailSendResult> SendPlatformOtpEmailAsync(string toEmail, string userName, string code, DateTime expiresAt)
+    {
+        var content = $@"<h2>Hola {WebUtility.HtmlEncode(userName)}</h2>
+<p>Tu código de acceso a la plataforma es:</p>
+<p style='font-size:32px;font-weight:700;letter-spacing:8px;text-align:center'>{WebUtility.HtmlEncode(code)}</p>
+<p>Expira a las {expiresAt.ToUniversalTime():HH:mm} UTC. Si no solicitaste este acceso, ignora este mensaje.</p>";
+        return QueueEmailAsync("platform_otp", [toEmail], "Código de acceso a la plataforma", BuildBrandedEmail("Verificación de acceso", "Administración SaaS", content), true);
+    }
+
+    public Task<EmailSendResult> SendTenantInvitationEmailAsync(string toEmail, string userName, string tenantName, string invitationUrl, DateTime expiresAt)
+    {
+        var content = $@"<h2>Hola {WebUtility.HtmlEncode(userName)}</h2>
+<p>Fuiste invitado como administrador de <strong>{WebUtility.HtmlEncode(tenantName)}</strong>.</p>
+<p style='text-align:center;margin:28px 0'><a href='{WebUtility.HtmlEncode(invitationUrl)}' style='background:#f97316;color:#fff;padding:13px 24px;text-decoration:none;border-radius:7px;font-weight:bold'>Activar cuenta</a></p>
+<p>La invitación es de un solo uso y expira el {expiresAt.ToUniversalTime():dd/MM/yyyy HH:mm} UTC.</p>";
+        return QueueEmailAsync("tenant_invitation", [toEmail], $"Invitación a {tenantName}", BuildBrandedEmail("Activa tu cuenta", "Administración de empresa", content), true);
+    }
+
     public async Task<EmailSendResult> SendDailyMonetaryAuditEmailAsync(
         IReadOnlyCollection<string> toEmails,
         DailyMonetaryAuditEmailPayload payload,

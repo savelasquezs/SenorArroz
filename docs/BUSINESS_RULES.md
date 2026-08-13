@@ -2,6 +2,24 @@
 
 Este documento resume reglas funcionales que Codex debe respetar antes de modificar pedidos, pagos, cocina, domicilios, impresión, caja o módulos relacionados.
 
+## Plataforma SaaS implementada
+
+- Cada empresa es un tenant y todos los datos funcionales son tenant-owned.
+- `TenantId` se obtiene del JWT firmado o de scopes internos creados tras resolver una asociacion segura; nunca de headers o DTOs publicos.
+- `PlatformAdmin` y usuarios operativos son identidades separadas aunque compartan email y hash inicial.
+- `Suspended` y `Cancelled` invalidan access/refresh tokens, SignalR, app movil, print agent, webhooks y workers.
+- Los modulos y add-ons responden `403` desde backend cuando no estan habilitados.
+- Las versiones `Published` y `Retired` de planes no se editan; cada cambio crea una nueva version.
+- No se eliminan tenants ni sus datos en v1.
+
+| Plan | Cuotas | Alcance |
+|---|---|---|
+| Esencial | 1 sucursal, 10 usuarios | POS, cocina, clientes, catalogo, usuarios, pagos basicos, impresion, fidelizacion, configuracion y dashboard basico. |
+| Profesional | 3 sucursales, 30 usuarios | Esencial + multi-sucursal, gastos/proveedores, caja/conciliacion, domicilios, documentos y dashboard avanzado. |
+| Ilimitado | Sin limite | Profesional + enrutamiento, GPS/alertas/incidentes, auditoria avanzada, costos al menu y analitica completa. |
+
+Add-ons manuales: `whatsapp_ai` y `rappi`.
+
 ## Regla general
 
 El sistema ya opera con clientes reales. Todo cambio debe ser pequeño, seguro y compatible con datos existentes.

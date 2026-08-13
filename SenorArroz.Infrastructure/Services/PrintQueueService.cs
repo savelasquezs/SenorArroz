@@ -14,6 +14,7 @@ using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Domain.Constants;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models.Printing;
 
@@ -54,7 +55,12 @@ public class PrintQueueService : IPrintQueueService
     public async Task<bool> IsAgentTokenValidAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default)
     {
         var settings = await _db.BranchPrintSettings.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.BranchId == branchId, cancellationToken);
+            .FirstOrDefaultAsync(s => s.BranchId == branchId
+                && s.Branch.Tenant.Status == TenantStatus.Active
+                && _db.TenantSubscriptions.Any(subscription =>
+                    subscription.TenantId == s.Branch.TenantId
+                    && subscription.Status == TenantSubscriptionStatus.Active
+                    && subscription.PlanVersion.Modules.Any(module => module.Module.Active && module.Module.Code == TenantModules.Printing)), cancellationToken);
         if (settings == null) return false;
         return PrintAgentTokenCrypto.IsValid(plainToken, settings);
     }

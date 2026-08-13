@@ -23,6 +23,7 @@ namespace SenorArroz.Application
             // Configurar AutoMapper con el loggerFactory
             var mapperConfig = new MapperConfiguration(cfg =>
             {
+                cfg.AddGlobalIgnore("TenantId");
                 cfg.AddMaps(Assembly.GetExecutingAssembly()); // Detecta todos los Profiles
             }, loggerFactory);
 

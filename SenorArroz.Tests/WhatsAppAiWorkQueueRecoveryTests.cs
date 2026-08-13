@@ -57,6 +57,9 @@ public class WhatsAppAiWorkQueueRecoveryTests
         await using (var seedScope = provider.CreateAsyncScope())
         {
             var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var tenant = new Tenant { Id = 1, DisplayName = "Tenant", Slug = "tenant", Status = TenantStatus.Active };
+            var addon = new SaasAddon { Id = 1, Code = "whatsapp_ai", Name = "WhatsApp e IA", Active = true };
+            db.AddRange(tenant, addon, new TenantAddon { TenantId = 1, AddonId = 1, Tenant = tenant, Addon = addon, Active = true });
             db.WhatsAppMessages.AddRange(
                 Inbound(1, WhatsAppAiProcessingStatus.Processing, stale),
                 Inbound(2, WhatsAppAiProcessingStatus.ResponseGenerated, stale, attemptId: "response-2"),
@@ -78,7 +81,8 @@ public class WhatsAppAiWorkQueueRecoveryTests
                 Timestamp = stale,
                 SentByAi = true,
                 WhatsAppMessageId = "wamid-5",
-                RawPayload = "{\"origin\":\"ai\",\"attemptId\":\"confirmed-5\",\"success\":true}"
+                RawPayload = "{\"origin\":\"ai\",\"attemptId\":\"confirmed-5\",\"success\":true}",
+                TenantId = 1
             });
             await db.SaveChangesAsync();
         }
@@ -155,6 +159,7 @@ public class WhatsAppAiWorkQueueRecoveryTests
         int attempts = 0) => new()
         {
             Id = id,
+            TenantId = 1,
             ConversationId = id,
             Direction = WhatsAppMessageDirection.Inbound,
             Type = WhatsAppMessageType.Text,
