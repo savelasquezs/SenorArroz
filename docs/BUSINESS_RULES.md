@@ -238,6 +238,7 @@ Reglas:
 - Una parada en camino requiere dos puntos confiables dentro del radio de llegada, separados al menos por la permanencia configurada. Despues de confirmar la visita, el primer punto confiable fuera del radio de salida ejecuta el mismo flujo de negocio de una entrega manual.
 - Los radios de llegada y salida usan histeresis: llegada entre 10 y 150 metros, salida entre 20 y 500 metros y siempre mayor que llegada. La permanencia admite de 5 a 300 segundos.
 - La evidencia de llegada y autoentrega se persiste por `DeliveryRouteStop`. Una sola parada, priorizada por `StopSequence`, puede acumular evidencia simultaneamente para evitar entregar varios pedidos cercanos con la misma presencia.
+- El procesamiento de autoentrega se serializa por ruta mediante un bloqueo transaccional de PostgreSQL; dos puntos concurrentes no pueden duplicar la evidencia ni la transicion oficial de entrega.
 - Una ubicacion offline antigua se conserva en el recorrido, pero nunca cambia automaticamente el estado de un pedido.
 - La hora de cierre del seguimiento es una hora local de Colombia; los instantes de ubicación y sesión se persisten en UTC.
 - Un domiciliario solo puede tener una sesión laboral activa; un cambio de dispositivo cierra la anterior.

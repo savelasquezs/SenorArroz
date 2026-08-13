@@ -109,7 +109,9 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             throw new BusinessException($"No puedes cambiar el estado de {existingOrder.Status} a {request.StatusChange.Status}");
         }
 
-        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+        await using var tx = _context.Database.CurrentTransaction is null
+            ? await _context.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
         try
         {
@@ -242,12 +244,14 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
                     routeIdSnapshot,
                     cancellationToken);
 
-            await tx.CommitAsync(cancellationToken);
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken);
             return orderDto;
         }
         catch
         {
-            await tx.RollbackAsync(cancellationToken);
+            if (tx is not null)
+                await tx.RollbackAsync(CancellationToken.None);
             throw;
         }
     }

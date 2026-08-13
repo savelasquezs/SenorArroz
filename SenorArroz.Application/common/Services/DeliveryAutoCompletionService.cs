@@ -20,17 +20,20 @@ public sealed class DeliveryAutoCompletionService : IDeliveryAutoCompletionServi
     private readonly ISender _sender;
     private readonly IClock _clock;
     private readonly ILogger<DeliveryAutoCompletionService> _logger;
+    private readonly IDeliveryAutoCompletionRouteLock _routeLock;
 
     public DeliveryAutoCompletionService(
         IApplicationDbContext db,
         ISender sender,
         IClock clock,
-        ILogger<DeliveryAutoCompletionService> logger)
+        ILogger<DeliveryAutoCompletionService> logger,
+        IDeliveryAutoCompletionRouteLock routeLock)
     {
         _db = db;
         _sender = sender;
         _clock = clock;
         _logger = logger;
+        _routeLock = routeLock;
     }
 
     public async Task EvaluateLocationAsync(
@@ -63,6 +66,35 @@ public sealed class DeliveryAutoCompletionService : IDeliveryAutoCompletionServi
         }
 
         var routeId = location.DeliveryRouteId.Value;
+        try
+        {
+            await _routeLock.ExecuteAsync(
+                routeId,
+                innerCancellationToken => EvaluateLockedAsync(
+                    location,
+                    recordedAtUtc,
+                    nowUtc,
+                    routeId,
+                    innerCancellationToken),
+                cancellationToken);
+        }
+        catch (BusinessException ex)
+        {
+            _logger.LogInformation(
+                ex,
+                "AutoDelivery skipped order state changed route={RouteId} location={LocationId}",
+                routeId,
+                location.Id);
+        }
+    }
+
+    private async Task EvaluateLockedAsync(
+        DeliverymanLocation location,
+        DateTime recordedAtUtc,
+        DateTime nowUtc,
+        int routeId,
+        CancellationToken cancellationToken)
+    {
         var settings = await (
                 from route in _db.DeliveryRoutes.AsNoTracking()
                 join branch in _db.Branches.AsNoTracking() on route.BranchId equals branch.Id
@@ -240,38 +272,27 @@ public sealed class DeliveryAutoCompletionService : IDeliveryAutoCompletionServi
             return;
         }
 
-        try
+        var delivered = await _sender.Send(new ChangeOrderStatusCommand
         {
-            var delivered = await _sender.Send(new ChangeOrderStatusCommand
+            Id = active.Pending.OrderId,
+            StatusChange = new ChangeOrderStatusDto
             {
-                Id = active.Pending.OrderId,
-                StatusChange = new ChangeOrderStatusDto
-                {
-                    Status = OrderStatus.Delivered,
-                    Reason = "Entrega automatica por ubicacion GPS",
-                },
-                IsAutomaticDelivery = true,
-                AutoDeliveredAtUtc = nowUtc,
-                AutoDeliveryTriggerLocationId = location.Id,
-                AutoDeliveryDepartureDistanceMeters = active.DistanceMeters,
-            }, cancellationToken);
-            if (delivered.Status != OrderStatus.Delivered)
-                return;
+                Status = OrderStatus.Delivered,
+                Reason = "Entrega automatica por ubicacion GPS",
+            },
+            IsAutomaticDelivery = true,
+            AutoDeliveredAtUtc = nowUtc,
+            AutoDeliveryTriggerLocationId = location.Id,
+            AutoDeliveryDepartureDistanceMeters = active.DistanceMeters,
+        }, cancellationToken);
+        if (delivered.Status != OrderStatus.Delivered)
+            return;
 
-            _logger.LogInformation(
-                "AutoDelivery completed order={OrderId} route={RouteId} departureDistance={DistanceMeters}m",
-                active.Pending.OrderId,
-                stop.DeliveryRouteId,
-                Math.Round(active.DistanceMeters));
-        }
-        catch (BusinessException ex)
-        {
-            _logger.LogInformation(
-                ex,
-                "AutoDelivery skipped order state changed order={OrderId} route={RouteId}",
-                active.Pending.OrderId,
-                stop.DeliveryRouteId);
-        }
+        _logger.LogInformation(
+            "AutoDelivery completed order={OrderId} route={RouteId} departureDistance={DistanceMeters}m",
+            active.Pending.OrderId,
+            stop.DeliveryRouteId,
+            Math.Round(active.DistanceMeters));
     }
 
     private static bool SettingsAreValid(int arrivalRadiusMeters, int departureRadiusMeters, int minPresenceSeconds) =>

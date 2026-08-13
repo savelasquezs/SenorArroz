@@ -270,7 +270,8 @@ public class DeliveryAutoCompletionTests
                 db,
                 sender.Object,
                 clock,
-                Mock.Of<ILogger<DeliveryAutoCompletionService>>());
+                Mock.Of<ILogger<DeliveryAutoCompletionService>>(),
+                new InlineRouteLock());
             sender.Setup(x => x.Send(It.IsAny<ChangeOrderStatusCommand>(), It.IsAny<CancellationToken>()))
                 .Returns<ChangeOrderStatusCommand, CancellationToken>(async (command, cancellationToken) =>
                 {
@@ -418,5 +419,14 @@ public class DeliveryAutoCompletionTests
 
         private static decimal LatitudeAtDistance(double meters) =>
             4m + (decimal)(meters / 111_195d);
+
+        private sealed class InlineRouteLock : IDeliveryAutoCompletionRouteLock
+        {
+            public Task ExecuteAsync(
+                int routeId,
+                Func<CancellationToken, Task> action,
+                CancellationToken cancellationToken = default) =>
+                action(cancellationToken);
+        }
     }
 }
