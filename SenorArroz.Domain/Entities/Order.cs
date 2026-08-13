@@ -85,6 +85,7 @@ public class Order : BaseEntity
     public virtual LoyaltyCycleStep? LoyaltyCycleStep { get; set; }
     public virtual User? DeliveryMan { get; set; }
     public virtual DeliveryRoute? DeliveryRoute { get; set; }
+    public virtual DeliveryRouteStop? DeliveryRouteStop { get; set; }
     public virtual DeliveryAppConnection? DeliveryAppConnection { get; set; }
 
     public virtual ICollection<OrderDetail> OrderDetails { get; set; } = new List<OrderDetail>();

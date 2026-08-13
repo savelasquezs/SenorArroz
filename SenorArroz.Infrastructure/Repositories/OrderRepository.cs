@@ -44,6 +44,7 @@ public class OrderRepository : IOrderRepository
                 .ThenInclude(a => a!.Neighborhood)
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
+            .Include(o => o.DeliveryRouteStop)
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
     }
 
@@ -59,6 +60,7 @@ public class OrderRepository : IOrderRepository
                 .ThenInclude(a => a!.Neighborhood)
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
+            .Include(o => o.DeliveryRouteStop)
             .Include(o => o.OrderDetails)
                 .ThenInclude(od => od.Product)
                     .ThenInclude(p => p.Category)
@@ -77,6 +79,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
             .Include(o => o.DeliveryRoute)
+            .Include(o => o.DeliveryRouteStop)
             .Include(o => o.OrderDetails)
                 .ThenInclude(od => od.Product)
                     .ThenInclude(p => p.Category)
@@ -103,6 +106,7 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.Address)
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
+            .Include(o => o.DeliveryRouteStop)
             .Include(o => o.BankPayments)
                 .ThenInclude(bp => bp.Bank)
                     .ThenInclude(b => b.Branch)
@@ -1050,6 +1054,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
             .Include(o => o.DeliveryRoute)
+            .Include(o => o.DeliveryRouteStop)
             .Include(o => o.BankPayments)
                 .ThenInclude(bp => bp.Bank)
                     .ThenInclude(b => b.Branch)

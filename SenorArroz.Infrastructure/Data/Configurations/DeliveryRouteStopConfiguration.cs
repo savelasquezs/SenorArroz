@@ -40,8 +40,8 @@ public class DeliveryRouteStopConfiguration : IEntityTypeConfiguration<DeliveryR
         builder.HasIndex(e => e.OrderId).IsUnique().HasDatabaseName("uq_delivery_route_stop_order");
 
         builder.HasOne(e => e.Order)
-            .WithMany()
-            .HasForeignKey(e => e.OrderId)
+            .WithOne(e => e.DeliveryRouteStop)
+            .HasForeignKey<DeliveryRouteStop>(e => e.OrderId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

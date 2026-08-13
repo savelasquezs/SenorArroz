@@ -1,5 +1,9 @@
+using AutoMapper;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using SenorArroz.Application.Common.Services;
+using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Application.Mappings;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
@@ -213,6 +217,81 @@ public class AsNoTrackingRegressionTests
         Assert.NotNull(fetched);
         Assert.Equal(50000, fetched.Total);
         Assert.Equal(OrderStatus.Taken, fetched.Status);
+    }
+
+    [Fact]
+    public async Task OrderRepository_Search_MapsAutomaticDeliveryIndicator()
+    {
+        await using var ctx = CreateContext(nameof(OrderRepository_Search_MapsAutomaticDeliveryIndicator));
+        var branch = MakeBranch();
+        ctx.Branches.Add(branch);
+        await ctx.SaveChangesAsync();
+
+        var deliveryman = new User
+        {
+            Name = "Domiciliario",
+            Email = "delivery-auto@test.com",
+            Phone = "3000000001",
+            PasswordHash = "hash",
+            Role = UserRole.Deliveryman,
+            BranchId = branch.Id,
+            Active = true,
+        };
+        var cashier = new User
+        {
+            Name = "Cajero",
+            Email = "cashier-auto@test.com",
+            Phone = "3000000002",
+            PasswordHash = "hash",
+            Role = UserRole.Cashier,
+            BranchId = branch.Id,
+            Active = true,
+        };
+        ctx.Users.AddRange(deliveryman, cashier);
+        await ctx.SaveChangesAsync();
+
+        var route = new DeliveryRoute
+        {
+            BranchId = branch.Id,
+            DeliverymanId = deliveryman.Id,
+            Status = DeliveryRouteStatus.InProgress,
+            LastAssignmentAtUtc = DateTime.UtcNow,
+        };
+        ctx.DeliveryRoutes.Add(route);
+        await ctx.SaveChangesAsync();
+
+        var order = new Order
+        {
+            BranchId = branch.Id,
+            TakenById = cashier.Id,
+            DeliveryManId = deliveryman.Id,
+            DeliveryRouteId = route.Id,
+            Type = OrderType.Delivery,
+            Status = OrderStatus.Delivered,
+        };
+        ctx.Orders.Add(order);
+        await ctx.SaveChangesAsync();
+        ctx.DeliveryRouteStops.Add(new DeliveryRouteStop
+        {
+            DeliveryRouteId = route.Id,
+            OrderId = order.Id,
+            StopSequence = 1,
+            AutoDeliveredAtUtc = DateTime.UtcNow,
+        });
+        await ctx.SaveChangesAsync();
+        ctx.ChangeTracker.Clear();
+
+        var repository = new OrderRepository(ctx, new SystemUtcClock());
+        var result = await repository.SearchOrdersAsync(
+            branchId: branch.Id,
+            page: 1,
+            pageSize: 10);
+        var mapper = new MapperConfiguration(
+            config => config.AddProfile<OrderMappingProfile>(),
+            NullLoggerFactory.Instance).CreateMapper();
+        var dto = mapper.Map<OrderDto>(Assert.Single(result.Items));
+
+        Assert.True(dto.WasAutomaticallyDelivered);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

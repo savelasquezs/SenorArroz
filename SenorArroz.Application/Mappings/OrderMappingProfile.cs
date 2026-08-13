@@ -43,6 +43,8 @@ public class OrderMappingProfile : Profile
                 src.DeliveryRoute != null ? src.DeliveryRoute.MetaDurationSeconds : null))
             .ForMember(dest => dest.DeliveryRouteActualDurationSeconds, opt => opt.MapFrom(src =>
                 src.DeliveryRoute != null ? src.DeliveryRoute.ActualDurationSeconds : null))
+            .ForMember(dest => dest.WasAutomaticallyDelivered, opt => opt.MapFrom(src =>
+                src.DeliveryRouteStop != null && src.DeliveryRouteStop.AutoDeliveredAtUtc.HasValue))
             .ForMember(dest => dest.BankPayments, opt => opt.MapFrom(src => src.BankPayments))
             .ForMember(dest => dest.AppPayments, opt => opt.MapFrom(src => src.AppPayments))
             .ForMember(dest => dest.TotalDeposited, opt => opt.Ignore())
@@ -97,6 +99,7 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.DeliveryManId, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryRouteId, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryRoute, opt => opt.Ignore())
+            .ForMember(dest => dest.DeliveryRouteStop, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryAppConnectionId, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryAppConnection, opt => opt.Ignore())
             .ForMember(dest => dest.ExternalOrderId, opt => opt.Ignore())
@@ -167,6 +170,7 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.LoyaltyCycleStep, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryMan, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryRoute, opt => opt.Ignore())
+            .ForMember(dest => dest.DeliveryRouteStop, opt => opt.Ignore())
             .ForMember(dest => dest.DeliveryAppConnection, opt => opt.Ignore())
             .ForMember(dest => dest.BankPayments, opt => opt.Ignore())
             .ForMember(dest => dest.AppPayments, opt => opt.Ignore())

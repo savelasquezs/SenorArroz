@@ -36,6 +36,7 @@ public class OrderDto
     public DateTime? DeliveryRouteCompletedAtUtc { get; set; }
     public int? DeliveryRouteMetaDurationSeconds { get; set; }
     public int? DeliveryRouteActualDurationSeconds { get; set; }
+    public bool WasAutomaticallyDelivered { get; set; }
     public string? DeliveryManName { get; set; }
     public string? GuestName { get; set; }
     public int? DeliveryAppConnectionId { get; set; }
