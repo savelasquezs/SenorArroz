@@ -831,12 +831,20 @@ public sealed class RappiIntegrationsController(
             var name = EffectiveName(mapping);
             var price = EffectivePrice(mapping);
             var description = EffectiveDescription(mapping);
-            if (string.IsNullOrWhiteSpace(name) || price <= 0)
+            var categoryName = mapping.Product.Category.Name;
+            var imageUrl = EffectiveImageUrl(mapping);
+            if (string.IsNullOrWhiteSpace(name) || name.Trim().Length < 2 || price <= 0)
                 return new(connection, null,
                     $"El producto {mapping.Product.Name} tiene nombre o precio inválido.");
-            if (string.IsNullOrWhiteSpace(description))
+            if (string.IsNullOrWhiteSpace(description) || description.Trim().Length < 2)
                 return new(connection, null,
                     $"El producto {mapping.Product.Name} requiere descripción para Rappi.");
+            if (string.IsNullOrWhiteSpace(categoryName) || categoryName.Trim().Length < 2)
+                return new(connection, null,
+                    $"El producto {mapping.Product.Name} requiere una categoría válida para Rappi.");
+            if (!IsValidHttpUrl(imageUrl))
+                return new(connection, null,
+                    $"El producto {mapping.Product.Name} tiene una URL de imagen inválida.");
             var position = itemPositions.TryGetValue(mapping.Product.CategoryId, out var current)
                 ? current + 1
                 : 0;
@@ -846,7 +854,7 @@ public sealed class RappiIntegrationsController(
                     mapping.CategorySku,
                     0,
                     0,
-                    mapping.Product.Category.Name,
+                    categoryName,
                     categoryPositions[mapping.Product.CategoryId]),
                 [],
                 name,
@@ -855,7 +863,7 @@ public sealed class RappiIntegrationsController(
                 mapping.Sku,
                 position,
                 "PRODUCT",
-                mapping.OverrideImageUrl ?? mapping.Product.CommercialProfile?.PhotoUrl));
+                imageUrl));
         }
         return new(connection, new RappiMenuRequest(parent.RappiStoreId, items), null);
     }
@@ -927,6 +935,14 @@ public sealed class RappiIntegrationsController(
 
     private static string? EffectiveImageUrl(DeliveryAppProductMapping mapping) =>
         mapping.OverrideImageUrl ?? mapping.Product.CommercialProfile?.PhotoUrl;
+
+    private static bool IsValidHttpUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return true;
+        return Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    }
 
     private static string? Clean(string? value, int maxLength)
     {

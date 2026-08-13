@@ -7,6 +7,7 @@ La implementación usa el ambiente sandbox y no contiene credenciales. Los secre
 Autenticación sandbox validada:
 
 - `POST https://api.dev.rappi.com/restaurants/auth/v1/token/login/integrations`.
+- API v2: `https://api.dev.rappi.com/api/v2/restaurants-integrations-public-api`.
 - Cuerpo JSON únicamente con `client_id` y `client_secret`.
 - El token se envía a API v2 mediante `x-authorization: bearer {access_token}`.
 
@@ -22,6 +23,15 @@ Tiendas de prueba:
 Valor pendiente:
 
 - Confirmación de Rappi para habilitar manualmente `READY_FOR_PICKUP`.
+- Iniciar sesión en Integrations Manager y validar una orden completa desde cada tienda.
+
+Estado sandbox verificado el 13 de agosto de 2026:
+
+- Las tiendas `900173116` y `900173117` responden con su `integrationId` correcto.
+- Los siete webhooks requeridos están activos para ambas tiendas.
+- El menú inicial de cinco productos Paisa fue aprobado en la tienda padre.
+- Los cinco SKU quedaron sincronizados como disponibles en padre e hija.
+- La tienda hija conserva estado de aprobación `UNKNOWN`; la herencia debe comprobarse visualmente en POS Tester.
 
 ## Fase 0 — Base de datos y Railway
 

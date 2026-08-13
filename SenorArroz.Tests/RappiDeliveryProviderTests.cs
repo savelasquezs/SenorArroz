@@ -21,7 +21,7 @@ public sealed class RappiDeliveryProviderTests
                 AuthUrl =
                     "https://api.dev.rappi.com/restaurants/auth/v1/token/login/integrations",
                 ApiBaseUrl =
-                    "https://microservices.dev.rappi.com/api/v2/restaurants-integrations-public-api",
+                    "https://api.dev.rappi.com/api/v2/restaurants-integrations-public-api",
                 ClientId = "client-id",
                 ClientSecret = "client-secret"
             }));
