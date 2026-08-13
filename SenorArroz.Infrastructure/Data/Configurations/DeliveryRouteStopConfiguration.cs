@@ -21,6 +21,15 @@ public class DeliveryRouteStopConfiguration : IEntityTypeConfiguration<DeliveryR
         builder.Property(e => e.RequiresComplexAccessBuffer).HasColumnName("requires_complex_access_buffer");
         builder.Property(e => e.ComplexAccessMatchTerm).HasColumnName("complex_access_match_term").HasMaxLength(64);
         builder.Property(e => e.ComplexAccessBonusSeconds).HasColumnName("complex_access_bonus_seconds");
+        builder.Property(e => e.ArrivalCandidateAtUtc).HasColumnName("arrival_candidate_at_utc");
+        builder.Property(e => e.ArrivalConfirmedAtUtc).HasColumnName("arrival_confirmed_at_utc");
+        builder.Property(e => e.ArrivalEvidenceCount).HasColumnName("arrival_evidence_count").HasDefaultValue(0);
+        builder.Property(e => e.ArrivalLastSeenAtUtc).HasColumnName("arrival_last_seen_at_utc");
+        builder.Property(e => e.ClosestDistanceMeters).HasColumnName("closest_distance_meters");
+        builder.Property(e => e.AutoDeliveredAtUtc).HasColumnName("auto_delivered_at_utc");
+        builder.Property(e => e.AutoDeliveryTriggerLocationId).HasColumnName("auto_delivery_trigger_location_id");
+        builder.Property(e => e.AutoDeliveryDepartureDistanceMeters)
+            .HasColumnName("auto_delivery_departure_distance_meters");
 
         builder.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

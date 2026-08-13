@@ -83,6 +83,16 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
         }
 
         BranchCoordinatesValidator.EnsureValid(request.Latitude, request.Longitude);
+        var autoCompleteArrivalRadius = request.DeliveryAutoCompleteArrivalRadiusMeters
+                                        ?? branch.DeliveryAutoCompleteArrivalRadiusMeters;
+        var autoCompleteDepartureRadius = request.DeliveryAutoCompleteDepartureRadiusMeters
+                                          ?? branch.DeliveryAutoCompleteDepartureRadiusMeters;
+        var autoCompleteMinPresence = request.DeliveryAutoCompleteMinPresenceSeconds
+                                      ?? branch.DeliveryAutoCompleteMinPresenceSeconds;
+        BranchDeliveryAutoCompletionSettingsValidator.EnsureValid(
+            autoCompleteArrivalRadius,
+            autoCompleteDepartureRadius,
+            autoCompleteMinPresence);
 
         // Update branch
         branch.Name = request.Name.Trim();
@@ -137,6 +147,11 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
             branch.DeliveryTrackingLocationRetentionDays = request.DeliveryTrackingLocationRetentionDays.Value;
         if (request.DeliveryTrackingIncidentRetentionDays.HasValue)
             branch.DeliveryTrackingIncidentRetentionDays = request.DeliveryTrackingIncidentRetentionDays.Value;
+        if (request.DeliveryAutoCompleteEnabled.HasValue)
+            branch.DeliveryAutoCompleteEnabled = request.DeliveryAutoCompleteEnabled.Value;
+        branch.DeliveryAutoCompleteArrivalRadiusMeters = autoCompleteArrivalRadius;
+        branch.DeliveryAutoCompleteDepartureRadiusMeters = autoCompleteDepartureRadius;
+        branch.DeliveryAutoCompleteMinPresenceSeconds = autoCompleteMinPresence;
 
         var staysToReclassify = await (
             from stay in _db.DeliveryStays

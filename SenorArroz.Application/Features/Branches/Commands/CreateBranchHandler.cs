@@ -43,6 +43,10 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
         }
 
         BranchCoordinatesValidator.EnsureValid(request.Latitude, request.Longitude);
+        BranchDeliveryAutoCompletionSettingsValidator.EnsureValid(
+            request.DeliveryAutoCompleteArrivalRadiusMeters,
+            request.DeliveryAutoCompleteDepartureRadiusMeters,
+            request.DeliveryAutoCompleteMinPresenceSeconds);
 
         var branch = new Branch
         {
@@ -65,6 +69,10 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
             DeliveryTrackingAllowedDistanceMeters = request.DeliveryTrackingAllowedDistanceMeters,
             DeliveryTrackingLocationRetentionDays = request.DeliveryTrackingLocationRetentionDays,
             DeliveryTrackingIncidentRetentionDays = request.DeliveryTrackingIncidentRetentionDays,
+            DeliveryAutoCompleteEnabled = request.DeliveryAutoCompleteEnabled,
+            DeliveryAutoCompleteArrivalRadiusMeters = request.DeliveryAutoCompleteArrivalRadiusMeters,
+            DeliveryAutoCompleteDepartureRadiusMeters = request.DeliveryAutoCompleteDepartureRadiusMeters,
+            DeliveryAutoCompleteMinPresenceSeconds = request.DeliveryAutoCompleteMinPresenceSeconds,
         };
 
         branch = await _branchRepository.CreateAsync(branch, cancellationToken);

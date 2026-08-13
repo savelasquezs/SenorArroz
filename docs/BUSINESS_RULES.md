@@ -234,6 +234,11 @@ Reglas:
 - La planificación consulta Google Routes una sola vez para el circuito `sucursal -> paradas -> sucursal`, con `TRAFFIC_AWARE_OPTIMAL`; la meta suma esa duración con tráfico, 4 minutos por pedido y el margen adicional de acceso complejo cuando aplique.
 - Tokens de dispositivo pertenecen al usuario y tenant.
 - Las frecuencias, tolerancias y retenciones del seguimiento se configuran por sucursal.
+- La autoentrega GPS se decide exclusivamente en backend y queda activa por sucursal de forma predeterminada. Solo considera puntos con GPS habilitado, precision informada de 0 a 50 metros y captura dentro de dos minutos del reloj del servidor.
+- Una parada en camino requiere dos puntos confiables dentro del radio de llegada, separados al menos por la permanencia configurada. Despues de confirmar la visita, el primer punto confiable fuera del radio de salida ejecuta el mismo flujo de negocio de una entrega manual.
+- Los radios de llegada y salida usan histeresis: llegada entre 10 y 150 metros, salida entre 20 y 500 metros y siempre mayor que llegada. La permanencia admite de 5 a 300 segundos.
+- La evidencia de llegada y autoentrega se persiste por `DeliveryRouteStop`. Una sola parada, priorizada por `StopSequence`, puede acumular evidencia simultaneamente para evitar entregar varios pedidos cercanos con la misma presencia.
+- Una ubicacion offline antigua se conserva en el recorrido, pero nunca cambia automaticamente el estado de un pedido.
 - La hora de cierre del seguimiento es una hora local de Colombia; los instantes de ubicación y sesión se persisten en UTC.
 - Un domiciliario solo puede tener una sesión laboral activa; un cambio de dispositivo cierra la anterior.
 - Un domiciliario solo puede tener una sesión autenticada vigente. Cada login nuevo reemplaza la anterior, invalida inmediatamente sus JWT/refresh tokens por `session_id` y cierra cualquier jornada laboral que estuviera activa.

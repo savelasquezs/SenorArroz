@@ -55,6 +55,18 @@ public class BranchConfiguration : IEntityTypeConfiguration<Branch>
         builder.Property(b => b.DeliveryTrackingIncidentRetentionDays)
             .HasColumnName("delivery_tracking_incident_retention_days")
             .HasDefaultValue(15);
+        builder.Property(b => b.DeliveryAutoCompleteEnabled)
+            .HasColumnName("delivery_auto_complete_enabled")
+            .HasDefaultValue(true);
+        builder.Property(b => b.DeliveryAutoCompleteArrivalRadiusMeters)
+            .HasColumnName("delivery_auto_complete_arrival_radius_meters")
+            .HasDefaultValue(50);
+        builder.Property(b => b.DeliveryAutoCompleteDepartureRadiusMeters)
+            .HasColumnName("delivery_auto_complete_departure_radius_meters")
+            .HasDefaultValue(120);
+        builder.Property(b => b.DeliveryAutoCompleteMinPresenceSeconds)
+            .HasColumnName("delivery_auto_complete_min_presence_seconds")
+            .HasDefaultValue(15);
         builder.Property(b => b.MenuImageUrl1).HasColumnName("menu_image_url_1").HasMaxLength(2000);
         builder.Property(b => b.MenuImageUrl2).HasColumnName("menu_image_url_2").HasMaxLength(2000);
 

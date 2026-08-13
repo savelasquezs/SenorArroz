@@ -24,4 +24,8 @@ public class CreateBranchCommand : IRequest<BranchDto>
     public int DeliveryTrackingAllowedDistanceMeters { get; set; } = 50;
     public int DeliveryTrackingLocationRetentionDays { get; set; } = 3;
     public int DeliveryTrackingIncidentRetentionDays { get; set; } = 15;
+    public bool DeliveryAutoCompleteEnabled { get; set; } = true;
+    public int DeliveryAutoCompleteArrivalRadiusMeters { get; set; } = 50;
+    public int DeliveryAutoCompleteDepartureRadiusMeters { get; set; } = 120;
+    public int DeliveryAutoCompleteMinPresenceSeconds { get; set; } = 15;
 }

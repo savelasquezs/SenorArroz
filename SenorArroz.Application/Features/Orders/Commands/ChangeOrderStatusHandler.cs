@@ -147,6 +147,25 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             var routeIdSnapshot = existingOrder.DeliveryRouteId;
             var previousStatus = existingOrder.Status;
 
+            if (request.IsAutomaticDelivery)
+            {
+                var routeStop = await _context.DeliveryRouteStops.FirstOrDefaultAsync(
+                    stop => stop.OrderId == request.Id
+                            && stop.DeliveryRouteId == routeIdSnapshot,
+                    cancellationToken);
+                if (routeStop is null
+                    || !request.AutoDeliveredAtUtc.HasValue
+                    || !request.AutoDeliveryTriggerLocationId.HasValue
+                    || !request.AutoDeliveryDepartureDistanceMeters.HasValue)
+                {
+                    throw new BusinessException("No se encontro evidencia valida para la entrega automatica.");
+                }
+
+                routeStop.AutoDeliveredAtUtc = request.AutoDeliveredAtUtc.Value;
+                routeStop.AutoDeliveryTriggerLocationId = request.AutoDeliveryTriggerLocationId.Value;
+                routeStop.AutoDeliveryDepartureDistanceMeters = request.AutoDeliveryDepartureDistanceMeters.Value;
+            }
+
             if (previousStatus == OrderStatus.Delivered
                 && request.StatusChange.Status == OrderStatus.Ready)
             {
@@ -206,7 +225,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
 
             if (previousStatus == OrderStatus.OnTheWay
                 && request.StatusChange.Status != OrderStatus.OnTheWay
-                && Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))
+                && (Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role)
+                    || request.IsAutomaticDelivery))
             {
                 await _notificationService.NotifyOrderModifiedToDelivery(
                     orderDto,
@@ -340,7 +360,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
 
         if (previousStatus == OrderStatus.OnTheWay
             && request.StatusChange.Status != OrderStatus.OnTheWay
-            && Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))
+            && (Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role)
+                || request.IsAutomaticDelivery))
         {
             await _notificationService.NotifyOrderModifiedToDelivery(
                 orderDto,

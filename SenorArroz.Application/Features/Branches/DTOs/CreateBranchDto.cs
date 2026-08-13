@@ -62,4 +62,15 @@ public class CreateBranchDto
 
     [Range(1, int.MaxValue, ErrorMessage = "La retención de incidentes debe ser mayor que cero")]
     public int DeliveryTrackingIncidentRetentionDays { get; set; } = 15;
+
+    public bool DeliveryAutoCompleteEnabled { get; set; } = true;
+
+    [Range(10, 150, ErrorMessage = "El radio de llegada debe estar entre 10 y 150 metros")]
+    public int DeliveryAutoCompleteArrivalRadiusMeters { get; set; } = 50;
+
+    [Range(20, 500, ErrorMessage = "El radio de salida debe estar entre 20 y 500 metros")]
+    public int DeliveryAutoCompleteDepartureRadiusMeters { get; set; } = 120;
+
+    [Range(5, 300, ErrorMessage = "La permanencia minima debe estar entre 5 y 300 segundos")]
+    public int DeliveryAutoCompleteMinPresenceSeconds { get; set; } = 15;
 }

@@ -19,6 +19,15 @@ public class DeliveryRouteStop : BaseEntity
     public string? ComplexAccessMatchTerm { get; set; }
     public int ComplexAccessBonusSeconds { get; set; }
 
+    public DateTime? ArrivalCandidateAtUtc { get; set; }
+    public DateTime? ArrivalConfirmedAtUtc { get; set; }
+    public int ArrivalEvidenceCount { get; set; }
+    public DateTime? ArrivalLastSeenAtUtc { get; set; }
+    public double? ClosestDistanceMeters { get; set; }
+    public DateTime? AutoDeliveredAtUtc { get; set; }
+    public long? AutoDeliveryTriggerLocationId { get; set; }
+    public double? AutoDeliveryDepartureDistanceMeters { get; set; }
+
     public virtual DeliveryRoute DeliveryRoute { get; set; } = null!;
     public virtual Order Order { get; set; } = null!;
 }

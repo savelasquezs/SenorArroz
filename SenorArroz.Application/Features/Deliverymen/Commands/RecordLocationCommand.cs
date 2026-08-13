@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
@@ -32,17 +33,23 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
     private readonly ICurrentUser _currentUser;
     private readonly IOrderNotificationService _notifications;
     private readonly IClock _clock;
+    private readonly IDeliveryAutoCompletionService? _autoCompletion;
+    private readonly ILogger<RecordLocationHandler>? _logger;
 
     public RecordLocationHandler(
         IApplicationDbContext db,
         ICurrentUser currentUser,
         IOrderNotificationService notifications,
-        IClock clock)
+        IClock clock,
+        IDeliveryAutoCompletionService? autoCompletion = null,
+        ILogger<RecordLocationHandler>? logger = null)
     {
         _db = db;
         _currentUser = currentUser;
         _notifications = notifications;
         _clock = clock;
+        _autoCompletion = autoCompletion;
+        _logger = logger;
     }
 
     public async Task<RecordLocationResult> Handle(RecordLocationCommand request, CancellationToken cancellationToken)
@@ -119,7 +126,7 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
         if (routeId.HasValue)
             await RepairStaleRouteClockAsync(routeId.Value, recordedAtUtc, cancellationToken);
 
-        _db.DeliverymanLocations.Add(new DeliverymanLocation
+        var location = new DeliverymanLocation
         {
             DeliverymanId = deliverymanId,
             WorkSessionId = workSession.Id,
@@ -138,9 +145,26 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
                                : DeliveryTrackingMode.Light),
             RecordedAt = recordedAtUtc,
             SyncedAt = nowUtc,
-        });
+        };
+        _db.DeliverymanLocations.Add(location);
         workSession.LastCommunicationAt = nowUtc;
         await _db.SaveChangesAsync(cancellationToken);
+
+        if (_autoCompletion is not null)
+        {
+            try
+            {
+                await _autoCompletion.EvaluateLocationAsync(location, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(
+                    ex,
+                    "AutoDelivery evaluation failed location={LocationId} route={RouteId}",
+                    location.Id,
+                    routeId);
+            }
+        }
 
         await _notifications.NotifyDeliverymanLocation(
             branchId,

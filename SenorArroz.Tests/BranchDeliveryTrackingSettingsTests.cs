@@ -1,8 +1,10 @@
 using System.ComponentModel.DataAnnotations;
+using SenorArroz.Application.Features.Branches;
 using SenorArroz.Application.Features.Branches.Commands;
 using SenorArroz.Application.Features.Branches.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Exceptions;
 
 namespace SenorArroz.Tests;
 
@@ -21,6 +23,10 @@ public class BranchDeliveryTrackingSettingsTests
         Assert.Equal(50, branch.DeliveryTrackingAllowedDistanceMeters);
         Assert.Equal(3, branch.DeliveryTrackingLocationRetentionDays);
         Assert.Equal(15, branch.DeliveryTrackingIncidentRetentionDays);
+        Assert.True(branch.DeliveryAutoCompleteEnabled);
+        Assert.Equal(50, branch.DeliveryAutoCompleteArrivalRadiusMeters);
+        Assert.Equal(120, branch.DeliveryAutoCompleteDepartureRadiusMeters);
+        Assert.Equal(15, branch.DeliveryAutoCompleteMinPresenceSeconds);
     }
 
     [Fact]
@@ -36,6 +42,19 @@ public class BranchDeliveryTrackingSettingsTests
         Assert.Equal(50, dto.DeliveryTrackingAllowedDistanceMeters);
         Assert.Equal(3, dto.DeliveryTrackingLocationRetentionDays);
         Assert.Equal(15, dto.DeliveryTrackingIncidentRetentionDays);
+        Assert.True(dto.DeliveryAutoCompleteEnabled);
+        Assert.Equal(50, dto.DeliveryAutoCompleteArrivalRadiusMeters);
+        Assert.Equal(120, dto.DeliveryAutoCompleteDepartureRadiusMeters);
+        Assert.Equal(15, dto.DeliveryAutoCompleteMinPresenceSeconds);
+    }
+
+    [Fact]
+    public void AutoCompletionSettings_RejectDepartureRadiusNotGreaterThanArrival()
+    {
+        var error = Assert.Throws<BusinessException>(() =>
+            BranchDeliveryAutoCompletionSettingsValidator.EnsureValid(50, 50, 15));
+
+        Assert.Contains("mayor", error.Message);
     }
 
     [Fact]

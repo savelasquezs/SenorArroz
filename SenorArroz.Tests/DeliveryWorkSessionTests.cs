@@ -353,11 +353,13 @@ public class DeliveryWorkSessionTests
         });
         await db.SaveChangesAsync();
         var notifications = new Mock<IOrderNotificationService>();
+        var autoCompletion = new Mock<IDeliveryAutoCompletionService>();
         var handler = new RecordLocationHandler(
             db,
             CurrentUser().Object,
             notifications.Object,
-            new FakeClock(now));
+            new FakeClock(now),
+            autoCompletion.Object);
         var command = new RecordLocationCommand
         {
             WorkSessionId = 10,
@@ -390,6 +392,9 @@ public class DeliveryWorkSessionTests
         Assert.Equal(now, point.SyncedAt);
         notifications.Verify(x => x.NotifyDeliverymanLocation(
             7, 1, 20, 4.60971, -74.08175, capturedAt), Times.Once);
+        autoCompletion.Verify(x => x.EvaluateLocationAsync(
+            It.Is<DeliverymanLocation>(location => location.ClientPointId == pointId),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

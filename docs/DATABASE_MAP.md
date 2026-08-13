@@ -193,6 +193,8 @@ Notas:
 - `DeliveryRoutingPlan` conserva una versión incremental y solo admite un plan `active` por sucursal mediante índice parcial.
 - Las propuestas y sus paradas son snapshots operativos; el claim valida nuevamente estado, sucursal, asignación y versión dentro de una transacción serializable.
 - El esquema V1 se instala con `SenorArroz.Infrastructure/Scripts/add_delivery_routing_v1.sql` antes de desplegar el API que consulta estas tablas.
+- `Branch` configura la autoentrega GPS mediante activacion, radio de llegada, radio de salida y permanencia minima. Los valores iniciales son `true`, 50 m, 120 m y 15 s.
+- `DeliveryRouteStop` persiste candidato y confirmacion de llegada, evidencias, distancia minima y la ubicacion de salida que produjo una autoentrega. El esquema se instala con `SenorArroz.Infrastructure/Scripts/add_delivery_auto_completion.sql` antes del backend que consulta estas columnas.
 
 - La app móvil no debe poder operar sobre tenant distinto al del domiciliario autenticado.
 - Cada ubicación nueva debe pertenecer a una sesión laboral activa del mismo domiciliario y dispositivo.

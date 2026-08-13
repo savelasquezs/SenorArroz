@@ -52,6 +52,11 @@ public class Branch : BaseEntity
     /// <summary>Días de conservación de incidentes y su evidencia.</summary>
     public int DeliveryTrackingIncidentRetentionDays { get; set; } = 15;
 
+    public bool DeliveryAutoCompleteEnabled { get; set; } = true;
+    public int DeliveryAutoCompleteArrivalRadiusMeters { get; set; } = 50;
+    public int DeliveryAutoCompleteDepartureRadiusMeters { get; set; } = 120;
+    public int DeliveryAutoCompleteMinPresenceSeconds { get; set; } = 15;
+
     public string? MenuImageUrl1 { get; set; }
     public string? MenuImageUrl2 { get; set; }
 
