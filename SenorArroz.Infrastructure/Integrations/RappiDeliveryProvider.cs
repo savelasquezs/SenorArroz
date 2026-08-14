@@ -43,6 +43,18 @@ public sealed class RappiDeliveryProvider(
         }
     }
 
+    public async Task<RappiOperationResult> SetStoreIntegratedAsync(
+        string storeId,
+        bool integrated,
+        CancellationToken ct)
+    {
+        var path = $"stores-pa/{Uri.EscapeDataString(storeId)}/status?integrated={integrated.ToString().ToLowerInvariant()}";
+        var response = await SendAuthorizedAsync(
+            () => new HttpRequestMessage(HttpMethod.Put, BuildUrl(path)),
+            ct);
+        return ToOperation(response);
+    }
+
     public async Task<RappiWebhookResult> ConfigureWebhookAsync(
         string eventType,
         string webhookUrl,

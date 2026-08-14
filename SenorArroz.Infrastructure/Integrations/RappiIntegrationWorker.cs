@@ -22,6 +22,7 @@ public sealed class RappiIntegrationWorker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var nextRecovery = DateTimeOffset.MinValue;
+        var nextCapabilitySync = DateTimeOffset.MinValue;
         var nextCleanup = DateTimeOffset.MinValue;
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
 
@@ -41,6 +42,11 @@ public sealed class RappiIntegrationWorker(
                 await ProcessAvailabilityAsync(db, rappi, clock, stoppingToken);
 
                 var now = DateTimeOffset.UtcNow;
+                if (now >= nextCapabilitySync)
+                {
+                    await SyncCapabilitiesAsync(db, rappi, stoppingToken);
+                    nextCapabilitySync = now.AddMinutes(15);
+                }
                 if (now >= nextRecovery)
                 {
                     await RecoverSentOrdersAsync(db, rappi, processor, stoppingToken);
@@ -74,6 +80,52 @@ public sealed class RappiIntegrationWorker(
         IClock clock,
         CancellationToken ct)
     {
+        var candidates = await db.ExternalDeliveryOrders
+            .AsNoTracking()
+            .Where(x =>
+                x.Store != null
+                && x.Store.ManualReadyForPickupEnabled
+                && x.InternalOrder != null
+                && x.InternalOrder.Status == OrderStatus.Ready)
+            .OrderBy(x => x.CreatedAt)
+            .Take(100)
+            .Select(x => new { x.ConnectionId, x.ExternalOrderId, ExternalDeliveryOrderId = x.Id })
+            .ToListAsync(ct);
+        if (candidates.Count > 0)
+        {
+            var candidateKeys = candidates
+                .Select(x => $"READY_FOR_PICKUP:{x.ConnectionId}:{x.ExternalOrderId}")
+                .ToList();
+            var existingKeys = await db.IntegrationWebhookEvents
+                .AsNoTracking()
+                .Where(x => candidateKeys.Contains(x.EventKey))
+                .Select(x => x.EventKey)
+                .ToHashSetAsync(ct);
+            foreach (var candidate in candidates)
+            {
+                var eventKey = $"READY_FOR_PICKUP:{candidate.ConnectionId}:{candidate.ExternalOrderId}";
+                if (existingKeys.Contains(eventKey))
+                    continue;
+                db.IntegrationWebhookEvents.Add(new IntegrationWebhookEvent
+                {
+                    ConnectionId = candidate.ConnectionId,
+                    Provider = "rappi",
+                    EventKey = eventKey,
+                    EventType = "READY_FOR_PICKUP_OUTBOX",
+                    PayloadHash = string.Empty,
+                    PayloadJson = JsonSerializer.Serialize(new
+                    {
+                        externalOrderId = candidate.ExternalOrderId,
+                        candidate.ExternalDeliveryOrderId
+                    }),
+                    Status = "outbox_pending",
+                    CreatedAt = clock.UtcNow,
+                    UpdatedAt = clock.UtcNow
+                });
+            }
+            await db.SaveChangesAsync(ct);
+        }
+
         var rows = await db.IntegrationWebhookEvents
             .Where(x =>
                 x.Provider == "rappi"
@@ -106,6 +158,50 @@ public sealed class RappiIntegrationWorker(
         }
         if (rows.Count > 0)
             await db.SaveChangesAsync(ct);
+    }
+
+    private async Task SyncCapabilitiesAsync(
+        ApplicationDbContext db,
+        IRappiDeliveryProvider rappi,
+        CancellationToken ct)
+    {
+        var connections = await db.DeliveryAppConnections
+            .AsNoTracking()
+            .Include(x => x.Stores)
+            .Where(x => x.Provider == "rappi" && x.IsActive && x.IsVerified)
+            .ToListAsync(ct);
+        if (connections.Count == 0)
+            return;
+
+        var storeResult = await rappi.TestConnectionAsync(ct);
+        if (!storeResult.Success || storeResult.Stores is null)
+        {
+            logger.LogWarning("Rappi store capability sync failed: {Error}", storeResult.Error);
+            return;
+        }
+
+        var remoteStoreIds = storeResult.Stores.Select(x => x.StoreId).ToHashSet();
+        foreach (var storeId in connections
+                     .SelectMany(x => x.Stores)
+                     .Select(x => x.RappiStoreId)
+                     .Where(remoteStoreIds.Contains)
+                     .Distinct())
+        {
+            var status = await rappi.SetStoreIntegratedAsync(storeId, true, ct);
+            if (!status.Success)
+                logger.LogWarning("Rappi store {StoreId} integration sync failed: {Error}", storeId, status.Error);
+        }
+
+        foreach (var storeId in connections
+                     .SelectMany(x => x.Stores)
+                     .Where(x => x.IsParent)
+                     .Select(x => x.RappiStoreId)
+                     .Distinct())
+        {
+            var menuStatus = await rappi.GetMenuApprovalAsync(storeId, ct);
+            if (!menuStatus.Success)
+                logger.LogWarning("Rappi menu status sync failed for {StoreId}: {Error}", storeId, menuStatus.Error);
+        }
     }
 
     private static async Task ReconcileAvailabilityStateAsync(

@@ -12,6 +12,10 @@ public interface IRappiDeliveryProvider
 {
     bool CredentialsConfigured { get; }
     Task<RappiConnectionResult> TestConnectionAsync(CancellationToken cancellationToken);
+    Task<RappiOperationResult> SetStoreIntegratedAsync(
+        string storeId,
+        bool integrated,
+        CancellationToken cancellationToken);
     Task<RappiWebhookResult> ConfigureWebhookAsync(
         string eventType,
         string webhookUrl,

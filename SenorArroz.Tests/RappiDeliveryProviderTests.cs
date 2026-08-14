@@ -28,6 +28,14 @@ public sealed class RappiDeliveryProviderTests
 
         var connection = await provider.TestConnectionAsync(CancellationToken.None);
         var repeatedConnection = await provider.TestConnectionAsync(CancellationToken.None);
+        var storeIntegrated = await provider.SetStoreIntegratedAsync(
+            "900173116",
+            true,
+            CancellationToken.None);
+        var storeNotIntegrated = await provider.SetStoreIntegratedAsync(
+            "900173117",
+            false,
+            CancellationToken.None);
         var menu = await provider.PublishMenuAsync(
             new RappiMenuRequest(
                 "900173116",
@@ -75,6 +83,8 @@ public sealed class RappiDeliveryProviderTests
         Assert.True(repeatedConnection.Success);
         Assert.Equal("900173116", connection.Stores![0].StoreId);
         Assert.Equal("900173116", connection.Stores[0].IntegrationId);
+        Assert.True(storeIntegrated.Success);
+        Assert.True(storeNotIntegrated.Success);
         Assert.True(menu.Success);
         Assert.True(availability.Success);
         Assert.True(webhook.Success);
@@ -122,6 +132,12 @@ public sealed class RappiDeliveryProviderTests
         using var rejectionBody = JsonDocument.Parse(
             handler.Requests.Single(x => x.Path.EndsWith("/orders/rappi-order-1/reject")).Body);
         Assert.Equal("Sin inventario", rejectionBody.RootElement.GetProperty("reason").GetString());
+        var storeStatus = handler.Requests.Single(x =>
+            x.Path.EndsWith("/stores-pa/900173116/status"));
+        Assert.Equal("?integrated=true", storeStatus.Query);
+        var disabledStoreStatus = handler.Requests.Single(x =>
+            x.Path.EndsWith("/stores-pa/900173117/status"));
+        Assert.Equal("?integrated=false", disabledStoreStatus.Query);
     }
 
     private sealed class ContractHandler : HttpMessageHandler
@@ -142,7 +158,7 @@ public sealed class RappiDeliveryProviderTests
             var authorization = request.Headers.TryGetValues("x-authorization", out var values)
                 ? values.Single()
                 : null;
-            Requests.Add(new(path, body, authorization));
+            Requests.Add(new(path, request.RequestUri.Query, body, authorization));
 
             if (path.EndsWith("/token/login/integrations"))
             {
@@ -174,6 +190,7 @@ public sealed class RappiDeliveryProviderTests
 
     private sealed record CapturedRequest(
         string Path,
+        string Query,
         string Body,
         string? Authorization);
 }

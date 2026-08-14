@@ -143,9 +143,17 @@ public sealed class RappiIntegrationsController(
         if (!CanAdminister(branchId))
             return Forbid();
         var connection = await db.DeliveryAppConnections
+            .Include(x => x.Stores)
             .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
         if (connection is null)
             return NotFound();
+        foreach (var store in connection.Stores)
+        {
+            var result = await rappi.SetStoreIntegratedAsync(store.RappiStoreId, false, ct);
+            if (!result.Success)
+                return BadRequest(ApiResponse<string>.ErrorResponse(
+                    result.Error ?? $"Rappi no permitió desintegrar la tienda {store.RappiStoreId}."));
+        }
         connection.IsActive = false;
         connection.UpdatedAt = clock.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -587,7 +595,7 @@ public sealed class RappiIntegrationsController(
         if (exists)
             return normalizedEvent == "PING"
                 ? Ok(new { status = "OK", description = "Tienda prendida" })
-                : Accepted();
+                : Ok(new { status = "OK" });
 
         var storedEvent = new IntegrationWebhookEvent
         {
@@ -633,11 +641,11 @@ public sealed class RappiIntegrationsController(
                 throw;
             return normalizedEvent == "PING"
                 ? Ok(new { status = "OK", description = "Tienda prendida" })
-                : Accepted();
+                : Ok(new { status = "OK" });
         }
         return normalizedEvent == "PING"
             ? Ok(new { status = "OK", description = "Tienda prendida" })
-            : Accepted();
+            : Ok(new { status = "OK" });
     }
 
     private IQueryable<DeliveryAppConnection> ConnectionQuery() =>

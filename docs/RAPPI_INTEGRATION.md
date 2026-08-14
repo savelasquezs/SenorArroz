@@ -20,9 +20,7 @@ Tiendas de prueba:
 - En POS Tester usar `POS=SeñorArrozDevV2` e `INTEGRACIÓN=SENORARROZDEVV2`.
 - El menú se publica únicamente a la tienda padre.
 
-Valor pendiente:
-
-- Confirmación de Rappi para habilitar manualmente `READY_FOR_PICKUP`.
+`READY_FOR_PICKUP` está habilitado únicamente para las dos tiendas sandbox durante la homologación. Producción permanece deshabilitado hasta confirmación expresa de Rappi.
 
 Estado sandbox verificado el 13 de agosto de 2026:
 
@@ -139,8 +137,8 @@ Una orden inconsistente se retiene y nunca se sustituye silenciosamente. El tota
 
 ## Fase 6 — Estados, cancelaciones y liquidación
 
-1. Solicitar a Rappi la activación manual de `READY_FOR_PICKUP`.
-2. Habilitar la opción individualmente solo después de la confirmación.
+1. Mantener `READY_FOR_PICKUP` habilitado en las dos tiendas sandbox para homologación.
+2. Solicitar confirmación de Rappi antes de habilitarlo en tiendas de producción.
 3. Probar `Listo`, entrega al courier, cierre y cancelación recibida desde Rappi.
    Al pasar a `Listo`, verificar una sola impresión de cocina y el envío automático e idempotente de `READY_FOR_PICKUP`.
 4. Rechazar desde **Incidencias Rappi** una orden retenida que aún no haya sido aceptada y confirmar la transición desde `SENT`.

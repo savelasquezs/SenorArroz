@@ -343,6 +343,6 @@ Reglas:
 - Las cancelaciones posteriores a la aceptación se originan en Rappi y llegan por `ORDER_EVENT_CANCEL`. El webhook cancela el pedido interno, revierte el pago por app no liquidado, actualiza cocina y rutas y es idempotente.
 - Una cancelación Rappi de una orden entregada o con pago ya liquidado crea una incidencia financiera y no altera silenciosamente los movimientos conciliados.
 - La consignación real de un lote se prorratea por neto esperado; el residuo monetario se asigna a la última orden.
-- `READY_FOR_PICKUP` permanece deshabilitado por tienda hasta confirmación expresa de Rappi. Una vez habilitado, cambiar el pedido a `Ready` crea automáticamente el envío idempotente a Rappi.
+- `READY_FOR_PICKUP` está habilitado exclusivamente en las tiendas sandbox `900173116` y `900173117` para homologación. En producción permanece deshabilitado hasta confirmación expresa de Rappi. Cambiar el pedido a `Ready` crea automáticamente el envío idempotente y el worker recupera envíos faltantes tras reinicios.
 - La información personal y el payload crudo se anonimizan después de 90 días.
 - Deshabilitar la integración conserva configuración, eventos, pedidos e historial financiero.
