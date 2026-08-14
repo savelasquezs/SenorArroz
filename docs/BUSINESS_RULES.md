@@ -323,6 +323,7 @@ Reglas:
 - La tienda `900173116` es padre y la `900173117` hereda su menú. Solo se publica el menú al padre.
 - En sandbox `store_integration_id` es `900173116` para la tienda padre y `900173117` para la hija; en POS Tester se selecciona `POS=SeñorArrozDevV2` e `INTEGRACIÓN=SENORARROZDEVV2`.
 - Cada webhook tiene un secreto distinto, cifrado en base de datos. La firma usa HMAC-SHA256 sobre `timestamp.rawPayload` y comparación en tiempo constante.
+- El Sandbox Tester de Integrations Manager firma una representación heredada que convierte valores booleanos, numéricos y `null` a cadenas; la validación intenta primero el payload crudo y acepta esa representación exacta solo como fallback.
 - Si Rappi ya tiene un webhook activo pero el secreto local falta, se rota mediante `reset-secret` y se guarda cifrado antes de continuar; no se intenta crear un duplicado.
 - `STORE_CONNECTIVITY` acepta tanto el contrato documentado (`external_store_id`, `enabled`) como el contrato real del Sandbox Tester (`store_id`, `online`, `checked_at`); solo actualiza el estado operativo de la tienda.
 - Todo webhook se persiste antes de procesarse y es idempotente por integración y evento.
