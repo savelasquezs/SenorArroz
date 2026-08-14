@@ -38,10 +38,6 @@ public interface IRappiDeliveryProvider
 public interface IExternalDeliveryStatusSyncService
 {
     Task SyncReadyForPickupAsync(int internalOrderId, CancellationToken cancellationToken);
-    Task<bool> SyncCancellationAsync(
-        int internalOrderId,
-        string reason,
-        CancellationToken cancellationToken);
 }
 
 public interface IRappiOrderProcessor

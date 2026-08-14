@@ -90,6 +90,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
+        EnsureRappiCancellationOrigin(existingOrder, request.StatusChange.Status);
+
         if (Roles.IsDeliveryman(_currentUser.Role))
         {
             if (!existingOrder.DeliveryManId.HasValue || existingOrder.DeliveryManId.Value != _currentUser.Id)
@@ -250,6 +252,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
 
+        EnsureRappiCancellationOrigin(existingOrder, request.StatusChange.Status);
+
         if (Roles.IsDeliveryman(_currentUser.Role))
         {
             if (!existingOrder.DeliveryManId.HasValue || existingOrder.DeliveryManId.Value != _currentUser.Id)
@@ -351,6 +355,18 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
                 cancellationToken);
 
         return orderDto;
+    }
+
+    private static void EnsureRappiCancellationOrigin(Order order, OrderStatus targetStatus)
+    {
+        if (targetStatus == OrderStatus.Cancelled
+            && order.ExternalFulfillmentProvider?.Equals(
+                "rappi",
+                StringComparison.OrdinalIgnoreCase) == true)
+        {
+            throw new BusinessException(
+                "Las órdenes Rappi aceptadas solo se cancelan desde Rappi y se sincronizan por webhook");
+        }
     }
 
     private async Task TryEnqueueKitchenPrintWhenReadyAsync(

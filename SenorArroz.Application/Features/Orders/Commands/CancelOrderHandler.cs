@@ -22,7 +22,6 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
     private readonly IClock _clock;
     private readonly IOrderNotificationService _notificationService;
-    private readonly IExternalDeliveryStatusSyncService? _externalDeliveryStatusSync;
 
     public CancelOrderHandler(
         IOrderRepository orderRepository,
@@ -34,8 +33,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         ILoyaltyCycleService loyaltyCycle,
         IDeliveryRouteWorkflowService deliveryRouteWorkflow,
         IClock clock,
-        IOrderNotificationService notificationService,
-        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null)
+        IOrderNotificationService notificationService)
     {
         _orderRepository = orderRepository;
         _bankPaymentRepository = bankPaymentRepository;
@@ -47,7 +45,6 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
         _clock = clock;
         _notificationService = notificationService;
-        _externalDeliveryStatusSync = externalDeliveryStatusSync;
     }
 
     public async Task<OrderDto> Handle(CancelOrderCommand request, CancellationToken cancellationToken)
@@ -74,32 +71,19 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         var isRappiOrder = existingOrder.ExternalFulfillmentProvider?.Equals(
             "rappi",
             StringComparison.OrdinalIgnoreCase) == true;
+
+        if (isRappiOrder)
+            throw new BusinessException(
+                "Rappi no permite rechazar una orden delivery después de aceptarla. " +
+                "La cancelación debe realizarse en Rappi y se sincronizará automáticamente por webhook");
+
         var appPayments = (await _appPaymentRepository.GetByOrderIdAsync(
             request.Id,
             cancellationToken)).ToList();
 
-        if (isRappiOrder && appPayments.Any(x => x.IsSetted))
-            throw new BusinessException(
-                "El pedido Rappi ya fue liquidado y requiere conciliación antes de cancelarlo");
-
-        if (isRappiOrder)
-        {
-            if (_externalDeliveryStatusSync is null
-                || !await _externalDeliveryStatusSync.SyncCancellationAsync(
-                    request.Id,
-                    cancellationReason,
-                    cancellationToken))
-            {
-                throw new BusinessException(
-                    "No se encontró la orden externa de Rappi para sincronizar la cancelación");
-            }
-        }
-
         await CancelAssociatedPaymentsAsync(
             request.Id,
-            cancellationReason,
             appPayments,
-            isRappiOrder,
             cancellationToken);
 
         var order = await _orderRepository.CancelOrderAsync(
@@ -137,27 +121,11 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
 
     private async Task CancelAssociatedPaymentsAsync(
         int orderId,
-        string reason,
         IReadOnlyCollection<AppPayment> appPayments,
-        bool reverseAppPayments,
         CancellationToken cancellationToken = default)
     {
         foreach (var appPayment in appPayments)
-        {
-            if (!reverseAppPayments)
-            {
-                await _appPaymentRepository.DeleteAsync(appPayment.Id, cancellationToken);
-                continue;
-            }
-
-            if (appPayment.IsReversed)
-                continue;
-
-            appPayment.IsReversed = true;
-            appPayment.ReversedAt = _clock.UtcNow;
-            appPayment.ReversalReason = $"Cancelado desde Señor Arroz: {reason}";
-            await _appPaymentRepository.UpdateAsync(appPayment, cancellationToken);
-        }
+            await _appPaymentRepository.DeleteAsync(appPayment.Id, cancellationToken);
 
         var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(orderId, cancellationToken);
         foreach (var bankPayment in bankPayments)

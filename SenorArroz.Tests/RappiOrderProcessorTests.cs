@@ -1,4 +1,5 @@
 using AutoMapper;
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -268,6 +269,109 @@ public sealed class RappiOrderProcessorTests
             .OrderDetails.Single().UnitPrice);
     }
 
+    [Fact]
+    public async Task Cancellation_webhook_reverses_payment_and_is_idempotent()
+    {
+        await using var db = CreateDb();
+        await SeedAsync(db);
+        var rappi = new Mock<IRappiDeliveryProvider>();
+        rappi.Setup(x => x.AcceptOrderAsync("rappi-order-1", 25, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(true, 200));
+        var notifications = new Mock<IOrderNotificationService>();
+        notifications.Setup(x => x.NotifyOrderCancelledToKitchen(
+                1,
+                It.IsAny<int>(),
+                It.IsAny<string?>()))
+            .Returns(Task.CompletedTask);
+        var workflow = new Mock<IDeliveryRouteWorkflowService>();
+        workflow.Setup(x => x.OnOrderCancelledWhileRouteOpenAsync(
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        workflow.Setup(x => x.TryFinalizeRouteWhenAllTerminalAsync(
+                It.IsAny<int>(),
+                It.IsAny<int?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var processor = CreateProcessor(
+            db,
+            rappi.Object,
+            notifications: notifications.Object,
+            deliveryRouteWorkflow: workflow.Object);
+
+        var accepted = await processor.IngestNewOrderAsync(1, ValidOrder, CancellationToken.None);
+        Assert.True(accepted.Success);
+
+        await InvokeCancellationAsync(processor, "cancel_by_user");
+        await InvokeCancellationAsync(processor, "cancel_by_user");
+
+        var order = await db.Orders.SingleAsync();
+        var external = await db.ExternalDeliveryOrders.SingleAsync();
+        var payment = await db.AppPayments.SingleAsync();
+        Assert.Equal(OrderStatus.Cancelled, order.Status);
+        Assert.Contains("cancel_by_user", order.CancelledReason, StringComparison.Ordinal);
+        Assert.Equal(ExternalOrderStatus.Cancelled, external.Status);
+        Assert.True(payment.IsReversed);
+        Assert.Contains("cancel_by_user", payment.ReversalReason, StringComparison.Ordinal);
+        notifications.Verify(x => x.NotifyOrderCancelledToKitchen(
+            1,
+            order.Id,
+            It.Is<string?>(reason => reason != null && reason.Contains("cancel_by_user"))), Times.Once);
+        workflow.Verify(x => x.OnOrderCancelledWhileRouteOpenAsync(
+            order.Id,
+            It.IsAny<CancellationToken>()), Times.Once);
+        workflow.Verify(x => x.TryFinalizeRouteWhenAllTerminalAsync(
+            order.Id,
+            It.IsAny<int?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Cancellation_webhook_flags_settled_order_for_reconciliation()
+    {
+        await using var db = CreateDb();
+        await SeedAsync(db);
+        var rappi = new Mock<IRappiDeliveryProvider>();
+        rappi.Setup(x => x.AcceptOrderAsync("rappi-order-1", 25, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(true, 200));
+        var notifications = new Mock<IOrderNotificationService>(MockBehavior.Strict);
+        var workflow = new Mock<IDeliveryRouteWorkflowService>(MockBehavior.Strict);
+        var processor = CreateProcessor(
+            db,
+            rappi.Object,
+            notifications: notifications.Object,
+            deliveryRouteWorkflow: workflow.Object);
+
+        var accepted = await processor.IngestNewOrderAsync(1, ValidOrder, CancellationToken.None);
+        Assert.True(accepted.Success);
+        var payment = await db.AppPayments.SingleAsync();
+        payment.IsSetted = true;
+        await db.SaveChangesAsync();
+
+        await InvokeCancellationAsync(processor, "cancel_by_support");
+
+        var order = await db.Orders.SingleAsync();
+        var external = await db.ExternalDeliveryOrders.SingleAsync();
+        Assert.Equal(OrderStatus.Taken, order.Status);
+        Assert.Equal(ExternalOrderStatus.ReconciliationRequired, external.Status);
+        Assert.Contains("conciliación", external.LastError, StringComparison.OrdinalIgnoreCase);
+        Assert.False(payment.IsReversed);
+        notifications.VerifyNoOtherCalls();
+        workflow.VerifyNoOtherCalls();
+    }
+
+    private static async Task InvokeCancellationAsync(RappiOrderProcessor processor, string eventName)
+    {
+        var method = typeof(RappiOrderProcessor).GetMethod(
+            "ApplyCancellationAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("ApplyCancellationAsync method not found.");
+        var payload = $$"""{"order_id":"rappi-order-1","event":"{{eventName}}"}""";
+        var task = method.Invoke(processor, [1, payload, CancellationToken.None]) as Task
+            ?? throw new InvalidOperationException("ApplyCancellationAsync did not return a Task.");
+        await task;
+    }
+
     private static ApplicationDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -355,20 +459,30 @@ public sealed class RappiOrderProcessorTests
 
     private static RappiOrderProcessor CreateProcessor(
         ApplicationDbContext db,
-        IRappiDeliveryProvider rappi)
+        IRappiDeliveryProvider rappi,
+        IOrderRepository? orderRepository = null,
+        IMapper? mapper = null,
+        IOrderNotificationService? notifications = null,
+        IDeliveryRouteWorkflowService? deliveryRouteWorkflow = null)
     {
-        var orderRepository = new Mock<IOrderRepository>();
-        orderRepository.Setup(x => x.GetByIdWithFullDetailsAsync(
-                It.IsAny<int>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Order?)null);
+        if (orderRepository is null)
+        {
+            var repository = new Mock<IOrderRepository>();
+            repository.Setup(x => x.GetByIdWithFullDetailsAsync(
+                    It.IsAny<int>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((Order?)null);
+            orderRepository = repository.Object;
+        }
+
         return new RappiOrderProcessor(
             db,
             rappi,
             new FakeClock(new DateTime(2026, 8, 13, 20, 0, 0, DateTimeKind.Utc)),
-            orderRepository.Object,
-            Mock.Of<IMapper>(),
-            Mock.Of<IOrderNotificationService>(),
+            orderRepository,
+            mapper ?? Mock.Of<IMapper>(),
+            notifications ?? Mock.Of<IOrderNotificationService>(),
+            deliveryRouteWorkflow ?? Mock.Of<IDeliveryRouteWorkflowService>(),
             NullLogger<RappiOrderProcessor>.Instance);
     }
 }

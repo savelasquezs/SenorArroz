@@ -9,6 +9,7 @@ using SenorArroz.Application.Features.Orders.Commands;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Shared.Constants;
 
@@ -390,5 +391,51 @@ public class ChangeOrderStatusHandlerReservationTests
         Assert.Equal(OrderStatus.Ready, result.Status);
         printQueue.VerifyAll();
         externalSync.VerifyAll();
+    }
+
+    [Fact]
+    public async Task Accepted_Rappi_order_cannot_be_changed_to_cancelled_manually()
+    {
+        const int orderId = 119;
+        var utc = new DateTime(2026, 8, 14, 18, 0, 0, DateTimeKind.Utc);
+        var order = new Order
+        {
+            Id = orderId,
+            BranchId = 1,
+            TakenById = 1,
+            Type = OrderType.Delivery,
+            Status = OrderStatus.Taken,
+            ExternalFulfillmentProvider = "rappi",
+            ExternalOrderId = "rappi-119",
+            StatusTimes = "{}",
+            CreatedAt = utc,
+            UpdatedAt = utc,
+        };
+        var repo = new Mock<IOrderRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(orderId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+        var handler = BuildHandler(
+            repo.Object,
+            new FakeClock(utc),
+            new TestCurrentUser(Roles.Admin));
+
+        var error = await Assert.ThrowsAsync<BusinessException>(() => handler.Handle(
+            new ChangeOrderStatusCommand
+            {
+                Id = orderId,
+                StatusChange = new ChangeOrderStatusDto
+                {
+                    Status = OrderStatus.Cancelled,
+                    Reason = "Cancelación manual"
+                },
+            },
+            CancellationToken.None));
+
+        Assert.Contains("se sincronizan por webhook", error.Message, StringComparison.OrdinalIgnoreCase);
+        repo.Verify(r => r.ChangeStatusAsync(
+            It.IsAny<int>(),
+            It.IsAny<OrderStatus>(),
+            It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 }

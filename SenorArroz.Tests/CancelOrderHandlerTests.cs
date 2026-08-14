@@ -117,8 +117,7 @@ public class CancelOrderHandlerTests
         IClock clock,
         ICurrentUser? user = null,
         IOrderNotificationService? notifications = null,
-        IAppPaymentRepository? appPaymentRepository = null,
-        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null)
+        IAppPaymentRepository? appPaymentRepository = null)
     {
         var bank = new Mock<IBankPaymentRepository>();
         bank.Setup(r => r.GetByOrderIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
@@ -147,8 +146,7 @@ public class CancelOrderHandlerTests
             new NullLoyaltyCycle(),
             new NullDeliveryRouteWorkflow(),
             clock,
-            notifications ?? new NullOrderNotifications(),
-            externalDeliveryStatusSync);
+            notifications ?? new NullOrderNotifications());
     }
 
     private static Order ScheduledReservation(int id, DateTime createdAt, DateTime prepareAt, DateTime reservedFor) =>
@@ -321,101 +319,30 @@ public class CancelOrderHandlerTests
     }
 
     [Fact]
-    public async Task Rappi_order_syncs_cancellation_and_reverses_unsettled_app_payment()
+    public async Task Accepted_Rappi_delivery_order_cannot_be_cancelled_from_pos()
     {
         var utcNow = new DateTime(2026, 8, 14, 17, 0, 0, DateTimeKind.Utc);
         var order = ScheduledReservation(101, utcNow, utcNow, utcNow);
         order.ExternalFulfillmentProvider = "rappi";
         order.ExternalOrderId = "rappi-101";
-        var payment = new AppPayment { Id = 71, OrderId = order.Id, Amount = 25000 };
 
         var orderRepo = new Mock<IOrderRepository>();
         orderRepo.Setup(r => r.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(order);
-        orderRepo.Setup(r => r.CancelOrderAsync(order.Id, "Sin inventario", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                order.Status = OrderStatus.Cancelled;
-                order.CancelledReason = "Sin inventario";
-                return order;
-            });
-
-        var payments = new Mock<IAppPaymentRepository>();
-        payments.Setup(r => r.GetByOrderIdAsync(order.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync([payment]);
-        payments.Setup(r => r.UpdateAsync(payment, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(payment);
-
-        var externalSync = new Mock<IExternalDeliveryStatusSyncService>();
-        externalSync.Setup(x => x.SyncCancellationAsync(
-                order.Id,
-                "Sin inventario",
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
         var handler = BuildHandler(
             orderRepo.Object,
-            new FakeClock(utcNow),
-            appPaymentRepository: payments.Object,
-            externalDeliveryStatusSync: externalSync.Object);
-
-        var result = await handler.Handle(
-            new CancelOrderCommand
-            {
-                Id = order.Id,
-                Cancellation = new CancelOrderDto { Reason = "  Sin inventario  " },
-            },
-            CancellationToken.None);
-
-        Assert.Equal(OrderStatus.Cancelled, result.Status);
-        Assert.True(payment.IsReversed);
-        Assert.Equal(utcNow, payment.ReversedAt);
-        Assert.Equal("Cancelado desde Señor Arroz: Sin inventario", payment.ReversalReason);
-        externalSync.VerifyAll();
-        payments.Verify(r => r.UpdateAsync(payment, It.IsAny<CancellationToken>()), Times.Once);
-        payments.Verify(r => r.DeleteAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task Settled_Rappi_order_requires_reconciliation_before_cancellation()
-    {
-        var utcNow = new DateTime(2026, 8, 14, 17, 0, 0, DateTimeKind.Utc);
-        var order = ScheduledReservation(102, utcNow, utcNow, utcNow);
-        order.ExternalFulfillmentProvider = "rappi";
-        var payment = new AppPayment
-        {
-            Id = 72,
-            OrderId = order.Id,
-            Amount = 25000,
-            IsSetted = true,
-        };
-
-        var orderRepo = new Mock<IOrderRepository>();
-        orderRepo.Setup(r => r.GetByIdAsync(order.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(order);
-        var payments = new Mock<IAppPaymentRepository>();
-        payments.Setup(r => r.GetByOrderIdAsync(order.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync([payment]);
-        var externalSync = new Mock<IExternalDeliveryStatusSyncService>();
-        var handler = BuildHandler(
-            orderRepo.Object,
-            new FakeClock(utcNow),
-            appPaymentRepository: payments.Object,
-            externalDeliveryStatusSync: externalSync.Object);
+            new FakeClock(utcNow));
 
         var error = await Assert.ThrowsAsync<BusinessException>(() => handler.Handle(
             new CancelOrderCommand
             {
                 Id = order.Id,
-                Cancellation = new CancelOrderDto { Reason = "Sin inventario" },
+                Cancellation = new CancelOrderDto { Reason = "  Sin inventario  " },
             },
             CancellationToken.None));
 
-        Assert.Contains("requiere conciliación", error.Message);
-        externalSync.Verify(x => x.SyncCancellationAsync(
-            It.IsAny<int>(),
-            It.IsAny<string>(),
-            It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Contains("no permite rechazar", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("webhook", error.Message, StringComparison.OrdinalIgnoreCase);
         orderRepo.Verify(r => r.CancelOrderAsync(
             It.IsAny<int>(),
             It.IsAny<string>(),

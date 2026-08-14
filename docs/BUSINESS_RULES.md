@@ -339,8 +339,9 @@ Reglas:
 - Los importes monetarios de Rappi se aceptan como enteros JSON o como decimales sin fracción (`31000` y `31000.00`); nunca se redondean valores fraccionarios.
 - En POS Tester, una orden `delivery` gestionada por courier Rappi puede traer `delivery_information=null`. La ausencia de dirección no bloquea la orden; si Rappi envía dirección, se conserva en el snapshot externo.
 - Revalidar una incidencia vuelve a interpretar el payload crudo y refresca líneas, descuentos y totales antes de crear el pedido interno.
-- Una cancelación previa a liquidación revierte el pago por app sin borrarlo. Una cancelación entregada o liquidada crea una incidencia financiera.
-- La cancelación iniciada en Señor Arroz primero debe ser aceptada por Rappi; si Rappi la rechaza, el pedido interno conserva su estado. Los pedidos Rappi ya liquidados requieren conciliación y no se cancelan desde el POS.
+- El rechazo de Rappi solo aplica mientras la orden está en `SENT`. Una orden `delivery` ya aceptada (`TAKEN`) no se cancela desde el POS de Señor Arroz.
+- Las cancelaciones posteriores a la aceptación se originan en Rappi y llegan por `ORDER_EVENT_CANCEL`. El webhook cancela el pedido interno, revierte el pago por app no liquidado, actualiza cocina y rutas y es idempotente.
+- Una cancelación Rappi de una orden entregada o con pago ya liquidado crea una incidencia financiera y no altera silenciosamente los movimientos conciliados.
 - La consignación real de un lote se prorratea por neto esperado; el residuo monetario se asigna a la última orden.
 - `READY_FOR_PICKUP` permanece deshabilitado por tienda hasta confirmación expresa de Rappi. Una vez habilitado, cambiar el pedido a `Ready` crea automáticamente el envío idempotente a Rappi.
 - La información personal y el payload crudo se anonimizan después de 90 días.

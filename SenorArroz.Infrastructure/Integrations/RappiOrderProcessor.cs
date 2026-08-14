@@ -5,6 +5,7 @@ using System.Text.Json;
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
@@ -20,6 +21,7 @@ public sealed class RappiOrderProcessor(
     IOrderRepository orders,
     IMapper mapper,
     IOrderNotificationService notifications,
+    IDeliveryRouteWorkflowService deliveryRouteWorkflow,
     ILogger<RappiOrderProcessor> logger) : IRappiOrderProcessor
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -365,6 +367,7 @@ public sealed class RappiOrderProcessor(
         using var document = JsonDocument.Parse(payload);
         var orderId = FindString(document.RootElement, "order_id")
             ?? throw new InvalidOperationException("El webhook de cancelación no contiene order_id.");
+        var cancellationReason = BuildCancellationReason(document.RootElement);
         var external = await db.ExternalDeliveryOrders
             .Include(x => x.InternalOrder)
             .FirstOrDefaultAsync(x =>
@@ -376,6 +379,14 @@ public sealed class RappiOrderProcessor(
         if (external.InternalOrder is null)
         {
             external.Status = ExternalOrderStatus.Cancelled;
+            external.LastError = null;
+            return;
+        }
+
+        if (external.InternalOrder.Status == OrderStatus.Cancelled)
+        {
+            external.Status = ExternalOrderStatus.Cancelled;
+            external.LastError = null;
             return;
         }
 
@@ -389,22 +400,54 @@ public sealed class RappiOrderProcessor(
             return;
         }
 
+        var previousStatus = external.InternalOrder.Status;
+        var routeIdSnapshot = external.InternalOrder.DeliveryRouteId;
+        var notifyKitchen = KitchenOrderNotificationEligibility.IsVisibleToActiveKitchen(
+            external.InternalOrder,
+            clock.UtcNow);
+
         foreach (var appPayment in appPayments)
         {
+            if (appPayment.IsReversed)
+                continue;
+
             appPayment.IsReversed = true;
             appPayment.ReversedAt = clock.UtcNow;
-            appPayment.ReversalReason = "Cancelado desde Rappi";
+            appPayment.ReversalReason = cancellationReason;
         }
         external.InternalOrder.Status = OrderStatus.Cancelled;
-        external.InternalOrder.CancelledReason = "Cancelado desde Rappi";
+        external.InternalOrder.CancelledReason = cancellationReason;
         external.InternalOrder.AddStatusTime(OrderStatus.Cancelled, clock.UtcNow);
         external.Status = ExternalOrderStatus.Cancelled;
         external.LastError = null;
         await db.SaveChangesAsync(ct);
-        await notifications.NotifyOrderCancelledToKitchen(
-            external.InternalOrder.BranchId,
+
+        if (notifyKitchen)
+        {
+            await notifications.NotifyOrderCancelledToKitchen(
+                external.InternalOrder.BranchId,
+                external.InternalOrder.Id,
+                cancellationReason);
+        }
+
+        await deliveryRouteWorkflow.OnOrderCancelledWhileRouteOpenAsync(
             external.InternalOrder.Id,
-            "Cancelado desde Rappi");
+            ct);
+        await deliveryRouteWorkflow.TryFinalizeRouteWhenAllTerminalAsync(
+            external.InternalOrder.Id,
+            routeIdSnapshot,
+            ct);
+
+        if (previousStatus == OrderStatus.OnTheWay)
+        {
+            var fullOrder = await orders.GetByIdWithFullDetailsAsync(external.InternalOrder.Id, ct);
+            if (fullOrder is not null)
+            {
+                await notifications.NotifyOrderModifiedToDelivery(
+                    mapper.Map<OrderDto>(fullOrder),
+                    "status");
+            }
+        }
     }
 
     private async Task ApplyOrderEventAsync(int connectionId, string payload, CancellationToken ct)
@@ -730,10 +773,31 @@ public sealed class RappiOrderProcessor(
         {
             var value = FindString(root, name);
             if (!string.IsNullOrWhiteSpace(value)
-                && !value.Equals("ORDER_OTHER_EVENT", StringComparison.OrdinalIgnoreCase))
+                && !value.Equals("ORDER_OTHER_EVENT", StringComparison.OrdinalIgnoreCase)
+                && !value.Equals("ORDER_EVENT_CANCEL", StringComparison.OrdinalIgnoreCase))
                 return value;
         }
         return string.Empty;
+    }
+
+    private static string BuildCancellationReason(JsonElement root)
+    {
+        var eventName = FindEventName(root);
+        var detail = FindString(root, "cancel_reason")
+            ?? FindString(root, "reason")
+            ?? FindString(root, "description");
+
+        var reason = string.IsNullOrWhiteSpace(eventName)
+            ? "Cancelado desde Rappi"
+            : $"Cancelado desde Rappi ({eventName.Trim()})";
+
+        if (!string.IsNullOrWhiteSpace(detail)
+            && !detail.Equals(eventName, StringComparison.OrdinalIgnoreCase))
+        {
+            reason += $": {detail.Trim()}";
+        }
+
+        return Limit(reason, 200);
     }
 
     private static int SumNumericProperties(JsonElement element)

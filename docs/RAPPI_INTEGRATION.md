@@ -141,12 +141,15 @@ Una orden inconsistente se retiene y nunca se sustituye silenciosamente. El tota
 
 1. Solicitar a Rappi la activación manual de `READY_FOR_PICKUP`.
 2. Habilitar la opción individualmente solo después de la confirmación.
-3. Probar `Listo`, entrega al courier, cierre y cancelación.
+3. Probar `Listo`, entrega al courier, cierre y cancelación recibida desde Rappi.
    Al pasar a `Listo`, verificar una sola impresión de cocina y el envío automático e idempotente de `READY_FOR_PICKUP`.
-4. Cancelar una orden antes de liquidarla y confirmar que el pago por app quede revertido.
-5. Cancelar otra después de liquidarla y confirmar la incidencia financiera sin borrar movimientos.
-6. Liquidar un lote ingresando una consignación real distinta al neto esperado.
-7. Confirmar el prorrateo, residuo en la última orden y diferencia individual.
+4. Rechazar desde **Incidencias Rappi** una orden retenida que aún no haya sido aceptada y confirmar la transición desde `SENT`.
+5. Cancelar desde Rappi una orden aceptada antes de liquidarla y confirmar por `ORDER_EVENT_CANCEL` que el pedido interno y el pago por app queden cancelado y reversado.
+6. Recibir otra cancelación después de liquidarla y confirmar la incidencia financiera sin borrar movimientos.
+7. Liquidar un lote ingresando una consignación real distinta al neto esperado.
+8. Confirmar el prorrateo, residuo en la última orden y diferencia individual.
+
+Rappi solo permite rechazar una orden en estado `SENT`. La integración acepta automáticamente las órdenes válidas y las crea localmente después de llevarlas a `TAKEN`; desde ese momento, para el flujo `delivery` con courier Rappi, el POS no presenta la acción de cancelar. Las cancelaciones del cliente, soporte o plataforma se sincronizan mediante `ORDER_EVENT_CANCEL`.
 
 ## Fase 7 — Aceptación
 
