@@ -23,7 +23,6 @@ Tiendas de prueba:
 Valor pendiente:
 
 - Confirmación de Rappi para habilitar manualmente `READY_FOR_PICKUP`.
-- Iniciar sesión en Integrations Manager y validar una orden completa desde cada tienda.
 
 Estado sandbox verificado el 13 de agosto de 2026:
 
@@ -31,7 +30,10 @@ Estado sandbox verificado el 13 de agosto de 2026:
 - Los siete webhooks requeridos están activos para ambas tiendas.
 - El menú inicial de cinco productos Paisa fue aprobado en la tienda padre.
 - Los cinco SKU quedaron sincronizados como disponibles en padre e hija.
-- La tienda hija conserva estado de aprobación `UNKNOWN`; la herencia debe comprobarse visualmente en POS Tester.
+- La tienda hija conserva estado de aprobación API `UNKNOWN`, pero POS Tester confirmó visualmente que hereda los mismos cinco productos, descripciones y precios.
+- POS Tester generó una orden `delivery` desde cada tienda; ambas fueron recibidas por `NEW_ORDER`, aceptadas en Rappi y creadas internamente en estado `Taken`.
+- La orden de la tienda padre incluyó envío gratis por `3000`: se conservaron `total_order=31000`, `total_discounts=3000` y cargos por `8900` sin mezclar sus conceptos.
+- Cada orden generó su `AppPayment` por `31000`, con comisión estimada del `25%`, neto esperado de `23250` y trabajo de impresión de cocina en cola.
 
 ## Fase 0 — Base de datos y Railway
 
