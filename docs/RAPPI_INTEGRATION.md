@@ -168,3 +168,27 @@ No configurar producción hasta recibir credenciales, tiendas, dominio y autoriz
 ## Diagnóstico
 
 El panel administrativo muestra conexión, tiendas, webhooks, PING, conectividad, publicación de menú, disponibilidad y último error sanitizado. La bandeja Rappi contiene incidencias, reintentos y trazabilidad; no contiene un catálogo simulado.
+
+## Estado de homologación sandbox — 2026-08-14
+
+Adoptadas en Integrations Manager:
+
+- listado de tiendas;
+- envío de menú;
+- consulta del estado del menú;
+- toma de órdenes dentro de seis minutos.
+
+Verificaciones correctas del integrador pendientes de reconocimiento por el homologador:
+
+- `NEW_ORDER`, `ORDER_EVENT_CANCEL` y `PING` figuran suscritos para `900173116` y `900173117`;
+- el tester entrega los tres eventos con HTTP 200;
+- `PING` responde en menos de tres segundos;
+- una firma válida se acepta y una firma alterada se rechaza con HTTP 401.
+
+Bloqueos reproducibles del sandbox de Rappi:
+
+- `PUT stores-pa/{storeId}/status` devuelve HTTP 500 para ambas tiendas y para ambos valores de `integrated`, aunque el token contiene `update:store_integrated_status`;
+- `POST orders/{orderId}/ready-for-pickup` devuelve HTTP 424 `error.ready_for_pickup.unsuccessful`, aunque el token contiene `update:orders_ready_for_pickup`;
+- el homologador informa que no hay webhooks configurados, mientras el módulo Webhooks los muestra suscritos y su tester obtiene HTTP 200.
+
+La autenticación moderna documentada genera un token con audiencia `https://int-public-api-v2/api/v2`. La audiencia heredada entregada por correo genera un token válido, pero los endpoints responden HTTP 401 `v1_disabled`; no debe usarse como alternativa.
