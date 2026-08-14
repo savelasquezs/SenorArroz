@@ -100,7 +100,9 @@ public class ChangeOrderStatusHandlerReservationTests
         IOrderRepository repo,
         IClock clock,
         ICurrentUser? user = null,
-        IOrderNotificationService? notifications = null)
+        IOrderNotificationService? notifications = null,
+        IPrintQueueService? printQueue = null,
+        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null)
     {
         var mapper = new MapperConfiguration(cfg =>
         {
@@ -114,9 +116,10 @@ public class ChangeOrderStatusHandlerReservationTests
             businessRules,
             notifications ?? new NullOrderNotifications(),
             new NullDeliveryRouteWorkflow(),
-            new NullPrintQueue(),
+            printQueue ?? new NullPrintQueue(),
             new NullLoyaltyCycle(),
-            NullLogger<ChangeOrderStatusHandler>.Instance);
+            NullLogger<ChangeOrderStatusHandler>.Instance,
+            externalDeliveryStatusSync);
     }
 
     private static (Order summary, Order detailed) ReservationPair(int orderId, int? addressId)
@@ -324,5 +327,68 @@ public class ChangeOrderStatusHandlerReservationTests
         Assert.Equal(OrderStatus.Delivered, notifications.LastDeliveryModifiedOrder?.Status);
         Assert.Equal("status", notifications.LastDeliveryModificationKind);
         Assert.Null(notifications.LastDeliveryKitchenChanges);
+    }
+
+    [Fact]
+    public async Task Rappi_order_ready_prints_in_kitchen_and_syncs_ready_for_pickup()
+    {
+        const int orderId = 118;
+        var utc = new DateTime(2026, 8, 14, 18, 0, 0, DateTimeKind.Utc);
+        var order = new Order
+        {
+            Id = orderId,
+            BranchId = 1,
+            TakenById = 1,
+            Type = OrderType.Delivery,
+            Status = OrderStatus.InPreparation,
+            ExternalFulfillmentProvider = "rappi",
+            ExternalOrderId = "rappi-118",
+            StatusTimes = "{}",
+            CreatedAt = utc,
+            UpdatedAt = utc,
+        };
+        var repo = new Mock<IOrderRepository>(MockBehavior.Strict);
+        repo.Setup(r => r.GetByIdAsync(orderId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+        repo.Setup(r => r.ChangeStatusAsync(
+                orderId,
+                OrderStatus.Ready,
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                order.Status = OrderStatus.Ready;
+                return order;
+            });
+        var printQueue = new Mock<IPrintQueueService>();
+        printQueue.Setup(x => x.EnqueueAsync(
+                order.BranchId,
+                PrintJobKind.Kitchen,
+                It.Is<IReadOnlyList<int>>(ids => ids.SequenceEqual(new[] { orderId })),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PrintJob());
+        var externalSync = new Mock<IExternalDeliveryStatusSyncService>();
+        externalSync.Setup(x => x.SyncReadyForPickupAsync(
+                orderId,
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var handler = BuildHandler(
+            repo.Object,
+            new FakeClock(utc),
+            new TestCurrentUser(Roles.Admin),
+            printQueue: printQueue.Object,
+            externalDeliveryStatusSync: externalSync.Object);
+
+        var result = await handler.Handle(
+            new ChangeOrderStatusCommand
+            {
+                Id = orderId,
+                StatusChange = new ChangeOrderStatusDto { Status = OrderStatus.Ready },
+            },
+            CancellationToken.None);
+
+        Assert.Equal(OrderStatus.Ready, result.Status);
+        printQueue.VerifyAll();
+        externalSync.VerifyAll();
     }
 }

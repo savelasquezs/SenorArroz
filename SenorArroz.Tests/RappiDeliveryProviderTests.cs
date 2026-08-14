@@ -66,6 +66,10 @@ public sealed class RappiDeliveryProviderTests
         var menuApproval = await provider.GetMenuApprovalAsync(
             "900173116",
             CancellationToken.None);
+        var rejection = await provider.RejectOrderAsync(
+            "rappi-order-1",
+            "Sin inventario",
+            CancellationToken.None);
 
         Assert.True(connection.Success);
         Assert.True(repeatedConnection.Success);
@@ -78,6 +82,7 @@ public sealed class RappiDeliveryProviderTests
         Assert.True(rotatedWebhook.Success);
         Assert.Equal(["900173116", "900173117"], configuredWebhook.EnabledStoreIds);
         Assert.True(menuApproval.Success);
+        Assert.True(rejection.Success);
         Assert.Equal("webhook-secret", webhook.Secret);
         Assert.Equal("rotated-webhook-secret", rotatedWebhook.Secret);
         Assert.Equal(1, handler.AuthRequests);
@@ -113,6 +118,10 @@ public sealed class RappiDeliveryProviderTests
             handler.Requests.Single(x => x.Path.EndsWith("/webhook")).Body);
         Assert.Equal("NEW_ORDER", webhookBody.RootElement.GetProperty("event").GetString());
         Assert.Equal(2, webhookBody.RootElement.GetProperty("data")[0].GetProperty("stores").GetArrayLength());
+
+        using var rejectionBody = JsonDocument.Parse(
+            handler.Requests.Single(x => x.Path.EndsWith("/orders/rappi-order-1/reject")).Body);
+        Assert.Equal("Sin inventario", rejectionBody.RootElement.GetProperty("reason").GetString());
     }
 
     private sealed class ContractHandler : HttpMessageHandler

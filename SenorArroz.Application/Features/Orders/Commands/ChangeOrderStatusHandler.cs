@@ -61,7 +61,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         IDeliveryRouteWorkflowService deliveryRouteWorkflow,
         IPrintQueueService printQueue,
         ILoyaltyCycleService loyaltyCycle,
-        ILogger<ChangeOrderStatusHandler> logger)
+        ILogger<ChangeOrderStatusHandler> logger,
+        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null)
         : this(
             orderRepository,
             context: null!,
@@ -72,7 +73,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             deliveryRouteWorkflow,
             printQueue,
             loyaltyCycle,
-            logger)
+            logger,
+            externalDeliveryStatusSync)
     {
     }
 
@@ -199,27 +201,10 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
                     await _notificationService.NotifyOrderReadyToDelivery(orderDto);
                 if (_externalDeliveryStatusSync is not null)
                     await _externalDeliveryStatusSync.SyncReadyForPickupAsync(order.Id, cancellationToken);
-
-                var role = (_currentUser.Role ?? string.Empty).Trim();
-                if (Roles.IsKitchen(role))
-                {
-                    try
-                    {
-                        await _printQueue.EnqueueAsync(
-                            order.BranchId,
-                            PrintJobKind.Kitchen,
-                            new[] { order.Id },
-                            cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(
-                            ex,
-                            "No se encolo comanda de cocina para pedido {OrderId} (sucursal {BranchId}). El estado si se actualizo.",
-                            order.Id,
-                            order.BranchId);
-                    }
-                }
+                await TryEnqueueKitchenPrintWhenReadyAsync(
+                    order,
+                    previousStatus,
+                    cancellationToken);
             }
 
             if (request.StatusChange.Status == OrderStatus.OnTheWay)
@@ -337,26 +322,10 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
                 await _notificationService.NotifyOrderReadyToDelivery(orderDto);
             if (_externalDeliveryStatusSync is not null)
                 await _externalDeliveryStatusSync.SyncReadyForPickupAsync(order.Id, cancellationToken);
-            var role = (_currentUser.Role ?? string.Empty).Trim();
-            if (Roles.IsKitchen(role))
-            {
-                try
-                {
-                    await _printQueue.EnqueueAsync(
-                        order.BranchId,
-                        PrintJobKind.Kitchen,
-                        new[] { order.Id },
-                        cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(
-                        ex,
-                        "No se encolo comanda de cocina para pedido {OrderId} (sucursal {BranchId}). El estado si se actualizo.",
-                        order.Id,
-                        order.BranchId);
-                }
-            }
+            await TryEnqueueKitchenPrintWhenReadyAsync(
+                order,
+                previousStatus,
+                cancellationToken);
         }
 
         if (request.StatusChange.Status == OrderStatus.OnTheWay)
@@ -382,6 +351,38 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
                 cancellationToken);
 
         return orderDto;
+    }
+
+    private async Task TryEnqueueKitchenPrintWhenReadyAsync(
+        Order order,
+        OrderStatus previousStatus,
+        CancellationToken cancellationToken)
+    {
+        if (previousStatus == OrderStatus.Ready)
+            return;
+
+        var isRappiOrder = order.ExternalFulfillmentProvider?.Equals(
+            "rappi",
+            StringComparison.OrdinalIgnoreCase) == true;
+        if (!isRappiOrder && !Roles.IsKitchen((_currentUser.Role ?? string.Empty).Trim()))
+            return;
+
+        try
+        {
+            await _printQueue.EnqueueAsync(
+                order.BranchId,
+                PrintJobKind.Kitchen,
+                [order.Id],
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "No se encolo comanda de cocina para pedido {OrderId} (sucursal {BranchId}). El estado si se actualizo.",
+                order.Id,
+                order.BranchId);
+        }
     }
 
     private async Task ClearDeliveryAssignmentAsync(int orderId, CancellationToken cancellationToken)

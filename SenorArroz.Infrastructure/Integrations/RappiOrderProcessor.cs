@@ -20,7 +20,6 @@ public sealed class RappiOrderProcessor(
     IOrderRepository orders,
     IMapper mapper,
     IOrderNotificationService notifications,
-    IPrintQueueService printQueue,
     ILogger<RappiOrderProcessor> logger) : IRappiOrderProcessor
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -237,21 +236,6 @@ public sealed class RappiOrderProcessor(
             external.ValidationErrorsJson = null;
             external.LastError = null;
             await db.SaveChangesAsync(ct);
-            try
-            {
-                await printQueue.EnqueueAsync(
-                    order.BranchId,
-                    PrintJobKind.Kitchen,
-                    [order.Id],
-                    ct);
-            }
-            catch (InvalidOperationException ex)
-            {
-                logger.LogWarning(
-                    ex,
-                    "Kitchen print was not queued for Rappi order {OrderId}.",
-                    order.Id);
-            }
             await transaction.CommitAsync(ct);
 
             var fullOrder = await orders.GetByIdWithFullDetailsAsync(order.Id, ct);

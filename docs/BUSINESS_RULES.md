@@ -332,6 +332,7 @@ Reglas:
 - La disponibilidad deriva del producto seleccionado, activo y disponible según las reglas internas, y se sincroniza en ambas tiendas.
 - Solo se admiten órdenes `delivery` con courier Rappi.
 - Una orden válida se toma automáticamente y se crea en estado `Taken`. SKU, precio, stock, modificadores o totales inconsistentes la dejan retenida.
+- La orden Rappi no genera impresión al ingresar. La comanda de cocina se encola cuando el pedido cambia por primera vez a `Ready`.
 - Las órdenes retenidas solo permiten revalidar y aceptar o rechazar; no se permiten sustituciones particulares.
 - La recuperación de `SENT` consulta la ventana oficial de 10 minutos y deduplica por conexión y `order_id`.
 - `total_order` es el total autoritativo. Descuentos Rappi, descuentos del aliado, cargos, comisión estimada, neto esperado, consignación real y diferencia se conservan por separado.
@@ -339,7 +340,8 @@ Reglas:
 - En POS Tester, una orden `delivery` gestionada por courier Rappi puede traer `delivery_information=null`. La ausencia de dirección no bloquea la orden; si Rappi envía dirección, se conserva en el snapshot externo.
 - Revalidar una incidencia vuelve a interpretar el payload crudo y refresca líneas, descuentos y totales antes de crear el pedido interno.
 - Una cancelación previa a liquidación revierte el pago por app sin borrarlo. Una cancelación entregada o liquidada crea una incidencia financiera.
+- La cancelación iniciada en Señor Arroz primero debe ser aceptada por Rappi; si Rappi la rechaza, el pedido interno conserva su estado. Los pedidos Rappi ya liquidados requieren conciliación y no se cancelan desde el POS.
 - La consignación real de un lote se prorratea por neto esperado; el residuo monetario se asigna a la última orden.
-- `READY_FOR_PICKUP` permanece deshabilitado por tienda hasta confirmación expresa de Rappi.
+- `READY_FOR_PICKUP` permanece deshabilitado por tienda hasta confirmación expresa de Rappi. Una vez habilitado, cambiar el pedido a `Ready` crea automáticamente el envío idempotente a Rappi.
 - La información personal y el payload crudo se anonimizan después de 90 días.
 - Deshabilitar la integración conserva configuración, eventos, pedidos e historial financiero.

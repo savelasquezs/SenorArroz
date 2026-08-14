@@ -33,7 +33,7 @@ Estado sandbox verificado el 13 de agosto de 2026:
 - La tienda hija conserva estado de aprobación API `UNKNOWN`, pero POS Tester confirmó visualmente que hereda los mismos cinco productos, descripciones y precios.
 - POS Tester generó una orden `delivery` desde cada tienda; ambas fueron recibidas por `NEW_ORDER`, aceptadas en Rappi y creadas internamente en estado `Taken`.
 - La orden de la tienda padre incluyó envío gratis por `3000`: se conservaron `total_order=31000`, `total_discounts=3000` y cargos por `8900` sin mezclar sus conceptos.
-- Cada orden generó su `AppPayment` por `31000`, con comisión estimada del `25%`, neto esperado de `23250` y trabajo de impresión de cocina en cola.
+- Cada orden generó su `AppPayment` por `31000`, con comisión estimada del `25%` y neto esperado de `23250`. La impresión de cocina se encola únicamente cuando el pedido pasa a `Listo`.
 
 ## Fase 0 — Base de datos y Railway
 
@@ -127,7 +127,7 @@ No usar el rechazo de órdenes para deshabilitar productos.
 ## Fase 5 — Órdenes
 
 1. Enviar una orden delivery con courier Rappi desde cada tienda.
-2. Verificar impresión de cocina, detalle del pedido, cliente Rappi y tienda origen.
+2. Verificar detalle del pedido, cliente Rappi y tienda origen sin generar todavía la impresión de cocina.
 3. Probar un descuento financiado por Rappi.
 4. Probar un descuento financiado por Señor Arroz.
 5. Probar SKU inválido, precio distinto, agotado, modificador y payload repetido.
@@ -142,6 +142,7 @@ Una orden inconsistente se retiene y nunca se sustituye silenciosamente. El tota
 1. Solicitar a Rappi la activación manual de `READY_FOR_PICKUP`.
 2. Habilitar la opción individualmente solo después de la confirmación.
 3. Probar `Listo`, entrega al courier, cierre y cancelación.
+   Al pasar a `Listo`, verificar una sola impresión de cocina y el envío automático e idempotente de `READY_FOR_PICKUP`.
 4. Cancelar una orden antes de liquidarla y confirmar que el pago por app quede revertido.
 5. Cancelar otra después de liquidarla y confirmar la incidencia financiera sin borrar movimientos.
 6. Liquidar un lote ingresando una consignación real distinta al neto esperado.

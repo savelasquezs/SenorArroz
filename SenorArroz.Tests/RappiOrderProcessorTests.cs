@@ -362,13 +362,6 @@ public sealed class RappiOrderProcessorTests
                 It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((Order?)null);
-        var printQueue = new Mock<IPrintQueueService>();
-        printQueue.Setup(x => x.EnqueueAsync(
-                It.IsAny<int>(),
-                PrintJobKind.Kitchen,
-                It.IsAny<IReadOnlyList<int>>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PrintJob());
         return new RappiOrderProcessor(
             db,
             rappi,
@@ -376,7 +369,6 @@ public sealed class RappiOrderProcessorTests
             orderRepository.Object,
             Mock.Of<IMapper>(),
             Mock.Of<IOrderNotificationService>(),
-            printQueue.Object,
             NullLogger<RappiOrderProcessor>.Instance);
     }
 }

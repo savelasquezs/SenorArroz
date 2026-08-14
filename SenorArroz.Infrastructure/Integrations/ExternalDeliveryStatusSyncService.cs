@@ -2,12 +2,15 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Exceptions;
 
 namespace SenorArroz.Infrastructure.Integrations;
 
 public sealed class ExternalDeliveryStatusSyncService(
     IApplicationDbContext db,
-    IClock clock) : IExternalDeliveryStatusSyncService
+    IClock clock,
+    IRappiDeliveryProvider rappi) : IExternalDeliveryStatusSyncService
 {
     public async Task SyncReadyForPickupAsync(int internalOrderId, CancellationToken ct)
     {
@@ -41,4 +44,37 @@ public sealed class ExternalDeliveryStatusSyncService(
         });
         await db.SaveChangesAsync(ct);
     }
+
+    public async Task<bool> SyncCancellationAsync(
+        int internalOrderId,
+        string reason,
+        CancellationToken ct)
+    {
+        var external = await db.ExternalDeliveryOrders
+            .FirstOrDefaultAsync(x => x.InternalOrderId == internalOrderId, ct);
+        if (external is null)
+            return false;
+
+        if (external.Status == ExternalOrderStatus.Cancelled)
+            return true;
+
+        var result = await rappi.RejectOrderAsync(external.ExternalOrderId, reason, ct);
+        external.LastAttemptAt = clock.UtcNow;
+
+        if (!result.Success)
+        {
+            external.LastError = Limit(result.Error ?? "Rappi rechazó la cancelación.", 1000);
+            await db.SaveChangesAsync(ct);
+            throw new BusinessException(
+                $"Rappi no permitió cancelar el pedido. {external.LastError}");
+        }
+
+        external.Status = ExternalOrderStatus.Cancelled;
+        external.LastError = null;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    private static string Limit(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
 }

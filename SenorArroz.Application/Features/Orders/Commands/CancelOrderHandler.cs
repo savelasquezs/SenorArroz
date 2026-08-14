@@ -22,6 +22,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
     private readonly IClock _clock;
     private readonly IOrderNotificationService _notificationService;
+    private readonly IExternalDeliveryStatusSyncService? _externalDeliveryStatusSync;
 
     public CancelOrderHandler(
         IOrderRepository orderRepository,
@@ -33,7 +34,8 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         ILoyaltyCycleService loyaltyCycle,
         IDeliveryRouteWorkflowService deliveryRouteWorkflow,
         IClock clock,
-        IOrderNotificationService notificationService)
+        IOrderNotificationService notificationService,
+        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null)
     {
         _orderRepository = orderRepository;
         _bankPaymentRepository = bankPaymentRepository;
@@ -45,12 +47,14 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
         _clock = clock;
         _notificationService = notificationService;
+        _externalDeliveryStatusSync = externalDeliveryStatusSync;
     }
 
     public async Task<OrderDto> Handle(CancelOrderCommand request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Cancellation.Reason))
             throw new BusinessException("La razón de cancelación es obligatoria");
+        var cancellationReason = request.Cancellation.Reason.Trim();
 
         var existingOrder = await _orderRepository.GetByIdAsync(request.Id, cancellationToken);
         if (existingOrder == null)
@@ -67,17 +71,45 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
 
         var routeIdSnapshot = existingOrder.DeliveryRouteId;
         var previousStatus = existingOrder.Status;
+        var isRappiOrder = existingOrder.ExternalFulfillmentProvider?.Equals(
+            "rappi",
+            StringComparison.OrdinalIgnoreCase) == true;
+        var appPayments = (await _appPaymentRepository.GetByOrderIdAsync(
+            request.Id,
+            cancellationToken)).ToList();
 
-        await CancelAssociatedPaymentsAsync(request.Id, cancellationToken);
+        if (isRappiOrder && appPayments.Any(x => x.IsSetted))
+            throw new BusinessException(
+                "El pedido Rappi ya fue liquidado y requiere conciliación antes de cancelarlo");
+
+        if (isRappiOrder)
+        {
+            if (_externalDeliveryStatusSync is null
+                || !await _externalDeliveryStatusSync.SyncCancellationAsync(
+                    request.Id,
+                    cancellationReason,
+                    cancellationToken))
+            {
+                throw new BusinessException(
+                    "No se encontró la orden externa de Rappi para sincronizar la cancelación");
+            }
+        }
+
+        await CancelAssociatedPaymentsAsync(
+            request.Id,
+            cancellationReason,
+            appPayments,
+            isRappiOrder,
+            cancellationToken);
 
         var order = await _orderRepository.CancelOrderAsync(
             request.Id,
-            request.Cancellation.Reason,
+            cancellationReason,
             cancellationToken);
 
         if (KitchenOrderNotificationEligibility.IsVisibleToActiveKitchen(existingOrder, _clock.UtcNow))
         {
-            var preview = request.Cancellation.Reason.Trim();
+            var preview = cancellationReason;
             if (preview.Length > 120)
                 preview = preview[..120];
             await _notificationService.NotifyOrderCancelledToKitchen(existingOrder.BranchId, request.Id, preview);
@@ -103,11 +135,29 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         return orderDto;
     }
 
-    private async Task CancelAssociatedPaymentsAsync(int orderId, CancellationToken cancellationToken = default)
+    private async Task CancelAssociatedPaymentsAsync(
+        int orderId,
+        string reason,
+        IReadOnlyCollection<AppPayment> appPayments,
+        bool reverseAppPayments,
+        CancellationToken cancellationToken = default)
     {
-        var appPayments = await _appPaymentRepository.GetByOrderIdAsync(orderId, cancellationToken);
         foreach (var appPayment in appPayments)
-            await _appPaymentRepository.DeleteAsync(appPayment.Id, cancellationToken);
+        {
+            if (!reverseAppPayments)
+            {
+                await _appPaymentRepository.DeleteAsync(appPayment.Id, cancellationToken);
+                continue;
+            }
+
+            if (appPayment.IsReversed)
+                continue;
+
+            appPayment.IsReversed = true;
+            appPayment.ReversedAt = _clock.UtcNow;
+            appPayment.ReversalReason = $"Cancelado desde Señor Arroz: {reason}";
+            await _appPaymentRepository.UpdateAsync(appPayment, cancellationToken);
+        }
 
         var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(orderId, cancellationToken);
         foreach (var bankPayment in bankPayments)
