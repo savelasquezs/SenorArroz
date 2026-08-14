@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -69,26 +70,8 @@ public sealed class RappiOrderProcessor(
         if (existing is null)
             db.ExternalDeliveryOrders.Add(external);
 
-        external.StoreId = store?.Id;
-        external.ExternalStoreId = parsed.StoreInternalId ?? parsed.StoreExternalId ?? string.Empty;
-        external.CustomerName = Limit(parsed.CustomerName, 200);
-        external.CustomerPhone = Limit(parsed.CustomerPhone, 50);
-        external.DeliveryAddress = Limit(parsed.DeliveryAddress, 600);
-        external.DeliveryMethod = Limit(parsed.DeliveryMethod, 40);
-        external.PaymentMethod = Limit(parsed.PaymentMethod, 60);
-        external.Total = parsed.Total;
-        external.TotalProducts = parsed.TotalProducts;
-        external.TotalDiscounts = parsed.TotalDiscounts;
-        external.TotalDiscountByPartner = parsed.TotalDiscountByPartner;
-        external.TotalDiscountByRappi = parsed.Discounts.Sum(x => x.AmountByRappi);
-        external.TotalCharges = parsed.TotalCharges;
-        external.CookingTimeMinutes = parsed.CookingTimeMinutes > 0
-            ? Math.Clamp(parsed.CookingTimeMinutes, 5, 180)
-            : connection.DefaultCookingTimeMinutes;
         external.RawPayloadJson = rawOrderJson;
-        external.LinesJson = JsonSerializer.Serialize(parsed.Lines, JsonOptions);
-        external.DiscountsJson = JsonSerializer.Serialize(parsed.Discounts, JsonOptions);
-        external.UpdatedAt = clock.UtcNow;
+        ApplyParsedOrder(external, connection, store, parsed);
 
         var validationErrors = Validate(connection, store, parsed);
         external.ValidationErrorsJson = validationErrors.Count == 0
@@ -126,6 +109,7 @@ public sealed class RappiOrderProcessor(
             return new(true, external.Id, external.InternalOrderId);
 
         var parsed = ParseOrder(external.RawPayloadJson);
+        ApplyParsedOrder(external, external.Connection, external.Store, parsed);
         var errors = Validate(external.Connection, external.Store, parsed);
         external.ValidationErrorsJson = errors.Count == 0
             ? null
@@ -562,8 +546,6 @@ public sealed class RappiOrderProcessor(
             errors.Add("La tienda recibida no está configurada.");
         if (!string.Equals(order.DeliveryMethod, "delivery", StringComparison.OrdinalIgnoreCase))
             errors.Add($"La modalidad {order.DeliveryMethod} no está soportada en este sprint.");
-        if (string.IsNullOrWhiteSpace(order.DeliveryAddress))
-            errors.Add("La orden no contiene una dirección de entrega.");
         if (!connection.CustomerId.HasValue)
             errors.Add("Falta seleccionar el cliente interno Rappi.");
         if (!connection.TechnicalUserId.HasValue)
@@ -612,6 +594,33 @@ public sealed class RappiOrderProcessor(
         && (product.Category.Name.Contains("arroz", StringComparison.OrdinalIgnoreCase)
             || !product.Stock.HasValue
             || product.Stock.Value > 0);
+
+    private void ApplyParsedOrder(
+        ExternalDeliveryOrder external,
+        DeliveryAppConnection connection,
+        DeliveryAppStore? store,
+        ParsedRappiOrder parsed)
+    {
+        external.StoreId = store?.Id;
+        external.ExternalStoreId = parsed.StoreInternalId ?? parsed.StoreExternalId ?? string.Empty;
+        external.CustomerName = Limit(parsed.CustomerName, 200);
+        external.CustomerPhone = Limit(parsed.CustomerPhone, 50);
+        external.DeliveryAddress = Limit(parsed.DeliveryAddress, 600);
+        external.DeliveryMethod = Limit(parsed.DeliveryMethod, 40);
+        external.PaymentMethod = Limit(parsed.PaymentMethod, 60);
+        external.Total = parsed.Total;
+        external.TotalProducts = parsed.TotalProducts;
+        external.TotalDiscounts = parsed.TotalDiscounts;
+        external.TotalDiscountByPartner = parsed.TotalDiscountByPartner;
+        external.TotalDiscountByRappi = parsed.Discounts.Sum(x => x.AmountByRappi);
+        external.TotalCharges = parsed.TotalCharges;
+        external.CookingTimeMinutes = parsed.CookingTimeMinutes > 0
+            ? Math.Clamp(parsed.CookingTimeMinutes, 5, 180)
+            : connection.DefaultCookingTimeMinutes;
+        external.LinesJson = JsonSerializer.Serialize(parsed.Lines, JsonOptions);
+        external.DiscountsJson = JsonSerializer.Serialize(parsed.Discounts, JsonOptions);
+        external.UpdatedAt = clock.UtcNow;
+    }
 
     private static ParsedRappiOrder ParseOrder(string rawJson)
     {
@@ -747,11 +756,13 @@ public sealed class RappiOrderProcessor(
     {
         if (element.ValueKind != JsonValueKind.Object)
             return 0;
-        var total = 0;
+        long total = 0;
         foreach (var property in element.EnumerateObject())
-            if (property.Value.TryGetInt32(out var value))
+            if (TryGetInt(property.Value, out var value))
                 total += value;
-        return total;
+        if (total is > int.MaxValue or < int.MinValue)
+            throw new InvalidOperationException("Los cargos de la orden Rappi exceden el rango permitido.");
+        return (int)total;
     }
 
     private static string? FindString(JsonElement root, string name)
@@ -801,14 +812,43 @@ public sealed class RappiOrderProcessor(
     private static int? GetInt(JsonElement element, string name) =>
         element.ValueKind == JsonValueKind.Object
         && element.TryGetProperty(name, out var value)
-        && value.TryGetInt32(out var parsed)
+        && TryGetInt(value, out var parsed)
             ? parsed
             : null;
 
     private static bool HasInt(JsonElement element, string name) =>
-        element.ValueKind == JsonValueKind.Object
-        && element.TryGetProperty(name, out var value)
-        && value.TryGetInt32(out _);
+        GetInt(element, name).HasValue;
+
+    private static bool TryGetInt(JsonElement value, out int parsed)
+    {
+        if (value.ValueKind == JsonValueKind.Number)
+        {
+            if (value.TryGetInt32(out parsed))
+                return true;
+            if (value.TryGetDecimal(out var number)
+                && decimal.Truncate(number) == number
+                && number is >= int.MinValue and <= int.MaxValue)
+            {
+                parsed = decimal.ToInt32(number);
+                return true;
+            }
+        }
+        else if (value.ValueKind == JsonValueKind.String
+                 && decimal.TryParse(
+                     value.GetString(),
+                     NumberStyles.Number,
+                     CultureInfo.InvariantCulture,
+                     out var number)
+                 && decimal.Truncate(number) == number
+                 && number is >= int.MinValue and <= int.MaxValue)
+        {
+            parsed = decimal.ToInt32(number);
+            return true;
+        }
+
+        parsed = 0;
+        return false;
+    }
 
     private static string Limit(string? value, int maxLength) =>
         string.IsNullOrWhiteSpace(value)

@@ -69,6 +69,64 @@ public sealed class RappiOrderProcessorTests
         }
         """;
 
+    private const string PosTesterOrder = """
+        {
+          "customer": {
+            "first_name": "Usuario de prueba"
+          },
+          "order_detail": {
+            "order_id": "pos-tester-order",
+            "delivery_method": "delivery",
+            "delivery_operation_type": "regular",
+            "payment_method": "credit_card",
+            "cooking_time": 30,
+            "delivery_information": null,
+            "totals": {
+              "charges": {
+                "shipping": 3000.00,
+                "service_fee": 5900.00
+              },
+              "total_order": 18000.00,
+              "total_to_pay": 0.00,
+              "total_products": 18000,
+              "total_discounts": 3000,
+              "total_discount_by_partner": 0,
+              "total_products_with_discount": 18000.00,
+              "total_products_without_discount": 18000.00
+            },
+            "items": [
+              {
+                "id": "rappi-product-26",
+                "sku": "product-26",
+                "name": "Arroz paisa Personal",
+                "type": "product",
+                "quantity": 1,
+                "price": 18000.00,
+                "unit_price_with_discount": 18000.00,
+                "unit_price_without_discount": 18000.00,
+                "comments": "",
+                "subitems": []
+              }
+            ],
+            "discounts": [
+              {
+                "title": "Envio gratis",
+                "description": "Descuento de envío del POS Tester",
+                "type": "free_shipping",
+                "value": 3000,
+                "amount_by_rappi": 0,
+                "amount_by_partner": 0
+              }
+            ]
+          },
+          "store": {
+            "internal_id": "900173116",
+            "external_id": "900173116",
+            "name": "Señor Arroz Dev1"
+          }
+        }
+        """;
+
     [Fact]
     public async Task Valid_order_is_accepted_once_and_preserves_growth_totals()
     {
@@ -137,6 +195,77 @@ public sealed class RappiOrderProcessorTests
         Assert.Empty(await db.Orders.ToListAsync());
         Assert.Empty(await db.AppPayments.ToListAsync());
         rappi.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Pos_tester_order_accepts_decimal_money_and_optional_rappi_delivery_address()
+    {
+        await using var db = CreateDb();
+        await SeedAsync(db);
+        var rappi = new Mock<IRappiDeliveryProvider>();
+        rappi.Setup(x => x.AcceptOrderAsync("pos-tester-order", 30, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(true, 200));
+        var processor = CreateProcessor(db, rappi.Object);
+
+        var result = await processor.IngestNewOrderAsync(1, PosTesterOrder, CancellationToken.None);
+
+        Assert.True(result.Success);
+        var external = await db.ExternalDeliveryOrders.SingleAsync();
+        Assert.Equal(ExternalOrderStatus.Accepted, external.Status);
+        Assert.Equal(string.Empty, external.DeliveryAddress);
+        Assert.Equal(18000, external.Total);
+        Assert.Equal(18000, external.TotalProducts);
+        Assert.Equal(3000, external.TotalDiscounts);
+        Assert.Equal(8900, external.TotalCharges);
+
+        var order = await db.Orders.Include(x => x.OrderDetails).SingleAsync();
+        Assert.Equal(18000, order.Total);
+        Assert.Equal(18000, order.Subtotal);
+        Assert.Equal(18000, order.OrderDetails.Single().UnitPrice);
+        Assert.Equal(18000, (await db.AppPayments.SingleAsync()).Amount);
+    }
+
+    [Fact]
+    public async Task Revalidation_refreshes_a_previously_blocked_payload_snapshot()
+    {
+        await using var db = CreateDb();
+        await SeedAsync(db);
+        db.ExternalDeliveryOrders.Add(new ExternalDeliveryOrder
+        {
+            Id = 77,
+            ConnectionId = 1,
+            BranchId = 1,
+            StoreId = 1,
+            ExternalOrderId = "pos-tester-order",
+            ExternalStoreId = "900173116",
+            DeliveryMethod = "delivery",
+            PaymentMethod = "credit_card",
+            Total = 0,
+            TotalProducts = 18000,
+            TotalDiscounts = 3000,
+            TotalDiscountByPartner = 0,
+            TotalCharges = 0,
+            RawPayloadJson = PosTesterOrder,
+            LinesJson = "[]",
+            DiscountsJson = "[]",
+            Status = ExternalOrderStatus.BlockedMapping
+        });
+        await db.SaveChangesAsync();
+        var rappi = new Mock<IRappiDeliveryProvider>();
+        rappi.Setup(x => x.AcceptOrderAsync("pos-tester-order", 30, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(true, 200));
+        var processor = CreateProcessor(db, rappi.Object);
+
+        var result = await processor.RevalidateAndAcceptAsync(77, 23, CancellationToken.None);
+
+        Assert.True(result.Success);
+        var external = await db.ExternalDeliveryOrders.SingleAsync();
+        Assert.Equal(ExternalOrderStatus.Accepted, external.Status);
+        Assert.Equal(18000, external.Total);
+        Assert.Equal(8900, external.TotalCharges);
+        Assert.Contains("18000", external.LinesJson, StringComparison.Ordinal);
+        Assert.Equal(18000, (await db.Orders.Include(x => x.OrderDetails).SingleAsync())
+            .OrderDetails.Single().UnitPrice);
     }
 
     private static ApplicationDbContext CreateDb()

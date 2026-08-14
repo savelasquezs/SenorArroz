@@ -93,6 +93,8 @@ El registro es recuperable: si el webhook ya existe en Rappi pero el secreto loc
 
 El Sandbox Tester envía `STORE_CONNECTIVITY` con `store_id`, `online` y `checked_at`; el backend también conserva compatibilidad con `external_store_id`, `enabled` y `message`, que es el formato documentado.
 
+El payload real de órdenes del POS Tester puede enviar importes integrales con representación decimal (`31000.00`) y `delivery_information=null` para entregas operadas por courier Rappi. El parser acepta ambas variantes sin redondear valores fraccionarios y la revalidación reconstruye el snapshot persistido antes de aceptar una incidencia.
+
 ## Fase 3 — Menú automático
 
 1. Seleccionar un catálogo pequeño de productos simples.
