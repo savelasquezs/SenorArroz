@@ -12,6 +12,7 @@ public static class DeliveryTrackingReviewPolicy
     [
         DeliveryTrackingAlertType.GpsDisabled,
         DeliveryTrackingAlertType.LocationPermissionRevoked,
+        DeliveryTrackingAlertType.NoCommunication,
         DeliveryTrackingAlertType.UnexpectedStay,
     ];
 
@@ -22,6 +23,7 @@ public static class DeliveryTrackingReviewPolicy
     {
         DeliveryTrackingAlertType.GpsDisabled => "gps_disabled",
         DeliveryTrackingAlertType.LocationPermissionRevoked => "location_permission_revoked",
+        DeliveryTrackingAlertType.NoCommunication => "no_communication",
         DeliveryTrackingAlertType.UnexpectedStay => "unexpected_stay",
         _ => throw new ArgumentOutOfRangeException(nameof(alertType), alertType, null),
     };
@@ -36,6 +38,10 @@ public static class DeliveryTrackingReviewPolicy
             "Se detectó que apagaste la ubicación o retiraste su permiso durante la jornada. " +
             "Estás incurriendo en una posible falta disciplinaria. Si contabas con permiso, omite este mensaje; " +
             "para aclarar la situación, consulta a tu administrador.",
+        DeliveryTrackingAlertType.NoCommunication =>
+            "Se detectó una interrupción prolongada del seguimiento durante tu jornada. " +
+            "La causa será revisada y no se considera una falta automáticamente. Si contabas con permiso, " +
+            "omite este mensaje; para aclarar la situación, consulta a tu administrador.",
         _ => throw new ArgumentOutOfRangeException(nameof(alertType), alertType, null),
     };
 }

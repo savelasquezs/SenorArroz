@@ -186,8 +186,13 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             ? await _db.Users.AsNoTracking().Where(x => x.Id == incident.ReviewedByUserId.Value)
                 .Select(x => x.Name).FirstOrDefaultAsync(cancellationToken)
             : null;
-        var isActive = incident.IncidentType == DeliveryTrackingIncidentType.Stay
-            && await IsActiveStayAsync(incident.WorkSessionId, incident.DeliveryStayId, cancellationToken);
+        var isActive = incident.IncidentType switch
+        {
+            DeliveryTrackingIncidentType.Stay =>
+                await IsActiveStayAsync(incident.WorkSessionId, incident.DeliveryStayId, cancellationToken),
+            DeliveryTrackingIncidentType.TrackingInterruption => !incident.EvidenceComplete,
+            _ => false,
+        };
         var pointCount = locations.Count(x => x.IsCorePoint);
 
         var dto = new DeliveryTrackingIncidentDetailDto(

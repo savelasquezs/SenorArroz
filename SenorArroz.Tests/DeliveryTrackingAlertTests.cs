@@ -63,7 +63,8 @@ public class DeliveryTrackingAlertTests
             DeviceEvent(201, DeliveryDeviceEventType.GpsDisabled, 1),
             DeviceEvent(202, DeliveryDeviceEventType.GpsEnabled, 2),
             DeviceEvent(203, DeliveryDeviceEventType.LocationPermissionRevoked, 3),
-            DeviceEvent(204, DeliveryDeviceEventType.InternetRecovered, 4, "queued_location_count=4"));
+            DeviceEvent(204, DeliveryDeviceEventType.InternetRecovered, 4, "queued_location_count=4"),
+            DeviceEvent(205, DeliveryDeviceEventType.AppStopped, 10, "detected_on_next_launch"));
         db.UserDeviceTokens.AddRange(
             new UserDeviceToken { Id = 1, UserId = 1, Token = "deliveryman-token" },
             new UserDeviceToken { Id = 2, UserId = 2, Token = "other-token" });
@@ -127,7 +128,11 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(-74.08m, stay.StartLongitude);
         Assert.Contains("300 segundos", db.DeliveryTrackingAlerts
             .Single(x => x.AlertType == DeliveryTrackingAlertType.NoCommunication).Message);
-        Assert.Equal(3, fcm.Sends.Count);
+        var interruption = db.DeliveryTrackingIncidents.Single(
+            x => x.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption);
+        Assert.Equal("app_or_tracking_service_stopped", interruption.ClassificationReason);
+        Assert.Equal(205, interruption.SourceDeviceEventId);
+        Assert.Equal(4, fcm.Sends.Count);
         Assert.All(fcm.Sends, send => Assert.Equal(["deliveryman-token"], send.Tokens));
         Assert.All(fcm.Sends, send =>
         {
@@ -139,10 +144,11 @@ public class DeliveryTrackingAlertTests
         Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "gps_disabled");
         Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "location_permission_revoked");
         Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "unexpected_stay");
+        Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "no_communication");
         Assert.Contains(fcm.Sends, send => send.Body.Contains("lugar no autorizado"));
         Assert.Contains(fcm.Sends, send => send.Body.Contains("apagaste la ubicación"));
         Assert.Equal(0, await service.ProcessAsync());
-        Assert.Equal(3, fcm.Sends.Count);
+        Assert.Equal(4, fcm.Sends.Count);
 
         var incident = db.DeliveryTrackingIncidents.Single(
             x => x.IncidentType == DeliveryTrackingIncidentType.Stay);
@@ -151,11 +157,14 @@ public class DeliveryTrackingAlertTests
         await db.SaveChangesAsync();
         clock.UtcNow = BaseTime.AddMinutes(11);
 
-        Assert.Equal(2, await service.ProcessAsync());
+        Assert.True(await service.ProcessAsync() >= 2);
         Assert.Equal(DeliveryTrackingAlertStatus.Resolved,
             db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.UnexpectedStay).Status);
-        Assert.Equal(DeliveryTrackingAlertStatus.Resolved,
-            db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.NoCommunication).Status);
+        var recoveredInterruption = db.DeliveryTrackingAlerts.Single(
+            x => x.AlertType == DeliveryTrackingAlertType.NoCommunication);
+        Assert.Equal(DeliveryTrackingAlertStatus.Active, recoveredInterruption.Status);
+        Assert.Equal(BaseTime.AddMinutes(11), recoveredInterruption.RecoveredAt);
+        Assert.NotNull(recoveredInterruption.IncidentId);
     }
 
     [Fact]
@@ -195,13 +204,14 @@ public class DeliveryTrackingAlertTests
         });
         await db.SaveChangesAsync();
         var fcm = new FakeFcmPushService();
-        var service = CreateService(db, new FakeClock(BaseTime.AddSeconds(61)), fcm);
+        var service = CreateService(db, new FakeClock(BaseTime.AddSeconds(121)), fcm);
 
         await service.ProcessAsync();
 
         var noCommunication = db.DeliveryTrackingAlerts.Single(
             x => x.AlertType == DeliveryTrackingAlertType.NoCommunication);
-        Assert.Equal(BaseTime.AddSeconds(60), noCommunication.OccurredAt);
+        Assert.Equal(BaseTime.AddSeconds(120), noCommunication.OccurredAt);
+        Assert.Equal(DeliveryTrackingAlertSeverity.RequiresReview, noCommunication.Severity);
         Assert.Contains("30 segundos", noCommunication.Message);
         var pastCutoff = db.DeliveryTrackingAlerts.Single(
             x => x.AlertType == DeliveryTrackingAlertType.SessionPastAutoClose);

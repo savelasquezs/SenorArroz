@@ -40,6 +40,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         if (changes > 0)
             await _db.SaveChangesAsync(cancellationToken);
         var incidentChanges = await ProcessGpsDisabledIncidentsAsync(nowUtc, cancellationToken);
+        incidentChanges += await ProcessTrackingInterruptionIncidentsAsync(nowUtc, cancellationToken);
         if (incidentChanges > 0)
             await _db.SaveChangesAsync(cancellationToken);
         await NotifyDeliverymenAsync(_newReviewAlerts, cancellationToken);
@@ -516,6 +517,118 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         SyncedAt = source.SyncedAt,
     };
 
+    private async Task<int> ProcessTrackingInterruptionIncidentsAsync(
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var alerts = await _db.DeliveryTrackingAlerts
+            .Where(alert => alert.AlertType == DeliveryTrackingAlertType.NoCommunication
+                && alert.WorkSessionId.HasValue
+                && !_db.DeliveryTrackingIncidents.Any(incident =>
+                    incident.AlertId == alert.Id && incident.SourceUpdatedAt >= alert.UpdatedAt))
+            .OrderBy(alert => alert.OccurredAt)
+            .Take(BatchSize)
+            .ToListAsync(cancellationToken);
+        if (alerts.Count == 0)
+            return 0;
+
+        var alertIds = alerts.Select(x => x.Id).ToList();
+        var existing = await _db.DeliveryTrackingIncidents
+            .Where(x => x.AlertId.HasValue && alertIds.Contains(x.AlertId.Value))
+            .ToDictionaryAsync(x => x.AlertId!.Value, cancellationToken);
+        var changes = 0;
+        foreach (var alert in alerts)
+        {
+            var sessionId = alert.WorkSessionId!.Value;
+            var evidenceEnd = alert.RecoveredAt ?? nowUtc;
+            var locations = await _db.DeliverymanLocations.AsNoTracking()
+                .Where(x => x.WorkSessionId == sessionId
+                    && x.RecordedAt >= alert.OccurredAt.AddMinutes(-5)
+                    && x.RecordedAt <= evidenceEnd.AddMinutes(5))
+                .OrderBy(x => x.RecordedAt).ThenBy(x => x.Id)
+                .ToListAsync(cancellationToken);
+            var events = await _db.DeliveryDeviceEvents.AsNoTracking()
+                .Where(x => x.WorkSessionId == sessionId
+                    && x.RecordedAt >= alert.OccurredAt.AddMinutes(-5)
+                    && x.RecordedAt <= evidenceEnd.AddMinutes(5))
+                .OrderBy(x => x.RecordedAt).ThenBy(x => x.Id)
+                .ToListAsync(cancellationToken);
+            var before = locations.LastOrDefault(x => x.RecordedAt <= alert.OccurredAt);
+            var after = alert.RecoveredAt.HasValue
+                ? locations.FirstOrDefault(x => x.RecordedAt >= alert.RecoveredAt.Value)
+                : null;
+            var appStopped = events.LastOrDefault(x => x.EventType == DeliveryDeviceEventType.AppStopped);
+            var connectivityEvidence = events.Any(x =>
+                    x.EventType == DeliveryDeviceEventType.InternetLost
+                    || x.EventType == DeliveryDeviceEventType.InternetRecovered)
+                || locations.Any(x => x.InternetAvailable == false || x.TrackingMode == DeliveryTrackingMode.Offline);
+            var reason = appStopped is not null
+                ? "app_or_tracking_service_stopped"
+                : connectivityEvidence
+                    ? "connectivity_interruption"
+                    : "cause_not_determinable";
+
+            if (!existing.TryGetValue(alert.Id, out var incident))
+            {
+                incident = new DeliveryTrackingIncident
+                {
+                    IncidentType = DeliveryTrackingIncidentType.TrackingInterruption,
+                    AlertId = alert.Id,
+                    ReviewStatus = DeliveryIncidentReviewStatus.Pending,
+                    CreatedAt = nowUtc,
+                };
+                _db.DeliveryTrackingIncidents.Add(incident);
+                existing[alert.Id] = incident;
+            }
+
+            incident.BranchId = alert.BranchId;
+            incident.DeliverymanId = alert.DeliverymanId;
+            incident.WorkSessionId = sessionId;
+            incident.SourceDeviceEventId = appStopped?.Id;
+            incident.DeliveryRouteId = before?.DeliveryRouteId ?? after?.DeliveryRouteId;
+            incident.StartedAt = alert.OccurredAt;
+            incident.EndedAt = alert.RecoveredAt ?? alert.OccurredAt;
+            incident.DurationSeconds = alert.DurationSeconds ?? 0;
+            incident.CenterLatitude = before?.Latitude ?? after?.Latitude;
+            incident.CenterLongitude = before?.Longitude ?? after?.Longitude;
+            incident.RadiusMeters = 0;
+            incident.AverageAccuracyMeters = new[] { before, after }
+                .Where(x => x?.AccuracyMeters is not null)
+                .Select(x => x!.AccuracyMeters!.Value)
+                .DefaultIfEmpty(0).Average();
+            incident.ClassificationReason = reason;
+            incident.SourceUpdatedAt = alert.UpdatedAt;
+            incident.EvidenceCapturedAt = nowUtc;
+            incident.EvidenceComplete = alert.RecoveredAt.HasValue;
+            incident.UpdatedAt = nowUtc;
+
+            var knownLocations = incident.Id == 0
+                ? new HashSet<long>()
+                : (await _db.DeliveryIncidentLocationEvidence.AsNoTracking()
+                    .Where(x => x.IncidentId == incident.Id)
+                    .Select(x => x.SourceLocationId)
+                    .ToListAsync(cancellationToken)).ToHashSet();
+            foreach (var location in new[] { before, after }.Where(x => x is not null).Cast<DeliverymanLocation>()
+                         .Where(x => knownLocations.Add(x.Id)))
+                incident.LocationEvidence.Add(CopyIncidentLocation(location));
+
+            var knownEvents = incident.Id == 0
+                ? new HashSet<long>()
+                : (await _db.DeliveryIncidentDeviceEventEvidence.AsNoTracking()
+                    .Where(x => x.IncidentId == incident.Id)
+                    .Select(x => x.SourceDeviceEventId)
+                    .ToListAsync(cancellationToken)).ToHashSet();
+            foreach (var deviceEvent in events.Where(x => knownEvents.Add(x.Id)))
+                incident.DeviceEventEvidence.Add(CopyIncidentDeviceEvent(deviceEvent));
+
+            if (incident.Id == 0)
+                await _db.SaveChangesAsync(cancellationToken);
+            alert.IncidentId = incident.Id;
+            changes++;
+        }
+        return changes;
+    }
+
     private static DeliveryIncidentDeviceEventEvidence CopyIncidentDeviceEvent(DeliveryDeviceEvent source) => new()
     {
         SourceDeviceEventId = source.Id,
@@ -628,7 +741,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             var intervalSeconds = lastModes.GetValueOrDefault(session.Id) == DeliveryTrackingMode.ActiveDelivery
                 ? branch.DeliveryTrackingActiveIntervalSeconds
                 : branch.DeliveryTrackingLightIntervalSeconds;
-            var thresholdSeconds = Math.Max(1, intervalSeconds) * 2;
+            var thresholdSeconds = lastModes.GetValueOrDefault(session.Id) == DeliveryTrackingMode.ActiveDelivery
+                ? 120
+                : Math.Max(1, intervalSeconds) * 2;
             var silenceSeconds = (nowUtc - session.LastCommunicationAt).TotalSeconds;
             if (silenceSeconds >= thresholdSeconds)
             {
@@ -642,7 +757,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                         WorkSessionId = session.Id,
                         DeduplicationKey = key,
                         AlertType = DeliveryTrackingAlertType.NoCommunication,
-                        Severity = DeliveryTrackingAlertSeverity.Warning,
+                        Severity = DeliveryTrackingAlertSeverity.RequiresReview,
                         Status = DeliveryTrackingAlertStatus.Active,
                         Title = "Domiciliario sin comunicación",
                         Message = $"No se reciben datos desde hace {Math.Max(1, (int)silenceSeconds / 60)} minutos; se esperaban reportes cada {intervalSeconds} segundos.",
@@ -693,9 +808,28 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                 continue;
             }
             if (alert.AlertType == DeliveryTrackingAlertType.NoCommunication
-                && session.LastCommunicationAt > alert.OccurredAt)
+                && session.LastCommunicationAt > alert.OccurredAt
+                && !alert.RecoveredAt.HasValue)
             {
-                Resolve(alert, session.LastCommunicationAt, "La comunicación se recuperó.");
+                alert.RecoveredAt = session.LastCommunicationAt;
+                alert.LastOccurredAt = session.LastCommunicationAt;
+                alert.DurationSeconds = Math.Max(0,
+                    (int)Math.Round((session.LastCommunicationAt - alert.OccurredAt).TotalSeconds));
+                var sessionLocations = await _db.DeliverymanLocations.AsNoTracking()
+                    .Where(x => x.WorkSessionId == session.Id)
+                    .OrderBy(x => x.RecordedAt).ThenBy(x => x.Id)
+                    .ToListAsync(cancellationToken);
+                var before = sessionLocations.LastOrDefault(x => x.RecordedAt <= alert.OccurredAt);
+                var after = sessionLocations.FirstOrDefault(x => x.RecordedAt >= session.LastCommunicationAt);
+                alert.StartLatitude ??= before?.Latitude;
+                alert.StartLongitude ??= before?.Longitude;
+                alert.StartLocationRecordedAt ??= before?.RecordedAt;
+                alert.EndLatitude ??= after?.Latitude;
+                alert.EndLongitude ??= after?.Longitude;
+                alert.EndLocationRecordedAt ??= after?.RecordedAt;
+                alert.Message = $"El seguimiento se interrumpió durante {FormatDuration(alert.DurationSeconds)}. " +
+                    "La causa exacta requiere revisión; la recuperación no cierra el caso automáticamente.";
+                alert.UpdatedAt = nowUtc;
                 changes++;
             }
         }

@@ -21,6 +21,7 @@ public class DeliveryTrackingIncidentConfiguration : IEntityTypeConfiguration<De
         builder.Property(x => x.WorkSessionId).HasColumnName("work_session_id").IsRequired();
         builder.Property(x => x.DeliveryStayId).HasColumnName("delivery_stay_id");
         builder.Property(x => x.SourceDeviceEventId).HasColumnName("source_device_event_id");
+        builder.Property(x => x.AlertId).HasColumnName("alert_id");
         builder.Property(x => x.DeliveryRouteId).HasColumnName("delivery_route_id");
         builder.Property(x => x.OrderId).HasColumnName("order_id");
         builder.Property(x => x.StayClassification).HasColumnName("stay_classification").HasMaxLength(40)
@@ -63,6 +64,8 @@ public class DeliveryTrackingIncidentConfiguration : IEntityTypeConfiguration<De
             .HasDatabaseName("uq_delivery_tracking_incident_stay");
         builder.HasIndex(x => x.SourceDeviceEventId).IsUnique().HasFilter("source_device_event_id IS NOT NULL")
             .HasDatabaseName("uq_delivery_tracking_incident_device_event");
+        builder.HasIndex(x => x.AlertId).IsUnique().HasFilter("alert_id IS NOT NULL")
+            .HasDatabaseName("uq_delivery_tracking_incident_alert");
         builder.HasIndex(x => new { x.BranchId, x.StartedAt })
             .HasDatabaseName("idx_delivery_tracking_incident_branch_started");
         builder.HasIndex(x => new { x.WorkSessionId, x.StartedAt })

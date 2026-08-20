@@ -15,6 +15,7 @@ public class DeliveryTrackingIncident
     public int WorkSessionId { get; set; }
     public long? DeliveryStayId { get; set; }
     public long? SourceDeviceEventId { get; set; }
+    public long? AlertId { get; set; }
     public int? DeliveryRouteId { get; set; }
     public int? OrderId { get; set; }
     public DeliveryStayClassification? StayClassification { get; set; }
