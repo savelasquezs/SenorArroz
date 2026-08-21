@@ -219,7 +219,9 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 .Where(x => x.BranchId == branchId
                     && x.OccurredAt > periodStartUtc
                     && x.OccurredAt <= saved.ClosedAt
-                    && CashClosureAuditMapper.IncludedTrackingAlertTypes.Contains(x.AlertType))
+                    && CashClosureAuditMapper.IncludedTrackingAlertTypes.Contains(x.AlertType)
+                    && (x.AlertType != DeliveryTrackingAlertType.NoCommunication
+                        || x.Severity == DeliveryTrackingAlertSeverity.RequiresReview))
                 .ToListAsync(cancellationToken);
             var trackingDeliverymanIds = trackingAlerts.Select(x => x.DeliverymanId).Distinct().ToList();
             var trackingDeliverymanNames = await _context.Users.AsNoTracking()

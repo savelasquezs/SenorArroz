@@ -106,7 +106,8 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(-74.09m, gpsAlert.EndLongitude);
         Assert.Contains("1 min 0 s", gpsAlert.Message);
         var gpsReview = db.DeliveryTrackingIncidents.Single(
-            x => x.IncidentType == DeliveryTrackingIncidentType.LocationDisabled);
+            x => x.IncidentType == DeliveryTrackingIncidentType.LocationDisabled
+                && x.SourceDeviceEventId == 201);
         Assert.Equal(DeliveryIncidentReviewStatus.Pending, gpsReview.ReviewStatus);
         Assert.Equal(201, gpsReview.SourceDeviceEventId);
         Assert.Equal(BaseTime.AddMinutes(1), gpsReview.StartedAt);
@@ -126,7 +127,7 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(660, stay.DurationSeconds);
         Assert.Equal(4.6m, stay.StartLatitude);
         Assert.Equal(-74.08m, stay.StartLongitude);
-        Assert.Contains("300 segundos", db.DeliveryTrackingAlerts
+        Assert.Contains("app o el servicio", db.DeliveryTrackingAlerts
             .Single(x => x.AlertType == DeliveryTrackingAlertType.NoCommunication).Message);
         var interruption = db.DeliveryTrackingIncidents.Single(
             x => x.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption);
@@ -210,14 +211,258 @@ public class DeliveryTrackingAlertTests
 
         var noCommunication = db.DeliveryTrackingAlerts.Single(
             x => x.AlertType == DeliveryTrackingAlertType.NoCommunication);
-        Assert.Equal(BaseTime.AddSeconds(120), noCommunication.OccurredAt);
-        Assert.Equal(DeliveryTrackingAlertSeverity.RequiresReview, noCommunication.Severity);
+        Assert.Equal(BaseTime, noCommunication.OccurredAt);
+        Assert.Equal(DeliveryTrackingAlertSeverity.Warning, noCommunication.Severity);
         Assert.Contains("30 segundos", noCommunication.Message);
         var pastCutoff = db.DeliveryTrackingAlerts.Single(
             x => x.AlertType == DeliveryTrackingAlertType.SessionPastAutoClose);
         Assert.Equal(DeliveryTrackingAlertSeverity.Critical, pastCutoff.Severity);
         Assert.Equal(BaseTime.AddSeconds(30), pastCutoff.OccurredAt);
         Assert.Empty(fcm.Sends);
+    }
+
+    [Fact]
+    public async Task Process_DoesNotDuplicateNoCommunicationWhenGpsAlertIsActive()
+    {
+        await using var db = CreateDb();
+        db.Branches.Add(new Branch
+        {
+            Id = 7,
+            Name = "Centro",
+            Address = "A",
+            Phone1 = "1",
+            DeliveryTrackingLightIntervalSeconds = 300,
+            DeliveryTrackingActiveIntervalSeconds = 30,
+        });
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device",
+            DevicePlatform = "android",
+            StartedAt = BaseTime,
+            AutoCloseAt = BaseTime.AddHours(8),
+            LastCommunicationAt = BaseTime,
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        db.DeliverymanLocations.Add(new DeliverymanLocation
+        {
+            Id = 100,
+            DeliverymanId = 1,
+            WorkSessionId = 10,
+            Latitude = 4.6m,
+            Longitude = -74.08m,
+            TrackingMode = DeliveryTrackingMode.ActiveDelivery,
+            RecordedAt = BaseTime,
+        });
+        db.DeliveryDeviceEvents.Add(DeviceEvent(201, DeliveryDeviceEventType.GpsDisabled, 1));
+        db.UserDeviceTokens.Add(new UserDeviceToken { Id = 1, UserId = 1, Token = "deliveryman-token" });
+        await db.SaveChangesAsync();
+        var fcm = new FakeFcmPushService();
+
+        await CreateService(db, new FakeClock(BaseTime.AddMinutes(3)), fcm).ProcessAsync();
+
+        Assert.Single(db.DeliveryTrackingAlerts);
+        Assert.Equal(DeliveryTrackingAlertType.GpsDisabled, db.DeliveryTrackingAlerts.Single().AlertType);
+        Assert.Single(db.DeliveryTrackingIncidents);
+        Assert.Single(fcm.Sends);
+    }
+
+    [Fact]
+    public async Task Process_AutoResolvesShortGenericInterruptionWithoutReviewNotification()
+    {
+        await using var db = CreateDb();
+        db.Branches.Add(new Branch
+        {
+            Id = 7,
+            Name = "Centro",
+            Address = "A",
+            Phone1 = "1",
+            DeliveryTrackingLightIntervalSeconds = 300,
+            DeliveryTrackingActiveIntervalSeconds = 30,
+        });
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device",
+            DevicePlatform = "android",
+            StartedAt = BaseTime,
+            AutoCloseAt = BaseTime.AddHours(8),
+            LastCommunicationAt = BaseTime,
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        db.DeliverymanLocations.Add(new DeliverymanLocation
+        {
+            Id = 100,
+            DeliverymanId = 1,
+            WorkSessionId = 10,
+            Latitude = 4.6m,
+            Longitude = -74.08m,
+            TrackingMode = DeliveryTrackingMode.ActiveDelivery,
+            RecordedAt = BaseTime,
+        });
+        await db.SaveChangesAsync();
+        var clock = new FakeClock(BaseTime.AddMinutes(3));
+        var fcm = new FakeFcmPushService();
+        var service = CreateService(db, clock, fcm);
+
+        await service.ProcessAsync();
+
+        var alert = db.DeliveryTrackingAlerts.Single();
+        Assert.Equal(DeliveryTrackingAlertSeverity.Warning, alert.Severity);
+        Assert.Empty(fcm.Sends);
+        Assert.Empty(db.DeliveryTrackingIncidents);
+
+        db.DeliveryWorkSessions.Single().LastCommunicationAt = BaseTime.AddMinutes(5);
+        await db.SaveChangesAsync();
+        clock.UtcNow = BaseTime.AddMinutes(5);
+        await service.ProcessAsync();
+
+        Assert.Equal(DeliveryTrackingAlertStatus.Resolved, alert.Status);
+        Assert.Equal("Interrupción breve recuperada automáticamente.", alert.ResolutionReason);
+        Assert.Empty(db.DeliveryTrackingIncidents);
+        Assert.Empty(fcm.Sends);
+    }
+
+    [Theory]
+    [InlineData(DeliveryDeviceEventType.AppStopped)]
+    [InlineData(DeliveryDeviceEventType.LocationServiceRestarted)]
+    public async Task Process_AttachesLateServiceStopEvidenceWithoutDuplicatingReviewOrFcm(
+        DeliveryDeviceEventType eventType)
+    {
+        await using var db = CreateDb();
+        db.Branches.Add(new Branch
+        {
+            Id = 7,
+            Name = "Centro",
+            Address = "A",
+            Phone1 = "1",
+            DeliveryTrackingLightIntervalSeconds = 300,
+            DeliveryTrackingActiveIntervalSeconds = 30,
+        });
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device",
+            DevicePlatform = "android",
+            StartedAt = BaseTime,
+            AutoCloseAt = BaseTime.AddHours(8),
+            LastCommunicationAt = BaseTime,
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        db.DeliverymanLocations.Add(new DeliverymanLocation
+        {
+            Id = 100,
+            DeliverymanId = 1,
+            WorkSessionId = 10,
+            Latitude = 4.6m,
+            Longitude = -74.08m,
+            TrackingMode = DeliveryTrackingMode.ActiveDelivery,
+            RecordedAt = BaseTime,
+        });
+        db.UserDeviceTokens.Add(new UserDeviceToken { Id = 1, UserId = 1, Token = "deliveryman-token" });
+        await db.SaveChangesAsync();
+        var clock = new FakeClock(BaseTime.AddMinutes(10).AddSeconds(1));
+        var fcm = new FakeFcmPushService();
+        var service = CreateService(db, clock, fcm);
+
+        await service.ProcessAsync();
+        Assert.Single(fcm.Sends);
+
+        db.DeliveryWorkSessions.Single().LastCommunicationAt = BaseTime.AddMinutes(11);
+        db.DeliveryDeviceEvents.Add(DeviceEvent(201, DeliveryDeviceEventType.InternetRecovered, 11));
+        await db.SaveChangesAsync();
+        clock.UtcNow = BaseTime.AddMinutes(11);
+        await service.ProcessAsync();
+        Assert.Single(fcm.Sends);
+
+        var stopped = DeviceEvent(202, eventType, 11, "detected_on_next_launch");
+        stopped.RecordedAt = BaseTime.AddMinutes(11).AddSeconds(30);
+        db.DeliveryDeviceEvents.Add(stopped);
+        await db.SaveChangesAsync();
+        clock.UtcNow = stopped.RecordedAt;
+        await service.ProcessAsync();
+
+        Assert.Single(db.DeliveryTrackingAlerts);
+        Assert.Single(db.DeliveryTrackingIncidents);
+        Assert.Single(fcm.Sends);
+        Assert.Equal(DeliveryInterruptionCause.AppOrTrackingServiceStopped,
+            db.DeliveryTrackingIncidents.Single().InterruptionCause);
+        Assert.Equal(0, await service.ProcessAsync());
+    }
+
+    [Theory]
+    [InlineData(15, 60, true)]
+    [InlineData(10, 420, true)]
+    [InlineData(14, 419, false)]
+    public async Task Process_EscalatesOfflineEvidenceByCountOrDuration(
+        int count,
+        int durationSeconds,
+        bool expectedReview)
+    {
+        await using var db = CreateDb();
+        var recoveredAt = BaseTime.AddMinutes(8);
+        db.Branches.Add(new Branch { Id = 7, Name = "Centro", Address = "A", Phone1 = "1" });
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device",
+            DevicePlatform = "android",
+            StartedAt = BaseTime,
+            AutoCloseAt = BaseTime.AddHours(8),
+            LastCommunicationAt = recoveredAt,
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        db.DeliveryDeviceEvents.Add(new DeliveryDeviceEvent
+        {
+            Id = 201,
+            DeliverymanId = 1,
+            WorkSessionId = 10,
+            EventType = DeliveryDeviceEventType.InternetRecovered,
+            InternetAvailable = true,
+            OfflineLocationCount = count,
+            OfflineStartedAt = recoveredAt.AddSeconds(-durationSeconds),
+            OfflineEndedAt = recoveredAt,
+            Details = $"queued_location_count={count}",
+            RecordedAt = recoveredAt,
+            SyncedAt = recoveredAt,
+        });
+        var offlineStartedAt = recoveredAt.AddSeconds(-durationSeconds);
+        for (var index = 0; index < count; index++)
+        {
+            var progress = count == 1 ? 0d : index / (double)(count - 1);
+            db.DeliverymanLocations.Add(new DeliverymanLocation
+            {
+                Id = 1000 + index,
+                DeliverymanId = 1,
+                WorkSessionId = 10,
+                Latitude = 4.6m,
+                Longitude = -74.08m,
+                InternetAvailable = false,
+                GpsEnabled = true,
+                TrackingMode = DeliveryTrackingMode.Offline,
+                RecordedAt = offlineStartedAt.AddSeconds(durationSeconds * progress),
+                SyncedAt = recoveredAt,
+            });
+        }
+        db.UserDeviceTokens.Add(new UserDeviceToken { Id = 1, UserId = 1, Token = "deliveryman-token" });
+        await db.SaveChangesAsync();
+        var fcm = new FakeFcmPushService();
+
+        await CreateService(db, new FakeClock(recoveredAt), fcm).ProcessAsync();
+
+        var alert = db.DeliveryTrackingAlerts.Single();
+        Assert.Equal(expectedReview ? DeliveryTrackingAlertType.NoCommunication : DeliveryTrackingAlertType.OfflineLocationsQueued, alert.AlertType);
+        Assert.Equal(expectedReview ? DeliveryTrackingAlertStatus.Active : DeliveryTrackingAlertStatus.Resolved, alert.Status);
+        Assert.Equal(expectedReview, db.DeliveryTrackingIncidents.Any());
+        Assert.Equal(expectedReview ? 1 : 0, fcm.Sends.Count);
     }
 
     [Fact]

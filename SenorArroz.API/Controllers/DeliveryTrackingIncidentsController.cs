@@ -95,6 +95,7 @@ public class DeliveryTrackingIncidentsController : ControllerBase
                 group => group.OrderByDescending(x => x.RecordedAt).ThenByDescending(x => x.Id)
                     .Select(x => new IncidentLastState(x.IncidentId, x.GpsEnabled, x.InternetAvailable))
                     .First());
+        var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
 
         var result = new PagedResult<DeliveryTrackingIncidentListItemDto>
         {
@@ -111,7 +112,13 @@ public class DeliveryTrackingIncidentsController : ControllerBase
                     incident.WorkSessionId,
                     incident.StartedAt,
                     incident.EndedAt,
-                    incident.DurationSeconds,
+                    incident.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption
+                        && !incident.EvidenceComplete
+                            ? Math.Max(0, checked((int)Math.Min(int.MaxValue,
+                                (nowUtc - incident.StartedAt).TotalSeconds)))
+                            : incident.DurationSeconds,
+                    incident.InterruptionCause,
+                    incident.InterruptionCertainty,
                     incident.StayClassification,
                     incident.FinalClassification,
                     incident.ReviewStatus,
@@ -173,6 +180,9 @@ public class DeliveryTrackingIncidentsController : ControllerBase
                 x.GpsEnabled,
                 x.LocationPermissionGranted,
                 x.Details,
+                x.OfflineLocationCount,
+                x.OfflineStartedAt,
+                x.OfflineEndedAt,
                 x.RecordedAt,
                 x.SyncedAt))
             .ToListAsync(cancellationToken);
@@ -207,6 +217,8 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             incident.OrderId,
             incident.StayClassification,
             incident.ClassificationReason,
+            incident.InterruptionCause,
+            incident.InterruptionCertainty,
             incident.FinalClassification,
             incident.ReviewStatus,
             incident.StartedAt,
@@ -363,6 +375,8 @@ public record DeliveryTrackingIncidentListItemDto(
     DateTime StartedAt,
     DateTime EndedAt,
     int DurationSeconds,
+    DeliveryInterruptionCause? InterruptionCause,
+    DeliveryInterruptionCertainty? InterruptionCertainty,
     DeliveryStayClassification? AutomaticClassification,
     DeliveryStayClassification? FinalClassification,
     DeliveryIncidentReviewStatus ReviewStatus,
@@ -386,6 +400,8 @@ public record DeliveryTrackingIncidentDetailDto(
     int? OrderId,
     DeliveryStayClassification? AutomaticClassification,
     string? ClassificationReason,
+    DeliveryInterruptionCause? InterruptionCause,
+    DeliveryInterruptionCertainty? InterruptionCertainty,
     DeliveryStayClassification? FinalClassification,
     DeliveryIncidentReviewStatus ReviewStatus,
     DateTime StartedAt,
@@ -434,6 +450,9 @@ public record DeliveryIncidentDeviceEventEvidenceDto(
     bool? GpsEnabled,
     bool? LocationPermissionGranted,
     string? Details,
+    int? OfflineLocationCount,
+    DateTime? OfflineStartedAt,
+    DateTime? OfflineEndedAt,
     DateTime RecordedAt,
     DateTime SyncedAt);
 

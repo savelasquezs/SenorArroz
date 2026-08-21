@@ -399,6 +399,9 @@ public class DeliverymanController : ControllerBase
             GpsEnabled = request.GpsEnabled,
             LocationPermissionGranted = request.LocationPermissionGranted,
             Details = request.Details,
+            OfflineLocationCount = request.OfflineLocationCount,
+            OfflineStartedAt = request.OfflineStartedAt,
+            OfflineEndedAt = request.OfflineEndedAt,
             RecordedAt = request.RecordedAt,
         });
         return NoContent();

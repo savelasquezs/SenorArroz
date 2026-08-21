@@ -31,7 +31,10 @@ public record RecordDeliveryDeviceEventRequest(
     bool? InternetAvailable = null,
     bool? GpsEnabled = null,
     bool? LocationPermissionGranted = null,
-    string? Details = null);
+    string? Details = null,
+    int? OfflineLocationCount = null,
+    DateTime? OfflineStartedAt = null,
+    DateTime? OfflineEndedAt = null);
 
 public class StartDeliveryWorkSessionRequest
 {

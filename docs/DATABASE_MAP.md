@@ -203,6 +203,7 @@ Notas:
 - El esquema de evidencia de alertas se instala con el script idempotente `SenorArroz.Infrastructure/Scripts/add_delivery_tracking_alert_location_evidence.sql` antes de desplegar el backend que usa esas columnas.
 - `DeliveryTrackingIncident` admite el tipo `location_disabled` y usa `SourceDeviceEventId` como vínculo único con el evento `gps_disabled`. Sus coordenadas centrales son opcionales porque puede confirmarse el apagado aun cuando no exista un punto GPS utilizable.
 - `DeliveryTrackingIncident` admite `tracking_interruption` y usa `AlertId` para vincular de forma única el silencio revisable con su alerta, ruta, eventos del dispositivo y puntos anterior/posterior.
+- Las interrupciones conservan `InterruptionCause` y `InterruptionCertainty`; los eventos de recuperación guardan conteo y rango temporal tipados de las ubicaciones offline.
 - La reproducción administrativa consulta `DeliverymanLocation` por `(deliveryman_id, recorded_at, id)`; el índice se instala con `SenorArroz.Infrastructure/Scripts/add_delivery_tracking_playback_index.sql`.
 - El esquema para casos de revisión por ubicación apagada se instala con `SenorArroz.Infrastructure/Scripts/add_gps_disabled_review_incidents.sql` antes de desplegar el backend correspondiente.
 

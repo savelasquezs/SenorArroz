@@ -20,6 +20,8 @@ public class DeliveryTrackingIncident
     public int? OrderId { get; set; }
     public DeliveryStayClassification? StayClassification { get; set; }
     public string? ClassificationReason { get; set; }
+    public DeliveryInterruptionCause? InterruptionCause { get; set; }
+    public DeliveryInterruptionCertainty? InterruptionCertainty { get; set; }
     public DateTime StartedAt { get; set; }
     public DateTime EndedAt { get; set; }
     public int DurationSeconds { get; set; }

@@ -18,6 +18,9 @@ public class RecordDeliveryDeviceEventCommand : IRequest
     public bool? GpsEnabled { get; set; }
     public bool? LocationPermissionGranted { get; set; }
     public string? Details { get; set; }
+    public int? OfflineLocationCount { get; set; }
+    public DateTime? OfflineStartedAt { get; set; }
+    public DateTime? OfflineEndedAt { get; set; }
     public DateTime RecordedAt { get; set; }
 }
 
@@ -43,6 +46,11 @@ public class RecordDeliveryDeviceEventHandler : IRequestHandler<RecordDeliveryDe
             throw new UnauthorizedAccessException("Usuario no autenticado.");
         if (request.BatteryLevelPercent is < 0 or > 100)
             throw new BusinessException("El nivel de batería debe estar entre 0 y 100.");
+        if (request.OfflineLocationCount is < 0 or > 10000)
+            throw new BusinessException("La cantidad de ubicaciones offline no es válida.");
+        if (request.OfflineStartedAt.HasValue && request.OfflineEndedAt.HasValue
+            && request.OfflineStartedAt.Value > request.OfflineEndedAt.Value)
+            throw new BusinessException("El rango de ubicaciones offline no es válido.");
 
         var deliverymanId = _currentUser.Id;
         if (request.ClientEventId.HasValue)
@@ -85,6 +93,13 @@ public class RecordDeliveryDeviceEventHandler : IRequestHandler<RecordDeliveryDe
             GpsEnabled = request.GpsEnabled,
             LocationPermissionGranted = request.LocationPermissionGranted,
             Details = NormalizeDetails(request.Details),
+            OfflineLocationCount = request.OfflineLocationCount,
+            OfflineStartedAt = request.OfflineStartedAt.HasValue
+                ? ColombiaTimeHelper.EnsureUtc(request.OfflineStartedAt.Value)
+                : null,
+            OfflineEndedAt = request.OfflineEndedAt.HasValue
+                ? ColombiaTimeHelper.EnsureUtc(request.OfflineEndedAt.Value)
+                : null,
             RecordedAt = ColombiaTimeHelper.EnsureUtc(request.RecordedAt),
             SyncedAt = nowUtc,
         });

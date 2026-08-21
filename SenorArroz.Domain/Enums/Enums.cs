@@ -192,6 +192,11 @@ namespace SenorArroz.Domain.Enums
         LocationPermissionRecovered,
         InternetLost,
         InternetRecovered,
+        AirplaneModeEnabled,
+        AirplaneModeDisabled,
+        WifiDisabled,
+        WifiEnabled,
+        DeviceRestarted,
         AppStopped,
         LocationServiceRestarted,
         BatteryLow,
@@ -216,6 +221,25 @@ namespace SenorArroz.Domain.Enums
         RouteDeviation,
         LocationDisabled,
         TrackingInterruption,
+    }
+
+    public enum DeliveryInterruptionCause
+    {
+        GpsDisabled,
+        LocationPermissionRevoked,
+        AirplaneModeEnabled,
+        AppOrTrackingServiceStopped,
+        WifiDisabled,
+        ConnectivityInterruption,
+        DeviceRestarted,
+        NotDetermined,
+    }
+
+    public enum DeliveryInterruptionCertainty
+    {
+        ConfirmedByDevice,
+        TechnicalEvidence,
+        NotDetermined,
     }
 
     public enum DeliveryIncidentReviewStatus

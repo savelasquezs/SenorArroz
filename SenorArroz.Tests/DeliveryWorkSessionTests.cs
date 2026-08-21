@@ -468,9 +468,12 @@ public class DeliveryWorkSessionTests
         {
             WorkSessionId = 10,
             ClientEventId = clientEventId,
-            EventType = DeliveryDeviceEventType.InternetLost,
-            InternetAvailable = false,
+            EventType = DeliveryDeviceEventType.InternetRecovered,
+            InternetAvailable = true,
             BatteryLevelPercent = 42,
+            OfflineLocationCount = 15,
+            OfflineStartedAt = recordedAt.AddMinutes(-7),
+            OfflineEndedAt = recordedAt,
             RecordedAt = recordedAt,
             Details = "  detected_while_offline  ",
         };
@@ -480,12 +483,15 @@ public class DeliveryWorkSessionTests
 
         var deviceEvent = Assert.Single(db.DeliveryDeviceEvents);
         Assert.Equal(clientEventId, deviceEvent.ClientEventId);
-        Assert.Equal(DeliveryDeviceEventType.InternetLost, deviceEvent.EventType);
-        Assert.False(deviceEvent.InternetAvailable);
+        Assert.Equal(DeliveryDeviceEventType.InternetRecovered, deviceEvent.EventType);
+        Assert.True(deviceEvent.InternetAvailable);
         Assert.Equal(42, deviceEvent.BatteryLevelPercent);
         Assert.Equal(recordedAt, deviceEvent.RecordedAt);
         Assert.Equal(syncedAt, deviceEvent.SyncedAt);
         Assert.Equal("detected_while_offline", deviceEvent.Details);
+        Assert.Equal(15, deviceEvent.OfflineLocationCount);
+        Assert.Equal(recordedAt.AddMinutes(-7), deviceEvent.OfflineStartedAt);
+        Assert.Equal(recordedAt, deviceEvent.OfflineEndedAt);
         Assert.Equal(syncedAt, db.DeliveryWorkSessions.Single().LastCommunicationAt);
     }
 

@@ -14,6 +14,9 @@ public class DeliveryDeviceEvent
     public bool? GpsEnabled { get; set; }
     public bool? LocationPermissionGranted { get; set; }
     public string? Details { get; set; }
+    public int? OfflineLocationCount { get; set; }
+    public DateTime? OfflineStartedAt { get; set; }
+    public DateTime? OfflineEndedAt { get; set; }
     public DateTime RecordedAt { get; set; }
     public DateTime SyncedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

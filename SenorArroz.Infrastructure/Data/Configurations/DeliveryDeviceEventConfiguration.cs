@@ -25,6 +25,9 @@ public class DeliveryDeviceEventConfiguration : IEntityTypeConfiguration<Deliver
         builder.Property(x => x.GpsEnabled).HasColumnName("gps_enabled");
         builder.Property(x => x.LocationPermissionGranted).HasColumnName("location_permission_granted");
         builder.Property(x => x.Details).HasColumnName("details").HasMaxLength(500);
+        builder.Property(x => x.OfflineLocationCount).HasColumnName("offline_location_count");
+        builder.Property(x => x.OfflineStartedAt).HasColumnName("offline_started_at");
+        builder.Property(x => x.OfflineEndedAt).HasColumnName("offline_ended_at");
         builder.Property(x => x.RecordedAt).HasColumnName("recorded_at").IsRequired();
         builder.Property(x => x.SyncedAt).HasColumnName("synced_at").IsRequired();
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")

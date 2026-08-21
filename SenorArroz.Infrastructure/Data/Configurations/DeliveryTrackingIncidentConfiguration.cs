@@ -29,6 +29,14 @@ public class DeliveryTrackingIncidentConfiguration : IEntityTypeConfiguration<De
                 value => value == null ? null : ToSnakeCase(value.Value.ToString()),
                 value => value == null ? null : Parse<DeliveryStayClassification>(value));
         builder.Property(x => x.ClassificationReason).HasColumnName("classification_reason").HasMaxLength(300);
+        builder.Property(x => x.InterruptionCause).HasColumnName("interruption_cause").HasMaxLength(60)
+            .HasConversion(
+                value => value == null ? null : ToSnakeCase(value.Value.ToString()),
+                value => value == null ? null : Parse<DeliveryInterruptionCause>(value));
+        builder.Property(x => x.InterruptionCertainty).HasColumnName("interruption_certainty").HasMaxLength(40)
+            .HasConversion(
+                value => value == null ? null : ToSnakeCase(value.Value.ToString()),
+                value => value == null ? null : Parse<DeliveryInterruptionCertainty>(value));
         builder.Property(x => x.StartedAt).HasColumnName("started_at").IsRequired();
         builder.Property(x => x.EndedAt).HasColumnName("ended_at").IsRequired();
         builder.Property(x => x.DurationSeconds).HasColumnName("duration_seconds").IsRequired();

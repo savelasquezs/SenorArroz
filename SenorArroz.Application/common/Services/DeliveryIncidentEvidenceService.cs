@@ -218,6 +218,9 @@ public class DeliveryIncidentEvidenceService : IDeliveryIncidentEvidenceService
         GpsEnabled = source.GpsEnabled,
         LocationPermissionGranted = source.LocationPermissionGranted,
         Details = source.Details,
+        OfflineLocationCount = source.OfflineLocationCount,
+        OfflineStartedAt = source.OfflineStartedAt,
+        OfflineEndedAt = source.OfflineEndedAt,
         RecordedAt = source.RecordedAt,
         SyncedAt = source.SyncedAt,
     };
