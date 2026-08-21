@@ -135,7 +135,7 @@ public class AppPaymentsController : ControllerBase
     /// Liquida un pago de app (marca como settled y crea bank payment)
     /// </summary>
     [HttpPost("{id}/settle")]
-    [Authorize(Roles = "Admin,Superadmin")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult> SettleAppPayment(int id)
     {
         var command = new SettleAppPaymentCommand { Id = id };
@@ -151,7 +151,7 @@ public class AppPaymentsController : ControllerBase
     /// Liquida múltiples pagos de apps (marca como settled y crea un solo bank payment)
     /// </summary>
     [HttpPost("settle-multiple")]
-    [Authorize(Roles = "Admin,Superadmin")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult> SettleMultipleAppPayments([FromBody] SettleAppPaymentsDto settleDto)
     {
         var command = new SettleMultipleAppPaymentsCommand

@@ -28,14 +28,19 @@ public class SettleAppPaymentHandler : IRequestHandler<SettleAppPaymentCommand, 
 
     public async Task<bool> Handle(SettleAppPaymentCommand request, CancellationToken cancellationToken)
     {
+        if (!Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))
+            throw new BusinessException("Solo administradores y cajeros pueden liquidar pagos de apps.");
+
         // Validate app payment exists
         var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (appPayment == null)
             return false;
-        _branchContext.EnsureAccess(appPayment.App.Bank.BranchId);
+        if (appPayment.Order.BranchId != appPayment.App.Bank.BranchId)
+            throw new BusinessException("El pago, la app y el banco deben pertenecer a la misma sucursal.");
+        _branchContext.EnsureAccess(appPayment.Order.BranchId);
 
         // Check if user has access to this app payment's branch
-        if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
+        if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.Order.BranchId != _currentUser.BranchId)
             throw new BusinessException("No tienes permisos para liquidar este pago");
 
         // Check if already settled

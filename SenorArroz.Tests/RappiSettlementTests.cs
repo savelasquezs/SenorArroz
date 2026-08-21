@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using SenorArroz.API.Controllers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.AppPayments.Commands;
 using SenorArroz.Domain.Entities;
@@ -10,10 +12,10 @@ namespace SenorArroz.Tests;
 
 public sealed class RappiSettlementTests
 {
-    private sealed class CurrentUser : ICurrentUser
+    private sealed class CurrentUser(string role = Roles.Admin) : ICurrentUser
     {
         public int Id => 1;
-        public string Role => Roles.Admin;
+        public string Role => role;
         public int BranchId => 1;
         public bool IsAuthenticated => true;
     }
@@ -49,7 +51,7 @@ public sealed class RappiSettlementTests
 
         var handler = new SettleMultipleAppPaymentsHandler(
             db,
-            new CurrentUser(),
+            new CurrentUser(Roles.Cashier),
             new TestBranchContext());
         await handler.Handle(new SettleMultipleAppPaymentsCommand
         {
@@ -68,6 +70,30 @@ public sealed class RappiSettlementTests
         Assert.Equal(210m, bankPayment.Amount);
         Assert.True(bankPayment.IsAppSettlement);
         Assert.Equal("[1,2]", bankPayment.AppSettlementSourcePaymentIds);
+    }
+
+    [Fact]
+    public void Cashier_can_settle_but_cannot_unsettle_app_payments()
+    {
+        var singleRoles = typeof(AppPaymentsController)
+            .GetMethod(nameof(AppPaymentsController.SettleAppPayment))!
+            .GetCustomAttributes(typeof(AuthorizeAttribute), true)
+            .Cast<AuthorizeAttribute>()
+            .Single().Roles ?? string.Empty;
+        var multipleRoles = typeof(AppPaymentsController)
+            .GetMethod(nameof(AppPaymentsController.SettleMultipleAppPayments))!
+            .GetCustomAttributes(typeof(AuthorizeAttribute), true)
+            .Cast<AuthorizeAttribute>()
+            .Single().Roles ?? string.Empty;
+        var unsettleRoles = typeof(AppPaymentsController)
+            .GetMethod(nameof(AppPaymentsController.UnsettleAppPayment))!
+            .GetCustomAttributes(typeof(AuthorizeAttribute), true)
+            .Cast<AuthorizeAttribute>()
+            .Single().Roles ?? string.Empty;
+
+        Assert.Contains("Cashier", singleRoles);
+        Assert.Contains("Cashier", multipleRoles);
+        Assert.DoesNotContain("Cashier", unsettleRoles);
     }
 
     private static Order NewOrder(int id, Branch branch, User user) => new()

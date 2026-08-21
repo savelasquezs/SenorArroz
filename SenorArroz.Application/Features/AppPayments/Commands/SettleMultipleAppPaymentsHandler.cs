@@ -16,6 +16,9 @@ public sealed class SettleMultipleAppPaymentsHandler(
         SettleMultipleAppPaymentsCommand request,
         CancellationToken ct)
     {
+        if (!Roles.IsSuperadminOrAdminOrCashier(currentUser.Role))
+            throw new BusinessException("Solo administradores y cajeros pueden liquidar pagos de apps.");
+
         var ids = request.PaymentIds.Distinct().ToList();
         if (ids.Count == 0)
             throw new BusinessException("Se requiere al menos un pago.");

@@ -129,6 +129,9 @@ Reglas:
 - Un pago por app puede quedar retenido antes de liberarse a banco.
 - El sistema debe poder reflejar saldo retenido por app.
 - Cuando dinero retenido se libera, debe impactar el banco correspondiente según regla actual.
+- Cajero, Admin y Superadmin pueden liquidar pagos por apps, de forma individual o por lote, únicamente dentro de la sucursal efectiva. La liquidación crea el ingreso en el banco asociado y, cuando existe neto esperado de Rappi, exige registrar el valor real consignado.
+- El pago, el pedido, la app y el banco deben corresponder a la misma sucursal; un pago revertido no puede liquidarse.
+- Desliquidar pagos por apps continúa reservado a Admin y Superadmin.
 - Vouchers/cupones de apps deben conservarse como parte de la lógica de pago si la feature los usa.
 - Cajero, Admin y Superadmin pueden verificar pagos bancarios de pedidos dentro de la sucursal efectiva; solo Admin y Superadmin pueden desverificarlos.
 - En la cola de verificación de `/orders`, las transferencias pendientes se ordenan por monto ascendente.
