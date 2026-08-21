@@ -396,6 +396,62 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(0, await service.ProcessAsync());
     }
 
+    [Fact]
+    public async Task Process_DeduplicatesRestartPairsAndKeepsDistinctIncidentSources()
+    {
+        await using var db = CreateDb();
+        db.Branches.Add(new Branch
+        {
+            Id = 7,
+            Name = "Centro",
+            Address = "A",
+            Phone1 = "1",
+            DeliveryTrackingLightIntervalSeconds = 300,
+            DeliveryTrackingActiveIntervalSeconds = 30,
+        });
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device",
+            DevicePlatform = "android",
+            StartedAt = BaseTime,
+            AutoCloseAt = BaseTime.AddHours(8),
+            LastCommunicationAt = BaseTime.AddMinutes(12),
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        var firstStop = DeviceEvent(201, DeliveryDeviceEventType.AppStopped, 1);
+        var firstRestart = DeviceEvent(202, DeliveryDeviceEventType.LocationServiceRestarted, 1);
+        firstRestart.RecordedAt = firstRestart.RecordedAt.AddSeconds(10);
+        var secondStop = DeviceEvent(203, DeliveryDeviceEventType.AppStopped, 10);
+        var secondRestart = DeviceEvent(204, DeliveryDeviceEventType.LocationServiceRestarted, 10);
+        secondRestart.RecordedAt = secondRestart.RecordedAt.AddSeconds(10);
+        db.DeliveryDeviceEvents.AddRange(firstStop, firstRestart, secondStop, secondRestart);
+        db.UserDeviceTokens.Add(new UserDeviceToken { Id = 1, UserId = 1, Token = "deliveryman-token" });
+        await db.SaveChangesAsync();
+        var fcm = new FakeFcmPushService();
+        var service = CreateService(db, new FakeClock(BaseTime.AddMinutes(12)), fcm);
+
+        await service.ProcessAsync();
+
+        var alerts = db.DeliveryTrackingAlerts
+            .Where(x => x.AlertType == DeliveryTrackingAlertType.NoCommunication)
+            .OrderBy(x => x.OccurredAt)
+            .ToList();
+        Assert.Equal(2, alerts.Count);
+        Assert.Equal([201L, 203L], alerts.Select(x => x.SourceDeviceEventId!.Value).ToArray());
+        Assert.All(alerts, x => Assert.NotNull(x.IncidentId));
+        var incidents = db.DeliveryTrackingIncidents
+            .Where(x => x.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption)
+            .OrderBy(x => x.StartedAt)
+            .ToList();
+        Assert.Equal(2, incidents.Count);
+        Assert.Equal([201L, 203L], incidents.Select(x => x.SourceDeviceEventId!.Value).ToArray());
+        Assert.Equal(2, fcm.Sends.Count);
+        Assert.Equal(0, await service.ProcessAsync());
+    }
+
     [Theory]
     [InlineData(15, 60, true)]
     [InlineData(10, 420, true)]

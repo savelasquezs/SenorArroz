@@ -154,6 +154,7 @@ Reglas:
 - Conciliaciones bancarias deben respetar tenant.
 - Préstamos informales por sucursal deben respetar tenant.
 - Movimientos de caja/bóveda deben respetar tenant.
+- El cierre, el despacho de auditoría diaria y el mensaje de correo en la cola se confirman atómicamente. Un fallo previo al encolado revierte el cierre para que un reintento no cree registros duplicados ni recorte el período auditado.
 
 No modificar cierres de caja sin revisar efectos sobre:
 
@@ -262,6 +263,8 @@ Reglas:
 - El correo de auditoría diaria identifica al domiciliario e incluye GPS apagado, permiso de ubicación retirado, interrupciones de comunicación con severidad `requires_review` y permanencias que requieren revisión, con enlaces de Google Maps cuando existe evidencia. Las ubicaciones offline breves y la jornada posterior al cierre permanecen disponibles en la app, pero no entran al correo. Antes de construirlo, el cierre de caja procesa los eventos pendientes para no competir con el trabajador periódico.
 - Al crear o escalar una alerta activa de los mismos tipos incluidos en la auditoría (`gps_disabled`, `location_permission_revoked`, `no_communication` con `requires_review` o `unexpected_stay`), el backend envía una sola vez un aviso FCM exclusivamente a los dispositivos registrados del domiciliario afectado. El aviso es informativo, advierte sobre una posible falta disciplinaria, permite omitirlo si existía permiso y remite al administrador; no reemplaza la revisión ni registra una decisión disciplinaria.
 - El fallo o la ausencia de FCM no revierte ni altera la alerta administrativa. Solo se intenta notificar al crear una alerta revisable o al escalar una advertencia a revisión; reprocesar el seguimiento no vuelve a enviar avisos por la misma alerta.
+- `app_stopped` y el `location_service_restarted` inmediatamente posterior se consolidan en una sola interrupción revisable. Un incidente usa exclusivamente el evento de origen vinculado a su alerta; la evidencia contextual puede compartirse, pero nunca se reutiliza ese origen para crear otra revisión.
+- El cierre de la jornada completa la recuperación conocida, pero no resuelve alertas o incidentes pendientes de revisión administrativa.
 - Las modificaciones de pedidos se consolidan por edición completa. Una sustitución o conjunto de cambios solo entra como reducción monetaria cuando el total final es menor al inicial; el detalle informa hora Colombia, actor, productos y cantidades afectados. Los pasos intermedios negativos de una edición cuyo total final aumentó o quedó igual no se reportan como merma.
 - El identificador transaccional y los productos anterior/nuevo del audit log se habilitan con el script idempotente `SenorArroz.Infrastructure/Scripts/improve_order_monetary_audit_operations.sql`, que debe ejecutarse antes de desplegar el backend; los logs anteriores siguen agrupándose por su marca temporal transaccional.
 

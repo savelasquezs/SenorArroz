@@ -157,17 +157,15 @@ public class CashClosureAuditEmailTests
     }
 
     [Fact]
-    public void DailyTrackingAudit_IncludesOnlyDelicateLocationAlerts()
+    public void DailyTrackingAudit_IncludesReviewableLocationAndCommunicationAlerts()
     {
         Assert.Equal(
             [
                 DeliveryTrackingAlertType.GpsDisabled,
                 DeliveryTrackingAlertType.LocationPermissionRevoked,
+                DeliveryTrackingAlertType.NoCommunication,
                 DeliveryTrackingAlertType.UnexpectedStay,
             ],
-            CashClosureAuditMapper.IncludedTrackingAlertTypes);
-        Assert.DoesNotContain(
-            DeliveryTrackingAlertType.NoCommunication,
             CashClosureAuditMapper.IncludedTrackingAlertTypes);
         Assert.DoesNotContain(
             DeliveryTrackingAlertType.OfflineLocationsQueued,

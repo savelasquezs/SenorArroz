@@ -142,6 +142,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 .ToList()
         };
 
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
         var saved = await _closureRepository.CreateAsync(closure, cancellationToken);
         var auditBusinessDate = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(saved.ClosedAt);
         var existingDispatch = await _context.DailyAuditDispatches
@@ -333,7 +334,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
             await _context.SaveChangesAsync(cancellationToken);
         }
 
-        return new CashClosureDto
+        var result = new CashClosureDto
         {
             Id = saved.Id,
             BranchId = saved.BranchId,
@@ -367,6 +368,8 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 Amount = il.Amount
             }).ToList()
         };
+        await transaction.CommitAsync(cancellationToken);
+        return result;
     }
 
     private static string TrackingAlertTitle(DeliveryTrackingAlertType type) => type switch
