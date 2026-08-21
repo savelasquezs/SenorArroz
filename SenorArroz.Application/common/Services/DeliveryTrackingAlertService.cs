@@ -604,6 +604,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         var alerts = await _db.DeliveryTrackingAlerts
             .Where(alert => alert.AlertType == DeliveryTrackingAlertType.NoCommunication
                 && alert.Severity == DeliveryTrackingAlertSeverity.RequiresReview
+                && alert.Status == DeliveryTrackingAlertStatus.Active
                 && alert.WorkSessionId.HasValue
                 && !_db.DeliveryTrackingIncidents.Any(incident =>
                     incident.AlertId == alert.Id && incident.SourceUpdatedAt >= alert.UpdatedAt))

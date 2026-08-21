@@ -452,6 +452,36 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(0, await service.ProcessAsync());
     }
 
+    [Fact]
+    public async Task Process_KeepsDirectInterruptionPendingWhenSessionAlreadyEnded()
+    {
+        await using var db = CreateDb();
+        db.Branches.Add(new Branch { Id = 7, Name = "Centro", Address = "A", Phone1 = "1" });
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10,
+            DeliverymanId = 1,
+            BranchId = 7,
+            DeviceInstallationId = "device",
+            DevicePlatform = "android",
+            StartedAt = BaseTime,
+            EndedAt = BaseTime.AddMinutes(2),
+            AutoCloseAt = BaseTime.AddHours(8),
+            LastCommunicationAt = BaseTime.AddMinutes(2),
+            Status = DeliveryWorkSessionStatus.Closed,
+        });
+        db.DeliveryDeviceEvents.Add(DeviceEvent(201, DeliveryDeviceEventType.AppStopped, 1));
+        await db.SaveChangesAsync();
+
+        await CreateService(db, new FakeClock(BaseTime.AddMinutes(2))).ProcessAsync();
+
+        var alert = Assert.Single(db.DeliveryTrackingAlerts);
+        Assert.Equal(DeliveryTrackingAlertStatus.Active, alert.Status);
+        Assert.Equal(BaseTime.AddMinutes(2), alert.RecoveredAt);
+        Assert.Equal(DeliveryTrackingAlertSeverity.RequiresReview, alert.Severity);
+        Assert.Equal(DeliveryIncidentReviewStatus.Pending, Assert.Single(db.DeliveryTrackingIncidents).ReviewStatus);
+    }
+
     [Theory]
     [InlineData(15, 60, true)]
     [InlineData(10, 420, true)]
