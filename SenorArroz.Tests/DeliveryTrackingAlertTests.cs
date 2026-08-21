@@ -441,19 +441,20 @@ public class DeliveryTrackingAlertTests
             .ToList();
         Assert.Equal(2, alerts.Count);
         Assert.Equal([201L, 203L], alerts.Select(x => x.SourceDeviceEventId!.Value).ToArray());
-        Assert.All(alerts, x => Assert.NotNull(x.IncidentId));
+        Assert.NotNull(alerts[0].IncidentId);
+        Assert.Null(alerts[1].IncidentId);
         var incidents = db.DeliveryTrackingIncidents
             .Where(x => x.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption)
             .OrderBy(x => x.StartedAt)
             .ToList();
-        Assert.Equal(2, incidents.Count);
-        Assert.Equal([201L, 203L], incidents.Select(x => x.SourceDeviceEventId!.Value).ToArray());
-        Assert.Equal(2, fcm.Sends.Count);
+        var incident = Assert.Single(incidents);
+        Assert.Equal(201L, incident.SourceDeviceEventId);
+        Assert.Single(fcm.Sends);
         Assert.Equal(0, await service.ProcessAsync());
     }
 
     [Fact]
-    public async Task Process_KeepsDirectInterruptionPendingWhenSessionAlreadyEnded()
+    public async Task Process_ResolvesBriefDirectInterruptionWhenSessionAlreadyEnded()
     {
         await using var db = CreateDb();
         db.Branches.Add(new Branch { Id = 7, Name = "Centro", Address = "A", Phone1 = "1" });
@@ -476,14 +477,13 @@ public class DeliveryTrackingAlertTests
         await CreateService(db, new FakeClock(BaseTime.AddMinutes(2))).ProcessAsync();
 
         var alert = Assert.Single(db.DeliveryTrackingAlerts);
-        Assert.Equal(DeliveryTrackingAlertStatus.Active, alert.Status);
-        Assert.Equal(BaseTime.AddMinutes(2), alert.RecoveredAt);
-        Assert.Equal(DeliveryTrackingAlertSeverity.RequiresReview, alert.Severity);
-        Assert.Equal(DeliveryIncidentReviewStatus.Pending, Assert.Single(db.DeliveryTrackingIncidents).ReviewStatus);
+        Assert.Equal(DeliveryTrackingAlertStatus.Resolved, alert.Status);
+        Assert.Equal(DeliveryTrackingAlertSeverity.Warning, alert.Severity);
+        Assert.Empty(db.DeliveryTrackingIncidents);
     }
 
     [Theory]
-    [InlineData(15, 60, true)]
+    [InlineData(15, 60, false)]
     [InlineData(10, 420, true)]
     [InlineData(14, 419, false)]
     public async Task Process_EscalatesOfflineEvidenceByCountOrDuration(

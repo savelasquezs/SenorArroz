@@ -12,7 +12,6 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
 {
     private const int BatchSize = 200;
     private const int ReviewSilenceSeconds = 600;
-    private const int ReviewOfflineLocationCount = 15;
     private const int ReviewOfflineDurationSeconds = 420;
     private readonly IApplicationDbContext _db;
     private readonly IClock _clock;
@@ -204,8 +203,6 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                     .FirstOrDefaultAsync(cancellationToken);
                 if (existingInterruption is not null)
                 {
-                    var wasAlreadyReview =
-                        existingInterruption.Severity == DeliveryTrackingAlertSeverity.RequiresReview;
                     var currentSource = events.FirstOrDefault(x => x.Id == existingInterruption.SourceDeviceEventId);
                     if (currentSource is null
                         || DirectInterruptionPriority(deviceEvent.EventType) > DirectInterruptionPriority(currentSource.EventType))
@@ -213,14 +210,10 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                         existingInterruption.SourceDeviceEventId = deviceEvent.Id;
                         existingInterruption.Message = BuildDirectInterruptionMessage(deviceEvent);
                     }
-                    existingInterruption.Severity = DeliveryTrackingAlertSeverity.RequiresReview;
-                    existingInterruption.Title = "Interrupción de seguimiento pendiente de revisión";
                     existingInterruption.LastOccurredAt = existingInterruption.LastOccurredAt > deviceEvent.RecordedAt
                         ? existingInterruption.LastOccurredAt
                         : deviceEvent.RecordedAt;
                     existingInterruption.UpdatedAt = nowUtc;
-                    if (!wasAlreadyReview)
-                        QueueReviewNotification(existingInterruption);
                     changes++;
                     continue;
                 }
@@ -931,7 +924,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             {
                 activeInterruption.Severity = DeliveryTrackingAlertSeverity.RequiresReview;
                 activeInterruption.Title = "Interrupción prolongada pendiente de revisión";
-                activeInterruption.Message = "La interrupción de seguimiento superó 10 minutos y requiere revisión administrativa.";
+                activeInterruption.Message = activeInterruption.SourceDeviceEventId.HasValue
+                    ? $"{activeInterruption.Message} La interrupción superó 10 minutos y requiere revisión administrativa."
+                    : "La interrupción de seguimiento superó 10 minutos y requiere revisión administrativa.";
                 activeInterruption.UpdatedAt = nowUtc;
                 QueueReviewNotification(activeInterruption);
                 changes++;
@@ -1017,8 +1012,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                         && x.RecordedAt >= alert.OccurredAt
                         && x.RecordedAt <= session.LastCommunicationAt.AddMinutes(1))
                     .ToListAsync(cancellationToken);
-                var requiresReview = alert.DurationSeconds >= ReviewSilenceSeconds
-                    || relatedEvents.Any(IsReviewInterruptionEvent);
+                var requiresReview = alert.Severity == DeliveryTrackingAlertSeverity.RequiresReview
+                    || alert.DurationSeconds >= ReviewSilenceSeconds
+                    || relatedEvents.Any(IsReviewableOfflineEvidence);
                 if (requiresReview)
                 {
                     var wasAlreadyReview = alert.Severity == DeliveryTrackingAlertSeverity.RequiresReview;
@@ -1075,7 +1071,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         if (count <= 0)
             return null;
         var durationSeconds = OfflineDurationSeconds(source);
-        if (count >= ReviewOfflineLocationCount || durationSeconds >= ReviewOfflineDurationSeconds)
+        if (durationSeconds >= ReviewOfflineDurationSeconds)
         {
             return new DeliveryTrackingAlert
             {
@@ -1120,9 +1116,13 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             source,
             branchId,
             DeliveryTrackingAlertType.NoCommunication,
-            DeliveryTrackingAlertSeverity.RequiresReview,
-            "Acción que interrumpió el seguimiento",
+            DeliveryTrackingAlertSeverity.Warning,
+            "Interrupción de seguimiento detectada",
             BuildDirectInterruptionMessage(source));
+
+    private static bool IsReviewableOfflineEvidence(DeliveryDeviceEvent source) =>
+        source.EventType == DeliveryDeviceEventType.InternetRecovered
+        && OfflineDurationSeconds(source) >= ReviewOfflineDurationSeconds;
 
     private static bool IsReviewInterruptionEvent(DeliveryDeviceEvent source) => source.EventType switch
     {
@@ -1131,9 +1131,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             or DeliveryDeviceEventType.DeviceRestarted
             or DeliveryDeviceEventType.AppStopped
             or DeliveryDeviceEventType.LocationServiceRestarted => true,
-        DeliveryDeviceEventType.InternetRecovered =>
-            (source.OfflineLocationCount ?? ParseQueuedLocationCount(source.Details)) >= ReviewOfflineLocationCount
-            || OfflineDurationSeconds(source) >= ReviewOfflineDurationSeconds,
+        DeliveryDeviceEventType.InternetRecovered => IsReviewableOfflineEvidence(source),
         _ => false,
     };
 
