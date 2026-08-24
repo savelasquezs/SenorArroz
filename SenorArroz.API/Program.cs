@@ -1,8 +1,12 @@
 // SenorArroz.API/Program.cs - Updated with Authentication
 using System.Globalization;
 using System.Text;
+using System.Security.Cryptography;
+using System.Net;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
@@ -11,6 +15,7 @@ using SenorArroz.API.Extensions;
 using SenorArroz.API.Hosting;
 using SenorArroz.API.Middleware;
 using SenorArroz.API.Filters;
+using SenorArroz.API.Security;
 using SenorArroz.Application;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
@@ -118,6 +123,31 @@ builder.Services.AddSwaggerGen(c =>
 // Add Application and Infrastructure services
 builder.Services.AddApplication();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<StorefrontQuoteConcurrencyGate>();
+var storefrontKeyId = builder.Configuration["Storefront:KeyId"];
+var storefrontKeyHash = builder.Configuration["Storefront:KeyHash"];
+if (builder.Environment.IsProduction())
+{
+    if (string.IsNullOrWhiteSpace(storefrontKeyId))
+        throw new InvalidOperationException("Storefront__KeyId no está configurado.");
+
+    try
+    {
+        if (string.IsNullOrWhiteSpace(storefrontKeyHash)
+            || Convert.FromHexString(storefrontKeyHash.Trim()).Length != SHA256.HashSizeInBytes)
+            throw new InvalidOperationException("Storefront__KeyHash debe ser un hash SHA-256 hexadecimal.");
+    }
+    catch (FormatException exception)
+    {
+        throw new InvalidOperationException(
+            "Storefront__KeyHash debe ser un hash SHA-256 hexadecimal.",
+            exception);
+    }
+}
+builder.Services.Configure<StorefrontApiKeyOptions>(
+    builder.Configuration.GetSection("Storefront"));
+builder.Services.AddSingleton<StorefrontApiKeyValidator>();
 builder.Services.Configure<DeliveryAppVersionOptions>(
     builder.Configuration.GetSection(DeliveryAppVersionOptions.SectionName));
 
@@ -166,7 +196,13 @@ builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IPrintAgentN
 
 // JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey not configured");
+var secretKey = jwtSettings["SecretKey"];
+if (string.IsNullOrWhiteSpace(secretKey))
+{
+    if (builder.Environment.IsProduction())
+        throw new InvalidOperationException("JwtSettings__SecretKey no está configurado.");
+    secretKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+}
 const string sessionReplacedItemKey = "exclusive-delivery-session-replaced";
 
 builder.Services.AddAuthentication(options =>
@@ -176,7 +212,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false; // Set to true in production
+    options.RequireHttpsMetadata = builder.Environment.IsProduction();
     options.SaveToken = true;
     options.TokenValidationParameters = new TokenValidationParameters
     {
@@ -273,26 +309,48 @@ builder.Services.AddAuthentication(options =>
             return context.Response.WriteAsync(result);
         }
     };
-});
+})
+.AddScheme<StorefrontApiKeyOptions, StorefrontApiKeyAuthenticationHandler>(
+    StorefrontApiKeyOptions.Scheme,
+    _ => { });
 
 builder.Services.AddAuthorization();
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    foreach (var configuredProxy in builder.Configuration.GetSection("ReverseProxy:KnownProxies").Get<string[]>() ?? [])
+    {
+        if (!IPAddress.TryParse(configuredProxy, out var proxy))
+            throw new InvalidOperationException($"Proxy confiable inválido: {configuredProxy}");
+        options.KnownProxies.Add(proxy);
+    }
+
+    foreach (var configuredNetwork in builder.Configuration.GetSection("ReverseProxy:KnownNetworks").Get<string[]>() ?? [])
+    {
+        var parts = configuredNetwork.Split('/', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2
+            || !IPAddress.TryParse(parts[0], out var prefix)
+            || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var prefixLength)
+            || prefixLength < 0
+            || prefixLength > (prefix.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128))
+            throw new InvalidOperationException($"Red de proxy confiable inválida: {configuredNetwork}");
+
+        options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, prefixLength));
+    }
+});
 
 // CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("Frontend", policy =>
     {
+        var allowedOrigins = builder.Configuration
+            .GetSection("Cors:AllowedOrigins")
+            .Get<string[]>() ?? [];
         policy
-            .WithOrigins(
-                "https://senorarroz.com",
-                "https://www.senorarroz.com",
-                "http://localhost:5173", 
-                "http://localhost:5174", 
-                "http://localhost:3000",
-                "https://senorarroz.up.railway.app",
-                "https://senorarrozapi.up.railway.app",
-                "https://api.senorarroz.com"
-            )
+            .WithOrigins(allowedOrigins)
             .AllowAnyMethod()
             .AllowAnyHeader()
             .AllowCredentials();
@@ -305,6 +363,9 @@ var authPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Auth:P
 var authWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Auth:WindowSeconds", 60));
 var rappiWebhookPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:RappiWebhook:PermitLimit", 600));
 var rappiWebhookWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:RappiWebhook:WindowSeconds", 60));
+var storefrontCatalogPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontCatalog:PermitLimit", 120));
+var storefrontQuotePermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontQuote:PermitLimit", 60));
+var storefrontWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontQuote:WindowSeconds", 60));
 var globalWindow = TimeSpan.FromSeconds(globalWindowSec);
 var authWindow = TimeSpan.FromSeconds(authWindowSec);
 var rappiWebhookWindow = TimeSpan.FromSeconds(rappiWebhookWindowSec);
@@ -357,6 +418,34 @@ builder.Services.AddRateLimiter(options =>
             });
     });
 
+    options.AddPolicy("storefront-catalog", httpContext =>
+    {
+        var keyId = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"storefront-catalog:{keyId}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = storefrontCatalogPermit,
+                Window = TimeSpan.FromSeconds(storefrontWindowSec),
+                QueueLimit = 0
+            });
+    });
+
+    options.AddPolicy("storefront-quote", httpContext =>
+    {
+        var keyId = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"storefront-quote:{keyId}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = storefrontQuotePermit,
+                Window = TimeSpan.FromSeconds(storefrontWindowSec),
+                QueueLimit = 0
+            });
+    });
+
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
     {
         var path = httpContext.Request.Path;
@@ -386,23 +475,29 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline
-// Swagger habilitado en Development y Production para facilitar testing
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "SenorArroz API v1");
-    c.RoutePrefix = string.Empty; // Serve Swagger UI at the app's root
-});
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "SenorArroz API v1");
+        c.RoutePrefix = string.Empty;
+    });
+}
 
 // Global exception handling middleware
 app.UseMiddleware<GlobalExceptionMiddleware>();
+
+app.UseForwardedHeaders();
+
+if (app.Environment.IsProduction())
+    app.UseHsts();
 
 app.UseHttpsRedirection();
 
 app.UseStaticFiles();
 
-app.UseCors("AllowAll");
+app.UseCors("Frontend");
 
 // Authentication & Authorization
 app.UseAuthentication();

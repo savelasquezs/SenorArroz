@@ -164,10 +164,17 @@ Buscar primero:
 - `SenorArroz.Infrastructure/Services/GoogleRoutesDrivingMetricsService.cs`
 - `SenorArroz.Infrastructure/Services/AddressResolutionServices.cs`
 
-Endpoints anónimos:
+Endpoints protegidos con credenciales exclusivas del BFF (`X-Storefront-Key-Id` y `X-Storefront-Key`):
 
-- `GET /api/public/storefront/catalog`: catálogo compartido, promociones vigentes y configuración pública segura.
-- `POST /api/public/storefront/delivery-quote`: valida ubicación, calcula todas las rutas, revalida carrito y genera el enlace de WhatsApp.
+- `GET /api/public/storefront/catalog`: catálogo compartido, estados públicos de disponibilidad y configuración segura. No expone inventario exacto ni promociones sin sucursal.
+- `POST /api/public/storefront/delivery-quote`: exige autorización de datos, valida ubicación, calcula todas las rutas, revalida carrito y promoción de la sede y genera el enlace de WhatsApp.
+
+Seguridad y operación:
+
+- `SenorArroz.API/Security/StorefrontApiKeyAuthentication.cs` valida identificador y hash de clave en tiempo constante.
+- Las cotizaciones admiten cuerpos de hasta 32 KB, 60 solicitudes por minuto y ocho ejecuciones concurrentes por instancia, con valores configurables.
+- Geocodificación y rutas válidas se cachean cinco minutos. Precio, estado, disponibilidad y promociones siempre se consultan nuevamente.
+- El storefront permanece single-tenant hasta completar el aislamiento real de las consultas globales.
 
 ### Usuarios y autenticación
 

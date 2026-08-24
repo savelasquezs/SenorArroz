@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: senor_arroz
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 1234
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5433:5432"
@@ -32,8 +32,8 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=senor_arroz;Username=postgres;Password=1234
-      - JwtSettings__SecretKey=IsmaelHermoso2023andPaolaHermosaEsposa2024andSantiagoPapasitoTodoeltiempo
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=senor_arroz;Username=postgres;Password=${POSTGRES_PASSWORD}
+      - JwtSettings__SecretKey=${JWT_SECRET_KEY}
       - JwtSettings__ExpiryInHours=24
       - JwtSettings__AccessTokenExpirationMinutes=480
       - JwtSettings__Issuer=SenorArroz.API
@@ -45,6 +45,8 @@ services:
       - FrontendSettings__ResetPasswordUrl=http://localhost:5173/reset-password
       - GOOGLE_MAPS_GEOCODING_API_KEY=${GOOGLE_MAPS_GEOCODING_API_KEY:-}
       - GOOGLE_MAPS_ROUTES_API_KEY=${GOOGLE_MAPS_ROUTES_API_KEY:-}
+      - Storefront__KeyId=${STOREFRONT_KEY_ID}
+      - Storefront__KeyHash=${STOREFRONT_KEY_HASH}
     ports:
       - "5000:8080"
       - "5001:8081"

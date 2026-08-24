@@ -53,7 +53,7 @@ Desplegar la aplicación SenorArroz completa (base de datos, backend y frontend)
    - `ASPNETCORE_ENVIRONMENT=Production`
    - `ASPNETCORE_URLS=http://+:8080` (Railway asignará puerto automáticamente)
    - `ConnectionStrings__DefaultConnection=<valor construido con PGHOST, PGPORT, PGDATABASE, PGUSER y PGPASSWORD de MainDatabase>`
-   - `JwtSettings__SecretKey=IsmaelHermoso2023andPaolaHermosaEsposa2024andSantiagoPapasitoTodoeltiempo`
+   - `JwtSettings__SecretKey=<secreto-aleatorio-en-variable-segura>`
    - `JwtSettings__ExpiryInHours=24`
    - `JwtSettings__AccessTokenExpirationMinutes=480`
    - `JwtSettings__Issuer=SenorArroz.API`

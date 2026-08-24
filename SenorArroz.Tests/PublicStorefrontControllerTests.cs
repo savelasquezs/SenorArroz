@@ -1,10 +1,15 @@
 using System.Net;
+using System.Reflection;
 using System.Text;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Moq;
 using SenorArroz.API.Controllers;
+using SenorArroz.API.Security;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
@@ -17,6 +22,14 @@ namespace SenorArroz.Tests;
 public class PublicStorefrontControllerTests
 {
     private static readonly DateTime Now = new(2026, 8, 23, 15, 0, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public void Endpoints_RequireStorefrontAuthentication()
+    {
+        var authorization = Assert.Single(typeof(PublicStorefrontController).GetCustomAttributes<AuthorizeAttribute>());
+        Assert.Equal(StorefrontApiKeyOptions.Scheme, authorization.AuthenticationSchemes);
+        Assert.Empty(typeof(PublicStorefrontController).GetCustomAttributes<AllowAnonymousAttribute>());
+    }
 
     [Fact]
     public async Task Catalog_ReturnsSharedActiveProductsOnlyOnce()
@@ -32,6 +45,40 @@ public class PublicStorefrontControllerTests
         var product = Assert.Single(response.Data!.Products);
         Assert.Equal(50_000, product.Price);
         Assert.Equal("Arroces", product.CategoryName);
+        Assert.Equal("available", product.AvailabilityStatus);
+        Assert.Null(typeof(PublicProductDto).GetProperty("Stock"));
+    }
+
+    [Fact]
+    public async Task Catalog_ExposesAvailabilityWithoutExactInventory()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        db.ChangeTracker.Entries<Product>().Single(x => x.Entity.Id == 20).Entity.Stock = 3;
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 1800).GetCatalog(default);
+
+        var ok = Assert.IsType<OkObjectResult>(action.Result);
+        var response = Assert.IsType<ApiResponse<PublicCatalogDto>>(ok.Value);
+        Assert.Equal("lowStock", Assert.Single(response.Data!.Products).AvailabilityStatus);
+        Assert.Empty(response.Data.Promotions);
+    }
+
+    [Fact]
+    public async Task Quote_RejectsMissingDataProcessingConsent()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        await db.SaveChangesAsync();
+        var request = Request();
+        request.AcceptDataProcessing = false;
+
+        var action = await Controller(db, 1800).Quote(request, default);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(action.Result);
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(badRequest.Value);
+        Assert.Contains("autorizar", response.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -49,6 +96,7 @@ public class PublicStorefrontControllerTests
         Assert.Equal(30, response.Data.TravelMinutes);
         Assert.Equal(20, response.Data.PreparationMinutes);
         Assert.Equal(50, response.Data.EstimatedTotalMinutes);
+        Assert.Contains("Autorización de datos", Uri.UnescapeDataString(response.Data.WhatsAppUrl));
     }
 
     [Fact]
@@ -76,6 +124,7 @@ public class PublicStorefrontControllerTests
         Address = "Calle 10 # 20-30",
         Latitude = 6.25m,
         Longitude = -75.56m,
+        AcceptDataProcessing = true,
         Items = [new() { ProductId = 20, Quantity = 2 }],
     };
 
@@ -88,7 +137,14 @@ public class PublicStorefrontControllerTests
         var geocoder = new GoogleAddressGeocoder(
             new HttpClient(new GeocodingHandler()),
             Options.Create(new GoogleMapsRouteOptions { GeocodingApiKey = "test" }));
-        return new PublicStorefrontController(db, routeService.Object, geocoder, new FakeClock(Now));
+        var configuration = new ConfigurationBuilder().Build();
+        return new PublicStorefrontController(
+            db,
+            routeService.Object,
+            geocoder,
+            new FakeClock(Now),
+            new MemoryCache(Options.Create(new MemoryCacheOptions())),
+            new StorefrontQuoteConcurrencyGate(configuration));
     }
 
     private static void Seed(ApplicationDbContext db)
@@ -159,4 +215,3 @@ public class PublicStorefrontControllerTests
         }
     }
 }
-

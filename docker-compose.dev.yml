@@ -12,8 +12,8 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=senor_arroz;Username=postgres;Password=1234
-      - JwtSettings__SecretKey=IsmaelHermoso2023andPaolaHermosaEsposa2024andSantiagoPapasitoTodoeltiempo
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=senor_arroz;Username=postgres;Password=${POSTGRES_PASSWORD}
+      - JwtSettings__SecretKey=${JWT_SECRET_KEY}
       - JwtSettings__ExpiryInHours=24
       - JwtSettings__AccessTokenExpirationMinutes=480
       - JwtSettings__Issuer=SenorArroz.API
@@ -25,6 +25,8 @@ services:
       - FrontendSettings__ResetPasswordUrl=http://localhost:5174/reset-password
       - GOOGLE_MAPS_GEOCODING_API_KEY=${GOOGLE_MAPS_GEOCODING_API_KEY:-}
       - GOOGLE_MAPS_ROUTES_API_KEY=${GOOGLE_MAPS_ROUTES_API_KEY:-}
+      - Storefront__KeyId=${STOREFRONT_KEY_ID}
+      - Storefront__KeyHash=${STOREFRONT_KEY_HASH}
     volumes:
       # Montar código fuente para hot reload
       - ./SenorArroz.API:/src/SenorArroz.API

@@ -48,15 +48,20 @@ Reglas:
 
 ### Pedidos desde la web pública
 
-- Productos y categorías conforman un catálogo compartido entre sucursales del mismo tenant; el carrito conserva los mismos `ProductId` al cambiar la sede sugerida.
-- La web pública nunca envía precios como fuente de verdad. El backend vuelve a resolver producto, precio, estado y stock antes de generar el mensaje.
-- El cliente registra nombre, teléfono, ciudad y dirección; las ciudades habilitadas inicialmente son Medellín, Bello y Copacabana.
-- Google valida la ubicación y calcula el desplazamiento desde todas las sucursales activas que tengan coordenadas y WhatsApp activo/verificado.
+- El storefront se mantiene single-tenant hasta que todas las consultas públicas estén aisladas por tenant; no se habilita para un segundo negocio con las consultas globales actuales.
+- Productos y categorías conforman un catálogo compartido entre sucursales del negocio; el carrito conserva los mismos `ProductId` al cambiar la sede sugerida.
+- La web pública nunca envía precios, tenant, stock ni sucursal como fuente de verdad. El backend vuelve a resolver producto, precio, estado, disponibilidad y promociones antes de generar el mensaje.
+- El catálogo público expone únicamente `available`, `lowStock` o `unavailable`; nunca publica el inventario exacto. Las promociones solo se entregan después de determinar la sucursal mediante una cotización.
+- El navegador accede al backend únicamente mediante el BFF de Next.js. Los endpoints públicos del backend exigen `X-Storefront-Key-Id` y `X-Storefront-Key`; el backend conserva únicamente el hash SHA-256 de la clave y lo compara en tiempo constante.
+- El cliente registra nombre, teléfono, ciudad y dirección; las ciudades habilitadas inicialmente son Medellín, Bello y Copacabana. Las notas por producto son opcionales y admiten hasta 200 caracteres.
+- Gestionar la solicitud exige autorización para el tratamiento de datos bajo la política versión `2026-08-24`. La autorización promocional es separada, opcional y desmarcada; ambas decisiones se incluyen en el mensaje.
+- Google valida la ubicación y calcula el desplazamiento desde todas las sucursales activas que tengan coordenadas y WhatsApp activo/verificado. Geocodificación y rutas se cachean durante cinco minutos sin usar datos personales legibles como clave.
 - La sucursal con menor desplazamiento se recomienda, pero el cliente puede seleccionar otra sede habilitada.
 - El tiempo mostrado es `20 minutos de preparación + desplazamiento de Google`.
 - La cobertura depende únicamente del desplazamiento de Google: hasta 30 minutos continúa normal; más de 30 minutos requiere autorización.
-- Cuando se requiere autorización, el mensaje se dirige a la sucursal más cercana e incluye cliente, teléfono, dirección confirmada, enlace de Google Maps, carrito, precios vigentes y tiempos.
-- La web no crea una orden operativa; entrega un mensaje validado al WhatsApp de la sucursal.
+- Cuando se requiere autorización, el mensaje se dirige a la sucursal más cercana e incluye cliente, teléfono, dirección confirmada, enlace de Google Maps, carrito, precios vigentes, tiempos y autorizaciones.
+- Cualquier cambio en productos, cantidades, notas, dirección, cliente, consentimientos o sucursal invalida la cotización. Antes de abrir WhatsApp se revalidan precio, disponibilidad, promoción y cobertura; si cambian, el cliente debe confirmar nuevamente.
+- La web no crea una orden operativa ni procesa pagos; entrega un mensaje validado al WhatsApp de la sucursal.
 
 Reglas esperadas:
 

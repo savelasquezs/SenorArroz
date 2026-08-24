@@ -32,7 +32,7 @@
 - `ASPNETCORE_ENVIRONMENT=Production`
 - `ASPNETCORE_URLS=http://+:8080`
 - `ConnectionStrings__DefaultConnection=<valor construido con PGHOST, PGPORT, PGDATABASE, PGUSER y PGPASSWORD del servicio MainDatabase>`
-- `JwtSettings__SecretKey=IsmaelHermoso2023andPaolaHermosaEsposa2024andSantiagoPapasitoTodoeltiempo`
+- `JwtSettings__SecretKey=<secreto-aleatorio-en-variable-segura>`
 - `JwtSettings__ExpiryInHours=24`
 - `JwtSettings__AccessTokenExpirationMinutes=480`
 - `JwtSettings__Issuer=SenorArroz.API`

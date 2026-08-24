@@ -252,7 +252,7 @@ railway connect MainDatabase
 
 ```bash
 # Desde el directorio senorArrozAPI
-psql "Host=localhost;Port=5433;Database=senor_arroz;Username=postgres;Password=1234" -f Scripts/add-branch-id-to-supplier.sql
+psql "Host=localhost;Port=5433;Database=senor_arroz;Username=postgres;Password=<contraseña-local>" -f Scripts/add-branch-id-to-supplier.sql
 ```
 
 **Verificar que se aplicó correctamente:**

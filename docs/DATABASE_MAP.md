@@ -78,6 +78,7 @@ UpdatedAt
 | UserDeviceToken | Sí | Desde `User.TenantId` |
 
 - `Branch.IsActive` (`branch.is_active`) determina si la sucursal participa en el storefront público. Se instala con `SenorArroz.Infrastructure/Scripts/add_branch_active_storefront.sql` y su valor por defecto es `true`.
+- El storefront público actual es una excepción single-tenant: no debe habilitarse para otro negocio hasta que productos, categorías, promociones y sucursales se filtren obligatoriamente por `tenant_id` resuelto en servidor.
 
 Notas:
 

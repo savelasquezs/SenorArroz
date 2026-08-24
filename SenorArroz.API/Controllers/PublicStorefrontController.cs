@@ -3,7 +3,10 @@ using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using SenorArroz.API.Security;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -13,23 +16,27 @@ using SenorArroz.Shared.Models;
 namespace SenorArroz.API.Controllers;
 
 [ApiController]
-[AllowAnonymous]
+[Authorize(AuthenticationSchemes = StorefrontApiKeyOptions.Scheme)]
 [Route("api/public/storefront")]
 public sealed class PublicStorefrontController(
     IApplicationDbContext db,
     IGoogleRoutesDrivingMetricsService routes,
     GoogleAddressGeocoder geocoder,
-    IClock clock) : ControllerBase
+    IClock clock,
+    IMemoryCache cache,
+    StorefrontQuoteConcurrencyGate concurrencyGate) : ControllerBase
 {
     private const int PreparationMinutes = 20;
     private const int CoverageTravelMinutes = 30;
+    private const int MaxWhatsAppMessageLength = 3500;
+    private static readonly TimeSpan MapCacheDuration = TimeSpan.FromMinutes(5);
     private static readonly string[] AllowedCities = ["Medellín", "Bello", "Copacabana"];
 
     [HttpGet("catalog")]
-    [ResponseCache(Duration = 60, Location = ResponseCacheLocation.Any)]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [EnableRateLimiting("storefront-catalog")]
     public async Task<ActionResult<ApiResponse<PublicCatalogDto>>> GetCatalog(CancellationToken cancellationToken)
     {
-        var now = clock.UtcNow;
         var products = await db.Products
             .AsNoTracking()
             .Include(x => x.Category)
@@ -43,8 +50,11 @@ public sealed class PublicStorefrontController(
                 x.Category.Name,
                 x.Name,
                 x.Price,
-                x.Stock,
-                !x.Stock.HasValue || x.Stock > 0,
+                x.Stock.HasValue && x.Stock.Value <= 0
+                    ? "unavailable"
+                    : x.Stock.HasValue && x.Stock.Value <= 5
+                        ? "lowStock"
+                        : "available",
                 x.CommercialProfile != null ? x.CommercialProfile.Description : null,
                 x.CommercialProfile != null ? x.CommercialProfile.Ingredients : null,
                 x.CommercialProfile != null ? x.CommercialProfile.PhotoUrl : null,
@@ -57,25 +67,6 @@ public sealed class PublicStorefrontController(
             .Select(x => new PublicBranchDto(x.Id, x.Name, x.Address))
             .ToListAsync(cancellationToken);
 
-        var promotionRows = await db.DailyPromotions
-            .AsNoTracking()
-            .Include(x => x.Branch)
-            .Include(x => x.GiftProduct)
-            .Include(x => x.DiscountProducts)
-                .ThenInclude(x => x.Product)
-            .Where(x => x.Branch.IsActive
-                && x.Branch.Latitude.HasValue
-                && x.Branch.Longitude.HasValue
-                && x.Branch.WhatsAppSetting != null
-                && x.Branch.WhatsAppSetting.IsActive
-                && x.Branch.WhatsAppSetting.IsVerified
-                && x.IsActive
-                && x.StartsAt <= now
-                && (x.EndsAt == null || x.EndsAt > now))
-            .OrderBy(x => x.Branch.Name)
-            .ToListAsync(cancellationToken);
-        var promotions = promotionRows.Select(ToPromotionDto).ToList();
-
         var categories = products
             .GroupBy(x => new { x.CategoryId, x.CategoryName })
             .Select(x => new PublicCategoryDto(x.Key.CategoryId, x.Key.CategoryName, x.Count()))
@@ -85,7 +76,7 @@ public sealed class PublicStorefrontController(
         var result = new PublicCatalogDto(
             categories,
             products,
-            promotions,
+            [],
             branches,
             AllowedCities,
             PreparationMinutes,
@@ -95,10 +86,20 @@ public sealed class PublicStorefrontController(
     }
 
     [HttpPost("delivery-quote")]
+    [RequestSizeLimit(32 * 1024)]
+    [EnableRateLimiting("storefront-quote")]
     public async Task<ActionResult<ApiResponse<PublicDeliveryQuoteDto>>> Quote(
         [FromBody] PublicDeliveryQuoteRequest request,
         CancellationToken cancellationToken)
     {
+        using var concurrencyLease = await concurrencyGate.TryEnter(cancellationToken);
+        if (concurrencyLease is null)
+            return StatusCode(StatusCodes.Status429TooManyRequests,
+                ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Hay muchas cotizaciones en curso. Intenta nuevamente en unos segundos."));
+
+        if (!request.AcceptDataProcessing)
+            return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Debes autorizar el tratamiento de datos para gestionar tu solicitud."));
+
         var normalizedCity = MatchAllowedCity(request.City);
         if (normalizedCity is null)
             return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La ciudad debe ser Medellín, Bello o Copacabana."));
@@ -107,7 +108,7 @@ public sealed class PublicStorefrontController(
         if (digits.Length is < 10 or > 15)
             return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Ingresa un teléfono válido."));
 
-        var resolved = await geocoder.Resolve(
+        var resolved = await ResolveAddressCached(
             request.Address,
             request.Latitude,
             request.Longitude,
@@ -147,9 +148,7 @@ public sealed class PublicStorefrontController(
         var destination = ((double)resolved.Result.Latitude, (double)resolved.Result.Longitude);
         var routeTasks = branchRows.Select(async branch =>
         {
-            var metrics = await routes.ComputeRouteAsync(
-                [((double)branch.Latitude, (double)branch.Longitude), destination],
-                cancellationToken);
+            var metrics = await RouteCached(branch, destination, cancellationToken);
             return new { Branch = branch, Metrics = metrics };
         });
         var routeResults = await Task.WhenAll(routeTasks);
@@ -187,6 +186,8 @@ public sealed class PublicStorefrontController(
             checkoutTravelMinutes,
             outsideCoverage,
             promotionDto);
+        if (message.Length > MaxWhatsAppMessageLength)
+            return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("El pedido contiene demasiada información. Reduce las notas e intenta nuevamente."));
         var whatsappUrl = $"https://wa.me/{DigitsOnly(checkout.Branch.WhatsAppPhone)}?text={Uri.EscapeDataString(message)}";
 
         var branchOptions = validRoutes.Select(x =>
@@ -232,6 +233,43 @@ public sealed class PublicStorefrontController(
             && x.WhatsAppSetting.IsActive
             && x.WhatsAppSetting.IsVerified
             && x.WhatsAppSetting.DisplayPhoneNumber != "");
+
+    private async Task<(GeocodedAddress? Result, string? Error)> ResolveAddressCached(
+        string address,
+        decimal? latitude,
+        decimal? longitude,
+        CancellationToken cancellationToken)
+    {
+        var locationSource = latitude.HasValue && longitude.HasValue
+            ? $"{latitude.Value:F6}|{longitude.Value:F6}"
+            : Normalize(address);
+        var cacheKey = $"storefront:geocode:{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(locationSource)))}";
+        if (cache.TryGetValue(cacheKey, out (GeocodedAddress? Result, string? Error) cached))
+            return cached;
+
+        var resolved = await geocoder.Resolve(address, latitude, longitude, cancellationToken);
+        if (resolved.Result is not null)
+            cache.Set(cacheKey, resolved, MapCacheDuration);
+        return resolved;
+    }
+
+    private async Task<DrivingRouteMetrics> RouteCached(
+        BranchRouteSource branch,
+        (double Latitude, double Longitude) destination,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = FormattableString.Invariant(
+            $"storefront:route:{branch.Id}:{branch.Latitude:F6}:{branch.Longitude:F6}:{destination.Latitude:F6}:{destination.Longitude:F6}");
+        if (cache.TryGetValue(cacheKey, out DrivingRouteMetrics cached))
+            return cached;
+
+        var metrics = await routes.ComputeRouteAsync(
+            [((double)branch.Latitude, (double)branch.Longitude), destination],
+            cancellationToken);
+        if (metrics.DurationSeconds > 0)
+            cache.Set(cacheKey, metrics, MapCacheDuration);
+        return metrics;
+    }
 
     private async Task<DailyPromotion?> GetActivePromotion(int branchId, CancellationToken cancellationToken)
     {
@@ -310,7 +348,7 @@ public sealed class PublicStorefrontController(
         var sb = new StringBuilder();
         sb.AppendLine(outsideCoverage ? "*SOLICITUD FUERA DE COBERTURA*" : "*NUEVO PEDIDO WEB*");
         sb.AppendLine();
-        sb.AppendLine($"*Cliente:* {request.Name.Trim()}");
+        sb.AppendLine($"*Cliente:* {SingleLine(request.Name)}");
         sb.AppendLine($"*Teléfono:* {DigitsOnly(request.Phone)}");
         sb.AppendLine($"*Ciudad:* {city}");
         sb.AppendLine($"*Dirección confirmada:* {formattedAddress}");
@@ -323,7 +361,7 @@ public sealed class PublicStorefrontController(
         {
             sb.AppendLine($"• {line.Quantity} × {line.Name} — {Money(line.Subtotal)}");
             if (!string.IsNullOrWhiteSpace(line.Notes))
-                sb.AppendLine($"  Nota: {line.Notes}");
+                sb.AppendLine($"  Nota: {SingleLine(line.Notes)}");
         }
         sb.AppendLine($"*Subtotal:* {Money(subtotal)}");
         if (promotion is not null)
@@ -333,6 +371,9 @@ public sealed class PublicStorefrontController(
             sb.AppendLine();
             sb.AppendLine("La ubicación supera 30 minutos de desplazamiento. El cliente fue informado de que el envío está sujeto a autorización de la sucursal.");
         }
+        sb.AppendLine();
+        sb.AppendLine("*Autorización de datos:* aceptada (Política de privacidad v2026-08-24)");
+        sb.AppendLine($"*Autorización de promociones:* {(request.AcceptMarketing ? "aceptada" : "no aceptada")}");
         return sb.ToString().Trim();
     }
 
@@ -355,7 +396,8 @@ public sealed class PublicStorefrontController(
     private static string DigitsOnly(string? value) => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
     private static int ToMinutes(int durationSeconds) => (int)Math.Ceiling(durationSeconds / 60m);
     private static string Money(int value) => value.ToString("C0", CultureInfo.GetCultureInfo("es-CO"));
-
+    private static string SingleLine(string? value) => string.Join(' ', (value ?? string.Empty)
+        .Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     private sealed record BranchRouteSource(
         int Id,
         string Name,
@@ -382,8 +424,7 @@ public sealed record PublicProductDto(
     string CategoryName,
     string Name,
     int Price,
-    int? Stock,
-    bool IsAvailable,
+    string AvailabilityStatus,
     string? Description,
     string? Ingredients,
     string? PhotoUrl,
@@ -412,7 +453,7 @@ public sealed class PublicDeliveryQuoteRequest
     [Required, StringLength(20, MinimumLength = 10)]
     public string Phone { get; set; } = string.Empty;
 
-    [Required]
+    [Required, StringLength(30)]
     public string City { get; set; } = string.Empty;
 
     [Required, StringLength(250, MinimumLength = 5)]
@@ -425,6 +466,11 @@ public sealed class PublicDeliveryQuoteRequest
     public decimal? Longitude { get; set; }
 
     public int? SelectedBranchId { get; set; }
+
+    [Range(typeof(bool), "true", "true", ErrorMessage = "Debes autorizar el tratamiento de datos.")]
+    public bool AcceptDataProcessing { get; set; }
+
+    public bool AcceptMarketing { get; set; }
     public List<PublicCartItemRequest> Items { get; set; } = [];
 }
 
@@ -436,7 +482,7 @@ public sealed class PublicCartItemRequest
     [Range(1, 50)]
     public int Quantity { get; set; }
 
-    [StringLength(500)]
+    [StringLength(200)]
     public string? Notes { get; set; }
 }
 
