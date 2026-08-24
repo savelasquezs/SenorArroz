@@ -58,6 +58,7 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
             Phone2 = request.Phone2,
             Latitude = request.Latitude,
             Longitude = request.Longitude,
+            IsActive = request.IsActive,
             MaxFreeDeliveryDiscount = Math.Max(0, request.MaxFreeDeliveryDiscount),
             PosCopyEtaMinMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaMinMinutes, 30),
             PosCopyEtaRangeMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaRangeMinutes, 15),

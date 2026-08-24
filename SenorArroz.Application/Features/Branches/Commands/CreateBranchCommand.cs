@@ -13,6 +13,7 @@ public class CreateBranchCommand : IRequest<BranchDto>
     public string? Phone2 { get; set; }
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
+    public bool IsActive { get; set; } = true;
     public int MaxFreeDeliveryDiscount { get; set; } = 3000;
     public int PosCopyEtaMinMinutes { get; set; } = 30;
     public int PosCopyEtaRangeMinutes { get; set; } = 15;

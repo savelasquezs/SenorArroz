@@ -46,6 +46,18 @@ Reglas:
 
 ## Pedidos
 
+### Pedidos desde la web pública
+
+- Productos y categorías conforman un catálogo compartido entre sucursales del mismo tenant; el carrito conserva los mismos `ProductId` al cambiar la sede sugerida.
+- La web pública nunca envía precios como fuente de verdad. El backend vuelve a resolver producto, precio, estado y stock antes de generar el mensaje.
+- El cliente registra nombre, teléfono, ciudad y dirección; las ciudades habilitadas inicialmente son Medellín, Bello y Copacabana.
+- Google valida la ubicación y calcula el desplazamiento desde todas las sucursales activas que tengan coordenadas y WhatsApp activo/verificado.
+- La sucursal con menor desplazamiento se recomienda, pero el cliente puede seleccionar otra sede habilitada.
+- El tiempo mostrado es `20 minutos de preparación + desplazamiento de Google`.
+- La cobertura depende únicamente del desplazamiento de Google: hasta 30 minutos continúa normal; más de 30 minutos requiere autorización.
+- Cuando se requiere autorización, el mensaje se dirige a la sucursal más cercana e incluye cliente, teléfono, dirección confirmada, enlace de Google Maps, carrito, precios vigentes y tiempos.
+- La web no crea una orden operativa; entrega un mensaje validado al WhatsApp de la sucursal.
+
 Reglas esperadas:
 
 - Un pedido pertenece a una sucursal.

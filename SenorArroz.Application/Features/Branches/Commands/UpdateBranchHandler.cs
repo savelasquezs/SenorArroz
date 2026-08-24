@@ -103,6 +103,8 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
         branch.Phone2 = request.Phone2;
         branch.Latitude = request.Latitude;
         branch.Longitude = request.Longitude;
+        if (isSuperadmin && request.IsActive.HasValue)
+            branch.IsActive = request.IsActive.Value;
         if (request.MaxFreeDeliveryDiscount.HasValue)
             branch.MaxFreeDeliveryDiscount = Math.Max(0, request.MaxFreeDeliveryDiscount.Value);
         branch.PosCopyEtaMinMinutes = BranchEtaLimits.ClampMinutes(request.PosCopyEtaMinMinutes, 30);

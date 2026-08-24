@@ -154,6 +154,20 @@ Contexto operativo actual de sucursal:
 - `BranchScopeActionFilter` rechaza valores explícitos de ruta, query o body que contradigan el contexto.
 - Productos, categorías y documentos corporativos permanecen compartidos en esta fase.
 - El dashboard puede omitir el header exclusivamente para lecturas agregadas.
+- `Branch.IsActive` controla si una sede participa en la web pública. La columna se instala con `SenorArroz.Infrastructure/Scripts/add_branch_active_storefront.sql`.
+
+### Web pública y pedidos por WhatsApp
+
+Buscar primero:
+
+- `SenorArroz.API/Controllers/PublicStorefrontController.cs`
+- `SenorArroz.Infrastructure/Services/GoogleRoutesDrivingMetricsService.cs`
+- `SenorArroz.Infrastructure/Services/AddressResolutionServices.cs`
+
+Endpoints anónimos:
+
+- `GET /api/public/storefront/catalog`: catálogo compartido, promociones vigentes y configuración pública segura.
+- `POST /api/public/storefront/delivery-quote`: valida ubicación, calcula todas las rutas, revalida carrito y genera el enlace de WhatsApp.
 
 ### Usuarios y autenticación
 

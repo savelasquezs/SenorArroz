@@ -77,6 +77,8 @@ UpdatedAt
 | PasswordResetToken | Sí | Desde `User.TenantId` |
 | UserDeviceToken | Sí | Desde `User.TenantId` |
 
+- `Branch.IsActive` (`branch.is_active`) determina si la sucursal participa en el storefront público. Se instala con `SenorArroz.Infrastructure/Scripts/add_branch_active_storefront.sql` y su valor por defecto es `true`.
+
 Notas:
 
 - `Branch` debe ser la primera tabla del negocio en recibir `TenantId`.

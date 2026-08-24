@@ -18,6 +18,7 @@ public class Branch : BaseEntity
 
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
+    public bool IsActive { get; set; } = true;
 
     /// <summary>Tope COP del descuento “domicilio gratis” repartido en líneas del pedido (POS).</summary>
     public int MaxFreeDeliveryDiscount { get; set; } = 3000;

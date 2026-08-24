@@ -13,6 +13,7 @@ public class BranchDto
     public string? Phone2 { get; set; }
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
+    public bool IsActive { get; set; }
 
     /// <summary>Tope COP del descuento “domicilio gratis” en borrador POS.</summary>
     public int MaxFreeDeliveryDiscount { get; set; }
