@@ -214,11 +214,47 @@ public class PublicStorefrontControllerTests
         Assert.Equal("pickup", response.Data!.FulfillmentType);
         Assert.Null(response.Data.FormattedAddress);
         Assert.Equal(0, response.Data.EstimatedDeliveryFee);
+        Assert.All(response.Data.Branches, branch => Assert.Null(branch.RoutePolyline));
         Assert.StartsWith("https://wa.me/573001234567?text=", response.Data.WhatsAppUrl);
         var message = Uri.UnescapeDataString(response.Data.WhatsAppUrl);
         Assert.Contains("Recoger en el local", message);
         Assert.Contains("Calle 1", message);
         Assert.DoesNotContain("Autorización", message);
+    }
+
+    [Theory]
+    [InlineData("+57 300 123 4567")]
+    [InlineData("0057 300-123-4567")]
+    public async Task Quote_NormalizesColombianMobileBeforeValidationAndWhatsApp(string phone)
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        await db.SaveChangesAsync();
+        var request = Request();
+        request.Phone = phone;
+
+        var action = await Controller(db, 1800).Quote(request, default);
+
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.Equal("3001234567", request.Phone);
+        Assert.Contains("*Teléfono:* 3001234567", Uri.UnescapeDataString(response.Data!.WhatsAppUrl));
+    }
+
+    [Theory]
+    [InlineData("300123456")]
+    [InlineData("2001234567")]
+    public async Task Quote_RejectsInvalidColombianMobile(string phone)
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        await db.SaveChangesAsync();
+        var request = Request();
+        request.Phone = phone;
+
+        var action = await Controller(db, 1800).Quote(request, default);
+
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<BadRequestObjectResult>(action.Result).Value);
+        Assert.Contains("celular colombiano", response.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -238,6 +274,7 @@ public class PublicStorefrontControllerTests
         Assert.Equal(5_000, response.Data.EstimatedDeliveryFee);
         Assert.Equal(20, response.Data.PreparationMinutes);
         Assert.Equal(50, response.Data.EstimatedTotalMinutes);
+        Assert.Equal("encoded-route", Assert.Single(response.Data.Branches).RoutePolyline);
         var message = Uri.UnescapeDataString(response.Data.WhatsAppUrl);
         Assert.Contains("Valor estimado del domicilio", message);
         Assert.DoesNotContain("Autorización", message);
@@ -298,6 +335,7 @@ public class PublicStorefrontControllerTests
         Assert.Equal(3_000, branch.DistanceMeters);
         Assert.Equal(4_000, branch.EstimatedDeliveryFee);
         Assert.Equal(12, branch.TravelMinutes);
+        Assert.Equal("encoded-route", branch.RoutePolyline);
         Assert.Equal(5_000, response.Data.CoverageDistanceMeters);
     }
 
@@ -313,12 +351,12 @@ public class PublicStorefrontControllerTests
         Items = [new() { ProductId = 20, Quantity = 2 }],
     };
 
-    private static PublicStorefrontController Controller(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000)
+    private static PublicStorefrontController Controller(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000, string? routePolyline = "encoded-route")
     {
         var routeService = new Mock<IGoogleRoutesDrivingMetricsService>();
         routeService
             .Setup(x => x.ComputeRouteAsync(It.IsAny<IReadOnlyList<(double Latitude, double Longitude)>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DrivingRouteMetrics(routeDistanceMeters, routeSeconds, 0, 0));
+            .ReturnsAsync(new DrivingRouteMetrics(routeDistanceMeters, routeSeconds, 0, 0, routePolyline));
         var geocoder = new GoogleAddressGeocoder(
             new HttpClient(new GeocodingHandler()),
             Options.Create(new GoogleMapsRouteOptions { GeocodingApiKey = "test" }));

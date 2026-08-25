@@ -173,9 +173,9 @@ public sealed class PublicStorefrontController(
         if (fulfillmentType is not ("delivery" or "pickup"))
             return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Selecciona si deseas domicilio o recoger en el local."));
 
-        var digits = DigitsOnly(request.Phone);
-        if (digits.Length is < 10 or > 15)
-            return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Ingresa un teléfono válido."));
+        request.Phone = ColombianMobilePhone.Normalize(request.Phone);
+        if (!ColombianMobilePhone.IsValid(request.Phone))
+            return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Ingresa un celular colombiano válido de 10 dígitos."));
 
         var branchRows = await GetEligibleBranches(cancellationToken);
         if (branchRows.Count == 0)
@@ -273,7 +273,7 @@ public sealed class PublicStorefrontController(
                 .OrderBy(x => x.Name)
                 .Select(x => new PublicBranchQuoteDto(
                     x.Id, x.Name, x.Address, x.Latitude, x.Longitude, 0, 0, PreparationMinutes, 0, true,
-                    x.Id == checkoutBranch.Id, x.Id == checkoutBranch.Id))
+                    x.Id == checkoutBranch.Id, x.Id == checkoutBranch.Id, null))
                 .ToList();
         }
 
@@ -509,7 +509,7 @@ public sealed class PublicStorefrontController(
         sb.AppendLine("*NUEVO PEDIDO WEB*");
         sb.AppendLine();
         sb.AppendLine($"*Cliente:* {SingleLine(request.Name)}");
-        sb.AppendLine($"*Teléfono:* {DigitsOnly(request.Phone)}");
+        sb.AppendLine($"*Teléfono:* {ColombianMobilePhone.Normalize(request.Phone)}");
         if (fulfillmentType == "pickup")
         {
             sb.AppendLine("*Modalidad:* Recoger en el local");
@@ -560,10 +560,9 @@ public sealed class PublicStorefrontController(
             .Normalize(NormalizationForm.FormC);
     }
 
-    private static string DigitsOnly(string? value) => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
     private static string WhatsAppDigits(string? value)
     {
-        var digits = DigitsOnly(value);
+        var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
         return digits.Length == 10 ? $"57{digits}" : digits;
     }
     private static string BuildWhatsAppUrl(string phone) => $"https://wa.me/{WhatsAppDigits(phone)}";
@@ -587,7 +586,8 @@ public sealed class PublicStorefrontController(
             travelMinutes,
             IsWithinCoverage(route.Metrics),
             route.Branch.Id == recommendedBranchId,
-            route.Branch.Id == selectedBranchId);
+            route.Branch.Id == selectedBranchId,
+            route.Metrics.EncodedPolyline);
     }
     private static string Money(int value) => value.ToString("C0", CultureInfo.GetCultureInfo("es-CO"));
     private static string GoogleMapsUrl(decimal latitude, decimal longitude) =>
@@ -696,8 +696,14 @@ public sealed class PublicDeliveryQuoteRequest
     [Required, StringLength(100, MinimumLength = 2)]
     public string Name { get; set; } = string.Empty;
 
-    [Required, StringLength(20, MinimumLength = 10)]
-    public string Phone { get; set; } = string.Empty;
+    private string _phone = string.Empty;
+
+    [Required, StringLength(10, MinimumLength = 10), RegularExpression(@"^3\d{9}$")]
+    public string Phone
+    {
+        get => _phone;
+        set => _phone = ColombianMobilePhone.Normalize(value);
+    }
 
     [StringLength(30)]
     public string? City { get; set; }
@@ -743,7 +749,8 @@ public sealed record PublicBranchQuoteDto(
     int TravelMinutes,
     bool IsWithinCoverage,
     bool IsRecommended,
-    bool IsSelected);
+    bool IsSelected,
+    string? RoutePolyline = null);
 
 public sealed record PublicCoveragePreviewDto(
     string FormattedAddress,
@@ -781,3 +788,18 @@ public sealed record PublicDeliveryQuoteDto(
     int Subtotal,
     PublicPromotionDto? Promotion,
     string WhatsAppUrl);
+
+internal static class ColombianMobilePhone
+{
+    public static string Normalize(string? value)
+    {
+        var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
+        return digits.Length > 10 ? digits[^10..] : digits;
+    }
+
+    public static bool IsValid(string? value)
+    {
+        var normalized = Normalize(value);
+        return normalized.Length == 10 && normalized[0] == '3';
+    }
+}

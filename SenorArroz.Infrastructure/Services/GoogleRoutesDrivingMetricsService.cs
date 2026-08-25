@@ -9,7 +9,7 @@ using SenorArroz.Application.Options;
 namespace SenorArroz.Infrastructure.Services;
 
 /// <summary>
-/// Google Routes API v2 computeRoutes (solo distanceMeters + duration).
+/// Google Routes API v2 computeRoutes.
 /// </summary>
 public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsService
 {
@@ -91,7 +91,7 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
         request.Headers.TryAddWithoutValidation("X-Goog-Api-Key", _opts.RoutesApiKey);
         request.Headers.TryAddWithoutValidation(
             "X-Goog-FieldMask",
-            "routes.distanceMeters,routes.duration,routes.legs.distanceMeters,routes.legs.duration");
+            "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration");
         request.Content = JsonContent.Create(body, options: JsonOptions);
 
         HttpResponseMessage response;
@@ -122,13 +122,20 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
         var durationSec = ReadDurationSeconds(route0);
         var returnDistance = 0;
         var returnDuration = 0;
+        string? encodedPolyline = null;
+        if (route0.TryGetProperty("polyline", out var polyline)
+            && polyline.TryGetProperty("encodedPolyline", out var encodedPolylineElement)
+            && encodedPolylineElement.ValueKind == JsonValueKind.String)
+        {
+            encodedPolyline = encodedPolylineElement.GetString();
+        }
         if (route0.TryGetProperty("legs", out var legs) && legs.GetArrayLength() > 0)
         {
             var returnLeg = legs[legs.GetArrayLength() - 1];
             returnDistance = ReadDistanceMeters(returnLeg);
             returnDuration = ReadDurationSeconds(returnLeg);
         }
-        return new DrivingRouteMetrics(distance, durationSec, returnDistance, returnDuration);
+        return new DrivingRouteMetrics(distance, durationSec, returnDistance, returnDuration, encodedPolyline);
     }
 
     private sealed class RoutesComputeRequest

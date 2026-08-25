@@ -4,10 +4,11 @@ public readonly record struct DrivingRouteMetrics(
     int DistanceMeters,
     int DurationSeconds,
     int ReturnDistanceMeters,
-    int ReturnDurationSeconds);
+    int ReturnDurationSeconds,
+    string? EncodedPolyline = null);
 
 /// <summary>
-/// Tiempo y distancia de conducción entre waypoints ordenados (sin geometría).
+/// Tiempo, distancia y geometría opcional de conducción entre waypoints ordenados.
 /// </summary>
 public interface IGoogleRoutesDrivingMetricsService
 {
