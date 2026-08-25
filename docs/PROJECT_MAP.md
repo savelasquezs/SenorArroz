@@ -166,7 +166,7 @@ Buscar primero:
 
 Endpoints protegidos con credenciales exclusivas del BFF (`X-Storefront-Key-Id` y `X-Storefront-Key`):
 
-- `GET /api/public/storefront/catalog`: catálogo compartido, estados públicos de disponibilidad y configuración segura. No expone inventario exacto ni promociones sin sucursal.
+- `GET /api/public/storefront/catalog`: catálogo compartido agrupado en `riceGroups`, `comboGroups`, `beverageGroups` y `additionGroups`. Cada grupo usa la ficha comercial y contiene opciones ordenadas con el `ProductId` real; no expone inventario exacto ni promociones sin sucursal.
 - `POST /api/public/storefront/delivery-quote`: exige autorización de datos, valida ubicación, calcula todas las rutas, revalida carrito y promoción de la sede y genera el enlace de WhatsApp.
 
 Seguridad y operación:
@@ -175,6 +175,8 @@ Seguridad y operación:
 - Las cotizaciones admiten cuerpos de hasta 32 KB, 60 solicitudes por minuto y ocho ejecuciones concurrentes por instancia, con valores configurables.
 - Geocodificación y rutas válidas se cachean cinco minutos. Precio, estado, disponibilidad y promociones siempre se consultan nuevamente.
 - El storefront permanece single-tenant hasta completar el aislamiento real de las consultas globales.
+- `product_category.storefront_role` decide explícitamente qué puede publicarse. `hidden`, categorías desconocidas, productos inactivos y productos agotados no pueden incorporarse a una cotización.
+- `product.storefront_variant_label` y `product.storefront_sort_order` controlan la presentación y el orden web sin inferir información desde el nombre del producto.
 
 ### Usuarios y autenticación
 

@@ -53,6 +53,8 @@ public class UpdateProductHandler : IRequestHandler<UpdateProductCommand, Produc
         existingProduct.CommercialProfileId = request.CommercialProfileId;
         existingProduct.ServesPeopleMin = request.ServesPeopleMin;
         existingProduct.ServesPeopleMax = request.ServesPeopleMax;
+        existingProduct.StorefrontVariantLabel = string.IsNullOrWhiteSpace(request.StorefrontVariantLabel) ? null : request.StorefrontVariantLabel.Trim();
+        existingProduct.StorefrontSortOrder = request.StorefrontSortOrder;
 
         var updatedProduct = await _productRepository.UpdateAsync(existingProduct, cancellationToken);
         return _mapper.Map<ProductDto>(updatedProduct);

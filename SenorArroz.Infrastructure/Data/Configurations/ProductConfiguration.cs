@@ -23,6 +23,8 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.CommercialProfileId).HasColumnName("commercial_profile_id");
         builder.Property(p => p.ServesPeopleMin).HasColumnName("serves_people_min");
         builder.Property(p => p.ServesPeopleMax).HasColumnName("serves_people_max");
+        builder.Property(p => p.StorefrontVariantLabel).HasColumnName("storefront_variant_label").HasMaxLength(80);
+        builder.Property(p => p.StorefrontSortOrder).HasColumnName("storefront_sort_order").HasDefaultValue(0);
 
         builder.Property(p => p.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

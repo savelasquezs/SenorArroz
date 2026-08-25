@@ -16,4 +16,6 @@ public class UpdateProductCommand : IRequest<ProductDto>
     public int? CommercialProfileId { get; set; }
     public int? ServesPeopleMin { get; set; }
     public int? ServesPeopleMax { get; set; }
+    public string? StorefrontVariantLabel { get; set; }
+    public int StorefrontSortOrder { get; set; }
 }

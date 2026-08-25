@@ -16,6 +16,7 @@ public class ProductCategoryConfiguration : IEntityTypeConfiguration<ProductCate
 
         builder.Property(pc => pc.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(pc => pc.Name).HasColumnName("name").HasMaxLength(150).IsRequired();
+        builder.Property(pc => pc.StorefrontRole).HasColumnName("storefront_role").HasMaxLength(20).HasDefaultValue("hidden").IsRequired();
 
         builder.Property(pc => pc.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

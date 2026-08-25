@@ -50,6 +50,9 @@ Reglas:
 
 - El storefront se mantiene single-tenant hasta que todas las consultas públicas estén aisladas por tenant; no se habilita para un segundo negocio con las consultas globales actuales.
 - Productos y categorías conforman un catálogo compartido entre sucursales del negocio; el carrito conserva los mismos `ProductId` al cambiar la sede sugerida.
+- El catálogo web clasifica las categorías con un rol explícito: arroz, combo, bebida, adición u oculto. Nunca determina el uso público analizando nombres durante una solicitud.
+- Las fichas comerciales agrupan presentaciones del mismo producto; la presentación y el orden web son metadatos del producto. Sin ficha, el producto se expone como grupo individual.
+- Una solicitud web debe contener al menos un arroz o combo. Categorías ocultas, productos inactivos y productos agotados se rechazan aunque el navegador envíe directamente su `ProductId`.
 - La web pública nunca envía precios, tenant, stock ni sucursal como fuente de verdad. El backend vuelve a resolver producto, precio, estado, disponibilidad y promociones antes de generar el mensaje.
 - El catálogo público expone únicamente `available`, `lowStock` o `unavailable`; nunca publica el inventario exacto. Las promociones solo se entregan después de determinar la sucursal mediante una cotización.
 - El navegador accede al backend únicamente mediante el BFF de Next.js. Los endpoints públicos del backend exigen `X-Storefront-Key-Id` y `X-Storefront-Key`; el backend conserva únicamente el hash SHA-256 de la clave y lo compara en tiempo constante.

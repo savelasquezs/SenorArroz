@@ -11,4 +11,7 @@ public class CreateProductCategoryDto
 
     // BranchId opcional, solo para superadmin. Admin usa su branch automáticamente
     public int? BranchId { get; set; }
+
+    [RegularExpression("^(rice|combo|beverage|addition|hidden)$")]
+    public string StorefrontRole { get; set; } = "hidden";
 }

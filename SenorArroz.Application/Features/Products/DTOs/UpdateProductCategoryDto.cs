@@ -8,4 +8,7 @@ public class UpdateProductCategoryDto
     [Required(ErrorMessage = "El nombre de la categoría es requerido")]
     [StringLength(150, ErrorMessage = "El nombre no puede exceder 150 caracteres")]
     public string Name { get; set; } = string.Empty;
+
+    [RegularExpression("^(rice|combo|beverage|addition|hidden)$")]
+    public string StorefrontRole { get; set; } = "hidden";
 }

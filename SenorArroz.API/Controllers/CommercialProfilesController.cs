@@ -82,7 +82,7 @@ public class CommercialProfilesController : ControllerBase
         if (profile is null) return NotFound(ApiResponse<List<CommercialProfileProductDto>>.ErrorResponse("Ficha no encontrada."));
         if (!CanAccess(profile.BranchId)) return Forbid();
         var products = await _db.Products.AsNoTracking().Where(x => x.Category.BranchId == profile.BranchId)
-            .OrderBy(x => x.Name).Select(x => new CommercialProfileProductDto(x.Id, x.Name, x.Active, x.CommercialProfileId, x.CommercialProfile != null ? x.CommercialProfile.Name : null)).ToListAsync(ct);
+            .OrderBy(x => x.Name).Select(x => new CommercialProfileProductDto(x.Id, x.Name, x.Active, x.CommercialProfileId, x.CommercialProfile != null ? x.CommercialProfile.Name : null, x.Category.StorefrontRole)).ToListAsync(ct);
         return Ok(ApiResponse<List<CommercialProfileProductDto>>.SuccessResponse(products));
     }
 
@@ -108,5 +108,5 @@ public class CommercialProfilesController : ControllerBase
 
 public record CommercialProfileDto(int Id, int BranchId, string Name, string? Description, string? Ingredients, string? PhotoUrl);
 public record SaveCommercialProfileDto(int BranchId, string Name, string? Description, string? Ingredients);
-public record CommercialProfileProductDto(int Id, string Name, bool Active, int? CommercialProfileId, string? CommercialProfileName);
+public record CommercialProfileProductDto(int Id, string Name, bool Active, int? CommercialProfileId, string? CommercialProfileName, string StorefrontRole);
 public record SetCommercialProfileProductsDto(List<int> ProductIds);

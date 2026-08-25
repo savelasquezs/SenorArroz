@@ -70,7 +70,8 @@ public class CreateProductCategoryHandler : IRequestHandler<CreateProductCategor
         var category = new ProductCategory
         {
             BranchId = branchId,
-            Name = request.Name.Trim()
+            Name = request.Name.Trim(),
+            StorefrontRole = request.StorefrontRole
         };
 
         category = await _categoryRepository.CreateAsync(category, cancellationToken);

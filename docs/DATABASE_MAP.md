@@ -119,6 +119,9 @@ Notas:
 Notas:
 
 - Productos y categorías NO deben compartirse entre restaurantes.
+- `ProductCategory.StorefrontRole` se almacena en `product_category.storefront_role` y admite `rice`, `combo`, `beverage`, `addition` o `hidden`; el valor seguro por defecto es `hidden`.
+- `Product.StorefrontVariantLabel` y `Product.StorefrontSortOrder` se almacenan en `storefront_variant_label` y `storefront_sort_order`. La ficha `CommercialProfile` agrupa productos web; si no existe, cada producto se publica como grupo individual.
+- El esquema y el backfill explícito del catálogo guiado se instalan con `SenorArroz.Infrastructure/Scripts/add_storefront_guided_catalog.sql` antes de desplegar el contrato agrupado.
 - Nombres únicos deben ser por tenant, no globales.
 - `DailyPromotion.CreatedByUserId` registra quién creó la promoción para limitar las modificaciones del cajero a sus propios registros. La columna y la eliminación del índice histórico que impedía promociones activas no superpuestas se instalan con `SenorArroz.Infrastructure/Scripts/add_daily_promotion_cashier_permissions.sql` antes de desplegar el backend.
 

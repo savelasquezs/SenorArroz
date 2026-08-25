@@ -32,6 +32,8 @@ $hash = ([BitConverter]::ToString($hashBytes)).Replace('-', '')
 
 `ReverseProxy__KnownProxies` no se inventa ni se rellena con la IP pública del dominio. Debe contener la IP del proxy que se conecta directamente al contenedor. Si Railway no ofrece una IP o red estable, se determina después del despliegue a partir del aviso `Unknown proxy` del middleware y se valida que pertenezca a la infraestructura esperada antes de confiar en ella.
 
+En el entorno Railway actual se observó un pool IPv4 mapeado en IPv6 dentro de `::ffff:100.64.0.0/120`. Producción usa `ReverseProxy__KnownNetworks__0=::ffff:100.64.0.0/120`; debe volver a verificarse después de una migración de región o infraestructura.
+
 Las claves de Geocoding y Routes deben ser distintas, privadas, restringidas a sus APIs, con cuotas y alertas. Swagger permanece deshabilitado en producción.
 
 ## Next.js

@@ -8,4 +8,5 @@ public class UpdateProductCategoryCommand : IRequest<ProductCategoryDto>
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string StorefrontRole { get; set; } = "hidden";
 }

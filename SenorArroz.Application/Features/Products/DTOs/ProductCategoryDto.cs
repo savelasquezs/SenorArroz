@@ -7,6 +7,7 @@ public class ProductCategoryDto
     public int BranchId { get; set; }
     public string BranchName { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public string StorefrontRole { get; set; } = "hidden";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

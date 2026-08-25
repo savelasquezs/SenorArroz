@@ -48,7 +48,9 @@ public class CreateProductHandler : IRequestHandler<CreateProductCommand, Produc
             Active = request.Active,
             CommercialProfileId = request.CommercialProfileId,
             ServesPeopleMin = request.ServesPeopleMin,
-            ServesPeopleMax = request.ServesPeopleMax
+            ServesPeopleMax = request.ServesPeopleMax,
+            StorefrontVariantLabel = Clean(request.StorefrontVariantLabel),
+            StorefrontSortOrder = request.StorefrontSortOrder
         };
 
         var createdProduct = await _productRepository.CreateAsync(product, cancellationToken);
@@ -61,4 +63,6 @@ public class CreateProductHandler : IRequestHandler<CreateProductCommand, Produc
         if (min <= 0) throw new BusinessException("El mínimo de personas debe ser mayor que cero.");
         if (max < min) throw new BusinessException("El máximo de personas debe ser igual o mayor que el mínimo.");
     }
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

@@ -29,6 +29,8 @@ public sealed class PublicStorefrontController(
     private const int PreparationMinutes = 20;
     private const int CoverageTravelMinutes = 30;
     private const int MaxWhatsAppMessageLength = 3500;
+    private static readonly HashSet<string> PublicRoles = ["rice", "combo", "beverage", "addition"];
+    private static readonly HashSet<string> MainRoles = ["rice", "combo"];
     private static readonly TimeSpan MapCacheDuration = TimeSpan.FromMinutes(5);
     private static readonly string[] AllowedCities = ["Medellín", "Bello", "Copacabana"];
 
@@ -41,25 +43,10 @@ public sealed class PublicStorefrontController(
             .AsNoTracking()
             .Include(x => x.Category)
             .Include(x => x.CommercialProfile)
-            .Where(x => x.Active)
+            .Where(x => x.Active && PublicRoles.Contains(x.Category.StorefrontRole))
             .OrderBy(x => x.Category.Name)
+            .ThenBy(x => x.StorefrontSortOrder)
             .ThenBy(x => x.Name)
-            .Select(x => new PublicProductDto(
-                x.Id,
-                x.CategoryId,
-                x.Category.Name,
-                x.Name,
-                x.Price,
-                x.Stock.HasValue && x.Stock.Value <= 0
-                    ? "unavailable"
-                    : x.Stock.HasValue && x.Stock.Value <= 5
-                        ? "lowStock"
-                        : "available",
-                x.CommercialProfile != null ? x.CommercialProfile.Description : null,
-                x.CommercialProfile != null ? x.CommercialProfile.Ingredients : null,
-                x.CommercialProfile != null ? x.CommercialProfile.PhotoUrl : null,
-                x.ServesPeopleMin,
-                x.ServesPeopleMax))
             .ToListAsync(cancellationToken);
 
         var branches = await EligibleBranchesQuery()
@@ -67,15 +54,11 @@ public sealed class PublicStorefrontController(
             .Select(x => new PublicBranchDto(x.Id, x.Name, x.Address))
             .ToListAsync(cancellationToken);
 
-        var categories = products
-            .GroupBy(x => new { x.CategoryId, x.CategoryName })
-            .Select(x => new PublicCategoryDto(x.Key.CategoryId, x.Key.CategoryName, x.Count()))
-            .OrderBy(x => x.Name)
-            .ToList();
-
         var result = new PublicCatalogDto(
-            categories,
-            products,
+            BuildGroups(products, "rice"),
+            BuildGroups(products, "combo"),
+            BuildGroups(products, "beverage"),
+            BuildGroups(products, "addition"),
             [],
             branches,
             AllowedCities,
@@ -139,6 +122,7 @@ public sealed class PublicStorefrontController(
         var productIds = request.Items.Select(x => x.ProductId).Distinct().ToList();
         var products = await db.Products
             .AsNoTracking()
+            .Include(x => x.Category)
             .Where(x => productIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, cancellationToken);
         var validationError = ValidateItems(request.Items, products);
@@ -296,17 +280,64 @@ public sealed class PublicStorefrontController(
             return "Agrega al menos un producto al carrito.";
         if (items.Count > 30)
             return "El carrito supera la cantidad máxima de productos distintos.";
+        var hasMain = false;
         foreach (var item in items)
         {
             if (item.Quantity is < 1 or > 50)
                 return "Cada cantidad debe estar entre 1 y 50.";
             if (!products.TryGetValue(item.ProductId, out var product) || !product.Active)
                 return "Uno de los productos ya no está disponible.";
+            if (!PublicRoles.Contains(product.Category.StorefrontRole))
+                return "Uno de los productos no está habilitado para pedidos web.";
             if (product.Stock.HasValue && product.Stock.Value < item.Quantity)
                 return $"No hay stock suficiente de {product.Name}.";
+            hasMain |= MainRoles.Contains(product.Category.StorefrontRole);
         }
-        return null;
+        return hasMain ? null : "Agrega al menos un arroz o combo para continuar.";
     }
+
+    private static IReadOnlyCollection<PublicProductGroupDto> BuildGroups(
+        IReadOnlyCollection<Product> products,
+        string role) => products
+        .Where(x => x.Category.StorefrontRole == role)
+        .GroupBy(x => x.CommercialProfileId.HasValue
+            ? $"{role}:profile:{x.CommercialProfileId.Value}"
+            : $"{role}:product:{x.Id}")
+        .Select(group =>
+        {
+            var first = group.OrderBy(x => x.StorefrontSortOrder).ThenBy(x => x.Name).First();
+            var options = group
+                .OrderBy(x => x.StorefrontSortOrder)
+                .ThenBy(x => x.Name)
+                .Select(x => new PublicProductOptionDto(
+                    x.Id,
+                    x.Name,
+                    x.StorefrontVariantLabel ?? x.Name,
+                    x.Price,
+                    Availability(x),
+                    x.ServesPeopleMin,
+                    x.ServesPeopleMax))
+                .ToList();
+            return new PublicProductGroupDto(
+                group.Key,
+                first.CategoryId,
+                first.Category.Name,
+                first.CommercialProfile?.Name ?? (role == "rice" ? first.Category.Name : first.Name),
+                first.CommercialProfile?.Description,
+                first.CommercialProfile?.Ingredients,
+                first.CommercialProfile?.PhotoUrl,
+                group.Min(x => x.StorefrontSortOrder),
+                options);
+        })
+        .OrderBy(x => x.SortOrder)
+        .ThenBy(x => x.Name)
+        .ToList();
+
+    private static string Availability(Product product) => product.Stock.HasValue && product.Stock.Value <= 0
+        ? "unavailable"
+        : product.Stock.HasValue && product.Stock.Value <= 5
+            ? "lowStock"
+            : "available";
 
     private static PublicPromotionDto ToPromotionDto(DailyPromotion promotion)
     {
@@ -408,26 +439,34 @@ public sealed class PublicStorefrontController(
 }
 
 public sealed record PublicCatalogDto(
-    IReadOnlyCollection<PublicCategoryDto> Categories,
-    IReadOnlyCollection<PublicProductDto> Products,
+    IReadOnlyCollection<PublicProductGroupDto> RiceGroups,
+    IReadOnlyCollection<PublicProductGroupDto> ComboGroups,
+    IReadOnlyCollection<PublicProductGroupDto> BeverageGroups,
+    IReadOnlyCollection<PublicProductGroupDto> AdditionGroups,
     IReadOnlyCollection<PublicPromotionDto> Promotions,
     IReadOnlyCollection<PublicBranchDto> Branches,
     IReadOnlyCollection<string> Cities,
     int PreparationMinutes,
     int CoverageTravelMinutes);
 
-public sealed record PublicCategoryDto(int Id, string Name, int ProductCount);
 public sealed record PublicBranchDto(int Id, string Name, string Address);
-public sealed record PublicProductDto(
-    int Id,
+public sealed record PublicProductGroupDto(
+    string Key,
     int CategoryId,
     string CategoryName,
     string Name,
-    int Price,
-    string AvailabilityStatus,
     string? Description,
     string? Ingredients,
     string? PhotoUrl,
+    int SortOrder,
+    IReadOnlyCollection<PublicProductOptionDto> Options);
+
+public sealed record PublicProductOptionDto(
+    int ProductId,
+    string Name,
+    string VariantLabel,
+    int Price,
+    string AvailabilityStatus,
     int? ServesPeopleMin,
     int? ServesPeopleMax);
 

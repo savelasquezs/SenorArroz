@@ -36,6 +36,7 @@ public class UpdateProductCategoryHandler : IRequestHandler<UpdateProductCategor
 
         // Update category
         category.Name = request.Name.Trim();
+        category.StorefrontRole = request.StorefrontRole;
 
         category = await _categoryRepository.UpdateAsync(category, cancellationToken);
 

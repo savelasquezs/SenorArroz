@@ -20,6 +20,8 @@ public class ProductDto
     public string? PhotoUrl { get; set; }
     public int? ServesPeopleMin { get; set; }
     public int? ServesPeopleMax { get; set; }
+    public string? StorefrontVariantLabel { get; set; }
+    public int StorefrontSortOrder { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

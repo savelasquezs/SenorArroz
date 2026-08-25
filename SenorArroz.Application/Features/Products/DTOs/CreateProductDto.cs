@@ -28,4 +28,8 @@ public class CreateProductDto
     public int? ServesPeopleMin { get; set; }
     [Range(1, int.MaxValue, ErrorMessage = "El máximo de personas debe ser mayor que cero")]
     public int? ServesPeopleMax { get; set; }
+    [StringLength(80)]
+    public string? StorefrontVariantLabel { get; set; }
+    [Range(0, int.MaxValue)]
+    public int StorefrontSortOrder { get; set; }
 }

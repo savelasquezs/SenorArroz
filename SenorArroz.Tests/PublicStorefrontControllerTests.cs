@@ -42,11 +42,12 @@ public class PublicStorefrontControllerTests
 
         var ok = Assert.IsType<OkObjectResult>(action.Result);
         var response = Assert.IsType<ApiResponse<PublicCatalogDto>>(ok.Value);
-        var product = Assert.Single(response.Data!.Products);
+        var group = Assert.Single(response.Data!.RiceGroups);
+        var product = Assert.Single(group.Options);
         Assert.Equal(50_000, product.Price);
-        Assert.Equal("Arroces", product.CategoryName);
+        Assert.Equal("Arroces", group.CategoryName);
         Assert.Equal("available", product.AvailabilityStatus);
-        Assert.Null(typeof(PublicProductDto).GetProperty("Stock"));
+        Assert.Null(typeof(PublicProductOptionDto).GetProperty("Stock"));
     }
 
     [Fact]
@@ -61,8 +62,78 @@ public class PublicStorefrontControllerTests
 
         var ok = Assert.IsType<OkObjectResult>(action.Result);
         var response = Assert.IsType<ApiResponse<PublicCatalogDto>>(ok.Value);
-        Assert.Equal("lowStock", Assert.Single(response.Data!.Products).AvailabilityStatus);
+        Assert.Equal("lowStock", Assert.Single(Assert.Single(response.Data!.RiceGroups).Options).AvailabilityStatus);
         Assert.Empty(response.Data.Promotions);
+    }
+
+    [Fact]
+    public async Task Catalog_GroupsProductsByCommercialProfile_AndOrdersVariants()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        var category = db.ProductCategories.Local.Single();
+        var profile = new CommercialProfile { Id = 30, BranchId = category.BranchId, Branch = category.Branch, Name = "Arroz paisa", Description = "Sabor de casa" };
+        var first = db.Products.Local.Single();
+        first.CommercialProfile = profile;
+        first.CommercialProfileId = profile.Id;
+        first.StorefrontVariantLabel = "Familiar";
+        first.StorefrontSortOrder = 20;
+        db.Add(new Product { Id = 21, CategoryId = category.Id, Category = category, Name = "Arroz paisa Personal", Price = 18_000, Stock = 10, Active = true, CommercialProfile = profile, CommercialProfileId = profile.Id, StorefrontVariantLabel = "Personal", StorefrontSortOrder = 10 });
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 1800).GetCatalog(default);
+
+        var response = Assert.IsType<ApiResponse<PublicCatalogDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        var group = Assert.Single(response.Data!.RiceGroups);
+        Assert.Equal("Arroz paisa", group.Name);
+        Assert.Equal(["Personal", "Familiar"], group.Options.Select(x => x.VariantLabel));
+    }
+
+    [Fact]
+    public async Task Catalog_HidesOperationalCategories_AndUsesIndividualFallbackWithoutProfile()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        var branch = db.Branches.Local.Single();
+        var hidden = new ProductCategory { Id = 13, BranchId = branch.Id, Branch = branch, Name = "Empaque", StorefrontRole = "hidden" };
+        db.AddRange(hidden, new Product { Id = 22, CategoryId = hidden.Id, Category = hidden, Name = "Cuchara", Price = 0, Stock = 10, Active = true });
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 1800).GetCatalog(default);
+
+        var response = Assert.IsType<ApiResponse<PublicCatalogDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.Single(response.Data!.RiceGroups);
+        Assert.Empty(response.Data.ComboGroups);
+        Assert.DoesNotContain(response.Data.RiceGroups, x => x.Name == "Cuchara");
+        Assert.StartsWith("rice:product:", response.Data.RiceGroups.Single().Key);
+    }
+
+    [Fact]
+    public async Task Quote_RejectsCartWithoutMainProduct()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        db.ProductCategories.Local.Single().StorefrontRole = "addition";
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 1800).Quote(Request(), default);
+
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<BadRequestObjectResult>(action.Result).Value);
+        Assert.Contains("arroz o combo", response.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Quote_RejectsProductFromHiddenCategory()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        db.ProductCategories.Local.Single().StorefrontRole = "hidden";
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 1800).Quote(Request(), default);
+
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<BadRequestObjectResult>(action.Result).Value);
+        Assert.Contains("no está habilitado", response.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -173,7 +244,7 @@ public class PublicStorefrontControllerTests
             IsVerified = true,
         };
         branch.WhatsAppSetting = setting;
-        var category = new ProductCategory { Id = 12, BranchId = branch.Id, Branch = branch, Name = "Arroces" };
+        var category = new ProductCategory { Id = 12, BranchId = branch.Id, Branch = branch, Name = "Arroces", StorefrontRole = "rice" };
         db.AddRange(
             branch,
             setting,

@@ -8,4 +8,5 @@ public class CreateProductCategoryCommand : IRequest<ProductCategoryDto>
 {
     public string Name { get; set; } = string.Empty;
     public int? BranchId { get; set; } // Optional, for superadmin
+    public string StorefrontRole { get; set; } = "hidden";
 }

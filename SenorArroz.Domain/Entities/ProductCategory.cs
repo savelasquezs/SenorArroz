@@ -6,6 +6,7 @@ public class ProductCategory : BaseEntity
 {
     public int BranchId { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string StorefrontRole { get; set; } = "hidden";
 
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;
