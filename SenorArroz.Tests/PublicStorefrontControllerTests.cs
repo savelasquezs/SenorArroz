@@ -109,6 +109,39 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
+    public async Task AddressPreview_ReturnsCoordinatesForCustomerConfirmation()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 1800).PreviewAddress(new PublicAddressPreviewRequest
+        {
+            City = "Medellín",
+            Address = "Calle 10 # 20-30",
+        }, default);
+
+        var response = Assert.IsType<ApiResponse<PublicAddressPreviewDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.Equal(6.25m, response.Data!.Latitude);
+        Assert.Equal(-75.56m, response.Data.Longitude);
+        Assert.Contains("Medellín", response.Data.FormattedAddress);
+    }
+
+    [Fact]
+    public async Task AddressPreview_RejectsUnsupportedCity()
+    {
+        await using var db = CreateDb();
+
+        var action = await Controller(db, 1800).PreviewAddress(new PublicAddressPreviewRequest
+        {
+            City = "Bogotá",
+            Address = "Calle 10 # 20-30",
+        }, default);
+
+        Assert.IsType<BadRequestObjectResult>(action.Result);
+    }
+
+    [Fact]
     public async Task Quote_RejectsCartWithoutMainProduct()
     {
         await using var db = CreateDb();

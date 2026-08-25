@@ -59,7 +59,7 @@ Reglas:
 - El navegador accede al backend únicamente mediante el BFF de Next.js. Los endpoints públicos del backend exigen `X-Storefront-Key-Id` y `X-Storefront-Key`; el backend conserva únicamente el hash SHA-256 de la clave y lo compara en tiempo constante.
 - El cliente registra nombre, teléfono, ciudad y dirección; las ciudades habilitadas inicialmente son Medellín, Bello y Copacabana. Las notas por producto son opcionales y admiten hasta 200 caracteres.
 - Gestionar la solicitud exige autorización para el tratamiento de datos bajo la política versión `2026-08-24`. La autorización promocional es separada, opcional y desmarcada; ambas decisiones se incluyen en el mensaje.
-- Google valida la ubicación y calcula el desplazamiento desde todas las sucursales activas que tengan coordenadas y WhatsApp activo/verificado. Geocodificación y rutas se cachean durante cinco minutos sin usar datos personales legibles como clave.
+- Google geocodifica la dirección para que el cliente confirme visualmente el punto antes de cotizar; la cotización usa las coordenadas confirmadas y calcula el desplazamiento desde todas las sucursales activas que tengan coordenadas y WhatsApp activo/verificado. Geocodificación y rutas se cachean durante cinco minutos sin usar datos personales legibles como clave.
 - La sucursal con menor desplazamiento se recomienda, pero el cliente puede seleccionar otra sede habilitada.
 - El tiempo mostrado es `20 minutos de preparación + desplazamiento de Google`.
 - La cobertura depende únicamente del desplazamiento de Google: hasta 30 minutos continúa normal; más de 30 minutos requiere autorización.

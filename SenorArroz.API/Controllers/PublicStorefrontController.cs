@@ -68,6 +68,32 @@ public sealed class PublicStorefrontController(
         return Ok(ApiResponse<PublicCatalogDto>.SuccessResponse(result));
     }
 
+    [HttpPost("address-preview")]
+    [RequestSizeLimit(4 * 1024)]
+    [EnableRateLimiting("storefront-quote")]
+    public async Task<ActionResult<ApiResponse<PublicAddressPreviewDto>>> PreviewAddress(
+        [FromBody] PublicAddressPreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        var normalizedCity = MatchAllowedCity(request.City);
+        if (normalizedCity is null)
+            return BadRequest(ApiResponse<PublicAddressPreviewDto>.ErrorResponse("La ciudad debe ser Medellín, Bello o Copacabana."));
+
+        var resolved = await ResolveAddressCached(request.Address, null, null, cancellationToken);
+        if (resolved.Result is null)
+            return BadRequest(ApiResponse<PublicAddressPreviewDto>.ErrorResponse(resolved.Error ?? "No fue posible ubicar la dirección."));
+
+        if (!AddressMatchesCity(resolved.Result.FormattedAddress, normalizedCity))
+            return BadRequest(ApiResponse<PublicAddressPreviewDto>.ErrorResponse($"La ubicación encontrada no pertenece a {normalizedCity}."));
+
+        var result = new PublicAddressPreviewDto(
+            resolved.Result.FormattedAddress,
+            resolved.Result.Latitude,
+            resolved.Result.Longitude,
+            resolved.Result.RequiresConfirmation);
+        return Ok(ApiResponse<PublicAddressPreviewDto>.SuccessResponse(result));
+    }
+
     [HttpPost("delivery-quote")]
     [RequestSizeLimit(32 * 1024)]
     [EnableRateLimiting("storefront-quote")]
@@ -451,6 +477,21 @@ public sealed record PublicCatalogDto(
     int CoverageTravelMinutes);
 
 public sealed record PublicBranchDto(int Id, string Name, string Address);
+public sealed record PublicAddressPreviewDto(
+    string FormattedAddress,
+    decimal Latitude,
+    decimal Longitude,
+    bool RequiresConfirmation);
+
+public sealed class PublicAddressPreviewRequest
+{
+    [Required, StringLength(30)]
+    public string City { get; set; } = string.Empty;
+
+    [Required, StringLength(250, MinimumLength = 5)]
+    public string Address { get; set; } = string.Empty;
+}
+
 public sealed record PublicProductGroupDto(
     string Key,
     int CategoryId,
