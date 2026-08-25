@@ -53,10 +53,17 @@ public sealed class PublicStorefrontController(
             .ThenBy(x => x.Name)
             .ToListAsync(cancellationToken);
 
-        var branches = await EligibleBranchesQuery()
+        var branchRows = await GetEligibleBranches(cancellationToken);
+        var branches = branchRows
             .OrderBy(x => x.Name)
-            .Select(x => new PublicBranchDto(x.Id, x.Name, x.Address, x.Latitude!.Value, x.Longitude!.Value))
-            .ToListAsync(cancellationToken);
+            .Select(x => new PublicBranchDto(
+                x.Id,
+                x.Name,
+                x.Address,
+                x.Latitude,
+                x.Longitude,
+                BuildWhatsAppUrl(x.ContactPhone)))
+            .ToList();
 
         var result = new PublicCatalogDto(
             BuildGroups(products, "rice"),
@@ -285,7 +292,7 @@ public sealed class PublicStorefrontController(
             promotionDto);
         if (message.Length > MaxWhatsAppMessageLength)
             return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("El pedido contiene demasiada información. Reduce las notas e intenta nuevamente."));
-        var whatsappUrl = $"https://wa.me/{DigitsOnly(checkoutBranch.WhatsAppPhone)}?text={Uri.EscapeDataString(message)}";
+        var whatsappUrl = $"{BuildWhatsAppUrl(checkoutBranch.ContactPhone)}?text={Uri.EscapeDataString(message)}";
 
         var result = new PublicDeliveryQuoteDto(
             fulfillmentType,
@@ -315,10 +322,7 @@ public sealed class PublicStorefrontController(
         .Where(x => x.IsActive
             && x.Latitude.HasValue
             && x.Longitude.HasValue
-            && x.WhatsAppSetting != null
-            && x.WhatsAppSetting.IsActive
-            && x.WhatsAppSetting.IsVerified
-            && x.WhatsAppSetting.DisplayPhoneNumber != "");
+            && (x.Phone1.Trim() != "" || (x.Phone2 != null && x.Phone2.Trim() != "")));
 
     private Task<List<BranchRouteSource>> GetEligibleBranches(CancellationToken cancellationToken) => EligibleBranchesQuery()
         .Select(x => new BranchRouteSource(
@@ -327,7 +331,7 @@ public sealed class PublicStorefrontController(
             x.Address,
             x.Latitude!.Value,
             x.Longitude!.Value,
-            x.WhatsAppSetting!.DisplayPhoneNumber))
+            x.Phone1.Trim() != "" ? x.Phone1 : x.Phone2!))
         .ToListAsync(cancellationToken);
 
     private async Task<List<BranchRouteResult>> GetValidRoutes(
@@ -557,6 +561,12 @@ public sealed class PublicStorefrontController(
     }
 
     private static string DigitsOnly(string? value) => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
+    private static string WhatsAppDigits(string? value)
+    {
+        var digits = DigitsOnly(value);
+        return digits.Length == 10 ? $"57{digits}" : digits;
+    }
+    private static string BuildWhatsAppUrl(string phone) => $"https://wa.me/{WhatsAppDigits(phone)}";
     private static int ToMinutes(int durationSeconds) => (int)Math.Ceiling(durationSeconds / 60m);
     private static bool IsWithinCoverage(DrivingRouteMetrics metrics) =>
         metrics.DistanceMeters <= CoverageDistanceMeters && ToMinutes(metrics.DurationSeconds) <= CoverageTravelMinutes;
@@ -590,7 +600,7 @@ public sealed class PublicStorefrontController(
         string Address,
         decimal Latitude,
         decimal Longitude,
-        string WhatsAppPhone);
+        string ContactPhone);
     private sealed record BranchRouteResult(BranchRouteSource Branch, DrivingRouteMetrics Metrics);
 }
 
@@ -606,7 +616,13 @@ public sealed record PublicCatalogDto(
     int CoverageTravelMinutes,
     int CoverageDistanceMeters);
 
-public sealed record PublicBranchDto(int Id, string Name, string Address, decimal Latitude, decimal Longitude);
+public sealed record PublicBranchDto(
+    int Id,
+    string Name,
+    string Address,
+    decimal Latitude,
+    decimal Longitude,
+    string ContactWhatsAppUrl);
 public sealed record PublicAddressPreviewDto(
     string FormattedAddress,
     decimal Latitude,

@@ -166,7 +166,7 @@ Buscar primero:
 
 Endpoints protegidos con credenciales exclusivas del BFF (`X-Storefront-Key-Id` y `X-Storefront-Key`):
 
-- `GET /api/public/storefront/catalog`: catálogo compartido agrupado en `riceGroups`, `comboGroups`, `beverageGroups` y `additionGroups`. Cada grupo usa la ficha comercial y contiene opciones ordenadas con el `ProductId` real; expone las sucursales habilitadas con dirección y coordenadas, pero no inventario exacto ni promociones sin sucursal.
+- `GET /api/public/storefront/catalog`: catálogo compartido agrupado en `riceGroups`, `comboGroups`, `beverageGroups` y `additionGroups`. Cada grupo usa la ficha comercial y contiene opciones ordenadas con el `ProductId` real; expone las sucursales activas que tengan coordenadas y teléfono principal, incluyendo dirección, ubicación y enlace de contacto por WhatsApp, pero no inventario exacto ni promociones sin sucursal.
 - `POST /api/public/storefront/address-preview`: geocodifica una dirección o lugar conocido dentro de las ciudades habilitadas para mostrar un mapa de confirmación sin exponer credenciales de Google al navegador.
 - `POST /api/public/storefront/coverage-preview`: valida una ubicación confirmada y devuelve distancia, tiempo, cobertura dual y tarifa estimada desde cada sucursal sin exigir carrito ni datos del cliente.
 - `POST /api/public/storefront/delivery-quote`: cotiza domicilio o recogida, revalida carrito y promoción de la sede y genera el enlace de WhatsApp. Domicilio valida ubicación, distancia, tiempo y tarifa; recogida no solicita dirección del cliente.
@@ -176,6 +176,7 @@ Seguridad y operación:
 - `SenorArroz.API/Security/StorefrontApiKeyAuthentication.cs` valida identificador y hash de clave en tiempo constante.
 - Las cotizaciones admiten cuerpos de hasta 32 KB, 60 solicitudes por minuto y ocho ejecuciones concurrentes por instancia, con valores configurables.
 - Geocodificación y rutas válidas se cachean cinco minutos. Precio, estado, disponibilidad y promociones siempre se consultan nuevamente.
+- Los contactos y pedidos de la landing se dirigen a `Branch.Phone1`, con respaldo en `Branch.Phone2`; no usan el número configurado para WhatsApp/IA.
 - El storefront permanece single-tenant hasta completar el aislamiento real de las consultas globales.
 - `product_category.storefront_role` decide explícitamente qué puede publicarse. `hidden`, categorías desconocidas, productos inactivos y productos agotados no pueden incorporarse a una cotización.
 - `product.storefront_variant_label` y `product.storefront_sort_order` controlan la presentación y el orden web sin inferir información desde el nombre del producto.

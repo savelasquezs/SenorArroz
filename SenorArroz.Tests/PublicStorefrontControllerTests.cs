@@ -67,6 +67,31 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
+    public async Task Catalog_IncludesActiveBranchWithoutAiWhatsAppSetting_AndUsesMainPhone()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        db.Add(new Branch
+        {
+            Id = 15,
+            Name = "La 80",
+            Address = "Calle 80",
+            Phone1 = "3017654321",
+            Latitude = 6.27m,
+            Longitude = -75.59m,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 1800).GetCatalog(default);
+
+        var response = Assert.IsType<ApiResponse<PublicCatalogDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.Equal(2, response.Data!.Branches.Count);
+        var branch = response.Data.Branches.Single(x => x.Id == 15);
+        Assert.Equal("https://wa.me/573017654321", branch.ContactWhatsAppUrl);
+    }
+
+    [Fact]
     public async Task Catalog_GroupsProductsByCommercialProfile_AndOrdersVariants()
     {
         await using var db = CreateDb();
@@ -189,6 +214,7 @@ public class PublicStorefrontControllerTests
         Assert.Equal("pickup", response.Data!.FulfillmentType);
         Assert.Null(response.Data.FormattedAddress);
         Assert.Equal(0, response.Data.EstimatedDeliveryFee);
+        Assert.StartsWith("https://wa.me/573001234567?text=", response.Data.WhatsAppUrl);
         var message = Uri.UnescapeDataString(response.Data.WhatsAppUrl);
         Assert.Contains("Recoger en el local", message);
         Assert.Contains("Calle 1", message);
@@ -325,7 +351,7 @@ public class PublicStorefrontControllerTests
             Branch = branch,
             PhoneNumberId = "phone-id",
             BusinessAccountId = "business-id",
-            DisplayPhoneNumber = "+573001234567",
+            DisplayPhoneNumber = "+573009999999",
             AccessToken = "secret",
             WebhookVerifyToken = "verify",
             IsActive = true,
