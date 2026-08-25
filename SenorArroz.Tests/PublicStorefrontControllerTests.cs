@@ -78,7 +78,7 @@ public class PublicStorefrontControllerTests
         first.CommercialProfileId = profile.Id;
         first.StorefrontVariantLabel = "Familiar";
         first.StorefrontSortOrder = 20;
-        db.Add(new Product { Id = 21, CategoryId = category.Id, Category = category, Name = "Arroz paisa Personal", Price = 18_000, Stock = 10, Active = true, CommercialProfile = profile, CommercialProfileId = profile.Id, StorefrontVariantLabel = "Personal", StorefrontSortOrder = 10 });
+        db.Add(new Product { Id = 21, CategoryId = category.Id, Category = category, Name = "Arroz paisa Personal", Price = 18_000, Stock = 10, Active = true, CommercialProfile = profile, CommercialProfileId = profile.Id, StorefrontVariantLabel = "Personal", StorefrontSortOrder = 30 });
         await db.SaveChangesAsync();
 
         var action = await Controller(db, 1800).GetCatalog(default);

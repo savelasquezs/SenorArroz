@@ -156,6 +156,45 @@ WHERE p.category_id = c.id
   AND c.name = 'Combos'
   AND p.name IN ('Combochicharrón', 'Costicombo');
 
+WITH vegetarian_profiles AS (
+    SELECT cp.branch_id,
+           cp.id,
+           CASE WHEN NULLIF(BTRIM(cp.photo_url), '') IS NOT NULL THEN 1 ELSE 0 END AS has_photo,
+           CASE WHEN NULLIF(BTRIM(cp.description), '') IS NOT NULL THEN 1 ELSE 0 END AS has_description,
+           COUNT(p.id) FILTER (WHERE c.name = 'Vegetariano') AS linked_products
+    FROM commercial_profile cp
+    LEFT JOIN product p ON p.commercial_profile_id = cp.id
+    LEFT JOIN product_category c ON c.id = p.category_id
+    WHERE LOWER(BTRIM(cp.name)) = LOWER('Arroz vegetariano')
+       OR c.name = 'Vegetariano'
+    GROUP BY cp.branch_id, cp.id, cp.photo_url, cp.description
+), canonical_vegetarian_profile AS (
+    SELECT DISTINCT ON (branch_id) branch_id, id
+    FROM vegetarian_profiles
+    ORDER BY branch_id, has_photo DESC, has_description DESC, linked_products DESC, id
+)
+UPDATE product p
+SET commercial_profile_id = canonical.id
+FROM product_category c
+JOIN canonical_vegetarian_profile canonical ON canonical.branch_id = c.branch_id
+WHERE p.category_id = c.id
+  AND c.name = 'Vegetariano';
+
+WITH canonical_vegetarian_profile AS (
+    SELECT c.branch_id, MIN(p.commercial_profile_id) AS id
+    FROM product p
+    JOIN product_category c ON c.id = p.category_id
+    WHERE c.name = 'Vegetariano'
+      AND p.commercial_profile_id IS NOT NULL
+    GROUP BY c.branch_id
+)
+DELETE FROM commercial_profile duplicate
+USING canonical_vegetarian_profile canonical
+WHERE duplicate.branch_id = canonical.branch_id
+  AND duplicate.id <> canonical.id
+  AND LOWER(BTRIM(duplicate.name)) = LOWER('Arroz vegetariano')
+  AND NOT EXISTS (SELECT 1 FROM product p WHERE p.commercial_profile_id = duplicate.id);
+
 CREATE INDEX IF NOT EXISTS ix_product_category_storefront
     ON product (category_id, storefront_sort_order, id) WHERE active = true;
 

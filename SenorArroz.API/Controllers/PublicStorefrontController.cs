@@ -307,7 +307,8 @@ public sealed class PublicStorefrontController(
         {
             var first = group.OrderBy(x => x.StorefrontSortOrder).ThenBy(x => x.Name).First();
             var options = group
-                .OrderBy(x => x.StorefrontSortOrder)
+                .OrderBy(x => x.Price)
+                .ThenBy(x => x.StorefrontSortOrder)
                 .ThenBy(x => x.Name)
                 .Select(x => new PublicProductOptionDto(
                     x.Id,
