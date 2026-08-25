@@ -410,6 +410,8 @@ public sealed class PublicStorefrontController(
         sb.AppendLine($"*Teléfono:* {DigitsOnly(request.Phone)}");
         sb.AppendLine($"*Ciudad:* {city}");
         sb.AppendLine($"*Dirección confirmada:* {formattedAddress}");
+        if (!string.IsNullOrWhiteSpace(request.AddressAdditionalInfo))
+            sb.AppendLine($"*Datos adicionales:* {SingleLine(request.AddressAdditionalInfo)}");
         sb.AppendLine($"*Ubicación:* https://www.google.com/maps?q={latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}");
         sb.AppendLine($"*Sucursal sugerida:* {branchName}");
         sb.AppendLine($"*Tiempo estimado:* {PreparationMinutes} min de preparación + {travelMinutes} min de desplazamiento = {PreparationMinutes + travelMinutes} min");
@@ -490,6 +492,7 @@ public sealed class PublicAddressPreviewRequest
 
     [Required, StringLength(250, MinimumLength = 5)]
     public string Address { get; set; } = string.Empty;
+
 }
 
 public sealed record PublicProductGroupDto(
@@ -539,6 +542,9 @@ public sealed class PublicDeliveryQuoteRequest
 
     [Required, StringLength(250, MinimumLength = 5)]
     public string Address { get; set; } = string.Empty;
+
+    [StringLength(160)]
+    public string? AddressAdditionalInfo { get; set; }
 
     [Range(-90, 90)]
     public decimal? Latitude { get; set; }

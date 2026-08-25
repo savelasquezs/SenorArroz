@@ -200,7 +200,9 @@ public class PublicStorefrontControllerTests
         Assert.Equal(30, response.Data.TravelMinutes);
         Assert.Equal(20, response.Data.PreparationMinutes);
         Assert.Equal(50, response.Data.EstimatedTotalMinutes);
-        Assert.Contains("Autorización de datos", Uri.UnescapeDataString(response.Data.WhatsAppUrl));
+        var message = Uri.UnescapeDataString(response.Data.WhatsAppUrl);
+        Assert.Contains("Autorización de datos", message);
+        Assert.Contains("Torre A, apartamento 202", message);
     }
 
     [Fact]
@@ -226,6 +228,7 @@ public class PublicStorefrontControllerTests
         Phone = "3001234567",
         City = "Medellín",
         Address = "Calle 10 # 20-30",
+        AddressAdditionalInfo = "Torre A, apartamento 202",
         Latitude = 6.25m,
         Longitude = -75.56m,
         AcceptDataProcessing = true,
