@@ -166,9 +166,10 @@ Buscar primero:
 
 Endpoints protegidos con credenciales exclusivas del BFF (`X-Storefront-Key-Id` y `X-Storefront-Key`):
 
-- `GET /api/public/storefront/catalog`: catálogo compartido agrupado en `riceGroups`, `comboGroups`, `beverageGroups` y `additionGroups`. Cada grupo usa la ficha comercial y contiene opciones ordenadas con el `ProductId` real; no expone inventario exacto ni promociones sin sucursal.
+- `GET /api/public/storefront/catalog`: catálogo compartido agrupado en `riceGroups`, `comboGroups`, `beverageGroups` y `additionGroups`. Cada grupo usa la ficha comercial y contiene opciones ordenadas con el `ProductId` real; expone las sucursales habilitadas con dirección y coordenadas, pero no inventario exacto ni promociones sin sucursal.
 - `POST /api/public/storefront/address-preview`: geocodifica una dirección o lugar conocido dentro de las ciudades habilitadas para mostrar un mapa de confirmación sin exponer credenciales de Google al navegador.
-- `POST /api/public/storefront/delivery-quote`: exige autorización de datos, valida ubicación, calcula todas las rutas, revalida carrito y promoción de la sede y genera el enlace de WhatsApp.
+- `POST /api/public/storefront/coverage-preview`: valida una ubicación confirmada y devuelve distancia, tiempo, cobertura dual y tarifa estimada desde cada sucursal sin exigir carrito ni datos del cliente.
+- `POST /api/public/storefront/delivery-quote`: cotiza domicilio o recogida, revalida carrito y promoción de la sede y genera el enlace de WhatsApp. Domicilio valida ubicación, distancia, tiempo y tarifa; recogida no solicita dirección del cliente.
 
 Seguridad y operación:
 

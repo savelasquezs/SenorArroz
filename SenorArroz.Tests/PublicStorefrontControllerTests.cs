@@ -170,23 +170,33 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
-    public async Task Quote_RejectsMissingDataProcessingConsent()
+    public async Task Quote_Pickup_DoesNotRequireAddressAndUsesSelectedBranch()
     {
         await using var db = CreateDb();
         Seed(db);
         await db.SaveChangesAsync();
         var request = Request();
-        request.AcceptDataProcessing = false;
+        request.FulfillmentType = "pickup";
+        request.City = null;
+        request.Address = null;
+        request.Latitude = null;
+        request.Longitude = null;
+        request.SelectedBranchId = 10;
 
         var action = await Controller(db, 1800).Quote(request, default);
 
-        var badRequest = Assert.IsType<BadRequestObjectResult>(action.Result);
-        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(badRequest.Value);
-        Assert.Contains("autorizar", response.Message, StringComparison.OrdinalIgnoreCase);
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.Equal("pickup", response.Data!.FulfillmentType);
+        Assert.Null(response.Data.FormattedAddress);
+        Assert.Equal(0, response.Data.EstimatedDeliveryFee);
+        var message = Uri.UnescapeDataString(response.Data.WhatsAppUrl);
+        Assert.Contains("Recoger en el local", message);
+        Assert.Contains("Calle 1", message);
+        Assert.DoesNotContain("Autorización", message);
     }
 
     [Fact]
-    public async Task Quote_UsesTravelOnlyForCoverage_AndAddsPreparationToEta()
+    public async Task Quote_RequiresDistanceAndTravelLimits_AndAddsPreparationToEta()
     {
         await using var db = CreateDb();
         Seed(db);
@@ -198,10 +208,13 @@ public class PublicStorefrontControllerTests
         var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(ok.Value);
         Assert.False(response.Data!.IsOutsideCoverage);
         Assert.Equal(30, response.Data.TravelMinutes);
+        Assert.Equal(4_000, response.Data.DistanceMeters);
+        Assert.Equal(5_000, response.Data.EstimatedDeliveryFee);
         Assert.Equal(20, response.Data.PreparationMinutes);
         Assert.Equal(50, response.Data.EstimatedTotalMinutes);
         var message = Uri.UnescapeDataString(response.Data.WhatsAppUrl);
-        Assert.Contains("Autorización de datos", message);
+        Assert.Contains("Valor estimado del domicilio", message);
+        Assert.DoesNotContain("Autorización", message);
         Assert.Contains("Torre A, apartamento 202", message);
     }
 
@@ -219,7 +232,47 @@ public class PublicStorefrontControllerTests
         Assert.True(response.Data!.IsOutsideCoverage);
         Assert.Equal(31, response.Data.TravelMinutes);
         Assert.Equal(51, response.Data.EstimatedTotalMinutes);
-        Assert.Contains("SOLICITUD%20FUERA%20DE%20COBERTURA", response.Data.WhatsAppUrl);
+        var message = Uri.UnescapeDataString(response.Data.WhatsAppUrl);
+        Assert.Contains("*NUEVO PEDIDO WEB*", message);
+        Assert.DoesNotContain("fuera de cobertura", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Quote_OverFiveKilometers_IsOutsideCoverageEvenUnderThirtyMinutes()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 1200, 5_001).Quote(Request(), default);
+
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.True(response.Data!.IsOutsideCoverage);
+        Assert.Equal(7_000, response.Data.EstimatedDeliveryFee);
+    }
+
+    [Fact]
+    public async Task CoveragePreview_ReturnsBranchDistanceTimeAndEstimatedFee()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 720, 3_000).PreviewCoverage(new PublicCoveragePreviewRequest
+        {
+            City = "Medellín",
+            Address = "Calle 10 # 20-30",
+            Latitude = 6.25m,
+            Longitude = -75.56m,
+        }, default);
+
+        var response = Assert.IsType<ApiResponse<PublicCoveragePreviewDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        var branch = Assert.Single(response.Data!.Branches);
+        Assert.True(branch.IsWithinCoverage);
+        Assert.Equal(3_000, branch.DistanceMeters);
+        Assert.Equal(4_000, branch.EstimatedDeliveryFee);
+        Assert.Equal(12, branch.TravelMinutes);
+        Assert.Equal(5_000, response.Data.CoverageDistanceMeters);
     }
 
     private static PublicDeliveryQuoteRequest Request() => new()
@@ -231,16 +284,15 @@ public class PublicStorefrontControllerTests
         AddressAdditionalInfo = "Torre A, apartamento 202",
         Latitude = 6.25m,
         Longitude = -75.56m,
-        AcceptDataProcessing = true,
         Items = [new() { ProductId = 20, Quantity = 2 }],
     };
 
-    private static PublicStorefrontController Controller(ApplicationDbContext db, int routeSeconds)
+    private static PublicStorefrontController Controller(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000)
     {
         var routeService = new Mock<IGoogleRoutesDrivingMetricsService>();
         routeService
             .Setup(x => x.ComputeRouteAsync(It.IsAny<IReadOnlyList<(double Latitude, double Longitude)>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new DrivingRouteMetrics(8_000, routeSeconds, 0, 0));
+            .ReturnsAsync(new DrivingRouteMetrics(routeDistanceMeters, routeSeconds, 0, 0));
         var geocoder = new GoogleAddressGeocoder(
             new HttpClient(new GeocodingHandler()),
             Options.Create(new GoogleMapsRouteOptions { GeocodingApiKey = "test" }));

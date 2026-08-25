@@ -28,6 +28,10 @@ public sealed class PublicStorefrontController(
 {
     private const int PreparationMinutes = 20;
     private const int CoverageTravelMinutes = 30;
+    private const int CoverageDistanceMeters = 5_000;
+    private const int DeliveryBaseDistanceMeters = 2_000;
+    private const int DeliveryBaseFee = 3_000;
+    private const int DeliveryFeePerAdditionalKilometer = 1_000;
     private const int MaxWhatsAppMessageLength = 3500;
     private static readonly HashSet<string> PublicRoles = ["rice", "combo", "beverage", "addition"];
     private static readonly HashSet<string> MainRoles = ["rice", "combo"];
@@ -51,7 +55,7 @@ public sealed class PublicStorefrontController(
 
         var branches = await EligibleBranchesQuery()
             .OrderBy(x => x.Name)
-            .Select(x => new PublicBranchDto(x.Id, x.Name, x.Address))
+            .Select(x => new PublicBranchDto(x.Id, x.Name, x.Address, x.Latitude!.Value, x.Longitude!.Value))
             .ToListAsync(cancellationToken);
 
         var result = new PublicCatalogDto(
@@ -63,7 +67,8 @@ public sealed class PublicStorefrontController(
             branches,
             AllowedCities,
             PreparationMinutes,
-            CoverageTravelMinutes);
+            CoverageTravelMinutes,
+            CoverageDistanceMeters);
 
         return Ok(ApiResponse<PublicCatalogDto>.SuccessResponse(result));
     }
@@ -94,6 +99,57 @@ public sealed class PublicStorefrontController(
         return Ok(ApiResponse<PublicAddressPreviewDto>.SuccessResponse(result));
     }
 
+    [HttpPost("coverage-preview")]
+    [RequestSizeLimit(8 * 1024)]
+    [EnableRateLimiting("storefront-quote")]
+    public async Task<ActionResult<ApiResponse<PublicCoveragePreviewDto>>> PreviewCoverage(
+        [FromBody] PublicCoveragePreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var concurrencyLease = await concurrencyGate.TryEnter(cancellationToken);
+        if (concurrencyLease is null)
+            return StatusCode(StatusCodes.Status429TooManyRequests,
+                ApiResponse<PublicCoveragePreviewDto>.ErrorResponse("Hay muchas validaciones en curso. Intenta nuevamente en unos segundos."));
+
+        var normalizedCity = MatchAllowedCity(request.City);
+        if (normalizedCity is null)
+            return BadRequest(ApiResponse<PublicCoveragePreviewDto>.ErrorResponse("La ciudad debe ser Medellín, Bello o Copacabana."));
+
+        var resolved = await ResolveAddressCached(request.Address, request.Latitude, request.Longitude, cancellationToken);
+        if (resolved.Result is null)
+            return BadRequest(ApiResponse<PublicCoveragePreviewDto>.ErrorResponse(resolved.Error ?? "No fue posible validar la ubicación."));
+
+        if (!request.Latitude.HasValue || !request.Longitude.HasValue)
+            return BadRequest(ApiResponse<PublicCoveragePreviewDto>.ErrorResponse("Selecciona y confirma una dirección exacta en Google Maps."));
+
+        if (!AddressMatchesCity(resolved.Result.FormattedAddress, normalizedCity))
+            return BadRequest(ApiResponse<PublicCoveragePreviewDto>.ErrorResponse($"La ubicación confirmada no pertenece a {normalizedCity}."));
+
+        var branchRows = await GetEligibleBranches(cancellationToken);
+        if (branchRows.Count == 0)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                ApiResponse<PublicCoveragePreviewDto>.ErrorResponse("No hay sucursales habilitadas para pedidos web."));
+
+        var routeResults = await GetValidRoutes(
+            branchRows,
+            ((double)resolved.Result.Latitude, (double)resolved.Result.Longitude),
+            cancellationToken);
+        if (routeResults.Count == 0)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                ApiResponse<PublicCoveragePreviewDto>.ErrorResponse("Google Maps no pudo calcular el desplazamiento en este momento."));
+
+        var nearest = routeResults[0];
+        var result = new PublicCoveragePreviewDto(
+            resolved.Result.FormattedAddress,
+            resolved.Result.Latitude,
+            resolved.Result.Longitude,
+            routeResults.Select(x => ToBranchQuote(x, nearest.Branch.Id, nearest.Branch.Id)).ToList(),
+            nearest.Branch.Id,
+            CoverageDistanceMeters,
+            CoverageTravelMinutes);
+        return Ok(ApiResponse<PublicCoveragePreviewDto>.SuccessResponse(result));
+    }
+
     [HttpPost("delivery-quote")]
     [RequestSizeLimit(32 * 1024)]
     [EnableRateLimiting("storefront-quote")]
@@ -106,44 +162,42 @@ public sealed class PublicStorefrontController(
             return StatusCode(StatusCodes.Status429TooManyRequests,
                 ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Hay muchas cotizaciones en curso. Intenta nuevamente en unos segundos."));
 
-        if (!request.AcceptDataProcessing)
-            return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Debes autorizar el tratamiento de datos para gestionar tu solicitud."));
-
-        var normalizedCity = MatchAllowedCity(request.City);
-        if (normalizedCity is null)
-            return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La ciudad debe ser Medellín, Bello o Copacabana."));
+        var fulfillmentType = Normalize(request.FulfillmentType);
+        if (fulfillmentType is not ("delivery" or "pickup"))
+            return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Selecciona si deseas domicilio o recoger en el local."));
 
         var digits = DigitsOnly(request.Phone);
         if (digits.Length is < 10 or > 15)
             return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Ingresa un teléfono válido."));
 
-        var resolved = await ResolveAddressCached(
-            request.Address,
-            request.Latitude,
-            request.Longitude,
-            cancellationToken);
-        if (resolved.Result is null)
-            return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse(resolved.Error ?? "No fue posible validar la ubicación."));
-
-        var confirmedByMap = request.Latitude.HasValue && request.Longitude.HasValue;
-        if (!confirmedByMap && resolved.Result.RequiresConfirmation)
-            return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Selecciona y confirma una dirección exacta en Google Maps."));
-
-        if (!AddressMatchesCity(resolved.Result.FormattedAddress, normalizedCity))
-            return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse($"La ubicación confirmada no pertenece a {normalizedCity}."));
-
-        var branchRows = await EligibleBranchesQuery()
-            .Select(x => new BranchRouteSource(
-                x.Id,
-                x.Name,
-                x.Address,
-                x.Latitude!.Value,
-                x.Longitude!.Value,
-                x.WhatsAppSetting!.DisplayPhoneNumber))
-            .ToListAsync(cancellationToken);
+        var branchRows = await GetEligibleBranches(cancellationToken);
         if (branchRows.Count == 0)
             return StatusCode(StatusCodes.Status503ServiceUnavailable,
                 ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("No hay sucursales habilitadas para pedidos web."));
+
+        GeocodedAddress? resolvedAddress = null;
+        string? normalizedCity = null;
+        if (fulfillmentType == "delivery")
+        {
+            normalizedCity = MatchAllowedCity(request.City);
+            if (normalizedCity is null)
+                return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La ciudad debe ser Medellín, Bello o Copacabana."));
+
+            var resolved = await ResolveAddressCached(request.Address ?? string.Empty, request.Latitude, request.Longitude, cancellationToken);
+            if (resolved.Result is null)
+                return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse(resolved.Error ?? "No fue posible validar la ubicación."));
+
+            if (!request.Latitude.HasValue || !request.Longitude.HasValue)
+                return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Selecciona y confirma una dirección exacta en Google Maps."));
+
+            if (!AddressMatchesCity(resolved.Result.FormattedAddress, normalizedCity))
+                return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse($"La ubicación confirmada no pertenece a {normalizedCity}."));
+            resolvedAddress = resolved.Result;
+        }
+        else if (!request.SelectedBranchId.HasValue || branchRows.All(x => x.Id != request.SelectedBranchId.Value))
+        {
+            return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Selecciona una sucursal habilitada para recoger tu pedido."));
+        }
 
         var productIds = request.Items.Select(x => x.ProductId).Distinct().ToList();
         var products = await db.Products
@@ -155,76 +209,98 @@ public sealed class PublicStorefrontController(
         if (validationError is not null)
             return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse(validationError));
 
-        var destination = ((double)resolved.Result.Latitude, (double)resolved.Result.Longitude);
-        var routeTasks = branchRows.Select(async branch =>
-        {
-            var metrics = await RouteCached(branch, destination, cancellationToken);
-            return new { Branch = branch, Metrics = metrics };
-        });
-        var routeResults = await Task.WhenAll(routeTasks);
-        var validRoutes = routeResults
-            .Where(x => x.Metrics.DurationSeconds > 0)
-            .OrderBy(x => x.Metrics.DurationSeconds)
-            .ToList();
-        if (validRoutes.Count == 0)
-            return StatusCode(StatusCodes.Status503ServiceUnavailable,
-                ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Google Maps no pudo calcular el desplazamiento en este momento."));
-
-        var nearest = validRoutes[0];
-        var selected = validRoutes.FirstOrDefault(x => x.Branch.Id == request.SelectedBranchId) ?? nearest;
-        var selectedTravelMinutes = ToMinutes(selected.Metrics.DurationSeconds);
-        var outsideCoverage = selectedTravelMinutes > CoverageTravelMinutes;
-        var checkout = outsideCoverage ? nearest : selected;
-        var checkoutTravelMinutes = ToMinutes(checkout.Metrics.DurationSeconds);
         var cartLines = request.Items.Select(item =>
         {
             var product = products[item.ProductId];
             return new PublicCartLineDto(product.Id, product.Name, item.Quantity, product.Price, product.Price * item.Quantity, item.Notes?.Trim());
         }).ToList();
         var subtotal = cartLines.Sum(x => x.Subtotal);
-        var promotion = await GetActivePromotion(checkout.Branch.Id, cancellationToken);
+
+        IReadOnlyCollection<PublicBranchQuoteDto> branchOptions;
+        BranchRouteSource checkoutBranch;
+        int recommendedBranchId;
+        int selectedBranchId;
+        int travelMinutes;
+        int distanceMeters;
+        int estimatedDeliveryFee;
+        int checkoutTravelMinutes;
+        int checkoutDeliveryFee;
+        bool outsideCoverage;
+
+        if (fulfillmentType == "delivery")
+        {
+            var routeResults = await GetValidRoutes(
+                branchRows,
+                ((double)resolvedAddress!.Latitude, (double)resolvedAddress.Longitude),
+                cancellationToken);
+            if (routeResults.Count == 0)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Google Maps no pudo calcular el desplazamiento en este momento."));
+
+            var nearest = routeResults[0];
+            var selected = routeResults.FirstOrDefault(x => x.Branch.Id == request.SelectedBranchId) ?? nearest;
+            selectedBranchId = selected.Branch.Id;
+            recommendedBranchId = nearest.Branch.Id;
+            travelMinutes = ToMinutes(selected.Metrics.DurationSeconds);
+            distanceMeters = selected.Metrics.DistanceMeters;
+            estimatedDeliveryFee = EstimateDeliveryFee(distanceMeters);
+            outsideCoverage = !IsWithinCoverage(selected.Metrics);
+            var checkout = outsideCoverage ? nearest : selected;
+            checkoutBranch = checkout.Branch;
+            checkoutTravelMinutes = ToMinutes(checkout.Metrics.DurationSeconds);
+            checkoutDeliveryFee = EstimateDeliveryFee(checkout.Metrics.DistanceMeters);
+            branchOptions = routeResults.Select(x => ToBranchQuote(x, nearest.Branch.Id, selected.Branch.Id)).ToList();
+        }
+        else
+        {
+            checkoutBranch = branchRows.Single(x => x.Id == request.SelectedBranchId!.Value);
+            recommendedBranchId = checkoutBranch.Id;
+            selectedBranchId = checkoutBranch.Id;
+            travelMinutes = 0;
+            distanceMeters = 0;
+            estimatedDeliveryFee = 0;
+            checkoutTravelMinutes = 0;
+            checkoutDeliveryFee = 0;
+            outsideCoverage = false;
+            branchOptions = branchRows
+                .OrderBy(x => x.Name)
+                .Select(x => new PublicBranchQuoteDto(
+                    x.Id, x.Name, x.Address, x.Latitude, x.Longitude, 0, 0, PreparationMinutes, 0, true,
+                    x.Id == checkoutBranch.Id, x.Id == checkoutBranch.Id))
+                .ToList();
+        }
+
+        var promotion = await GetActivePromotion(checkoutBranch.Id, cancellationToken);
         var promotionDto = promotion is null ? null : ToPromotionDto(promotion);
         var message = BuildWhatsAppMessage(
             request,
+            fulfillmentType,
             normalizedCity,
-            resolved.Result.FormattedAddress,
-            resolved.Result.Latitude,
-            resolved.Result.Longitude,
+            resolvedAddress,
             cartLines,
             subtotal,
-            checkout.Branch.Name,
+            checkoutBranch,
             checkoutTravelMinutes,
-            outsideCoverage,
+            checkoutDeliveryFee,
             promotionDto);
         if (message.Length > MaxWhatsAppMessageLength)
             return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("El pedido contiene demasiada información. Reduce las notas e intenta nuevamente."));
-        var whatsappUrl = $"https://wa.me/{DigitsOnly(checkout.Branch.WhatsAppPhone)}?text={Uri.EscapeDataString(message)}";
-
-        var branchOptions = validRoutes.Select(x =>
-        {
-            var travel = ToMinutes(x.Metrics.DurationSeconds);
-            return new PublicBranchQuoteDto(
-                x.Branch.Id,
-                x.Branch.Name,
-                x.Branch.Address,
-                travel,
-                PreparationMinutes + travel,
-                travel <= CoverageTravelMinutes,
-                x.Branch.Id == nearest.Branch.Id,
-                x.Branch.Id == selected.Branch.Id);
-        }).ToList();
+        var whatsappUrl = $"https://wa.me/{DigitsOnly(checkoutBranch.WhatsAppPhone)}?text={Uri.EscapeDataString(message)}";
 
         var result = new PublicDeliveryQuoteDto(
-            resolved.Result.FormattedAddress,
-            resolved.Result.Latitude,
-            resolved.Result.Longitude,
+            fulfillmentType,
+            resolvedAddress?.FormattedAddress,
+            resolvedAddress?.Latitude,
+            resolvedAddress?.Longitude,
             branchOptions,
-            nearest.Branch.Id,
-            selected.Branch.Id,
-            checkout.Branch.Id,
-            selectedTravelMinutes,
+            recommendedBranchId,
+            selectedBranchId,
+            checkoutBranch.Id,
+            distanceMeters,
+            estimatedDeliveryFee,
+            travelMinutes,
             PreparationMinutes,
-            PreparationMinutes + selectedTravelMinutes,
+            PreparationMinutes + travelMinutes,
             outsideCoverage,
             cartLines,
             subtotal,
@@ -243,6 +319,29 @@ public sealed class PublicStorefrontController(
             && x.WhatsAppSetting.IsActive
             && x.WhatsAppSetting.IsVerified
             && x.WhatsAppSetting.DisplayPhoneNumber != "");
+
+    private Task<List<BranchRouteSource>> GetEligibleBranches(CancellationToken cancellationToken) => EligibleBranchesQuery()
+        .Select(x => new BranchRouteSource(
+            x.Id,
+            x.Name,
+            x.Address,
+            x.Latitude!.Value,
+            x.Longitude!.Value,
+            x.WhatsAppSetting!.DisplayPhoneNumber))
+        .ToListAsync(cancellationToken);
+
+    private async Task<List<BranchRouteResult>> GetValidRoutes(
+        IReadOnlyCollection<BranchRouteSource> branches,
+        (double Latitude, double Longitude) destination,
+        CancellationToken cancellationToken)
+    {
+        var routeTasks = branches.Select(async branch =>
+            new BranchRouteResult(branch, await RouteCached(branch, destination, cancellationToken)));
+        return (await Task.WhenAll(routeTasks))
+            .Where(x => x.Metrics.DurationSeconds > 0)
+            .OrderBy(x => x.Metrics.DurationSeconds)
+            .ToList();
+    }
 
     private async Task<(GeocodedAddress? Result, string? Error)> ResolveAddressCached(
         string address,
@@ -392,29 +491,41 @@ public sealed class PublicStorefrontController(
 
     private static string BuildWhatsAppMessage(
         PublicDeliveryQuoteRequest request,
-        string city,
-        string formattedAddress,
-        decimal latitude,
-        decimal longitude,
+        string fulfillmentType,
+        string? city,
+        GeocodedAddress? resolvedAddress,
         IReadOnlyCollection<PublicCartLineDto> lines,
         int subtotal,
-        string branchName,
+        BranchRouteSource branch,
         int travelMinutes,
-        bool outsideCoverage,
+        int estimatedDeliveryFee,
         PublicPromotionDto? promotion)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(outsideCoverage ? "*SOLICITUD FUERA DE COBERTURA*" : "*NUEVO PEDIDO WEB*");
+        sb.AppendLine("*NUEVO PEDIDO WEB*");
         sb.AppendLine();
         sb.AppendLine($"*Cliente:* {SingleLine(request.Name)}");
         sb.AppendLine($"*Teléfono:* {DigitsOnly(request.Phone)}");
-        sb.AppendLine($"*Ciudad:* {city}");
-        sb.AppendLine($"*Dirección confirmada:* {formattedAddress}");
-        if (!string.IsNullOrWhiteSpace(request.AddressAdditionalInfo))
-            sb.AppendLine($"*Datos adicionales:* {SingleLine(request.AddressAdditionalInfo)}");
-        sb.AppendLine($"*Ubicación:* https://www.google.com/maps?q={latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}");
-        sb.AppendLine($"*Sucursal sugerida:* {branchName}");
-        sb.AppendLine($"*Tiempo estimado:* {PreparationMinutes} min de preparación + {travelMinutes} min de desplazamiento = {PreparationMinutes + travelMinutes} min");
+        if (fulfillmentType == "pickup")
+        {
+            sb.AppendLine("*Modalidad:* Recoger en el local");
+            sb.AppendLine($"*Sucursal:* {branch.Name}");
+            sb.AppendLine($"*Dirección de recogida:* {branch.Address}");
+            sb.AppendLine($"*Ubicación de la sede:* {GoogleMapsUrl(branch.Latitude, branch.Longitude)}");
+            sb.AppendLine($"*Tiempo estimado de preparación:* {PreparationMinutes} min");
+        }
+        else
+        {
+            sb.AppendLine("*Modalidad:* Domicilio");
+            sb.AppendLine($"*Ciudad:* {city}");
+            sb.AppendLine($"*Dirección confirmada:* {resolvedAddress!.FormattedAddress}");
+            if (!string.IsNullOrWhiteSpace(request.AddressAdditionalInfo))
+                sb.AppendLine($"*Datos adicionales:* {SingleLine(request.AddressAdditionalInfo)}");
+            sb.AppendLine($"*Ubicación:* {GoogleMapsUrl(resolvedAddress.Latitude, resolvedAddress.Longitude)}");
+            sb.AppendLine($"*Sucursal:* {branch.Name}");
+            sb.AppendLine($"*Tiempo estimado:* {PreparationMinutes} min de preparación + {travelMinutes} min de desplazamiento = {PreparationMinutes + travelMinutes} min");
+            sb.AppendLine($"*Valor estimado del domicilio:* {Money(estimatedDeliveryFee)} (sujeto a confirmación de la sucursal)");
+        }
         sb.AppendLine();
         sb.AppendLine("*Pedido:*");
         foreach (var line in lines)
@@ -426,14 +537,6 @@ public sealed class PublicStorefrontController(
         sb.AppendLine($"*Subtotal:* {Money(subtotal)}");
         if (promotion is not null)
             sb.AppendLine($"*Promoción vigente:* {promotion.Title} (sujeta a validación final)");
-        if (outsideCoverage)
-        {
-            sb.AppendLine();
-            sb.AppendLine("La ubicación supera 30 minutos de desplazamiento. El cliente fue informado de que el envío está sujeto a autorización de la sucursal.");
-        }
-        sb.AppendLine();
-        sb.AppendLine("*Autorización de datos:* aceptada (Política de privacidad v2026-08-24)");
-        sb.AppendLine($"*Autorización de promociones:* {(request.AcceptMarketing ? "aceptada" : "no aceptada")}");
         return sb.ToString().Trim();
     }
 
@@ -455,7 +558,30 @@ public sealed class PublicStorefrontController(
 
     private static string DigitsOnly(string? value) => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
     private static int ToMinutes(int durationSeconds) => (int)Math.Ceiling(durationSeconds / 60m);
+    private static bool IsWithinCoverage(DrivingRouteMetrics metrics) =>
+        metrics.DistanceMeters <= CoverageDistanceMeters && ToMinutes(metrics.DurationSeconds) <= CoverageTravelMinutes;
+    private static int EstimateDeliveryFee(int distanceMeters) => DeliveryBaseFee
+        + Math.Max(0, (int)Math.Ceiling((distanceMeters - DeliveryBaseDistanceMeters) / 1_000m)) * DeliveryFeePerAdditionalKilometer;
+    private static PublicBranchQuoteDto ToBranchQuote(BranchRouteResult route, int recommendedBranchId, int selectedBranchId)
+    {
+        var travelMinutes = ToMinutes(route.Metrics.DurationSeconds);
+        return new PublicBranchQuoteDto(
+            route.Branch.Id,
+            route.Branch.Name,
+            route.Branch.Address,
+            route.Branch.Latitude,
+            route.Branch.Longitude,
+            route.Metrics.DistanceMeters,
+            EstimateDeliveryFee(route.Metrics.DistanceMeters),
+            PreparationMinutes + travelMinutes,
+            travelMinutes,
+            IsWithinCoverage(route.Metrics),
+            route.Branch.Id == recommendedBranchId,
+            route.Branch.Id == selectedBranchId);
+    }
     private static string Money(int value) => value.ToString("C0", CultureInfo.GetCultureInfo("es-CO"));
+    private static string GoogleMapsUrl(decimal latitude, decimal longitude) =>
+        $"https://www.google.com/maps?q={latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}";
     private static string SingleLine(string? value) => string.Join(' ', (value ?? string.Empty)
         .Split(['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     private sealed record BranchRouteSource(
@@ -465,6 +591,7 @@ public sealed class PublicStorefrontController(
         decimal Latitude,
         decimal Longitude,
         string WhatsAppPhone);
+    private sealed record BranchRouteResult(BranchRouteSource Branch, DrivingRouteMetrics Metrics);
 }
 
 public sealed record PublicCatalogDto(
@@ -476,9 +603,10 @@ public sealed record PublicCatalogDto(
     IReadOnlyCollection<PublicBranchDto> Branches,
     IReadOnlyCollection<string> Cities,
     int PreparationMinutes,
-    int CoverageTravelMinutes);
+    int CoverageTravelMinutes,
+    int CoverageDistanceMeters);
 
-public sealed record PublicBranchDto(int Id, string Name, string Address);
+public sealed record PublicBranchDto(int Id, string Name, string Address, decimal Latitude, decimal Longitude);
 public sealed record PublicAddressPreviewDto(
     string FormattedAddress,
     decimal Latitude,
@@ -493,6 +621,21 @@ public sealed class PublicAddressPreviewRequest
     [Required, StringLength(250, MinimumLength = 5)]
     public string Address { get; set; } = string.Empty;
 
+}
+
+public sealed class PublicCoveragePreviewRequest
+{
+    [Required, StringLength(30)]
+    public string City { get; set; } = string.Empty;
+
+    [Required, StringLength(250, MinimumLength = 5)]
+    public string Address { get; set; } = string.Empty;
+
+    [Range(-90, 90)]
+    public decimal? Latitude { get; set; }
+
+    [Range(-180, 180)]
+    public decimal? Longitude { get; set; }
 }
 
 public sealed record PublicProductGroupDto(
@@ -531,17 +674,20 @@ public sealed record PublicPromotionDto(
 
 public sealed class PublicDeliveryQuoteRequest
 {
+    [Required, StringLength(20)]
+    public string FulfillmentType { get; set; } = "delivery";
+
     [Required, StringLength(100, MinimumLength = 2)]
     public string Name { get; set; } = string.Empty;
 
     [Required, StringLength(20, MinimumLength = 10)]
     public string Phone { get; set; } = string.Empty;
 
-    [Required, StringLength(30)]
-    public string City { get; set; } = string.Empty;
+    [StringLength(30)]
+    public string? City { get; set; }
 
-    [Required, StringLength(250, MinimumLength = 5)]
-    public string Address { get; set; } = string.Empty;
+    [StringLength(250, MinimumLength = 5)]
+    public string? Address { get; set; }
 
     [StringLength(160)]
     public string? AddressAdditionalInfo { get; set; }
@@ -554,10 +700,6 @@ public sealed class PublicDeliveryQuoteRequest
 
     public int? SelectedBranchId { get; set; }
 
-    [Range(typeof(bool), "true", "true", ErrorMessage = "Debes autorizar el tratamiento de datos.")]
-    public bool AcceptDataProcessing { get; set; }
-
-    public bool AcceptMarketing { get; set; }
     public List<PublicCartItemRequest> Items { get; set; } = [];
 }
 
@@ -577,11 +719,24 @@ public sealed record PublicBranchQuoteDto(
     int Id,
     string Name,
     string Address,
-    int TravelMinutes,
+    decimal Latitude,
+    decimal Longitude,
+    int DistanceMeters,
+    int EstimatedDeliveryFee,
     int EstimatedTotalMinutes,
+    int TravelMinutes,
     bool IsWithinCoverage,
     bool IsRecommended,
     bool IsSelected);
+
+public sealed record PublicCoveragePreviewDto(
+    string FormattedAddress,
+    decimal Latitude,
+    decimal Longitude,
+    IReadOnlyCollection<PublicBranchQuoteDto> Branches,
+    int RecommendedBranchId,
+    int CoverageDistanceMeters,
+    int CoverageTravelMinutes);
 
 public sealed record PublicCartLineDto(
     int ProductId,
@@ -592,13 +747,16 @@ public sealed record PublicCartLineDto(
     string? Notes);
 
 public sealed record PublicDeliveryQuoteDto(
-    string FormattedAddress,
-    decimal Latitude,
-    decimal Longitude,
+    string FulfillmentType,
+    string? FormattedAddress,
+    decimal? Latitude,
+    decimal? Longitude,
     IReadOnlyCollection<PublicBranchQuoteDto> Branches,
     int RecommendedBranchId,
     int SelectedBranchId,
     int CheckoutBranchId,
+    int DistanceMeters,
+    int EstimatedDeliveryFee,
     int TravelMinutes,
     int PreparationMinutes,
     int EstimatedTotalMinutes,

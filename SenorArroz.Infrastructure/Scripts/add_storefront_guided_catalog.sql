@@ -156,7 +156,7 @@ WHERE p.category_id = c.id
   AND c.name = 'Combos'
   AND p.name IN ('Combochicharrón', 'Costicombo');
 
-WITH vegetarian_profiles AS (
+/*  */WITH vegetarian_profiles AS (
     SELECT cp.branch_id,
            cp.id,
            CASE WHEN NULLIF(BTRIM(cp.photo_url), '') IS NOT NULL THEN 1 ELSE 0 END AS has_photo,
