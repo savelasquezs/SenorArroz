@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using SenorArroz.API.Security;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -23,6 +24,7 @@ public sealed class PublicStorefrontController(
     IGoogleRoutesDrivingMetricsService routes,
     GoogleAddressGeocoder geocoder,
     IClock clock,
+    IBranchBusinessHoursService businessHours,
     IMemoryCache cache,
     StorefrontQuoteConcurrencyGate concurrencyGate) : ControllerBase
 {
@@ -54,6 +56,8 @@ public sealed class PublicStorefrontController(
             .ToListAsync(cancellationToken);
 
         var branchRows = await GetEligibleBranches(cancellationToken);
+        var branchIds = branchRows.Select(x => x.Id).ToList();
+        var hours = await businessHours.GetBusinessHoursMany(branchIds, cancellationToken);
         var branches = branchRows
             .OrderBy(x => x.Name)
             .Select(x => new PublicBranchDto(
@@ -62,7 +66,11 @@ public sealed class PublicStorefrontController(
                 x.Address,
                 x.Latitude,
                 x.Longitude,
-                BuildWhatsAppUrl(x.ContactPhone)))
+                BuildWhatsAppUrl(x.ContactPhone),
+                hours[x.Id]
+                    .Select(hour => new PublicBranchBusinessHourDto(
+                        hour.DayOfWeek, hour.OpenTime, hour.CloseTime, hour.IsClosed, hour.DisplayOrder))
+                    .ToList()))
             .ToList();
 
         var result = new PublicCatalogDto(
@@ -181,6 +189,36 @@ public sealed class PublicStorefrontController(
         if (branchRows.Count == 0)
             return StatusCode(StatusCodes.Status503ServiceUnavailable,
                 ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("No hay sucursales habilitadas para pedidos web."));
+
+        var hoursEvaluation = await businessHours.EvaluateMany(branchRows.Select(x => x.Id), clock.UtcNow, cancellationToken);
+        if (fulfillmentType == "pickup")
+        {
+            var requestedBranch = branchRows.FirstOrDefault(x => x.Id == request.SelectedBranchId);
+            if (requestedBranch is null)
+                return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Selecciona una sucursal habilitada para recoger tu pedido."));
+            var evaluation = hoursEvaluation[requestedBranch.Id];
+            if (!evaluation.IsConfigured)
+                return Conflict(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse($"{requestedBranch.Name} no tiene un horario de atención válido y no puede recibir pedidos web."));
+            if (!evaluation.IsOpen)
+                return Conflict(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse(ClosedBranchMessage(requestedBranch.Name, evaluation.NextOpeningAtUtc)));
+        }
+        else
+        {
+            var openBranches = branchRows.Where(x => hoursEvaluation[x.Id].IsConfigured && hoursEvaluation[x.Id].IsOpen).ToList();
+            if (openBranches.Count == 0)
+            {
+                var nextOpening = hoursEvaluation.Values
+                    .Where(x => x.IsConfigured && x.NextOpeningAtUtc.HasValue)
+                    .Select(x => x.NextOpeningAtUtc!.Value)
+                    .DefaultIfEmpty()
+                    .Min();
+                var closedMessage = nextOpening == default
+                    ? "En este momento no hay sedes con horario válido disponibles para recibir pedidos web."
+                    : $"En este momento todas nuestras sedes están cerradas. Volvemos a atender {FormatOpening(nextOpening)}.";
+                return Conflict(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse(closedMessage));
+            }
+            branchRows = openBranches;
+        }
 
         GeocodedAddress? resolvedAddress = null;
         string? normalizedCity = null;
@@ -566,6 +604,16 @@ public sealed class PublicStorefrontController(
         return digits.Length == 10 ? $"57{digits}" : digits;
     }
     private static string BuildWhatsAppUrl(string phone) => $"https://wa.me/{WhatsAppDigits(phone)}";
+
+    private static string ClosedBranchMessage(string branchName, DateTime? nextOpeningAtUtc) => nextOpeningAtUtc.HasValue
+        ? $"{branchName} está fuera de su horario de atención. Vuelve a recibir pedidos {FormatOpening(nextOpeningAtUtc.Value)}."
+        : $"{branchName} está fuera de su horario de atención y no tiene una próxima apertura disponible.";
+
+    private static string FormatOpening(DateTime openingAtUtc)
+    {
+        var local = ColombiaTimeHelper.GetNowInColombiaFromUtc(openingAtUtc);
+        return local.ToString("dddd d 'de' MMMM 'a las' h:mm tt", CultureInfo.GetCultureInfo("es-CO"));
+    }
     private static int ToMinutes(int durationSeconds) => (int)Math.Ceiling(durationSeconds / 60m);
     private static bool IsWithinCoverage(DrivingRouteMetrics metrics) =>
         metrics.DistanceMeters <= CoverageDistanceMeters && ToMinutes(metrics.DurationSeconds) <= CoverageTravelMinutes;
@@ -622,7 +670,14 @@ public sealed record PublicBranchDto(
     string Address,
     decimal Latitude,
     decimal Longitude,
-    string ContactWhatsAppUrl);
+    string ContactWhatsAppUrl,
+    IReadOnlyCollection<PublicBranchBusinessHourDto> BusinessHours);
+public sealed record PublicBranchBusinessHourDto(
+    DayOfWeek DayOfWeek,
+    TimeOnly? OpenTime,
+    TimeOnly? CloseTime,
+    bool IsClosed,
+    int DisplayOrder);
 public sealed record PublicAddressPreviewDto(
     string FormattedAddress,
     decimal Latitude,

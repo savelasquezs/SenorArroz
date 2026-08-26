@@ -305,6 +305,15 @@ Reglas:
 - Si el horario está ausente o es inválido, se conserva el flujo normal de atención automática y se registra una advertencia.
 - Los mensajes ignorados por cierre no se reprocesan ni reciben una respuesta retroactiva al abrir.
 
+### Storefront público
+
+- El catálogo público expone el horario semanal real de cada sede activa elegible.
+- Las páginas públicas de sedes muestran los siete días del horario y resaltan el día actual en Colombia. Cuando la sede está abierta informan la hora de cierre de hoy; cuando el día está cerrado lo indican explícitamente. El estado no sustituye el detalle semanal.
+- Las sedes cerradas siguen siendo visibles, pero solo las sedes abiertas con los siete días válidamente configurados participan en cotizaciones de domicilio o recogida.
+- La apertura es inclusiva y el cierre exclusivo según la hora local de Colombia. No existe un cierre anticipado basado en el tiempo de preparación.
+- Un horario ausente, incompleto, inválido o con todos los días cerrados bloquea los pedidos web para esa sede.
+- El backend revalida el horario tanto al cotizar como inmediatamente antes de generar y abrir el enlace de WhatsApp. Si la sede cerró, el envío se bloquea y se informa la próxima apertura cuando exista.
+
 ## Impresión POS
 
 Reglas:

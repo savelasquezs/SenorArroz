@@ -65,6 +65,21 @@ public class WhatsAppAwayMessageTests
     }
 
     [Fact]
+    public async Task BusinessHours_EvaluatesManyBranchesInOneResult()
+    {
+        await using var db = Db();
+        AddWeeklySchedule(db, includeWeekend: true);
+        await db.SaveChangesAsync();
+
+        var result = await new BranchBusinessHoursService(db)
+            .EvaluateMany([1, 2], Utc(2026, 7, 27, 14, 0));
+
+        Assert.True(result[1].IsConfigured);
+        Assert.True(result[1].IsOpen);
+        Assert.False(result[2].IsConfigured);
+    }
+
+    [Fact]
     public void Template_RendersKnownVariablesAndRejectsUnknownOrIncompleteOnes()
     {
         var service = new WhatsAppAwayMessageService();

@@ -69,6 +69,7 @@ UpdatedAt
 | Entidad | Tenant-owned | Backfill sugerido |
 |---|---:|---|
 | Branch | Sí | Tenant inicial `1` |
+| BranchBusinessHour | Sí | Desde `Branch.TenantId` |
 | BranchPrintSettings | Sí | Desde `Branch.TenantId` |
 | BranchInformalLoan | Sí | Desde `Branch.TenantId` |
 | BranchInformalLoanExemptOrder | Sí | Desde Branch/Order según relación |
@@ -78,6 +79,7 @@ UpdatedAt
 | UserDeviceToken | Sí | Desde `User.TenantId` |
 
 - `Branch.IsActive` (`branch.is_active`) determina si la sucursal participa en el storefront público. Se instala con `SenorArroz.Infrastructure/Scripts/add_branch_active_storefront.sql` y su valor por defecto es `true`.
+- `BranchBusinessHour` se persiste en `branch_business_hour`, con una fila única por `(branch_id, day_of_week)`; el panel administrativo, el catálogo público y la validación previa a WhatsApp comparten esta fuente.
 - El storefront público actual es una excepción single-tenant: no debe habilitarse para otro negocio hasta que productos, categorías, promociones y sucursales se filtren obligatoriamente por `tenant_id` resuelto en servidor.
 
 Notas:

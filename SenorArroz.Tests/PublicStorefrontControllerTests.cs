@@ -11,6 +11,7 @@ using Moq;
 using SenorArroz.API.Controllers;
 using SenorArroz.API.Security;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Data;
@@ -48,6 +49,7 @@ public class PublicStorefrontControllerTests
         Assert.Equal("Arroces", group.CategoryName);
         Assert.Equal("available", product.AvailabilityStatus);
         Assert.Null(typeof(PublicProductOptionDto).GetProperty("Stock"));
+        Assert.Equal(7, Assert.Single(response.Data.Branches).BusinessHours.Count);
     }
 
     [Fact]
@@ -89,6 +91,8 @@ public class PublicStorefrontControllerTests
         Assert.Equal(2, response.Data!.Branches.Count);
         var branch = response.Data.Branches.Single(x => x.Id == 15);
         Assert.Equal("https://wa.me/573017654321", branch.ContactWhatsAppUrl);
+        Assert.Equal(7, branch.BusinessHours.Count);
+        Assert.All(branch.BusinessHours, hour => Assert.True(hour.IsClosed));
     }
 
     [Fact]
@@ -220,6 +224,92 @@ public class PublicStorefrontControllerTests
         Assert.Contains("Recoger en el local", message);
         Assert.Contains("Calle 1", message);
         Assert.DoesNotContain("Autorización", message);
+    }
+
+    [Fact]
+    public async Task Quote_RejectsPickupWhenBranchIsClosed()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        var sunday = db.BranchBusinessHours.Local.Single(x => x.DayOfWeek == DayOfWeek.Sunday);
+        sunday.IsClosed = true;
+        sunday.OpenTime = null;
+        sunday.CloseTime = null;
+        await db.SaveChangesAsync();
+        var request = Request();
+        request.FulfillmentType = "pickup";
+        request.City = null;
+        request.Address = null;
+        request.Latitude = null;
+        request.Longitude = null;
+        request.SelectedBranchId = 10;
+
+        var action = await Controller(db, 1800).Quote(request, default);
+
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<ConflictObjectResult>(action.Result).Value);
+        Assert.Contains("fuera de su horario", response.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Quote_RejectsDeliveryWhenNoBranchHasConfiguredHours()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        db.BranchBusinessHours.RemoveRange(db.BranchBusinessHours.Local);
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 1800).Quote(Request(), default);
+
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<ConflictObjectResult>(action.Result).Value);
+        Assert.Contains("horario válido", response.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Quote_DeliveryUsesOnlyOpenBranches()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        var closedSunday = db.BranchBusinessHours.Local.Single(x => x.BranchId == 10 && x.DayOfWeek == DayOfWeek.Sunday);
+        closedSunday.IsClosed = true;
+        closedSunday.OpenTime = null;
+        closedSunday.CloseTime = null;
+        var openBranch = new Branch { Id = 15, Name = "La 80", Address = "Calle 80", Phone1 = "3017654321", Latitude = 6.27m, Longitude = -75.59m, IsActive = true };
+        db.Branches.Add(openBranch);
+        db.BranchBusinessHours.AddRange(Enum.GetValues<DayOfWeek>().Select((day, index) => new BranchBusinessHour
+        {
+            BranchId = openBranch.Id,
+            Branch = openBranch,
+            DayOfWeek = day,
+            OpenTime = new TimeOnly(8, 0),
+            CloseTime = new TimeOnly(22, 0),
+            DisplayOrder = index,
+        }));
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 1800).Quote(Request(), default);
+
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.Equal(15, response.Data!.CheckoutBranchId);
+        Assert.Equal(15, Assert.Single(response.Data.Branches).Id);
+    }
+
+    [Fact]
+    public async Task Quote_RejectsFinalValidationAfterBranchCloses()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        await db.SaveChangesAsync();
+        var first = await Controller(db, 1800).Quote(Request(), default);
+        Assert.IsType<OkObjectResult>(first.Result);
+        var sunday = db.BranchBusinessHours.Single(x => x.BranchId == 10 && x.DayOfWeek == DayOfWeek.Sunday);
+        sunday.IsClosed = true;
+        sunday.OpenTime = null;
+        sunday.CloseTime = null;
+        await db.SaveChangesAsync();
+
+        var second = await Controller(db, 1800).Quote(Request(), default);
+
+        Assert.IsType<ConflictObjectResult>(second.Result);
     }
 
     [Theory]
@@ -366,6 +456,7 @@ public class PublicStorefrontControllerTests
             routeService.Object,
             geocoder,
             new FakeClock(Now),
+            new BranchBusinessHoursService(db),
             new MemoryCache(Options.Create(new MemoryCacheOptions())),
             new StorefrontQuoteConcurrencyGate(configuration));
     }
@@ -402,6 +493,15 @@ public class PublicStorefrontControllerTests
             setting,
             category,
             new Product { Id = 20, CategoryId = category.Id, Category = category, Name = "Arroz paisa", Price = 50_000, Stock = 10, Active = true });
+        db.BranchBusinessHours.AddRange(Enum.GetValues<DayOfWeek>().Select((day, index) => new BranchBusinessHour
+        {
+            BranchId = branch.Id,
+            Branch = branch,
+            DayOfWeek = day,
+            OpenTime = new TimeOnly(8, 0),
+            CloseTime = new TimeOnly(22, 0),
+            DisplayOrder = index,
+        }));
     }
 
     private static ApplicationDbContext CreateDb() => new(
