@@ -349,6 +349,7 @@ public sealed class PublicStorefrontController(
             outsideCoverage,
             cartLines,
             subtotal,
+            subtotal + checkoutDeliveryFee,
             promotionDto,
             whatsappUrl);
 
@@ -576,7 +577,16 @@ public sealed class PublicStorefrontController(
             if (!string.IsNullOrWhiteSpace(line.Notes))
                 sb.AppendLine($"  Nota: {SingleLine(line.Notes)}");
         }
-        sb.AppendLine($"*Subtotal:* {Money(subtotal)}");
+        sb.AppendLine($"*Subtotal de productos:* {Money(subtotal)}");
+        if (fulfillmentType == "delivery")
+        {
+            sb.AppendLine($"*Domicilio estimado desde {branch.Name}:* {Money(estimatedDeliveryFee)}");
+            sb.AppendLine($"*Total estimado:* {Money(subtotal + estimatedDeliveryFee)}");
+        }
+        else
+        {
+            sb.AppendLine($"*Total:* {Money(subtotal)}");
+        }
         if (promotion is not null)
             sb.AppendLine($"*Promoción vigente:* {promotion.Title} (sujeta a validación final)");
         return sb.ToString().Trim();
@@ -841,6 +851,7 @@ public sealed record PublicDeliveryQuoteDto(
     bool IsOutsideCoverage,
     IReadOnlyCollection<PublicCartLineDto> Items,
     int Subtotal,
+    int Total,
     PublicPromotionDto? Promotion,
     string WhatsAppUrl);
 

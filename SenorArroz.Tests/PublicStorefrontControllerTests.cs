@@ -362,11 +362,14 @@ public class PublicStorefrontControllerTests
         Assert.Equal(30, response.Data.TravelMinutes);
         Assert.Equal(4_000, response.Data.DistanceMeters);
         Assert.Equal(5_000, response.Data.EstimatedDeliveryFee);
+        Assert.Equal(response.Data.Subtotal + 5_000, response.Data.Total);
         Assert.Equal(20, response.Data.PreparationMinutes);
         Assert.Equal(50, response.Data.EstimatedTotalMinutes);
         Assert.Equal("encoded-route", Assert.Single(response.Data.Branches).RoutePolyline);
         var message = Uri.UnescapeDataString(response.Data.WhatsAppUrl);
         Assert.Contains("Valor estimado del domicilio", message);
+        Assert.Contains("*Domicilio estimado desde Santander:*", message);
+        Assert.Contains("*Total estimado:*", message);
         Assert.DoesNotContain("Autorización", message);
         Assert.Contains("Torre A, apartamento 202", message);
     }
