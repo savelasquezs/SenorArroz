@@ -368,7 +368,8 @@ public class PublicStorefrontControllerTests
         Assert.Equal("encoded-route", Assert.Single(response.Data.Branches).RoutePolyline);
         var message = Uri.UnescapeDataString(response.Data.WhatsAppUrl);
         Assert.Contains("Valor estimado del domicilio", message);
-        Assert.Contains("*Domicilio estimado desde Santander:*", message);
+        Assert.Contains("*Subtotal:*", message);
+        Assert.Contains("*Domicilio:*", message);
         Assert.Contains("*Total estimado:*", message);
         Assert.DoesNotContain("Autorización", message);
         Assert.Contains("Torre A, apartamento 202", message);

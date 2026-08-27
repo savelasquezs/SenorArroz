@@ -577,10 +577,10 @@ public sealed class PublicStorefrontController(
             if (!string.IsNullOrWhiteSpace(line.Notes))
                 sb.AppendLine($"  Nota: {SingleLine(line.Notes)}");
         }
-        sb.AppendLine($"*Subtotal de productos:* {Money(subtotal)}");
+        sb.AppendLine($"*Subtotal:* {Money(subtotal)}");
         if (fulfillmentType == "delivery")
         {
-            sb.AppendLine($"*Domicilio estimado desde {branch.Name}:* {Money(estimatedDeliveryFee)}");
+            sb.AppendLine($"*Domicilio:* {Money(estimatedDeliveryFee)}");
             sb.AppendLine($"*Total estimado:* {Money(subtotal + estimatedDeliveryFee)}");
         }
         else
