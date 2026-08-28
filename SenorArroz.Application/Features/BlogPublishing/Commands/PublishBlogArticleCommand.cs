@@ -34,7 +34,11 @@ public sealed class PublishBlogArticleHandler
         CancellationToken cancellationToken)
     {
         var preview = await _notionBlogClient.GetPreviewAsync(request.NotionPageId, cancellationToken);
-        Validate(preview);
+        var publishedPosts = await _repository.GetPublishedAsync(cancellationToken);
+        var existingPost = publishedPosts.FirstOrDefault(x =>
+            string.Equals(x.NotionPageId, preview.NotionPageId, StringComparison.OrdinalIgnoreCase));
+
+        Validate(preview, existingPost is not null);
 
         var existingSlug = await _repository.GetBySlugAsync(preview.Slug, cancellationToken);
         if (existingSlug is not null
@@ -54,7 +58,7 @@ public sealed class PublishBlogArticleHandler
             KeywordPrincipal = preview.KeywordPrincipal?.Trim(),
             Intent = preview.Intent?.Trim(),
             ContentJson = JsonSerializer.Serialize(preview.Blocks),
-            PublishedAt = now,
+            PublishedAt = existingPost?.PublishedAt ?? now,
         };
 
         var saved = await _repository.UpsertAsync(post, cancellationToken);
@@ -76,10 +80,20 @@ public sealed class PublishBlogArticleHandler
         return new BlogPublishResultDto(BlogPublishedPostDto.FromEntity(saved), publicUrl, warnings);
     }
 
-    private static void Validate(BlogArticlePreviewDto preview)
+    private static void Validate(BlogArticlePreviewDto preview, bool isRepublish)
     {
-        if (!string.Equals(preview.State, "Aprobado", StringComparison.Ordinal) || !preview.HumanReviewed)
-            throw new BusinessException("Solo se pueden publicar artículos aprobados y con revisión humana marcada.");
+        if (!preview.HumanReviewed)
+            throw new BusinessException("El artículo debe tener marcada la revisión humana antes de publicarse.");
+
+        var validState = string.Equals(preview.State, "Aprobado", StringComparison.Ordinal)
+            || (isRepublish && string.Equals(preview.State, "Publicado", StringComparison.Ordinal));
+        if (!validState)
+        {
+            throw new BusinessException(isRepublish
+                ? "Para republicar, el artículo debe estar en estado Publicado o Aprobado."
+                : "Solo se pueden publicar artículos aprobados y con revisión humana marcada.");
+        }
+
         if (string.IsNullOrWhiteSpace(preview.Title))
             throw new BusinessException("El artículo no tiene título.");
         if (preview.Title.Length > 240)
