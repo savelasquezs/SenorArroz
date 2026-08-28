@@ -66,7 +66,6 @@ public sealed class BlogPostRepository : IBlogPostRepository
                 keyword_principal = EXCLUDED.keyword_principal,
                 intent = EXCLUDED.intent,
                 content_json = EXCLUDED.content_json,
-                published_at = EXCLUDED.published_at,
                 updated_at = NOW()
             RETURNING id, tenant_id, notion_page_id, title, slug, meta_title, meta_description,
                       keyword_principal, intent, content_json::text, published_at, created_at, updated_at;
