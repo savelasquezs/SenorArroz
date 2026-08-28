@@ -48,6 +48,25 @@ public sealed record BlogArticlePreviewDto(
     IReadOnlyList<string> Warnings,
     DateTime? LastEditedAt);
 
+public sealed record BlogPublishingQueueItemDto(
+    string NotionPageId,
+    string Title,
+    string Slug,
+    string State,
+    bool HumanReviewed,
+    string? KeywordPrincipal,
+    string? Intent,
+    string? MetaTitle,
+    string? MetaDescription,
+    string? ClientViewUrl,
+    DateTime? LastEditedAt,
+    string PublicationStatus,
+    bool HasUnpublishedChanges,
+    string? PublicUrl,
+    DateTime? PublishedAt,
+    DateTime? PublishedUpdatedAt,
+    string? CheckError);
+
 public sealed record BlogPublishedPostSummaryDto(
     int Id,
     string Title,
