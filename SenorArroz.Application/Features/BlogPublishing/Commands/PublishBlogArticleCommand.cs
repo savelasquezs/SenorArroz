@@ -36,6 +36,13 @@ public sealed class PublishBlogArticleHandler
         var preview = await _notionBlogClient.GetPreviewAsync(request.NotionPageId, cancellationToken);
         Validate(preview);
 
+        var existingSlug = await _repository.GetBySlugAsync(preview.Slug, cancellationToken);
+        if (existingSlug is not null
+            && !string.Equals(existingSlug.NotionPageId, preview.NotionPageId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new BusinessException("Ya existe otro artículo publicado con ese slug. Corrige el Slug en Notion antes de publicar.");
+        }
+
         var now = DateTime.UtcNow;
         var post = new BlogPost
         {
