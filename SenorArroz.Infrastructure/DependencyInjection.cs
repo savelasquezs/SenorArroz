@@ -51,6 +51,8 @@ public static class DependencyInjection
         });
         services.AddSingleton<IFirebaseGcsStorage, FirebaseGcsStorageService>();
         services.AddScoped<IBusinessDocumentStorage, BusinessDocumentStorage>();
+        services.AddSingleton<IBlogPublishingConfiguration, BlogPublishingConfiguration>();
+        services.AddHttpClient<INotionBlogClient, NotionBlogClient>(client => client.Timeout = TimeSpan.FromSeconds(20));
 
         // FCM Push Notifications
         services.AddHttpClient<FcmPushService>();
@@ -103,6 +105,7 @@ public static class DependencyInjection
         // Repositories
         services.AddScoped<IBranchRepository, BranchRepository>();
         services.AddScoped<IBusinessDocumentRepository, BusinessDocumentRepository>();
+        services.AddScoped<IBlogPostRepository, BlogPostRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IAuthRepository, AuthRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
