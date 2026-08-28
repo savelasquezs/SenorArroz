@@ -3,13 +3,15 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BlogPublishing.DTOs;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Shared.Models;
 
 namespace SenorArroz.Application.Features.BlogPublishing.Queries;
 
-public sealed record GetBlogPublishingQueueQuery : IRequest<IReadOnlyList<BlogPublishingQueueItemDto>>;
+public sealed record GetBlogPublishingQueueQuery(int Page = 1, int PageSize = 30)
+    : IRequest<PagedResult<BlogPublishingQueueItemDto>>;
 
 public sealed class GetBlogPublishingQueueHandler
-    : IRequestHandler<GetBlogPublishingQueueQuery, IReadOnlyList<BlogPublishingQueueItemDto>>
+    : IRequestHandler<GetBlogPublishingQueueQuery, PagedResult<BlogPublishingQueueItemDto>>
 {
     private readonly INotionBlogClient _notionBlogClient;
     private readonly IBlogPostRepository _repository;
@@ -25,10 +27,12 @@ public sealed class GetBlogPublishingQueueHandler
         _configuration = configuration;
     }
 
-    public async Task<IReadOnlyList<BlogPublishingQueueItemDto>> Handle(
+    public async Task<PagedResult<BlogPublishingQueueItemDto>> Handle(
         GetBlogPublishingQueueQuery request,
         CancellationToken cancellationToken)
     {
+        var page = Math.Max(1, request.Page);
+        var pageSize = Math.Clamp(request.PageSize, 1, 100);
         var approved = await _notionBlogClient.GetApprovedArticlesAsync(cancellationToken);
         var published = await _repository.GetPublishedAsync(cancellationToken);
         var result = new List<BlogPublishingQueueItemDto>(approved.Count + published.Count);
@@ -120,11 +124,23 @@ public sealed class GetBlogPublishingQueueHandler
             }
         }
 
-        return result
+        var ordered = result
             .OrderBy(x => StatusOrder(x.PublicationStatus))
             .ThenByDescending(x => x.LastEditedAt ?? x.PublishedUpdatedAt ?? DateTime.MinValue)
             .ThenBy(x => x.Title, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
+        var totalCount = ordered.Length;
+        var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
+        var items = ordered.Skip((page - 1) * pageSize).Take(pageSize).ToArray();
+
+        return new PagedResult<BlogPublishingQueueItemDto>
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages,
+        };
     }
 
     private static int StatusOrder(string status) => status switch
