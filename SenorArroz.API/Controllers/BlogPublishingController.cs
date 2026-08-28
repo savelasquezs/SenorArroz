@@ -61,11 +61,11 @@ public sealed class PublicBlogController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<IReadOnlyList<BlogPublishedPostDto>>>> GetPosts(
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<BlogPublishedPostSummaryDto>>>> GetPosts(
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetPublishedBlogPostsQuery(), cancellationToken);
-        return Ok(ApiResponse<IReadOnlyList<BlogPublishedPostDto>>.SuccessResponse(result));
+        return Ok(ApiResponse<IReadOnlyList<BlogPublishedPostSummaryDto>>.SuccessResponse(result));
     }
 
     [HttpGet("{slug}")]
