@@ -4,10 +4,10 @@ using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Application.Features.BlogPublishing.Queries;
 
-public sealed record GetPublishedBlogPostsQuery : IRequest<IReadOnlyList<BlogPublishedPostDto>>;
+public sealed record GetPublishedBlogPostsQuery : IRequest<IReadOnlyList<BlogPublishedPostSummaryDto>>;
 
 public sealed class GetPublishedBlogPostsHandler
-    : IRequestHandler<GetPublishedBlogPostsQuery, IReadOnlyList<BlogPublishedPostDto>>
+    : IRequestHandler<GetPublishedBlogPostsQuery, IReadOnlyList<BlogPublishedPostSummaryDto>>
 {
     private readonly IBlogPostRepository _repository;
 
@@ -16,12 +16,12 @@ public sealed class GetPublishedBlogPostsHandler
         _repository = repository;
     }
 
-    public async Task<IReadOnlyList<BlogPublishedPostDto>> Handle(
+    public async Task<IReadOnlyList<BlogPublishedPostSummaryDto>> Handle(
         GetPublishedBlogPostsQuery request,
         CancellationToken cancellationToken)
     {
         var posts = await _repository.GetPublishedAsync(cancellationToken);
-        return posts.Select(BlogPublishedPostDto.FromEntity).ToArray();
+        return posts.Select(BlogPublishedPostSummaryDto.FromEntity).ToArray();
     }
 }
 
