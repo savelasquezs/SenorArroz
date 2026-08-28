@@ -48,6 +48,27 @@ public sealed record BlogArticlePreviewDto(
     IReadOnlyList<string> Warnings,
     DateTime? LastEditedAt);
 
+public sealed record BlogPublishedPostSummaryDto(
+    int Id,
+    string Title,
+    string Slug,
+    string MetaDescription,
+    string? KeywordPrincipal,
+    string? Intent,
+    DateTime PublishedAt,
+    DateTime UpdatedAt)
+{
+    public static BlogPublishedPostSummaryDto FromEntity(BlogPost post) => new(
+        post.Id,
+        post.Title,
+        post.Slug,
+        post.MetaDescription,
+        post.KeywordPrincipal,
+        post.Intent,
+        post.PublishedAt,
+        post.UpdatedAt);
+}
+
 public sealed record BlogPublishedPostDto(
     int Id,
     string Title,
