@@ -64,8 +64,8 @@ public sealed class GetBlogPublishingQueueHandler
             try
             {
                 var preview = await _notionBlogClient.GetPreviewAsync(post.NotionPageId, cancellationToken);
-                var currentFingerprint = BlogContentFingerprint.Compute(preview);
-                var publishedFingerprint = BlogContentFingerprint.Compute(post);
+                var currentFingerprint = global::SenorArroz.Application.Features.BlogPublishing.BlogContentFingerprint.Compute(preview);
+                var publishedFingerprint = global::SenorArroz.Application.Features.BlogPublishing.BlogContentFingerprint.Compute(post);
                 var hasChanges = !string.Equals(currentFingerprint, publishedFingerprint, StringComparison.Ordinal);
                 var canRepublish = preview.HumanReviewed
                     && (string.Equals(preview.State, "Publicado", StringComparison.Ordinal)
