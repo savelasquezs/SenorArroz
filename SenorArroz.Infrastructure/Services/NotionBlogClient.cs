@@ -24,28 +24,40 @@ public sealed class NotionBlogClient : INotionBlogClient
         CancellationToken cancellationToken = default)
     {
         EnsureNotionConfigured();
+        var statePropertyType = await GetPropertyTypeAsync("Estado", cancellationToken);
         var result = new List<BlogArticleSummaryDto>();
         string? cursor = null;
 
         do
         {
-            var payload = new
+            var stateFilter = statePropertyType switch
             {
-                filter = new
+                "status" => new Dictionary<string, object> { ["equals"] = "Aprobado" },
+                "select" => new Dictionary<string, object> { ["equals"] = "Aprobado" },
+                _ => throw new BusinessException("La propiedad 'Estado' de Notion debe ser de tipo Estado o Selección."),
+            };
+            var payload = new Dictionary<string, object>
+            {
+                ["filter"] = new
                 {
                     and = new object[]
                     {
-                        new { property = "Estado", select = new { equals = "Aprobado" } },
+                        new Dictionary<string, object>
+                        {
+                            ["property"] = "Estado",
+                            [statePropertyType] = stateFilter,
+                        },
                         new { property = "Revisión humana", checkbox = new { equals = true } },
                     },
                 },
-                sorts = new[]
+                ["sorts"] = new[]
                 {
                     new { timestamp = "last_edited_time", direction = "descending" },
                 },
-                page_size = 100,
-                start_cursor = cursor,
+                ["page_size"] = 100,
             };
+            if (!string.IsNullOrWhiteSpace(cursor))
+                payload["start_cursor"] = cursor;
 
             using var request = CreateRequest(
                 HttpMethod.Post,
@@ -116,11 +128,18 @@ public sealed class NotionBlogClient : INotionBlogClient
         CancellationToken cancellationToken = default)
     {
         EnsureNotionConfigured();
+        var statePropertyType = await GetPropertyTypeAsync("Estado", cancellationToken);
+        var publishedState = statePropertyType switch
+        {
+            "status" => new Dictionary<string, object> { ["status"] = new { name = "Publicado" } },
+            "select" => new Dictionary<string, object> { ["select"] = new { name = "Publicado" } },
+            _ => throw new BusinessException("La propiedad 'Estado' de Notion debe ser de tipo Estado o Selección."),
+        };
         var payload = new
         {
             properties = new Dictionary<string, object>
             {
-                ["Estado"] = new { select = new { name = "Publicado" } },
+                ["Estado"] = publishedState,
                 ["URL publicada"] = new { url = publicUrl },
                 ["Fecha publicación"] = new { date = new { start = publishedAtUtc.ToString("yyyy-MM-dd") } },
             },
@@ -308,11 +327,35 @@ public sealed class NotionBlogClient : INotionBlogClient
 
     private static string ReadSelectProperty(JsonElement page, string propertyName)
     {
-        if (!TryGetProperty(page, propertyName, out var property)
-            || !property.TryGetProperty("select", out var select)
-            || select.ValueKind == JsonValueKind.Null)
+        if (!TryGetProperty(page, propertyName, out var property))
             return string.Empty;
-        return select.TryGetProperty("name", out var name) ? name.GetString() ?? string.Empty : string.Empty;
+
+        foreach (var propertyType in new[] { "status", "select" })
+        {
+            if (property.TryGetProperty(propertyType, out var value) && value.ValueKind != JsonValueKind.Null)
+                return value.TryGetProperty("name", out var name) ? name.GetString() ?? string.Empty : string.Empty;
+        }
+
+        return string.Empty;
+    }
+
+    private async Task<string> GetPropertyTypeAsync(string propertyName, CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(
+            HttpMethod.Get,
+            $"https://api.notion.com/v1/data_sources/{Uri.EscapeDataString(_configuration.NotionDataSourceId)}");
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var document = await ReadJsonAsync(response, "leer la configuración del blog", cancellationToken);
+
+        if (!document.RootElement.TryGetProperty("properties", out var properties)
+            || !properties.TryGetProperty(propertyName, out var property)
+            || !property.TryGetProperty("type", out var type)
+            || type.ValueKind != JsonValueKind.String)
+        {
+            throw new BusinessException($"La fuente de datos de Notion no contiene la propiedad '{propertyName}'.");
+        }
+
+        return type.GetString() ?? string.Empty;
     }
 
     private static bool ReadCheckboxProperty(JsonElement page, string propertyName) =>
