@@ -9,7 +9,7 @@ Notion es la capa editorial. PostgreSQL conserva el snapshot que realmente se pu
 ## Flujo
 
 1. El artículo se prepara en la base editorial de Notion.
-2. Solo se lista en el admin cuando `Estado = Aprobado` y `Revisión humana = true`.
+2. Un artículo nuevo aparece cuando `Estado = Aprobado` y `Revisión humana = true`.
 3. El Superadmin solicita una vista previa.
 4. `RestauranteAPI` vuelve a leer la ficha de Notion y la propiedad `Vista cliente`.
 5. El backend convierte los bloques permitidos a JSON estructurado y reporta bloques incompatibles.
@@ -17,6 +17,26 @@ Notion es la capa editorial. PostgreSQL conserva el snapshot que realmente se pu
 7. El backend valida nuevamente el artículo y hace upsert del snapshot en `blog_post`.
 8. Después de persistir, actualiza Notion a `Publicado`, registra la URL pública y la fecha.
 9. `senorarroz.com` lee exclusivamente los snapshots publicados mediante los endpoints protegidos con la API key del storefront.
+
+## Detección de cambios y republicación
+
+El panel `Blog / SEO` consulta tanto artículos nuevos aprobados como snapshots ya publicados.
+
+Para cada artículo publicado, el backend vuelve a construir la preview actual de Notion y calcula un SHA-256 determinista con título, slug, metadata SEO, keyword, intención y bloques de la `Vista cliente`. También calcula el mismo fingerprint sobre el snapshot guardado en PostgreSQL.
+
+Estados del panel:
+
+- `readyToPublish`: existe en Notion pero todavía no tiene snapshot público.
+- `changesPending`: Notion y PostgreSQL no coinciden; se habilita `Republicar` después de revisar la preview.
+- `upToDate`: ambas versiones coinciden exactamente.
+- `notReady`: existe snapshot, pero el estado editorial o la revisión humana no permiten republicar.
+- `checkFailed`: no fue posible leer/comparar la fuente de Notion.
+
+La comparación ignora `Estado`, `URL publicada`, `Fecha publicación` y timestamps editoriales, por lo que el cambio automático de `Aprobado` a `Publicado` no produce falsos positivos.
+
+Un artículo ya publicado puede republicarse si conserva `Revisión humana = true` y está en `Publicado` o `Aprobado`. La republicación usa el mismo `notion_page_id`, actualiza el snapshot existente y conserva `published_at`.
+
+No se agregan columnas nuevas para esta función: el fingerprint publicado se calcula sobre los datos que ya existen en `blog_post`.
 
 ## Seguridad
 
@@ -79,6 +99,8 @@ La base de datos se actualiza antes que Notion. Si Notion falla después del com
 
 Este repositorio no usa migraciones EF para cambios de esquema.
 
+Para una instalación nueva del módulo:
+
 1. Ejecutar en PostgreSQL/Railway `SenorArroz.Infrastructure/Scripts/add_blog_publishing.sql`.
 2. Verificar que existe `blog_post` y sus índices.
 3. Configurar las variables de entorno de Notion.
@@ -86,4 +108,4 @@ Este repositorio no usa migraciones EF para cambios de esquema.
 5. Desplegar el frontend administrativo.
 6. Desplegar la web pública.
 
-No desplegar el backend nuevo antes de aplicar el script SQL.
+La detección de cambios/republicación no requiere ejecutar SQL adicional sobre instalaciones que ya tienen `blog_post`.
