@@ -21,6 +21,14 @@ public sealed class BlogPublishingController : ControllerBase
         _mediator = mediator;
     }
 
+    [HttpGet("queue")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<BlogPublishingQueueItemDto>>>> GetQueue(
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetBlogPublishingQueueQuery(), cancellationToken);
+        return Ok(ApiResponse<IReadOnlyList<BlogPublishingQueueItemDto>>.SuccessResponse(result));
+    }
+
     [HttpGet("approved")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<BlogArticleSummaryDto>>>> GetApproved(
         CancellationToken cancellationToken)
