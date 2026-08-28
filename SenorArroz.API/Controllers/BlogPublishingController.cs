@@ -22,11 +22,13 @@ public sealed class BlogPublishingController : ControllerBase
     }
 
     [HttpGet("queue")]
-    public async Task<ActionResult<ApiResponse<IReadOnlyList<BlogPublishingQueueItemDto>>>> GetQueue(
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<PagedResult<BlogPublishingQueueItemDto>>>> GetQueue(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 30,
+        CancellationToken cancellationToken = default)
     {
-        var result = await _mediator.Send(new GetBlogPublishingQueueQuery(), cancellationToken);
-        return Ok(ApiResponse<IReadOnlyList<BlogPublishingQueueItemDto>>.SuccessResponse(result));
+        var result = await _mediator.Send(new GetBlogPublishingQueueQuery(page, pageSize), cancellationToken);
+        return Ok(ApiResponse<PagedResult<BlogPublishingQueueItemDto>>.SuccessResponse(result));
     }
 
     [HttpGet("approved")]
