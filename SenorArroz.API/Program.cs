@@ -357,8 +357,12 @@ builder.Services.AddCors(options =>
     });
 });
 
-var globalPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Global:PermitLimit", 200));
+var globalPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Global:PermitLimit", 2000));
 var globalWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Global:WindowSeconds", 60));
+var authenticatedPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Authenticated:PermitLimit", 600));
+var authenticatedWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Authenticated:WindowSeconds", 60));
+var trackingPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:DeliveryTracking:PermitLimit", 120));
+var trackingWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:DeliveryTracking:WindowSeconds", 60));
 var authPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Auth:PermitLimit", 10));
 var authWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:Auth:WindowSeconds", 60));
 var rappiWebhookPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:RappiWebhook:PermitLimit", 600));
@@ -367,6 +371,8 @@ var storefrontCatalogPermit = Math.Max(1, builder.Configuration.GetValue("RateLi
 var storefrontQuotePermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontQuote:PermitLimit", 60));
 var storefrontWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontQuote:WindowSeconds", 60));
 var globalWindow = TimeSpan.FromSeconds(globalWindowSec);
+var authenticatedWindow = TimeSpan.FromSeconds(authenticatedWindowSec);
+var trackingWindow = TimeSpan.FromSeconds(trackingWindowSec);
 var authWindow = TimeSpan.FromSeconds(authWindowSec);
 var rappiWebhookWindow = TimeSpan.FromSeconds(rappiWebhookWindowSec);
 
@@ -382,6 +388,16 @@ builder.Services.AddRateLimiter(options =>
             if (sec > 0)
                 ctx.HttpContext.Response.Headers.RetryAfter = sec.ToString(NumberFormatInfo.InvariantInfo);
         }
+
+        var logger = ctx.HttpContext.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("RateLimiting");
+        logger.LogWarning(
+            "RATE_LIMIT_REJECTED path={Path} userId={UserId} ip={Ip} traceId={TraceId}",
+            ctx.HttpContext.Request.Path.Value,
+            ctx.HttpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+            ctx.HttpContext.Connection.RemoteIpAddress?.ToString(),
+            ctx.HttpContext.TraceIdentifier);
 
         await ctx.HttpContext.Response.WriteAsJsonAsync(new
         {
@@ -460,9 +476,36 @@ builder.Services.AddRateLimiter(options =>
             return RateLimitPartition.GetNoLimiter<string>("exempt");
         }
 
+        var userId = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            if (path.StartsWithSegments("/api/deliverymen/location"))
+            {
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    $"tracking:{userId}",
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        AutoReplenishment = true,
+                        PermitLimit = trackingPermit,
+                        Window = trackingWindow,
+                        QueueLimit = 0
+                    });
+            }
+
+            return RateLimitPartition.GetFixedWindowLimiter(
+                $"user:{userId}",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    AutoReplenishment = true,
+                    PermitLimit = authenticatedPermit,
+                    Window = authenticatedWindow,
+                    QueueLimit = 0
+                });
+        }
+
         var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         return RateLimitPartition.GetFixedWindowLimiter(
-            ip,
+            $"anonymous:{ip}",
             _ => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
