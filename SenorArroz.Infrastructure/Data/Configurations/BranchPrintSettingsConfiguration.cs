@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Infrastructure.Data.Configurations;
 
@@ -33,6 +34,10 @@ public class BranchPrintSettingsConfiguration : IEntityTypeConfiguration<BranchP
         builder.Property(s => s.EnableKitchenJobs).HasColumnName("enable_kitchen_jobs");
         builder.Property(s => s.EnableDeliveryJobs).HasColumnName("enable_delivery_jobs");
         builder.Property(s => s.EnableCashierJobs).HasColumnName("enable_cashier_jobs");
+        builder.Property(s => s.KitchenAutoPrintTrigger)
+            .HasColumnName("kitchen_auto_print_trigger")
+            .HasMaxLength(30)
+            .HasConversion(v => ToDb(v), v => FromDb(v));
         builder.Property(s => s.PrinterQueueKitchen).HasColumnName("printer_queue_kitchen").HasMaxLength(128);
         builder.Property(s => s.PrinterQueueDelivery).HasColumnName("printer_queue_delivery").HasMaxLength(128);
         builder.Property(s => s.PrinterQueueCashier).HasColumnName("printer_queue_cashier").HasMaxLength(128);
@@ -52,4 +57,18 @@ public class BranchPrintSettingsConfiguration : IEntityTypeConfiguration<BranchP
             .HasForeignKey<BranchPrintSettings>(s => s.BranchId)
             .OnDelete(DeleteBehavior.Cascade);
     }
+
+    private static string ToDb(KitchenAutoPrintTrigger value) => value switch
+    {
+        KitchenAutoPrintTrigger.WhenMarkedReady => "when_marked_ready",
+        KitchenAutoPrintTrigger.WhenOrderCreated => "when_order_created",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private static KitchenAutoPrintTrigger FromDb(string value) => value switch
+    {
+        "when_marked_ready" => KitchenAutoPrintTrigger.WhenMarkedReady,
+        "when_order_created" => KitchenAutoPrintTrigger.WhenOrderCreated,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
 }

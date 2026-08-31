@@ -63,6 +63,29 @@ public class PrintQueueServiceTests
         loyaltyRepository.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task Automatic_kitchen_enqueue_is_idempotent_for_order_and_trigger()
+    {
+        await using var db = CreateDb();
+        SeedKitchen(db);
+        var notifier = new RecordingNotifier(db);
+        var service = CreateService(db, notifier);
+
+        var first = await service.EnqueueAutomaticKitchenAsync(
+            1,
+            10,
+            KitchenAutoPrintTrigger.WhenOrderCreated);
+        var second = await service.EnqueueAutomaticKitchenAsync(
+            1,
+            10,
+            KitchenAutoPrintTrigger.WhenOrderCreated);
+
+        Assert.Equal(first.Id, second.Id);
+        Assert.Equal(1, await db.PrintJobs.CountAsync());
+        Assert.Equal(10, first.AutomaticOrderId);
+        Assert.Equal(KitchenAutoPrintTrigger.WhenOrderCreated, first.AutomaticTrigger);
+    }
+
     private static ApplicationDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -95,6 +118,45 @@ public class PrintQueueServiceTests
                 CreatedAt = DateTime.UtcNow,
                 Branch = branch,
             });
+        db.SaveChanges();
+    }
+
+    private static void SeedKitchen(ApplicationDbContext db)
+    {
+        var branch = new Branch { Id = 1, Name = "Sucursal" };
+        var category = new ProductCategory { Id = 1, Name = "Arroces", BranchId = 1 };
+        var product = new Product { Id = 1, Name = "Arroz", CategoryId = 1, Category = category };
+        db.Branches.Add(branch);
+        db.BranchPrintSettings.Add(new BranchPrintSettings
+        {
+            BranchId = 1,
+            Branch = branch,
+            EnableKitchenJobs = true,
+        });
+        db.ProductCategories.Add(category);
+        db.Products.Add(product);
+        db.Orders.Add(new Order
+        {
+            Id = 10,
+            BranchId = 1,
+            TakenById = 1,
+            Type = OrderType.Onsite,
+            Status = OrderStatus.Taken,
+            Total = 20000,
+            CreatedAt = DateTime.UtcNow,
+            Branch = branch,
+            OrderDetails =
+            [
+                new OrderDetail
+                {
+                    Id = 1,
+                    ProductId = 1,
+                    Product = product,
+                    Quantity = 1,
+                    UnitPrice = 20000,
+                }
+            ]
+        });
         db.SaveChanges();
     }
 

@@ -51,6 +51,7 @@ public class ReservationNotificationService : BackgroundService
         var notificationService = scope.ServiceProvider.GetRequiredService<IOrderNotificationService>();
         var mapper = scope.ServiceProvider.GetRequiredService<IMapper>();
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
+        var kitchenAutoPrint = scope.ServiceProvider.GetRequiredService<IKitchenAutoPrintService>();
 
         var now = clock.UtcNow;
         var twoHoursFromNow = now.AddHours(2);
@@ -63,6 +64,9 @@ public class ReservationNotificationService : BackgroundService
 
         foreach (var reservation in reservations)
         {
+            await kitchenAutoPrint.TryEnqueueAsync(
+                reservation,
+                KitchenAutoPrintTrigger.WhenOrderCreated);
             var orderDto = mapper.Map<OrderDto>(reservation);
             await notificationService.NotifyReservationToKitchen(orderDto);
 

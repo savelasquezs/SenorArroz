@@ -22,7 +22,8 @@ public sealed class RappiOrderProcessor(
     IMapper mapper,
     IOrderNotificationService notifications,
     IDeliveryRouteWorkflowService deliveryRouteWorkflow,
-    ILogger<RappiOrderProcessor> logger) : IRappiOrderProcessor
+    ILogger<RappiOrderProcessor> logger,
+    IKitchenAutoPrintService? kitchenAutoPrint = null) : IRappiOrderProcessor
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -242,7 +243,14 @@ public sealed class RappiOrderProcessor(
 
             var fullOrder = await orders.GetByIdWithFullDetailsAsync(order.Id, ct);
             if (fullOrder is not null)
+            {
+                if (kitchenAutoPrint is not null)
+                    await kitchenAutoPrint.TryEnqueueAsync(
+                        fullOrder,
+                        KitchenAutoPrintTrigger.WhenOrderCreated,
+                        ct);
                 await notifications.NotifyNewOrderToKitchen(mapper.Map<OrderDto>(fullOrder));
+            }
             return new(true, external.Id, order.Id);
         }
         catch (DbUpdateException ex)

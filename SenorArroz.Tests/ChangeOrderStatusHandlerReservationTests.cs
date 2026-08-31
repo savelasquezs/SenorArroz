@@ -75,6 +75,8 @@ public class ChangeOrderStatusHandlerReservationTests
         public Task<bool> IsAgentTokenValidAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<PrintJob> EnqueueAsync(int branchId, PrintJobKind kind, IReadOnlyList<int> orderIds, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PrintJob { Id = 1, BranchId = branchId, Kind = kind, Status = PrintJobStatus.Pending });
+        public Task<PrintJob> EnqueueAutomaticKitchenAsync(int branchId, int orderId, KitchenAutoPrintTrigger trigger, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PrintJob { Id = 1, BranchId = branchId, Kind = PrintJobKind.Kitchen, Status = PrintJobStatus.Pending });
         public Task<PrintJob> EnqueueDeliveryAsync(int branchId, IReadOnlyList<int> orderIds, int? deliverymanUserId = null, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PrintJob { Id = 1, BranchId = branchId, Kind = PrintJobKind.Delivery, Status = PrintJobStatus.Pending });
         public Task<PrintJob> EnqueueTestPrintAsync(int branchId, PrintJobKind kind, CancellationToken cancellationToken = default) =>
@@ -103,7 +105,8 @@ public class ChangeOrderStatusHandlerReservationTests
         ICurrentUser? user = null,
         IOrderNotificationService? notifications = null,
         IPrintQueueService? printQueue = null,
-        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null)
+        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null,
+        IKitchenAutoPrintService? kitchenAutoPrint = null)
     {
         var mapper = new MapperConfiguration(cfg =>
         {
@@ -120,7 +123,8 @@ public class ChangeOrderStatusHandlerReservationTests
             printQueue ?? new NullPrintQueue(),
             new NullLoyaltyCycle(),
             NullLogger<ChangeOrderStatusHandler>.Instance,
-            externalDeliveryStatusSync);
+            externalDeliveryStatusSync,
+            kitchenAutoPrint);
     }
 
     private static (Order summary, Order detailed) ReservationPair(int orderId, int? addressId)
@@ -361,13 +365,12 @@ public class ChangeOrderStatusHandlerReservationTests
                 order.Status = OrderStatus.Ready;
                 return order;
             });
-        var printQueue = new Mock<IPrintQueueService>();
-        printQueue.Setup(x => x.EnqueueAsync(
-                order.BranchId,
-                PrintJobKind.Kitchen,
-                It.Is<IReadOnlyList<int>>(ids => ids.SequenceEqual(new[] { orderId })),
+        var kitchenAutoPrint = new Mock<IKitchenAutoPrintService>();
+        kitchenAutoPrint.Setup(x => x.TryEnqueueAsync(
+                order,
+                KitchenAutoPrintTrigger.WhenMarkedReady,
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PrintJob());
+            .ReturnsAsync(true);
         var externalSync = new Mock<IExternalDeliveryStatusSyncService>();
         externalSync.Setup(x => x.SyncReadyForPickupAsync(
                 orderId,
@@ -377,8 +380,8 @@ public class ChangeOrderStatusHandlerReservationTests
             repo.Object,
             new FakeClock(utc),
             new TestCurrentUser(Roles.Admin),
-            printQueue: printQueue.Object,
-            externalDeliveryStatusSync: externalSync.Object);
+            externalDeliveryStatusSync: externalSync.Object,
+            kitchenAutoPrint: kitchenAutoPrint.Object);
 
         var result = await handler.Handle(
             new ChangeOrderStatusCommand
@@ -389,7 +392,7 @@ public class ChangeOrderStatusHandlerReservationTests
             CancellationToken.None);
 
         Assert.Equal(OrderStatus.Ready, result.Status);
-        printQueue.VerifyAll();
+        kitchenAutoPrint.VerifyAll();
         externalSync.VerifyAll();
     }
 

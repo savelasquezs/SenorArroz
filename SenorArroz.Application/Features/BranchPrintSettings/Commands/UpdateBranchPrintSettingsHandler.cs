@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BranchPrintSettings.DTOs;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 
 namespace SenorArroz.Application.Features.BranchPrintSettings.Commands;
@@ -45,6 +46,13 @@ public class UpdateBranchPrintSettingsHandler : IRequestHandler<UpdateBranchPrin
         entity.EnableKitchenJobs = d.EnableKitchenJobs;
         entity.EnableDeliveryJobs = d.EnableDeliveryJobs;
         entity.EnableCashierJobs = d.EnableCashierJobs;
+        if (d.KitchenAutoPrintTrigger.HasValue && !Enum.IsDefined(d.KitchenAutoPrintTrigger.Value))
+            throw new ValidationException(new Dictionary<string, string[]>
+            {
+                [nameof(d.KitchenAutoPrintTrigger)] = ["El momento de impresión automática de cocina no es válido."]
+            });
+        if (d.KitchenAutoPrintTrigger.HasValue)
+            entity.KitchenAutoPrintTrigger = d.KitchenAutoPrintTrigger.Value;
         entity.PrinterQueueKitchen = NullIfWhiteSpace(d.PrinterQueueKitchen);
         entity.PrinterQueueDelivery = NullIfWhiteSpace(d.PrinterQueueDelivery);
         entity.PrinterQueueCashier = NullIfWhiteSpace(d.PrinterQueueCashier);

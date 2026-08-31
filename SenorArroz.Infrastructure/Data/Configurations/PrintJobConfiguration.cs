@@ -35,6 +35,11 @@ public class PrintJobConfiguration : IEntityTypeConfiguration<PrintJob>
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
         builder.Property(j => j.StartedAt).HasColumnName("started_at");
         builder.Property(j => j.CompletedAt).HasColumnName("completed_at");
+        builder.Property(j => j.AutomaticOrderId).HasColumnName("automatic_order_id");
+        builder.Property(j => j.AutomaticTrigger).HasColumnName("automatic_trigger").HasMaxLength(30)
+            .HasConversion(
+                v => v.HasValue ? AutoTriggerToDb(v.Value) : null,
+                v => v == null ? null : AutoTriggerFromDb(v));
 
         builder.HasOne(j => j.Branch)
             .WithMany()
@@ -44,6 +49,11 @@ public class PrintJobConfiguration : IEntityTypeConfiguration<PrintJob>
         builder.HasIndex(j => new { j.BranchId, j.Kind, j.CreatedAt, j.Id })
             .HasDatabaseName("ix_print_job_pending_branch_kind_created")
             .HasFilter("status = 'pending'");
+
+        builder.HasIndex(j => new { j.BranchId, j.Kind, j.AutomaticOrderId, j.AutomaticTrigger })
+            .IsUnique()
+            .HasDatabaseName("ux_print_job_automatic_event")
+            .HasFilter("automatic_order_id IS NOT NULL AND automatic_trigger IS NOT NULL");
     }
 
     private static string KindToDb(PrintJobKind k) => k switch
@@ -78,5 +88,19 @@ public class PrintJobConfiguration : IEntityTypeConfiguration<PrintJob>
         "done" => PrintJobStatus.Done,
         "failed" => PrintJobStatus.Failed,
         _ => throw new ArgumentOutOfRangeException(nameof(v)),
+    };
+
+    private static string AutoTriggerToDb(KitchenAutoPrintTrigger value) => value switch
+    {
+        KitchenAutoPrintTrigger.WhenMarkedReady => "when_marked_ready",
+        KitchenAutoPrintTrigger.WhenOrderCreated => "when_order_created",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    private static KitchenAutoPrintTrigger AutoTriggerFromDb(string value) => value switch
+    {
+        "when_marked_ready" => KitchenAutoPrintTrigger.WhenMarkedReady,
+        "when_order_created" => KitchenAutoPrintTrigger.WhenOrderCreated,
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 }

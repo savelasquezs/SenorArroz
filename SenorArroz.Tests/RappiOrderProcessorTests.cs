@@ -199,6 +199,40 @@ public sealed class RappiOrderProcessorTests
     }
 
     [Fact]
+    public async Task Accepted_order_requests_created_auto_print_only_once()
+    {
+        await using var db = CreateDb();
+        await SeedAsync(db);
+        var rappi = new Mock<IRappiDeliveryProvider>();
+        rappi.Setup(x => x.AcceptOrderAsync("rappi-order-1", 25, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(true, 200));
+        var repository = new Mock<IOrderRepository>();
+        repository.Setup(x => x.GetByIdWithFullDetailsAsync(
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((int id, CancellationToken _) => new Order { Id = id, BranchId = 1 });
+        var autoPrint = new Mock<IKitchenAutoPrintService>();
+        autoPrint.Setup(x => x.TryEnqueueAsync(
+                It.IsAny<Order>(),
+                KitchenAutoPrintTrigger.WhenOrderCreated,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var processor = CreateProcessor(
+            db,
+            rappi.Object,
+            orderRepository: repository.Object,
+            kitchenAutoPrint: autoPrint.Object);
+
+        await processor.IngestNewOrderAsync(1, ValidOrder, CancellationToken.None);
+        await processor.IngestNewOrderAsync(1, ValidOrder, CancellationToken.None);
+
+        autoPrint.Verify(x => x.TryEnqueueAsync(
+            It.IsAny<Order>(),
+            KitchenAutoPrintTrigger.WhenOrderCreated,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Pos_tester_order_accepts_decimal_money_and_optional_rappi_delivery_address()
     {
         await using var db = CreateDb();
@@ -463,7 +497,8 @@ public sealed class RappiOrderProcessorTests
         IOrderRepository? orderRepository = null,
         IMapper? mapper = null,
         IOrderNotificationService? notifications = null,
-        IDeliveryRouteWorkflowService? deliveryRouteWorkflow = null)
+        IDeliveryRouteWorkflowService? deliveryRouteWorkflow = null,
+        IKitchenAutoPrintService? kitchenAutoPrint = null)
     {
         if (orderRepository is null)
         {
@@ -483,6 +518,7 @@ public sealed class RappiOrderProcessorTests
             mapper ?? Mock.Of<IMapper>(),
             notifications ?? Mock.Of<IOrderNotificationService>(),
             deliveryRouteWorkflow ?? Mock.Of<IDeliveryRouteWorkflowService>(),
-            NullLogger<RappiOrderProcessor>.Instance);
+            NullLogger<RappiOrderProcessor>.Instance,
+            kitchenAutoPrint);
     }
 }

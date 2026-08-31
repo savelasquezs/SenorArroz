@@ -23,5 +23,8 @@ public class PrintJob
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
 
+    public int? AutomaticOrderId { get; set; }
+    public KitchenAutoPrintTrigger? AutomaticTrigger { get; set; }
+
     public virtual Branch Branch { get; set; } = null!;
 }

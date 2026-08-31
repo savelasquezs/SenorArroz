@@ -244,6 +244,9 @@ Notas:
 
 - El print agent debe autenticarse contra una sucursal y tenant concretos.
 - Nunca debe leer trabajos de otra sucursal/tenant.
+- `BranchPrintSettings.KitchenAutoPrintTrigger` se almacena en `kitchen_auto_print_trigger` como `when_marked_ready` o `when_order_created`; el primero es el valor predeterminado compatible.
+- `PrintJob.AutomaticOrderId` y `AutomaticTrigger` identifican únicamente impresiones automáticas. El índice parcial único `ux_print_job_automatic_event` evita duplicarlas sin limitar reimpresiones manuales ni pruebas.
+- El esquema se instala con `SenorArroz.Infrastructure/Scripts/add_kitchen_auto_print_trigger.sql` antes de desplegar el backend correspondiente.
 - La recuperación de pendientes usa el índice parcial
   `ix_print_job_pending_branch_kind_created (branch_id, kind, created_at, id)
   WHERE status = 'pending'`. Los scripts de alta y rollback se ejecutan fuera

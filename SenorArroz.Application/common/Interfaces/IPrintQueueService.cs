@@ -9,6 +9,12 @@ public interface IPrintQueueService
 
     Task<PrintJob> EnqueueAsync(int branchId, PrintJobKind kind, IReadOnlyList<int> orderIds, CancellationToken cancellationToken = default);
 
+    Task<PrintJob> EnqueueAutomaticKitchenAsync(
+        int branchId,
+        int orderId,
+        KitchenAutoPrintTrigger trigger,
+        CancellationToken cancellationToken = default);
+
     Task<PrintJob> EnqueueDeliveryAsync(
         int branchId,
         IReadOnlyList<int> orderIds,

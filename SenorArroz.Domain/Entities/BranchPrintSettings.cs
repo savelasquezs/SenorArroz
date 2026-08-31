@@ -1,3 +1,5 @@
+using SenorArroz.Domain.Enums;
+
 namespace SenorArroz.Domain.Entities;
 
 /// <summary>Configuración de impresión de comandas por sucursal (1:1 con Branch).</summary>
@@ -30,6 +32,7 @@ public class BranchPrintSettings
     public bool EnableKitchenJobs { get; set; } = true;
     public bool EnableDeliveryJobs { get; set; } = true;
     public bool EnableCashierJobs { get; set; }
+    public KitchenAutoPrintTrigger KitchenAutoPrintTrigger { get; set; } = KitchenAutoPrintTrigger.WhenMarkedReady;
 
     /// <summary>Nombre exacto de la cola Windows para cocina (desde panel de impresión).</summary>
     public string? PrinterQueueKitchen { get; set; }

@@ -1,3 +1,5 @@
+using SenorArroz.Domain.Enums;
+
 namespace SenorArroz.Application.Features.BranchPrintSettings.DTOs;
 
 public class BranchPrintSettingsDto
@@ -29,6 +31,7 @@ public class BranchPrintSettingsDto
     public bool EnableKitchenJobs { get; set; }
     public bool EnableDeliveryJobs { get; set; }
     public bool EnableCashierJobs { get; set; }
+    public KitchenAutoPrintTrigger KitchenAutoPrintTrigger { get; set; }
 
     public string? PrinterQueueKitchen { get; set; }
     public string? PrinterQueueDelivery { get; set; }

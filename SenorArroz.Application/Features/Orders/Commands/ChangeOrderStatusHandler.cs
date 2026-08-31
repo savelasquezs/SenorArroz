@@ -25,6 +25,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     private readonly ILoyaltyCycleService _loyaltyCycle;
     private readonly ILogger<ChangeOrderStatusHandler> _logger;
     private readonly IExternalDeliveryStatusSyncService? _externalDeliveryStatusSync;
+    private readonly IKitchenAutoPrintService? _kitchenAutoPrint;
 
     public ChangeOrderStatusHandler(
         IOrderRepository orderRepository,
@@ -37,7 +38,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         IPrintQueueService printQueue,
         ILoyaltyCycleService loyaltyCycle,
         ILogger<ChangeOrderStatusHandler> logger,
-        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null)
+        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null,
+        IKitchenAutoPrintService? kitchenAutoPrint = null)
     {
         _orderRepository = orderRepository;
         _context = context;
@@ -50,6 +52,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         _loyaltyCycle = loyaltyCycle;
         _logger = logger;
         _externalDeliveryStatusSync = externalDeliveryStatusSync;
+        _kitchenAutoPrint = kitchenAutoPrint;
     }
 
     public ChangeOrderStatusHandler(
@@ -62,7 +65,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         IPrintQueueService printQueue,
         ILoyaltyCycleService loyaltyCycle,
         ILogger<ChangeOrderStatusHandler> logger,
-        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null)
+        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null,
+        IKitchenAutoPrintService? kitchenAutoPrint = null)
         : this(
             orderRepository,
             context: null!,
@@ -74,7 +78,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             printQueue,
             loyaltyCycle,
             logger,
-            externalDeliveryStatusSync)
+            externalDeliveryStatusSync,
+            kitchenAutoPrint)
     {
     }
 
@@ -385,6 +390,15 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
 
         try
         {
+            if (_kitchenAutoPrint is not null)
+            {
+                await _kitchenAutoPrint.TryEnqueueAsync(
+                    order,
+                    KitchenAutoPrintTrigger.WhenMarkedReady,
+                    cancellationToken);
+                return;
+            }
+
             await _printQueue.EnqueueAsync(
                 order.BranchId,
                 PrintJobKind.Kitchen,

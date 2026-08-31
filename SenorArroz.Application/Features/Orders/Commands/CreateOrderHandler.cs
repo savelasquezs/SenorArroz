@@ -19,6 +19,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     private readonly ICurrentUser _currentUser;
     private readonly IOrderNotificationService _notificationService;
     private readonly IClock _clock;
+    private readonly IKitchenAutoPrintService? _kitchenAutoPrint;
 
     public CreateOrderHandler(
         IOrderRepository orderRepository,
@@ -26,7 +27,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         IMapper mapper,
         ICurrentUser currentUser,
         IOrderNotificationService notificationService,
-        IClock clock)
+        IClock clock,
+        IKitchenAutoPrintService? kitchenAutoPrint = null)
     {
         _orderRepository = orderRepository;
         _db = db;
@@ -34,6 +36,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         _currentUser = currentUser;
         _notificationService = notificationService;
         _clock = clock;
+        _kitchenAutoPrint = kitchenAutoPrint;
     }
 
     public async Task<OrderDto> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
@@ -190,6 +193,11 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             || (fullOrder.PrepareAt.HasValue && fullOrder.PrepareAt.Value <= now);
         if (shouldNotifyNow)
         {
+            if (_kitchenAutoPrint is not null)
+                await _kitchenAutoPrint.TryEnqueueAsync(
+                    fullOrder,
+                    KitchenAutoPrintTrigger.WhenOrderCreated,
+                    cancellationToken);
             await _notificationService.NotifyNewOrderToKitchen(result);
         }
 

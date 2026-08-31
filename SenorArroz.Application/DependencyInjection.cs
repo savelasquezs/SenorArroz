@@ -42,6 +42,7 @@ namespace SenorArroz.Application
 
             // Business Rules Service
             services.AddScoped<IOrderBusinessRulesService, OrderBusinessRulesService>();
+            services.AddScoped<IKitchenAutoPrintService, KitchenAutoPrintService>();
             services.AddScoped<ILoyaltyCycleService, LoyaltyCycleService>();
             services.AddScoped<IFreeDeliverymanFcmTokenResolver, FreeDeliverymanFcmTokenResolver>();
             services.AddScoped<WhatsAppAttentionService>();

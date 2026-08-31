@@ -60,6 +60,32 @@ public class PrintQueueService : IPrintQueueService
     }
 
     public async Task<PrintJob> EnqueueAsync(int branchId, PrintJobKind kind, IReadOnlyList<int> orderIds, CancellationToken cancellationToken = default)
+        => await EnqueueAsync(branchId, kind, orderIds, null, cancellationToken);
+
+    public async Task<PrintJob> EnqueueAutomaticKitchenAsync(
+        int branchId,
+        int orderId,
+        KitchenAutoPrintTrigger trigger,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await _db.PrintJobs.AsNoTracking().FirstOrDefaultAsync(
+            x => x.BranchId == branchId
+                && x.Kind == PrintJobKind.Kitchen
+                && x.AutomaticOrderId == orderId
+                && x.AutomaticTrigger == trigger,
+            cancellationToken);
+        if (existing is not null)
+            return existing;
+
+        return await EnqueueAsync(branchId, PrintJobKind.Kitchen, [orderId], trigger, cancellationToken);
+    }
+
+    private async Task<PrintJob> EnqueueAsync(
+        int branchId,
+        PrintJobKind kind,
+        IReadOnlyList<int> orderIds,
+        KitchenAutoPrintTrigger? automaticTrigger,
+        CancellationToken cancellationToken)
     {
         if (kind == PrintJobKind.Delivery)
             return await EnqueueDeliveryAsync(branchId, orderIds, null, cancellationToken);
@@ -150,11 +176,32 @@ public class PrintQueueService : IPrintQueueService
             OrderIdsJson = orderIdsJson,
             PayloadJson = payloadJson,
             PayloadVersion = 1,
+            AutomaticOrderId = automaticTrigger.HasValue ? ids.Single() : null,
+            AutomaticTrigger = automaticTrigger,
         };
 
         _db.PrintJobs.Add(job);
         var saveWatch = Stopwatch.StartNew();
-        await _db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (
+            automaticTrigger.HasValue
+            && ex.InnerException is PostgresException
+            {
+                SqlState: PostgresErrorCodes.UniqueViolation,
+                ConstraintName: "ux_print_job_automatic_event"
+            })
+        {
+            _db.Entry(job).State = EntityState.Detached;
+            return await _db.PrintJobs.AsNoTracking().FirstAsync(
+                x => x.BranchId == branchId
+                    && x.Kind == kind
+                    && x.AutomaticOrderId == ids.Single()
+                    && x.AutomaticTrigger == automaticTrigger,
+                cancellationToken);
+        }
         saveWatch.Stop();
 
         var notificationWatch = Stopwatch.StartNew();

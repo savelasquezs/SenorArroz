@@ -159,6 +159,12 @@ namespace SenorArroz.Domain.Enums
         Failed,
     }
 
+    public enum KitchenAutoPrintTrigger
+    {
+        WhenMarkedReady,
+        WhenOrderCreated,
+    }
+
     public enum DeliveryWorkSessionStatus
     {
         Active,

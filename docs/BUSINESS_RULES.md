@@ -325,6 +325,10 @@ Reglas:
 - El token del agente nunca debe exponerse ni guardarse en repositorio.
 - El agente solo debe leer trabajos de su sucursal/tenant.
 - No cambiar payload de impresión sin revisar `senorArrozPrintAgent`.
+- Cada sucursal configura `KitchenAutoPrintTrigger`: `when_marked_ready` es el valor seguro predeterminado y `when_order_created` imprime al confirmar la creación local del pedido.
+- La opción aplica a pedidos manuales y Rappi. Las reservas futuras configuradas para imprimir al crear se difieren hasta que llegan a `PrepareAt` y se notifican a cocina.
+- La configuración controla solo la impresión automática; reimpresiones manuales y pruebas no se bloquean.
+- Los trabajos automáticos son idempotentes por sucursal, tipo, pedido y evento. Un fallo de impresión se registra sin convertir en fallida la operación principal del pedido.
 
 ## Seguridad
 
@@ -375,7 +379,7 @@ Reglas:
 - La disponibilidad deriva del producto seleccionado, activo y disponible según las reglas internas, y se sincroniza en ambas tiendas.
 - Solo se admiten órdenes `delivery` con courier Rappi.
 - Una orden válida se toma automáticamente y se crea en estado `Taken`. SKU, precio, stock, modificadores o totales inconsistentes la dejan retenida.
-- La orden Rappi no genera impresión al ingresar. La comanda de cocina se encola cuando el pedido cambia por primera vez a `Ready`.
+- La orden Rappi respeta `KitchenAutoPrintTrigger`: se imprime al confirmar su creación local o cuando cambia por primera vez a `Ready`, según la configuración de su sucursal.
 - Las órdenes retenidas solo permiten revalidar y aceptar o rechazar; no se permiten sustituciones particulares.
 - La recuperación de `SENT` consulta la ventana oficial de 10 minutos y deduplica por conexión y `order_id`.
 - `total_order` es el total autoritativo. Descuentos Rappi, descuentos del aliado, cargos, comisión estimada, neto esperado, consignación real y diferencia se conservan por separado.
