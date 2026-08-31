@@ -233,6 +233,9 @@ public static class PrintTicketPayloadBuilder
         var discountTotal = line2.LineDiscount;
         var deliveryFee = kind == PrintJobKind.Delivery ? 4500 : 0;
         var grandTotal = subtotal + deliveryFee;
+        var orderNotes = kind == PrintJobKind.Delivery
+            ? "Entregar con cubiertos y tocar el timbre."
+            : "Nota de prueba (pedido en local).";
 
         PrintTicketCustomerV1? customer = kind == PrintJobKind.Delivery
             ? new PrintTicketCustomerV1
@@ -278,8 +281,8 @@ public static class PrintTicketPayloadBuilder
             OrderStatus = kind == PrintJobKind.Delivery ? "on_the_way" : "in_preparation",
             PrepareAt = printedAtUtc,
             CreatedAt = printedAtUtc,
-            OrderNotes = kind == PrintJobKind.Delivery ? null : "Nota de prueba (pedido en local).",
-            OrderLevelNotes = kind == PrintJobKind.Delivery ? null : "Nota de prueba (pedido en local).",
+            OrderNotes = orderNotes,
+            OrderLevelNotes = orderNotes,
         };
 
         return new PrintTicketPayloadBatchV1 { Version = 1, Orders = new List<PrintTicketOrderPayloadV1> { orderPayload } };

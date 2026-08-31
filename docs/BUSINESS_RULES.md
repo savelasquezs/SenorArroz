@@ -329,6 +329,7 @@ Reglas:
 - La opción aplica a pedidos manuales y Rappi. Las reservas futuras configuradas para imprimir al crear se difieren hasta que llegan a `PrepareAt` y se notifican a cocina.
 - La configuración controla solo la impresión automática; reimpresiones manuales y pruebas no se bloquean.
 - Los trabajos automáticos son idempotentes por sucursal, tipo, pedido y evento. Un fallo de impresión se registra sin convertir en fallida la operación principal del pedido.
+- La comanda del domiciliario imprime las notas generales no vacías del pedido antes de los productos y conserva las notas particulares de cada línea.
 
 ## Seguridad
 

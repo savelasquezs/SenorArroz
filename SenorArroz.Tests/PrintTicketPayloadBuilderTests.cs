@@ -208,4 +208,21 @@ public class PrintTicketPayloadBuilderTests
         Assert.Null(order.BranchAddress);
         Assert.Null(order.KitchenFooterMessage);
     }
+
+    [Fact]
+    public void Delivery_test_payload_includes_order_notes()
+    {
+        var branch = new Branch { Id = 1, Name = "Sucursal de prueba" };
+
+        var order = PrintTicketPayloadBuilder.BuildTestBatch(
+            branch,
+            PrintJobKind.Delivery,
+            DateTime.UtcNow,
+            null,
+            "Marca",
+            "Pie").Orders.Single();
+
+        Assert.Equal("Entregar con cubiertos y tocar el timbre.", order.OrderNotes);
+        Assert.Equal(order.OrderNotes, order.OrderLevelNotes);
+    }
 }
