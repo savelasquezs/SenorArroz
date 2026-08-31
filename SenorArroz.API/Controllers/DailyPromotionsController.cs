@@ -109,7 +109,7 @@ public class DailyPromotionsController : ControllerBase
         if (parsed.Error is not null)
             return BadRequest(ApiResponse<DailyPromotionDto>.ErrorResponse(parsed.Error));
 
-        var validationError = await ValidateBusinessRules(branchId, dto, parsed.Type!.Value, parsed.Scope, cancellationToken);
+        var validationError = await ValidateBusinessRules(dto, parsed.Type!.Value, parsed.Scope, cancellationToken);
         if (validationError is not null)
             return BadRequest(ApiResponse<DailyPromotionDto>.ErrorResponse(validationError));
 
@@ -311,7 +311,6 @@ public class DailyPromotionsController : ControllerBase
     }
 
     private async Task<string?> ValidateBusinessRules(
-        int branchId,
         UpsertDailyPromotionDto dto,
         DailyPromotionType type,
         DailyPromotionDiscountScope? scope,
@@ -344,8 +343,6 @@ public class DailyPromotionsController : ControllerBase
                 return "El producto regalo no existe.";
             if (!giftProduct.Active)
                 return "El producto regalo debe estar activo.";
-            if (giftProduct.Category.BranchId != branchId)
-                return "El producto regalo no pertenece a la sucursal.";
             if (!IsGiftsCategory(giftProduct.Category.Name))
                 return "El producto regalo debe pertenecer a la categoria Regalos.";
 
@@ -385,12 +382,11 @@ public class DailyPromotionsController : ControllerBase
 
         var validCount = await _db.Products
             .AsNoTracking()
-            .Include(x => x.Category)
-            .Where(x => productIds.Contains(x.Id) && x.Active && x.Category.BranchId == branchId)
+            .Where(x => productIds.Contains(x.Id) && x.Active)
             .CountAsync(cancellationToken);
 
         if (validCount != productIds.Count)
-            return "Todos los productos del descuento deben existir, estar activos y pertenecer a la sucursal.";
+            return "Todos los productos del descuento deben existir y estar activos.";
 
         return null;
     }
