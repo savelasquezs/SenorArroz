@@ -88,6 +88,43 @@ public class DailyPromotionsCashierPermissionsTests
     }
 
     [Fact]
+    public async Task Cashier_CanUseGiftProductFromSharedCatalog()
+    {
+        await using var db = CreateDb();
+        db.Branches.AddRange(Branch(), Branch(8, "Norte"));
+        db.ProductCategories.Add(new ProductCategory { Id = 80, BranchId = 8, Name = "Regalos" });
+        db.Products.Add(new Product { Id = 90, CategoryId = 80, Name = "Yucas", Price = 0, Active = true });
+        await db.SaveChangesAsync();
+        var controller = Controller(db, userId: 11);
+
+        var action = await controller.Upsert(7, GiftProductDto(90), default);
+
+        Assert.IsType<OkObjectResult>(action.Result);
+        Assert.Equal(90, Assert.Single(db.DailyPromotions).GiftProductId);
+    }
+
+    [Fact]
+    public async Task Cashier_CanDiscountProductsFromSharedCatalog()
+    {
+        await using var db = CreateDb();
+        db.Branches.AddRange(Branch(), Branch(8, "Norte"));
+        db.ProductCategories.Add(new ProductCategory { Id = 80, BranchId = 8, Name = "Arroces" });
+        db.Products.Add(new Product { Id = 90, CategoryId = 80, Name = "Arroz paisa", Price = 30000, Active = true });
+        await db.SaveChangesAsync();
+        var controller = Controller(db, userId: 11);
+        var dto = ValidDto();
+        dto.Type = nameof(DailyPromotionType.PercentageDiscount);
+        dto.DiscountPercentage = 10;
+        dto.DiscountScope = nameof(DailyPromotionDiscountScope.SpecificProducts);
+        dto.DiscountProductIds = [90];
+
+        var action = await controller.Upsert(7, dto, default);
+
+        Assert.IsType<OkObjectResult>(action.Result);
+        Assert.Equal(90, Assert.Single(db.DailyPromotionProducts).ProductId);
+    }
+
+    [Fact]
     public async Task GetCurrent_MarksAnotherCashiersPromotionAsReadOnly()
     {
         await using var db = CreateDb();
@@ -127,10 +164,18 @@ public class DailyPromotionsCashierPermissionsTests
         EndsAt = new DateTime(2026, 8, 4, 4, 59, 0, DateTimeKind.Utc),
     };
 
-    private static Branch Branch() => new()
+    private static UpsertDailyPromotionDto GiftProductDto(int productId)
     {
-        Id = 7,
-        Name = "Centro",
+        var dto = ValidDto();
+        dto.Type = nameof(DailyPromotionType.GiftProduct);
+        dto.GiftProductId = productId;
+        return dto;
+    }
+
+    private static Branch Branch(int id = 7, string name = "Centro") => new()
+    {
+        Id = id,
+        Name = name,
         Address = "Calle 1",
         Phone1 = "1",
     };

@@ -207,6 +207,7 @@ Reglas:
 - Si la promoción activa de hoy fue creada por el mismo cajero, puede modificarla o desactivarla. Una promoción creada por otro usuario es de solo lectura para él.
 - `DailyPromotion.CreatedByUserId` conserva al autor. Los registros anteriores sin autor no pueden ser modificados por cajeros.
 - `StartsAt` y `EndsAt` se conservan en el contrato y la tabla para soportar una futura interfaz de programación; el modal actual no los expone y siempre trabaja sobre el día vigente.
+- Los productos y categorías forman un catálogo compartido entre las sucursales del mismo tenant. Un producto regalo activo de la categoría `Regalos`, o un producto activo elegido para un descuento específico, no puede rechazarse por la sucursal asociada históricamente a su categoría.
 
 ## Clientes y direcciones
 
