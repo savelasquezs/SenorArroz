@@ -35,6 +35,66 @@ public class DailyPromotionsCashierPermissionsTests
     }
 
     [Fact]
+    public async Task Cashier_CanUseGiftProductCreatedInAnotherBranch()
+    {
+        await using var db = CreateDb();
+        db.Branches.AddRange(Branch(), Branch(8, "Otra sede"));
+        db.ProductCategories.Add(new ProductCategory
+        {
+            Id = 80,
+            BranchId = 8,
+            Name = "Regalos"
+        });
+        db.Products.Add(new Product
+        {
+            Id = 90,
+            CategoryId = 80,
+            Name = "Papas",
+            Price = 0,
+            Active = true
+        });
+        await db.SaveChangesAsync();
+        var controller = Controller(db, userId: 11);
+
+        var action = await controller.Upsert(7, GiftDto(90), default);
+
+        Assert.IsType<OkObjectResult>(action.Result);
+        var saved = Assert.Single(db.DailyPromotions);
+        Assert.Equal(7, saved.BranchId);
+        Assert.Equal(90, saved.GiftProductId);
+    }
+
+    [Fact]
+    public async Task Cashier_CanDiscountSpecificProductCreatedInAnotherBranch()
+    {
+        await using var db = CreateDb();
+        db.Branches.AddRange(Branch(), Branch(8, "Otra sede"));
+        db.ProductCategories.Add(new ProductCategory
+        {
+            Id = 81,
+            BranchId = 8,
+            Name = "Arroces"
+        });
+        db.Products.Add(new Product
+        {
+            Id = 91,
+            CategoryId = 81,
+            Name = "Ropa Vieja",
+            Price = 30000,
+            Active = true
+        });
+        await db.SaveChangesAsync();
+        var controller = Controller(db, userId: 11);
+
+        var action = await controller.Upsert(7, PercentageDto(91), default);
+
+        Assert.IsType<OkObjectResult>(action.Result);
+        var saved = Assert.Single(db.DailyPromotions);
+        Assert.Equal(7, saved.BranchId);
+        Assert.Contains(saved.DiscountProducts, x => x.ProductId == 91);
+    }
+
+    [Fact]
     public async Task Cashier_CannotModifyTodaysPromotion_CreatedByAnotherUser()
     {
         await using var db = CreateDb();
@@ -127,10 +187,31 @@ public class DailyPromotionsCashierPermissionsTests
         EndsAt = new DateTime(2026, 8, 4, 4, 59, 0, DateTimeKind.Utc),
     };
 
-    private static Branch Branch() => new()
+    private static UpsertDailyPromotionDto GiftDto(int productId) => new()
     {
-        Id = 7,
-        Name = "Centro",
+        Type = nameof(DailyPromotionType.GiftProduct),
+        GiftProductId = productId,
+        DiscountProductIds = [],
+        IsActive = true,
+        StartsAt = new DateTime(2026, 8, 3, 10, 0, 0, DateTimeKind.Utc),
+        EndsAt = new DateTime(2026, 8, 4, 4, 59, 0, DateTimeKind.Utc),
+    };
+
+    private static UpsertDailyPromotionDto PercentageDto(int productId) => new()
+    {
+        Type = nameof(DailyPromotionType.PercentageDiscount),
+        DiscountPercentage = 10,
+        DiscountScope = nameof(DailyPromotionDiscountScope.SpecificProducts),
+        DiscountProductIds = [productId],
+        IsActive = true,
+        StartsAt = new DateTime(2026, 8, 3, 10, 0, 0, DateTimeKind.Utc),
+        EndsAt = new DateTime(2026, 8, 4, 4, 59, 0, DateTimeKind.Utc),
+    };
+
+    private static Branch Branch(int id = 7, string name = "Centro") => new()
+    {
+        Id = id,
+        Name = name,
         Address = "Calle 1",
         Phone1 = "1",
     };
