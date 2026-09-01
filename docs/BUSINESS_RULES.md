@@ -320,6 +320,7 @@ Reglas:
 - Las direcciones pueden tener una etiqueta libre corta y `NeighborhoodId` opcional. Una dirección guardada conserva su `delivery_fee`; Google valida ubicación y cobertura, pero no reemplaza esa tarifa. Las direcciones nuevas usan la tarifa calculada por el storefront.
 - El backend revalida productos, precios, disponibilidad, promoción, cobertura y horario al cotizar y nuevamente antes de crear el pedido. Si la sede cerró, bloquea la confirmación e informa la próxima apertura cuando exista.
 - La confirmación es idempotente, deriva cliente y dirección de la sesión verificada, calcula los totales en servidor y crea el pedido con origen `web` y usuario técnico configurado en `Branch.StorefrontTakenByUserId`. Efectivo inicia en `Taken`; pago en línea inicia en `AwaitingPayment`. La recogida web se persiste operacionalmente como `Onsite`.
+- El panel administrativo identifica los pedidos con origen `web` mediante una insignia visible en listados, detalle, cocina e historial del cliente.
 - Un pedido en `AwaitingPayment` no admite cambios manuales de estado ni se notifica a cocina. Solo un pago aprobado dentro de su ventana, o una revisión administrativa aprobada, lo cambia a `Taken`.
 - El pedido en efectivo se notifica a cocina inmediatamente. El pedido pagado se notifica mediante outbox después del commit financiero; los reintentos no duplican el evento operativo.
 - El storefront sigue siendo single-tenant en esta etapa; `TenantId` se resuelve desde configuración del servidor y nunca desde el navegador.
@@ -336,6 +337,7 @@ Reglas:
 - Un pago aprobado dentro de la ventana crea un único `app_payment` bruto con comisión y neto esperado, cambia el pedido a `Taken` y encola su notificación a cocina en la misma transacción.
 - Una aprobación posterior a 15 minutos, o asociada a un pedido que ya no espera pago, queda en revisión manual, alerta a Admin/Superadmin y no entra a cocina automáticamente.
 - Cancelaciones, anulaciones y reembolsos de Wompi quedan fuera de esta primera entrega.
+- Al eliminar un pedido autorizado se eliminan primero sus líneas auditadas, sus intentos y transacciones Wompi y sus referencias en propuestas temporales de ruta; ninguna de estas relaciones puede bloquear la eliminación del pedido.
 
 ## Impresión POS
 

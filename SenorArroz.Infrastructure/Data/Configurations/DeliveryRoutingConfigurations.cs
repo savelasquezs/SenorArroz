@@ -124,7 +124,7 @@ public sealed class DeliveryRouteProposalStopConfiguration : IEntityTypeConfigur
 
         builder.HasOne(x => x.DeliveryRoutingPlan).WithMany(x => x.Stops).HasForeignKey(x => x.DeliveryRoutingPlanId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.DeliveryRouteProposal).WithMany(x => x.Stops).HasForeignKey(x => x.DeliveryRouteProposalId).OnDelete(DeleteBehavior.Cascade);
-        builder.HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
         builder.HasIndex(x => new { x.DeliveryRoutingPlanId, x.OrderId }).IsUnique().HasDatabaseName("uq_delivery_route_proposal_stop_plan_order");
         builder.HasIndex(x => new { x.DeliveryRouteProposalId, x.StopSequence }).HasDatabaseName("idx_delivery_route_proposal_stop_sequence");
     }

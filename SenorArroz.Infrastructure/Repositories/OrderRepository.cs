@@ -231,6 +231,19 @@ public class OrderRepository : IOrderRepository
         var order = await _context.Orders.FindAsync([id], cancellationToken);
         if (order != null)
         {
+            var wompiAttempts = await _context.WompiPaymentAttempts
+                .Where(x => x.OrderId == id)
+                .ToListAsync(cancellationToken);
+            var routeProposalStops = await _context.DeliveryRouteProposalStops
+                .Where(x => x.OrderId == id)
+                .ToListAsync(cancellationToken);
+            var orderDetails = await _context.OrderDetails
+                .Where(x => x.OrderId == id)
+                .ToListAsync(cancellationToken);
+
+            _context.WompiPaymentAttempts.RemoveRange(wompiAttempts);
+            _context.DeliveryRouteProposalStops.RemoveRange(routeProposalStops);
+            _context.OrderDetails.RemoveRange(orderDetails);
             _context.Orders.Remove(order);
             await _context.SaveChangesAsync(cancellationToken);
         }

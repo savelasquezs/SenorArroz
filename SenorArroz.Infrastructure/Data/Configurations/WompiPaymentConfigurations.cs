@@ -72,7 +72,7 @@ public sealed class WompiPaymentAttemptConfiguration : IEntityTypeConfiguration<
         builder.HasIndex(x => x.AppPaymentId).IsUnique().HasFilter("app_payment_id IS NOT NULL").HasDatabaseName("ux_wompi_payment_attempt_app_payment");
         builder.HasOne(x => x.Order).WithMany(x => x.WompiPaymentAttempts).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.Integration).WithMany(x => x.PaymentAttempts).HasForeignKey(x => x.IntegrationId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne(x => x.AppPayment).WithMany().HasForeignKey(x => x.AppPaymentId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.AppPayment).WithMany().HasForeignKey(x => x.AppPaymentId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.ReviewedByUser).WithMany().HasForeignKey(x => x.ReviewedByUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }

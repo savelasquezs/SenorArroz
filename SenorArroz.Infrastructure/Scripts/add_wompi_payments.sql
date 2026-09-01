@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS wompi_payment_attempt (
     manual_review_reason character varying(500),
     reviewed_at timestamp with time zone,
     reviewed_by_user_id integer REFERENCES "user"(id) ON DELETE RESTRICT,
-    app_payment_id integer REFERENCES app_payment(id) ON DELETE RESTRICT,
+    app_payment_id integer REFERENCES app_payment(id) ON DELETE SET NULL,
     created_at timestamp with time zone NOT NULL DEFAULT NOW(),
     updated_at timestamp with time zone NOT NULL DEFAULT NOW()
 );

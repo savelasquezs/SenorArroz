@@ -146,6 +146,7 @@ Notas:
 - `OrderDetail` debe copiar tenant desde su pedido, no desde frontend.
 - `Order.StorefrontIdempotencyKey` evita pedidos duplicados por reintentos del checkout y nunca se acepta como sustituto de la sesión verificada.
 - El esquema de OTP, direcciones web y pedidos directos se instala con `SenorArroz.Infrastructure/Scripts/add_storefront_customer_otp.sql` antes de desplegar el API.
+- `wompi_payment_attempt.app_payment_id` usa `ON DELETE SET NULL`; el ajuste para instalaciones existentes está en `SenorArroz.Infrastructure/Scripts/fix_wompi_order_deletion.sql`.
 
 ### Bancos, apps y pagos
 
