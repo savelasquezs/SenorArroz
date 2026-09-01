@@ -1,14 +1,18 @@
 using System.ComponentModel.DataAnnotations;
+using System.Data;
 using System.Globalization;
 using System.Text;
+using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using SenorArroz.API.Security;
+using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Services;
@@ -170,7 +174,8 @@ public sealed class PublicStorefrontController(
     [EnableRateLimiting("storefront-quote")]
     public async Task<ActionResult<ApiResponse<PublicDeliveryQuoteDto>>> Quote(
         [FromBody] PublicDeliveryQuoteRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromServices] StorefrontCustomerAuthService? customerAuth = null)
     {
         using var concurrencyLease = await concurrencyGate.TryEnter(cancellationToken);
         if (concurrencyLease is null)
@@ -184,6 +189,32 @@ public sealed class PublicStorefrontController(
         request.Phone = ColombianMobilePhone.Normalize(request.Phone);
         if (!ColombianMobilePhone.IsValid(request.Phone))
             return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Ingresa un celular colombiano válido de 10 dígitos."));
+
+        Address? savedAddress = null;
+        if (request.SavedAddressId.HasValue)
+        {
+            if (customerAuth is null)
+                return Unauthorized(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Verifica tu celular para usar una dirección guardada."));
+            StorefrontCustomerSessionResult session;
+            try
+            {
+                session = await customerAuth.GetSessionAsync(Request.Headers["X-Storefront-Customer-Session"].FirstOrDefault(), cancellationToken);
+            }
+            catch (StorefrontAuthInvalidSessionException)
+            {
+                return Unauthorized(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La sesión del cliente no es válida o venció."));
+            }
+            if (session.Phone != request.Phone || session.Customer is null || session.AmbiguousCustomer)
+                return Unauthorized(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La dirección no pertenece a la sesión verificada."));
+            savedAddress = await db.Addresses.AsNoTracking().FirstOrDefaultAsync(
+                x => x.Id == request.SavedAddressId && x.CustomerId == session.Customer.Id, cancellationToken);
+            if (savedAddress is null)
+                return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La dirección guardada ya no está disponible."));
+            request.Address = savedAddress.AddressText;
+            request.AddressAdditionalInfo = savedAddress.AdditionalInfo;
+            request.Latitude = savedAddress.Latitude;
+            request.Longitude = savedAddress.Longitude;
+        }
 
         var branchRows = await GetEligibleBranches(cancellationToken);
         if (branchRows.Count == 0)
@@ -224,17 +255,17 @@ public sealed class PublicStorefrontController(
         string? normalizedCity = null;
         if (fulfillmentType == "delivery")
         {
-            normalizedCity = MatchAllowedCity(request.City);
-            if (normalizedCity is null)
-                return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La ciudad debe ser Medellín, Bello o Copacabana."));
-
             var resolved = await ResolveAddressCached(request.Address ?? string.Empty, request.Latitude, request.Longitude, cancellationToken);
             if (resolved.Result is null)
                 return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse(resolved.Error ?? "No fue posible validar la ubicación."));
 
-            if (!request.Latitude.HasValue || !request.Longitude.HasValue)
+            if (savedAddress is null && (!request.Latitude.HasValue || !request.Longitude.HasValue))
                 return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Selecciona y confirma una dirección exacta en Google Maps."));
 
+            normalizedCity = MatchAllowedCity(request.City)
+                ?? AllowedCities.FirstOrDefault(x => AddressMatchesCity(resolved.Result.FormattedAddress, x));
+            if (normalizedCity is null)
+                return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La dirección debe pertenecer a Medellín, Bello o Copacabana."));
             if (!AddressMatchesCity(resolved.Result.FormattedAddress, normalizedCity))
                 return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse($"La ubicación confirmada no pertenece a {normalizedCity}."));
             resolvedAddress = resolved.Result;
@@ -295,6 +326,12 @@ public sealed class PublicStorefrontController(
             checkoutTravelMinutes = ToMinutes(checkout.Metrics.DurationSeconds);
             checkoutDeliveryFee = EstimateDeliveryFee(checkout.Metrics.DistanceMeters);
             branchOptions = routeResults.Select(x => ToBranchQuote(x, nearest.Branch.Id, selected.Branch.Id)).ToList();
+            if (savedAddress is not null)
+            {
+                estimatedDeliveryFee = savedAddress.DeliveryFee;
+                checkoutDeliveryFee = savedAddress.DeliveryFee;
+                branchOptions = branchOptions.Select(x => x with { EstimatedDeliveryFee = savedAddress.DeliveryFee }).ToList();
+            }
         }
         else
         {
@@ -351,10 +388,232 @@ public sealed class PublicStorefrontController(
             subtotal,
             subtotal + checkoutDeliveryFee,
             promotionDto,
-            whatsappUrl);
+            whatsappUrl,
+            savedAddress is null ? "estimated" : "saved");
 
         return Ok(ApiResponse<PublicDeliveryQuoteDto>.SuccessResponse(result));
     }
+
+    [HttpPost("orders")]
+    [RequestSizeLimit(32 * 1024)]
+    [EnableRateLimiting("storefront-quote")]
+    public async Task<ActionResult<ApiResponse<PublicStorefrontOrderResult>>> ConfirmOrder(
+        [FromBody] PublicStorefrontOrderRequest request,
+        [FromHeader(Name = "Idempotency-Key")] string idempotencyKey,
+        [FromServices] StorefrontCustomerAuthService customerAuth,
+        [FromServices] IMapper mapper,
+        [FromServices] IOrderNotificationService notifications,
+        [FromServices] ILogger<PublicStorefrontController> logger,
+        CancellationToken cancellationToken)
+    {
+        idempotencyKey = (idempotencyKey ?? string.Empty).Trim();
+        if (idempotencyKey.Length is < 16 or > 80)
+            return BadRequest(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La confirmación del pedido no tiene una clave válida."));
+
+        StorefrontCustomerSessionResult session;
+        try
+        {
+            session = await customerAuth.GetSessionAsync(Request.Headers["X-Storefront-Customer-Session"].FirstOrDefault(), cancellationToken);
+        }
+        catch (StorefrontAuthInvalidSessionException)
+        {
+            return Unauthorized(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("Verifica nuevamente tu celular para confirmar el pedido."));
+        }
+        if (session.AmbiguousCustomer)
+            return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("Este celular está asociado a más de un cliente. Comunícate con la sucursal para actualizar tus datos."));
+
+        request.Phone = ColombianMobilePhone.Normalize(request.Phone);
+        if (session.Phone != request.Phone)
+            return Unauthorized(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("El celular del pedido no coincide con la sesión verificada."));
+
+        var existingOrder = await db.Orders.AsNoTracking()
+            .Include(x => x.Customer)
+            .FirstOrDefaultAsync(x => x.StorefrontIdempotencyKey == idempotencyKey, cancellationToken);
+        if (existingOrder is not null)
+        {
+            if (existingOrder.Customer is null || (existingOrder.Customer.Phone1 != session.Phone && existingOrder.Customer.Phone2 != session.Phone))
+                return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
+            return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(existingOrder)));
+        }
+
+        var quoteAction = await Quote(request, cancellationToken, customerAuth);
+        if (quoteAction.Result is not OkObjectResult ok
+            || ok.Value is not ApiResponse<PublicDeliveryQuoteDto> quoteResponse
+            || quoteResponse.Data is null)
+        {
+            if (quoteAction.Result is ObjectResult rejected)
+                return new ObjectResult(rejected.Value) { StatusCode = rejected.StatusCode ?? StatusCodes.Status400BadRequest };
+            return BadRequest(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("No fue posible validar nuevamente el pedido."));
+        }
+        var quote = quoteResponse.Data;
+
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
+        try
+        {
+            if (db.Database.IsRelational())
+                transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+
+            existingOrder = await db.Orders.Include(x => x.Customer)
+                .FirstOrDefaultAsync(x => x.StorefrontIdempotencyKey == idempotencyKey, cancellationToken);
+            if (existingOrder is not null)
+            {
+                if (existingOrder.Customer is null || (existingOrder.Customer.Phone1 != session.Phone && existingOrder.Customer.Phone2 != session.Phone))
+                    throw new StorefrontOrderConflictException("La clave de confirmación ya fue utilizada.");
+                if (transaction is not null)
+                    await transaction.CommitAsync(cancellationToken);
+                return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(existingOrder)));
+            }
+
+            var branch = await db.Branches.FirstOrDefaultAsync(x => x.Id == quote.CheckoutBranchId && x.IsActive, cancellationToken);
+            if (branch?.StorefrontTakenByUserId is null)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La sucursal todavía no está configurada para recibir pedidos directos desde la web."));
+            var technicalUserIsValid = await db.Users.AsNoTracking().AnyAsync(
+                x => x.Id == branch.StorefrontTakenByUserId && x.BranchId == branch.Id && x.Active, cancellationToken);
+            if (!technicalUserIsValid)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                    ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("El usuario técnico de pedidos web no está disponible para esta sucursal."));
+
+            Customer customer;
+            if (session.Customer is not null)
+            {
+                customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == session.Customer.Id && x.Active, cancellationToken)
+                    ?? throw new StorefrontOrderConflictException("El cliente verificado ya no está disponible.");
+            }
+            else
+            {
+                var matches = await db.Customers.Where(x => x.Active && (x.Phone1 == session.Phone || x.Phone2 == session.Phone))
+                    .OrderBy(x => x.Id).Take(2).ToListAsync(cancellationToken);
+                if (matches.Count > 1)
+                    throw new StorefrontOrderConflictException("El celular quedó asociado a más de un cliente.");
+                customer = matches.SingleOrDefault() ?? new Customer
+                {
+                    BranchId = branch.Id,
+                    Name = request.Name.Trim(),
+                    Phone1 = session.Phone,
+                    Active = true
+                };
+                if (customer.Id == 0)
+                    db.Customers.Add(customer);
+            }
+
+            Address? address = null;
+            if (quote.FulfillmentType == "delivery")
+            {
+                if (request.SavedAddressId.HasValue)
+                {
+                    address = await db.Addresses.FirstOrDefaultAsync(
+                        x => x.Id == request.SavedAddressId && x.CustomerId == customer.Id, cancellationToken)
+                        ?? throw new StorefrontOrderConflictException("La dirección guardada ya no pertenece al cliente verificado.");
+                }
+                else
+                {
+                    var hasAddresses = customer.Id != 0 && await db.Addresses.AnyAsync(x => x.CustomerId == customer.Id, cancellationToken);
+                    address = new Address
+                    {
+                        Customer = customer,
+                        Label = string.IsNullOrWhiteSpace(request.AddressLabel) ? "Casa" : request.AddressLabel.Trim(),
+                        AddressText = quote.FormattedAddress!,
+                        AdditionalInfo = request.AddressAdditionalInfo?.Trim(),
+                        DeliveryFee = quote.Total - quote.Subtotal,
+                        Latitude = quote.Latitude,
+                        Longitude = quote.Longitude,
+                        IsPrimary = !hasAddresses,
+                        OriginalAddressText = request.Address,
+                        NormalizedAddressText = quote.FormattedAddress,
+                        ValidationSource = "storefront_google",
+                        ValidatedAt = clock.UtcNow
+                    };
+                    db.Addresses.Add(address);
+                }
+            }
+
+            var order = new Order
+            {
+                BranchId = branch.Id,
+                TakenById = branch.StorefrontTakenByUserId.Value,
+                Customer = customer,
+                Address = address,
+                GuestName = request.Name.Trim(),
+                Type = quote.FulfillmentType == "delivery" ? OrderType.Delivery : OrderType.Onsite,
+                DeliveryFee = quote.FulfillmentType == "delivery" ? quote.Total - quote.Subtotal : 0,
+                Status = OrderStatus.Taken,
+                OrderSource = "web",
+                StorefrontIdempotencyKey = idempotencyKey,
+                Notes = request.OrderNotes?.Trim()
+            };
+            order.AddStatusTime(OrderStatus.Taken, clock.UtcNow);
+            foreach (var line in quote.Items)
+            {
+                order.OrderDetails.Add(new OrderDetail
+                {
+                    ProductId = line.ProductId,
+                    Quantity = line.Quantity,
+                    UnitPrice = line.UnitPrice,
+                    Discount = 0,
+                    Subtotal = line.Subtotal,
+                    Notes = line.Notes
+                });
+            }
+            OrderTotalsHelper.RecalculateFromOrderDetails(order);
+            db.Orders.Add(order);
+            await db.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+                await transaction.CommitAsync(cancellationToken);
+
+            try
+            {
+                var notificationOrder = await db.Orders.AsNoTracking()
+                    .Include(x => x.Branch)
+                    .Include(x => x.TakenBy)
+                    .Include(x => x.Customer)
+                    .Include(x => x.Address).ThenInclude(x => x!.Neighborhood)
+                    .Include(x => x.OrderDetails).ThenInclude(x => x.Product)
+                    .FirstOrDefaultAsync(x => x.Id == order.Id, cancellationToken);
+                if (notificationOrder is not null)
+                    await notifications.NotifyNewOrderToKitchen(mapper.Map<OrderDto>(notificationOrder));
+            }
+            catch (Exception notificationError)
+            {
+                logger.LogWarning(notificationError, "El pedido web {OrderId} se creó, pero la notificación de cocina falló.", order.Id);
+            }
+
+            return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(order)));
+        }
+        catch (StorefrontOrderConflictException ex)
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(cancellationToken);
+            return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse(ex.Message));
+        }
+        catch (DbUpdateException)
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(cancellationToken);
+            existingOrder = await db.Orders.AsNoTracking().Include(x => x.Customer)
+                .FirstOrDefaultAsync(x => x.StorefrontIdempotencyKey == idempotencyKey, cancellationToken);
+            if (existingOrder is not null)
+            {
+                if (existingOrder.Customer is null || (existingOrder.Customer.Phone1 != session.Phone && existingOrder.Customer.Phone2 != session.Phone))
+                    return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
+                return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(existingOrder)));
+            }
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+                await transaction.DisposeAsync();
+        }
+    }
+
+    private static PublicStorefrontOrderResult ToPublicOrderResult(Order order) => new(
+        order.Id,
+        order.Status.ToString(),
+        order.BranchId,
+        order.Subtotal,
+        order.DeliveryFee ?? 0,
+        order.Total);
 
     private IQueryable<Branch> EligibleBranchesQuery() => db.Branches
         .AsNoTracking()
@@ -753,7 +1012,7 @@ public sealed record PublicPromotionDto(
     IReadOnlyCollection<int> DiscountProductIds,
     DateTime? EndsAt);
 
-public sealed class PublicDeliveryQuoteRequest
+public class PublicDeliveryQuoteRequest
 {
     [Required, StringLength(20)]
     public string FulfillmentType { get; set; } = "delivery";
@@ -787,7 +1046,18 @@ public sealed class PublicDeliveryQuoteRequest
 
     public int? SelectedBranchId { get; set; }
 
+    public int? SavedAddressId { get; set; }
+
+    [StringLength(60)]
+    public string? AddressLabel { get; set; }
+
     public List<PublicCartItemRequest> Items { get; set; } = [];
+}
+
+public sealed class PublicStorefrontOrderRequest : PublicDeliveryQuoteRequest
+{
+    [StringLength(200)]
+    public string? OrderNotes { get; set; }
 }
 
 public sealed class PublicCartItemRequest
@@ -853,7 +1123,12 @@ public sealed record PublicDeliveryQuoteDto(
     int Subtotal,
     int Total,
     PublicPromotionDto? Promotion,
-    string WhatsAppUrl);
+    string WhatsAppUrl,
+    string DeliveryFeeSource = "estimated");
+
+public sealed record PublicStorefrontOrderResult(int OrderId, string Status, int BranchId, int Subtotal, int DeliveryFee, int Total);
+
+public sealed class StorefrontOrderConflictException(string message) : Exception(message);
 
 internal static class ColombianMobilePhone
 {

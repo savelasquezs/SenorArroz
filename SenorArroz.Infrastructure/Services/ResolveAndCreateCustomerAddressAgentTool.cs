@@ -61,7 +61,7 @@ public sealed class ResolveAndCreateCustomerAddressAgentTool(
             state.Activities.Add(new()
             {
                 Type = "address",
-                Message = $"Validó y seleccionó la dirección {persisted.Address.AddressText}, {resolved.Address!.Neighborhood.Name}.",
+                Message = $"Validó y seleccionó la dirección {persisted.Address.AddressText}{(resolved.Address!.Neighborhood == null ? string.Empty : $", {resolved.Address.Neighborhood.Name}")}.",
                 Timestamp = DateTime.UtcNow
             });
             await states.SaveAsync(context.ConversationId, state, cancellationToken);
@@ -77,7 +77,7 @@ public sealed class ResolveAndCreateCustomerAddressAgentTool(
                     created = persisted.Created,
                     reused = !persisted.Created,
                     address = persisted.Address.AddressText,
-                    neighborhood = resolved.Address!.Neighborhood.Name,
+                    neighborhood = resolved.Address!.Neighborhood?.Name,
                     isPrimary = persisted.Address.IsPrimary,
                     orderType = "delivery"
                 },

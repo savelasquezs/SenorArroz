@@ -163,7 +163,7 @@ public class WhatsAppAiOrchestrator(
                         address=a.AddressText,
                         additionalInfo=a.AdditionalInfo,
                         instructions=a.Instructions,
-                        neighborhood=a.Neighborhood.Name,
+                        neighborhood=a.Neighborhood != null ? a.Neighborhood.Name : null,
                         deliveryFee=a.DeliveryFee,
                         isPrimary=a.IsPrimary
                     }).ToList()

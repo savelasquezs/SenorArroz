@@ -185,7 +185,7 @@ public sealed class CreateCustomerAgentTool(
                     addressCreated,
                     addressReused = selectedAddress is not null && !addressCreated,
                     address = selectedAddress?.AddressText,
-                    neighborhood = resolvedAddress?.Neighborhood.Name
+                    neighborhood = resolvedAddress?.Neighborhood?.Name
                 },
                 Code: resolvedAddress is null
                     ? "customer_ready_for_pickup"

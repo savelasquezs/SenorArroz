@@ -312,7 +312,16 @@ Reglas:
 - Las sedes cerradas siguen siendo visibles, pero solo las sedes abiertas con los siete días válidamente configurados participan en cotizaciones de domicilio o recogida.
 - La apertura es inclusiva y el cierre exclusivo según la hora local de Colombia. No existe un cierre anticipado basado en el tiempo de preparación.
 - Un horario ausente, incompleto, inválido o con todos los días cerrados bloquea los pedidos web para esa sede.
-- El backend revalida el horario tanto al cotizar como inmediatamente antes de generar y abrir el enlace de WhatsApp. Si la sede cerró, el envío se bloquea y se informa la próxima apertura cuando exista.
+- Todo cliente debe verificar su celular con un OTP de seis dígitos antes de consultar datos privados o confirmar un pedido, exista o no previamente en `customer`.
+- El OTP se envía exclusivamente mediante la plantilla aprobada `customers_web_authentication` y la configuración activa y verificada de WhatsApp de `StorefrontCustomerAuth:AuthenticationBranchId`; el código dura 10 minutos, permite máximo cinco intentos, se usa una sola vez y admite reenvío después de 60 segundos.
+- Los códigos se generan con RNG criptográfico y solo se persiste su HMAC. Los tokens de sesión se guardan únicamente como hash y el BFF los conserva en una cookie `HttpOnly`, `Secure` y `SameSite=Lax`.
+- Después de verificar se buscan clientes activos globalmente por `Phone1` o `Phone2`. Una coincidencia única expone solo nombre y direcciones; una coincidencia ambigua no expone datos y bloquea el checkout hasta corregir el duplicado.
+- El cliente existente conserva su `BranchId` histórico. El cliente nuevo se crea únicamente al confirmar el pedido y toma como `BranchId` la sucursal que atenderá la orden.
+- Las direcciones pueden tener una etiqueta libre corta y `NeighborhoodId` opcional. Una dirección guardada conserva su `delivery_fee`; Google valida ubicación y cobertura, pero no reemplaza esa tarifa. Las direcciones nuevas usan la tarifa calculada por el storefront.
+- El backend revalida productos, precios, disponibilidad, promoción, cobertura y horario al cotizar y nuevamente antes de crear el pedido. Si la sede cerró, bloquea la confirmación e informa la próxima apertura cuando exista.
+- La confirmación es idempotente, deriva cliente y dirección de la sesión verificada, calcula los totales en servidor y crea el pedido con estado `Taken`, origen `web` y usuario técnico configurado en `Branch.StorefrontTakenByUserId`. La recogida web se persiste operacionalmente como `Onsite`.
+- El pedido confirmado se notifica a cocina. Si la notificación falla después del commit, el pedido se conserva y el fallo queda registrado sin exponer datos ni secretos.
+- El storefront sigue siendo single-tenant en esta etapa; `TenantId` se resuelve desde configuración del servidor y nunca desde el navegador.
 
 ## Impresión POS
 

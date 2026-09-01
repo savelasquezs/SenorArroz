@@ -5,7 +5,8 @@ namespace SenorArroz.Domain.Entities;
 public class Address : BaseEntity
 {
     public int CustomerId { get; set; }
-    public int NeighborhoodId { get; set; }
+    public int? NeighborhoodId { get; set; }
+    public string? Label { get; set; }
     public string AddressText { get; set; } = string.Empty; // Mapea a "address" en SQL
     public string? AdditionalInfo { get; set; }
     public int DeliveryFee { get; set; }
@@ -20,6 +21,6 @@ public class Address : BaseEntity
 
     // Navigation Properties
     public virtual Customer Customer { get; set; } = null!;
-    public virtual Neighborhood Neighborhood { get; set; } = null!;
+    public virtual Neighborhood? Neighborhood { get; set; }
     public virtual ICollection<Order> Orders { get; set; } = new List<Order>();
 }

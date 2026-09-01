@@ -47,6 +47,22 @@ public class WhatsAppMetaErrorHandlingTests
         Assert.Equal("Meta WhatsApp HTTP 502: upstream proxy unavailable | body: upstream proxy unavailable", result.ErrorMessage);
     }
 
+    [Fact]
+    public async Task CloudClient_AuthenticationTemplateSendsCodeInBodyAndCopyButton()
+    {
+        var handler = new CapturingHandler();
+        var client = CreateClient(handler);
+
+        var result = await client.SendAuthenticationTemplateMessageAsync(
+            "phone-id", "token", "573001234567", "customers_web_authentication", "es", "482193");
+
+        Assert.True(result.Success);
+        Assert.Contains("customers_web_authentication", handler.Body);
+        Assert.Contains("573001234567", handler.Body);
+        Assert.Contains("\"sub_type\":\"url\"", handler.Body);
+        Assert.Equal(2, handler.Body.Split("482193").Length - 1);
+    }
+
     [Theory]
     [InlineData(true, "Meta WhatsApp timeout:")]
     [InlineData(false, "Meta WhatsApp network_error:")]
@@ -201,6 +217,20 @@ public class WhatsAppMetaErrorHandlingTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromException<HttpResponseMessage>(exception);
+    }
+
+    private sealed class CapturingHandler : HttpMessageHandler
+    {
+        public string Body { get; private set; } = string.Empty;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Body = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"messages\":[{\"id\":\"wamid.1\"}]}", Encoding.UTF8, "application/json")
+            };
+        }
     }
 
     private sealed class RecordingLogger<T> : ILogger<T>

@@ -102,14 +102,14 @@ public class NeighborhoodRepository : INeighborhoodRepository
         var ids = neighborhoodIds.Distinct().ToList();
 
         var addressRows = await _context.Addresses.AsNoTracking()
-            .Where(a => ids.Contains(a.NeighborhoodId))
-            .GroupBy(a => a.NeighborhoodId)
+            .Where(a => a.NeighborhoodId.HasValue && ids.Contains(a.NeighborhoodId.Value))
+            .GroupBy(a => a.NeighborhoodId!.Value)
             .Select(g => new { NeighborhoodId = g.Key, AddressCount = g.Count() })
             .ToListAsync(cancellationToken);
 
         var customerRows = await _context.Addresses.AsNoTracking()
-            .Where(a => ids.Contains(a.NeighborhoodId))
-            .GroupBy(a => a.NeighborhoodId)
+            .Where(a => a.NeighborhoodId.HasValue && ids.Contains(a.NeighborhoodId.Value))
+            .GroupBy(a => a.NeighborhoodId!.Value)
             .Select(g => new
             {
                 NeighborhoodId = g.Key,

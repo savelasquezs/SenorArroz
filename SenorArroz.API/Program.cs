@@ -147,7 +147,10 @@ if (builder.Environment.IsProduction())
 }
 builder.Services.Configure<StorefrontApiKeyOptions>(
     builder.Configuration.GetSection("Storefront"));
+builder.Services.Configure<StorefrontCustomerAuthOptions>(
+    builder.Configuration.GetSection("StorefrontCustomerAuth"));
 builder.Services.AddSingleton<StorefrontApiKeyValidator>();
+builder.Services.AddScoped<SenorArroz.API.Services.StorefrontCustomerAuthService>();
 builder.Services.Configure<DeliveryAppVersionOptions>(
     builder.Configuration.GetSection(DeliveryAppVersionOptions.SectionName));
 
@@ -369,6 +372,7 @@ var rappiWebhookPermit = Math.Max(1, builder.Configuration.GetValue("RateLimitin
 var rappiWebhookWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:RappiWebhook:WindowSeconds", 60));
 var storefrontCatalogPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontCatalog:PermitLimit", 120));
 var storefrontQuotePermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontQuote:PermitLimit", 60));
+var storefrontAuthPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontAuth:PermitLimit", 30));
 var storefrontWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontQuote:WindowSeconds", 60));
 var globalWindow = TimeSpan.FromSeconds(globalWindowSec);
 var authenticatedWindow = TimeSpan.FromSeconds(authenticatedWindowSec);
@@ -457,6 +461,22 @@ builder.Services.AddRateLimiter(options =>
             {
                 AutoReplenishment = true,
                 PermitLimit = storefrontQuotePermit,
+                Window = TimeSpan.FromSeconds(storefrontWindowSec),
+                QueueLimit = 0
+            });
+    });
+
+    options.AddPolicy("storefront-auth", httpContext =>
+    {
+        var ip = httpContext.Request.Headers["X-Storefront-Client-IP"].FirstOrDefault()
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"storefront-auth:{ip}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = storefrontAuthPermit,
                 Window = TimeSpan.FromSeconds(storefrontWindowSec),
                 QueueLimit = 0
             });

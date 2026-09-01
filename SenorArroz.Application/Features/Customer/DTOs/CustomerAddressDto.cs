@@ -10,8 +10,9 @@ namespace SenorArroz.Application.Features.Customers.DTOs
     {
         public int Id { get; set; }
         public int CustomerId { get; set; }
-        public int NeighborhoodId { get; set; }
-        public string NeighborhoodName { get; set; } = string.Empty;
+        public int? NeighborhoodId { get; set; }
+        public string? NeighborhoodName { get; set; }
+        public string? Label { get; set; }
         public string Address { get; set; } = string.Empty;
         public string? AdditionalInfo { get; set; }
         public int DeliveryFee { get; set; }

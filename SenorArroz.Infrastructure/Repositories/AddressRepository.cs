@@ -46,9 +46,9 @@ public class AddressRepository : IAddressRepository
 
     public async Task<Address> CreateAsync(Address address, CancellationToken cancellationToken = default)
     {
-        if (address.DeliveryFee == 0)
+        if (address.DeliveryFee == 0 && address.NeighborhoodId.HasValue)
         {
-            var neighborhood = await _context.Neighborhoods.FindAsync([address.NeighborhoodId], cancellationToken);
+            var neighborhood = await _context.Neighborhoods.FindAsync([address.NeighborhoodId.Value], cancellationToken);
             if (neighborhood != null)
             {
                 address.DeliveryFee = neighborhood.DeliveryFee;

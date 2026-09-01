@@ -51,7 +51,7 @@ public sealed class SetOrderFulfillmentAgentTool(
                     cancellationToken);
             if (address is null)
                 return new(false, null, "La dirección no pertenece al cliente y la sucursal del contexto.", "address_not_found");
-            activity = $"El cliente confirmó la dirección {address.AddressText}, {address.Neighborhood.Name}.";
+            activity = $"El cliente confirmó la dirección {address.AddressText}{(address.Neighborhood == null ? string.Empty : $", {address.Neighborhood.Name}")}.";
         }
         else
         {

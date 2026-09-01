@@ -218,6 +218,60 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         }
     }
 
+    public async Task<WhatsAppCloudSendResult> SendAuthenticationTemplateMessageAsync(
+        string phoneNumberId,
+        string accessToken,
+        string toPhoneNumber,
+        string templateName,
+        string language,
+        string code,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Content = JsonContent.Create(new
+        {
+            messaging_product = "whatsapp",
+            to = toPhoneNumber,
+            type = "template",
+            template = new
+            {
+                name = templateName,
+                language = new { code = language },
+                components = new object[]
+                {
+                    new
+                    {
+                        type = "body",
+                        parameters = new[] { new { type = "text", text = code } }
+                    },
+                    new
+                    {
+                        type = "button",
+                        sub_type = "url",
+                        index = "0",
+                        parameters = new[] { new { type = "text", text = code } }
+                    }
+                }
+            }
+        });
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return new WhatsAppCloudSendResult(false, null, CreateMetaHttpError("send_authentication_template", body, response.StatusCode, accessToken));
+
+            using var document = JsonDocument.Parse(body);
+            return new WhatsAppCloudSendResult(true, TryGetFirstMessageId(document.RootElement), null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            return new WhatsAppCloudSendResult(false, null, CreateClientError("send_authentication_template", ex, accessToken));
+        }
+    }
+
     public async Task<WhatsAppCloudUploadMediaResult> UploadMediaAsync(
         string phoneNumberId,
         string accessToken,

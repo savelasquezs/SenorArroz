@@ -27,6 +27,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.DeliveryAppConnectionId).HasColumnName("delivery_app_connection_id");
         builder.Property(o => o.ExternalOrderId).HasColumnName("external_order_id").HasMaxLength(160);
         builder.Property(o => o.OrderSource).HasColumnName("order_source").HasMaxLength(40);
+        builder.Property(o => o.StorefrontIdempotencyKey).HasColumnName("storefront_idempotency_key").HasMaxLength(80);
         builder.Property(o => o.ExternalFulfillmentProvider).HasColumnName("external_fulfillment_provider").HasMaxLength(40);
         builder.Property(o => o.ExternalStoreName).HasColumnName("external_store_name").HasMaxLength(200);
         builder.Property(o => o.ExternalCustomerPhone).HasColumnName("external_customer_phone").HasMaxLength(50);
@@ -151,6 +152,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.HasIndex(o => o.DeliveryRouteId).HasDatabaseName("idx_order_delivery_route");
         builder.HasIndex(o => o.LoyaltyCycleStepId).HasDatabaseName("idx_order_loyalty_cycle_step");
         builder.HasIndex(o => new { o.DeliveryAppConnectionId, o.ExternalOrderId }).IsUnique().HasDatabaseName("ux_order_external_source");
+        builder.HasIndex(o => o.StorefrontIdempotencyKey).IsUnique().HasFilter("storefront_idempotency_key IS NOT NULL").HasDatabaseName("ux_order_storefront_idempotency_key");
     }
 
     /// <summary>

@@ -71,6 +71,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<Customer> Customers { get; set; }
 
+        public virtual DbSet<StorefrontCustomerAuthChallenge> StorefrontCustomerAuthChallenges { get; set; }
+
         public virtual DbSet<DeliverymanAdvance> DeliverymanAdvances { get; set; }
 
         public virtual DbSet<DeliverymanDayState> DeliverymanDayStates { get; set; }
@@ -173,6 +175,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new PrintJobConfiguration());
             modelBuilder.ApplyConfiguration(new UserConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerConfiguration());
+            modelBuilder.ApplyConfiguration(new StorefrontCustomerAuthChallengeConfiguration());
             modelBuilder.ApplyConfiguration(new NeighborhoodConfiguration());
             modelBuilder.ApplyConfiguration(new AddressConfiguration());
             modelBuilder.ApplyConfiguration(new ProductCategoryConfiguration());

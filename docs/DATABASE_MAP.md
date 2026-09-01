@@ -79,6 +79,7 @@ UpdatedAt
 | UserDeviceToken | Sí | Desde `User.TenantId` |
 
 - `Branch.IsActive` (`branch.is_active`) determina si la sucursal participa en el storefront público. Se instala con `SenorArroz.Infrastructure/Scripts/add_branch_active_storefront.sql` y su valor por defecto es `true`.
+- `Branch.StorefrontTakenByUserId` (`branch.storefront_taken_by_user_id`) identifica el usuario técnico activo de la misma sede con el que se crean pedidos web directos.
 - `BranchBusinessHour` se persiste en `branch_business_hour`, con una fila única por `(branch_id, day_of_week)`; el panel administrativo, el catálogo público y la validación previa a WhatsApp comparten esta fuente.
 - El storefront público actual es una excepción single-tenant: no debe habilitarse para otro negocio hasta que productos, categorías, promociones y sucursales se filtren obligatoriamente por `tenant_id` resuelto en servidor.
 
@@ -107,6 +108,9 @@ Notas:
 - `Customer.WhatsAppUserId` almacena el BSUID estable y no se expone para edición; `WhatsAppUsername` es visible, normalizado en minúsculas y con `@`.
 - La búsqueda de clientes combina nombre, teléfonos y username. El username no es único porque puede cambiar o reutilizarse.
 - Barrios pueden repetirse entre tenants.
+- `Address.Label` es una etiqueta libre opcional para identificar la dirección y `Address.NeighborhoodId` puede ser nulo en direcciones creadas desde el storefront.
+- Una dirección guardada conserva su `DeliveryFee`; una dirección nueva almacena la tarifa validada al confirmar el pedido.
+- `StorefrontCustomerAuthChallenge` es tenant-owned y conserva HMAC del OTP, expiración, intentos, consumo, hash de sesión e IP seudonimizada; nunca persiste el código ni el token en texto plano.
 
 ### Productos y fidelización
 
@@ -140,6 +144,8 @@ Notas:
 - `Order` es una de las tablas más sensibles.
 - Cualquier query de pedidos debe filtrar por tenant y luego por branch cuando aplique.
 - `OrderDetail` debe copiar tenant desde su pedido, no desde frontend.
+- `Order.StorefrontIdempotencyKey` evita pedidos duplicados por reintentos del checkout y nunca se acepta como sustituto de la sesión verificada.
+- El esquema de OTP, direcciones web y pedidos directos se instala con `SenorArroz.Infrastructure/Scripts/add_storefront_customer_otp.sql` antes de desplegar el API.
 
 ### Bancos, apps y pagos
 

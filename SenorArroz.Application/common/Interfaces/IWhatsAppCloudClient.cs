@@ -66,6 +66,15 @@ public interface IWhatsAppCloudClient
         IReadOnlyList<string> parameters,
         CancellationToken cancellationToken = default);
 
+    Task<WhatsAppCloudSendResult> SendAuthenticationTemplateMessageAsync(
+        string phoneNumberId,
+        string accessToken,
+        string toPhoneNumber,
+        string templateName,
+        string language,
+        string code,
+        CancellationToken cancellationToken = default);
+
     Task<WhatsAppCloudUploadMediaResult> UploadMediaAsync(
         string phoneNumberId,
         string accessToken,

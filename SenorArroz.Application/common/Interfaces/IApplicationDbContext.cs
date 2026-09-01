@@ -62,6 +62,8 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<Customer> Customers { get; set; }
 
+        DbSet<StorefrontCustomerAuthChallenge> StorefrontCustomerAuthChallenges { get; set; }
+
         DbSet<DeliverymanAdvance> DeliverymanAdvances { get; set; }
 
         DbSet<DeliverymanDayState> DeliverymanDayStates { get; set; }

@@ -24,6 +24,7 @@ public class BranchConfiguration : IEntityTypeConfiguration<Branch>
         builder.Property(b => b.Latitude).HasColumnName("latitude").HasColumnType("numeric(10,6)");
         builder.Property(b => b.Longitude).HasColumnName("longitude").HasColumnType("numeric(10,6)");
         builder.Property(b => b.IsActive).HasColumnName("is_active").HasDefaultValue(true);
+        builder.Property(b => b.StorefrontTakenByUserId).HasColumnName("storefront_taken_by_user_id");
 
         builder.Property(b => b.MaxFreeDeliveryDiscount).HasColumnName("max_free_delivery_discount").HasDefaultValue(3000);
         builder.Property(b => b.PosCopyEtaMinMinutes)

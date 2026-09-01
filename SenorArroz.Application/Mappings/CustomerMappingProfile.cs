@@ -32,7 +32,7 @@ public class CustomerMappingProfile : Profile
 
         // Address mappings
         CreateMap<Address, CustomerAddressDto>()
-            .ForMember(dest => dest.NeighborhoodName, opt => opt.MapFrom(src => src.Neighborhood.Name))
+            .ForMember(dest => dest.NeighborhoodName, opt => opt.MapFrom(src => src.Neighborhood != null ? src.Neighborhood.Name : null))
             .ForMember(dest => dest.Address, opt => opt.MapFrom(src => src.AddressText))
             .ForMember(dest => dest.IsPrimary, opt => opt.MapFrom(src => src.IsPrimary));
 

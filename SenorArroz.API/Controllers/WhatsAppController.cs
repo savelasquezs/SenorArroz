@@ -694,7 +694,7 @@ public class WhatsAppController : ControllerBase
                     x.Id,
                     x.AddressText,
                     x.AdditionalInfo,
-                    x.Neighborhood.Name,
+                    x.Neighborhood != null ? x.Neighborhood.Name : null,
                     x.DeliveryFee))
                 .FirstOrDefaultAsync(cancellationToken);
         }
@@ -769,7 +769,7 @@ public class WhatsAppController : ControllerBase
                 ? "Un asesor configuró el pedido para recoger en el local."
                 : address is null
                     ? "Un asesor dejó pendiente la dirección de domicilio."
-                    : $"Un asesor seleccionó la dirección {address.AddressText}, {address.Neighborhood.Name}.",
+                    : $"Un asesor seleccionó la dirección {address.AddressText}{(address.Neighborhood == null ? string.Empty : $", {address.Neighborhood.Name}")}.",
             Timestamp = _clock.UtcNow
         });
         await orderState.SaveAsync(conversationId, state, cancellationToken);

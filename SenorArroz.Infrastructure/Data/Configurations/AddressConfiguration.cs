@@ -15,7 +15,8 @@ public class AddressConfiguration : IEntityTypeConfiguration<Address>
         builder.Property(a => a.Id).HasColumnName("id");
 
         builder.Property(a => a.CustomerId).HasColumnName("customer_id").IsRequired();
-        builder.Property(a => a.NeighborhoodId).HasColumnName("neighborhood_id").IsRequired();
+        builder.Property(a => a.NeighborhoodId).HasColumnName("neighborhood_id");
+        builder.Property(a => a.Label).HasColumnName("label").HasMaxLength(60);
         builder.Property(a => a.AddressText).HasColumnName("address").HasMaxLength(200).IsRequired();
         builder.Property(a => a.AdditionalInfo).HasColumnName("additional_info").HasMaxLength(150);
         builder.Property(a => a.DeliveryFee).HasColumnName("delivery_fee").IsRequired();

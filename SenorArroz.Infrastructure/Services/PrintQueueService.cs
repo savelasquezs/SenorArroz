@@ -229,7 +229,7 @@ public class PrintQueueService : IPrintQueueService
                 CustomerPhone2 = o.Customer == null ? null : o.Customer.Phone2,
                 AddressDescription = o.Address == null ? null : o.Address.AddressText,
                 AddressAdditionalInfo = o.Address == null ? null : o.Address.AdditionalInfo,
-                NeighborhoodName = o.Address == null ? null : o.Address.Neighborhood.Name,
+                NeighborhoodName = o.Address == null ? null : o.Address.Neighborhood != null ? o.Address.Neighborhood.Name : null,
                 Subtotal = o.Subtotal,
                 DiscountTotal = o.DiscountTotal,
                 DeliveryFee = o.DeliveryFee ?? 0,

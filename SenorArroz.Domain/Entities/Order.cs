@@ -24,6 +24,7 @@ public class Order : BaseEntity
     public int? DeliveryAppConnectionId { get; set; }
     public string? ExternalOrderId { get; set; }
     public string? OrderSource { get; set; }
+    public string? StorefrontIdempotencyKey { get; set; }
     public string? ExternalFulfillmentProvider { get; set; }
     public string? ExternalStoreName { get; set; }
     public string? ExternalCustomerPhone { get; set; }

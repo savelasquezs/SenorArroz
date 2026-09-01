@@ -156,11 +156,13 @@ Contexto operativo actual de sucursal:
 - El dashboard puede omitir el header exclusivamente para lecturas agregadas.
 - `Branch.IsActive` controla si una sede participa en la web pública. La columna se instala con `SenorArroz.Infrastructure/Scripts/add_branch_active_storefront.sql`.
 
-### Web pública y pedidos por WhatsApp
+### Web pública, OTP y pedidos directos
 
 Buscar primero:
 
 - `SenorArroz.API/Controllers/PublicStorefrontController.cs`
+- `SenorArroz.API/Controllers/PublicCustomerAuthController.cs`
+- `SenorArroz.API/Services/StorefrontCustomerAuthService.cs`
 - `SenorArroz.Infrastructure/Services/GoogleRoutesDrivingMetricsService.cs`
 - `SenorArroz.Infrastructure/Services/AddressResolutionServices.cs`
 
@@ -169,14 +171,18 @@ Endpoints protegidos con credenciales exclusivas del BFF (`X-Storefront-Key-Id` 
 - `GET /api/public/storefront/catalog`: catálogo compartido agrupado en `riceGroups`, `comboGroups`, `beverageGroups` y `additionGroups`. Cada grupo usa la ficha comercial y contiene opciones ordenadas con el `ProductId` real; expone las sucursales activas que tengan coordenadas y teléfono principal, incluyendo dirección, ubicación, horario semanal y enlace de contacto por WhatsApp, pero no inventario exacto ni promociones sin sucursal.
 - `POST /api/public/storefront/address-preview`: geocodifica una dirección o lugar conocido dentro de las ciudades habilitadas para mostrar un mapa de confirmación sin exponer credenciales de Google al navegador.
 - `POST /api/public/storefront/coverage-preview`: valida una ubicación confirmada y devuelve distancia, tiempo, cobertura dual y tarifa estimada desde cada sucursal sin exigir carrito ni datos del cliente.
-- `POST /api/public/storefront/delivery-quote`: cotiza domicilio o recogida, revalida carrito, horario y promoción de la sede y genera el enlace de WhatsApp. Domicilio valida ubicación, distancia, tiempo y tarifa exclusivamente entre sedes abiertas; recogida no solicita dirección del cliente y exige que la sede elegida esté abierta.
+- `POST /api/public/customer-auth/request-code`: crea un desafío temporal y envía `customers_web_authentication` por el WhatsApp autenticador configurado.
+- `POST /api/public/customer-auth/verify-code`: consume el OTP y crea una sesión opaca; solo entonces devuelve nombre y direcciones cuando existe una coincidencia única.
+- `GET /api/public/customer-auth/session`: recupera el estado mínimo del cliente desde el token de sesión enviado exclusivamente por el BFF.
+- `POST /api/public/storefront/delivery-quote`: cotiza domicilio o recogida y revalida carrito, horario y promoción. Una dirección guardada exige sesión verificada y conserva su tarifa histórica.
+- `POST /api/public/storefront/orders`: vuelve a cotizar y crea un pedido idempotente con cliente, dirección, sucursal y totales resueltos en servidor.
 
 Seguridad y operación:
 
 - `SenorArroz.API/Security/StorefrontApiKeyAuthentication.cs` valida identificador y hash de clave en tiempo constante.
 - Las cotizaciones admiten cuerpos de hasta 32 KB, 60 solicitudes por minuto y ocho ejecuciones concurrentes por instancia, con valores configurables.
 - Geocodificación y rutas válidas se cachean cinco minutos. Precio, estado, disponibilidad y promociones siempre se consultan nuevamente.
-- Los contactos y pedidos de la landing se dirigen a `Branch.Phone1`, con respaldo en `Branch.Phone2`; no usan el número configurado para WhatsApp/IA.
+- Los contactos manuales de la landing se dirigen a `Branch.Phone1`, con respaldo en `Branch.Phone2`. Los OTP usan exclusivamente la configuración de WhatsApp de la sucursal autenticadora.
 - El storefront permanece single-tenant hasta completar el aislamiento real de las consultas globales.
 - `product_category.storefront_role` decide explícitamente qué puede publicarse. `hidden`, categorías desconocidas, productos inactivos y productos agotados no pueden incorporarse a una cotización.
 - `product.storefront_variant_label` y `product.storefront_sort_order` controlan la presentación y el orden web sin inferir información desde el nombre del producto.

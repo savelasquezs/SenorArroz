@@ -262,7 +262,7 @@ public class WhatsAppOrderDraftDto
 }
 
 public record WhatsAppOrderDraftItemDto(int ProductId, string Name, int Quantity, int UnitPrice, int Subtotal, string? Notes, bool Available);
-public record WhatsAppOrderDraftAddressDto(int Id, string Address, string? AdditionalInfo, string Neighborhood, int DeliveryFee);
+public record WhatsAppOrderDraftAddressDto(int Id, string Address, string? AdditionalInfo, string? Neighborhood, int DeliveryFee);
 public record WhatsAppOrderDraftActivityDto(string Type, string Message, DateTime Timestamp);
 public class UpdateWhatsAppOrderDraftFulfillmentDto { public string OrderType { get; set; } = string.Empty; public int? AddressId { get; set; } }
 
