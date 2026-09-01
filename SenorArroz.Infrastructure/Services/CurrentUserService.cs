@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
 using SenorArroz.Application.Common.Interfaces;
 
@@ -13,10 +13,14 @@ namespace SenorArroz.Infrastructure.Services
             _httpContextAccessor = httpContextAccessor;
         }
 
-        public int Id => int.Parse(
-    _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
-        ?? "0"
-);
+        public int Id
+        {
+            get
+            {
+                var value = _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                return int.TryParse(value, out var id) ? id : 0;
+            }
+        }
 
         public string Role => _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.Role)?.Value?.ToLower() ?? string.Empty;
 
@@ -24,8 +28,8 @@ namespace SenorArroz.Infrastructure.Services
         {
             get
             {
-                var branchClaim = _httpContextAccessor.HttpContext?.User?.FindFirst("branch_id")?.Value;
-                return branchClaim != null ? int.Parse(branchClaim) : 0;
+                var value = _httpContextAccessor.HttpContext?.User?.FindFirst("branch_id")?.Value;
+                return int.TryParse(value, out var branchId) ? branchId : 0;
             }
         }
 
@@ -42,6 +46,5 @@ namespace SenorArroz.Infrastructure.Services
 
         public string? DeviceInstallationId =>
             _httpContextAccessor.HttpContext?.User?.FindFirst("device_id")?.Value;
-
     }
 }
