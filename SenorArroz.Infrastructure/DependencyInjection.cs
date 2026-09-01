@@ -76,6 +76,7 @@ public static class DependencyInjection
         services.AddSingleton<IDeliveryRouteOptimizer, OrToolsDeliveryRouteOptimizer>();
         services.AddHttpClient<IWhatsAppCloudClient, WhatsAppCloudClient>();
         services.AddSingleton<IIntegrationSecretProtector, IntegrationSecretProtector>();
+        services.AddHttpClient<IWompiPaymentService, WompiPaymentService>(client => client.Timeout = TimeSpan.FromSeconds(15));
         services.AddHttpClient<IRappiDeliveryProvider, RappiDeliveryProvider>(client => client.Timeout = TimeSpan.FromSeconds(20));
         services.AddScoped<IRappiOrderProcessor, RappiOrderProcessor>();
         services.AddScoped<IExternalDeliveryStatusSyncService, ExternalDeliveryStatusSyncService>();
@@ -165,6 +166,7 @@ public static class DependencyInjection
         services.AddHostedService<DeliveryStayDetectionWorker>();
         services.AddHostedService<DeliveryTrackingAlertWorker>();
         services.AddHostedService<RappiIntegrationWorker>();
+        services.AddHostedService<PaymentNotificationOutboxWorker>();
 
         return services;
     }

@@ -65,6 +65,9 @@ public class OrderBusinessRulesService : IOrderBusinessRulesService
         if (order.Status == newStatus)
             return true;
 
+        if (order.Status == OrderStatus.AwaitingPayment || newStatus == OrderStatus.AwaitingPayment)
+            return false;
+
         // Admin y Superadmin pueden corregir libremente el estado, incluso si el
         // pedido ya fue entregado o cancelado.
         if (Roles.IsAdminOrSuperadmin(userRole))

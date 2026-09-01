@@ -18,12 +18,24 @@ namespace SenorArroz.Domain.Enums
 
     public enum OrderStatus
     {
+        AwaitingPayment, // awaiting_payment
         Taken,          // taken
         InPreparation,  // in_preparation
         Ready,          // ready
         OnTheWay,       // on_the_way
         Delivered,      // delivered
         Cancelled       // cancelled
+    }
+
+    public enum PaymentAttemptStatus
+    {
+        Pending,
+        Approved,
+        Declined,
+        Error,
+        Voided,
+        Expired,
+        ReviewRequired
     }
 
     public enum OrderType

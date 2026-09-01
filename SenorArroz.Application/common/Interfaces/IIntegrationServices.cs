@@ -8,6 +8,44 @@ public interface IIntegrationSecretProtector
     string Unprotect(string protectedText);
 }
 
+public interface IWompiPaymentService
+{
+    Task<WompiPaymentIntegration?> GetEnabledIntegrationAsync(int tenantId, int branchId, CancellationToken cancellationToken);
+    WompiCheckoutData CreateAttempt(Order order, WompiPaymentIntegration integration, DateTime utcNow);
+    Task<WompiWebhookProcessingResult> ProcessWebhookAsync(string environment, string rawPayload, string? headerChecksum, CancellationToken cancellationToken);
+    Task<WompiPaymentStatusResult?> GetOrderPaymentStatusAsync(int tenantId, int orderId, CancellationToken cancellationToken);
+    Task<WompiPaymentStatusResult?> SynchronizeTransactionAsync(int tenantId, int orderId, string providerTransactionId, CancellationToken cancellationToken);
+    Task<WompiCheckoutData> RetryAsync(int tenantId, Order order, DateTime utcNow, CancellationToken cancellationToken);
+    Task<WompiManualReviewResult> ResolveManualReviewAsync(int attemptId, int reviewedByUserId, bool approve, DateTime utcNow, CancellationToken cancellationToken);
+    Task<bool> TestPublicKeyAsync(string environment, string publicKey, CancellationToken cancellationToken);
+}
+
+public interface IPaymentReviewNotificationService
+{
+    Task NotifyReviewRequiredAsync(int branchId, int orderId, int paymentAttemptId, string reason, CancellationToken cancellationToken);
+}
+
+public record WompiCheckoutData(
+    string PublicKey,
+    string Currency,
+    long AmountInCents,
+    string Reference,
+    string IntegritySignature,
+    string ExpiresAt,
+    string Environment);
+
+public record WompiPaymentStatusResult(
+    int OrderId,
+    string OrderStatus,
+    string PaymentStatus,
+    bool RequiresManualReview,
+    string? ManualReviewReason,
+    string? ProviderTransactionId,
+    WompiCheckoutData? Checkout);
+
+public record WompiWebhookProcessingResult(bool Accepted, bool Duplicate, bool RequiresManualReview, int? BranchId, int? OrderId, int? PaymentAttemptId, string? Error = null);
+public record WompiManualReviewResult(int OrderId, int BranchId, string PaymentStatus, string OrderStatus);
+
 public interface IRappiDeliveryProvider
 {
     bool CredentialsConfigured { get; }

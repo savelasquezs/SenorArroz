@@ -66,6 +66,11 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<IntegrationWebhookEvent> IntegrationWebhookEvents { get; set; }
         public virtual DbSet<RappiMenuPublication> RappiMenuPublications { get; set; }
         public virtual DbSet<RappiAvailabilityState> RappiAvailabilityStates { get; set; }
+        public virtual DbSet<WompiPaymentIntegration> WompiPaymentIntegrations { get; set; }
+        public virtual DbSet<WompiPaymentAttempt> WompiPaymentAttempts { get; set; }
+        public virtual DbSet<WompiProviderTransaction> WompiProviderTransactions { get; set; }
+        public virtual DbSet<WompiWebhookEvent> WompiWebhookEvents { get; set; }
+        public virtual DbSet<PaymentNotificationOutboxMessage> PaymentNotificationOutboxMessages { get; set; }
 
         public virtual DbSet<PrintJob> PrintJobs { get; set; }
 
@@ -172,6 +177,11 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new IntegrationWebhookEventConfiguration());
             modelBuilder.ApplyConfiguration(new RappiMenuPublicationConfiguration());
             modelBuilder.ApplyConfiguration(new RappiAvailabilityStateConfiguration());
+            modelBuilder.ApplyConfiguration(new WompiPaymentIntegrationConfiguration());
+            modelBuilder.ApplyConfiguration(new WompiPaymentAttemptConfiguration());
+            modelBuilder.ApplyConfiguration(new WompiProviderTransactionConfiguration());
+            modelBuilder.ApplyConfiguration(new WompiWebhookEventConfiguration());
+            modelBuilder.ApplyConfiguration(new PaymentNotificationOutboxMessageConfiguration());
             modelBuilder.ApplyConfiguration(new PrintJobConfiguration());
             modelBuilder.ApplyConfiguration(new UserConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerConfiguration());

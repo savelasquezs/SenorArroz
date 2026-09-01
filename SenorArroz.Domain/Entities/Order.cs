@@ -93,6 +93,7 @@ public class Order : BaseEntity
     public virtual ICollection<BankPayment> BankPayments { get; set; } = new List<BankPayment>();
     public virtual ICollection<AppPayment> AppPayments { get; set; } = new List<AppPayment>();
     public virtual ICollection<ReservationDeposit> Deposits { get; set; } = new List<ReservationDeposit>();
+    public virtual ICollection<WompiPaymentAttempt> WompiPaymentAttempts { get; set; } = new List<WompiPaymentAttempt>();
 
     // Helper methods para StatusTimes
     public Dictionary<string, DateTime> GetStatusTimes()

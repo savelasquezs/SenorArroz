@@ -57,6 +57,11 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<IntegrationWebhookEvent> IntegrationWebhookEvents { get; set; }
         DbSet<RappiMenuPublication> RappiMenuPublications { get; set; }
         DbSet<RappiAvailabilityState> RappiAvailabilityStates { get; set; }
+        DbSet<WompiPaymentIntegration> WompiPaymentIntegrations { get; set; }
+        DbSet<WompiPaymentAttempt> WompiPaymentAttempts { get; set; }
+        DbSet<WompiProviderTransaction> WompiProviderTransactions { get; set; }
+        DbSet<WompiWebhookEvent> WompiWebhookEvents { get; set; }
+        DbSet<PaymentNotificationOutboxMessage> PaymentNotificationOutboxMessages { get; set; }
 
         DbSet<PrintJob> PrintJobs { get; set; }
 

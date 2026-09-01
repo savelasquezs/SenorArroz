@@ -119,6 +119,7 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.OrderDetails, opt => opt.Ignore())
             .ForMember(dest => dest.BankPayments, opt => opt.Ignore())
             .ForMember(dest => dest.AppPayments, opt => opt.Ignore())
+            .ForMember(dest => dest.WompiPaymentAttempts, opt => opt.Ignore())
             .ForMember(dest => dest.Deposits, opt => opt.Ignore())
             .ForMember(dest => dest.PaidInStoreCash, opt => opt.Ignore())
             .ForMember(dest => dest.PaidInStoreCashAt, opt => opt.Ignore())
@@ -176,6 +177,7 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.DeliveryAppConnection, opt => opt.Ignore())
             .ForMember(dest => dest.BankPayments, opt => opt.Ignore())
             .ForMember(dest => dest.AppPayments, opt => opt.Ignore())
+            .ForMember(dest => dest.WompiPaymentAttempts, opt => opt.Ignore())
             .ForMember(dest => dest.Deposits, opt => opt.Ignore())
             .ForMember(dest => dest.Id, opt => opt.Ignore())
             .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
@@ -208,6 +210,7 @@ public class OrderMappingProfile : Profile
     {
         return status switch
         {
+            Domain.Enums.OrderStatus.AwaitingPayment => "Esperando pago",
             Domain.Enums.OrderStatus.Taken => "Tomado",
             Domain.Enums.OrderStatus.InPreparation => "En preparación",
             Domain.Enums.OrderStatus.Ready => "Listo",

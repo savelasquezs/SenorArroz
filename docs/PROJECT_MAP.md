@@ -165,6 +165,10 @@ Buscar primero:
 - `SenorArroz.API/Services/StorefrontCustomerAuthService.cs`
 - `SenorArroz.Infrastructure/Services/GoogleRoutesDrivingMetricsService.cs`
 - `SenorArroz.Infrastructure/Services/AddressResolutionServices.cs`
+- `SenorArroz.API/Controllers/WompiIntegrationsController.cs`
+- `SenorArroz.API/Controllers/WompiWebhooksController.cs`
+- `SenorArroz.Infrastructure/Integrations/WompiPaymentService.cs`
+- `SenorArroz.Infrastructure/Services/PaymentNotificationOutboxWorker.cs`
 
 Endpoints protegidos con credenciales exclusivas del BFF (`X-Storefront-Key-Id` y `X-Storefront-Key`):
 
@@ -176,6 +180,11 @@ Endpoints protegidos con credenciales exclusivas del BFF (`X-Storefront-Key-Id` 
 - `GET /api/public/customer-auth/session`: recupera el estado mínimo del cliente desde el token de sesión enviado exclusivamente por el BFF.
 - `POST /api/public/storefront/delivery-quote`: cotiza domicilio o recogida y revalida carrito, horario y promoción. Una dirección guardada exige sesión verificada y conserva su tarifa histórica.
 - `POST /api/public/storefront/orders`: vuelve a cotizar y crea un pedido idempotente con cliente, dirección, sucursal y totales resueltos en servidor.
+- `GET /api/public/storefront/orders/{id}/payment-status`: consulta el intento de pago del cliente autenticado.
+- `POST /api/public/storefront/orders/{id}/payments/wompi/transactions/{transactionId}`: sincroniza el resultado devuelto por el widget sin sustituir al webhook firmado.
+- `POST /api/public/storefront/orders/{id}/payments/wompi/retry`: crea o reutiliza un intento vigente mientras el pedido siga esperando pago.
+- `GET|PUT /api/branches/{branchId}/payment-integrations/wompi`: consulta y configura proveedor, ambiente, App financiera y credenciales cifradas.
+- `POST /api/integrations/wompi/webhooks/{environment}`: recibe eventos públicos firmados de Sandbox o Producción.
 
 Seguridad y operación:
 
