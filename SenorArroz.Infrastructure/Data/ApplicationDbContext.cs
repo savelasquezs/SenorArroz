@@ -251,7 +251,7 @@ namespace SenorArroz.Infrastructure.Data
             if (!Database.IsNpgsql())
                 return;
 
-            var userId = _currentUser?.IsAuthenticated == true ? _currentUser.Id.ToString() : string.Empty;
+            var userId = _currentUser?.Id > 0 ? _currentUser.Id.ToString() : string.Empty;
             var branchId = _currentUser?.BranchId > 0 ? _currentUser.BranchId.ToString() : string.Empty;
 
             await Database.ExecuteSqlRawAsync("select set_config('app.current_user_id', {0}, true);", [userId], cancellationToken);
@@ -264,7 +264,7 @@ namespace SenorArroz.Infrastructure.Data
             if (!Database.IsNpgsql())
                 return;
 
-            var userId = _currentUser?.IsAuthenticated == true ? _currentUser.Id.ToString() : string.Empty;
+            var userId = _currentUser?.Id > 0 ? _currentUser.Id.ToString() : string.Empty;
             var branchId = _currentUser?.BranchId > 0 ? _currentUser.BranchId.ToString() : string.Empty;
 
             Database.ExecuteSqlRaw("select set_config('app.current_user_id', {0}, true);", userId);
