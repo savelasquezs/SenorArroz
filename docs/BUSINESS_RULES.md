@@ -332,6 +332,7 @@ Reglas:
 - Una sucursal solo ofrece pago en línea si la integración, la App y el banco están activos y las tres credenciales del ambiente activo están completas.
 - Cada intento usa referencia opaca única, total en centavos calculado por backend, moneda COP, firma SHA-256 y expiración exacta de 15 minutos. Reintentar crea una referencia nueva cuando la anterior ya venció o terminó.
 - El webhook firmado es la autoridad. Se valida firma en tiempo constante, ambiente, referencia, monto y moneda; eventos y transacciones son idempotentes.
+- Antes de abrir Wompi se cierra el carrito. El Widget retorna a `/pedido/{orderId}/pago`; la página sincroniza el `id` de transacción recibido y mantiene webhook y consulta periódica como respaldo.
 - Un pago aprobado dentro de la ventana crea un único `app_payment` bruto con comisión y neto esperado, cambia el pedido a `Taken` y encola su notificación a cocina en la misma transacción.
 - Una aprobación posterior a 15 minutos, o asociada a un pedido que ya no espera pago, queda en revisión manual, alerta a Admin/Superadmin y no entra a cocina automáticamente.
 - Cancelaciones, anulaciones y reembolsos de Wompi quedan fuera de esta primera entrega.
