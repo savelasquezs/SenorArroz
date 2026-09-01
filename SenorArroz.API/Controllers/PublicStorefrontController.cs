@@ -8,11 +8,13 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using SenorArroz.API.Security;
 using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Services;
@@ -30,7 +32,9 @@ public sealed class PublicStorefrontController(
     IClock clock,
     IBranchBusinessHoursService businessHours,
     IMemoryCache cache,
-    StorefrontQuoteConcurrencyGate concurrencyGate) : ControllerBase
+    StorefrontQuoteConcurrencyGate concurrencyGate,
+    IWompiPaymentService wompi,
+    IOptions<StorefrontCustomerAuthOptions> storefrontOptions) : ControllerBase
 {
     private const int PreparationMinutes = 20;
     private const int CoverageTravelMinutes = 30;
@@ -369,6 +373,14 @@ public sealed class PublicStorefrontController(
             return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("El pedido contiene demasiada información. Reduce las notas e intenta nuevamente."));
         var whatsappUrl = $"{BuildWhatsAppUrl(checkoutBranch.ContactPhone)}?text={Uri.EscapeDataString(message)}";
 
+        var onlinePaymentAvailable = await db.WompiPaymentIntegrations.AsNoTracking().AnyAsync(x =>
+            x.TenantId == Math.Max(1, storefrontOptions.Value.TenantId)
+            && x.BranchId == checkoutBranch.Id
+            && x.IsEnabled
+            && x.FinancialApp.Active
+            && x.FinancialApp.Bank.Active
+            && x.FinancialApp.Bank.BranchId == checkoutBranch.Id,
+            cancellationToken);
         var result = new PublicDeliveryQuoteDto(
             fulfillmentType,
             resolvedAddress?.FormattedAddress,
@@ -389,7 +401,8 @@ public sealed class PublicStorefrontController(
             subtotal + checkoutDeliveryFee,
             promotionDto,
             whatsappUrl,
-            savedAddress is null ? "estimated" : "saved");
+            savedAddress is null ? "estimated" : "saved",
+            onlinePaymentAvailable);
 
         return Ok(ApiResponse<PublicDeliveryQuoteDto>.SuccessResponse(result));
     }
@@ -425,6 +438,9 @@ public sealed class PublicStorefrontController(
         request.Phone = ColombianMobilePhone.Normalize(request.Phone);
         if (session.Phone != request.Phone)
             return Unauthorized(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("El celular del pedido no coincide con la sesión verificada."));
+        var paymentMethod = (request.PaymentMethod ?? string.Empty).Trim().ToLowerInvariant();
+        if (paymentMethod is not "cash" and not "online")
+            return BadRequest(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("Selecciona efectivo o pago en línea."));
 
         var existingOrder = await db.Orders.AsNoTracking()
             .Include(x => x.Customer)
@@ -433,7 +449,7 @@ public sealed class PublicStorefrontController(
         {
             if (existingOrder.Customer is null || (existingOrder.Customer.Phone1 != session.Phone && existingOrder.Customer.Phone2 != session.Phone))
                 return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
-            return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(existingOrder)));
+            return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(await ToPublicOrderResultAsync(existingOrder, cancellationToken)));
         }
 
         var quoteAction = await Quote(request, cancellationToken, customerAuth);
@@ -461,7 +477,7 @@ public sealed class PublicStorefrontController(
                     throw new StorefrontOrderConflictException("La clave de confirmación ya fue utilizada.");
                 if (transaction is not null)
                     await transaction.CommitAsync(cancellationToken);
-                return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(existingOrder)));
+                return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(await ToPublicOrderResultAsync(existingOrder, cancellationToken)));
             }
 
             var branch = await db.Branches.FirstOrDefaultAsync(x => x.Id == quote.CheckoutBranchId && x.IsActive, cancellationToken);
@@ -473,6 +489,11 @@ public sealed class PublicStorefrontController(
             if (!technicalUserIsValid)
                 return StatusCode(StatusCodes.Status503ServiceUnavailable,
                     ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("El usuario técnico de pedidos web no está disponible para esta sucursal."));
+            var wompiIntegration = paymentMethod == "online"
+                ? await wompi.GetEnabledIntegrationAsync(Math.Max(1, storefrontOptions.Value.TenantId), branch.Id, cancellationToken)
+                : null;
+            if (paymentMethod == "online" && wompiIntegration is null)
+                return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("Esta sucursal no tiene pago en línea disponible. Selecciona efectivo o elige otra sucursal."));
 
             Customer customer;
             if (session.Customer is not null)
@@ -537,12 +558,12 @@ public sealed class PublicStorefrontController(
                 GuestName = request.Name.Trim(),
                 Type = quote.FulfillmentType == "delivery" ? OrderType.Delivery : OrderType.Onsite,
                 DeliveryFee = quote.FulfillmentType == "delivery" ? quote.Total - quote.Subtotal : 0,
-                Status = OrderStatus.Taken,
+                Status = paymentMethod == "online" ? OrderStatus.AwaitingPayment : OrderStatus.Taken,
                 OrderSource = "web",
                 StorefrontIdempotencyKey = idempotencyKey,
                 Notes = request.OrderNotes?.Trim()
             };
-            order.AddStatusTime(OrderStatus.Taken, clock.UtcNow);
+            order.AddStatusTime(order.Status, clock.UtcNow);
             foreach (var line in quote.Items)
             {
                 order.OrderDetails.Add(new OrderDetail
@@ -558,10 +579,16 @@ public sealed class PublicStorefrontController(
             OrderTotalsHelper.RecalculateFromOrderDetails(order);
             db.Orders.Add(order);
             await db.SaveChangesAsync(cancellationToken);
+            WompiCheckoutData? checkout = null;
+            if (wompiIntegration is not null)
+            {
+                checkout = wompi.CreateAttempt(order, wompiIntegration, clock.UtcNow);
+                await db.SaveChangesAsync(cancellationToken);
+            }
             if (transaction is not null)
                 await transaction.CommitAsync(cancellationToken);
 
-            try
+            if (paymentMethod == "cash") try
             {
                 var notificationOrder = await db.Orders.AsNoTracking()
                     .Include(x => x.Branch)
@@ -578,7 +605,7 @@ public sealed class PublicStorefrontController(
                 logger.LogWarning(notificationError, "El pedido web {OrderId} se creó, pero la notificación de cocina falló.", order.Id);
             }
 
-            return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(order)));
+            return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(order, paymentMethod, checkout)));
         }
         catch (StorefrontOrderConflictException ex)
         {
@@ -596,7 +623,7 @@ public sealed class PublicStorefrontController(
             {
                 if (existingOrder.Customer is null || (existingOrder.Customer.Phone1 != session.Phone && existingOrder.Customer.Phone2 != session.Phone))
                     return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
-                return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(existingOrder)));
+                return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(await ToPublicOrderResultAsync(existingOrder, cancellationToken)));
             }
             throw;
         }
@@ -607,13 +634,88 @@ public sealed class PublicStorefrontController(
         }
     }
 
-    private static PublicStorefrontOrderResult ToPublicOrderResult(Order order) => new(
+    [HttpGet("orders/{orderId:int}/payment-status")]
+    [EnableRateLimiting("storefront-quote")]
+    public async Task<ActionResult<ApiResponse<WompiPaymentStatusResult>>> GetPaymentStatus(
+        int orderId,
+        [FromServices] StorefrontCustomerAuthService customerAuth,
+        CancellationToken cancellationToken)
+    {
+        var order = await GetVerifiedCustomerOrderAsync(orderId, customerAuth, cancellationToken);
+        if (order is null) return NotFound(ApiResponse<WompiPaymentStatusResult>.ErrorResponse("Pedido no encontrado."));
+        var result = await wompi.GetOrderPaymentStatusAsync(Math.Max(1, storefrontOptions.Value.TenantId), orderId, cancellationToken);
+        return result is null
+            ? NotFound(ApiResponse<WompiPaymentStatusResult>.ErrorResponse("Este pedido no tiene un pago en línea."))
+            : Ok(ApiResponse<WompiPaymentStatusResult>.SuccessResponse(result));
+    }
+
+    [HttpPost("orders/{orderId:int}/payments/wompi/transactions/{transactionId}")]
+    [EnableRateLimiting("storefront-quote")]
+    public async Task<ActionResult<ApiResponse<WompiPaymentStatusResult>>> RegisterWompiTransaction(
+        int orderId,
+        string transactionId,
+        [FromServices] StorefrontCustomerAuthService customerAuth,
+        CancellationToken cancellationToken)
+    {
+        var order = await GetVerifiedCustomerOrderAsync(orderId, customerAuth, cancellationToken);
+        if (order is null) return NotFound(ApiResponse<WompiPaymentStatusResult>.ErrorResponse("Pedido no encontrado."));
+        var result = await wompi.SynchronizeTransactionAsync(Math.Max(1, storefrontOptions.Value.TenantId), orderId, transactionId, cancellationToken);
+        return result is null
+            ? NotFound(ApiResponse<WompiPaymentStatusResult>.ErrorResponse("Este pedido no tiene un pago en línea."))
+            : Ok(ApiResponse<WompiPaymentStatusResult>.SuccessResponse(result));
+    }
+
+    [HttpPost("orders/{orderId:int}/payments/wompi/retry")]
+    [EnableRateLimiting("storefront-quote")]
+    public async Task<ActionResult<ApiResponse<WompiCheckoutData>>> RetryWompiPayment(
+        int orderId,
+        [FromServices] StorefrontCustomerAuthService customerAuth,
+        CancellationToken cancellationToken)
+    {
+        var order = await GetVerifiedCustomerOrderAsync(orderId, customerAuth, cancellationToken);
+        if (order is null) return NotFound(ApiResponse<WompiCheckoutData>.ErrorResponse("Pedido no encontrado."));
+        var checkout = await wompi.RetryAsync(Math.Max(1, storefrontOptions.Value.TenantId), order, clock.UtcNow, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(ApiResponse<WompiCheckoutData>.SuccessResponse(checkout));
+    }
+
+    private async Task<Order?> GetVerifiedCustomerOrderAsync(
+        int orderId,
+        StorefrontCustomerAuthService customerAuth,
+        CancellationToken cancellationToken)
+    {
+        StorefrontCustomerSessionResult session;
+        try
+        {
+            session = await customerAuth.GetSessionAsync(Request.Headers["X-Storefront-Customer-Session"].FirstOrDefault(), cancellationToken);
+        }
+        catch (StorefrontAuthInvalidSessionException)
+        {
+            return null;
+        }
+        return await db.Orders.Include(x => x.Customer).FirstOrDefaultAsync(x =>
+            x.Id == orderId
+            && x.OrderSource == "web"
+            && x.Customer != null
+            && (x.Customer.Phone1 == session.Phone || x.Customer.Phone2 == session.Phone), cancellationToken);
+    }
+
+    private async Task<PublicStorefrontOrderResult> ToPublicOrderResultAsync(Order order, CancellationToken cancellationToken)
+    {
+        var payment = await wompi.GetOrderPaymentStatusAsync(Math.Max(1, storefrontOptions.Value.TenantId), order.Id, cancellationToken);
+        return ToPublicOrderResult(order, payment is null ? "cash" : "online", payment?.Checkout, payment?.PaymentStatus);
+    }
+
+    private static PublicStorefrontOrderResult ToPublicOrderResult(Order order, string paymentMethod, WompiCheckoutData? checkout, string? paymentStatus = null) => new(
         order.Id,
         order.Status.ToString(),
         order.BranchId,
         order.Subtotal,
         order.DeliveryFee ?? 0,
-        order.Total);
+        order.Total,
+        paymentMethod,
+        paymentStatus ?? (paymentMethod == "cash" ? "NotRequired" : "Pending"),
+        checkout);
 
     private IQueryable<Branch> EligibleBranchesQuery() => db.Branches
         .AsNoTracking()
@@ -1058,6 +1160,8 @@ public sealed class PublicStorefrontOrderRequest : PublicDeliveryQuoteRequest
 {
     [StringLength(200)]
     public string? OrderNotes { get; set; }
+    [RegularExpression("^(cash|online)$")]
+    public string PaymentMethod { get; set; } = "cash";
 }
 
 public sealed class PublicCartItemRequest
@@ -1124,9 +1228,19 @@ public sealed record PublicDeliveryQuoteDto(
     int Total,
     PublicPromotionDto? Promotion,
     string WhatsAppUrl,
-    string DeliveryFeeSource = "estimated");
+    string DeliveryFeeSource = "estimated",
+    bool OnlinePaymentAvailable = false);
 
-public sealed record PublicStorefrontOrderResult(int OrderId, string Status, int BranchId, int Subtotal, int DeliveryFee, int Total);
+public sealed record PublicStorefrontOrderResult(
+    int OrderId,
+    string Status,
+    int BranchId,
+    int Subtotal,
+    int DeliveryFee,
+    int Total,
+    string PaymentMethod,
+    string PaymentStatus,
+    WompiCheckoutData? WompiCheckout);
 
 public sealed class StorefrontOrderConflictException(string message) : Exception(message);
 

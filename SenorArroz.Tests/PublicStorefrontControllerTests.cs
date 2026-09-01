@@ -1,19 +1,25 @@
+using AutoMapper;
 using System.Net;
 using System.Reflection;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
 using SenorArroz.API.Controllers;
 using SenorArroz.API.Security;
+using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
+using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Services;
 using SenorArroz.Shared.Models;
@@ -433,6 +439,129 @@ public class PublicStorefrontControllerTests
         Assert.Equal(5_000, response.Data.CoverageDistanceMeters);
     }
 
+    [Fact]
+    public async Task Quote_SavedAddressPreservesHistoricalDeliveryFee()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        var branch = db.Branches.Local.Single(x => x.Id == 10);
+        var customer = new Customer
+        {
+            Id = 30,
+            BranchId = branch.Id,
+            Branch = branch,
+            Name = "Cliente guardado",
+            Phone1 = "3005556677",
+            Active = true,
+        };
+        customer.Addresses.Add(new Address
+        {
+            Id = 31,
+            CustomerId = customer.Id,
+            Customer = customer,
+            Label = "Casa",
+            AddressText = "Calle 10 # 20-30, Medellín",
+            DeliveryFee = 9_000,
+            IsPrimary = true,
+        });
+        db.Customers.Add(customer);
+        await db.SaveChangesAsync();
+        var (auth, token) = await CreateVerifiedSession(db, customer.Phone1!);
+        var controller = Controller(db, 720, 3_000);
+        controller.ControllerContext = ContextWithSession(token);
+        var request = Request();
+        request.Phone = customer.Phone1!;
+        request.SavedAddressId = 31;
+        request.Address = null;
+        request.Latitude = null;
+        request.Longitude = null;
+
+        var action = await controller.Quote(request, default, auth);
+
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.Equal("saved", response.Data!.DeliveryFeeSource);
+        Assert.Equal(9_000, response.Data.EstimatedDeliveryFee);
+        Assert.Equal(response.Data.Subtotal + 9_000, response.Data.Total);
+    }
+
+    [Fact]
+    public async Task ConfirmOrder_NewCustomerCreatesSingleIdempotentDeliveryOrderAndAddress()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        var branch = db.Branches.Local.Single(x => x.Id == 10);
+        var technicalUser = new User
+        {
+            Id = 90,
+            BranchId = branch.Id,
+            Branch = branch,
+            Name = "Storefront",
+            Email = "storefront@test.local",
+            Phone = "3000000000",
+            PasswordHash = "not-used",
+            Active = true,
+        };
+        branch.StorefrontTakenByUserId = technicalUser.Id;
+        db.Users.Add(technicalUser);
+        await db.SaveChangesAsync();
+        var (auth, token) = await CreateVerifiedSession(db, "3008889900");
+        var controller = Controller(db, 720);
+        controller.ControllerContext = ContextWithSession(token);
+        var request = new PublicStorefrontOrderRequest
+        {
+            Name = "Cliente nuevo",
+            Phone = "3008889900",
+            FulfillmentType = "delivery",
+            City = "Medellín",
+            Address = "Calle 10 # 20-30",
+            AddressAdditionalInfo = "Apartamento 201",
+            AddressLabel = "Casa",
+            Latitude = 6.25m,
+            Longitude = -75.56m,
+            SelectedBranchId = branch.Id,
+            Items = [new PublicCartItemRequest { ProductId = 20, Quantity = 2 }],
+        };
+        const string idempotencyKey = "01J6Q5THDVA6PF6P0D7YYS55HA";
+        var mapper = new Mock<IMapper>();
+        mapper.Setup(x => x.Map<OrderDto>(It.IsAny<object>())).Returns(new OrderDto());
+        var notifications = new Mock<IOrderNotificationService>();
+        notifications.Setup(x => x.NotifyNewOrderToKitchen(It.IsAny<OrderDto>())).Returns(Task.CompletedTask);
+
+        var first = await controller.ConfirmOrder(
+            request,
+            idempotencyKey,
+            auth,
+            mapper.Object,
+            notifications.Object,
+            Mock.Of<ILogger<PublicStorefrontController>>(),
+            default);
+        var second = await controller.ConfirmOrder(
+            request,
+            idempotencyKey,
+            auth,
+            mapper.Object,
+            notifications.Object,
+            Mock.Of<ILogger<PublicStorefrontController>>(),
+            default);
+
+        var firstResponse = Assert.IsType<ApiResponse<PublicStorefrontOrderResult>>(Assert.IsType<OkObjectResult>(first.Result).Value);
+        var secondResponse = Assert.IsType<ApiResponse<PublicStorefrontOrderResult>>(Assert.IsType<OkObjectResult>(second.Result).Value);
+        Assert.Equal(firstResponse.Data!.OrderId, secondResponse.Data!.OrderId);
+        var order = Assert.Single(db.Orders.Include(x => x.OrderDetails));
+        Assert.Equal("web", order.OrderSource);
+        Assert.Equal(OrderStatus.Taken, order.Status);
+        Assert.Equal(OrderType.Delivery, order.Type);
+        Assert.Equal(100_000, order.Subtotal);
+        Assert.Equal(5_000, order.DeliveryFee);
+        Assert.Equal(105_000, order.Total);
+        Assert.Equal("Cliente nuevo", Assert.Single(db.Customers).Name);
+        var address = Assert.Single(db.Addresses);
+        Assert.Equal("Casa", address.Label);
+        Assert.Equal("Apartamento 201", address.AdditionalInfo);
+        Assert.Equal(5_000, address.DeliveryFee);
+        notifications.Verify(x => x.NotifyNewOrderToKitchen(It.IsAny<OrderDto>()), Times.Once);
+    }
+
     private static PublicDeliveryQuoteRequest Request() => new()
     {
         Name = "Cliente",
@@ -455,6 +584,9 @@ public class PublicStorefrontControllerTests
             new HttpClient(new GeocodingHandler()),
             Options.Create(new GoogleMapsRouteOptions { GeocodingApiKey = "test" }));
         var configuration = new ConfigurationBuilder().Build();
+        var wompi = new Mock<IWompiPaymentService>();
+        wompi.Setup(x => x.GetOrderPaymentStatusAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((WompiPaymentStatusResult?)null);
         return new PublicStorefrontController(
             db,
             routeService.Object,
@@ -462,7 +594,48 @@ public class PublicStorefrontControllerTests
             new FakeClock(Now),
             new BranchBusinessHoursService(db),
             new MemoryCache(Options.Create(new MemoryCacheOptions())),
-            new StorefrontQuoteConcurrencyGate(configuration));
+            new StorefrontQuoteConcurrencyGate(configuration),
+            wompi.Object,
+            Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }));
+    }
+
+    private static async Task<(StorefrontCustomerAuthService Service, string Token)> CreateVerifiedSession(
+        ApplicationDbContext db,
+        string phone)
+    {
+        string? code = null;
+        var cloud = new Mock<IWhatsAppCloudClient>();
+        cloud.Setup(x => x.SendAuthenticationTemplateMessageAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, string, string, string, CancellationToken>((_, _, _, _, _, value, _) => code = value)
+            .ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.test", null));
+        var service = new StorefrontCustomerAuthService(
+            db,
+            cloud.Object,
+            new FakeClock(Now),
+            Options.Create(new StorefrontCustomerAuthOptions
+            {
+                TenantId = 1,
+                AuthenticationBranchId = 10,
+                HmacSecret = "storefront-auth-test-secret-32-bytes-minimum",
+            }),
+            Mock.Of<ILogger<StorefrontCustomerAuthService>>());
+        var challenge = await service.RequestCodeAsync(phone, "127.0.0.1", default);
+        var verified = await service.VerifyCodeAsync(challenge.ChallengeId, code!, default);
+        return (service, verified.SessionToken);
+    }
+
+    private static ControllerContext ContextWithSession(string token)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Storefront-Customer-Session"] = token;
+        return new ControllerContext { HttpContext = context };
     }
 
     private static void Seed(ApplicationDbContext db)

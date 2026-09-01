@@ -107,7 +107,7 @@ public class OrderBusinessRulesServiceTests
     public void IsStatusTransitionValid_allows_admins_to_change_between_all_statuses(string role)
     {
         var sut = new OrderBusinessRulesService(new FakeClock(DateTime.UtcNow));
-        var statuses = Enum.GetValues<OrderStatus>();
+        var statuses = Enum.GetValues<OrderStatus>().Where(x => x != OrderStatus.AwaitingPayment);
 
         foreach (var current in statuses)
         foreach (var target in statuses)
@@ -117,6 +117,18 @@ public class OrderBusinessRulesServiceTests
                 sut.IsStatusTransitionValid(order, target, role),
                 $"Expected {role} to change status from {current} to {target}");
         }
+    }
+
+    [Theory]
+    [InlineData(Roles.Admin)]
+    [InlineData(Roles.Superadmin)]
+    [InlineData(Roles.Cashier)]
+    public void IsStatusTransitionValid_blocks_manual_payment_state_transitions(string role)
+    {
+        var sut = new OrderBusinessRulesService(new FakeClock(DateTime.UtcNow));
+
+        Assert.False(sut.IsStatusTransitionValid(new Order { Status = OrderStatus.AwaitingPayment }, OrderStatus.Taken, role));
+        Assert.False(sut.IsStatusTransitionValid(new Order { Status = OrderStatus.Taken }, OrderStatus.AwaitingPayment, role));
     }
 
     [Theory]

@@ -58,7 +58,7 @@ Reglas:
 - El catálogo público expone únicamente `available`, `lowStock` o `unavailable`; nunca publica el inventario exacto. Las promociones solo se entregan después de determinar la sucursal mediante una cotización.
 - El navegador accede al backend únicamente mediante el BFF de Next.js. Los endpoints públicos del backend exigen `X-Storefront-Key-Id` y `X-Storefront-Key`; el backend conserva únicamente el hash SHA-256 de la clave y lo compara en tiempo constante.
 - El cliente elige entre domicilio y recogida. Domicilio exige nombre, teléfono, ciudad y ubicación confirmada; recogida exige nombre, teléfono y una sucursal habilitada, pero nunca dirección del cliente. Las ciudades de domicilio habilitadas inicialmente son Medellín, Bello y Copacabana. Los datos internos de entrega (torre, piso, apartamento, interior o bloque) son opcionales, se separan de la dirección geocodificable y admiten hasta 160 caracteres. La web pública no solicita notas por producto.
-- El checkout informa que al hacer el pedido el cliente acepta el tratamiento de datos bajo la política versión `2026-08-24`; no usa checks de aceptación ni solicita autorización promocional. El mensaje de WhatsApp no incluye decisiones de consentimiento.
+- El checkout informa que al hacer el pedido el cliente acepta el tratamiento de datos bajo la política versión `2026-08-24`; no usa checks de aceptación ni solicita autorización promocional.
 - Google busca direcciones y lugares conocidos para que el cliente confirme visualmente el punto antes de cotizar. El pin puede ajustarse sin modificar el texto que el cliente escribió; la cotización usa las coordenadas confirmadas y calcula distancia y tiempo desde todas las sucursales activas que tengan coordenadas y teléfono principal. Geocodificación y rutas se cachean durante cinco minutos sin usar datos personales legibles como clave.
 - La web pública muestra y contacta todas las sedes habilitadas usando `Branch.Phone1` y, si está vacío, `Branch.Phone2`. La configuración de WhatsApp/IA no decide la elegibilidad de la sede ni recibe pedidos o contactos originados en la landing.
 - La sucursal con menor desplazamiento se recomienda, pero el cliente puede seleccionar otra sede habilitada.
@@ -66,9 +66,9 @@ Reglas:
 - La cobertura exige cumplir simultáneamente una distancia de ruta de Google de máximo 5 km y un desplazamiento de máximo 30 minutos. El mapa mantiene una casita y un círculo azul de 5 km por sucursal aunque cambie la dirección, dibuja la ruta real después de validar y el carrito reutiliza un único mapa para sucursales, coberturas, cliente y ruta. El backend conserva la ruta de Google como fuente de verdad para la cotización.
 - El teléfono del pedido web se normaliza a los últimos diez dígitos y debe cumplir `^3\d{9}$`; la misma normalización se aplica antes de validar y antes de construir el mensaje de WhatsApp. Esta regla no modifica los teléfonos de contacto de las sucursales.
 - El domicilio estimado cuesta `$3.000` hasta 2 km inclusive. Por cada kilómetro adicional iniciado suma `$1.000`: 3 km cuestan `$4.000`, 4 km `$5.000`, y así sucesivamente. La sucursal confirma siempre el valor final.
-- El mensaje de domicilio incluye cliente, teléfono, dirección confirmada, enlace de Google Maps, sucursal, carrito, precios vigentes, tiempo, valor estimado del domicilio, subtotal de productos y total estimado con domicilio. No incluye textos de fuera de cobertura ni consentimientos; el cajero vuelve a validar la viabilidad. El mensaje de recogida incluye únicamente cliente, teléfono, sucursal y dirección de recogida, tiempo de preparación, carrito y total.
-- Cualquier cambio en productos, cantidades, dirección, datos adicionales, cliente, modalidad o sucursal invalida la cotización. Antes de abrir WhatsApp se revalidan precio, disponibilidad, promoción y, para domicilio, cobertura y tarifa; si cambian, el cliente debe confirmar nuevamente.
-- La web no crea una orden operativa ni procesa pagos; entrega un mensaje validado al teléfono principal de la sucursal mediante WhatsApp.
+- La cotización contiene cliente, teléfono, dirección confirmada, sucursal, carrito, precios vigentes, tiempo, tarifa, subtotal y total. Para recogida no exige ni persiste una dirección del cliente.
+- Cualquier cambio en productos, cantidades, dirección, datos adicionales, cliente, modalidad o sucursal invalida la cotización. Antes de confirmar se revalidan precio, disponibilidad, promoción y, para domicilio, cobertura y tarifa.
+- Dentro de cobertura, la web crea directamente una orden operativa idempotente después de verificar el celular. WhatsApp se conserva únicamente como alternativa de consulta manual cuando la entrega requiere revisión; el storefront no procesa pagos en esta etapa.
 
 Reglas esperadas:
 
@@ -319,9 +319,22 @@ Reglas:
 - El cliente existente conserva su `BranchId` histórico. El cliente nuevo se crea únicamente al confirmar el pedido y toma como `BranchId` la sucursal que atenderá la orden.
 - Las direcciones pueden tener una etiqueta libre corta y `NeighborhoodId` opcional. Una dirección guardada conserva su `delivery_fee`; Google valida ubicación y cobertura, pero no reemplaza esa tarifa. Las direcciones nuevas usan la tarifa calculada por el storefront.
 - El backend revalida productos, precios, disponibilidad, promoción, cobertura y horario al cotizar y nuevamente antes de crear el pedido. Si la sede cerró, bloquea la confirmación e informa la próxima apertura cuando exista.
-- La confirmación es idempotente, deriva cliente y dirección de la sesión verificada, calcula los totales en servidor y crea el pedido con estado `Taken`, origen `web` y usuario técnico configurado en `Branch.StorefrontTakenByUserId`. La recogida web se persiste operacionalmente como `Onsite`.
-- El pedido confirmado se notifica a cocina. Si la notificación falla después del commit, el pedido se conserva y el fallo queda registrado sin exponer datos ni secretos.
+- La confirmación es idempotente, deriva cliente y dirección de la sesión verificada, calcula los totales en servidor y crea el pedido con origen `web` y usuario técnico configurado en `Branch.StorefrontTakenByUserId`. Efectivo inicia en `Taken`; pago en línea inicia en `AwaitingPayment`. La recogida web se persiste operacionalmente como `Onsite`.
+- Un pedido en `AwaitingPayment` no admite cambios manuales de estado ni se notifica a cocina. Solo un pago aprobado dentro de su ventana, o una revisión administrativa aprobada, lo cambia a `Taken`.
+- El pedido en efectivo se notifica a cocina inmediatamente. El pedido pagado se notifica mediante outbox después del commit financiero; los reintentos no duplican el evento operativo.
 - El storefront sigue siendo single-tenant en esta etapa; `TenantId` se resuelve desde configuración del servidor y nunca desde el navegador.
+
+### Pago en línea Wompi
+
+- El cliente ve únicamente `Efectivo` y `Pago en línea` con tarjeta o PSE; el nombre Wompi se reserva a la configuración administrativa.
+- La integración pertenece a tenant y sucursal, y referencia una App financiera activa cuyo banco pertenece a la misma sucursal. No se usa un ID de App fijo.
+- Admin solo configura su sucursal; Superadmin puede configurar la sucursal seleccionada. Cada ambiente conserva llave pública, secreto de integridad y secreto de eventos separados. Los secretos se cifran antes de persistirse y nunca se devuelven.
+- Una sucursal solo ofrece pago en línea si la integración, la App y el banco están activos y las tres credenciales del ambiente activo están completas.
+- Cada intento usa referencia opaca única, total en centavos calculado por backend, moneda COP, firma SHA-256 y expiración exacta de 15 minutos. Reintentar crea una referencia nueva cuando la anterior ya venció o terminó.
+- El webhook firmado es la autoridad. Se valida firma en tiempo constante, ambiente, referencia, monto y moneda; eventos y transacciones son idempotentes.
+- Un pago aprobado dentro de la ventana crea un único `app_payment` bruto con comisión y neto esperado, cambia el pedido a `Taken` y encola su notificación a cocina en la misma transacción.
+- Una aprobación posterior a 15 minutos, o asociada a un pedido que ya no espera pago, queda en revisión manual, alerta a Admin/Superadmin y no entra a cocina automáticamente.
+- Cancelaciones, anulaciones y reembolsos de Wompi quedan fuera de esta primera entrega.
 
 ## Impresión POS
 

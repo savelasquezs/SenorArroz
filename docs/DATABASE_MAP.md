@@ -417,3 +417,17 @@ Unicidades:
 - disponibilidad: `(store_id, product_mapping_id)`.
 
 El esquema se aplica con `SenorArroz.Infrastructure/Scripts/upgrade_rappi_v2_sandbox.sql`; no se usan migraciones EF para esta integración.
+
+## Pago en línea Wompi
+
+Tablas:
+
+- `wompi_payment_integration`: configuración por `(tenant_id, branch_id)`, App financiera, ambiente y secretos cifrados separados.
+- `wompi_payment_attempt`: referencia única, snapshot público/firma, monto, expiración, estado y revisión manual por pedido.
+- `wompi_provider_transaction`: observaciones de transacciones externas, únicas por `provider_transaction_id`.
+- `wompi_webhook_event`: inbox idempotente por huella criptográfica del evento.
+- `payment_notification_outbox`: entrega reintentable a cocina, única por pedido y tipo de evento.
+- `wompi_integration_audit`: altas, cambios y pruebas de configuración con actor administrativo.
+- `app_payment`: movimiento bruto creado únicamente al aprobar o validar manualmente un pago.
+
+El esquema se aplica con `SenorArroz.Infrastructure/Scripts/add_wompi_payments.sql` y también forma parte de `local-init-completo.sql`.

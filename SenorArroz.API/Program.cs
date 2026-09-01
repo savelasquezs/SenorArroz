@@ -151,6 +151,7 @@ builder.Services.Configure<StorefrontCustomerAuthOptions>(
     builder.Configuration.GetSection("StorefrontCustomerAuth"));
 builder.Services.AddSingleton<StorefrontApiKeyValidator>();
 builder.Services.AddScoped<SenorArroz.API.Services.StorefrontCustomerAuthService>();
+builder.Services.AddScoped<IPaymentReviewNotificationService, SenorArroz.API.Services.PaymentReviewNotificationService>();
 builder.Services.Configure<DeliveryAppVersionOptions>(
     builder.Configuration.GetSection(DeliveryAppVersionOptions.SectionName));
 
@@ -490,6 +491,7 @@ builder.Services.AddRateLimiter(options =>
             || path.StartsWithSegments("/swagger-ui")
             || path.StartsWithSegments("/hubs")
             || path.StartsWithSegments("/api/integrations/rappi/webhooks")
+            || path.StartsWithSegments("/api/integrations/wompi/webhooks")
             || string.Equals(pv, "/", StringComparison.Ordinal)
             || string.Equals(pv, "/index.html", StringComparison.OrdinalIgnoreCase))
         {
