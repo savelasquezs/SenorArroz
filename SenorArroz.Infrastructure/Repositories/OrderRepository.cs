@@ -231,6 +231,19 @@ public class OrderRepository : IOrderRepository
         var order = await _context.Orders.FindAsync([id], cancellationToken);
         if (order != null)
         {
+            var wompiAttempts = await _context.WompiPaymentAttempts
+                .Where(x => x.OrderId == id)
+                .ToListAsync(cancellationToken);
+            var routeProposalStops = await _context.DeliveryRouteProposalStops
+                .Where(x => x.OrderId == id)
+                .ToListAsync(cancellationToken);
+            var orderDetails = await _context.OrderDetails
+                .Where(x => x.OrderId == id)
+                .ToListAsync(cancellationToken);
+
+            _context.WompiPaymentAttempts.RemoveRange(wompiAttempts);
+            _context.DeliveryRouteProposalStops.RemoveRange(routeProposalStops);
+            _context.OrderDetails.RemoveRange(orderDetails);
             _context.Orders.Remove(order);
             await _context.SaveChangesAsync(cancellationToken);
         }
@@ -575,7 +588,7 @@ public class OrderRepository : IOrderRepository
 
     public async Task<decimal> GetTotalSalesAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
-        var query = _context.Orders.Where(o => o.Status != OrderStatus.Cancelled);
+        var query = _context.Orders.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.AwaitingPayment);
         
         if (branchId.HasValue)
             query = query.Where(o => o.BranchId == branchId);
@@ -595,7 +608,7 @@ public class OrderRepository : IOrderRepository
 
     public async Task<decimal> GetAverageOrderValueAsync(int? branchId = null, DateTime? fromDate = null, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
-        var query = _context.Orders.Where(o => o.Status != OrderStatus.Cancelled);
+        var query = _context.Orders.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.AwaitingPayment);
 
         if (branchId.HasValue)
             query = query.Where(o => o.BranchId == branchId);
@@ -619,7 +632,7 @@ public class OrderRepository : IOrderRepository
             .AsNoTracking()
             .Include(od => od.Product)
             .Include(od => od.Order)
-            .Where(od => od.Order.Status != OrderStatus.Cancelled)
+            .Where(od => od.Order.Status != OrderStatus.Cancelled && od.Order.Status != OrderStatus.AwaitingPayment)
             .AsQueryable();
 
         if (branchId.HasValue)
@@ -1135,7 +1148,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
         var totalAll = await q.CountAsync(cancellationToken);
         var cancelledCount = await q.CountAsync(o => o.Status == OrderStatus.Cancelled, cancellationToken);
-        var nonCancelled = q.Where(o => o.Status != OrderStatus.Cancelled);
+        var nonCancelled = q.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.AwaitingPayment);
 
         var completedCount = await nonCancelled.CountAsync(cancellationToken);
         var totalSales = completedCount > 0
@@ -1263,7 +1276,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime toUtc)
     {
         var q = ApplyOrderSalesDateRange(
-            _context.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled),
+            _context.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.AwaitingPayment),
             fromUtc,
             toUtc);
 
@@ -1573,7 +1586,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
-                .Where(od => od.Order.Status != OrderStatus.Cancelled),
+                .Where(od => od.Order.Status != OrderStatus.Cancelled && od.Order.Status != OrderStatus.AwaitingPayment),
             fromUtc,
             toUtc);
 
@@ -1630,7 +1643,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
-                .Where(od => od.Order.Status != OrderStatus.Cancelled),
+                .Where(od => od.Order.Status != OrderStatus.Cancelled && od.Order.Status != OrderStatus.AwaitingPayment),
             fromUtc,
             toUtc);
 
@@ -1699,7 +1712,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
-                .Where(od => od.Order.Status != OrderStatus.Cancelled),
+                .Where(od => od.Order.Status != OrderStatus.Cancelled && od.Order.Status != OrderStatus.AwaitingPayment),
             fromUtc,
             toUtc);
 
@@ -1760,7 +1773,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
-                .Where(od => od.Order.Status != OrderStatus.Cancelled && od.Product.WeightGrams != null),
+                .Where(od => od.Order.Status != OrderStatus.Cancelled && od.Order.Status != OrderStatus.AwaitingPayment && od.Product.WeightGrams != null),
             fromUtc,
             toUtc);
 
@@ -1828,7 +1841,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         var q = ApplyOrderDetailSalesDateRange(
             _context.OrderDetails
                 .AsNoTracking()
-                .Where(od => od.Order.Status != OrderStatus.Cancelled && od.Product.WeightGrams != null),
+                .Where(od => od.Order.Status != OrderStatus.Cancelled && od.Order.Status != OrderStatus.AwaitingPayment && od.Product.WeightGrams != null),
             fromUtc,
             toUtc);
 
@@ -1896,6 +1909,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
                 .AsNoTracking()
                 .Where(od =>
                     od.Order.Status != OrderStatus.Cancelled
+                    && od.Order.Status != OrderStatus.AwaitingPayment
                     && od.Product.WeightGrams != null
                     && od.Product.CategoryId == categoryId),
             fromUtc,
@@ -1927,7 +1941,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             _context.OrderDetails
                 .AsNoTracking()
                 .Where(od =>
-                    od.Order.Status != OrderStatus.Cancelled && od.Product.WeightGrams != null),
+                    od.Order.Status != OrderStatus.Cancelled && od.Order.Status != OrderStatus.AwaitingPayment && od.Product.WeightGrams != null),
             fromUtc,
             toUtc);
 

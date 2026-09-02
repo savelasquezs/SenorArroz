@@ -155,6 +155,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             .Where(o => o.BranchId == branchId
                 && o.Status != OrderStatus.Delivered
                 && o.Status != OrderStatus.Cancelled
+                && o.Status != OrderStatus.AwaitingPayment
                 && !exemptOrderIds.Contains(o.Id)
                 && !(o.Type == OrderType.Reservation
                      && o.PrepareAt.HasValue

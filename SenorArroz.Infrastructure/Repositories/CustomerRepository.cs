@@ -166,14 +166,17 @@ public class CustomerRepository : ICustomerRepository
         return await _context.Orders
             .CountAsync(o =>
                 o.CustomerId == customerId &&
-                o.Status != OrderStatus.Cancelled, cancellationToken);
+                o.Status != OrderStatus.Cancelled &&
+                o.Status != OrderStatus.AwaitingPayment, cancellationToken);
     }
 
     public async Task<(DateTime? First, DateTime? Last)> GetOrderDateRangeAsync(int customerId, CancellationToken cancellationToken = default)
     {
         var result = await _context.Orders
             .AsNoTracking()
-            .Where(o => o.CustomerId == customerId && o.Status != OrderStatus.Cancelled)
+            .Where(o => o.CustomerId == customerId
+                && o.Status != OrderStatus.Cancelled
+                && o.Status != OrderStatus.AwaitingPayment)
             .GroupBy(_ => 1)
             .Select(g => new
             {
@@ -190,7 +193,8 @@ public class CustomerRepository : ICustomerRepository
         return await _context.Orders
             .Where(o =>
                 o.CustomerId == customerId &&
-                o.Status != OrderStatus.Cancelled)
+                o.Status != OrderStatus.Cancelled &&
+                o.Status != OrderStatus.AwaitingPayment)
             .SumAsync(o => o.Total, cancellationToken);
     }
 }

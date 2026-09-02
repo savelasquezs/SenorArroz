@@ -49,6 +49,7 @@ public sealed class WompiPaymentAttemptConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.Id).HasColumnName("id");
         builder.Property(x => x.TenantId).HasColumnName("tenant_id");
         builder.Property(x => x.OrderId).HasColumnName("order_id");
+        builder.Property(x => x.StorefrontCheckoutId).HasColumnName("storefront_checkout_id");
         builder.Property(x => x.IntegrationId).HasColumnName("integration_id");
         builder.Property(x => x.Reference).HasColumnName("reference").HasMaxLength(100);
         builder.Property(x => x.Environment).HasColumnName("environment").HasMaxLength(20);
@@ -71,9 +72,58 @@ public sealed class WompiPaymentAttemptConfiguration : IEntityTypeConfiguration<
         builder.HasIndex(x => new { x.IntegrationId, x.Status }).HasDatabaseName("ix_wompi_payment_attempt_integration_status");
         builder.HasIndex(x => x.AppPaymentId).IsUnique().HasFilter("app_payment_id IS NOT NULL").HasDatabaseName("ux_wompi_payment_attempt_app_payment");
         builder.HasOne(x => x.Order).WithMany(x => x.WompiPaymentAttempts).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(x => x.StorefrontCheckout).WithMany(x => x.PaymentAttempts).HasForeignKey(x => x.StorefrontCheckoutId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.Integration).WithMany(x => x.PaymentAttempts).HasForeignKey(x => x.IntegrationId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne(x => x.AppPayment).WithMany().HasForeignKey(x => x.AppPaymentId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.AppPayment).WithMany().HasForeignKey(x => x.AppPaymentId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.ReviewedByUser).WithMany().HasForeignKey(x => x.ReviewedByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class StorefrontCheckoutConfiguration : IEntityTypeConfiguration<StorefrontCheckout>
+{
+    public void Configure(EntityTypeBuilder<StorefrontCheckout> builder)
+    {
+        builder.ToTable("storefront_checkout");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id");
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id");
+        builder.Property(x => x.PublicId).HasColumnName("public_id").HasMaxLength(40);
+        builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(80);
+        builder.Property(x => x.BranchId).HasColumnName("branch_id");
+        builder.Property(x => x.CustomerId).HasColumnName("customer_id");
+        builder.Property(x => x.SavedAddressId).HasColumnName("saved_address_id");
+        builder.Property(x => x.OrderId).HasColumnName("order_id");
+        builder.Property(x => x.CustomerPhone).HasColumnName("customer_phone").HasMaxLength(20);
+        builder.Property(x => x.CustomerName).HasColumnName("customer_name").HasMaxLength(150);
+        builder.Property(x => x.FulfillmentType).HasColumnName("fulfillment_type").HasMaxLength(20);
+        builder.Property(x => x.AddressLabel).HasColumnName("address_label").HasMaxLength(80);
+        builder.Property(x => x.OriginalAddress).HasColumnName("original_address").HasMaxLength(500);
+        builder.Property(x => x.FormattedAddress).HasColumnName("formatted_address").HasMaxLength(500);
+        builder.Property(x => x.AddressAdditionalInfo).HasColumnName("address_additional_info").HasMaxLength(500);
+        builder.Property(x => x.Latitude).HasColumnName("latitude").HasPrecision(10, 7);
+        builder.Property(x => x.Longitude).HasColumnName("longitude").HasPrecision(10, 7);
+        builder.Property(x => x.DeliveryFee).HasColumnName("delivery_fee");
+        builder.Property(x => x.Subtotal).HasColumnName("subtotal");
+        builder.Property(x => x.DiscountTotal).HasColumnName("discount_total");
+        builder.Property(x => x.Total).HasColumnName("total");
+        builder.Property(x => x.ItemsJson).HasColumnName("items_json").HasColumnType("jsonb");
+        builder.Property(x => x.OrderNotes).HasColumnName("order_notes").HasMaxLength(1000);
+        builder.Property(x => x.AppliedBenefitType).HasColumnName("applied_benefit_type").HasConversion<string>().HasMaxLength(30);
+        builder.Property(x => x.AppliedBenefitSourceId).HasColumnName("applied_benefit_source_id");
+        builder.Property(x => x.AppliedBenefitLabel).HasColumnName("applied_benefit_label").HasMaxLength(250);
+        builder.Property(x => x.AppliedBenefitRewardType).HasColumnName("applied_benefit_reward_type").HasConversion<string>().HasMaxLength(30);
+        builder.Property(x => x.AppliedBenefitAmount).HasColumnName("applied_benefit_amount").HasPrecision(10, 2);
+        builder.Property(x => x.AppliedBenefitSnapshot).HasColumnName("applied_benefit_snapshot").HasColumnType("jsonb");
+        builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(30);
+        builder.Property(x => x.ExpiresAt).HasColumnName("expires_at");
+        WompiPaymentIntegrationConfiguration.Timestamps(builder);
+        builder.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ux_storefront_checkout_public_id");
+        builder.HasIndex(x => x.IdempotencyKey).IsUnique().HasDatabaseName("ux_storefront_checkout_idempotency_key");
+        builder.HasIndex(x => new { x.TenantId, x.CustomerPhone, x.Status }).HasDatabaseName("ix_storefront_checkout_customer_status");
+        builder.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.SavedAddress).WithMany().HasForeignKey(x => x.SavedAddressId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.SetNull);
     }
 }
 

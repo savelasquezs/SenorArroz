@@ -354,7 +354,7 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
-    public async Task Quote_RequiresDistanceAndTravelLimits_AndAddsPreparationToEta()
+    public async Task Quote_RequiresDistanceAndTravelLimits_AndReturnsSafeDeliveryPromise()
     {
         await using var db = CreateDb();
         Seed(db);
@@ -370,7 +370,9 @@ public class PublicStorefrontControllerTests
         Assert.Equal(5_000, response.Data.EstimatedDeliveryFee);
         Assert.Equal(response.Data.Subtotal + 5_000, response.Data.Total);
         Assert.Equal(20, response.Data.PreparationMinutes);
-        Assert.Equal(50, response.Data.EstimatedTotalMinutes);
+        Assert.Equal(45, response.Data.EstimatedTotalMinutes);
+        Assert.Equal(35, response.Data.DeliveryPromiseMinMinutes);
+        Assert.Equal(45, response.Data.DeliveryPromiseMaxMinutes);
         Assert.Equal("encoded-route", Assert.Single(response.Data.Branches).RoutePolyline);
         var message = Uri.UnescapeDataString(response.Data.WhatsAppUrl);
         Assert.Contains("Valor estimado del domicilio", message);
@@ -394,7 +396,7 @@ public class PublicStorefrontControllerTests
         var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(ok.Value);
         Assert.True(response.Data!.IsOutsideCoverage);
         Assert.Equal(31, response.Data.TravelMinutes);
-        Assert.Equal(51, response.Data.EstimatedTotalMinutes);
+        Assert.Equal(45, response.Data.EstimatedTotalMinutes);
         var message = Uri.UnescapeDataString(response.Data.WhatsAppUrl);
         Assert.Contains("*NUEVO PEDIDO WEB*", message);
         Assert.DoesNotContain("fuera de cobertura", message, StringComparison.OrdinalIgnoreCase);
@@ -412,6 +414,76 @@ public class PublicStorefrontControllerTests
         var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
         Assert.True(response.Data!.IsOutsideCoverage);
         Assert.Equal(7_000, response.Data.EstimatedDeliveryFee);
+    }
+
+    [Fact]
+    public async Task Quote_AppliesEligibleDailyPromotionToServerCalculatedTotal()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        var branch = db.Branches.Local.Single();
+        db.DailyPromotions.Add(new DailyPromotion
+        {
+            BranchId = branch.Id,
+            Branch = branch,
+            Type = DailyPromotionType.PercentageDiscount,
+            DiscountPercentage = 10,
+            DiscountScope = DailyPromotionDiscountScope.AllProducts,
+            IsActive = true,
+            StartsAt = Now.AddHours(-1),
+            EndsAt = Now.AddHours(1),
+        });
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 720).Quote(Request(), default);
+
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.Equal("daily_promotion", response.Data!.AppliedBenefit!.Source);
+        Assert.Equal(10_000, response.Data.DiscountTotal);
+        Assert.Equal(95_000, response.Data.Total);
+        Assert.All(response.Data.Items, line => Assert.Equal(line.Quantity * line.UnitPrice - line.Discount, line.Subtotal));
+    }
+
+    [Fact]
+    public async Task Quote_RequiresCustomerChoiceWhenPromotionAndLoyaltyRewardCompete()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        var branch = db.Branches.Local.Single();
+        var customer = new Customer { Id = 77, BranchId = branch.Id, Branch = branch, Name = "Cliente fiel", Phone1 = "3001234567", Active = true };
+        db.Customers.Add(customer);
+        for (var index = 0; index < 4; index++)
+            db.Orders.Add(new Order { BranchId = branch.Id, TakenById = 1, Customer = customer, Status = OrderStatus.Delivered, Type = OrderType.Onsite, Subtotal = 10_000, Total = 10_000 });
+        db.LoyaltyCycleSteps.Add(new LoyaltyCycleStep { BranchId = branch.Id, Branch = branch, StepIndex = 1, RewardLabel = "Domicilio fiel gratis", RewardType = LoyaltyRewardType.FreeDelivery, IsActive = true });
+        db.DailyPromotions.Add(new DailyPromotion
+        {
+            BranchId = branch.Id,
+            Branch = branch,
+            Type = DailyPromotionType.PercentageDiscount,
+            DiscountPercentage = 10,
+            DiscountScope = DailyPromotionDiscountScope.AllProducts,
+            IsActive = true,
+            StartsAt = Now.AddHours(-1),
+            EndsAt = Now.AddHours(1),
+        });
+        await db.SaveChangesAsync();
+        var (auth, token) = await CreateVerifiedSession(db, customer.Phone1);
+        var controller = Controller(db, 720);
+        controller.ControllerContext = ContextWithSession(token);
+
+        var request = Request();
+        var conflictAction = await controller.Quote(request, default, auth);
+        var conflict = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(conflictAction.Result).Value).Data!;
+        Assert.True(conflict.BenefitConflict);
+        Assert.Equal(2, conflict.AvailableBenefits.Count);
+        Assert.Null(conflict.AppliedBenefit);
+
+        request.BenefitSelection = "loyalty";
+        var selectedAction = await controller.Quote(request, default, auth);
+        var selected = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(selectedAction.Result).Value).Data!;
+        Assert.False(selected.BenefitConflict);
+        Assert.Equal("loyalty", selected.AppliedBenefit!.Source);
+        Assert.Equal(0, selected.Total - selected.Subtotal);
     }
 
     [Fact]
@@ -559,7 +631,10 @@ public class PublicStorefrontControllerTests
         Assert.Equal("Casa", address.Label);
         Assert.Equal("Apartamento 201", address.AdditionalInfo);
         Assert.Equal(5_000, address.DeliveryFee);
-        notifications.Verify(x => x.NotifyNewOrderToKitchen(It.IsAny<OrderDto>()), Times.Once);
+        notifications.Verify(x => x.NotifyNewOrderToKitchen(It.IsAny<OrderDto>()), Times.Never);
+        var notification = Assert.Single(db.PaymentNotificationOutboxMessages);
+        Assert.Equal(order.Id, notification.OrderId);
+        Assert.Equal("order_created_web_cash", notification.EventType);
     }
 
     private static PublicDeliveryQuoteRequest Request() => new()

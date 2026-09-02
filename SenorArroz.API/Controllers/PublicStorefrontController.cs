@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,6 +14,7 @@ using SenorArroz.API.Security;
 using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
@@ -37,6 +39,8 @@ public sealed class PublicStorefrontController(
     IOptions<StorefrontCustomerAuthOptions> storefrontOptions) : ControllerBase
 {
     private const int PreparationMinutes = 20;
+    private const int DeliveryPromiseMinMinutes = 35;
+    private const int DeliveryPromiseMaxMinutes = 45;
     private const int CoverageTravelMinutes = 30;
     private const int CoverageDistanceMeters = 5_000;
     private const int DeliveryBaseDistanceMeters = 2_000;
@@ -194,24 +198,28 @@ public sealed class PublicStorefrontController(
         if (!ColombianMobilePhone.IsValid(request.Phone))
             return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Ingresa un celular colombiano válido de 10 dígitos."));
 
-        Address? savedAddress = null;
-        if (request.SavedAddressId.HasValue)
+        StorefrontCustomerSessionResult? verifiedSession = null;
+        if (customerAuth is not null && !string.IsNullOrWhiteSpace(Request.Headers["X-Storefront-Customer-Session"].FirstOrDefault()))
         {
-            if (customerAuth is null)
-                return Unauthorized(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Verifica tu celular para usar una dirección guardada."));
-            StorefrontCustomerSessionResult session;
             try
             {
-                session = await customerAuth.GetSessionAsync(Request.Headers["X-Storefront-Customer-Session"].FirstOrDefault(), cancellationToken);
+                var session = await customerAuth.GetSessionAsync(Request.Headers["X-Storefront-Customer-Session"].FirstOrDefault(), cancellationToken);
+                if (session.Phone == request.Phone && !session.AmbiguousCustomer)
+                    verifiedSession = session;
             }
             catch (StorefrontAuthInvalidSessionException)
             {
-                return Unauthorized(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La sesión del cliente no es válida o venció."));
+                verifiedSession = null;
             }
-            if (session.Phone != request.Phone || session.Customer is null || session.AmbiguousCustomer)
-                return Unauthorized(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La dirección no pertenece a la sesión verificada."));
+        }
+
+        Address? savedAddress = null;
+        if (request.SavedAddressId.HasValue)
+        {
+            if (verifiedSession?.Customer is null)
+                return Unauthorized(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Verifica tu celular para usar una dirección guardada."));
             savedAddress = await db.Addresses.AsNoTracking().FirstOrDefaultAsync(
-                x => x.Id == request.SavedAddressId && x.CustomerId == session.Customer.Id, cancellationToken);
+                x => x.Id == request.SavedAddressId && x.CustomerId == verifiedSession.Customer.Id, cancellationToken);
             if (savedAddress is null)
                 return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La dirección guardada ya no está disponible."));
             request.Address = savedAddress.AddressText;
@@ -357,7 +365,24 @@ public sealed class PublicStorefrontController(
         }
 
         var promotion = await GetActivePromotion(checkoutBranch.Id, cancellationToken);
+        if (promotion?.MinimumOrderValue is int minimumOrderValue && subtotal < minimumOrderValue)
+            promotion = null;
         var promotionDto = promotion is null ? null : ToPromotionDto(promotion);
+        var loyaltyBenefit = await GetLoyaltyBenefitAsync(checkoutBranch.Id, verifiedSession?.Customer?.Id, cancellationToken);
+        var availableBenefits = new List<PublicBenefitDto>();
+        if (promotion is not null) availableBenefits.Add(ToBenefitDto(promotion));
+        if (loyaltyBenefit is not null) availableBenefits.Add(loyaltyBenefit);
+        var selectedBenefit = Normalize(request.BenefitSelection);
+        var appliedBenefit = availableBenefits.Count switch
+        {
+            0 => null,
+            1 => availableBenefits[0],
+            _ => availableBenefits.FirstOrDefault(x => Normalize(x.Source) == selectedBenefit),
+        };
+        var benefitConflict = availableBenefits.Count > 1 && appliedBenefit is null;
+        var applied = await ApplyBenefitAsync(cartLines, checkoutDeliveryFee, appliedBenefit, cancellationToken);
+        cartLines = applied.Items;
+        checkoutDeliveryFee = applied.DeliveryFee;
         var message = BuildWhatsAppMessage(
             request,
             fulfillmentType,
@@ -368,7 +393,8 @@ public sealed class PublicStorefrontController(
             checkoutBranch,
             checkoutTravelMinutes,
             checkoutDeliveryFee,
-            promotionDto);
+            applied.DiscountTotal,
+            appliedBenefit);
         if (message.Length > MaxWhatsAppMessageLength)
             return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("El pedido contiene demasiada información. Reduce las notas e intenta nuevamente."));
         var whatsappUrl = $"{BuildWhatsAppUrl(checkoutBranch.ContactPhone)}?text={Uri.EscapeDataString(message)}";
@@ -391,15 +417,21 @@ public sealed class PublicStorefrontController(
             selectedBranchId,
             checkoutBranch.Id,
             distanceMeters,
-            estimatedDeliveryFee,
+            checkoutDeliveryFee,
             travelMinutes,
             PreparationMinutes,
-            PreparationMinutes + travelMinutes,
+            fulfillmentType == "delivery" ? DeliveryPromiseMaxMinutes : PreparationMinutes,
+            fulfillmentType == "delivery" ? DeliveryPromiseMinMinutes : PreparationMinutes,
+            fulfillmentType == "delivery" ? DeliveryPromiseMaxMinutes : PreparationMinutes,
             outsideCoverage,
             cartLines,
             subtotal,
-            subtotal + checkoutDeliveryFee,
+            applied.DiscountTotal,
+            subtotal - applied.DiscountTotal + checkoutDeliveryFee,
             promotionDto,
+            availableBenefits,
+            appliedBenefit,
+            benefitConflict,
             whatsappUrl,
             savedAddress is null ? "estimated" : "saved",
             onlinePaymentAvailable);
@@ -451,6 +483,16 @@ public sealed class PublicStorefrontController(
                 return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
             return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(await ToPublicOrderResultAsync(existingOrder, cancellationToken)));
         }
+        var existingCheckout = await db.StorefrontCheckouts.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.IdempotencyKey == idempotencyKey, cancellationToken);
+        if (existingCheckout is not null)
+        {
+            if (existingCheckout.CustomerPhone != session.Phone)
+                return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
+            var payment = await wompi.GetCheckoutPaymentStatusAsync(
+                Math.Max(1, storefrontOptions.Value.TenantId), existingCheckout.PublicId, cancellationToken);
+            return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicCheckoutResult(existingCheckout, payment)));
+        }
 
         var quoteAction = await Quote(request, cancellationToken, customerAuth);
         if (quoteAction.Result is not OkObjectResult ok
@@ -462,6 +504,8 @@ public sealed class PublicStorefrontController(
             return BadRequest(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("No fue posible validar nuevamente el pedido."));
         }
         var quote = quoteResponse.Data;
+        if (quote.BenefitConflict)
+            return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("Elige entre la promoción del día y tu premio de fidelización antes de continuar."));
 
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
         try
@@ -479,6 +523,17 @@ public sealed class PublicStorefrontController(
                     await transaction.CommitAsync(cancellationToken);
                 return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(await ToPublicOrderResultAsync(existingOrder, cancellationToken)));
             }
+            existingCheckout = await db.StorefrontCheckouts
+                .FirstOrDefaultAsync(x => x.IdempotencyKey == idempotencyKey, cancellationToken);
+            if (existingCheckout is not null)
+            {
+                if (existingCheckout.CustomerPhone != session.Phone)
+                    throw new StorefrontOrderConflictException("La clave de confirmación ya fue utilizada.");
+                if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+                var existingPayment = await wompi.GetCheckoutPaymentStatusAsync(
+                    Math.Max(1, storefrontOptions.Value.TenantId), existingCheckout.PublicId, cancellationToken);
+                return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicCheckoutResult(existingCheckout, existingPayment)));
+            }
 
             var branch = await db.Branches.FirstOrDefaultAsync(x => x.Id == quote.CheckoutBranchId && x.IsActive, cancellationToken);
             if (branch?.StorefrontTakenByUserId is null)
@@ -494,6 +549,51 @@ public sealed class PublicStorefrontController(
                 : null;
             if (paymentMethod == "online" && wompiIntegration is null)
                 return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("Esta sucursal no tiene pago en línea disponible. Selecciona efectivo o elige otra sucursal."));
+
+            if (paymentMethod == "online")
+            {
+                var checkout = new StorefrontCheckout
+                {
+                    TenantId = Math.Max(1, storefrontOptions.Value.TenantId),
+                    PublicId = Guid.NewGuid().ToString("N"),
+                    IdempotencyKey = idempotencyKey,
+                    BranchId = branch.Id,
+                    CustomerId = session.Customer?.Id,
+                    SavedAddressId = request.SavedAddressId,
+                    CustomerPhone = session.Phone,
+                    CustomerName = request.Name.Trim(),
+                    FulfillmentType = quote.FulfillmentType,
+                    AddressLabel = request.AddressLabel?.Trim(),
+                    OriginalAddress = request.Address,
+                    FormattedAddress = quote.FormattedAddress,
+                    AddressAdditionalInfo = request.AddressAdditionalInfo?.Trim(),
+                    Latitude = quote.Latitude,
+                    Longitude = quote.Longitude,
+                    DeliveryFee = quote.Total - (quote.Subtotal - quote.DiscountTotal),
+                    Subtotal = quote.Subtotal,
+                    DiscountTotal = quote.DiscountTotal,
+                    Total = quote.Total,
+                    ItemsJson = JsonSerializer.Serialize(quote.Items.Select(x => new StorefrontCheckoutLine(
+                        x.ProductId, x.Quantity, x.UnitPrice, x.Discount, x.Subtotal, x.Notes))),
+                    OrderNotes = request.OrderNotes?.Trim(),
+                    AppliedBenefitType = ParseBenefitType(quote.AppliedBenefit?.Source),
+                    AppliedBenefitSourceId = quote.AppliedBenefit?.SourceId,
+                    AppliedBenefitLabel = quote.AppliedBenefit?.Title,
+                    AppliedBenefitRewardType = ParseRewardType(quote.AppliedBenefit?.RewardType),
+                    AppliedBenefitAmount = quote.AppliedBenefit?.DiscountPercentage,
+                    AppliedBenefitSnapshot = quote.AppliedBenefit?.Snapshot,
+                    Status = "pending",
+                    ExpiresAt = clock.UtcNow.AddMinutes(15),
+                };
+                db.StorefrontCheckouts.Add(checkout);
+                await db.SaveChangesAsync(cancellationToken);
+                var wompiCheckout = wompi.CreateCheckoutAttempt(checkout, wompiIntegration!, clock.UtcNow);
+                await db.SaveChangesAsync(cancellationToken);
+                if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+                return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(
+                    new(null, checkout.PublicId, "PendingPayment", checkout.BranchId, checkout.Subtotal,
+                        checkout.DeliveryFee, checkout.Total, "online", "Pending", wompiCheckout)));
+            }
 
             Customer customer;
             if (session.Customer is not null)
@@ -536,7 +636,7 @@ public sealed class PublicStorefrontController(
                         Label = string.IsNullOrWhiteSpace(request.AddressLabel) ? "Casa" : request.AddressLabel.Trim(),
                         AddressText = quote.FormattedAddress!,
                         AdditionalInfo = request.AddressAdditionalInfo?.Trim(),
-                        DeliveryFee = quote.Total - quote.Subtotal,
+                        DeliveryFee = quote.Total - (quote.Subtotal - quote.DiscountTotal),
                         Latitude = quote.Latitude,
                         Longitude = quote.Longitude,
                         IsPrimary = !hasAddresses,
@@ -557,11 +657,18 @@ public sealed class PublicStorefrontController(
                 Address = address,
                 GuestName = request.Name.Trim(),
                 Type = quote.FulfillmentType == "delivery" ? OrderType.Delivery : OrderType.Onsite,
-                DeliveryFee = quote.FulfillmentType == "delivery" ? quote.Total - quote.Subtotal : 0,
-                Status = paymentMethod == "online" ? OrderStatus.AwaitingPayment : OrderStatus.Taken,
+                DeliveryFee = quote.FulfillmentType == "delivery" ? quote.Total - (quote.Subtotal - quote.DiscountTotal) : 0,
+                Status = OrderStatus.Taken,
                 OrderSource = "web",
                 StorefrontIdempotencyKey = idempotencyKey,
-                Notes = request.OrderNotes?.Trim()
+                Notes = request.OrderNotes?.Trim(),
+                AppliedBenefitType = ParseBenefitType(quote.AppliedBenefit?.Source),
+                AppliedBenefitSourceId = quote.AppliedBenefit?.SourceId,
+                AppliedBenefitLabel = quote.AppliedBenefit?.Title,
+                AppliedBenefitRewardType = ParseRewardType(quote.AppliedBenefit?.RewardType),
+                AppliedBenefitAmount = quote.AppliedBenefit?.DiscountPercentage,
+                AppliedBenefitSnapshot = quote.AppliedBenefit?.Snapshot,
+                FreeDeliveryRequested = quote.AppliedBenefit?.RewardType == nameof(LoyaltyRewardType.FreeDelivery),
             };
             order.AddStatusTime(order.Status, clock.UtcNow);
             foreach (var line in quote.Items)
@@ -571,7 +678,7 @@ public sealed class PublicStorefrontController(
                     ProductId = line.ProductId,
                     Quantity = line.Quantity,
                     UnitPrice = line.UnitPrice,
-                    Discount = 0,
+                    Discount = line.Discount,
                     Subtotal = line.Subtotal,
                     Notes = line.Notes
                 });
@@ -579,33 +686,20 @@ public sealed class PublicStorefrontController(
             OrderTotalsHelper.RecalculateFromOrderDetails(order);
             db.Orders.Add(order);
             await db.SaveChangesAsync(cancellationToken);
-            WompiCheckoutData? checkout = null;
-            if (wompiIntegration is not null)
+            db.PaymentNotificationOutboxMessages.Add(new PaymentNotificationOutboxMessage
             {
-                checkout = wompi.CreateAttempt(order, wompiIntegration, clock.UtcNow);
-                await db.SaveChangesAsync(cancellationToken);
-            }
+                TenantId = Math.Max(1, storefrontOptions.Value.TenantId),
+                BranchId = order.BranchId,
+                Order = order,
+                EventType = "order_created_web_cash",
+                Status = "pending",
+                NextAttemptAt = clock.UtcNow,
+            });
+            await db.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
                 await transaction.CommitAsync(cancellationToken);
 
-            if (paymentMethod == "cash") try
-            {
-                var notificationOrder = await db.Orders.AsNoTracking()
-                    .Include(x => x.Branch)
-                    .Include(x => x.TakenBy)
-                    .Include(x => x.Customer)
-                    .Include(x => x.Address).ThenInclude(x => x!.Neighborhood)
-                    .Include(x => x.OrderDetails).ThenInclude(x => x.Product)
-                    .FirstOrDefaultAsync(x => x.Id == order.Id, cancellationToken);
-                if (notificationOrder is not null)
-                    await notifications.NotifyNewOrderToKitchen(mapper.Map<OrderDto>(notificationOrder));
-            }
-            catch (Exception notificationError)
-            {
-                logger.LogWarning(notificationError, "El pedido web {OrderId} se creó, pero la notificación de cocina falló.", order.Id);
-            }
-
-            return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(order, paymentMethod, checkout)));
+            return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(order, paymentMethod, null)));
         }
         catch (StorefrontOrderConflictException ex)
         {
@@ -624,6 +718,16 @@ public sealed class PublicStorefrontController(
                 if (existingOrder.Customer is null || (existingOrder.Customer.Phone1 != session.Phone && existingOrder.Customer.Phone2 != session.Phone))
                     return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
                 return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(await ToPublicOrderResultAsync(existingOrder, cancellationToken)));
+            }
+            existingCheckout = await db.StorefrontCheckouts.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.IdempotencyKey == idempotencyKey, cancellationToken);
+            if (existingCheckout is not null)
+            {
+                if (existingCheckout.CustomerPhone != session.Phone)
+                    return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
+                var payment = await wompi.GetCheckoutPaymentStatusAsync(
+                    Math.Max(1, storefrontOptions.Value.TenantId), existingCheckout.PublicId, cancellationToken);
+                return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicCheckoutResult(existingCheckout, payment)));
             }
             throw;
         }
@@ -679,6 +783,53 @@ public sealed class PublicStorefrontController(
         return Ok(ApiResponse<WompiCheckoutData>.SuccessResponse(checkout));
     }
 
+    [HttpGet("checkouts/{checkoutId}/payment-status")]
+    [EnableRateLimiting("storefront-quote")]
+    public async Task<ActionResult<ApiResponse<WompiStorefrontCheckoutStatusResult>>> GetCheckoutPaymentStatus(
+        string checkoutId,
+        [FromServices] StorefrontCustomerAuthService customerAuth,
+        CancellationToken cancellationToken)
+    {
+        var checkout = await GetVerifiedCustomerCheckoutAsync(checkoutId, customerAuth, cancellationToken);
+        if (checkout is null) return NotFound(ApiResponse<WompiStorefrontCheckoutStatusResult>.ErrorResponse("Checkout no encontrado."));
+        var result = await wompi.GetCheckoutPaymentStatusAsync(Math.Max(1, storefrontOptions.Value.TenantId), checkoutId, cancellationToken);
+        return result is null
+            ? NotFound(ApiResponse<WompiStorefrontCheckoutStatusResult>.ErrorResponse("Este checkout no tiene un pago en línea."))
+            : Ok(ApiResponse<WompiStorefrontCheckoutStatusResult>.SuccessResponse(result));
+    }
+
+    [HttpPost("checkouts/{checkoutId}/payments/wompi/transactions/{transactionId}")]
+    [EnableRateLimiting("storefront-quote")]
+    public async Task<ActionResult<ApiResponse<WompiStorefrontCheckoutStatusResult>>> RegisterCheckoutTransaction(
+        string checkoutId,
+        string transactionId,
+        [FromServices] StorefrontCustomerAuthService customerAuth,
+        CancellationToken cancellationToken)
+    {
+        var checkout = await GetVerifiedCustomerCheckoutAsync(checkoutId, customerAuth, cancellationToken);
+        if (checkout is null) return NotFound(ApiResponse<WompiStorefrontCheckoutStatusResult>.ErrorResponse("Checkout no encontrado."));
+        var result = await wompi.SynchronizeCheckoutTransactionAsync(
+            Math.Max(1, storefrontOptions.Value.TenantId), checkoutId, transactionId, cancellationToken);
+        return result is null
+            ? NotFound(ApiResponse<WompiStorefrontCheckoutStatusResult>.ErrorResponse("Este checkout no tiene un pago en línea."))
+            : Ok(ApiResponse<WompiStorefrontCheckoutStatusResult>.SuccessResponse(result));
+    }
+
+    [HttpPost("checkouts/{checkoutId}/payments/wompi/retry")]
+    [EnableRateLimiting("storefront-quote")]
+    public async Task<ActionResult<ApiResponse<WompiCheckoutData>>> RetryCheckoutPayment(
+        string checkoutId,
+        [FromServices] StorefrontCustomerAuthService customerAuth,
+        CancellationToken cancellationToken)
+    {
+        var checkout = await GetVerifiedCustomerCheckoutAsync(checkoutId, customerAuth, cancellationToken);
+        if (checkout is null) return NotFound(ApiResponse<WompiCheckoutData>.ErrorResponse("Checkout no encontrado."));
+        var result = await wompi.RetryCheckoutAsync(
+            Math.Max(1, storefrontOptions.Value.TenantId), checkout, clock.UtcNow, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(ApiResponse<WompiCheckoutData>.SuccessResponse(result));
+    }
+
     private async Task<Order?> GetVerifiedCustomerOrderAsync(
         int orderId,
         StorefrontCustomerAuthService customerAuth,
@@ -700,6 +851,24 @@ public sealed class PublicStorefrontController(
             && (x.Customer.Phone1 == session.Phone || x.Customer.Phone2 == session.Phone), cancellationToken);
     }
 
+    private async Task<StorefrontCheckout?> GetVerifiedCustomerCheckoutAsync(
+        string checkoutId,
+        StorefrontCustomerAuthService customerAuth,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var session = await customerAuth.GetSessionAsync(Request.Headers["X-Storefront-Customer-Session"].FirstOrDefault(), cancellationToken);
+            return await db.StorefrontCheckouts.FirstOrDefaultAsync(
+                x => x.PublicId == checkoutId && x.CustomerPhone == session.Phone,
+                cancellationToken);
+        }
+        catch (StorefrontAuthInvalidSessionException)
+        {
+            return null;
+        }
+    }
+
     private async Task<PublicStorefrontOrderResult> ToPublicOrderResultAsync(Order order, CancellationToken cancellationToken)
     {
         var payment = await wompi.GetOrderPaymentStatusAsync(Math.Max(1, storefrontOptions.Value.TenantId), order.Id, cancellationToken);
@@ -708,6 +877,7 @@ public sealed class PublicStorefrontController(
 
     private static PublicStorefrontOrderResult ToPublicOrderResult(Order order, string paymentMethod, WompiCheckoutData? checkout, string? paymentStatus = null) => new(
         order.Id,
+        null,
         order.Status.ToString(),
         order.BranchId,
         order.Subtotal,
@@ -716,6 +886,30 @@ public sealed class PublicStorefrontController(
         paymentMethod,
         paymentStatus ?? (paymentMethod == "cash" ? "NotRequired" : "Pending"),
         checkout);
+
+    private static PublicStorefrontOrderResult ToPublicCheckoutResult(
+        StorefrontCheckout checkout,
+        WompiStorefrontCheckoutStatusResult? payment) => new(
+        payment?.OrderId ?? checkout.OrderId,
+        checkout.PublicId,
+        checkout.Status,
+        checkout.BranchId,
+        checkout.Subtotal,
+        checkout.DeliveryFee,
+        checkout.Total,
+        "online",
+        payment?.PaymentStatus ?? "Pending",
+        payment?.Checkout);
+
+    private static OrderBenefitType ParseBenefitType(string? source) => Normalize(source) switch
+    {
+        "daily_promotion" => OrderBenefitType.DailyPromotion,
+        "loyalty" => OrderBenefitType.Loyalty,
+        _ => OrderBenefitType.None,
+    };
+
+    private static LoyaltyRewardType? ParseRewardType(string? value) =>
+        Enum.TryParse<LoyaltyRewardType>(value, true, out var parsed) ? parsed : null;
 
     private IQueryable<Branch> EligibleBranchesQuery() => db.Branches
         .AsNoTracking()
@@ -800,6 +994,136 @@ public sealed class PublicStorefrontController(
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
     }
+
+    private async Task<PublicBenefitDto?> GetLoyaltyBenefitAsync(
+        int branchId,
+        int? customerId,
+        CancellationToken cancellationToken)
+    {
+        if (!customerId.HasValue) return null;
+        var hasReservedReward = await db.Orders.AsNoTracking().AnyAsync(
+                x => x.CustomerId == customerId
+                    && x.AppliedBenefitType == OrderBenefitType.Loyalty
+                    && x.Status != OrderStatus.Cancelled
+                    && x.Status != OrderStatus.Delivered,
+                cancellationToken)
+            || await db.StorefrontCheckouts.AsNoTracking().AnyAsync(
+                x => x.CustomerId == customerId
+                    && x.AppliedBenefitType == OrderBenefitType.Loyalty
+                    && x.Status == "pending"
+                    && x.ExpiresAt > clock.UtcNow,
+                cancellationToken);
+        if (hasReservedReward) return null;
+        var delivered = await db.Orders.AsNoTracking().CountAsync(
+            x => x.CustomerId == customerId && x.Status == OrderStatus.Delivered,
+            cancellationToken);
+        if (LoyaltyDeliveriesPerReward.GetDeliveriesUntilNextReward(delivered) != 1) return null;
+        var cycleLength = await db.LoyaltyCycleSteps.AsNoTracking()
+            .Where(x => x.BranchId == branchId && x.IsActive)
+            .Select(x => (int?)x.StepIndex)
+            .MaxAsync(cancellationToken) ?? 0;
+        if (cycleLength <= 0) return null;
+        var stepIndex = LoyaltyDeliveriesPerReward.GetStepIndexAtMilestone(delivered + 1, cycleLength);
+        var step = await db.LoyaltyCycleSteps.AsNoTracking()
+            .Include(x => x.GiftProduct)
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.StepIndex == stepIndex && x.IsActive, cancellationToken);
+        if (step?.RewardType is null) return null;
+        var snapshot = JsonSerializer.Serialize(new
+        {
+            step.Id,
+            step.StepIndex,
+            step.RewardLabel,
+            RewardType = step.RewardType.ToString(),
+            step.GiftProductId,
+            GiftProductName = step.GiftProduct?.Name,
+            step.DiscountPercentage,
+            DeliveredOrders = delivered,
+        });
+        return new(
+            "loyalty",
+            step.Id,
+            string.IsNullOrWhiteSpace(step.RewardLabel) ? "Premio de fidelización" : step.RewardLabel,
+            step.RewardType.Value.ToString(),
+            step.GiftProductId,
+            step.GiftProduct?.Name,
+            step.DiscountPercentage,
+            null,
+            [],
+            snapshot);
+    }
+
+    private static PublicBenefitDto ToBenefitDto(DailyPromotion promotion)
+    {
+        var dto = ToPromotionDto(promotion);
+        var snapshot = JsonSerializer.Serialize(new
+        {
+            promotion.Id,
+            promotion.BranchId,
+            Type = promotion.Type.ToString(),
+            dto.Title,
+            promotion.MinimumOrderValue,
+            promotion.GiftProductId,
+            dto.GiftProductName,
+            promotion.DiscountPercentage,
+            DiscountScope = promotion.DiscountScope?.ToString(),
+            DiscountProductIds = dto.DiscountProductIds,
+            promotion.StartsAt,
+            promotion.EndsAt,
+        });
+        return new(
+            "daily_promotion",
+            promotion.Id,
+            dto.Title,
+            promotion.Type.ToString(),
+            promotion.GiftProductId,
+            dto.GiftProductName,
+            promotion.DiscountPercentage,
+            promotion.DiscountScope?.ToString(),
+            dto.DiscountProductIds,
+            snapshot);
+    }
+
+    private async Task<BenefitApplication> ApplyBenefitAsync(
+        IReadOnlyCollection<PublicCartLineDto> sourceItems,
+        int deliveryFee,
+        PublicBenefitDto? benefit,
+        CancellationToken cancellationToken)
+    {
+        var items = sourceItems.Select(x => x with { Discount = 0, Subtotal = x.Quantity * x.UnitPrice }).ToList();
+        if (benefit is null) return new(items, deliveryFee, 0);
+
+        if (benefit.RewardType == nameof(LoyaltyRewardType.GiftProduct) && benefit.GiftProductId.HasValue)
+        {
+            var gift = await db.Products.AsNoTracking().FirstOrDefaultAsync(
+                x => x.Id == benefit.GiftProductId && x.Active,
+                cancellationToken);
+            if (gift is not null)
+                items.Add(new(gift.Id, gift.Name, 1, 0, 0, benefit.Source == "loyalty" ? "Regalo de fidelización" : "Promoción del día", 0, true));
+            return new(items, deliveryFee, 0);
+        }
+
+        if (benefit.RewardType == nameof(LoyaltyRewardType.FreeDelivery))
+            return new(items, 0, 0);
+
+        if (benefit.RewardType == nameof(LoyaltyRewardType.PercentageDiscount))
+        {
+            var percentage = Math.Clamp(benefit.DiscountPercentage ?? 0, 0, 100);
+            var eligibleIds = benefit.DiscountScope == nameof(DailyPromotionDiscountScope.SpecificProducts)
+                ? benefit.DiscountProductIds.ToHashSet()
+                : null;
+            items = items.Select(item =>
+            {
+                if (eligibleIds is not null && !eligibleIds.Contains(item.ProductId)) return item;
+                var gross = item.Quantity * item.UnitPrice;
+                var discount = (int)Math.Round(gross * percentage / 100m, MidpointRounding.AwayFromZero);
+                return item with { Discount = discount, Subtotal = gross - discount };
+            }).ToList();
+        }
+
+        return new(items, deliveryFee, items.Sum(x => x.Discount));
+    }
+
+    private sealed record BenefitApplication(List<PublicCartLineDto> Items, int DeliveryFee, int DiscountTotal);
 
     private static string? ValidateItems(
         IReadOnlyCollection<PublicCartItemRequest> items,
@@ -903,7 +1227,8 @@ public sealed class PublicStorefrontController(
         BranchRouteSource branch,
         int travelMinutes,
         int estimatedDeliveryFee,
-        PublicPromotionDto? promotion)
+        int discountTotal,
+        PublicBenefitDto? appliedBenefit)
     {
         var sb = new StringBuilder();
         sb.AppendLine("*NUEVO PEDIDO WEB*");
@@ -927,7 +1252,7 @@ public sealed class PublicStorefrontController(
                 sb.AppendLine($"*Datos adicionales:* {SingleLine(request.AddressAdditionalInfo)}");
             sb.AppendLine($"*Ubicación:* {GoogleMapsUrl(resolvedAddress.Latitude, resolvedAddress.Longitude)}");
             sb.AppendLine($"*Sucursal:* {branch.Name}");
-            sb.AppendLine($"*Tiempo estimado:* {PreparationMinutes} min de preparación + {travelMinutes} min de desplazamiento = {PreparationMinutes + travelMinutes} min");
+            sb.AppendLine($"*Tiempo estimado de entrega:* {DeliveryPromiseMinMinutes}–{DeliveryPromiseMaxMinutes} min");
             sb.AppendLine($"*Valor estimado del domicilio:* {Money(estimatedDeliveryFee)} (sujeto a confirmación de la sucursal)");
         }
         sb.AppendLine();
@@ -939,17 +1264,19 @@ public sealed class PublicStorefrontController(
                 sb.AppendLine($"  Nota: {SingleLine(line.Notes)}");
         }
         sb.AppendLine($"*Subtotal:* {Money(subtotal)}");
+        if (discountTotal > 0)
+            sb.AppendLine($"*Descuento:* -{Money(discountTotal)}");
         if (fulfillmentType == "delivery")
         {
             sb.AppendLine($"*Domicilio:* {Money(estimatedDeliveryFee)}");
-            sb.AppendLine($"*Total estimado:* {Money(subtotal + estimatedDeliveryFee)}");
+            sb.AppendLine($"*Total estimado:* {Money(subtotal - discountTotal + estimatedDeliveryFee)}");
         }
         else
         {
-            sb.AppendLine($"*Total:* {Money(subtotal)}");
+            sb.AppendLine($"*Total:* {Money(subtotal - discountTotal)}");
         }
-        if (promotion is not null)
-            sb.AppendLine($"*Promoción vigente:* {promotion.Title} (sujeta a validación final)");
+        if (appliedBenefit is not null)
+            sb.AppendLine($"*Beneficio aplicado:* {appliedBenefit.Title}");
         return sb.ToString().Trim();
     }
 
@@ -1114,6 +1441,18 @@ public sealed record PublicPromotionDto(
     IReadOnlyCollection<int> DiscountProductIds,
     DateTime? EndsAt);
 
+public sealed record PublicBenefitDto(
+    string Source,
+    int SourceId,
+    string Title,
+    string RewardType,
+    int? GiftProductId,
+    string? GiftProductName,
+    decimal? DiscountPercentage,
+    string? DiscountScope,
+    IReadOnlyCollection<int> DiscountProductIds,
+    string Snapshot);
+
 public class PublicDeliveryQuoteRequest
 {
     [Required, StringLength(20)]
@@ -1152,6 +1491,9 @@ public class PublicDeliveryQuoteRequest
 
     [StringLength(60)]
     public string? AddressLabel { get; set; }
+
+    [RegularExpression("^(daily_promotion|loyalty)?$")]
+    public string? BenefitSelection { get; set; }
 
     public List<PublicCartItemRequest> Items { get; set; } = [];
 }
@@ -1206,7 +1548,9 @@ public sealed record PublicCartLineDto(
     int Quantity,
     int UnitPrice,
     int Subtotal,
-    string? Notes);
+    string? Notes,
+    int Discount = 0,
+    bool IsGift = false);
 
 public sealed record PublicDeliveryQuoteDto(
     string FulfillmentType,
@@ -1222,17 +1566,24 @@ public sealed record PublicDeliveryQuoteDto(
     int TravelMinutes,
     int PreparationMinutes,
     int EstimatedTotalMinutes,
+    int DeliveryPromiseMinMinutes,
+    int DeliveryPromiseMaxMinutes,
     bool IsOutsideCoverage,
     IReadOnlyCollection<PublicCartLineDto> Items,
     int Subtotal,
+    int DiscountTotal,
     int Total,
     PublicPromotionDto? Promotion,
+    IReadOnlyCollection<PublicBenefitDto> AvailableBenefits,
+    PublicBenefitDto? AppliedBenefit,
+    bool BenefitConflict,
     string WhatsAppUrl,
     string DeliveryFeeSource = "estimated",
     bool OnlinePaymentAvailable = false);
 
 public sealed record PublicStorefrontOrderResult(
-    int OrderId,
+    int? OrderId,
+    string? CheckoutId,
     string Status,
     int BranchId,
     int Subtotal,
