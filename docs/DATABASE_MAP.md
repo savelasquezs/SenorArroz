@@ -424,11 +424,12 @@ El esquema se aplica con `SenorArroz.Infrastructure/Scripts/upgrade_rappi_v2_san
 Tablas:
 
 - `wompi_payment_integration`: configuración por `(tenant_id, branch_id)`, App financiera, ambiente y secretos cifrados separados.
-- `wompi_payment_attempt`: referencia única, snapshot público/firma, monto, expiración, estado y revisión manual por pedido.
+- `storefront_checkout`: snapshot idempotente y temporal de cliente, dirección, líneas, totales y beneficio elegido antes de materializar un pedido pagado.
+- `wompi_payment_attempt`: referencia única, snapshot público/firma, monto, expiración y revisión manual; pertenece a un pedido heredado o a un checkout público.
 - `wompi_provider_transaction`: observaciones de transacciones externas, únicas por `provider_transaction_id`.
 - `wompi_webhook_event`: inbox idempotente por huella criptográfica del evento.
 - `payment_notification_outbox`: entrega reintentable a cocina, única por pedido y tipo de evento.
 - `wompi_integration_audit`: altas, cambios y pruebas de configuración con actor administrativo.
 - `app_payment`: movimiento bruto creado únicamente al aprobar o validar manualmente un pago.
 
-El esquema se aplica con `SenorArroz.Infrastructure/Scripts/add_wompi_payments.sql` y también forma parte de `local-init-completo.sql`.
+El esquema base se aplica con `SenorArroz.Infrastructure/Scripts/add_wompi_payments.sql`. La actualización puntual para checkout previo al pedido es `SenorArroz.Infrastructure/Scripts/add_storefront_checkout.sql`; ambas forman parte de `local-init-completo.sql`.

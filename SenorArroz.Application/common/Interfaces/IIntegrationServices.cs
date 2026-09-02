@@ -12,10 +12,14 @@ public interface IWompiPaymentService
 {
     Task<WompiPaymentIntegration?> GetEnabledIntegrationAsync(int tenantId, int branchId, CancellationToken cancellationToken);
     WompiCheckoutData CreateAttempt(Order order, WompiPaymentIntegration integration, DateTime utcNow);
+    WompiCheckoutData CreateCheckoutAttempt(StorefrontCheckout checkout, WompiPaymentIntegration integration, DateTime utcNow);
     Task<WompiWebhookProcessingResult> ProcessWebhookAsync(string environment, string rawPayload, string? headerChecksum, CancellationToken cancellationToken);
     Task<WompiPaymentStatusResult?> GetOrderPaymentStatusAsync(int tenantId, int orderId, CancellationToken cancellationToken);
     Task<WompiPaymentStatusResult?> SynchronizeTransactionAsync(int tenantId, int orderId, string providerTransactionId, CancellationToken cancellationToken);
     Task<WompiCheckoutData> RetryAsync(int tenantId, Order order, DateTime utcNow, CancellationToken cancellationToken);
+    Task<WompiStorefrontCheckoutStatusResult?> GetCheckoutPaymentStatusAsync(int tenantId, string checkoutPublicId, CancellationToken cancellationToken);
+    Task<WompiStorefrontCheckoutStatusResult?> SynchronizeCheckoutTransactionAsync(int tenantId, string checkoutPublicId, string providerTransactionId, CancellationToken cancellationToken);
+    Task<WompiCheckoutData> RetryCheckoutAsync(int tenantId, StorefrontCheckout checkout, DateTime utcNow, CancellationToken cancellationToken);
     Task<WompiManualReviewResult> ResolveManualReviewAsync(int attemptId, int reviewedByUserId, bool approve, DateTime utcNow, CancellationToken cancellationToken);
     Task<bool> TestPublicKeyAsync(string environment, string publicKey, CancellationToken cancellationToken);
 }
@@ -37,6 +41,16 @@ public record WompiCheckoutData(
 public record WompiPaymentStatusResult(
     int OrderId,
     string OrderStatus,
+    string PaymentStatus,
+    bool RequiresManualReview,
+    string? ManualReviewReason,
+    string? ProviderTransactionId,
+    WompiCheckoutData? Checkout);
+
+public record WompiStorefrontCheckoutStatusResult(
+    string CheckoutId,
+    int? OrderId,
+    string CheckoutStatus,
     string PaymentStatus,
     bool RequiresManualReview,
     string? ManualReviewReason,

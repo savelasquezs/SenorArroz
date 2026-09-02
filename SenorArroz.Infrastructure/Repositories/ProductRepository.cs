@@ -262,7 +262,8 @@ public class ProductRepository : IProductRepository
             .AsNoTracking()
             .Where(od =>
                 od.ProductId == productId &&
-                od.Order.Status != OrderStatus.Cancelled)
+                od.Order.Status != OrderStatus.Cancelled &&
+                od.Order.Status != OrderStatus.AwaitingPayment)
             .Where(od =>
                 (od.Order.PrepareAt ?? od.Order.CreatedAt) >= wideFrom &&
                 (od.Order.PrepareAt ?? od.Order.CreatedAt) <= wideTo)

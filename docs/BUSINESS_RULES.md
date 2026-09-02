@@ -61,14 +61,14 @@ Reglas:
 - El checkout informa que al hacer el pedido el cliente acepta el tratamiento de datos bajo la política versión `2026-08-24`; no usa checks de aceptación ni solicita autorización promocional.
 - Google busca direcciones y lugares conocidos para que el cliente confirme visualmente el punto antes de cotizar. El pin puede ajustarse sin modificar el texto que el cliente escribió; la cotización usa las coordenadas confirmadas y calcula distancia y tiempo desde todas las sucursales activas que tengan coordenadas y teléfono principal. Geocodificación y rutas se cachean durante cinco minutos sin usar datos personales legibles como clave.
 - La web pública muestra y contacta todas las sedes habilitadas usando `Branch.Phone1` y, si está vacío, `Branch.Phone2`. La configuración de WhatsApp/IA no decide la elegibilidad de la sede ni recibe pedidos o contactos originados en la landing.
-- La sucursal con menor desplazamiento se recomienda, pero el cliente puede seleccionar otra sede habilitada.
-- Para domicilio, el tiempo mostrado es `20 minutos de preparación + desplazamiento de Google`; para recogida se muestran los 20 minutos de preparación.
+- Para domicilio, el backend asigna automáticamente la sede cubierta más conveniente; el cliente no debe resolver decisiones logísticas internas. Para recogida sí elige la sede.
+- Dentro de cobertura, el compromiso mostrado al cliente para domicilio es un rango fijo de 35 a 45 minutos. Google continúa determinando cobertura y tarifa internamente; para recogida se muestran 20 minutos de preparación.
 - La cobertura exige cumplir simultáneamente una distancia de ruta de Google de máximo 5 km y un desplazamiento de máximo 30 minutos. El mapa mantiene una casita y un círculo azul de 5 km por sucursal aunque cambie la dirección, dibuja la ruta real después de validar y el carrito reutiliza un único mapa para sucursales, coberturas, cliente y ruta. El backend conserva la ruta de Google como fuente de verdad para la cotización.
 - El teléfono del pedido web se normaliza a los últimos diez dígitos y debe cumplir `^3\d{9}$`; la misma normalización se aplica antes de validar y antes de construir el mensaje de WhatsApp. Esta regla no modifica los teléfonos de contacto de las sucursales.
 - El domicilio estimado cuesta `$3.000` hasta 2 km inclusive. Por cada kilómetro adicional iniciado suma `$1.000`: 3 km cuestan `$4.000`, 4 km `$5.000`, y así sucesivamente. La sucursal confirma siempre el valor final.
 - La cotización contiene cliente, teléfono, dirección confirmada, sucursal, carrito, precios vigentes, tiempo, tarifa, subtotal y total. Para recogida no exige ni persiste una dirección del cliente.
 - Cualquier cambio en productos, cantidades, dirección, datos adicionales, cliente, modalidad o sucursal invalida la cotización. Antes de confirmar se revalidan precio, disponibilidad, promoción y, para domicilio, cobertura y tarifa.
-- Dentro de cobertura, la web crea directamente una orden operativa idempotente después de verificar el celular. WhatsApp se conserva únicamente como alternativa de consulta manual cuando la entrega requiere revisión; el storefront no procesa pagos en esta etapa.
+- Dentro de cobertura, efectivo crea directamente una orden operativa idempotente después de verificar el celular. Pago en línea crea primero un checkout temporal y solo materializa el pedido después de la aprobación de Wompi. WhatsApp se conserva únicamente como alternativa de consulta manual cuando la entrega requiere revisión.
 
 Reglas esperadas:
 
@@ -319,10 +319,11 @@ Reglas:
 - El cliente existente conserva su `BranchId` histórico. El cliente nuevo se crea únicamente al confirmar el pedido y toma como `BranchId` la sucursal que atenderá la orden.
 - Las direcciones pueden tener una etiqueta libre corta y `NeighborhoodId` opcional. Una dirección guardada conserva su `delivery_fee`; Google valida ubicación y cobertura, pero no reemplaza esa tarifa. Las direcciones nuevas usan la tarifa calculada por el storefront.
 - El backend revalida productos, precios, disponibilidad, promoción, cobertura y horario al cotizar y nuevamente antes de crear el pedido. Si la sede cerró, bloquea la confirmación e informa la próxima apertura cuando exista.
-- La confirmación es idempotente, deriva cliente y dirección de la sesión verificada, calcula los totales en servidor y crea el pedido con origen `web` y usuario técnico configurado en `Branch.StorefrontTakenByUserId`. Efectivo inicia en `Taken`; pago en línea inicia en `AwaitingPayment`. La recogida web se persiste operacionalmente como `Onsite`.
+- La confirmación es idempotente, deriva cliente y dirección de la sesión verificada y calcula los totales en servidor. Efectivo crea el pedido con origen `web`, usuario técnico configurado en `Branch.StorefrontTakenByUserId` y estado `Taken`. Pago en línea crea un `storefront_checkout` temporal y no crea cliente, dirección ni pedido mientras el pago esté pendiente o rechazado. La recogida web se persiste operacionalmente como `Onsite`.
 - El panel administrativo identifica los pedidos con origen `web` mediante una insignia visible en listados, detalle, cocina e historial del cliente.
-- Un pedido en `AwaitingPayment` no admite cambios manuales de estado ni se notifica a cocina. Solo un pago aprobado dentro de su ventana, o una revisión administrativa aprobada, lo cambia a `Taken`.
-- El pedido en efectivo se notifica a cocina inmediatamente. El pedido pagado se notifica mediante outbox después del commit financiero; los reintentos no duplican el evento operativo.
+- Los pedidos heredados en `AwaitingPayment` se excluyen de ventas, ticket promedio, productos vendidos, métricas del cliente y bloqueos de cierre de caja.
+- El pedido en efectivo y el pedido pagado se notifican a cocina mediante outbox después del commit; los reintentos no duplican el evento operativo.
+- Las promociones diarias elegibles se aplican automáticamente en servidor. Si un cliente verificado también tiene un premio de fidelización disponible, el checkout exige escoger uno; nunca acumula ambos. La selección, el descuento y el beneficio quedan congelados en el checkout/pedido. Un premio pendiente queda reservado hasta aprobación, rechazo o expiración para impedir doble uso concurrente.
 - El storefront sigue siendo single-tenant en esta etapa; `TenantId` se resuelve desde configuración del servidor y nunca desde el navegador.
 
 ### Pago en línea Wompi
@@ -333,8 +334,8 @@ Reglas:
 - Una sucursal solo ofrece pago en línea si la integración, la App y el banco están activos y las tres credenciales del ambiente activo están completas.
 - Cada intento usa referencia opaca única, total en centavos calculado por backend, moneda COP, firma SHA-256 y expiración exacta de 15 minutos. Reintentar crea una referencia nueva cuando la anterior ya venció o terminó.
 - El webhook firmado es la autoridad. Se valida firma en tiempo constante, ambiente, referencia, monto y moneda; eventos y transacciones son idempotentes.
-- Antes de abrir Wompi se cierra el carrito. El Widget retorna a `/pedido/{orderId}/pago`; la página sincroniza el `id` de transacción recibido y mantiene webhook y consulta periódica como respaldo.
-- Un pago aprobado dentro de la ventana crea un único `app_payment` bruto con comisión y neto esperado, cambia el pedido a `Taken` y encola su notificación a cocina en la misma transacción.
+- Antes de abrir Wompi se cierra el carrito. Se usa Web Checkout de página completa y retorna a `/pago/{checkoutId}`; la página sincroniza el `id` de transacción recibido y mantiene webhook y consulta periódica como respaldo.
+- Un pago aprobado dentro de la ventana crea atómicamente cliente/dirección si hacen falta, pedido `Taken`, un único `app_payment` bruto con comisión y neto esperado, y la notificación outbox a cocina. Un pago pendiente o rechazado nunca crea pedido ni afecta caja.
 - Una aprobación posterior a 15 minutos, o asociada a un pedido que ya no espera pago, queda en revisión manual, alerta a Admin/Superadmin y no entra a cocina automáticamente.
 - Cancelaciones, anulaciones y reembolsos de Wompi quedan fuera de esta primera entrega.
 - Al eliminar un pedido autorizado se eliminan primero sus líneas auditadas, sus intentos y transacciones Wompi y sus referencias en propuestas temporales de ruta; ninguna de estas relaciones puede bloquear la eliminación del pedido.

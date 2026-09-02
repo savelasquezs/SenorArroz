@@ -73,6 +73,64 @@ public sealed class WompiPaymentServiceTests
     }
 
     [Fact]
+    public async Task Storefront_checkout_creates_order_only_after_approved_webhook()
+    {
+        await using var db = CreateDb(nameof(Storefront_checkout_creates_order_only_after_approved_webhook));
+        var setup = await SeedAsync(db);
+        setup.Order.Branch.StorefrontTakenByUserId = setup.Order.TakenById;
+        db.Orders.Remove(setup.Order);
+        var checkout = Checkout(setup.Integration);
+        db.StorefrontCheckouts.Add(checkout);
+        await db.SaveChangesAsync();
+        var service = CreateService(db, new FakeClock(Now));
+        service.CreateCheckoutAttempt(checkout, setup.Integration, Now);
+        await db.SaveChangesAsync();
+        var attempt = await db.WompiPaymentAttempts.SingleAsync();
+
+        Assert.Empty(await db.Orders.ToListAsync());
+        var result = await service.ProcessWebhookAsync(
+            "sandbox",
+            Webhook(attempt, "tx-checkout-approved", "APPROVED", 1788278400000),
+            null,
+            CancellationToken.None);
+
+        Assert.True(result.Accepted);
+        var order = Assert.Single(await db.Orders.Include(x => x.OrderDetails).ToListAsync());
+        Assert.Equal("web", order.OrderSource);
+        Assert.Equal(OrderStatus.Taken, order.Status);
+        Assert.Equal(22_000, order.Total);
+        Assert.Equal(order.Id, checkout.OrderId);
+        Assert.Equal("approved", checkout.Status);
+        Assert.Single(await db.AppPayments.ToListAsync());
+        Assert.Single(await db.PaymentNotificationOutboxMessages.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Declined_storefront_checkout_does_not_create_order()
+    {
+        await using var db = CreateDb(nameof(Declined_storefront_checkout_does_not_create_order));
+        var setup = await SeedAsync(db);
+        db.Orders.Remove(setup.Order);
+        var checkout = Checkout(setup.Integration);
+        db.StorefrontCheckouts.Add(checkout);
+        await db.SaveChangesAsync();
+        var service = CreateService(db, new FakeClock(Now));
+        service.CreateCheckoutAttempt(checkout, setup.Integration, Now);
+        await db.SaveChangesAsync();
+        var attempt = await db.WompiPaymentAttempts.SingleAsync();
+
+        await service.ProcessWebhookAsync(
+            "sandbox",
+            Webhook(attempt, "tx-checkout-declined", "DECLINED", 1788278400000),
+            null,
+            CancellationToken.None);
+
+        Assert.Empty(await db.Orders.ToListAsync());
+        Assert.Equal("declined", checkout.Status);
+        Assert.Empty(await db.AppPayments.ToListAsync());
+    }
+
+    [Fact]
     public async Task Late_approved_webhook_requires_manual_review_without_releasing_order()
     {
         await using var db = CreateDb(nameof(Late_approved_webhook_requires_manual_review_without_releasing_order));
@@ -176,6 +234,27 @@ public sealed class WompiPaymentServiceTests
         await db.SaveChangesAsync();
         return (order, integration);
     }
+
+    private static StorefrontCheckout Checkout(WompiPaymentIntegration integration) => new()
+    {
+        TenantId = 1,
+        PublicId = Guid.NewGuid().ToString("N"),
+        IdempotencyKey = Guid.NewGuid().ToString("N"),
+        BranchId = integration.BranchId,
+        CustomerPhone = "3001234567",
+        CustomerName = "Cliente web",
+        FulfillmentType = "delivery",
+        FormattedAddress = "Calle 10 # 20-30",
+        Latitude = 6.25m,
+        Longitude = -75.56m,
+        DeliveryFee = 4_000,
+        Subtotal = 18_000,
+        DiscountTotal = 0,
+        Total = 22_000,
+        ItemsJson = JsonSerializer.Serialize(new[] { new StorefrontCheckoutLine(99, 1, 18_000, 0, 18_000, null) }),
+        Status = "pending",
+        ExpiresAt = Now.AddMinutes(15),
+    };
 
     private static string Webhook(WompiPaymentAttempt attempt, string transactionId, string status, long timestamp)
     {
