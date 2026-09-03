@@ -10,16 +10,16 @@ namespace SenorArroz.Infrastructure.Services;
 
 public sealed class MetaConversionOutboxWorker(
     IServiceScopeFactory scopeFactory,
-    IBackgroundWorkSignal<PaymentNotificationOutboxWork> workSignal,
     ILogger<MetaConversionOutboxWorker> logger) : BackgroundService
 {
     private static readonly HashSet<string> PurchaseEventTypes = ["order_created_web_cash", "order_payment_approved"];
+    private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(30);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            var delay = TimeSpan.FromMinutes(5);
+            var delay = IdleDelay;
             try
             {
                 delay = await ProcessPendingAsync(stoppingToken);
@@ -36,7 +36,7 @@ public sealed class MetaConversionOutboxWorker(
 
             try
             {
-                await workSignal.WaitAsync(delay, stoppingToken);
+                await Task.Delay(delay, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -49,7 +49,7 @@ public sealed class MetaConversionOutboxWorker(
     {
         using var scope = scopeFactory.CreateScope();
         var client = scope.ServiceProvider.GetRequiredService<MetaConversionsClient>();
-        if (!client.IsConfigured) return TimeSpan.FromMinutes(5);
+        if (!client.IsConfigured) return IdleDelay;
 
         var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
         var now = DateTime.UtcNow;
@@ -88,6 +88,8 @@ public sealed class MetaConversionOutboxWorker(
                     if (checkout is not null)
                     {
                         message.MetaConsentGranted = checkout.MetaConsentGranted;
+                        if (checkout.MetaConsentGranted)
+                            message.MetaCustomerPhone ??= checkout.CustomerPhone;
                         message.MetaClientUserAgent ??= checkout.MetaClientUserAgent;
                         message.MetaClientIpAddress ??= checkout.MetaClientIpAddress;
                         message.MetaFbp ??= checkout.MetaFbp;
@@ -102,11 +104,7 @@ public sealed class MetaConversionOutboxWorker(
                     continue;
                 }
 
-                var phone = order.Customer?.Phone1;
-                if (string.IsNullOrWhiteSpace(phone)) phone = order.Customer?.Phone2;
-                if (string.IsNullOrWhiteSpace(phone))
-                    throw new InvalidOperationException("El pedido web no tiene un teléfono de cliente disponible para Meta CAPI.");
-
+                var phone = ExactPhone(message, order);
                 var shipping = Math.Max(0, order.DeliveryFee ?? 0);
                 var value = Math.Max(0, order.Total - shipping);
                 var contents = order.OrderDetails
@@ -151,9 +149,27 @@ public sealed class MetaConversionOutboxWorker(
             .OrderBy(x => x.MetaNextAttemptAt)
             .Select(x => x.MetaNextAttemptAt)
             .FirstOrDefaultAsync(cancellationToken);
-        if (!nextAttempt.HasValue) return TimeSpan.FromMinutes(5);
+        if (!nextAttempt.HasValue) return IdleDelay;
         var delay = nextAttempt.Value - DateTime.UtcNow;
-        return delay <= TimeSpan.Zero ? TimeSpan.Zero : delay;
+        if (delay <= TimeSpan.Zero) return TimeSpan.Zero;
+        return delay < IdleDelay ? delay : IdleDelay;
+    }
+
+    private static string ExactPhone(PaymentNotificationOutboxMessage message, Order order)
+    {
+        if (!string.IsNullOrWhiteSpace(message.MetaCustomerPhone))
+            return message.MetaCustomerPhone;
+
+        var candidates = new[] { order.Customer?.Phone1, order.Customer?.Phone2 }
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (candidates.Length == 1)
+            return candidates[0];
+
+        throw new InvalidOperationException(
+            "No fue posible determinar de forma inequívoca el teléfono verificado del pedido para Meta CAPI.");
     }
 
     private static void Ignore(PaymentNotificationOutboxMessage message, DateTime now)
