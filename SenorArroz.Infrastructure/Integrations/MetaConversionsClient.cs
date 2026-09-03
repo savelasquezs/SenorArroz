@@ -19,6 +19,8 @@ public sealed class MetaConversionsClient(HttpClient httpClient, IOptions<MetaCo
             throw new InvalidOperationException("Meta Conversions API no está configurada.");
         if (string.IsNullOrWhiteSpace(purchase.ClientUserAgent))
             throw new InvalidOperationException("El evento web no tiene el user agent original del cliente.");
+        if (purchase.Value < 0 || purchase.Shipping < 0)
+            throw new InvalidOperationException("El valor del evento Purchase no es válido para Meta CAPI.");
 
         var userData = new Dictionary<string, object>
         {
@@ -36,6 +38,8 @@ public sealed class MetaConversionsClient(HttpClient httpClient, IOptions<MetaCo
             .Where(x => x.Quantity > 0)
             .Select(x => new { id = x.ProductId.ToString(), quantity = x.Quantity })
             .ToArray();
+        if (contents.Length == 0)
+            throw new InvalidOperationException("El evento Purchase no contiene productos válidos para Meta CAPI.");
 
         var customData = new Dictionary<string, object>
         {
@@ -80,18 +84,18 @@ public sealed class MetaConversionsClient(HttpClient httpClient, IOptions<MetaCo
             throw new InvalidOperationException($"Meta Conversions API respondió {(int)response.StatusCode}: {SafeError(responseBody)}");
 
         using var document = JsonDocument.Parse(responseBody);
-        if (document.RootElement.TryGetProperty("events_received", out var received)
-            && received.ValueKind == JsonValueKind.Number
-            && received.GetInt32() < 1)
+        if (!document.RootElement.TryGetProperty("events_received", out var received)
+            || received.ValueKind != JsonValueKind.Number
+            || received.GetInt32() < 1)
             throw new InvalidOperationException("Meta Conversions API no confirmó la recepción del evento.");
     }
 
     internal static string HashPhone(string phone)
     {
         var digits = new string((phone ?? string.Empty).Where(char.IsDigit).ToArray());
-        if (digits.Length == 10) digits = $"57{digits}";
-        if (digits.Length < 11)
-            throw new InvalidOperationException("El teléfono del cliente no es válido para Meta CAPI.");
+        if (digits.Length == 10 && digits[0] == '3') digits = $"57{digits}";
+        if (digits.Length != 12 || !digits.StartsWith("573", StringComparison.Ordinal))
+            throw new InvalidOperationException("El teléfono del cliente no es un celular colombiano válido para Meta CAPI.");
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(digits))).ToLowerInvariant();
     }
 
