@@ -10,15 +10,18 @@ namespace SenorArroz.Infrastructure.Services;
 
 public sealed class PaymentNotificationOutboxWorker(
     IServiceScopeFactory scopeFactory,
+    IBackgroundWorkSignal<PaymentNotificationOutboxWork> workSignal,
     ILogger<PaymentNotificationOutboxWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            var delay = TimeSpan.FromSeconds(30);
             try
             {
                 await ProcessPendingAsync(stoppingToken);
+                delay = await GetNextDelayAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -28,8 +31,32 @@ public sealed class PaymentNotificationOutboxWorker(
             {
                 logger.LogError(exception, "Falló el procesamiento del outbox de pagos.");
             }
-            await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+
+            try
+            {
+                await workSignal.WaitAsync(delay, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
         }
+    }
+
+    private async Task<TimeSpan> GetNextDelayAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
+        var nextAttempt = await db.PaymentNotificationOutboxMessages
+            .AsNoTracking()
+            .Where(x => x.Status == "pending")
+            .OrderBy(x => x.NextAttemptAt)
+            .Select(x => x.NextAttemptAt)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (!nextAttempt.HasValue)
+            return TimeSpan.FromMinutes(5);
+        var delay = nextAttempt.Value - DateTime.UtcNow;
+        return delay <= TimeSpan.Zero ? TimeSpan.Zero : delay;
     }
 
     private async Task ProcessPendingAsync(CancellationToken cancellationToken)

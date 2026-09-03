@@ -11,10 +11,15 @@ public class EmailOutboxWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<EmailOutboxWorker> _logger;
+    private readonly IBackgroundWorkSignal<EmailOutboxWork> _workSignal;
 
-    public EmailOutboxWorker(IServiceScopeFactory scopeFactory, ILogger<EmailOutboxWorker> logger)
+    public EmailOutboxWorker(
+        IServiceScopeFactory scopeFactory,
+        IBackgroundWorkSignal<EmailOutboxWork> workSignal,
+        ILogger<EmailOutboxWorker> logger)
     {
         _scopeFactory = scopeFactory;
+        _workSignal = workSignal;
         _logger = logger;
     }
 
@@ -35,7 +40,7 @@ public class EmailOutboxWorker : BackgroundService
                 _logger.LogError(ex, "Error while processing email outbox.");
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+            await _workSignal.WaitAsync(TimeSpan.FromMinutes(2), stoppingToken);
         }
     }
 

@@ -19,7 +19,8 @@ public sealed class WompiPaymentService(
     IPaymentReviewNotificationService reviewNotifications,
     IWompiPaymentAttemptLock paymentAttemptLock,
     HttpClient httpClient,
-    ILogger<WompiPaymentService> logger) : IWompiPaymentService
+    ILogger<WompiPaymentService> logger,
+    IBackgroundWorkSignal<PaymentNotificationOutboxWork>? notificationSignal = null) : IWompiPaymentService
 {
     public Task<WompiPaymentIntegration?> GetEnabledIntegrationAsync(int tenantId, int branchId, CancellationToken cancellationToken) =>
         db.WompiPaymentIntegrations
@@ -164,6 +165,7 @@ public sealed class WompiPaymentService(
             if (environment == "sandbox") attempt.Integration.LastSandboxWebhookAt = clock.UtcNow;
             else attempt.Integration.LastProductionWebhookAt = clock.UtcNow;
             await db.SaveChangesAsync(lockCancellationToken);
+            notificationSignal?.Pulse();
             result = result with { BranchId = AttemptBranchId(attempt), OrderId = attempt.OrderId };
             return (Result: result, ReviewReason: attempt.ManualReviewReason);
         }, cancellationToken);
@@ -226,6 +228,7 @@ public sealed class WompiPaymentService(
                 false,
                 lockCancellationToken);
             await db.SaveChangesAsync(lockCancellationToken);
+            notificationSignal?.Pulse();
             return (Result: result, Status: ToStatus(current), ReviewReason: current.ManualReviewReason);
         }, cancellationToken);
         if (observed.Result.RequiresManualReview && !observed.Result.Duplicate)
@@ -290,6 +293,7 @@ public sealed class WompiPaymentService(
                 false,
                 lockCancellationToken);
             await db.SaveChangesAsync(lockCancellationToken);
+            notificationSignal?.Pulse();
             return (Result: result, Status: ToCheckoutStatus(current), ReviewReason: current.ManualReviewReason);
         }, cancellationToken);
         if (observed.Result.RequiresManualReview && !observed.Result.Duplicate && observed.Result.OrderId.HasValue)
@@ -382,6 +386,7 @@ public sealed class WompiPaymentService(
         attempt.ReviewedAt = utcNow;
         attempt.ReviewedByUserId = reviewedByUserId;
         await db.SaveChangesAsync(cancellationToken);
+        notificationSignal?.Pulse();
         return new(attempt.OrderId!.Value, attempt.Order!.BranchId, attempt.Status.ToString(), attempt.Order.Status.ToString());
     }
 

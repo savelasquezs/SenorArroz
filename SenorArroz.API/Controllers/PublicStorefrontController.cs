@@ -36,7 +36,8 @@ public sealed class PublicStorefrontController(
     IMemoryCache cache,
     StorefrontQuoteConcurrencyGate concurrencyGate,
     IWompiPaymentService wompi,
-    IOptions<StorefrontCustomerAuthOptions> storefrontOptions) : ControllerBase
+    IOptions<StorefrontCustomerAuthOptions> storefrontOptions,
+    IBackgroundWorkSignal<PaymentNotificationOutboxWork>? paymentNotificationSignal = null) : ControllerBase
 {
     private const int PreparationMinutes = 20;
     private const int DeliveryPromiseMinMinutes = 35;
@@ -737,6 +738,7 @@ public sealed class PublicStorefrontController(
             await db.SaveChangesAsync(cancellationToken);
             if (transaction is not null)
                 await transaction.CommitAsync(cancellationToken);
+            paymentNotificationSignal?.Pulse();
 
             return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(order, paymentMethod, null)));
         }

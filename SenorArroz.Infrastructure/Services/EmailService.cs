@@ -22,12 +22,19 @@ public class EmailService : IEmailService
     private readonly int _maxAttempts;
     private readonly string _logoUrl;
     private readonly string _restaurantName;
+    private readonly IBackgroundWorkSignal<EmailOutboxWork>? _workSignal;
 
-    public EmailService(IApplicationDbContext context, IConfiguration configuration, ILogger<EmailService> logger, IClock clock)
+    public EmailService(
+        IApplicationDbContext context,
+        IConfiguration configuration,
+        ILogger<EmailService> logger,
+        IClock clock,
+        IBackgroundWorkSignal<EmailOutboxWork>? workSignal = null)
     {
         _context = context;
         _logger = logger;
         _clock = clock;
+        _workSignal = workSignal;
         _maxAttempts = int.Parse(configuration["EmailSettings:MaxAttempts"] ?? "5");
         _logoUrl = configuration["Branding:EmailLogoUrl"] ?? "https://senorarroz.up.railway.app/favicon.png";
         _restaurantName = configuration["Branding:RestaurantDisplayName"] ?? "El Señor Arroz";
@@ -188,6 +195,7 @@ public class EmailService : IEmailService
             });
 
             await _context.SaveChangesAsync();
+            _workSignal?.Pulse();
             _logger.LogInformation("Email queued successfully. Type: {MessageType}. Recipients: {Recipients}", messageType, string.Join(", ", recipients));
             return EmailSendResult.Ok("outbox");
         }
