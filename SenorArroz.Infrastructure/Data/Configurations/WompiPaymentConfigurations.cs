@@ -195,6 +195,7 @@ public sealed class PaymentNotificationOutboxMessageConfiguration : IEntityTypeC
         builder.Property(x => x.MetaNextAttemptAt).HasColumnName("meta_next_attempt_at");
         builder.Property(x => x.MetaProcessedAt).HasColumnName("meta_processed_at");
         builder.Property(x => x.MetaLastError).HasColumnName("meta_last_error").HasMaxLength(1000);
+        builder.Property(x => x.MetaCustomerPhone).HasColumnName("meta_customer_phone").HasMaxLength(20);
         builder.Property(x => x.MetaClientUserAgent).HasColumnName("meta_client_user_agent").HasMaxLength(512);
         builder.Property(x => x.MetaClientIpAddress).HasColumnName("meta_client_ip_address").HasMaxLength(64);
         builder.Property(x => x.MetaFbp).HasColumnName("meta_fbp").HasMaxLength(255);
