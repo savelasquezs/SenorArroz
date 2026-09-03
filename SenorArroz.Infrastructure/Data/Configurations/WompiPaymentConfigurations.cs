@@ -116,6 +116,10 @@ public sealed class StorefrontCheckoutConfiguration : IEntityTypeConfiguration<S
         builder.Property(x => x.AppliedBenefitSnapshot).HasColumnName("applied_benefit_snapshot").HasColumnType("jsonb");
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(30);
         builder.Property(x => x.ExpiresAt).HasColumnName("expires_at");
+        builder.Property(x => x.MetaClientUserAgent).HasColumnName("meta_client_user_agent").HasMaxLength(512);
+        builder.Property(x => x.MetaClientIpAddress).HasColumnName("meta_client_ip_address").HasMaxLength(64);
+        builder.Property(x => x.MetaFbp).HasColumnName("meta_fbp").HasMaxLength(255);
+        builder.Property(x => x.MetaFbc).HasColumnName("meta_fbc").HasMaxLength(255);
         WompiPaymentIntegrationConfiguration.Timestamps(builder);
         builder.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ux_storefront_checkout_public_id");
         builder.HasIndex(x => x.IdempotencyKey).IsUnique().HasDatabaseName("ux_storefront_checkout_idempotency_key");
@@ -186,8 +190,18 @@ public sealed class PaymentNotificationOutboxMessageConfiguration : IEntityTypeC
         builder.Property(x => x.NextAttemptAt).HasColumnName("next_attempt_at");
         builder.Property(x => x.ProcessedAt).HasColumnName("processed_at");
         builder.Property(x => x.LastError).HasColumnName("last_error").HasMaxLength(1000);
+        builder.Property(x => x.MetaStatus).HasColumnName("meta_status").HasMaxLength(20);
+        builder.Property(x => x.MetaAttemptCount).HasColumnName("meta_attempt_count");
+        builder.Property(x => x.MetaNextAttemptAt).HasColumnName("meta_next_attempt_at");
+        builder.Property(x => x.MetaProcessedAt).HasColumnName("meta_processed_at");
+        builder.Property(x => x.MetaLastError).HasColumnName("meta_last_error").HasMaxLength(1000);
+        builder.Property(x => x.MetaClientUserAgent).HasColumnName("meta_client_user_agent").HasMaxLength(512);
+        builder.Property(x => x.MetaClientIpAddress).HasColumnName("meta_client_ip_address").HasMaxLength(64);
+        builder.Property(x => x.MetaFbp).HasColumnName("meta_fbp").HasMaxLength(255);
+        builder.Property(x => x.MetaFbc).HasColumnName("meta_fbc").HasMaxLength(255);
         WompiPaymentIntegrationConfiguration.Timestamps(builder);
         builder.HasIndex(x => new { x.Status, x.NextAttemptAt }).HasDatabaseName("ix_payment_notification_outbox_pending");
+        builder.HasIndex(x => new { x.MetaStatus, x.MetaNextAttemptAt }).HasDatabaseName("ix_payment_notification_outbox_meta_pending");
         builder.HasIndex(x => new { x.OrderId, x.EventType }).IsUnique().HasDatabaseName("ux_payment_notification_outbox_order_event");
         builder.HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
     }
