@@ -14,8 +14,6 @@ using SenorArroz.Infrastructure.WhatsApp;
 using SenorArroz.Infrastructure.Integrations;
 using Microsoft.Extensions.Hosting;
 
-
-
 namespace SenorArroz.Infrastructure;
 
 public static class DependencyInjection
@@ -42,12 +40,21 @@ public static class DependencyInjection
         services.Configure<WhatsAppCloudOptions>(configuration.GetSection(WhatsAppCloudOptions.SectionName));
         services.Configure<WhatsAppAiOrchestratorOptions>(configuration.GetSection(WhatsAppAiOrchestratorOptions.SectionName));
         services.Configure<WhatsAppAiPricingOptions>(configuration.GetSection(WhatsAppAiPricingOptions.SectionName));
+        services.Configure<MetaConversionsOptions>(configuration.GetSection(MetaConversionsOptions.SectionName));
         services.PostConfigure<WhatsAppCloudOptions>(options =>
         {
             options.AccessToken = FirstNonEmpty(configuration["WHATSAPP_TOKEN"], options.AccessToken);
             options.BusinessAccountId = FirstNonEmpty(configuration["WHATSAPP_BUSINESS_ACCOUNT_ID"], options.BusinessAccountId);
             options.PhoneNumberId = FirstNonEmpty(configuration["WHATSAPP_PHONE_NUMBER_ID"], options.PhoneNumberId);
             options.GraphApiVersion = FirstNonEmpty(configuration["GRAPH_API_VERSION"], options.GraphApiVersion) ?? options.GraphApiVersion;
+        });
+        services.PostConfigure<MetaConversionsOptions>(options =>
+        {
+            options.PixelId = FirstNonEmpty(configuration["META_PIXEL_ID"], options.PixelId) ?? string.Empty;
+            options.AccessToken = FirstNonEmpty(configuration["META_CAPI_ACCESS_TOKEN"], options.AccessToken) ?? string.Empty;
+            options.GraphApiVersion = FirstNonEmpty(configuration["META_GRAPH_API_VERSION"], options.GraphApiVersion) ?? "v25.0";
+            options.EventSourceUrl = FirstNonEmpty(configuration["META_EVENT_SOURCE_URL"], options.EventSourceUrl) ?? "https://senorarroz.com";
+            options.TestEventCode = FirstNonEmpty(configuration["META_CAPI_TEST_EVENT_CODE"], options.TestEventCode);
         });
         services.AddSingleton<IFirebaseGcsStorage, FirebaseGcsStorageService>();
         services.AddScoped<IBusinessDocumentStorage, BusinessDocumentStorage>();
@@ -59,10 +66,13 @@ public static class DependencyInjection
         services.AddScoped<IFcmPushService, FcmPushService>();
 
         // Database
-        services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
-        services.AddDbContextFactory<ApplicationDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+        services.AddSingleton<StorefrontMetaAttributionInterceptor>();
+        services.AddDbContext<ApplicationDbContext>((provider, options) =>
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+                .AddInterceptors(provider.GetRequiredService<StorefrontMetaAttributionInterceptor>()));
+        services.AddDbContextFactory<ApplicationDbContext>((provider, options) =>
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+                .AddInterceptors(provider.GetRequiredService<StorefrontMetaAttributionInterceptor>()));
 
         services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IDeliveryAutoCompletionRouteLock, PostgresDeliveryAutoCompletionRouteLock>();
@@ -78,6 +88,7 @@ public static class DependencyInjection
         services.AddHttpClient<IWhatsAppCloudClient, WhatsAppCloudClient>();
         services.AddSingleton<IIntegrationSecretProtector, IntegrationSecretProtector>();
         services.AddHttpClient<IWompiPaymentService, WompiPaymentService>(client => client.Timeout = TimeSpan.FromSeconds(15));
+        services.AddHttpClient<MetaConversionsClient>(client => client.Timeout = TimeSpan.FromSeconds(15));
         services.AddHttpClient<IRappiDeliveryProvider, RappiDeliveryProvider>(client => client.Timeout = TimeSpan.FromSeconds(20));
         services.AddScoped<IRappiOrderProcessor, RappiOrderProcessor>();
         services.AddScoped<IExternalDeliveryStatusSyncService, ExternalDeliveryStatusSyncService>();
@@ -169,6 +180,7 @@ public static class DependencyInjection
         services.AddHostedService<DeliveryTrackingAlertWorker>();
         services.AddHostedService<RappiIntegrationWorker>();
         services.AddHostedService<PaymentNotificationOutboxWorker>();
+        services.AddHostedService<MetaConversionOutboxWorker>();
 
         return services;
     }
