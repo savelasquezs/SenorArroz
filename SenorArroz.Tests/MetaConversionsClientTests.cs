@@ -71,6 +71,19 @@ public sealed class MetaConversionsClientTests
     }
 
     [Fact]
+    public async Task Purchase_normalizes_international_colombian_phone_before_hashing()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{\"events_received\":1}");
+        var client = CreateClient(handler, null);
+
+        await client.SendPurchaseAsync(Purchase("+57 300 123 4567"), CancellationToken.None);
+
+        using var document = JsonDocument.Parse(handler.Body!);
+        var hash = document.RootElement.GetProperty("data")[0].GetProperty("user_data").GetProperty("ph")[0].GetString();
+        Assert.Equal(Sha256("573001234567"), hash);
+    }
+
+    [Fact]
     public async Task Purchase_marks_client_rejection_as_permanent()
     {
         var handler = new RecordingHandler(HttpStatusCode.BadRequest, "{\"error\":{\"message\":\"Invalid parameter\"}}");
@@ -106,21 +119,18 @@ public sealed class MetaConversionsClientTests
     }
 
     [Theory]
-    [InlineData("3001234567")]
-    [InlineData("+57 300 123 4567")]
-    public void HashPhone_accepts_only_valid_colombian_mobile_formats(string phone)
-    {
-        Assert.Equal(Sha256("573001234567"), MetaConversionsClient.HashPhone(phone));
-    }
-
-    [Theory]
     [InlineData("12345")]
     [InlineData("6011234567")]
     [InlineData("57300123456799")]
-    public void HashPhone_rejects_invalid_or_non_mobile_values(string phone)
+    public async Task Purchase_rejects_invalid_or_non_mobile_phone_as_permanent(string phone)
     {
-        var exception = Assert.Throws<MetaConversionsException>(() => MetaConversionsClient.HashPhone(phone));
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{\"events_received\":1}");
+        var client = CreateClient(handler, null);
+
+        var exception = await Assert.ThrowsAsync<MetaConversionsException>(() => client.SendPurchaseAsync(Purchase(phone), CancellationToken.None));
+
         Assert.False(exception.Retryable);
+        Assert.Null(handler.Request);
     }
 
     private static MetaPurchaseEvent Purchase(string phone) => new(
