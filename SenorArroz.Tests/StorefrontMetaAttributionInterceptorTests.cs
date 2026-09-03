@@ -21,6 +21,7 @@ public sealed class StorefrontMetaAttributionInterceptorTests
 
         Assert.True(checkout.MetaConsentGranted);
         Assert.True(outbox.MetaConsentGranted);
+        Assert.Equal("3001234567", outbox.MetaCustomerPhone);
         Assert.Equal("Mozilla/5.0 test", checkout.MetaClientUserAgent);
         Assert.Equal("203.0.113.8", checkout.MetaClientIpAddress);
         Assert.Equal("fb.1.test.fbp", checkout.MetaFbp);
@@ -29,26 +30,32 @@ public sealed class StorefrontMetaAttributionInterceptorTests
     }
 
     [Fact]
-    public async Task Denied_consent_does_not_capture_browser_identifiers()
+    public async Task Denied_consent_does_not_capture_matching_data()
     {
         var accessor = ContextWithHeaders("denied");
         await using var db = CreateDb(accessor);
         var checkout = Checkout();
+        var outbox = Outbox();
         db.StorefrontCheckouts.Add(checkout);
+        db.PaymentNotificationOutboxMessages.Add(outbox);
 
         await db.SaveChangesAsync();
 
         Assert.False(checkout.MetaConsentGranted);
+        Assert.False(outbox.MetaConsentGranted);
+        Assert.Null(outbox.MetaCustomerPhone);
         Assert.Null(checkout.MetaClientUserAgent);
         Assert.Null(checkout.MetaClientIpAddress);
         Assert.Null(checkout.MetaFbp);
         Assert.Null(checkout.MetaFbc);
+        Assert.Null(outbox.MetaClientUserAgent);
     }
 
     private static HttpContextAccessor ContextWithHeaders(string consent)
     {
         var context = new DefaultHttpContext();
         context.Request.Headers["X-Meta-Consent"] = consent;
+        context.Request.Headers["X-Meta-Customer-Phone"] = "3001234567";
         context.Request.Headers["X-Storefront-Client-User-Agent"] = "Mozilla/5.0 test";
         context.Request.Headers["X-Storefront-Client-Ip"] = "203.0.113.8";
         context.Request.Headers["X-Meta-Fbp"] = "fb.1.test.fbp";
