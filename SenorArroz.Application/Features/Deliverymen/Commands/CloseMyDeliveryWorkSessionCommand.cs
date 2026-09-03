@@ -13,12 +13,18 @@ public class CloseMyDeliveryWorkSessionHandler : IRequestHandler<CloseMyDelivery
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IClock _clock;
+    private readonly IBackgroundWorkSignal<DeliveryWorkSessionScheduleWork>? _scheduleSignal;
 
-    public CloseMyDeliveryWorkSessionHandler(IApplicationDbContext db, ICurrentUser currentUser, IClock clock)
+    public CloseMyDeliveryWorkSessionHandler(
+        IApplicationDbContext db,
+        ICurrentUser currentUser,
+        IClock clock,
+        IBackgroundWorkSignal<DeliveryWorkSessionScheduleWork>? scheduleSignal = null)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _scheduleSignal = scheduleSignal;
     }
 
     public async Task Handle(CloseMyDeliveryWorkSessionCommand request, CancellationToken cancellationToken)
@@ -39,5 +45,6 @@ public class CloseMyDeliveryWorkSessionHandler : IRequestHandler<CloseMyDelivery
             ColombiaTimeHelper.EnsureUtc(_clock.UtcNow),
             DeliveryWorkSessionEndReason.UserChange);
         await _db.SaveChangesAsync(cancellationToken);
+        _scheduleSignal?.Pulse();
     }
 }

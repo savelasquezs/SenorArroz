@@ -10,16 +10,17 @@ namespace SenorArroz.Infrastructure.Services;
 /// </summary>
 public class DeliveryRouteConsolidationWorker : BackgroundService
 {
-    private static readonly TimeSpan Period = TimeSpan.FromSeconds(30);
-
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<DeliveryRouteConsolidationWorker> _logger;
+    private readonly IBackgroundWorkSignal<DeliveryRouteConsolidationWork> _workSignal;
 
     public DeliveryRouteConsolidationWorker(
         IServiceProvider serviceProvider,
+        IBackgroundWorkSignal<DeliveryRouteConsolidationWork> workSignal,
         ILogger<DeliveryRouteConsolidationWorker> logger)
     {
         _serviceProvider = serviceProvider;
+        _workSignal = workSignal;
         _logger = logger;
     }
 
@@ -27,6 +28,7 @@ public class DeliveryRouteConsolidationWorker : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            var delay = TimeSpan.FromSeconds(30);
             try
             {
                 using var scope = _serviceProvider.CreateScope();
@@ -34,6 +36,10 @@ public class DeliveryRouteConsolidationWorker : BackgroundService
                 var n = await workflow.ConsolidatePendingRoutesAsync(stoppingToken);
                 if (n > 0)
                     _logger.LogInformation("Consolidadas {Count} rutas de domicilio.", n);
+                var next = await workflow.GetNextPendingConsolidationAtAsync(stoppingToken);
+                delay = next.HasValue ? next.Value - DateTime.UtcNow : TimeSpan.FromMinutes(5);
+                if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
+                if (delay > TimeSpan.FromMinutes(5)) delay = TimeSpan.FromMinutes(5);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -46,7 +52,7 @@ public class DeliveryRouteConsolidationWorker : BackgroundService
 
             try
             {
-                await Task.Delay(Period, stoppingToken);
+                await _workSignal.WaitAsync(delay, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

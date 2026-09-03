@@ -14,6 +14,30 @@ namespace SenorArroz.Tests;
 public class DeliveryRouteAssignmentTests
 {
     [Fact]
+    public async Task Assignment_WakesConsolidationAndSchedulesExactDueTime()
+    {
+        await using var db = CreateDb();
+        var now = new DateTime(2026, 7, 21, 18, 0, 0, DateTimeKind.Utc);
+        db.Branches.Add(new Branch { Id = 1, Name = "Centro", Address = "Sucursal" });
+        db.Orders.Add(DeliveryOrder(10, deliverymanId: 7));
+        await db.SaveChangesAsync();
+        var signal = new Mock<IBackgroundWorkSignal<DeliveryRouteConsolidationWork>>();
+        var options = new DeliveryRouteOptions { ConsolidationDelaySeconds = 180 };
+        var service = new DeliveryRouteWorkflowService(
+            db,
+            Mock.Of<IGoogleRoutesDrivingMetricsService>(),
+            Options.Create(options),
+            NullLogger<DeliveryRouteWorkflowService>.Instance,
+            new FakeClock(now),
+            signal.Object);
+
+        await service.OnOrderAssignedToDeliverymanAsync(db.Orders.Single());
+
+        Assert.Equal(now.AddSeconds(180), await service.GetNextPendingConsolidationAtAsync());
+        signal.Verify(x => x.Pulse(), Times.Once);
+    }
+
+    [Fact]
     public async Task Consolidation_UsesOneRoundTripRequest_AndAddsPerOrderBuffer()
     {
         await using var db = CreateDb();

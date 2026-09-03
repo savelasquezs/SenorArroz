@@ -23,6 +23,7 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
     private readonly IFcmPushService _fcm;
     private readonly ILogger<UpdateBranchHandler> _logger;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IBackgroundWorkSignal<DeliveryWorkSessionScheduleWork>? _workSessionScheduleSignal;
 
     public UpdateBranchHandler(
         IBranchRepository branchRepository,
@@ -32,7 +33,8 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
         IClock clock,
         IFcmPushService fcm,
         ILogger<UpdateBranchHandler> logger,
-        IRefreshTokenRepository refreshTokenRepository)
+        IRefreshTokenRepository refreshTokenRepository,
+        IBackgroundWorkSignal<DeliveryWorkSessionScheduleWork>? workSessionScheduleSignal = null)
     {
         _branchRepository = branchRepository;
         _db = db;
@@ -42,6 +44,7 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
         _fcm = fcm;
         _logger = logger;
         _refreshTokenRepository = refreshTokenRepository;
+        _workSessionScheduleSignal = workSessionScheduleSignal;
     }
 
     public async Task<BranchDto> Handle(UpdateBranchCommand request, CancellationToken cancellationToken)
@@ -165,6 +168,8 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
             stay.InvalidateClassification();
 
         branch = await _branchRepository.UpdateAsync(branch, cancellationToken);
+        if (sessionsWithUpdatedCutoff.Count > 0)
+            _workSessionScheduleSignal?.Pulse();
 
         var branchDto = _mapper.Map<BranchDto>(branch);
 

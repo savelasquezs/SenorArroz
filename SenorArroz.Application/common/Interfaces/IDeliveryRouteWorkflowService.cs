@@ -29,4 +29,7 @@ public interface IDeliveryRouteWorkflowService
 
     /// <summary>Consolida rutas abiertas cuya última asignación superó el delay. Ejecutado por worker.</summary>
     Task<int> ConsolidatePendingRoutesAsync(CancellationToken cancellationToken = default);
+
+    Task<DateTime?> GetNextPendingConsolidationAtAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<DateTime?>(null);
 }

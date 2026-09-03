@@ -16,19 +16,22 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
     private readonly DeliveryRouteOptions _opt;
     private readonly ILogger<DeliveryRouteWorkflowService> _logger;
     private readonly IClock _clock;
+    private readonly IBackgroundWorkSignal<DeliveryRouteConsolidationWork>? _consolidationSignal;
 
     public DeliveryRouteWorkflowService(
         IApplicationDbContext db,
         IGoogleRoutesDrivingMetricsService routesMetrics,
         IOptions<DeliveryRouteOptions> options,
         ILogger<DeliveryRouteWorkflowService> logger,
-        IClock clock)
+        IClock clock,
+        IBackgroundWorkSignal<DeliveryRouteConsolidationWork>? consolidationSignal = null)
     {
         _db = db;
         _routesMetrics = routesMetrics;
         _opt = options.Value;
         _logger = logger;
         _clock = clock;
+        _consolidationSignal = consolidationSignal;
     }
 
     public async Task OnOrderAssignedToDeliverymanAsync(Order order, CancellationToken cancellationToken = default)
@@ -139,6 +142,8 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         route.ComplexAccessBufferSeconds = _opt.ComplexAccessBufferSeconds;
 
         await _db.SaveChangesAsync(cancellationToken);
+        if (route.Status == DeliveryRouteStatus.Open)
+            _consolidationSignal?.Pulse();
 
         // Una asignacion urgente debe incorporarse a la ruta que ya esta en camino.
         // Se recalculan sus metricas, pero nunca se reinicia el reloj operativo.
@@ -471,6 +476,17 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         }
 
         return count;
+    }
+
+    public async Task<DateTime?> GetNextPendingConsolidationAtAsync(CancellationToken cancellationToken = default)
+    {
+        var lastAssignmentAt = await _db.DeliveryRoutes
+            .AsNoTracking()
+            .Where(route => route.Status == DeliveryRouteStatus.Open && route.Stops.Any())
+            .OrderBy(route => route.LastAssignmentAtUtc)
+            .Select(route => (DateTime?)route.LastAssignmentAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        return lastAssignmentAt?.AddSeconds(Math.Max(0, _opt.ConsolidationDelaySeconds));
     }
 
     /// <summary>

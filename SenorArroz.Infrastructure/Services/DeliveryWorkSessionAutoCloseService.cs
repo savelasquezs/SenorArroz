@@ -12,15 +12,17 @@ namespace SenorArroz.Infrastructure.Services;
 
 public class DeliveryWorkSessionAutoCloseService : BackgroundService
 {
-    private static readonly TimeSpan Period = TimeSpan.FromSeconds(30);
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<DeliveryWorkSessionAutoCloseService> _logger;
+    private readonly IBackgroundWorkSignal<DeliveryWorkSessionScheduleWork> _workSignal;
 
     public DeliveryWorkSessionAutoCloseService(
         IServiceProvider serviceProvider,
+        IBackgroundWorkSignal<DeliveryWorkSessionScheduleWork> workSignal,
         ILogger<DeliveryWorkSessionAutoCloseService> logger)
     {
         _serviceProvider = serviceProvider;
+        _workSignal = workSignal;
         _logger = logger;
     }
 
@@ -28,9 +30,11 @@ public class DeliveryWorkSessionAutoCloseService : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            var delay = TimeSpan.FromSeconds(30);
             try
             {
                 await CloseExpiredSessionsAsync(stoppingToken);
+                delay = await GetNextDelayAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -41,8 +45,32 @@ public class DeliveryWorkSessionAutoCloseService : BackgroundService
                 _logger.LogError(ex, "Error al cerrar automáticamente las jornadas vencidas.");
             }
 
-            await Task.Delay(Period, stoppingToken);
+            try
+            {
+                await _workSignal.WaitAsync(delay, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
         }
+    }
+
+    private async Task<TimeSpan> GetNextDelayAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var nextAutoClose = await db.DeliveryWorkSessions
+            .AsNoTracking()
+            .Where(x => x.Status == DeliveryWorkSessionStatus.Active)
+            .OrderBy(x => x.AutoCloseAt)
+            .Select(x => (DateTime?)x.AutoCloseAt)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (!nextAutoClose.HasValue)
+            return TimeSpan.FromMinutes(15);
+        var delay = nextAutoClose.Value - DateTime.UtcNow;
+        if (delay < TimeSpan.Zero) return TimeSpan.Zero;
+        return delay > TimeSpan.FromMinutes(15) ? TimeSpan.FromMinutes(15) : delay;
     }
 
     private async Task CloseExpiredSessionsAsync(CancellationToken cancellationToken)

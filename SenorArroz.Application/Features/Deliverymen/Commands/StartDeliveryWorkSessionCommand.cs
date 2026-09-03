@@ -22,12 +22,18 @@ public class StartDeliveryWorkSessionHandler : IRequestHandler<StartDeliveryWork
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IClock _clock;
+    private readonly IBackgroundWorkSignal<DeliveryWorkSessionScheduleWork>? _scheduleSignal;
 
-    public StartDeliveryWorkSessionHandler(IApplicationDbContext db, ICurrentUser currentUser, IClock clock)
+    public StartDeliveryWorkSessionHandler(
+        IApplicationDbContext db,
+        ICurrentUser currentUser,
+        IClock clock,
+        IBackgroundWorkSignal<DeliveryWorkSessionScheduleWork>? scheduleSignal = null)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _scheduleSignal = scheduleSignal;
     }
 
     public async Task<DeliveryWorkSessionDto> Handle(StartDeliveryWorkSessionCommand request, CancellationToken cancellationToken)
@@ -110,6 +116,7 @@ public class StartDeliveryWorkSessionHandler : IRequestHandler<StartDeliveryWork
         };
         _db.DeliveryWorkSessions.Add(session);
         await _db.SaveChangesAsync(cancellationToken);
+        _scheduleSignal?.Pulse();
 
         return DeliveryWorkSessionDtoMapper.Map(session, branch);
     }

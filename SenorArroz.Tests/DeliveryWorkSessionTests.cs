@@ -109,7 +109,12 @@ public class DeliveryWorkSessionTests
         await using var db = CreateDb();
         db.Branches.Add(CreateBranch());
         await db.SaveChangesAsync();
-        var handler = CreateStartHandler(db, new DateTime(2026, 7, 20, 18, 0, 0, DateTimeKind.Utc));
+        var signal = new Mock<IBackgroundWorkSignal<DeliveryWorkSessionScheduleWork>>();
+        var handler = new StartDeliveryWorkSessionHandler(
+            db,
+            CurrentUser().Object,
+            new FakeClock(new DateTime(2026, 7, 20, 18, 0, 0, DateTimeKind.Utc)),
+            signal.Object);
 
         var result = await handler.Handle(StartCommand("device-a"), default);
 
@@ -117,6 +122,7 @@ public class DeliveryWorkSessionTests
         Assert.Equal(DeliveryWorkSessionStatus.Active, result.Status);
         Assert.Equal(300, result.Tracking.LightIntervalSeconds);
         Assert.Single(db.DeliveryWorkSessions);
+        signal.Verify(x => x.Pulse(), Times.Once);
     }
 
     [Fact]
