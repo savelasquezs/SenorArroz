@@ -14,6 +14,7 @@ ALTER TABLE payment_notification_outbox
     ADD COLUMN IF NOT EXISTS meta_processed_at timestamp with time zone,
     ADD COLUMN IF NOT EXISTS meta_last_error varchar(1000),
     ADD COLUMN IF NOT EXISTS meta_consent_granted boolean NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS meta_customer_phone varchar(20),
     ADD COLUMN IF NOT EXISTS meta_client_user_agent varchar(512),
     ADD COLUMN IF NOT EXISTS meta_client_ip_address varchar(64),
     ADD COLUMN IF NOT EXISTS meta_fbp varchar(255),
