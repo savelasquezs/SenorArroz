@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Integrations;
 
 namespace SenorArroz.Infrastructure.Services;
@@ -155,7 +156,7 @@ public sealed class MetaConversionOutboxWorker(
         return delay <= TimeSpan.Zero ? TimeSpan.Zero : delay;
     }
 
-    private static void Ignore(Domain.Entities.PaymentNotificationOutboxMessage message, DateTime now)
+    private static void Ignore(PaymentNotificationOutboxMessage message, DateTime now)
     {
         message.MetaStatus = "ignored";
         message.MetaProcessedAt = now;
