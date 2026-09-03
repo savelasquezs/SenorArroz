@@ -20,7 +20,7 @@ Esto permite la deduplicación Pixel + CAPI.
    - `META_CAPI_ACCESS_TOKEN=<secreto>`
    - `META_GRAPH_API_VERSION=v25.0`
    - `META_EVENT_SOURCE_URL=https://senorarroz.com`
-   - `META_CAPI_TEST_EVENT_CODE=TEST94728` únicamente durante la validación.
+   - `META_CAPI_TEST_EVENT_CODE=<código actual de Probar eventos del dataset 1941546679814779>` únicamente durante la validación. No reutilizar automáticamente un código generado para el Pixel anterior.
 3. Configurar en el storefront:
    - `NEXT_PUBLIC_META_PIXEL_ID=1941546679814779`
 4. Desplegar el storefront con el consentimiento de medición.
