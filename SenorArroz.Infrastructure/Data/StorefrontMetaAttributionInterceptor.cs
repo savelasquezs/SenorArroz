@@ -31,6 +31,7 @@ public sealed class StorefrontMetaAttributionInterceptor(IHttpContextAccessor ht
             http.Request.Headers["X-Meta-Consent"].FirstOrDefault()?.Trim(),
             "granted",
             StringComparison.OrdinalIgnoreCase);
+        var customerPhone = consentGranted ? ReadHeader(http, "X-Meta-Customer-Phone", 20) : null;
         var userAgent = consentGranted ? ReadHeader(http, "X-Storefront-Client-User-Agent", 512) : null;
         var clientIp = consentGranted ? ReadHeader(http, "X-Storefront-Client-Ip", 64) : null;
         var fbp = consentGranted ? ReadHeader(http, "X-Meta-Fbp", 255) : null;
@@ -48,6 +49,7 @@ public sealed class StorefrontMetaAttributionInterceptor(IHttpContextAccessor ht
         foreach (var entry in context.ChangeTracker.Entries<PaymentNotificationOutboxMessage>().Where(x => x.State == EntityState.Added))
         {
             entry.Entity.MetaConsentGranted = consentGranted;
+            entry.Entity.MetaCustomerPhone ??= customerPhone;
             entry.Entity.MetaClientUserAgent ??= userAgent;
             entry.Entity.MetaClientIpAddress ??= clientIp;
             entry.Entity.MetaFbp ??= fbp;
