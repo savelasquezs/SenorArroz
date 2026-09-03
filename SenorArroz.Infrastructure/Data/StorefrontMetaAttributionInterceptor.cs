@@ -27,14 +27,18 @@ public sealed class StorefrontMetaAttributionInterceptor(IHttpContextAccessor ht
         var http = httpContextAccessor.HttpContext;
         if (context is null || http is null) return;
 
-        var userAgent = ReadHeader(http, "X-Storefront-Client-User-Agent", 512);
-        var clientIp = ReadHeader(http, "X-Storefront-Client-Ip", 64);
-        var fbp = ReadHeader(http, "X-Meta-Fbp", 255);
-        var fbc = ReadHeader(http, "X-Meta-Fbc", 255);
-        if (userAgent is null && clientIp is null && fbp is null && fbc is null) return;
+        var consentGranted = string.Equals(
+            http.Request.Headers["X-Meta-Consent"].FirstOrDefault()?.Trim(),
+            "granted",
+            StringComparison.OrdinalIgnoreCase);
+        var userAgent = consentGranted ? ReadHeader(http, "X-Storefront-Client-User-Agent", 512) : null;
+        var clientIp = consentGranted ? ReadHeader(http, "X-Storefront-Client-Ip", 64) : null;
+        var fbp = consentGranted ? ReadHeader(http, "X-Meta-Fbp", 255) : null;
+        var fbc = consentGranted ? ReadHeader(http, "X-Meta-Fbc", 255) : null;
 
         foreach (var entry in context.ChangeTracker.Entries<StorefrontCheckout>().Where(x => x.State == EntityState.Added))
         {
+            entry.Entity.MetaConsentGranted = consentGranted;
             entry.Entity.MetaClientUserAgent ??= userAgent;
             entry.Entity.MetaClientIpAddress ??= clientIp;
             entry.Entity.MetaFbp ??= fbp;
@@ -43,6 +47,7 @@ public sealed class StorefrontMetaAttributionInterceptor(IHttpContextAccessor ht
 
         foreach (var entry in context.ChangeTracker.Entries<PaymentNotificationOutboxMessage>().Where(x => x.State == EntityState.Added))
         {
+            entry.Entity.MetaConsentGranted = consentGranted;
             entry.Entity.MetaClientUserAgent ??= userAgent;
             entry.Entity.MetaClientIpAddress ??= clientIp;
             entry.Entity.MetaFbp ??= fbp;
