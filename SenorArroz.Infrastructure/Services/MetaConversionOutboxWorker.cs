@@ -2,7 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Integrations;
 
@@ -10,10 +12,12 @@ namespace SenorArroz.Infrastructure.Services;
 
 public sealed class MetaConversionOutboxWorker(
     IServiceScopeFactory scopeFactory,
+    IOptions<StorefrontCustomerAuthOptions> storefrontOptions,
     ILogger<MetaConversionOutboxWorker> logger) : BackgroundService
 {
     private static readonly HashSet<string> PurchaseEventTypes = ["order_created_web_cash", "order_payment_approved"];
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(30);
+    private readonly int _tenantId = Math.Max(1, storefrontOptions.Value.TenantId);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -54,7 +58,9 @@ public sealed class MetaConversionOutboxWorker(
         var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
         var now = DateTime.UtcNow;
         var messages = await db.PaymentNotificationOutboxMessages
-            .Where(x => x.MetaStatus == "pending" && (x.MetaNextAttemptAt == null || x.MetaNextAttemptAt <= now))
+            .Where(x => x.TenantId == _tenantId
+                && x.MetaStatus == "pending"
+                && (x.MetaNextAttemptAt == null || x.MetaNextAttemptAt <= now))
             .OrderBy(x => x.Id)
             .Take(20)
             .ToListAsync(cancellationToken);
@@ -84,7 +90,7 @@ public sealed class MetaConversionOutboxWorker(
                 if (message.EventType == "order_payment_approved")
                 {
                     var checkout = await db.StorefrontCheckouts.AsNoTracking()
-                        .FirstOrDefaultAsync(x => x.OrderId == order.Id, cancellationToken);
+                        .FirstOrDefaultAsync(x => x.TenantId == _tenantId && x.OrderId == order.Id, cancellationToken);
                     if (checkout is not null)
                     {
                         message.MetaConsentGranted = checkout.MetaConsentGranted;
@@ -147,7 +153,7 @@ public sealed class MetaConversionOutboxWorker(
         if (messages.Count > 0) await db.SaveChangesAsync(cancellationToken);
 
         var nextAttempt = await db.PaymentNotificationOutboxMessages.AsNoTracking()
-            .Where(x => x.MetaStatus == "pending")
+            .Where(x => x.TenantId == _tenantId && x.MetaStatus == "pending")
             .OrderBy(x => x.MetaNextAttemptAt)
             .Select(x => x.MetaNextAttemptAt)
             .FirstOrDefaultAsync(cancellationToken);
