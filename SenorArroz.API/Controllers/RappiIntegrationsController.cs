@@ -23,7 +23,8 @@ public sealed class RappiIntegrationsController(
     IIntegrationSecretProtector protector,
     IRappiDeliveryProvider rappi,
     IRappiOrderProcessor orderProcessor,
-    IOptions<ApiPublicOptions> apiPublicOptions) : ControllerBase
+    IOptions<ApiPublicOptions> apiPublicOptions,
+    IBackgroundWorkSignal<RappiWork> workSignal) : ControllerBase
 {
     private static readonly string[] WebhookEvents =
     [
@@ -425,6 +426,7 @@ public sealed class RappiIntegrationsController(
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(x => x.Status, "pending")
                 .SetProperty(x => x.NextAttemptAt, (DateTime?)null), ct);
+        workSignal.Pulse();
         return Ok(ApiResponse<object>.SuccessResponse(new { queued = true },
             "Disponibilidad programada para reconciliación."));
     }
@@ -629,6 +631,8 @@ public sealed class RappiIntegrationsController(
         try
         {
             await db.SaveChangesAsync(ct);
+            if (normalizedEvent != "PING")
+                workSignal.Pulse();
         }
         catch (DbUpdateException)
         {

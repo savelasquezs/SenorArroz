@@ -7,7 +7,8 @@ namespace SenorArroz.Infrastructure.Integrations;
 
 public sealed class ExternalDeliveryStatusSyncService(
     IApplicationDbContext db,
-    IClock clock) : IExternalDeliveryStatusSyncService
+    IClock clock,
+    IBackgroundWorkSignal<RappiWork>? workSignal = null) : IExternalDeliveryStatusSyncService
 {
     public async Task SyncReadyForPickupAsync(int internalOrderId, CancellationToken ct)
     {
@@ -40,6 +41,7 @@ public sealed class ExternalDeliveryStatusSyncService(
             UpdatedAt = clock.UtcNow
         });
         await db.SaveChangesAsync(ct);
+        workSignal?.Pulse();
     }
 
 }

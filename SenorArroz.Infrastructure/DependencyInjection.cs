@@ -155,6 +155,7 @@ public static class DependencyInjection
         services.AddScoped<IBranchContext, BranchContextService>();
         services.AddHttpClient<ResendEmailDeliveryService>();
         services.AddScoped<IEmailService, EmailService>();
+        services.AddSingleton(typeof(IBackgroundWorkSignal<>), typeof(BackgroundWorkSignal<>));
         // OrderNotificationService will be registered in Program.cs after SignalR setup
 
         // Background Services

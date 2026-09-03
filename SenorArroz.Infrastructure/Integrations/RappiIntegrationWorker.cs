@@ -15,6 +15,7 @@ namespace SenorArroz.Infrastructure.Integrations;
 public sealed class RappiIntegrationWorker(
     IServiceScopeFactory scopeFactory,
     IOptions<RappiOptions> options,
+    IBackgroundWorkSignal<RappiWork> workSignal,
     ILogger<RappiIntegrationWorker> logger) : BackgroundService
 {
     private readonly RappiOptions options = options.Value;
@@ -24,8 +25,6 @@ public sealed class RappiIntegrationWorker(
         var nextRecovery = DateTimeOffset.MinValue;
         var nextCapabilitySync = DateTimeOffset.MinValue;
         var nextCleanup = DateTimeOffset.MinValue;
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
-
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -69,8 +68,10 @@ public sealed class RappiIntegrationWorker(
                 logger.LogError(ex, "Rappi background cycle failed.");
             }
 
-            if (!await timer.WaitForNextTickAsync(stoppingToken))
-                break;
+            var waitNow = DateTimeOffset.UtcNow;
+            var nextScheduled = new[] { nextRecovery, nextCapabilitySync, nextCleanup }.Min();
+            var delay = nextScheduled <= waitNow ? TimeSpan.FromSeconds(5) : nextScheduled - waitNow;
+            await workSignal.WaitAsync(delay, stoppingToken);
         }
     }
 
