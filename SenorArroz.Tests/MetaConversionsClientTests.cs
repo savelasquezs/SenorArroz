@@ -71,14 +71,26 @@ public sealed class MetaConversionsClientTests
     }
 
     [Fact]
-    public async Task Purchase_fails_when_meta_rejects_event()
+    public async Task Purchase_marks_client_rejection_as_permanent()
     {
         var handler = new RecordingHandler(HttpStatusCode.BadRequest, "{\"error\":{\"message\":\"Invalid parameter\"}}");
         var client = CreateClient(handler, null);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendPurchaseAsync(Purchase("3001234567"), CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<MetaConversionsException>(() => client.SendPurchaseAsync(Purchase("3001234567"), CancellationToken.None));
 
         Assert.Contains("400", exception.Message, StringComparison.Ordinal);
+        Assert.False(exception.Retryable);
+    }
+
+    [Fact]
+    public async Task Purchase_marks_server_error_as_retryable()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.ServiceUnavailable, "{\"error\":{\"message\":\"Temporary\"}}");
+        var client = CreateClient(handler, null);
+
+        var exception = await Assert.ThrowsAsync<MetaConversionsException>(() => client.SendPurchaseAsync(Purchase("3001234567"), CancellationToken.None));
+
+        Assert.True(exception.Retryable);
     }
 
     [Fact]
@@ -87,9 +99,10 @@ public sealed class MetaConversionsClientTests
         var handler = new RecordingHandler(HttpStatusCode.OK, "{\"messages\":[]}");
         var client = CreateClient(handler, null);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendPurchaseAsync(Purchase("3001234567"), CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<MetaConversionsException>(() => client.SendPurchaseAsync(Purchase("3001234567"), CancellationToken.None));
 
         Assert.Contains("no confirmó", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(exception.Retryable);
     }
 
     [Theory]
@@ -106,7 +119,8 @@ public sealed class MetaConversionsClientTests
     [InlineData("57300123456799")]
     public void HashPhone_rejects_invalid_or_non_mobile_values(string phone)
     {
-        Assert.Throws<InvalidOperationException>(() => MetaConversionsClient.HashPhone(phone));
+        var exception = Assert.Throws<MetaConversionsException>(() => MetaConversionsClient.HashPhone(phone));
+        Assert.False(exception.Retryable);
     }
 
     private static MetaPurchaseEvent Purchase(string phone) => new(
