@@ -28,10 +28,11 @@ public sealed class MetaConversionsDiagnosticsController(
                 && PurchaseEventTypes.Contains(x.EventType)
                 && x.CreatedAt >= since);
 
-        var counts = await query
+        var countRows = await query
             .GroupBy(x => x.MetaStatus)
             .Select(group => new { Status = group.Key, Count = group.Count() })
             .ToListAsync(cancellationToken);
+        var counts = countRows.ToDictionary(x => x.Status, x => x.Count, StringComparer.OrdinalIgnoreCase);
         var latestProcessed = await query
             .Where(x => x.MetaStatus == "processed")
             .OrderByDescending(x => x.MetaProcessedAt)
@@ -61,6 +62,6 @@ public sealed class MetaConversionsDiagnosticsController(
         }));
     }
 
-    private static int Count(IEnumerable<dynamic> counts, string status) =>
-        counts.FirstOrDefault(x => string.Equals((string)x.Status, status, StringComparison.OrdinalIgnoreCase))?.Count ?? 0;
+    private static int Count(IReadOnlyDictionary<string, int> counts, string status) =>
+        counts.TryGetValue(status, out var count) ? count : 0;
 }
