@@ -159,6 +159,7 @@ public sealed class PaymentNotificationOutboxMessage : BaseEntity
     public string? MetaLastError { get; set; }
     [Column("meta_consent_granted")]
     public bool MetaConsentGranted { get; set; }
+    public string? MetaCustomerPhone { get; set; }
     public string? MetaClientUserAgent { get; set; }
     public string? MetaClientIpAddress { get; set; }
     public string? MetaFbp { get; set; }
