@@ -64,8 +64,7 @@ public sealed class MetaConversionOutboxWorker(
             {
                 if (!PurchaseEventTypes.Contains(message.EventType))
                 {
-                    message.MetaStatus = "ignored";
-                    message.MetaProcessedAt = now;
+                    Ignore(message, now);
                     continue;
                 }
 
@@ -77,22 +76,29 @@ public sealed class MetaConversionOutboxWorker(
 
                 if (!string.Equals(order.OrderSource, "web", StringComparison.OrdinalIgnoreCase))
                 {
-                    message.MetaStatus = "ignored";
-                    message.MetaProcessedAt = now;
+                    Ignore(message, now);
                     continue;
                 }
 
-                if (string.IsNullOrWhiteSpace(message.MetaClientUserAgent))
+                if (message.EventType == "order_payment_approved")
                 {
                     var checkout = await db.StorefrontCheckouts.AsNoTracking()
                         .FirstOrDefaultAsync(x => x.OrderId == order.Id, cancellationToken);
                     if (checkout is not null)
                     {
+                        message.MetaConsentGranted = checkout.MetaConsentGranted;
                         message.MetaClientUserAgent ??= checkout.MetaClientUserAgent;
                         message.MetaClientIpAddress ??= checkout.MetaClientIpAddress;
                         message.MetaFbp ??= checkout.MetaFbp;
                         message.MetaFbc ??= checkout.MetaFbc;
                     }
+                }
+
+                if (!message.MetaConsentGranted)
+                {
+                    Ignore(message, now);
+                    logger.LogDebug("Meta CAPI omitió el pedido web {OrderId} porque el cliente no autorizó medición.", order.Id);
+                    continue;
                 }
 
                 var phone = order.Customer?.Phone1;
@@ -147,6 +153,14 @@ public sealed class MetaConversionOutboxWorker(
         if (!nextAttempt.HasValue) return TimeSpan.FromMinutes(5);
         var delay = nextAttempt.Value - DateTime.UtcNow;
         return delay <= TimeSpan.Zero ? TimeSpan.Zero : delay;
+    }
+
+    private static void Ignore(Domain.Entities.PaymentNotificationOutboxMessage message, DateTime now)
+    {
+        message.MetaStatus = "ignored";
+        message.MetaProcessedAt = now;
+        message.MetaLastError = null;
+        message.MetaNextAttemptAt = null;
     }
 
     private static string Truncate(string value, int maxLength) => value.Length <= maxLength ? value : value[..maxLength];
