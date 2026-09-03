@@ -89,6 +89,7 @@ public sealed class StorefrontCheckout : BaseEntity
     public string? AppliedBenefitSnapshot { get; set; }
     public string Status { get; set; } = "pending";
     public DateTime ExpiresAt { get; set; }
+    public bool MetaConsentGranted { get; set; }
     public string? MetaClientUserAgent { get; set; }
     public string? MetaClientIpAddress { get; set; }
     public string? MetaFbp { get; set; }
@@ -154,6 +155,7 @@ public sealed class PaymentNotificationOutboxMessage : BaseEntity
     public DateTime? MetaNextAttemptAt { get; set; }
     public DateTime? MetaProcessedAt { get; set; }
     public string? MetaLastError { get; set; }
+    public bool MetaConsentGranted { get; set; }
     public string? MetaClientUserAgent { get; set; }
     public string? MetaClientIpAddress { get; set; }
     public string? MetaFbp { get; set; }
