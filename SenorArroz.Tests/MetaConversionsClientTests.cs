@@ -76,22 +76,52 @@ public sealed class MetaConversionsClientTests
         var handler = new RecordingHandler(HttpStatusCode.BadRequest, "{\"error\":{\"message\":\"Invalid parameter\"}}");
         var client = CreateClient(handler, null);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendPurchaseAsync(new MetaPurchaseEvent(
-            88,
-            DateTime.UtcNow,
-            "3001234567",
-            10_000,
-            0,
-            1,
-            "cash",
-            [new MetaPurchaseContent(27, 1)],
-            "Mozilla/5.0",
-            null,
-            null,
-            null), CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendPurchaseAsync(Purchase("3001234567"), CancellationToken.None));
 
         Assert.Contains("400", exception.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Purchase_requires_explicit_events_received_confirmation()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.OK, "{\"messages\":[]}");
+        var client = CreateClient(handler, null);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendPurchaseAsync(Purchase("3001234567"), CancellationToken.None));
+
+        Assert.Contains("no confirmó", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("3001234567")]
+    [InlineData("+57 300 123 4567")]
+    public void HashPhone_accepts_only_valid_colombian_mobile_formats(string phone)
+    {
+        Assert.Equal(Sha256("573001234567"), MetaConversionsClient.HashPhone(phone));
+    }
+
+    [Theory]
+    [InlineData("12345")]
+    [InlineData("6011234567")]
+    [InlineData("57300123456799")]
+    public void HashPhone_rejects_invalid_or_non_mobile_values(string phone)
+    {
+        Assert.Throws<InvalidOperationException>(() => MetaConversionsClient.HashPhone(phone));
+    }
+
+    private static MetaPurchaseEvent Purchase(string phone) => new(
+        88,
+        DateTime.UtcNow,
+        phone,
+        10_000,
+        0,
+        1,
+        "cash",
+        [new MetaPurchaseContent(27, 1)],
+        "Mozilla/5.0",
+        null,
+        null,
+        null);
 
     private static MetaConversionsClient CreateClient(RecordingHandler handler, string? testCode)
     {
