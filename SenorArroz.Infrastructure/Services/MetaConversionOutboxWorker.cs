@@ -73,7 +73,7 @@ public sealed class MetaConversionOutboxWorker(
                     .Include(x => x.Customer)
                     .Include(x => x.OrderDetails)
                     .FirstOrDefaultAsync(x => x.Id == message.OrderId, cancellationToken)
-                    ?? throw new InvalidOperationException($"Pedido {message.OrderId} no encontrado para Meta CAPI.");
+                    ?? throw new MetaConversionsException($"Pedido {message.OrderId} no encontrado para Meta CAPI.", retryable: false);
 
                 if (!string.Equals(order.OrderSource, "web", StringComparison.OrdinalIgnoreCase))
                 {
@@ -132,12 +132,14 @@ public sealed class MetaConversionOutboxWorker(
                 message.MetaNextAttemptAt = null;
                 logger.LogInformation("Meta CAPI confirmó Purchase para pedido web {OrderId}.", order.Id);
             }
+            catch (MetaConversionsException exception) when (!exception.Retryable)
+            {
+                MarkFailed(message, exception, now);
+                logger.LogWarning(exception, "Meta CAPI rechazó de forma permanente Purchase para pedido {OrderId}.", message.OrderId);
+            }
             catch (Exception exception)
             {
-                message.MetaAttemptCount++;
-                message.MetaLastError = Truncate(exception.Message, 1000);
-                message.MetaNextAttemptAt = now.AddSeconds(Math.Min(600, 15 * Math.Pow(2, Math.Min(message.MetaAttemptCount, 5))));
-                if (message.MetaAttemptCount >= 10) message.MetaStatus = "failed";
+                ScheduleRetry(message, exception, now);
                 logger.LogWarning(exception, "No se pudo enviar Purchase de Meta CAPI para pedido {OrderId}.", message.OrderId);
             }
         }
@@ -168,8 +170,26 @@ public sealed class MetaConversionOutboxWorker(
         if (candidates.Length == 1)
             return candidates[0];
 
-        throw new InvalidOperationException(
-            "No fue posible determinar de forma inequívoca el teléfono verificado del pedido para Meta CAPI.");
+        throw new MetaConversionsException(
+            "No fue posible determinar de forma inequívoca el teléfono verificado del pedido para Meta CAPI.",
+            retryable: false);
+    }
+
+    private static void ScheduleRetry(PaymentNotificationOutboxMessage message, Exception exception, DateTime now)
+    {
+        message.MetaAttemptCount++;
+        message.MetaLastError = Truncate(exception.Message, 1000);
+        message.MetaNextAttemptAt = now.AddSeconds(Math.Min(600, 15 * Math.Pow(2, Math.Min(message.MetaAttemptCount, 5))));
+        if (message.MetaAttemptCount >= 10) message.MetaStatus = "failed";
+    }
+
+    private static void MarkFailed(PaymentNotificationOutboxMessage message, Exception exception, DateTime now)
+    {
+        message.MetaAttemptCount++;
+        message.MetaStatus = "failed";
+        message.MetaProcessedAt = now;
+        message.MetaLastError = Truncate(exception.Message, 1000);
+        message.MetaNextAttemptAt = null;
     }
 
     private static void Ignore(PaymentNotificationOutboxMessage message, DateTime now)
