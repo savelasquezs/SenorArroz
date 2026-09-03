@@ -28,13 +28,16 @@ public class BranchBusinessHoursService(IApplicationDbContext db):IBranchBusines
  private static IReadOnlyList<BranchBusinessHourDto> WithFallback(int branchId,IReadOnlyList<BranchBusinessHourDto> rows)=>rows.Count>0?rows:Enumerable.Range(0,7).Select(i=>new BranchBusinessHourDto(null,branchId,(DayOfWeek)((i+1)%7),null,null,true,i)).ToList();
  private static BranchBusinessHoursEvaluation EvaluateRows(IReadOnlyCollection<BranchBusinessHourDto> rows,DateTime nowUtc)
  {
-  if(!IsValidConfiguredSchedule(rows))return new(false,false,null,null);
+  if(!IsValidConfiguredSchedule(rows))return new(false,false,null,null,null);
   var schedule=rows.ToDictionary(x=>x.DayOfWeek);
   var nowLocal=ColombiaTimeHelper.GetNowInColombiaFromUtc(nowUtc);
   var today=schedule[nowLocal.DayOfWeek];
   var localTime=TimeOnly.FromDateTime(nowLocal);
   if(!today.IsClosed&&localTime>=today.OpenTime!.Value&&localTime<today.CloseTime!.Value)
-   return new(true,true,null,null);
+  {
+   var closingAtLocal=nowLocal.Date.Add(today.CloseTime.Value.ToTimeSpan());
+   return new(true,true,null,null,ColombiaTimeHelper.ConvertColombiaToUtc(closingAtLocal));
+  }
   DateTime? closedAtLocal=null;
   for(var offset=0;offset<=7;offset++)
   {
@@ -53,7 +56,7 @@ public class BranchBusinessHoursService(IApplicationDbContext db):IBranchBusines
    var candidate=date.Add(row.OpenTime!.Value.ToTimeSpan());
    if(candidate>nowLocal&&(nextOpeningLocal is null||candidate<nextOpeningLocal))nextOpeningLocal=candidate;
   }
-  return new(true,false,closedAtLocal is null?null:ColombiaTimeHelper.ConvertColombiaToUtc(closedAtLocal.Value),nextOpeningLocal is null?null:ColombiaTimeHelper.ConvertColombiaToUtc(nextOpeningLocal.Value));
+  return new(true,false,closedAtLocal is null?null:ColombiaTimeHelper.ConvertColombiaToUtc(closedAtLocal.Value),nextOpeningLocal is null?null:ColombiaTimeHelper.ConvertColombiaToUtc(nextOpeningLocal.Value),null);
  }
  private static bool IsValidConfiguredSchedule(IReadOnlyCollection<BranchBusinessHourDto> rows)
  {

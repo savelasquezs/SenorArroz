@@ -102,6 +102,50 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
+    public async Task BranchAvailability_OnlyEnablesOpenBranchWithActiveStorefrontUser()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        var branch = db.Branches.Local.Single();
+        var technicalUser = new User
+        {
+            Id = 90,
+            BranchId = branch.Id,
+            Branch = branch,
+            Name = "Storefront",
+            Email = "storefront@test.local",
+            Phone = "3000000000",
+            PasswordHash = "not-used",
+            Active = true,
+        };
+        branch.StorefrontTakenByUserId = technicalUser.Id;
+        db.BranchBusinessHours.Local.Single(hour => hour.DayOfWeek == DayOfWeek.Sunday).CloseTime = new TimeOnly(11, 0);
+        db.Users.Add(technicalUser);
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, 1800).GetBranchAvailability(default);
+
+        var response = Assert.IsType<ApiResponse<IReadOnlyCollection<PublicBranchAvailabilityDto>>>(
+            Assert.IsType<OkObjectResult>(action.Result).Value);
+        var availability = Assert.Single(response.Data!);
+        Assert.True(availability.IsConfigured);
+        Assert.True(availability.IsOpen);
+        Assert.True(availability.CanReceiveOrders);
+        Assert.True(availability.IsAvailable);
+        Assert.True(availability.IsClosingSoon);
+        Assert.Equal(new DateTime(2026, 8, 23, 16, 0, 0, DateTimeKind.Utc), availability.ClosingAtUtc);
+
+        technicalUser.Active = false;
+        await db.SaveChangesAsync();
+        action = await Controller(db, 1800).GetBranchAvailability(default);
+        response = Assert.IsType<ApiResponse<IReadOnlyCollection<PublicBranchAvailabilityDto>>>(
+            Assert.IsType<OkObjectResult>(action.Result).Value);
+        availability = Assert.Single(response.Data!);
+        Assert.False(availability.CanReceiveOrders);
+        Assert.False(availability.IsAvailable);
+    }
+
+    [Fact]
     public async Task Catalog_GroupsProductsByCommercialProfile_AndOrdersVariants()
     {
         await using var db = CreateDb();

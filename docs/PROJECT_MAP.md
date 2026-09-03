@@ -173,6 +173,7 @@ Buscar primero:
 Endpoints protegidos con credenciales exclusivas del BFF (`X-Storefront-Key-Id` y `X-Storefront-Key`):
 
 - `GET /api/public/storefront/catalog`: catálogo compartido agrupado en `riceGroups`, `comboGroups`, `beverageGroups` y `additionGroups`. Cada grupo usa la ficha comercial y contiene opciones ordenadas con el `ProductId` real; expone las sucursales activas que tengan coordenadas y teléfono principal, incluyendo dirección, ubicación, horario semanal y enlace de contacto por WhatsApp, pero no inventario exacto ni promociones sin sucursal.
+- `GET /api/public/storefront/branches/availability`: consulta sin caché si cada sede pública está abierta y cuenta con un usuario técnico activo para recibir pedidos web.
 - `POST /api/public/storefront/address-preview`: geocodifica una dirección o lugar conocido dentro de las ciudades habilitadas para mostrar un mapa de confirmación sin exponer credenciales de Google al navegador.
 - `POST /api/public/storefront/coverage-preview`: valida una ubicación confirmada y devuelve distancia, tiempo, cobertura dual y tarifa estimada desde cada sucursal sin exigir carrito ni datos del cliente.
 - `POST /api/public/customer-auth/request-code`: crea un desafío temporal y envía `customers_web_authentication` por el WhatsApp autenticador configurado.

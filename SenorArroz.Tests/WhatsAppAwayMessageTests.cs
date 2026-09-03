@@ -25,7 +25,9 @@ public class WhatsAppAwayMessageTests
 
         Assert.True(atOpening.IsConfigured);
         Assert.True(atOpening.IsOpen);
+        Assert.Equal(Utc(2026, 7, 27, 23, 0), atOpening.CurrentClosingAtUtc);
         Assert.False(atClosing.IsOpen);
+        Assert.Null(atClosing.CurrentClosingAtUtc);
         Assert.Equal(Utc(2026, 7, 27, 23, 0), atClosing.ClosedPeriodStartedAtUtc);
         Assert.Equal(Utc(2026, 7, 28, 14, 0), atClosing.NextOpeningAtUtc);
     }

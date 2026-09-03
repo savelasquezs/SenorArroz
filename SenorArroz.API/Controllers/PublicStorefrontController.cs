@@ -100,6 +100,45 @@ public sealed class PublicStorefrontController(
         return Ok(ApiResponse<PublicCatalogDto>.SuccessResponse(result));
     }
 
+    [HttpGet("branches/availability")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [EnableRateLimiting("storefront-catalog")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyCollection<PublicBranchAvailabilityDto>>>> GetBranchAvailability(
+        CancellationToken cancellationToken)
+    {
+        var branches = await EligibleBranchesQuery()
+            .Select(branch => new
+            {
+                branch.Id,
+                CanReceiveOrders = branch.StorefrontTakenByUserId.HasValue
+                    && db.Users.Any(user => user.Id == branch.StorefrontTakenByUserId
+                        && user.BranchId == branch.Id
+                        && user.Active),
+            })
+            .ToListAsync(cancellationToken);
+        var evaluations = await businessHours.EvaluateMany(branches.Select(branch => branch.Id), clock.UtcNow, cancellationToken);
+        IReadOnlyCollection<PublicBranchAvailabilityDto> result = branches
+            .Select(branch =>
+            {
+                var evaluation = evaluations[branch.Id];
+                var isClosingSoon = evaluation.CurrentClosingAtUtc.HasValue
+                    && evaluation.CurrentClosingAtUtc.Value > clock.UtcNow
+                    && evaluation.CurrentClosingAtUtc.Value <= clock.UtcNow.AddHours(1);
+                return new PublicBranchAvailabilityDto(
+                    branch.Id,
+                    evaluation.IsConfigured,
+                    evaluation.IsOpen,
+                    branch.CanReceiveOrders,
+                    evaluation.IsConfigured && evaluation.IsOpen && branch.CanReceiveOrders,
+                    evaluation.NextOpeningAtUtc,
+                    evaluation.CurrentClosingAtUtc,
+                    isClosingSoon);
+            })
+            .ToList();
+
+        return Ok(ApiResponse<IReadOnlyCollection<PublicBranchAvailabilityDto>>.SuccessResponse(result));
+    }
+
     [HttpPost("address-preview")]
     [RequestSizeLimit(4 * 1024)]
     [EnableRateLimiting("storefront-quote")]
@@ -1376,6 +1415,15 @@ public sealed record PublicBranchBusinessHourDto(
     TimeOnly? CloseTime,
     bool IsClosed,
     int DisplayOrder);
+public sealed record PublicBranchAvailabilityDto(
+    int BranchId,
+    bool IsConfigured,
+    bool IsOpen,
+    bool CanReceiveOrders,
+    bool IsAvailable,
+    DateTime? NextOpeningAtUtc,
+    DateTime? ClosingAtUtc,
+    bool IsClosingSoon);
 public sealed record PublicAddressPreviewDto(
     string FormattedAddress,
     decimal Latitude,

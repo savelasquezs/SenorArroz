@@ -309,7 +309,7 @@ Reglas:
 
 - El catálogo público expone el horario semanal real de cada sede activa elegible.
 - Las páginas públicas de sedes muestran los siete días del horario y resaltan el día actual en Colombia. Cuando la sede está abierta informan la hora de cierre de hoy; cuando el día está cerrado lo indican explícitamente. El estado no sustituye el detalle semanal.
-- Las sedes cerradas siguen siendo visibles, pero solo las sedes abiertas con los siete días válidamente configurados participan en cotizaciones de domicilio o recogida.
+- Las sedes cerradas siguen siendo visibles, pero solo las sedes abiertas con los siete días válidamente configurados participan en cotizaciones de domicilio o recogida. Al entrar a recogida se consulta el estado operativo sin caché; solo son seleccionables las sedes abiertas con un usuario técnico activo para pedidos web y, si existe una sola, se selecciona automáticamente. Durante los últimos 60 minutos de atención se muestra la hora exacta de cierre.
 - La apertura es inclusiva y el cierre exclusivo según la hora local de Colombia. No existe un cierre anticipado basado en el tiempo de preparación.
 - Un horario ausente, incompleto, inválido o con todos los días cerrados bloquea los pedidos web para esa sede.
 - Todo cliente debe verificar su celular con un OTP de seis dígitos antes de consultar datos privados o confirmar un pedido, exista o no previamente en `customer`.
