@@ -17,6 +17,7 @@ public sealed class WompiPaymentService(
     IIntegrationSecretProtector secrets,
     IClock clock,
     IPaymentReviewNotificationService reviewNotifications,
+    IWompiPaymentAttemptLock paymentAttemptLock,
     HttpClient httpClient,
     ILogger<WompiPaymentService> logger) : IWompiPaymentService
 {
@@ -112,72 +113,69 @@ public sealed class WompiPaymentService(
         environment = NormalizeEnvironment(environment);
         using var document = JsonDocument.Parse(rawPayload);
         var root = document.RootElement;
-        var transaction = root.GetProperty("data").GetProperty("transaction");
+        var transaction = RequiredProperty(RequiredProperty(root, "data"), "transaction");
         var reference = RequiredString(transaction, "reference");
         var providerTransactionId = RequiredString(transaction, "id");
         var providerStatus = RequiredString(transaction, "status").ToUpperInvariant();
-        var attempt = await db.WompiPaymentAttempts
-            .Include(x => x.Integration)
-            .Include(x => x.Order)
-            .Include(x => x.StorefrontCheckout).ThenInclude(x => x!.SavedAddress)
-            .Include(x => x.ProviderTransactions)
-            .FirstOrDefaultAsync(x => x.Reference == reference && x.Environment == environment, cancellationToken);
-        if (attempt is null)
-            return new(false, false, false, null, null, null, "Referencia desconocida.");
-
-        var checksum = string.IsNullOrWhiteSpace(headerChecksum)
-            ? root.GetProperty("signature").GetProperty("checksum").GetString()
-            : headerChecksum;
-        if (!ValidateEventChecksum(root, secrets.Unprotect(attempt.EncryptedEventsSecretSnapshot), checksum))
-            return new(false, false, false, null, null, null, "Firma inválida.");
-
         var payloadHash = Sha256Hex(rawPayload);
-        var timestamp = root.GetProperty("timestamp").GetRawText();
+        var timestamp = RequiredProperty(root, "timestamp").GetRawText();
         var fingerprint = Sha256Hex($"{environment}|{timestamp}|{providerTransactionId}|{providerStatus}|{payloadHash}");
-        if (await db.WompiWebhookEvents.AnyAsync(x => x.EventFingerprint == fingerprint, cancellationToken))
-            return new(true, true, attempt.RequiresManualReview, AttemptBranchId(attempt), attempt.OrderId, attempt.Id);
-
         var amountInCents = RequiredInt64(transaction, "amount_in_cents");
         var currency = RequiredString(transaction, "currency").ToUpperInvariant();
-        if (amountInCents != attempt.ExpectedAmountInCents || currency != attempt.Currency)
-            return new(false, false, false, null, null, null, "La transacción no coincide con el monto o moneda esperados.");
-
-        var eventRow = new WompiWebhookEvent
+        var processed = await paymentAttemptLock.ExecuteAsync(reference, async lockCancellationToken =>
         {
-            TenantId = attempt.TenantId,
-            IntegrationId = attempt.IntegrationId,
-            Environment = environment,
-            EventFingerprint = fingerprint,
-            PayloadHash = payloadHash,
-            ProviderTransactionId = providerTransactionId,
-            Status = "processed",
-            ProcessedAt = clock.UtcNow,
-        };
-        db.WompiWebhookEvents.Add(eventRow);
-        var result = await ApplyTransactionObservationAsync(
-            attempt,
-            providerTransactionId,
-            providerStatus,
-            transaction.TryGetProperty("payment_method_type", out var method) ? method.GetString() : null,
-            amountInCents,
-            currency,
-            payloadHash,
-            clock.UtcNow,
-            false,
-            cancellationToken);
-        if (environment == "sandbox") attempt.Integration.LastSandboxWebhookAt = clock.UtcNow;
-        else attempt.Integration.LastProductionWebhookAt = clock.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-        result = result with { BranchId = AttemptBranchId(attempt), OrderId = attempt.OrderId };
+            var attempt = await PaymentAttemptByReferenceQuery(reference, environment)
+                .FirstOrDefaultAsync(lockCancellationToken);
+            if (attempt is null)
+                return (Result: new WompiWebhookProcessingResult(false, false, false, null, null, null, "Referencia desconocida."), ReviewReason: (string?)null);
 
-        if (result.RequiresManualReview)
+            var checksum = string.IsNullOrWhiteSpace(headerChecksum)
+                ? RequiredString(RequiredProperty(root, "signature"), "checksum")
+                : headerChecksum;
+            if (!ValidateEventChecksum(root, secrets.Unprotect(attempt.EncryptedEventsSecretSnapshot), checksum))
+                return (Result: new WompiWebhookProcessingResult(false, false, false, null, null, null, "Firma inválida."), ReviewReason: (string?)null);
+            if (await db.WompiWebhookEvents.AnyAsync(x => x.EventFingerprint == fingerprint, lockCancellationToken))
+                return (Result: new WompiWebhookProcessingResult(true, true, attempt.RequiresManualReview, AttemptBranchId(attempt), attempt.OrderId, attempt.Id), ReviewReason: attempt.ManualReviewReason);
+            if (amountInCents != attempt.ExpectedAmountInCents || currency != attempt.Currency)
+                return (Result: new WompiWebhookProcessingResult(false, false, false, null, null, null, "La transacción no coincide con el monto o moneda esperados."), ReviewReason: (string?)null);
+
+            db.WompiWebhookEvents.Add(new WompiWebhookEvent
+            {
+                TenantId = attempt.TenantId,
+                IntegrationId = attempt.IntegrationId,
+                Environment = environment,
+                EventFingerprint = fingerprint,
+                PayloadHash = payloadHash,
+                ProviderTransactionId = providerTransactionId,
+                Status = "processed",
+                ProcessedAt = clock.UtcNow,
+            });
+            var result = await ApplyTransactionObservationAsync(
+                attempt,
+                providerTransactionId,
+                providerStatus,
+                transaction.TryGetProperty("payment_method_type", out var method) ? method.GetString() : null,
+                amountInCents,
+                currency,
+                payloadHash,
+                clock.UtcNow,
+                false,
+                lockCancellationToken);
+            if (environment == "sandbox") attempt.Integration.LastSandboxWebhookAt = clock.UtcNow;
+            else attempt.Integration.LastProductionWebhookAt = clock.UtcNow;
+            await db.SaveChangesAsync(lockCancellationToken);
+            result = result with { BranchId = AttemptBranchId(attempt), OrderId = attempt.OrderId };
+            return (Result: result, ReviewReason: attempt.ManualReviewReason);
+        }, cancellationToken);
+
+        if (processed.Result.RequiresManualReview && !processed.Result.Duplicate)
             await NotifyReviewSafelyAsync(
-                result.BranchId!.Value,
-                result.OrderId!.Value,
-                result.PaymentAttemptId!.Value,
-                attempt.ManualReviewReason ?? "Pago que requiere revisión.",
+                processed.Result.BranchId!.Value,
+                processed.Result.OrderId!.Value,
+                processed.Result.PaymentAttemptId!.Value,
+                processed.ReviewReason ?? "Pago que requiere revisión.",
                 cancellationToken);
-        return result;
+        return processed.Result;
     }
 
     public async Task<WompiPaymentStatusResult?> GetOrderPaymentStatusAsync(int tenantId, int orderId, CancellationToken cancellationToken)
@@ -198,7 +196,7 @@ public sealed class WompiPaymentService(
         string providerTransactionId,
         CancellationToken cancellationToken)
     {
-        var attempt = await LatestAttemptQuery(tenantId, orderId).FirstOrDefaultAsync(cancellationToken);
+        var attempt = await LatestAttemptQuery(tenantId, orderId).AsNoTracking().FirstOrDefaultAsync(cancellationToken);
         if (attempt is null) return null;
         var baseUrl = attempt.Environment == "production" ? "https://production.wompi.co" : "https://sandbox.wompi.co";
         using var response = await httpClient.GetAsync($"{baseUrl}/v1/transactions/{Uri.EscapeDataString(providerTransactionId)}", cancellationToken);
@@ -213,26 +211,31 @@ public sealed class WompiPaymentService(
         var currency = RequiredString(transaction, "currency").ToUpperInvariant();
         if (amount != attempt.ExpectedAmountInCents || currency != attempt.Currency)
             throw new BusinessException("La transacción no coincide con el valor esperado.");
-        var result = await ApplyTransactionObservationAsync(
-            attempt,
-            providerTransactionId,
-            RequiredString(transaction, "status").ToUpperInvariant(),
-            transaction.TryGetProperty("payment_method_type", out var method) ? method.GetString() : null,
-            amount,
-            currency,
-            Sha256Hex(raw),
-            clock.UtcNow,
-            false,
-            cancellationToken);
-        await db.SaveChangesAsync(cancellationToken);
-        if (result.RequiresManualReview)
+        var observed = await paymentAttemptLock.ExecuteAsync(attempt.Reference, async lockCancellationToken =>
+        {
+            var current = await PaymentAttemptByIdQuery(attempt.Id).FirstAsync(lockCancellationToken);
+            var result = await ApplyTransactionObservationAsync(
+                current,
+                providerTransactionId,
+                RequiredString(transaction, "status").ToUpperInvariant(),
+                transaction.TryGetProperty("payment_method_type", out var method) ? method.GetString() : null,
+                amount,
+                currency,
+                Sha256Hex(raw),
+                clock.UtcNow,
+                false,
+                lockCancellationToken);
+            await db.SaveChangesAsync(lockCancellationToken);
+            return (Result: result, Status: ToStatus(current), ReviewReason: current.ManualReviewReason);
+        }, cancellationToken);
+        if (observed.Result.RequiresManualReview && !observed.Result.Duplicate)
             await NotifyReviewSafelyAsync(
-                result.BranchId!.Value,
-                result.OrderId!.Value,
-                result.PaymentAttemptId!.Value,
-                attempt.ManualReviewReason ?? "Pago que requiere revisión.",
+                observed.Result.BranchId!.Value,
+                observed.Result.OrderId!.Value,
+                observed.Result.PaymentAttemptId!.Value,
+                observed.ReviewReason ?? "Pago que requiere revisión.",
                 cancellationToken);
-        return ToStatus(attempt);
+        return observed.Status;
     }
 
     public async Task<WompiStorefrontCheckoutStatusResult?> GetCheckoutPaymentStatusAsync(
@@ -257,7 +260,7 @@ public sealed class WompiPaymentService(
         string providerTransactionId,
         CancellationToken cancellationToken)
     {
-        var attempt = await LatestCheckoutAttemptQuery(tenantId, checkoutPublicId).FirstOrDefaultAsync(cancellationToken);
+        var attempt = await LatestCheckoutAttemptQuery(tenantId, checkoutPublicId).AsNoTracking().FirstOrDefaultAsync(cancellationToken);
         if (attempt is null) return null;
         var baseUrl = attempt.Environment == "production" ? "https://production.wompi.co" : "https://sandbox.wompi.co";
         using var response = await httpClient.GetAsync($"{baseUrl}/v1/transactions/{Uri.EscapeDataString(providerTransactionId)}", cancellationToken);
@@ -272,26 +275,31 @@ public sealed class WompiPaymentService(
         var currency = RequiredString(transaction, "currency").ToUpperInvariant();
         if (amount != attempt.ExpectedAmountInCents || currency != attempt.Currency)
             throw new BusinessException("La transacción no coincide con el valor esperado.");
-        var result = await ApplyTransactionObservationAsync(
-            attempt,
-            providerTransactionId,
-            RequiredString(transaction, "status").ToUpperInvariant(),
-            transaction.TryGetProperty("payment_method_type", out var method) ? method.GetString() : null,
-            amount,
-            currency,
-            Sha256Hex(raw),
-            clock.UtcNow,
-            false,
-            cancellationToken);
-        await db.SaveChangesAsync(cancellationToken);
-        if (result.RequiresManualReview && attempt.OrderId.HasValue)
+        var observed = await paymentAttemptLock.ExecuteAsync(attempt.Reference, async lockCancellationToken =>
+        {
+            var current = await PaymentAttemptByIdQuery(attempt.Id).FirstAsync(lockCancellationToken);
+            var result = await ApplyTransactionObservationAsync(
+                current,
+                providerTransactionId,
+                RequiredString(transaction, "status").ToUpperInvariant(),
+                transaction.TryGetProperty("payment_method_type", out var method) ? method.GetString() : null,
+                amount,
+                currency,
+                Sha256Hex(raw),
+                clock.UtcNow,
+                false,
+                lockCancellationToken);
+            await db.SaveChangesAsync(lockCancellationToken);
+            return (Result: result, Status: ToCheckoutStatus(current), ReviewReason: current.ManualReviewReason);
+        }, cancellationToken);
+        if (observed.Result.RequiresManualReview && !observed.Result.Duplicate && observed.Result.OrderId.HasValue)
             await NotifyReviewSafelyAsync(
-                AttemptBranchId(attempt),
-                attempt.OrderId.Value,
-                attempt.Id,
-                attempt.ManualReviewReason ?? "Pago que requiere revisión.",
+                observed.Result.BranchId!.Value,
+                observed.Result.OrderId.Value,
+                observed.Result.PaymentAttemptId!.Value,
+                observed.ReviewReason ?? "Pago que requiere revisión.",
                 cancellationToken);
-        return ToCheckoutStatus(attempt);
+        return observed.Status;
     }
 
     private async Task NotifyReviewSafelyAsync(
@@ -401,8 +409,9 @@ public sealed class WompiPaymentService(
             .FirstOrDefaultAsync(x => x.ProviderTransactionId == providerTransactionId, cancellationToken);
         if (providerTransaction is not null && providerTransaction.PaymentAttemptId != attempt.Id)
             throw new BusinessException("La transacción Wompi ya está asociada a otro intento.");
+        var repeatedObservation = providerTransaction?.Status == providerStatus;
         var alreadyAppliedApproval = providerStatus == "APPROVED"
-            && providerTransaction?.Status == "APPROVED"
+            && repeatedObservation
             && attempt.Status == PaymentAttemptStatus.Approved
             && attempt.AppPaymentId.HasValue;
         providerTransaction ??= new WompiProviderTransaction
@@ -419,7 +428,7 @@ public sealed class WompiPaymentService(
         providerTransaction.ObservedAt = observedAt;
 
         if (alreadyAppliedApproval)
-            return new(true, false, false, AttemptBranchId(attempt), attempt.OrderId, attempt.Id);
+            return new(true, true, false, AttemptBranchId(attempt), attempt.OrderId, attempt.Id);
 
         if (providerStatus == "APPROVED")
         {
@@ -464,7 +473,7 @@ public sealed class WompiPaymentService(
                 };
         }
 
-        return new(true, false, attempt.RequiresManualReview, AttemptBranchId(attempt), attempt.OrderId, attempt.Id);
+        return new(true, repeatedObservation, attempt.RequiresManualReview, AttemptBranchId(attempt), attempt.OrderId, attempt.Id);
     }
 
     private void ApproveAttempt(WompiPaymentAttempt attempt, DateTime approvedAt)
@@ -513,6 +522,19 @@ public sealed class WompiPaymentService(
             .Include(x => x.ProviderTransactions)
             .Where(x => x.TenantId == tenantId && x.OrderId == orderId)
             .OrderByDescending(x => x.Id);
+
+    private IQueryable<WompiPaymentAttempt> PaymentAttemptByReferenceQuery(string reference, string environment) =>
+        PaymentAttemptQuery().Where(x => x.Reference == reference && x.Environment == environment);
+
+    private IQueryable<WompiPaymentAttempt> PaymentAttemptByIdQuery(int attemptId) =>
+        PaymentAttemptQuery().Where(x => x.Id == attemptId);
+
+    private IQueryable<WompiPaymentAttempt> PaymentAttemptQuery() =>
+        db.WompiPaymentAttempts
+            .Include(x => x.Integration)
+            .Include(x => x.Order)
+            .Include(x => x.StorefrontCheckout).ThenInclude(x => x!.SavedAddress)
+            .Include(x => x.ProviderTransactions);
 
     private IQueryable<WompiPaymentAttempt> LatestCheckoutAttemptQuery(int tenantId, string checkoutPublicId) =>
         db.WompiPaymentAttempts
@@ -680,17 +702,19 @@ public sealed class WompiPaymentService(
     private static bool ValidateEventChecksum(JsonElement root, string eventsSecret, string? receivedChecksum)
     {
         if (string.IsNullOrWhiteSpace(receivedChecksum)) return false;
-        var data = root.GetProperty("data");
-        var properties = root.GetProperty("signature").GetProperty("properties");
+        var data = RequiredProperty(root, "data");
+        var properties = RequiredProperty(RequiredProperty(root, "signature"), "properties");
+        if (properties.ValueKind != JsonValueKind.Array)
+            throw new JsonException("Las propiedades de firma Wompi no son válidas.");
         var source = new StringBuilder();
         foreach (var property in properties.EnumerateArray())
         {
             var current = data;
             foreach (var segment in RequiredElementString(property).Split('.'))
-                current = current.GetProperty(segment);
+                current = RequiredProperty(current, segment);
             source.Append(JsonScalar(current));
         }
-        source.Append(root.GetProperty("timestamp").GetRawText());
+        source.Append(RequiredProperty(root, "timestamp").GetRawText());
         source.Append(eventsSecret);
         var expected = Encoding.UTF8.GetBytes(Sha256Hex(source.ToString()));
         var received = Encoding.UTF8.GetBytes(receivedChecksum.Trim().ToLowerInvariant());
@@ -705,17 +729,29 @@ public sealed class WompiPaymentService(
     };
 
     private static string RequiredString(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var value) && !string.IsNullOrWhiteSpace(value.GetString())
+        element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(property, out var value)
+            && value.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(value.GetString())
             ? value.GetString()!
             : throw new JsonException($"Falta {property} en la transacción Wompi.");
 
     private static long RequiredInt64(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var value) && value.TryGetInt64(out var result)
+        element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(property, out var value)
+            && value.TryGetInt64(out var result)
             ? result
             : throw new JsonException($"Falta {property} en la transacción Wompi.");
 
     private static string RequiredElementString(JsonElement element) =>
-        element.GetString() ?? throw new JsonException("Propiedad de firma Wompi inválida.");
+        element.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(element.GetString())
+            ? element.GetString()!
+            : throw new JsonException("Propiedad de firma Wompi inválida.");
+
+    private static JsonElement RequiredProperty(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
+            ? value
+            : throw new JsonException($"Falta {property} en el webhook Wompi.");
 
     private static string NormalizeEnvironment(string environment) => environment.Trim().ToLowerInvariant() switch
     {

@@ -66,6 +66,7 @@ public static class DependencyInjection
 
         services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IDeliveryAutoCompletionRouteLock, PostgresDeliveryAutoCompletionRouteLock>();
+        services.AddScoped<IWompiPaymentAttemptLock, PostgresWompiPaymentAttemptLock>();
 
         services.AddScoped<IPrintQueueService, PrintQueueService>();
 

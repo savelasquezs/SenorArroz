@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using SenorArroz.Application.Common.Interfaces;
+using System.Text.Json;
 
 namespace SenorArroz.API.Controllers;
 
@@ -26,6 +27,11 @@ public sealed class WompiWebhooksController(IWompiPaymentService wompi, ILogger<
                 return BadRequest();
             }
             return Ok();
+        }
+        catch (JsonException exception)
+        {
+            logger.LogWarning(exception, "Webhook Wompi malformado en {Environment}.", environment);
+            return BadRequest();
         }
         catch (Exception exception)
         {

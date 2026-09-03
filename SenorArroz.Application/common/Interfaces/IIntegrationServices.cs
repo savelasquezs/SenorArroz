@@ -29,6 +29,14 @@ public interface IPaymentReviewNotificationService
     Task NotifyReviewRequiredAsync(int branchId, int orderId, int paymentAttemptId, string reason, CancellationToken cancellationToken);
 }
 
+public interface IWompiPaymentAttemptLock
+{
+    Task<T> ExecuteAsync<T>(
+        string reference,
+        Func<CancellationToken, Task<T>> action,
+        CancellationToken cancellationToken = default);
+}
+
 public record WompiCheckoutData(
     string PublicKey,
     string Currency,

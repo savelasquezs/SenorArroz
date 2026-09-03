@@ -2,9 +2,12 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using SenorArroz.API.Controllers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -61,6 +64,7 @@ public sealed class WompiPaymentServiceTests
         Assert.True(first.Accepted);
         Assert.False(first.RequiresManualReview);
         Assert.True(duplicate.Duplicate);
+        Assert.True(repeatedObservation.Duplicate);
         Assert.False(repeatedObservation.RequiresManualReview);
         Assert.Equal(OrderStatus.Taken, setup.Order.Status);
         Assert.Equal(PaymentAttemptStatus.Approved, attempt.Status);
@@ -177,6 +181,85 @@ public sealed class WompiPaymentServiceTests
         Assert.Empty(await db.AppPayments.ToListAsync());
     }
 
+    [Theory]
+    [InlineData(2_199_900, "COP")]
+    [InlineData(2_200_000, "USD")]
+    public async Task Mismatched_amount_or_currency_is_rejected_without_financial_changes(long amountInCents, string currency)
+    {
+        await using var db = CreateDb($"{nameof(Mismatched_amount_or_currency_is_rejected_without_financial_changes)}-{currency}");
+        var setup = await SeedAsync(db);
+        var service = CreateService(db, new FakeClock(Now));
+        service.CreateAttempt(setup.Order, setup.Integration, Now);
+        await db.SaveChangesAsync();
+        var attempt = await db.WompiPaymentAttempts.SingleAsync();
+
+        var result = await service.ProcessWebhookAsync(
+            "sandbox",
+            Webhook(attempt, "tx-mismatch", "APPROVED", 1788278400000, amountInCents, currency),
+            null,
+            CancellationToken.None);
+
+        Assert.False(result.Accepted);
+        Assert.Equal(OrderStatus.AwaitingPayment, setup.Order.Status);
+        Assert.Empty(await db.AppPayments.ToListAsync());
+        Assert.Empty(await db.WompiProviderTransactions.ToListAsync());
+        Assert.Empty(await db.WompiWebhookEvents.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData("ERROR", PaymentAttemptStatus.Error, "error")]
+    [InlineData("VOIDED", PaymentAttemptStatus.Voided, "voided")]
+    [InlineData("PENDING", PaymentAttemptStatus.Pending, "pending")]
+    public async Task Non_approved_checkout_status_never_creates_an_order(
+        string providerStatus,
+        PaymentAttemptStatus expectedAttemptStatus,
+        string expectedCheckoutStatus)
+    {
+        await using var db = CreateDb($"{nameof(Non_approved_checkout_status_never_creates_an_order)}-{providerStatus}");
+        var setup = await SeedAsync(db);
+        db.Orders.Remove(setup.Order);
+        var checkout = Checkout(setup.Integration);
+        db.StorefrontCheckouts.Add(checkout);
+        await db.SaveChangesAsync();
+        var service = CreateService(db, new FakeClock(Now));
+        service.CreateCheckoutAttempt(checkout, setup.Integration, Now);
+        await db.SaveChangesAsync();
+        var attempt = await db.WompiPaymentAttempts.SingleAsync();
+
+        var result = await service.ProcessWebhookAsync(
+            "sandbox",
+            Webhook(attempt, $"tx-{providerStatus.ToLowerInvariant()}", providerStatus, 1788278400000),
+            null,
+            CancellationToken.None);
+
+        Assert.True(result.Accepted);
+        Assert.Equal(expectedAttemptStatus, attempt.Status);
+        Assert.Equal(expectedCheckoutStatus, checkout.Status);
+        Assert.Empty(await db.Orders.ToListAsync());
+        Assert.Empty(await db.AppPayments.ToListAsync());
+        Assert.Empty(await db.PaymentNotificationOutboxMessages.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Malformed_webhook_returns_bad_request_instead_of_server_error()
+    {
+        await using var db = CreateDb(nameof(Malformed_webhook_returns_bad_request_instead_of_server_error));
+        var controller = new WompiWebhooksController(
+            CreateService(db, new FakeClock(Now)),
+            NullLogger<WompiWebhooksController>.Instance)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext(),
+            },
+        };
+        controller.Request.Body = new MemoryStream("{}"u8.ToArray());
+
+        var response = await controller.Webhook("sandbox", CancellationToken.None);
+
+        Assert.IsType<BadRequestResult>(response);
+    }
+
     private static ApplicationDbContext CreateDb(string name) => new(
         new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(name).Options);
 
@@ -192,6 +275,7 @@ public sealed class WompiPaymentServiceTests
             protector.Object,
             clock,
             (notifications ?? new Mock<IPaymentReviewNotificationService>()).Object,
+            new InlineWompiPaymentAttemptLock(),
             new HttpClient(new StubHttpHandler()),
             NullLogger<WompiPaymentService>.Instance);
     }
@@ -256,9 +340,16 @@ public sealed class WompiPaymentServiceTests
         ExpiresAt = Now.AddMinutes(15),
     };
 
-    private static string Webhook(WompiPaymentAttempt attempt, string transactionId, string status, long timestamp)
+    private static string Webhook(
+        WompiPaymentAttempt attempt,
+        string transactionId,
+        string status,
+        long timestamp,
+        long? amountInCents = null,
+        string currency = "COP")
     {
-        var checksum = Sha256($"{transactionId}{status}{attempt.ExpectedAmountInCents}{timestamp}{EventsSecret}");
+        var amount = amountInCents ?? attempt.ExpectedAmountInCents;
+        var checksum = Sha256($"{transactionId}{status}{amount}{timestamp}{EventsSecret}");
         return JsonSerializer.Serialize(new
         {
             @event = "transaction.updated",
@@ -269,8 +360,8 @@ public sealed class WompiPaymentServiceTests
                     id = transactionId,
                     reference = attempt.Reference,
                     status,
-                    amount_in_cents = attempt.ExpectedAmountInCents,
-                    currency = "COP",
+                    amount_in_cents = amount,
+                    currency,
                     payment_method_type = "CARD",
                 },
             },
@@ -290,5 +381,13 @@ public sealed class WompiPaymentServiceTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+    }
+
+    private sealed class InlineWompiPaymentAttemptLock : IWompiPaymentAttemptLock
+    {
+        public Task<T> ExecuteAsync<T>(
+            string reference,
+            Func<CancellationToken, Task<T>> action,
+            CancellationToken cancellationToken = default) => action(cancellationToken);
     }
 }
