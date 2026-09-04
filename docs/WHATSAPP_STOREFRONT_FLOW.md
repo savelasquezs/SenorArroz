@@ -70,13 +70,15 @@ Rollback del Flow: apagar `flow_enabled`; el clasificador deja de enviarlo. Para
 - Homologación de la navegación atrás y del recorrido real en Meta, domicilio y pagos; la validación estática del JSON ya pasó.
 - Homologar el reintento de Wompi desde el chat y conciliar envíos con resultado incierto.
 - Completar pruebas de enrutamiento entre sedes sobre PostgreSQL.
-- Configurar `AppSecret` antes del SQL y despliegue: el preflight de producción confirmó Santander con ID `1`, número `3158993904`, canal activo/verificado y secreto ausente.
-- Ejecutar SQL de producción, desplegar desactivado, registrar clave pública, publicar y activar tras homologación.
+- Verificar un webhook real firmado con el `AppSecret` configurado.
+- Publicar y activar únicamente después de homologar el endpoint y el recorrido interno.
 
 ## Validación del 3 de septiembre de 2026
 
 - PostgreSQL local: inicializador completo desde cero, script puntual aplicado dos veces, rollback atómico y doble confirmación concurrente sin duplicar pedido ni outbox.
 - Meta: borrador `Señor Arroz - Compra central v1`, ID `1639196854522768`, cuenta `111353392041880`; JSON guardado con cero errores tras corregir la cantidad inicial numérica y retirar `max-chars` de `TextArea`.
-- El borrador no está publicado, no tiene endpoint ni clave pública registrados y no se ha vinculado una app.
-- No se ha ejecutado SQL de producción ni hecho push/despliegue de esta funcionalidad.
+- Producción: SQL aplicado y backend desplegado por el usuario; canal central y Flow permanecen desactivados.
+- App vinculada: `634937629322620`. Clave pública registrada con firma `VALID` y correspondencia comprobada con la privada de Railway.
+- Endpoint registrado en Meta: `/api/whatsapp/flows/0e5b8c3c-bc5e-4922-8c3f-6da7a9a3a454/data-exchange`. La primera prueba HTTP detectó un `400` por nombres del sobre JSON; se corrigió el DTO para aceptar `encrypted_aes_key`, `encrypted_flow_data` e `initial_vector`, con prueba de regresión.
+- El borrador continúa sin publicar; la comprobación cifrada en producción debe repetirse tras desplegar esta corrección.
 - `reintentar pago` reutiliza o crea un intento dentro de los quince minutos originales; no amplía el vencimiento del checkout de WhatsApp.

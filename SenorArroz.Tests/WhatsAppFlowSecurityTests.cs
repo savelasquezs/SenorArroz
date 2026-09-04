@@ -16,6 +16,20 @@ namespace SenorArroz.Tests;
 
 public sealed class WhatsAppFlowSecurityTests
 {
+    [Fact]
+    public void EncryptedRequestUsesMetaWireFieldNames()
+    {
+        const string json = """{"encrypted_aes_key":"key","encrypted_flow_data":"data","initial_vector":"iv"}""";
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var request = JsonSerializer.Deserialize<WhatsAppEncryptedFlowRequest>(json, options);
+
+        Assert.NotNull(request);
+        Assert.Equal("key", request.EncryptedAesKey);
+        Assert.Equal("data", request.EncryptedFlowData);
+        Assert.Equal("iv", request.InitialVector);
+        Assert.Equal(json, JsonSerializer.Serialize(request, options));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
