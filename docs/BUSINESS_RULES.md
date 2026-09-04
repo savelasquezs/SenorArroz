@@ -292,6 +292,23 @@ Reglas:
 - Las modificaciones de pedidos se consolidan por edición completa. Una sustitución o conjunto de cambios solo entra como reducción monetaria cuando el total final es menor al inicial; el detalle informa hora Colombia, actor, productos y cantidades afectados. Los pasos intermedios negativos de una edición cuyo total final aumentó o quedó igual no se reportan como merma.
 - El identificador transaccional y los productos anterior/nuevo del audit log se habilitan con el script idempotente `SenorArroz.Infrastructure/Scripts/improve_order_monetary_audit_operations.sql`, que debe ejecutarse antes de desplegar el backend; los logs anteriores siguen agrupándose por su marca temporal transaccional.
 
+## WhatsApp Flow comercial central
+
+- La v1 opera únicamente con `TenantId = 1`; tenant y canal se resuelven en backend y nunca desde datos editables del Flow.
+- El canal central es independiente de la sucursal histórica. Las conversaciones nacen sin sede operativa y solo se asignan al cotizar domicilio o elegir recogida.
+- Admin y Superadmin ven la cola central sin sede. Después de la asignación, la conversación es visible para la sede asignada y Superadmin.
+- Los comandos normalizados `pedido`, `pedir`, `comprar`, `hacer pedido` y `ver menú` abren el Flow antes de la IA. No se introduce un modo de conversación adicional.
+- El token del Flow es aleatorio, dura dos horas y solo se persiste como hash. El estado puede guardar selecciones, pero nunca precios o totales como autoridad.
+- Cada resumen y confirmación vuelve a validar producto, stock, precio, beneficio, cobertura, sede y total mediante el motor del storefront.
+- Una identidad telefónica ambigua no recibe direcciones guardadas y debe pasar a atención humana.
+- Fuera de cobertura no se confirma un domicilio. El cliente puede cambiar dirección, elegir recogida o solicitar asesor.
+- Efectivo materializa el pedido idempotente. Wompi materializa el pedido únicamente tras una aprobación válida del servicio existente.
+- Enlaces, aprobaciones, pedidos y fallos posteriores se envían mediante outbox idempotente.
+- Un envío de resultado incierto requiere conciliación; no se repite automáticamente un mensaje que Meta pudo haber entregado.
+- `reintentar pago` opera únicamente sobre el checkout propio de la conversación y conserva su vencimiento original de quince minutos.
+- Logs y métricas del Flow no incluyen nombres, teléfonos, direcciones, tokens, mensajes ni contenido del carrito.
+- `FlowEnabled` permanece apagado hasta validar cifrado, endpoint, allowlist y publicación en Meta.
+
 ## WhatsApp y horarios de atención
 
 - Los webhooks resuelven primero por BSUID (`from_user_id`/`contacts[].user_id`) y después por teléfono (`from`/`wa_id`); `contacts[].profile.username` se conserva como dato visible.

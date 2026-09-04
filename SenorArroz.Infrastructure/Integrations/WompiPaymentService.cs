@@ -75,13 +75,15 @@ public sealed class WompiPaymentService(
             throw new BusinessException("El checkout debe existir antes de iniciar el pago.");
         if (checkout.Total <= 0)
             throw new BusinessException("El total del checkout no es válido para pago en línea.");
+        if (checkout.OrderSource == "whatsapp_flow" && checkout.ExpiresAt <= utcNow)
+            throw new BusinessException("El checkout de WhatsApp expiró. Inicia un pedido nuevo.");
 
         var environment = NormalizeEnvironment(integration.ActiveEnvironment);
         var publicKey = GetPublicKey(integration, environment);
         var integritySecret = GetIntegritySecret(integration, environment);
         ValidateCredentialPrefixes(environment, publicKey, integritySecret, GetEventsSecret(integration, environment));
 
-        var expiresAt = NormalizeUtc(utcNow).AddMinutes(15);
+        var expiresAt = checkout.OrderSource == "whatsapp_flow" ? NormalizeUtc(checkout.ExpiresAt) : NormalizeUtc(utcNow).AddMinutes(15);
         var reference = $"SA-{Guid.NewGuid():N}".ToUpperInvariant();
         var amountInCents = checked((long)checkout.Total * 100L);
         var expiration = FormatExpiration(expiresAt);
@@ -453,10 +455,16 @@ public sealed class WompiPaymentService(
                 attempt.ManualReviewReason = duplicateOrderPayment
                     ? "Wompi reportó un pago aprobado para un pedido que ya no esperaba pago. Verifica un posible cobro duplicado."
                     : "Wompi aprobó el pago después de vencer la ventana de 15 minutos. Valida que el pedido todavía pueda atenderse.";
+                if (attempt.StorefrontCheckout is not null)
+                    await EnqueueWhatsAppCheckoutMessageAsync(attempt.StorefrontCheckout, "payment-review-required",
+                        "Wompi reportó tu pago, pero requiere revisión antes de confirmar el pedido. Un asesor debe verificarlo; no vuelvas a pagar.", observedAt, cancellationToken);
             }
             else
             {
                 ApproveAttempt(attempt, observedAt);
+                if (attempt.StorefrontCheckout is not null)
+                    await EnqueueWhatsAppCheckoutMessageAsync(attempt.StorefrontCheckout, "payment-approved",
+                        "Tu pago fue aprobado y el pedido quedó confirmado. La sede asignada continuará contigo por este chat.", observedAt, cancellationToken);
             }
         }
         else if (attempt.Status != PaymentAttemptStatus.Approved && !attempt.RequiresManualReview)
@@ -469,6 +477,7 @@ public sealed class WompiPaymentService(
                 _ => PaymentAttemptStatus.Pending,
             };
             if (attempt.StorefrontCheckout is not null)
+            {
                 attempt.StorefrontCheckout.Status = attempt.Status switch
                 {
                     PaymentAttemptStatus.Declined => "declined",
@@ -476,6 +485,10 @@ public sealed class WompiPaymentService(
                     PaymentAttemptStatus.Voided => "voided",
                     _ => "pending",
                 };
+                if (attempt.Status is PaymentAttemptStatus.Declined or PaymentAttemptStatus.Error or PaymentAttemptStatus.Voided)
+                    await EnqueueWhatsAppCheckoutMessageAsync(attempt.StorefrontCheckout, $"payment-{attempt.Status.ToString().ToLowerInvariant()}",
+                        "No pudimos completar el pago. Escribe “reintentar pago” para recibir un enlace vigente o pide ayuda a un asesor.", observedAt, cancellationToken);
+            }
         }
 
         return new(true, repeatedObservation, attempt.RequiresManualReview, AttemptBranchId(attempt), attempt.OrderId, attempt.Id);
@@ -636,7 +649,8 @@ public sealed class WompiPaymentService(
             Type = checkout.FulfillmentType == "delivery" ? OrderType.Delivery : OrderType.Onsite,
             DeliveryFee = checkout.DeliveryFee,
             Status = OrderStatus.AwaitingPayment,
-            OrderSource = "web",
+            OrderSource = checkout.OrderSource,
+            WhatsAppConversationId = checkout.WhatsAppConversationId,
             StorefrontIdempotencyKey = checkout.IdempotencyKey,
             Notes = checkout.OrderNotes,
             AppliedBenefitType = checkout.AppliedBenefitType,
@@ -666,6 +680,53 @@ public sealed class WompiPaymentService(
         checkout.Order = order;
         db.Orders.Add(order);
         return order;
+    }
+
+    private async Task EnqueueWhatsAppCheckoutMessageAsync(
+        StorefrontCheckout checkout,
+        string eventType,
+        string body,
+        DateTime observedAt,
+        CancellationToken cancellationToken)
+    {
+        if (!checkout.WhatsAppConversationId.HasValue) return;
+        var eventKey = $"whatsapp-{eventType}:{checkout.PublicId}";
+        if (await db.WhatsAppCommerceOutboxMessages.AnyAsync(x => x.EventKey == eventKey, cancellationToken)) return;
+        var conversation = await db.WhatsAppConversations.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == checkout.WhatsAppConversationId.Value && x.ChannelSettingId != null, cancellationToken);
+        if (conversation?.ChannelSettingId is not int channelSettingId) return;
+        var session = await db.WhatsAppCommerceSessions.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.IdempotencyKey == checkout.IdempotencyKey && x.ConversationId == conversation.Id, cancellationToken);
+        if (session is not null)
+        {
+            db.WhatsAppCommerceEvents.Add(new WhatsAppCommerceEvent
+            {
+                TenantId = checkout.TenantId,
+                SessionId = session.Id,
+                ConversationId = conversation.Id,
+                BranchId = checkout.BranchId,
+                EventKey = $"{session.CorrelationId:N}:{eventType}",
+                EventName = eventType.Replace('-', '_'),
+                Screen = "COMPLETE",
+                ReferenceId = checkout.OrderId?.ToString() ?? checkout.PublicId
+            });
+            if (eventType == "payment-approved" && checkout.OrderId.HasValue)
+                db.WhatsAppCommerceEvents.Add(new WhatsAppCommerceEvent
+                {
+                    TenantId = checkout.TenantId, SessionId = session.Id, ConversationId = conversation.Id,
+                    BranchId = checkout.BranchId, EventKey = $"{session.CorrelationId:N}:order-created",
+                    EventName = "order_created", Screen = "COMPLETE", ReferenceId = checkout.OrderId.Value.ToString()
+                });
+        }
+        db.WhatsAppCommerceOutboxMessages.Add(new WhatsAppCommerceOutboxMessage
+        {
+            TenantId = checkout.TenantId,
+            ChannelSettingId = channelSettingId,
+            ConversationId = conversation.Id,
+            EventKey = eventKey,
+            Body = body,
+            NextAttemptAt = observedAt
+        });
     }
 
     private static WompiCheckoutData ToCheckout(WompiPaymentAttempt attempt) => new(

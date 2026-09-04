@@ -24,6 +24,7 @@ public class Order : BaseEntity
     public int? DeliveryAppConnectionId { get; set; }
     public string? ExternalOrderId { get; set; }
     public string? OrderSource { get; set; }
+    public int? WhatsAppConversationId { get; set; }
     public string? StorefrontIdempotencyKey { get; set; }
     public string? ExternalFulfillmentProvider { get; set; }
     public string? ExternalStoreName { get; set; }
@@ -88,6 +89,7 @@ public class Order : BaseEntity
     public virtual DeliveryRoute? DeliveryRoute { get; set; }
     public virtual DeliveryRouteStop? DeliveryRouteStop { get; set; }
     public virtual DeliveryAppConnection? DeliveryAppConnection { get; set; }
+    public virtual WhatsAppConversation? WhatsAppConversation { get; set; }
 
     public virtual ICollection<OrderDetail> OrderDetails { get; set; } = new List<OrderDetail>();
     public virtual ICollection<BankPayment> BankPayments { get; set; } = new List<BankPayment>();

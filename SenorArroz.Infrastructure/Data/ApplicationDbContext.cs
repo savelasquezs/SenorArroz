@@ -48,6 +48,16 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<WhatsAppBranchSetting> WhatsAppBranchSettings { get; set; }
 
+        public virtual DbSet<WhatsAppChannelSetting> WhatsAppChannelSettings { get; set; }
+
+        public virtual DbSet<TenantAiSetting> TenantAiSettings { get; set; }
+
+        public virtual DbSet<WhatsAppCommerceSession> WhatsAppCommerceSessions { get; set; }
+
+        public virtual DbSet<WhatsAppFlowExchange> WhatsAppFlowExchanges { get; set; }
+        public virtual DbSet<WhatsAppCommerceOutboxMessage> WhatsAppCommerceOutboxMessages { get; set; }
+        public virtual DbSet<WhatsAppCommerceEvent> WhatsAppCommerceEvents { get; set; }
+
         public virtual DbSet<WhatsAppConversation> WhatsAppConversations { get; set; }
 
         public virtual DbSet<WhatsAppMessage> WhatsAppMessages { get; set; }
@@ -164,6 +174,12 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new BranchPrintSettingsConfiguration());
             modelBuilder.ApplyConfiguration(new BusinessDocumentConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppBranchSettingConfiguration());
+            modelBuilder.ApplyConfiguration(new WhatsAppChannelSettingConfiguration());
+            modelBuilder.ApplyConfiguration(new TenantAiSettingConfiguration());
+            modelBuilder.ApplyConfiguration(new WhatsAppCommerceSessionConfiguration());
+            modelBuilder.ApplyConfiguration(new WhatsAppFlowExchangeConfiguration());
+            modelBuilder.ApplyConfiguration(new WhatsAppCommerceOutboxMessageConfiguration());
+            modelBuilder.ApplyConfiguration(new WhatsAppCommerceEventConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppConversationConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppMessageConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppAiInvocationConfiguration());

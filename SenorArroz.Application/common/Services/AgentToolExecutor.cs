@@ -36,7 +36,11 @@ public class AgentToolExecutor : IAgentToolExecutor, IAgentToolCatalog
         if (!_registry.TryGetValue(name, out var tool)) return new(false, null, "Herramienta no permitida.", "tool_not_allowed");
         var conversation = await _db.WhatsAppConversations.AsNoTracking().FirstOrDefaultAsync(x => x.Id == context.ConversationId, ct);
         if (conversation is null) return new(false, null, "Conversación no encontrada.", "conversation_not_found");
-        if (conversation.BranchId != context.BranchId) return new(false, null, "La conversación no pertenece a la sucursal indicada por el contexto interno.", "branch_mismatch");
+        var effectiveBranchId = conversation.OperationalBranchId ?? conversation.BranchId;
+        if (effectiveBranchId != context.BranchId) return new(false, null, "La conversación no pertenece a la sucursal indicada por el contexto interno.", "branch_mismatch");
+        if (conversation.ChannelSettingId.HasValue && !conversation.OperationalBranchId.HasValue
+            && !name.Equals("request_human_assistance", StringComparison.OrdinalIgnoreCase))
+            return new(false, null, "La conversación central todavía no tiene una sucursal operativa asignada.", "operational_branch_required");
         if (tool.RequiresAiMode && conversation.AttentionMode != WhatsAppAttentionMode.Ai) return new(false, null, "La conversación ya no está siendo atendida por IA.", "attention_mode_changed");
         if (arguments.ValueKind != JsonValueKind.Object) return new(false, null, "Los argumentos deben ser un objeto JSON.", "invalid_arguments");
         var schema = tool.ParametersSchema;
@@ -46,6 +50,6 @@ public class AgentToolExecutor : IAgentToolExecutor, IAgentToolCatalog
         if (schema.TryGetProperty("properties", out var properties))
             foreach (var property in arguments.EnumerateObject())
                 if (!properties.TryGetProperty(property.Name, out _)) return new(false, null, $"Argumento no permitido: {property.Name}.", "invalid_arguments");
-        return await tool.ExecuteAsync(context with { BranchId = conversation.BranchId, PhoneNumber = conversation.PhoneNumber, CustomerId = conversation.CustomerId, AttentionMode = conversation.AttentionMode.ToString() }, arguments, ct);
+        return await tool.ExecuteAsync(context with { BranchId = effectiveBranchId, PhoneNumber = conversation.PhoneNumber, CustomerId = conversation.CustomerId, AttentionMode = conversation.AttentionMode.ToString() }, arguments, ct);
     }
 }

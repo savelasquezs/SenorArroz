@@ -2,6 +2,7 @@ using AutoMapper;
 using System.Net;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -681,6 +682,175 @@ public class PublicStorefrontControllerTests
         Assert.Equal("order_created_web_cash", notification.EventType);
     }
 
+    [Fact]
+    public async Task Flow_PickupCartAndCashConfirmationReuseCommerceAndCreateOneOrder()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState());
+        await Exchange(flow, session, "FULFILLMENT", new { fulfillment_type = "pickup" });
+        await Exchange(flow, session, "ADDRESS_PICKUP", new { branch_id = "10", name = "Cliente Flow" });
+        Assert.Equal(10, session.Conversation.OperationalBranchId);
+        await Exchange(flow, session, "CATEGORY", new { category = "rice" });
+        await Exchange(flow, session, "PRODUCTS", new { product_id = "20", quantity = "2" });
+        var modified = await Exchange(flow, session, "CART", new { command = "increase", product_id = "20" });
+        Assert.Equal("CART", modified["screen"]);
+        await Exchange(flow, session, "CART", new { command = "continue" });
+        await Exchange(flow, session, "BENEFITS", new { benefit_selection = "" });
+        await Exchange(flow, session, "PAYMENT", new { payment_method = "cash", order_notes = "Sin cubiertos" });
+        var confirmed = await Exchange(flow, session, "SUMMARY", new { command = "confirm" });
+        Assert.Equal("SUCCESS", confirmed["screen"]);
+        var order = Assert.Single(db.Orders.Include(x => x.OrderDetails));
+        Assert.Equal("whatsapp_flow", order.OrderSource);
+        Assert.Equal(session.ConversationId, order.WhatsAppConversationId);
+        Assert.Equal(150_000, order.Total);
+        Assert.Equal(3, Assert.Single(order.OrderDetails).Quantity);
+        Assert.Equal("Sin cubiertos", order.Notes);
+        Assert.Single(db.WhatsAppCommerceOutboxMessages);
+        await Exchange(flow, session, "SUMMARY", new { command = "confirm" });
+        Assert.Single(db.Orders);
+        Assert.Single(db.WhatsAppCommerceOutboxMessages);
+    }
+
+    [FlowPostgreSqlFact]
+    public async Task Flow_ConfirmationParticipatesInOuterPostgresTransaction()
+    {
+        var connection = Environment.GetEnvironmentVariable("FLOW_POSTGRES_TEST_CONNECTION")!;
+        await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var state = new WhatsAppCommerceState
+        {
+            LastScreen = "SUMMARY", FulfillmentType = "pickup", Name = "Cliente Flow", SelectedBranchId = 10,
+            PaymentMethod = "cash", Cart = [new WhatsAppCartItemState { ProductId = 20, Quantity = 2 }]
+        };
+        var (flow, session) = await CreateFlow(db, state);
+        await using (var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable))
+        {
+            var result = await Exchange(flow, session, "SUMMARY", new { command = "confirm" });
+            Assert.Equal("SUCCESS", result["screen"]);
+            Assert.Single(db.Orders);
+            Assert.Single(db.WhatsAppCommerceOutboxMessages);
+            await transaction.RollbackAsync();
+        }
+        db.ChangeTracker.Clear();
+        Assert.Empty(await db.Orders.ToListAsync());
+        Assert.Empty(await db.WhatsAppCommerceOutboxMessages.ToListAsync());
+        Assert.Equal("active", (await db.WhatsAppCommerceSessions.SingleAsync()).Status);
+        var requestJson = JsonSerializer.Serialize(new
+        {
+            action = "data_exchange", version = "3.0", screen = "SUMMARY", flow_token = "token",
+            data = new { command = "confirm", _session_version = 1 }
+        });
+        async Task<IActionResult> ConfirmConcurrently()
+        {
+            await using var concurrentDb = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options);
+            var crypto = new Mock<IWhatsAppFlowCrypto>();
+            crypto.Setup(x => x.Decrypt(It.IsAny<WhatsAppEncryptedFlowRequest>()))
+                .Returns(new WhatsAppDecryptedFlowRequest(requestJson, new byte[16], new byte[16]));
+            crypto.Setup(x => x.Encrypt(It.IsAny<string>(), It.IsAny<byte[]>(), It.IsAny<byte[]>()))
+                .Returns<string, byte[], byte[]>((json, _, _) => json);
+            var controller = new WhatsAppFlowsController(concurrentDb, crypto.Object, FlowService(concurrentDb),
+                new FakeClock(Now), Mock.Of<IWhatsAppNotificationService>(), Mock.Of<ILogger<WhatsAppFlowsController>>())
+            { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
+            return await controller.DataExchange(session.ChannelSetting.PublicId, new("", "", ""), default);
+        }
+        var results = await Task.WhenAll(ConfirmConcurrently(), ConfirmConcurrently());
+        Assert.All(results, result => Assert.IsType<ContentResult>(result));
+        Assert.Single(await db.Orders.ToListAsync());
+        Assert.Single(await db.WhatsAppCommerceOutboxMessages.ToListAsync());
+        var exchange = Assert.Single(await db.WhatsAppFlowExchanges.ToListAsync());
+        Assert.DoesNotContain("flow_token", exchange.ResponseJson);
+    }
+
+    private sealed class FlowPostgreSqlFactAttribute : FactAttribute
+    {
+        public FlowPostgreSqlFactAttribute()
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FLOW_POSTGRES_TEST_CONNECTION")))
+                Skip = "Requiere FLOW_POSTGRES_TEST_CONNECTION a una base PostgreSQL de pruebas vacía.";
+        }
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("51")]
+    [InlineData("1.5")]
+    [InlineData("invalid")]
+    public async Task Flow_RejectsInvalidQuantitiesWithoutChangingCart(string quantity)
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState { LastScreen = "PRODUCTS", Category = "rice" });
+        var result = await Exchange(flow, session, "PRODUCTS", new { product_id = "20", quantity });
+        Assert.Equal("PRODUCTS", result["screen"]);
+        Assert.Empty(JsonSerializer.Deserialize<WhatsAppCommerceState>(session.StateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.Cart);
+    }
+
+    [Fact]
+    public async Task Flow_RejectsStaleVersionAndJumpToConfirmation()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState { LastScreen = "PRODUCTS", Category = "rice" });
+        var data = JsonSerializer.SerializeToElement(new { product_id = "20", quantity = "2", _session_version = session.Version - 1 });
+        var result = await flow.HandleAsync(session, "data_exchange", "PRODUCTS", "token", data, default);
+        Assert.Equal("PRODUCTS", result["screen"]);
+        result = await Exchange(flow, session, "SUMMARY", new { command = "confirm" });
+        Assert.Equal("PRODUCTS", result["screen"]);
+        Assert.Empty(db.Orders);
+        Assert.Empty(db.WhatsAppCommerceOutboxMessages);
+    }
+
+    [Fact]
+    public async Task Flow_AmbiguousPhoneNeverDisplaysSavedAddresses()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState { LastScreen = "ADDRESS_PICKUP", Name = "Nombre anterior" });
+        db.Customers.AddRange(
+            new Customer { BranchId = 10, Name = "Uno", Phone1 = "3008889900", Active = true },
+            new Customer { BranchId = 10, Name = "Dos", Phone1 = "3008889900", Active = true });
+        await db.SaveChangesAsync();
+        var result = await flow.HandleAsync(session, "INIT", null, "token", default, default);
+        var data = JsonSerializer.SerializeToElement(result["data"]);
+        Assert.True(data.GetProperty("ambiguous_customer").GetBoolean());
+        Assert.Equal("", data.GetProperty("name").GetString());
+        Assert.Equal("new", Assert.Single(data.GetProperty("saved_addresses").EnumerateArray()).GetProperty("id").GetString());
+    }
+
+    private static async Task<(WhatsAppCommerceFlowService Flow, WhatsAppCommerceSession Session)> CreateFlow(ApplicationDbContext db, WhatsAppCommerceState state)
+    {
+        Seed(db);
+        var branch = db.Branches.Local.Single();
+        branch.StorefrontTakenByUserId = 90;
+        db.Users.Add(new User { Id = 90, Branch = branch, BranchId = branch.Id, Name = "Web", Email = "web@test.local", Phone = "3000000000", PasswordHash = "unused", Active = true });
+        var channel = new WhatsAppChannelSetting { TenantId = 1, IsActive = true, IsVerified = true, FlowEnabled = true };
+        var conversation = new WhatsAppConversation { BranchId = 10, TenantId = 1, ChannelSetting = channel, PhoneNumber = "573008889900" };
+        var session = new WhatsAppCommerceSession
+        {
+            TenantId = 1, ChannelSetting = channel, Conversation = conversation,
+            StateJson = JsonSerializer.Serialize(state, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            FlowTokenHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes("token"))).ToLowerInvariant(),
+            IdempotencyKey = $"test_flow_{Guid.NewGuid():N}", ExpiresAt = Now.AddHours(2)
+        };
+        db.WhatsAppCommerceSessions.Add(session);
+        await db.SaveChangesAsync();
+        return (FlowService(db), session);
+    }
+
+    private static WhatsAppCommerceFlowService FlowService(ApplicationDbContext db)
+    {
+        var auth = new StorefrontCustomerAuthService(db, Mock.Of<IWhatsAppCloudClient>(), new FakeClock(Now),
+            Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }), Mock.Of<ILogger<StorefrontCustomerAuthService>>());
+        var flow = new WhatsAppCommerceFlowService(db, Mock.Of<IWhatsAppCloudClient>(), new FakeClock(Now),
+            Options.Create(new WhatsAppFlowOptions()), Commerce(db, 720), auth, Mock.Of<IMapper>(),
+            Mock.Of<IOrderNotificationService>(), Mock.Of<ILogger<PublicStorefrontController>>(), Mock.Of<ILogger<WhatsAppCommerceFlowService>>());
+        return flow;
+    }
+
+    private static Task<Dictionary<string, object?>> Exchange(WhatsAppCommerceFlowService flow, WhatsAppCommerceSession session, string screen, object fields)
+    {
+        var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(JsonSerializer.Serialize(fields))!;
+        data["_session_version"] = session.Version;
+        return flow.HandleAsync(session, "data_exchange", screen, "token", JsonSerializer.SerializeToElement(data), default);
+    }
+
     private static PublicDeliveryQuoteRequest Request() => new()
     {
         Name = "Cliente",
@@ -694,6 +864,11 @@ public class PublicStorefrontControllerTests
     };
 
     private static PublicStorefrontController Controller(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000, string? routePolyline = "encoded-route")
+        => new(db, new FakeClock(Now), Mock.Of<IWompiPaymentService>(),
+            Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }),
+            Commerce(db, routeSeconds, routeDistanceMeters, routePolyline));
+
+    private static StorefrontCommerceService Commerce(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000, string? routePolyline = "encoded-route")
     {
         var routeService = new Mock<IGoogleRoutesDrivingMetricsService>();
         routeService
@@ -706,7 +881,7 @@ public class PublicStorefrontControllerTests
         var wompi = new Mock<IWompiPaymentService>();
         wompi.Setup(x => x.GetOrderPaymentStatusAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((WompiPaymentStatusResult?)null);
-        return new PublicStorefrontController(
+        return new StorefrontCommerceService(
             db,
             routeService.Object,
             geocoder,

@@ -228,6 +228,12 @@ Notas:
 |---|---:|---|
 | WhatsAppBranchSetting | Sí | Desde `Branch.TenantId` |
 | WhatsAppConversation | Sí | Desde `Branch.TenantId` |
+| WhatsAppChannelSetting | Sí | Tenant inicial `1` y copia no destructiva de Santander |
+| TenantAiSetting | Sí | Tenant inicial `1` y copia no destructiva de Santander |
+| WhatsAppCommerceSession | Sí | Creación nueva por conversación central |
+| WhatsAppFlowExchange | Sí, por sesión | Creación nueva |
+| WhatsAppCommerceOutboxMessage | Sí | Creación nueva |
+| WhatsAppCommerceEvent | Sí | Creación nueva, sin PII |
 | WhatsAppMessage | Sí | Desde la conversación y sucursal |
 
 Notas:
@@ -239,6 +245,11 @@ Notas:
 - Los índices únicos parciales permiten conversaciones sin teléfono y protegen tanto el teléfono como el BSUID dentro de una sucursal. `WhatsAppUsername` solo tiene índice de búsqueda.
 - El esquema BSUID se instala con `SenorArroz.Infrastructure/Scripts/add_whatsapp_user_identity.sql` antes del backend y no realiza backfill especulativo; los historiales antiguos se enriquecen al recibir el siguiente webhook.
 - Si BSUID y teléfono resuelven a historiales diferentes no se fusionan mensajes automáticamente; se registra el conflicto y solo se comparte la asociación al cliente cuando es seguro.
+- El esquema central y su backfill se instalan con `SenorArroz.Infrastructure/Scripts/add_whatsapp_tenant_flow.sql` antes del backend que consulta estas tablas.
+- `WhatsAppConversation.ChannelSettingId` identifica conversaciones tenant-wide y `OperationalBranchId` la sede asignada, que puede permanecer nula.
+- Los índices únicos por sucursal solo abarcan conversaciones históricas (`channel_setting_id IS NULL`); las centrales son únicas por canal y teléfono/BSUID, sin fusionar historiales existentes.
+- `WhatsAppCommerceSession.FlowTokenHash` nunca contiene el token original; `CorrelationId` enlaza métricas sin datos personales.
+- `WhatsAppFlowExchange` deduplica por sesión y huella canónica; `WhatsAppCommerceOutboxMessage.EventKey` y `WhatsAppCommerceEvent.EventKey` son únicos globalmente.
 
 ### Impresión
 

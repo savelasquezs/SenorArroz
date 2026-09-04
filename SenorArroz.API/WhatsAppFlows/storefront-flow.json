@@ -1,0 +1,789 @@
+{
+  "version": "7.1",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "FULFILLMENT": [
+      "ADDRESS_PICKUP"
+    ],
+    "ADDRESS_PICKUP": [
+      "CATEGORY"
+    ],
+    "CATEGORY": [
+      "PRODUCTS"
+    ],
+    "PRODUCTS": [
+      "CART"
+    ],
+    "CART": [
+      "BENEFITS"
+    ],
+    "BENEFITS": [
+      "PAYMENT"
+    ],
+    "PAYMENT": [
+      "SUMMARY"
+    ],
+    "SUMMARY": []
+  },
+  "screens": [
+    {
+      "id": "FULFILLMENT",
+      "title": "Tu pedido",
+      "data": {
+        "_session_version": {
+          "type": "number",
+          "__example__": 1
+        },
+        "error_message": {
+          "type": "string",
+          "__example__": ""
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "¿Cómo quieres recibirlo?"
+              },
+              {
+                "type": "TextCaption",
+                "text": "${data.error_message}"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "fulfillment_type",
+                "label": "Modalidad",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "delivery",
+                    "title": "Domicilio"
+                  },
+                  {
+                    "id": "pickup",
+                    "title": "Recoger en una sede"
+                  }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continuar",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "fulfillment_type": "${form.fulfillment_type}",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ADDRESS_PICKUP",
+      "title": "Entrega o recogida",
+      "data": {
+        "_session_version": {
+          "type": "number",
+          "__example__": 2
+        },
+        "error_message": {
+          "type": "string",
+          "__example__": ""
+        },
+        "fulfillment_type": {
+          "type": "string",
+          "__example__": "delivery"
+        },
+        "name": {
+          "type": "string",
+          "__example__": "Cliente"
+        },
+        "normalized_address": {
+          "type": "string",
+          "__example__": ""
+        },
+        "requires_address_confirmation": {
+          "type": "boolean",
+          "__example__": false
+        },
+        "ambiguous_customer": {
+          "type": "boolean",
+          "__example__": false
+        },
+        "saved_addresses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": []
+        },
+        "branches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": []
+        },
+        "cities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": []
+        },
+        "city": {
+          "type": "string",
+          "__example__": ""
+        },
+        "address": {
+          "type": "string",
+          "__example__": ""
+        },
+        "address_label": {
+          "type": "string",
+          "__example__": ""
+        },
+        "address_additional_info": {
+          "type": "string",
+          "__example__": ""
+        },
+        "is_delivery": {
+          "type": "boolean",
+          "__example__": true
+        },
+        "is_pickup": {
+          "type": "boolean",
+          "__example__": false
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextCaption",
+                "text": "${data.error_message}"
+              },
+              {
+                "type": "TextInput",
+                "name": "name",
+                "label": "Tu nombre",
+                "required": false,
+                "max-chars": 100
+              },
+              {
+                "type": "Dropdown",
+                "name": "saved_address_id",
+                "label": "Dirección guardada",
+                "data-source": "${data.saved_addresses}",
+                "visible": "${data.is_delivery}"
+              },
+              {
+                "type": "Dropdown",
+                "name": "branch_id",
+                "label": "Sede para recoger",
+                "data-source": "${data.branches}",
+                "visible": "${data.is_pickup}"
+              },
+              {
+                "type": "Dropdown",
+                "name": "city",
+                "label": "Ciudad",
+                "data-source": "${data.cities}",
+                "visible": "${data.is_delivery}"
+              },
+              {
+                "type": "TextInput",
+                "name": "address",
+                "label": "Dirección nueva",
+                "input-type": "text",
+                "visible": "${data.is_delivery}",
+                "max-chars": 250
+              },
+              {
+                "type": "TextInput",
+                "name": "address_additional_info",
+                "label": "Datos adicionales",
+                "visible": "${data.is_delivery}",
+                "max-chars": 160
+              },
+              {
+                "type": "TextInput",
+                "name": "address_label",
+                "label": "Etiqueta",
+                "visible": "${data.is_delivery}",
+                "max-chars": 60
+              },
+              {
+                "type": "TextBody",
+                "text": "Dirección encontrada: ${data.normalized_address}",
+                "visible": "${data.is_delivery}"
+              },
+              {
+                "type": "OptIn",
+                "name": "address_confirmed",
+                "label": "Confirmo que esta dirección es correcta",
+                "required": false,
+                "visible": "${data.is_delivery}"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "command",
+                "label": "Atención",
+                "data-source": [
+                  {
+                    "id": "continue",
+                    "title": "Continuar compra"
+                  },
+                  {
+                    "id": "human",
+                    "title": "Hablar con un asesor"
+                  }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continuar",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "name": "${form.name}",
+                    "saved_address_id": "${form.saved_address_id}",
+                    "branch_id": "${form.branch_id}",
+                    "city": "${form.city}",
+                    "address": "${form.address}",
+                    "address_additional_info": "${form.address_additional_info}",
+                    "address_label": "${form.address_label}",
+                    "address_confirmed": "${form.address_confirmed}",
+                    "command": "${form.command}",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ],
+            "init-values": {
+              "name": "${data.name}",
+              "address": "${data.address}",
+              "address_additional_info": "${data.address_additional_info}",
+              "address_label": "${data.address_label}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "CATEGORY",
+      "title": "Menú",
+      "data": {
+        "_session_version": {
+          "type": "number",
+          "__example__": 3
+        },
+        "error_message": {
+          "type": "string",
+          "__example__": ""
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": []
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Elige una categoría"
+              },
+              {
+                "type": "Dropdown",
+                "name": "category",
+                "label": "Categoría",
+                "required": true,
+                "data-source": "${data.categories}"
+              },
+              {
+                "type": "Footer",
+                "label": "Ver productos",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "category": "${form.category}",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "PRODUCTS",
+      "title": "Productos",
+      "data": {
+        "_session_version": {
+          "type": "number",
+          "__example__": 4
+        },
+        "error_message": {
+          "type": "string",
+          "__example__": ""
+        },
+        "products": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "image": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": []
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextCaption",
+                "text": "${data.error_message}"
+              },
+              {
+                "type": "Dropdown",
+                "name": "product_id",
+                "label": "Producto",
+                "required": false,
+                "data-source": "${data.products}"
+              },
+              {
+                "type": "TextInput",
+                "name": "quantity",
+                "label": "Cantidad (1 a 50)",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "command",
+                "label": "Acción",
+                "data-source": [
+                  {
+                    "id": "add",
+                    "title": "Agregar al carrito"
+                  },
+                  {
+                    "id": "next_page",
+                    "title": "Ver más productos"
+                  },
+                  {
+                    "id": "previous_page",
+                    "title": "Página anterior"
+                  },
+                  {
+                    "id": "catalog",
+                    "title": "Cambiar categoría"
+                  },
+                  {
+                    "id": "human",
+                    "title": "Hablar con un asesor"
+                  }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Agregar",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "product_id": "${form.product_id}",
+                    "quantity": "${form.quantity}",
+                    "_session_version": "${data._session_version}",
+                    "command": "${form.command}"
+                  }
+                }
+              }
+            ],
+            "init-values": {
+              "quantity": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "CART",
+      "title": "Carrito",
+      "data": {
+        "_session_version": {
+          "type": "number",
+          "__example__": 5
+        },
+        "error_message": {
+          "type": "string",
+          "__example__": ""
+        },
+        "cart_total": {
+          "type": "string",
+          "__example__": "$50.000"
+        },
+        "cart_lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": []
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextCaption",
+                "text": "${data.error_message}"
+              },
+              {
+                "type": "Dropdown",
+                "name": "product_id",
+                "label": "Modificar producto",
+                "data-source": "${data.cart_lines}"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "command",
+                "label": "Acción",
+                "data-source": [
+                  {
+                    "id": "continue",
+                    "title": "Continuar"
+                  },
+                  {
+                    "id": "catalog",
+                    "title": "Agregar otro producto"
+                  },
+                  {
+                    "id": "increase",
+                    "title": "Aumentar uno"
+                  },
+                  {
+                    "id": "decrease",
+                    "title": "Disminuir uno"
+                  },
+                  {
+                    "id": "remove",
+                    "title": "Eliminar"
+                  },
+                  {
+                    "id": "human",
+                    "title": "Hablar con un asesor"
+                  }
+                ]
+              },
+              {
+                "type": "TextHeading",
+                "text": "Total estimado: ${data.cart_total}"
+              },
+              {
+                "type": "Footer",
+                "label": "Aplicar",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "product_id": "${form.product_id}",
+                    "command": "${form.command}",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "BENEFITS",
+      "title": "Beneficios",
+      "data": {
+        "_session_version": {
+          "type": "number",
+          "__example__": 6
+        },
+        "error_message": {
+          "type": "string",
+          "__example__": ""
+        },
+        "benefits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": []
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextCaption",
+                "text": "${data.error_message}"
+              },
+              {
+                "type": "Dropdown",
+                "name": "benefit_selection",
+                "label": "Beneficio",
+                "data-source": "${data.benefits}"
+              },
+              {
+                "type": "Footer",
+                "label": "Continuar",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "benefit_selection": "${form.benefit_selection}",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "PAYMENT",
+      "title": "Pago",
+      "data": {
+        "_session_version": {
+          "type": "number",
+          "__example__": 7
+        },
+        "error_message": {
+          "type": "string",
+          "__example__": ""
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextCaption",
+                "text": "${data.error_message}"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "payment_method",
+                "label": "Medio de pago",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "cash",
+                    "title": "Efectivo"
+                  },
+                  {
+                    "id": "online",
+                    "title": "Pago en línea"
+                  }
+                ]
+              },
+              {
+                "type": "TextArea",
+                "name": "order_notes",
+                "label": "Notas generales"
+              },
+              {
+                "type": "Footer",
+                "label": "Ver resumen",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "payment_method": "${form.payment_method}",
+                    "order_notes": "${form.order_notes}",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SUMMARY",
+      "title": "Confirma tu pedido",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "_session_version": {
+          "type": "number",
+          "__example__": 8
+        },
+        "error_message": {
+          "type": "string",
+          "__example__": ""
+        },
+        "summary": {
+          "type": "string",
+          "__example__": "Resumen"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              {
+                "type": "TextCaption",
+                "text": "${data.error_message}"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.summary}"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "command",
+                "label": "¿Qué deseas hacer?",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "confirm",
+                    "title": "Confirmar pedido"
+                  },
+                  {
+                    "id": "address",
+                    "title": "Cambiar dirección"
+                  },
+                  {
+                    "id": "pickup",
+                    "title": "Recoger en una sede"
+                  },
+                  {
+                    "id": "human",
+                    "title": "Hablar con un asesor"
+                  }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continuar",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "command": "${form.command}",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -38,6 +38,12 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<BusinessDocument> BusinessDocuments { get; set; }
 
         DbSet<WhatsAppBranchSetting> WhatsAppBranchSettings { get; set; }
+        DbSet<WhatsAppChannelSetting> WhatsAppChannelSettings { get; set; }
+        DbSet<TenantAiSetting> TenantAiSettings { get; set; }
+        DbSet<WhatsAppCommerceSession> WhatsAppCommerceSessions { get; set; }
+        DbSet<WhatsAppFlowExchange> WhatsAppFlowExchanges { get; set; }
+        DbSet<WhatsAppCommerceOutboxMessage> WhatsAppCommerceOutboxMessages { get; set; }
+        DbSet<WhatsAppCommerceEvent> WhatsAppCommerceEvents { get; set; }
 
         DbSet<WhatsAppConversation> WhatsAppConversations { get; set; }
 

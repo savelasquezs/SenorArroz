@@ -5,7 +5,10 @@ namespace SenorArroz.Domain.Entities;
 
 public class WhatsAppConversation : BaseEntity
 {
+    public int TenantId { get; set; } = 1;
+    public int? ChannelSettingId { get; set; }
     public int BranchId { get; set; }
+    public int? OperationalBranchId { get; set; }
     public int? CustomerId { get; set; }
     public string? PhoneNumber { get; set; }
     public string? WhatsAppUserId { get; set; }
@@ -26,6 +29,8 @@ public class WhatsAppConversation : BaseEntity
     public DateTime? AiOrderStateUpdatedAt { get; set; }
 
     public virtual Branch Branch { get; set; } = null!;
+    public virtual Branch? OperationalBranch { get; set; }
+    public virtual WhatsAppChannelSetting? ChannelSetting { get; set; }
     public virtual Customer? Customer { get; set; }
     public virtual User? AssignedUser { get; set; }
     public virtual User? AttentionModeUpdatedByUser { get; set; }

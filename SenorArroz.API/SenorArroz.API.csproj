@@ -26,4 +26,8 @@
     <ProjectReference Include="..\SenorArroz.Shared\SenorArroz.Shared.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Update="WhatsAppFlows\storefront-flow.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
