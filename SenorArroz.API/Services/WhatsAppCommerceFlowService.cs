@@ -36,14 +36,21 @@ public sealed class WhatsAppCommerceFlowService(
     private readonly WhatsAppFlowOptions _options = options.Value;
 
     public static bool IsPurchaseIntent(string? text)
+        => NormalizeCommand(text) is "pedido" or "pedir" or "comprar" or "hacer pedido" or "ver menu";
+
+    public static bool IsGreeting(string? text)
+        => NormalizeCommand(text) is "hola" or "buenas" or "buen dia" or "buenos dias" or "buenas tardes" or "buenas noches"
+            or "hola buenas" or "hola buen dia" or "hola buenos dias" or "hola buenas tardes" or "hola buenas noches";
+
+    private static string NormalizeCommand(string? text)
     {
         var withoutDiacritics = new string((text ?? string.Empty).Trim().ToLowerInvariant()
             .Normalize(NormalizationForm.FormD)
             .Where(x => CharUnicodeInfo.GetUnicodeCategory(x) != UnicodeCategory.NonSpacingMark)
             .ToArray())
             .Normalize(NormalizationForm.FormC);
-        var normalized = string.Join(' ', withoutDiacritics.Split(' ', StringSplitOptions.RemoveEmptyEntries));
-        return normalized is "pedido" or "pedir" or "comprar" or "hacer pedido" or "ver menu";
+        var words = new string(withoutDiacritics.Select(x => char.IsPunctuation(x) ? ' ' : x).ToArray());
+        return string.Join(' ', words.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 
     public static bool IsPaymentRetryIntent(string? text) =>
@@ -90,7 +97,7 @@ public sealed class WhatsAppCommerceFlowService(
         return true;
     }
 
-    public async Task<bool> StartAsync(int conversationId, int channelSettingId, CancellationToken ct)
+    public async Task<bool> StartAsync(int conversationId, int channelSettingId, CancellationToken ct, bool greeting = false)
     {
         if (!_options.Enabled || _options.TenantId != 1)
             return false;
@@ -102,7 +109,7 @@ public sealed class WhatsAppCommerceFlowService(
 
         var conversation = await db.WhatsAppConversations.FirstOrDefaultAsync(
             x => x.Id == conversationId && x.TenantId == 1 && x.ChannelSettingId == channel.Id, ct);
-        if (conversation is null || conversation.AttentionMode is WhatsAppAttentionMode.Human or WhatsAppAttentionMode.WaitingForHuman or WhatsAppAttentionMode.Paused)
+        if (conversation is null)
             return false;
         var phone = ColombianMobilePhone.Normalize(conversation.PhoneNumber);
         if (!ColombianMobilePhone.IsValid(phone)
@@ -113,11 +120,14 @@ public sealed class WhatsAppCommerceFlowService(
         if (recipient is null)
             return false;
 
-        var customerSession = await customerAuth.ResolveTrustedPhoneAsync(conversation.PhoneNumber ?? recipient, ct);
         var previous = await db.WhatsAppCommerceSessions
             .Where(x => x.ConversationId == conversation.Id && x.Status == "active" && x.ExpiresAt > clock.UtcNow)
             .OrderByDescending(x => x.Id)
             .FirstOrDefaultAsync(ct);
+        if (greeting && previous is not null)
+            return true;
+
+        var customerSession = await customerAuth.ResolveTrustedPhoneAsync(conversation.PhoneNumber ?? recipient, ct);
         var state = previous is null
             ? new WhatsAppCommerceState
             {
@@ -151,7 +161,7 @@ public sealed class WhatsAppCommerceFlowService(
 
         var sent = await cloud.SendFlowMessageAsync(
             channel.PhoneNumberId, channel.AccessToken, recipient,
-            previous is null ? "Haz tu pedido completo sin salir de WhatsApp." : "Tu carrito sigue disponible. Puedes continuar donde quedaste.",
+            previous is null ? "¡Hola! Bienvenido a Señor Arroz. Toca Ver menú para elegir tus productos y hacer tu pedido sin salir de WhatsApp. Si necesitas ayuda, puedes seguir escribiendo por aquí." : "Tu carrito sigue disponible. Puedes continuar donde quedaste.",
             previous is null ? "Ver menú" : "Continuar pedido", channel.FlowId, rawToken, state.LastScreen, ct);
         if (!sent.Success)
         {
@@ -162,6 +172,7 @@ public sealed class WhatsAppCommerceFlowService(
             return false;
         }
 
+        conversation.LastMessageAt = clock.UtcNow;
         db.WhatsAppMessages.Add(new WhatsAppMessage
         {
             ConversationId = conversation.Id,

@@ -11,11 +11,81 @@ using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
 using SenorArroz.Infrastructure.WhatsApp;
+using AutoMapper;
+using Microsoft.EntityFrameworkCore;
+using Moq;
+using SenorArroz.API.Controllers;
+using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
+using SenorArroz.Infrastructure.Data;
 
 namespace SenorArroz.Tests;
 
 public sealed class WhatsAppFlowSecurityTests
 {
+    [Theory]
+    [InlineData(WhatsAppAttentionMode.Human)]
+    [InlineData(WhatsAppAttentionMode.WaitingForHuman)]
+    [InlineData(WhatsAppAttentionMode.Paused)]
+    [InlineData(WhatsAppAttentionMode.Ai)]
+    public async Task GreetingStartsFlowWithoutAiAndPreservesAttentionAndActiveCart(WhatsAppAttentionMode mode)
+    {
+        await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var now = DateTime.UtcNow;
+        var clock = Mock.Of<IClock>(x => x.UtcNow == now);
+        var channel = new WhatsAppChannelSetting
+        {
+            Id = 1, TenantId = 1, IsActive = true, IsVerified = true, FlowEnabled = true,
+            PhoneNumberId = "phone", AccessToken = "test", FlowId = "flow"
+        };
+        var conversation = new WhatsAppConversation
+        {
+            Id = 1, TenantId = 1, ChannelSettingId = 1, ChannelSetting = channel,
+            PhoneNumber = "3000000000", AttentionMode = mode, AssignedUserId = 42
+        };
+        db.Add(conversation);
+        await db.SaveChangesAsync();
+        var cloud = new Mock<IWhatsAppCloudClient>();
+        cloud.Setup(x => x.SendFlowMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.test", null));
+        var auth = new StorefrontCustomerAuthService(db, cloud.Object, clock,
+            Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }), Mock.Of<ILogger<StorefrontCustomerAuthService>>());
+        var service = new WhatsAppCommerceFlowService(db, cloud.Object, clock,
+            Options.Create(new WhatsAppFlowOptions { Enabled = true, RestrictToAllowlist = false }),
+            null!, auth, Mock.Of<IMapper>(), Mock.Of<IOrderNotificationService>(),
+            Mock.Of<ILogger<PublicStorefrontController>>(), Mock.Of<ILogger<WhatsAppCommerceFlowService>>());
+
+        Assert.True(await service.StartAsync(1, 1, default, greeting: true));
+        var session = await db.WhatsAppCommerceSessions.SingleAsync();
+        var tokenHash = session.FlowTokenHash;
+        Assert.True(await service.StartAsync(1, 1, default, greeting: true));
+        Assert.Single(await db.WhatsAppCommerceSessions.ToListAsync());
+        Assert.Single(await db.WhatsAppMessages.ToListAsync());
+        Assert.Equal(tokenHash, session.FlowTokenHash);
+        Assert.Equal("active", session.Status);
+        Assert.Equal(mode, conversation.AttentionMode);
+        Assert.Equal(42, conversation.AssignedUserId);
+        Assert.Empty(await db.TenantAiSettings.ToListAsync());
+
+        Assert.True(await service.StartAsync(1, 1, default));
+        Assert.Equal(2, await db.WhatsAppMessages.CountAsync());
+        Assert.Single(await db.WhatsAppCommerceSessions.Where(x => x.Status == "active").ToListAsync());
+        Assert.Equal(mode, conversation.AttentionMode);
+    }
+
+    [Theory]
+    [InlineData("¡Hola!")]
+    [InlineData("  Hola, buenos días. ")]
+    [InlineData("BUENAS\tTARDES")]
+    public void SimpleGreetingsOfferFlow(string text) => Assert.True(WhatsAppCommerceFlowService.IsGreeting(text));
+
+    [Theory]
+    [InlineData("Hola, necesito un asesor")]
+    [InlineData("Buenos días, no llegó mi pedido")]
+    public void GreetingsWithRequestsKeepTheirNormalAttention(string text) => Assert.False(WhatsAppCommerceFlowService.IsGreeting(text));
+
     [Fact]
     public void EncryptedRequestUsesMetaWireFieldNames()
     {

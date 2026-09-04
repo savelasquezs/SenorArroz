@@ -4,13 +4,21 @@
 
 El canal central de WhatsApp atiende exclusivamente al tenant `1` y reutiliza el motor comercial del storefront. El número puede conservar temporalmente su configuración histórica por sucursal, pero una conversación recibida por `whatsapp_channel_setting` es tenant-wide y su `OperationalBranchId` permanece nulo hasta cotizar domicilio o seleccionar recogida.
 
-El recorrido preparado, todavía pendiente de validación y publicación en Meta, es:
+El recorrido publicado en Meta, habilitado para pruebas internas y todavía pendiente de homologación completa, es:
 
 ```text
 FULFILLMENT -> ADDRESS_PICKUP -> CATEGORY -> PRODUCTS -> CART -> BENEFITS -> PAYMENT -> SUMMARY -> SUCCESS
 ```
 
 Efectivo crea el pedido de forma idempotente. Wompi crea un checkout de 15 minutos y el pedido solo se materializa al procesar una aprobación válida. Los mensajes posteriores salen por `whatsapp_commerce_outbox`.
+
+## Inicio sin IA
+
+Un saludo simple o un comando de compra (`pedido`, `pedir`, `comprar`, `hacer pedido`, `ver menú`) ofrece el botón interactivo sin consultar la IA. Funciona en atención humana, esperando asesor y con la IA pausada, conservando la asignación y el modo actuales. La bienvenida y el botón forman un mismo mensaje de WhatsApp.
+
+Un saludo repetido durante una sesión activa no vuelve a enviar el botón ni reemplaza el token. El comando `pedido` permite reenviar la invitación conservando las selecciones; el nuevo token reemplaza al anterior y los importes se recotizan. Las invitaciones y el estado «Menú interactivo disponible» se notifican también a la bandeja.
+
+La configuración se encuentra en `/whatsapp/settings` (menú «Canal central WhatsApp», Admin/Superadmin). «IA activa» solo controla el asistente conversacional; no es requisito de Flow. La atención de una conversación se cambia desde la bandeja, independientemente del menú de compra.
 
 ## Componentes
 
@@ -70,8 +78,8 @@ Rollback del Flow: apagar `flow_enabled`; el clasificador deja de enviarlo. Para
 - Homologación de la navegación atrás y del recorrido real en Meta, domicilio y pagos; la validación estática del JSON ya pasó.
 - Homologar el reintento de Wompi desde el chat y conciliar envíos con resultado incierto.
 - Completar pruebas de enrutamiento entre sedes sobre PostgreSQL.
-- Verificar un webhook real firmado con el `AppSecret` configurado.
-- Publicar y activar únicamente después de homologar el endpoint y el recorrido interno.
+- Completar la prueba real en atención humana e IA apagada después de desplegar el inicio independiente.
+- Corregir y verificar la conexión en vivo de la bandeja desde una sesión administrativa autenticada.
 
 ## Validación del 3 de septiembre de 2026
 
@@ -82,3 +90,10 @@ Rollback del Flow: apagar `flow_enabled`; el clasificador deja de enviarlo. Para
 - Endpoint registrado en Meta: `/api/whatsapp/flows/0e5b8c3c-bc5e-4922-8c3f-6da7a9a3a454/data-exchange`. La primera prueba HTTP detectó un `400` por nombres del sobre JSON; se corrigió el DTO para aceptar `encrypted_aes_key`, `encrypted_flow_data` e `initial_vector`, con prueba de regresión.
 - El borrador continúa sin publicar; la comprobación cifrada en producción debe repetirse tras desplegar esta corrección.
 - `reintentar pago` reutiliza o crea un intento dentro de los quince minutos originales; no amplía el vencimiento del checkout de WhatsApp.
+
+## Actualización del 4 de septiembre de 2026
+
+- Flow `1639196854522768` publicado en Meta y habilitado con allowlist interna. La publicación no significa que la homologación completa haya terminado.
+- Health check cifrado de producción: HTTP 200 con estado `active`. Campo `flows` suscrito en la app correcta.
+- App Secret corregido tanto en Santander como en el canal central; Meta aceptó la autenticación de la app y los mensajes entrantes reales quedaron persistidos con webhooks HTTP 200.
+- La dependencia accidental entre atención Humana y envío del Flow se elimina mediante las reglas de «Inicio sin IA». No requiere modificar el Flow publicado ni el esquema de PostgreSQL.

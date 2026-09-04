@@ -557,13 +557,20 @@ public class WhatsAppController : ControllerBase
                     continue;
                 }
                 if (message.Conversation.ChannelSettingId.HasValue
-                    && WhatsAppCommerceFlowService.IsPurchaseIntent(message.TextBody)
-                    && await _commerceFlow.StartAsync(message.ConversationId, message.Conversation.ChannelSettingId.Value, cancellationToken))
+                    && (WhatsAppCommerceFlowService.IsPurchaseIntent(message.TextBody) || WhatsAppCommerceFlowService.IsGreeting(message.TextBody))
+                    && await _commerceFlow.StartAsync(message.ConversationId, message.Conversation.ChannelSettingId.Value, cancellationToken,
+                        greeting: WhatsAppCommerceFlowService.IsGreeting(message.TextBody)))
                 {
                     message.AiProcessingStatus = WhatsAppAiProcessingStatus.Ignored;
                     message.AiProcessedAt = _clock.UtcNow;
                     message.AiProcessingError = "whatsapp_flow_started";
                     await _db.SaveChangesAsync(cancellationToken);
+                    await NotifyWhatsAppAiProcessingChangedAsync(message.Id, cancellationToken);
+                    var flowMessageId = await _db.WhatsAppMessages.Where(x => x.ConversationId == message.ConversationId
+                            && x.Direction == WhatsAppMessageDirection.Outbound && x.Id > message.Id)
+                        .OrderByDescending(x => x.Id).Select(x => (int?)x.Id).FirstOrDefaultAsync(cancellationToken);
+                    if (flowMessageId.HasValue)
+                        await NotifyWhatsAppMessageCreatedAsync(flowMessageId.Value, cancellationToken);
                     continue;
                 }
                 var awayDispatch = awayMessageDispatches.FirstOrDefault(x => ReferenceEquals(x.Message, message));

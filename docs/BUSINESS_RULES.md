@@ -297,7 +297,8 @@ Reglas:
 - La v1 opera únicamente con `TenantId = 1`; tenant y canal se resuelven en backend y nunca desde datos editables del Flow.
 - El canal central es independiente de la sucursal histórica. Las conversaciones nacen sin sede operativa y solo se asignan al cotizar domicilio o elegir recogida.
 - Admin y Superadmin ven la cola central sin sede. Después de la asignación, la conversación es visible para la sede asignada y Superadmin.
-- Los comandos normalizados `pedido`, `pedir`, `comprar`, `hacer pedido` y `ver menú` abren el Flow antes de la IA. No se introduce un modo de conversación adicional.
+- Los comandos normalizados `pedido`, `pedir`, `comprar`, `hacer pedido` y `ver menú` abren el Flow independientemente de la IA y del modo de atención. También funciona durante atención humana o IA pausada, sin cambiar el modo ni el asesor asignado. No se introduce un modo de conversación adicional.
+- Un saludo simple (`hola`, `buenas`, `buenos días`, `buenas tardes` o `buenas noches`) responde con una bienvenida y el botón del Flow. Saludos repetidos durante una sesión vigente no duplican la invitación ni reinician el carrito; `pedido` permite volver a enviarla conservando las selecciones y recotizando.
 - El token del Flow es aleatorio, dura dos horas y solo se persiste como hash. El estado puede guardar selecciones, pero nunca precios o totales como autoridad.
 - Cada resumen y confirmación vuelve a validar producto, stock, precio, beneficio, cobertura, sede y total mediante el motor del storefront.
 - Una identidad telefónica ambigua no recibe direcciones guardadas y debe pasar a atención humana.
@@ -311,6 +312,7 @@ Reglas:
 
 ## WhatsApp y horarios de atención
 
+- La configuración de WhatsApp rechaza identificadores de app y otros valores con formato incorrecto en `AppSecret`; exige la clave secreta hexadecimal de 32 caracteres de Meta. Dejar el campo vacío al editar conserva la clave existente. La verificación del token de Cloud API no certifica la firma del webhook.
 - Los webhooks resuelven primero por BSUID (`from_user_id`/`contacts[].user_id`) y después por teléfono (`from`/`wa_id`); `contacts[].profile.username` se conserva como dato visible.
 - Una conversación puede operar sin teléfono cuando tiene BSUID. Los envíos prefieren teléfono y usan BSUID como alternativa; las plantillas de autenticación continúan exigiendo teléfono.
 - Una asociación manual de cliente nunca se reemplaza por inferencia del webhook. Ante conflicto entre historial por BSUID e historial por teléfono se conservan ambos y no se fusionan mensajes.

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Models;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
@@ -38,6 +39,9 @@ public sealed class TenantWhatsAppSettingsController(
         [FromBody] UpdateTenantWhatsAppChannelDto dto,
         CancellationToken ct)
     {
+        if (!string.IsNullOrWhiteSpace(dto.AppSecret) && !WhatsAppWebhookSignature.IsValidAppSecret(dto.AppSecret))
+            return BadRequest(ApiResponse<TenantWhatsAppChannelDto>.ErrorResponse(WhatsAppWebhookSignature.InvalidAppSecretMessage));
+
         var channel = await db.WhatsAppChannelSettings.FirstOrDefaultAsync(x => x.TenantId == 1, ct);
         if (channel is null)
         {
@@ -65,7 +69,7 @@ public sealed class TenantWhatsAppSettingsController(
             channel.FlowEnabled = false;
         }
         if (dto.FlowEnabled && (!channel.IsActive || !channel.IsVerified || string.IsNullOrWhiteSpace(channel.FlowId)
-            || string.IsNullOrWhiteSpace(flowOptions.Value.PrivateKey) || string.IsNullOrWhiteSpace(channel.AppSecret)
+            || string.IsNullOrWhiteSpace(flowOptions.Value.PrivateKey) || !WhatsAppWebhookSignature.IsValidAppSecret(channel.AppSecret)
             || !flowOptions.Value.Enabled))
             return Conflict(ApiResponse<TenantWhatsAppChannelDto>.ErrorResponse("Verifica el canal, registra el Flow ID y habilita WhatsAppFlow en el entorno antes de activarlo."));
         channel.FlowEnabled = dto.FlowEnabled;
@@ -172,7 +176,7 @@ public sealed class TenantWhatsAppSettingsController(
         !string.IsNullOrWhiteSpace(flowOptions.Value.PrivateKey));
     private static TenantWhatsAppChannelDto ToChannelDto(WhatsAppChannelSetting x) => new(
         x.PublicId, x.PhoneNumberId, x.BusinessAccountId, x.DisplayPhoneNumber, !string.IsNullOrWhiteSpace(x.AccessToken),
-        x.WebhookVerifyToken, !string.IsNullOrWhiteSpace(x.AppSecret), x.FlowId, x.IsActive, x.IsVerified, x.FlowEnabled, x.LastVerifiedAt);
+        x.WebhookVerifyToken, WhatsAppWebhookSignature.IsValidAppSecret(x.AppSecret), x.FlowId, x.IsActive, x.IsVerified, x.FlowEnabled, x.LastVerifiedAt);
     private static TenantAiSettingDto ToAiDto(TenantAiSetting x) => new(
         x.Provider, x.Model, x.IsActive, x.IsVerified, x.Temperature, x.MaxContextMessages, x.AssistantName,
         x.PromptObjective, x.PromptPersonality, x.PromptRequiredRules, x.PromptFixedBranchInfo, x.PromptAdditionalInstructions, x.TransferMessage);

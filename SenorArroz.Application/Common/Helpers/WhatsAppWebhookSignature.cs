@@ -5,6 +5,11 @@ namespace SenorArroz.Application.Common.Helpers;
 
 public static class WhatsAppWebhookSignature
 {
+    public const string InvalidAppSecretMessage = "App Secret debe ser la clave secreta de 32 caracteres hexadecimales de Meta, no el identificador de la app. Está en Configuración de la app > Básica > Clave secreta de la app.";
+
+    public static bool IsValidAppSecret(string? appSecret) =>
+        appSecret?.Trim() is { Length: 32 } value && value.All(Uri.IsHexDigit);
+
     public static bool IsValid(string? header, string payload, string appSecret)
     {
         if (string.IsNullOrWhiteSpace(header) || string.IsNullOrWhiteSpace(appSecret)

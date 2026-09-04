@@ -17,6 +17,21 @@ namespace SenorArroz.Tests;
 public class WhatsAppAiDiagnosticsTests
 {
     [Fact]
+    public void FlowInvitationIsReportedAsSuccessWithoutAi()
+    {
+        var result = WhatsAppAiDiagnosticsMapper.ToDto(new WhatsAppMessage
+        {
+            AiProcessingStatus = WhatsAppAiProcessingStatus.Ignored,
+            AiProcessingError = "whatsapp_flow_started"
+        }, 3);
+
+        Assert.Equal("success", result.Severity);
+        Assert.Equal("flow", result.ErrorCategory);
+        Assert.Equal("Menú interactivo disponible", result.Title);
+        Assert.False(result.WillRetry);
+    }
+
+    [Fact]
     public void Mapper_ClassifiesQuotaPreservesHttpStatusAndRedactsSecrets()
     {
         var now = new DateTime(2026, 7, 13, 18, 0, 0, DateTimeKind.Utc);
