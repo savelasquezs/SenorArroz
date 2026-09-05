@@ -131,7 +131,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
             {
                 BankId = r.BankId,
                 ExpectedBalance = r.ExpectedBalance,
-                ActualBalance = r.ExpectedBalance,
+                ActualBalance = r.ActualBalance,
                 Adjustments = r.Adjustments,
                 Difference = CashRegisterMoney.DifferenceInWholePesos(r.ActualBalance, r.ExpectedBalance)
             }).Concat(carriedHiddenBankReconciliations).ToList(),
