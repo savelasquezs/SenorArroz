@@ -23,7 +23,6 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
     private readonly IClock _clock;
     private readonly IUserRepository _userRepository;
     private readonly IEmailService _emailService;
-    private readonly IDeliveryTrackingAlertService _trackingAlertService;
 
     public CloseCashRegisterHandler(
         ICashRegisterClosureRepository closureRepository,
@@ -32,8 +31,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         IMediator mediator,
         IClock clock,
         IUserRepository userRepository,
-        IEmailService emailService,
-        IDeliveryTrackingAlertService trackingAlertService)
+        IEmailService emailService)
     {
         _closureRepository = closureRepository;
         _context = context;
@@ -42,7 +40,6 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         _clock = clock;
         _userRepository = userRepository;
         _emailService = emailService;
-        _trackingAlertService = trackingAlertService;
     }
 
     public async Task<CashClosureDto> Handle(CloseCashRegisterCommand request, CancellationToken cancellationToken)
@@ -134,7 +131,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
             {
                 BankId = r.BankId,
                 ExpectedBalance = r.ExpectedBalance,
-                ActualBalance = r.ActualBalance,
+                ActualBalance = r.ExpectedBalance,
                 Adjustments = r.Adjustments,
                 Difference = CashRegisterMoney.DifferenceInWholePesos(r.ActualBalance, r.ExpectedBalance)
             }).Concat(carriedHiddenBankReconciliations).ToList(),
@@ -214,9 +211,6 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 .OrderBy(x => x.Title)
                 .ToList();
 
-            // Process pending device/stay evidence immediately so the end-of-day
-            // email cannot race the one-minute background alert worker.
-            await _trackingAlertService.ProcessAsync(cancellationToken);
             var trackingAlerts = await _context.DeliveryTrackingAlerts.AsNoTracking()
                 .Where(x => x.BranchId == branchId
                     && x.OccurredAt > periodStartUtc
