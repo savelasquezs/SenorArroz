@@ -204,11 +204,13 @@ Buscar primero:
 - `SenorArroz.API/Controllers/WhatsAppFlowsController.cs`
 - `SenorArroz.API/Controllers/TenantWhatsAppSettingsController.cs`
 - `SenorArroz.API/Services/WhatsAppCommerceFlowService.cs`
+- `SenorArroz.API/Services/StorefrontRecommendationSelector.cs`
 - `SenorArroz.API/Services/StorefrontCommerceService.cs`
 - `SenorArroz.API/Services/WhatsAppFlowImageService.cs`
 - `SenorArroz.API/Services/WhatsAppCommerceOutboxWorker.cs`
 - `SenorArroz.Infrastructure/WhatsApp/WhatsAppFlowCrypto.cs`
 - `SenorArroz.Infrastructure/Scripts/add_whatsapp_tenant_flow.sql`
+- `SenorArroz.Infrastructure/Scripts/add_whatsapp_commerce_session_tokens.sql`
 - `docs/WHATSAPP_STOREFRONT_FLOW.md`
 
 El canal central opera con `TenantId = 1`, asigna sucursal al cotizar o elegir recogida y llama directamente al motor del storefront. `POST /api/whatsapp/flows/{channelPublicId}/data-exchange` usa el protocolo cifrado de Meta; nunca se consume el BFF ni se hace HTTP contra el mismo backend.

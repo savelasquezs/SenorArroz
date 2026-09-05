@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -31,7 +32,12 @@ public sealed class TenantWhatsAppSettingsController(
     {
         var channel = await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(x => x.TenantId == 1, ct);
         var ai = await db.TenantAiSettings.AsNoTracking().FirstOrDefaultAsync(x => x.TenantId == 1, ct);
-        return Ok(ApiResponse<TenantWhatsAppSettingsDto>.SuccessResponse(ToDto(channel, ai)));
+        var sessions = await db.WhatsAppCommerceSessions.AsNoTracking()
+            .Where(x => x.TenantId == 1)
+            .OrderByDescending(x => x.UpdatedAt)
+            .Take(20)
+            .ToListAsync(ct);
+        return Ok(ApiResponse<TenantWhatsAppSettingsDto>.SuccessResponse(ToDto(channel, ai, sessions.Select(ToFlowSession).ToArray())));
     }
 
     [HttpPut("channel")]
@@ -169,21 +175,50 @@ public sealed class TenantWhatsAppSettingsController(
         return BadRequest(ApiResponse<TenantAiSettingDto>.ErrorResponse(message));
     }
 
-    private TenantWhatsAppSettingsDto ToDto(WhatsAppChannelSetting? channel, TenantAiSetting? ai) => new(
+    private TenantWhatsAppSettingsDto ToDto(
+        WhatsAppChannelSetting? channel,
+        TenantAiSetting? ai,
+        IReadOnlyCollection<WhatsAppFlowSessionDto> sessions) => new(
         channel is null ? null : ToChannelDto(channel), ai is null ? null : ToAiDto(ai),
         channel is null ? null : $"{Request.Scheme}://{Request.Host}/api/whatsapp/flows/{channel.PublicId}/data-exchange",
         flowOptions.Value.Enabled,
-        !string.IsNullOrWhiteSpace(flowOptions.Value.PrivateKey));
+        !string.IsNullOrWhiteSpace(flowOptions.Value.PrivateKey),
+        sessions);
     private static TenantWhatsAppChannelDto ToChannelDto(WhatsAppChannelSetting x) => new(
         x.PublicId, x.PhoneNumberId, x.BusinessAccountId, x.DisplayPhoneNumber, !string.IsNullOrWhiteSpace(x.AccessToken),
         x.WebhookVerifyToken, WhatsAppWebhookSignature.IsValidAppSecret(x.AppSecret), x.FlowId, x.IsActive, x.IsVerified, x.FlowEnabled, x.LastVerifiedAt);
     private static TenantAiSettingDto ToAiDto(TenantAiSetting x) => new(
         x.Provider, x.Model, x.IsActive, x.IsVerified, x.Temperature, x.MaxContextMessages, x.AssistantName,
         x.PromptObjective, x.PromptPersonality, x.PromptRequiredRules, x.PromptFixedBranchInfo, x.PromptAdditionalInstructions, x.TransferMessage);
+    private static WhatsAppFlowSessionDto ToFlowSession(WhatsAppCommerceSession session)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(session.StateJson);
+            var root = document.RootElement;
+            var schemaVersion = root.TryGetProperty("schemaVersion", out var schema) && schema.TryGetInt32(out var parsed) ? parsed : 1;
+            var screen = root.TryGetProperty("lastScreen", out var lastScreen) ? lastScreen.GetString() ?? "UNKNOWN" : "UNKNOWN";
+            var category = root.TryGetProperty("category", out var selectedCategory) && selectedCategory.ValueKind == JsonValueKind.String
+                ? selectedCategory.GetString()
+                : null;
+            return new(session.CorrelationId, $"v{schemaVersion}", session.Status, screen, category, session.UpdatedAt, session.ExpiresAt);
+        }
+        catch (JsonException)
+        {
+            return new(session.CorrelationId, "unknown", session.Status, "RECOVERY", null, session.UpdatedAt, session.ExpiresAt);
+        }
+    }
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
-public sealed record TenantWhatsAppSettingsDto(TenantWhatsAppChannelDto? Channel, TenantAiSettingDto? Ai, string? DataExchangeUrl, bool FlowEnvironmentEnabled, bool PrivateKeyConfigured);
+public sealed record TenantWhatsAppSettingsDto(
+    TenantWhatsAppChannelDto? Channel,
+    TenantAiSettingDto? Ai,
+    string? DataExchangeUrl,
+    bool FlowEnvironmentEnabled,
+    bool PrivateKeyConfigured,
+    IReadOnlyCollection<WhatsAppFlowSessionDto> FlowSessions);
+public sealed record WhatsAppFlowSessionDto(Guid CorrelationId, string FlowVersion, string Status, string Screen, string? Category, DateTime UpdatedAt, DateTime ExpiresAt);
 public sealed record TenantWhatsAppChannelDto(Guid PublicId, string PhoneNumberId, string BusinessAccountId, string DisplayPhoneNumber, bool AccessTokenConfigured, string WebhookVerifyToken, bool AppSecretConfigured, string? FlowId, bool IsActive, bool IsVerified, bool FlowEnabled, DateTime? LastVerifiedAt);
 public sealed record TenantAiSettingDto(string Provider, string Model, bool IsActive, bool IsVerified, double? Temperature, int MaxContextMessages, string AssistantName, string? PromptObjective, string? PromptPersonality, string? PromptRequiredRules, string? PromptFixedBranchInfo, string? PromptAdditionalInstructions, string TransferMessage);
 

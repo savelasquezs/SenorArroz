@@ -20,7 +20,6 @@ public sealed class WhatsAppFlowsController(
     IApplicationDbContext db,
     IWhatsAppFlowCrypto crypto,
     WhatsAppCommerceFlowService commerce,
-    IClock clock,
     IWhatsAppNotificationService notifications,
     ILogger<WhatsAppFlowsController> logger) : ControllerBase
 {
@@ -45,34 +44,46 @@ public sealed class WhatsAppFlowsController(
 
         JsonDocument document;
         try { document = JsonDocument.Parse(decrypted.Json, new JsonDocumentOptions { MaxDepth = 24 }); }
-        catch (JsonException) { return BadRequest(); }
+        catch (JsonException)
+        {
+            return Encrypted(WhatsAppCommerceFlowService.Recovery(1, "No pudimos leer la solicitud. Cierra este menú y escribe PEDIDO.", false), decrypted);
+        }
         using var documentLifetime = document;
         var root = document.RootElement;
-        if (root.ValueKind != JsonValueKind.Object) return BadRequest();
+        if (root.ValueKind != JsonValueKind.Object)
+            return Encrypted(WhatsAppCommerceFlowService.Recovery(1, "No pudimos leer la solicitud. Cierra este menú y escribe PEDIDO.", false), decrypted);
         var action = GetString(root, "action") ?? string.Empty;
         var version = GetString(root, "version") ?? "3.0";
         var channel = await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(
             x => x.PublicId == channelPublicId && x.TenantId == 1, ct);
-        if (channel is null) return NotFound();
+        if (channel is null)
+            return Encrypted(WhatsAppCommerceFlowService.Recovery(1, "Este menú ya no está disponible. Cierra y escribe PEDIDO.", false), decrypted);
         if (action == "ping")
             return Encrypted(new Dictionary<string, object?> { ["version"] = version, ["data"] = new { status = "active" } }, decrypted);
         if (action is "client_error" or "data_exchange_error"
             || root.TryGetProperty("data", out var errorData) && errorData.ValueKind == JsonValueKind.Object && errorData.TryGetProperty("error", out _))
         {
-            logger.LogWarning("WhatsApp Flow client error received. ChannelPublicId={ChannelPublicId}", channelPublicId);
+            var errorCode = root.TryGetProperty("data", out var clientData)
+                ? GetString(clientData, "error") ?? GetString(clientData, "error_code") ?? "unknown"
+                : "unknown";
+            logger.LogWarning("WhatsApp Flow client error received. ChannelPublicId={ChannelPublicId} Action={Action} ErrorCode={ErrorCode}",
+                channelPublicId, action, errorCode.Length <= 80 ? errorCode : errorCode[..80]);
             return Encrypted(new Dictionary<string, object?> { ["version"] = version, ["data"] = new { acknowledged = true } }, decrypted);
         }
-        if (action is not ("INIT" or "data_exchange"))
-            return Encrypted(new Dictionary<string, object?> { ["version"] = version, ["data"] = new { error_message = "Acción no soportada." } }, decrypted);
+        if (action is not ("INIT" or "data_exchange" or "BACK"))
+            return Encrypted(WhatsAppCommerceFlowService.Recovery(1, "No pudimos reconocer esa acción. Intenta nuevamente.", false), decrypted);
 
-        if (!channel.IsActive || !channel.IsVerified || !channel.FlowEnabled) return NotFound();
+        if (!channel.IsActive || !channel.IsVerified || !channel.FlowEnabled)
+            return Encrypted(WhatsAppCommerceFlowService.Recovery(1, "Los pedidos por este menú están pausados. Cierra y escribe ASESOR.", false), decrypted);
 
         var flowToken = GetString(root, "flow_token");
         var session = await commerce.FindSessionAsync(channel.Id, flowToken ?? string.Empty, ct);
-        if (session is null || session.ExpiresAt <= clock.UtcNow)
+        if (session is null)
         {
-            Response.StatusCode = 427;
-            return Encrypted(new { error_msg = "Sesión inválida o vencida. Escribe “pedido” para comenzar nuevamente." }, decrypted);
+            if (string.Equals(GetString(root, "screen"), "RECOVERY", StringComparison.OrdinalIgnoreCase)
+                && root.TryGetProperty("data", out var recoveryData))
+                return Encrypted(WhatsAppCommerceFlowService.CompleteRecovery(flowToken ?? string.Empty, GetString(recoveryData, "command") ?? "restart"), decrypted);
+            return Encrypted(WhatsAppCommerceFlowService.Recovery(1, "Esta sesión ya no está disponible. Cierra este menú y escribe PEDIDO.", false), decrypted);
         }
 
         var fingerprint = Fingerprint(root);
@@ -118,8 +129,8 @@ public sealed class WhatsAppFlowsController(
         catch (DbUpdateConcurrencyException)
         {
             if (transaction is not null) await transaction.RollbackAsync(ct);
-            Response.StatusCode = 427;
-            return Encrypted(new { error_msg = "El pedido cambió en otra pantalla. Escribe “pedido” para retomarlo." }, decrypted);
+            logger.LogInformation("WhatsApp Flow concurrency recovered. CorrelationId={CorrelationId}", session.CorrelationId);
+            return Encrypted(WhatsAppCommerceFlowService.Recovery(session.Version, "Tu pedido cambió en otra pantalla. Reintenta para cargar la versión más reciente.", true), decrypted);
         }
         catch (DbUpdateException)
         {

@@ -231,6 +231,7 @@ Notas:
 | WhatsAppChannelSetting | Sí | Tenant inicial `1` y copia no destructiva de Santander |
 | TenantAiSetting | Sí | Tenant inicial `1` y copia no destructiva de Santander |
 | WhatsAppCommerceSession | Sí | Creación nueva por conversación central |
+| WhatsAppCommerceSessionToken | Sí | Backfill del hash principal de cada sesión |
 | WhatsAppFlowExchange | Sí, por sesión | Creación nueva |
 | WhatsAppCommerceOutboxMessage | Sí | Creación nueva |
 | WhatsAppCommerceEvent | Sí | Creación nueva, sin PII |
@@ -248,7 +249,7 @@ Notas:
 - El esquema central y su backfill se instalan con `SenorArroz.Infrastructure/Scripts/add_whatsapp_tenant_flow.sql` antes del backend que consulta estas tablas.
 - `WhatsAppConversation.ChannelSettingId` identifica conversaciones tenant-wide y `OperationalBranchId` la sede asignada, que puede permanecer nula.
 - Los índices únicos por sucursal solo abarcan conversaciones históricas (`channel_setting_id IS NULL`); las centrales son únicas por canal y teléfono/BSUID, sin fusionar historiales existentes.
-- `WhatsAppCommerceSession.FlowTokenHash` nunca contiene el token original; `CorrelationId` enlaza métricas sin datos personales.
+- `WhatsAppCommerceSession.FlowTokenHash` y `WhatsAppCommerceSessionToken.TokenHash` nunca contienen el token original; varias invitaciones pueden resolver a la misma sesión e idempotencia. El script idempotente `SenorArroz.Infrastructure/Scripts/add_whatsapp_commerce_session_tokens.sql` debe ejecutarse antes del backend V2.
 - `WhatsAppFlowExchange` deduplica por sesión y huella canónica; `WhatsAppCommerceOutboxMessage.EventKey` y `WhatsAppCommerceEvent.EventKey` son únicos globalmente.
 
 ### Impresión

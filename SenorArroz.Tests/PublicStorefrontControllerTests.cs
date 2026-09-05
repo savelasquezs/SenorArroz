@@ -687,15 +687,17 @@ public class PublicStorefrontControllerTests
     {
         await using var db = CreateDb();
         var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState());
-        await Exchange(flow, session, "FULFILLMENT", new { fulfillment_type = "pickup" });
-        await Exchange(flow, session, "ADDRESS_PICKUP", new { branch_id = "10", name = "Cliente Flow" });
-        Assert.Equal(10, session.Conversation.OperationalBranchId);
         await Exchange(flow, session, "CATEGORY", new { category = "rice" });
-        await Exchange(flow, session, "PRODUCTS", new { product_id = "20", quantity = "2" });
-        var modified = await Exchange(flow, session, "CART", new { command = "increase", product_id = "20" });
-        Assert.Equal("CART", modified["screen"]);
+        await Exchange(flow, session, "PRODUCT_GROUP", new { product_group = "rice:product:20" });
+        await Exchange(flow, session, "PRODUCT_VARIANT", new { product_id = "20", quantity = "2", command = "save" });
+        var edit = await Exchange(flow, session, "CART", new { command = "edit", cart_product_id = "20" });
+        Assert.Equal("PRODUCT_VARIANT", edit["screen"]);
+        await Exchange(flow, session, "PRODUCT_VARIANT", new { product_id = "20", quantity = "3", command = "save" });
         await Exchange(flow, session, "CART", new { command = "continue" });
-        await Exchange(flow, session, "BENEFITS", new { benefit_selection = "" });
+        await Exchange(flow, session, "FULFILLMENT", new { fulfillment_type = "pickup" });
+        var address = await Exchange(flow, session, "ADDRESS_PICKUP", new { branch_id = "10", name = "Cliente Flow" });
+        Assert.Equal("PAYMENT", address["screen"]);
+        Assert.Equal(10, session.Conversation.OperationalBranchId);
         await Exchange(flow, session, "PAYMENT", new { payment_method = "cash", order_notes = "Sin cubiertos" });
         var confirmed = await Exchange(flow, session, "SUMMARY", new { command = "confirm" });
         Assert.Equal("SUCCESS", confirmed["screen"]);
@@ -749,7 +751,7 @@ public class PublicStorefrontControllerTests
             crypto.Setup(x => x.Encrypt(It.IsAny<string>(), It.IsAny<byte[]>(), It.IsAny<byte[]>()))
                 .Returns<string, byte[], byte[]>((json, _, _) => json);
             var controller = new WhatsAppFlowsController(concurrentDb, crypto.Object, FlowService(concurrentDb),
-                new FakeClock(Now), Mock.Of<IWhatsAppNotificationService>(), Mock.Of<ILogger<WhatsAppFlowsController>>())
+                Mock.Of<IWhatsAppNotificationService>(), Mock.Of<ILogger<WhatsAppFlowsController>>())
             { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
             return await controller.DataExchange(session.ChannelSetting.PublicId, new("", "", ""), default);
         }
@@ -778,9 +780,12 @@ public class PublicStorefrontControllerTests
     public async Task Flow_RejectsInvalidQuantitiesWithoutChangingCart(string quantity)
     {
         await using var db = CreateDb();
-        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState { LastScreen = "PRODUCTS", Category = "rice" });
-        var result = await Exchange(flow, session, "PRODUCTS", new { product_id = "20", quantity });
-        Assert.Equal("PRODUCTS", result["screen"]);
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState
+        {
+            LastScreen = "PRODUCT_VARIANT", Category = "rice", SelectedProductGroup = "rice:product:20"
+        });
+        var result = await Exchange(flow, session, "PRODUCT_VARIANT", new { product_id = "20", quantity, command = "save" });
+        Assert.Equal("PRODUCT_VARIANT", result["screen"]);
         Assert.Empty(JsonSerializer.Deserialize<WhatsAppCommerceState>(session.StateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.Cart);
     }
 
@@ -788,12 +793,15 @@ public class PublicStorefrontControllerTests
     public async Task Flow_RejectsStaleVersionAndJumpToConfirmation()
     {
         await using var db = CreateDb();
-        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState { LastScreen = "PRODUCTS", Category = "rice" });
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState
+        {
+            LastScreen = "PRODUCT_VARIANT", Category = "rice", SelectedProductGroup = "rice:product:20"
+        });
         var data = JsonSerializer.SerializeToElement(new { product_id = "20", quantity = "2", _session_version = session.Version - 1 });
-        var result = await flow.HandleAsync(session, "data_exchange", "PRODUCTS", "token", data, default);
-        Assert.Equal("PRODUCTS", result["screen"]);
+        var result = await flow.HandleAsync(session, "data_exchange", "PRODUCT_VARIANT", "token", data, default);
+        Assert.Equal("PRODUCT_VARIANT", result["screen"]);
         result = await Exchange(flow, session, "SUMMARY", new { command = "confirm" });
-        Assert.Equal("PRODUCTS", result["screen"]);
+        Assert.Equal("PRODUCT_VARIANT", result["screen"]);
         Assert.Empty(db.Orders);
         Assert.Empty(db.WhatsAppCommerceOutboxMessages);
     }
@@ -812,6 +820,40 @@ public class PublicStorefrontControllerTests
         Assert.True(data.GetProperty("ambiguous_customer").GetBoolean());
         Assert.Equal("", data.GetProperty("name").GetString());
         Assert.Equal("new", Assert.Single(data.GetProperty("saved_addresses").EnumerateArray()).GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task FlowEndpoint_ReturnsEncryptedRecoveryWithHttp200ForExpiredSession()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState());
+        session.ExpiresAt = Now.AddMinutes(-1);
+        await db.SaveChangesAsync();
+        var requestJson = JsonSerializer.Serialize(new
+        {
+            action = "INIT",
+            version = "3.0",
+            flow_token = "token",
+            data = new { }
+        });
+        var crypto = new Mock<IWhatsAppFlowCrypto>();
+        crypto.Setup(x => x.Decrypt(It.IsAny<WhatsAppEncryptedFlowRequest>()))
+            .Returns(new WhatsAppDecryptedFlowRequest(requestJson, new byte[16], new byte[16]));
+        crypto.Setup(x => x.Encrypt(It.IsAny<string>(), It.IsAny<byte[]>(), It.IsAny<byte[]>()))
+            .Returns<string, byte[], byte[]>((json, _, _) => json);
+        var controller = new WhatsAppFlowsController(db, crypto.Object, flow,
+            Mock.Of<IWhatsAppNotificationService>(), Mock.Of<ILogger<WhatsAppFlowsController>>())
+        { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
+
+        var action = await controller.DataExchange(session.ChannelSetting.PublicId, new("", "", ""), default);
+
+        var result = Assert.IsType<ContentResult>(action);
+        Assert.Equal(200, result.StatusCode ?? StatusCodes.Status200OK);
+        using var response = JsonDocument.Parse(result.Content!);
+        Assert.Equal("RECOVERY", response.RootElement.GetProperty("screen").GetString());
+        var recoveryOptions = response.RootElement.GetProperty("data").GetProperty("recovery_options")
+            .EnumerateArray().Select(x => x.GetProperty("id").GetString()!).ToArray();
+        Assert.Equal(["restart", "human"], recoveryOptions);
     }
 
     private static async Task<(WhatsAppCommerceFlowService Flow, WhatsAppCommerceSession Session)> CreateFlow(ApplicationDbContext db, WhatsAppCommerceState state)

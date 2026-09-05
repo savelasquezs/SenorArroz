@@ -2,342 +2,42 @@
   "version": "7.1",
   "data_api_version": "3.0",
   "routing_model": {
-    "FULFILLMENT": [
-      "ADDRESS_PICKUP"
-    ],
-    "ADDRESS_PICKUP": [
-      "CATEGORY"
-    ],
-    "CATEGORY": [
-      "PRODUCTS"
-    ],
-    "PRODUCTS": [
-      "CART"
-    ],
-    "CART": [
-      "BENEFITS"
-    ],
-    "BENEFITS": [
-      "PAYMENT"
-    ],
-    "PAYMENT": [
-      "SUMMARY"
-    ],
-    "SUMMARY": []
+    "CATEGORY": ["PRODUCT_GROUP"],
+    "PRODUCT_GROUP": ["CATEGORY", "PRODUCT_VARIANT"],
+    "PRODUCT_VARIANT": ["PRODUCT_GROUP", "CATEGORY", "CART"],
+    "CART": ["CATEGORY", "PRODUCT_VARIANT", "FULFILLMENT"],
+    "FULFILLMENT": ["CART", "ADDRESS_PICKUP"],
+    "ADDRESS_PICKUP": ["FULFILLMENT", "BENEFITS", "PAYMENT", "RECOVERY"],
+    "BENEFITS": ["ADDRESS_PICKUP", "PAYMENT", "RECOVERY"],
+    "PAYMENT": ["ADDRESS_PICKUP", "SUMMARY", "RECOVERY"],
+    "SUMMARY": ["PAYMENT", "CART", "FULFILLMENT", "RECOVERY"],
+    "RECOVERY": ["CATEGORY", "CART", "FULFILLMENT", "ADDRESS_PICKUP", "BENEFITS", "PAYMENT", "SUMMARY"]
   },
   "screens": [
     {
-      "id": "FULFILLMENT",
-      "title": "Tu pedido",
-      "data": {
-        "_session_version": {
-          "type": "number",
-          "__example__": 1
-        },
-        "error_message": {
-          "type": "string",
-          "__example__": ""
-        }
-      },
-      "layout": {
-        "type": "SingleColumnLayout",
-        "children": [
-          {
-            "type": "Form",
-            "name": "form",
-            "children": [
-              {
-                "type": "TextHeading",
-                "text": "¿Cómo quieres recibirlo?"
-              },
-              {
-                "type": "TextCaption",
-                "text": "${data.error_message}"
-              },
-              {
-                "type": "RadioButtonsGroup",
-                "name": "fulfillment_type",
-                "label": "Modalidad",
-                "required": true,
-                "data-source": [
-                  {
-                    "id": "delivery",
-                    "title": "Domicilio"
-                  },
-                  {
-                    "id": "pickup",
-                    "title": "Recoger en una sede"
-                  }
-                ]
-              },
-              {
-                "type": "Footer",
-                "label": "Continuar",
-                "on-click-action": {
-                  "name": "data_exchange",
-                  "payload": {
-                    "fulfillment_type": "${form.fulfillment_type}",
-                    "_session_version": "${data._session_version}"
-                  }
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": "ADDRESS_PICKUP",
-      "title": "Entrega o recogida",
-      "data": {
-        "_session_version": {
-          "type": "number",
-          "__example__": 2
-        },
-        "error_message": {
-          "type": "string",
-          "__example__": ""
-        },
-        "fulfillment_type": {
-          "type": "string",
-          "__example__": "delivery"
-        },
-        "name": {
-          "type": "string",
-          "__example__": "Cliente"
-        },
-        "normalized_address": {
-          "type": "string",
-          "__example__": ""
-        },
-        "requires_address_confirmation": {
-          "type": "boolean",
-          "__example__": false
-        },
-        "ambiguous_customer": {
-          "type": "boolean",
-          "__example__": false
-        },
-        "saved_addresses": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              }
-            }
-          },
-          "__example__": []
-        },
-        "branches": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              }
-            }
-          },
-          "__example__": []
-        },
-        "cities": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              }
-            }
-          },
-          "__example__": []
-        },
-        "city": {
-          "type": "string",
-          "__example__": ""
-        },
-        "address": {
-          "type": "string",
-          "__example__": ""
-        },
-        "address_label": {
-          "type": "string",
-          "__example__": ""
-        },
-        "address_additional_info": {
-          "type": "string",
-          "__example__": ""
-        },
-        "is_delivery": {
-          "type": "boolean",
-          "__example__": true
-        },
-        "is_pickup": {
-          "type": "boolean",
-          "__example__": false
-        }
-      },
-      "layout": {
-        "type": "SingleColumnLayout",
-        "children": [
-          {
-            "type": "Form",
-            "name": "form",
-            "children": [
-              {
-                "type": "TextCaption",
-                "text": "${data.error_message}"
-              },
-              {
-                "type": "TextInput",
-                "name": "name",
-                "label": "Tu nombre",
-                "required": false,
-                "max-chars": 100
-              },
-              {
-                "type": "Dropdown",
-                "name": "saved_address_id",
-                "label": "Dirección guardada",
-                "data-source": "${data.saved_addresses}",
-                "visible": "${data.is_delivery}"
-              },
-              {
-                "type": "Dropdown",
-                "name": "branch_id",
-                "label": "Sede para recoger",
-                "data-source": "${data.branches}",
-                "visible": "${data.is_pickup}"
-              },
-              {
-                "type": "Dropdown",
-                "name": "city",
-                "label": "Ciudad",
-                "data-source": "${data.cities}",
-                "visible": "${data.is_delivery}"
-              },
-              {
-                "type": "TextInput",
-                "name": "address",
-                "label": "Dirección nueva",
-                "input-type": "text",
-                "visible": "${data.is_delivery}",
-                "max-chars": 250
-              },
-              {
-                "type": "TextInput",
-                "name": "address_additional_info",
-                "label": "Datos adicionales",
-                "visible": "${data.is_delivery}",
-                "max-chars": 160
-              },
-              {
-                "type": "TextInput",
-                "name": "address_label",
-                "label": "Etiqueta",
-                "visible": "${data.is_delivery}",
-                "max-chars": 60
-              },
-              {
-                "type": "TextBody",
-                "text": "Dirección encontrada: ${data.normalized_address}",
-                "visible": "${data.is_delivery}"
-              },
-              {
-                "type": "OptIn",
-                "name": "address_confirmed",
-                "label": "Confirmo que esta dirección es correcta",
-                "required": false,
-                "visible": "${data.is_delivery}"
-              },
-              {
-                "type": "RadioButtonsGroup",
-                "name": "command",
-                "label": "Atención",
-                "data-source": [
-                  {
-                    "id": "continue",
-                    "title": "Continuar compra"
-                  },
-                  {
-                    "id": "human",
-                    "title": "Hablar con un asesor"
-                  }
-                ]
-              },
-              {
-                "type": "Footer",
-                "label": "Continuar",
-                "on-click-action": {
-                  "name": "data_exchange",
-                  "payload": {
-                    "name": "${form.name}",
-                    "saved_address_id": "${form.saved_address_id}",
-                    "branch_id": "${form.branch_id}",
-                    "city": "${form.city}",
-                    "address": "${form.address}",
-                    "address_additional_info": "${form.address_additional_info}",
-                    "address_label": "${form.address_label}",
-                    "address_confirmed": "${form.address_confirmed}",
-                    "command": "${form.command}",
-                    "_session_version": "${data._session_version}"
-                  }
-                }
-              }
-            ],
-            "init-values": {
-              "name": "${data.name}",
-              "address": "${data.address}",
-              "address_additional_info": "${data.address_additional_info}",
-              "address_label": "${data.address_label}"
-            }
-          }
-        ]
-      }
-    },
-    {
       "id": "CATEGORY",
-      "title": "Menú",
+      "title": "¿Qué quieres pedir?",
+      "refresh_on_back": true,
       "data": {
-        "_session_version": {
-          "type": "number",
-          "__example__": 3
-        },
-        "error_message": {
-          "type": "string",
-          "__example__": ""
-        },
+        "_session_version": { "type": "number", "__example__": 1 },
+        "error_message": { "type": "string", "__example__": "" },
+        "help_text": { "type": "string", "__example__": "¿Necesitas ayuda? Cierra este menú y escribe ASESOR." },
         "categories": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              }
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
             }
           },
-          "__example__": []
+          "__example__": [
+            { "id": "rice", "title": "Arroces", "description": "Nuestras recetas en cinco tamaños" },
+            { "id": "combo", "title": "Combos", "description": "Opciones listas para compartir" },
+            { "id": "beverage", "title": "Bebidas", "description": "Para acompañar tu pedido" },
+            { "id": "addition", "title": "Adiciones", "description": "Complementos y extras" }
+          ]
         }
       },
       "layout": {
@@ -347,17 +47,17 @@
             "type": "Form",
             "name": "form",
             "children": [
+              { "type": "TextHeading", "text": "Elige una categoría" },
+              { "type": "TextBody", "text": "Te acompañaremos paso a paso." },
+              { "type": "TextCaption", "text": "${data.error_message}" },
               {
-                "type": "TextHeading",
-                "text": "Elige una categoría"
-              },
-              {
-                "type": "Dropdown",
+                "type": "RadioButtonsGroup",
                 "name": "category",
-                "label": "Categoría",
+                "label": "Categorías",
                 "required": true,
                 "data-source": "${data.categories}"
               },
+              { "type": "TextCaption", "text": "${data.help_text}" },
               {
                 "type": "Footer",
                 "label": "Ver productos",
@@ -375,40 +75,29 @@
       }
     },
     {
-      "id": "PRODUCTS",
-      "title": "Productos",
+      "id": "PRODUCT_GROUP",
+      "title": "Elige tu favorito",
+      "refresh_on_back": true,
       "data": {
-        "_session_version": {
-          "type": "number",
-          "__example__": 4
-        },
-        "error_message": {
-          "type": "string",
-          "__example__": ""
-        },
-        "products": {
+        "_session_version": { "type": "number", "__example__": 2 },
+        "error_message": { "type": "string", "__example__": "" },
+        "help_text": { "type": "string", "__example__": "¿Necesitas ayuda? Cierra este menú y escribe ASESOR." },
+        "category_title": { "type": "string", "__example__": "Arroces" },
+        "product_groups": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "enabled": {
-                "type": "boolean"
-              },
-              "image": {
-                "type": "string"
-              }
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "enabled": { "type": "boolean" },
+              "image": { "type": "string" }
             }
           },
-          "__example__": []
+          "__example__": [
+            { "id": "rice:profile:1", "title": "Arroz paisa", "description": "Desde $20.000", "enabled": true, "image": "" }
+          ]
         }
       },
       "layout": {
@@ -418,105 +107,62 @@
             "type": "Form",
             "name": "form",
             "children": [
-              {
-                "type": "TextCaption",
-                "text": "${data.error_message}"
-              },
-              {
-                "type": "Dropdown",
-                "name": "product_id",
-                "label": "Producto",
-                "required": false,
-                "data-source": "${data.products}"
-              },
-              {
-                "type": "TextInput",
-                "name": "quantity",
-                "label": "Cantidad (1 a 50)",
-                "input-type": "number",
-                "required": false
-              },
+              { "type": "TextSubheading", "text": "${data.category_title}" },
+              { "type": "TextCaption", "text": "${data.error_message}" },
               {
                 "type": "RadioButtonsGroup",
-                "name": "command",
-                "label": "Acción",
-                "data-source": [
-                  {
-                    "id": "add",
-                    "title": "Agregar al carrito"
-                  },
-                  {
-                    "id": "next_page",
-                    "title": "Ver más productos"
-                  },
-                  {
-                    "id": "previous_page",
-                    "title": "Página anterior"
-                  },
-                  {
-                    "id": "catalog",
-                    "title": "Cambiar categoría"
-                  },
-                  {
-                    "id": "human",
-                    "title": "Hablar con un asesor"
-                  }
-                ]
+                "name": "product_group",
+                "label": "Recetas y productos",
+                "required": true,
+                "media-size": "regular",
+                "data-source": "${data.product_groups}"
               },
+              { "type": "TextCaption", "text": "${data.help_text}" },
               {
                 "type": "Footer",
-                "label": "Agregar",
+                "label": "Ver tamaños",
                 "on-click-action": {
                   "name": "data_exchange",
                   "payload": {
-                    "product_id": "${form.product_id}",
-                    "quantity": "${form.quantity}",
-                    "_session_version": "${data._session_version}",
-                    "command": "${form.command}"
+                    "product_group": "${form.product_group}",
+                    "command": "select",
+                    "_session_version": "${data._session_version}"
                   }
                 }
               }
-            ],
-            "init-values": {
-              "quantity": 1
-            }
+            ]
           }
         ]
       }
     },
     {
-      "id": "CART",
-      "title": "Carrito",
+      "id": "PRODUCT_VARIANT",
+      "title": "Elige tamaño",
+      "refresh_on_back": true,
       "data": {
-        "_session_version": {
-          "type": "number",
-          "__example__": 5
-        },
-        "error_message": {
-          "type": "string",
-          "__example__": ""
-        },
-        "cart_total": {
-          "type": "string",
-          "__example__": "$50.000"
-        },
-        "cart_lines": {
+        "_session_version": { "type": "number", "__example__": 3 },
+        "error_message": { "type": "string", "__example__": "" },
+        "help_text": { "type": "string", "__example__": "¿Necesitas ayuda? Cierra este menú y escribe ASESOR." },
+        "product_group_name": { "type": "string", "__example__": "Arroz paisa" },
+        "product_group_description": { "type": "string", "__example__": "Una receta para compartir" },
+        "selected_product_id": { "type": "string", "__example__": "20" },
+        "quantity": { "type": "string", "__example__": "1" },
+        "editing_product": { "type": "boolean", "__example__": false },
+        "variant_footer_label": { "type": "string", "__example__": "Agregar al pedido" },
+        "product_variants": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              }
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "enabled": { "type": "boolean" }
             }
           },
-          "__example__": []
+          "__example__": [
+            { "id": "20", "title": "Personal", "description": "$20.000 · Para 1 persona", "enabled": true }
+          ]
         }
       },
       "layout": {
@@ -525,59 +171,50 @@
           {
             "type": "Form",
             "name": "form",
+            "init-values": {
+              "product_id": "${data.selected_product_id}",
+              "quantity": "${data.quantity}",
+              "command": "save"
+            },
             "children": [
+              { "type": "TextHeading", "text": "${data.product_group_name}" },
+              { "type": "TextBody", "text": "${data.product_group_description}" },
+              { "type": "TextCaption", "text": "${data.error_message}" },
               {
-                "type": "TextCaption",
-                "text": "${data.error_message}"
+                "type": "RadioButtonsGroup",
+                "name": "product_id",
+                "label": "Tamaño y precio",
+                "required": true,
+                "data-source": "${data.product_variants}"
               },
               {
-                "type": "Dropdown",
-                "name": "product_id",
-                "label": "Modificar producto",
-                "data-source": "${data.cart_lines}"
+                "type": "TextInput",
+                "name": "quantity",
+                "label": "Cantidad",
+                "input-type": "number",
+                "required": true,
+                "max-chars": 2
               },
               {
                 "type": "RadioButtonsGroup",
                 "name": "command",
-                "label": "Acción",
+                "label": "¿Qué quieres hacer?",
+                "required": "${data.editing_product}",
+                "visible": "${data.editing_product}",
                 "data-source": [
-                  {
-                    "id": "continue",
-                    "title": "Continuar"
-                  },
-                  {
-                    "id": "catalog",
-                    "title": "Agregar otro producto"
-                  },
-                  {
-                    "id": "increase",
-                    "title": "Aumentar uno"
-                  },
-                  {
-                    "id": "decrease",
-                    "title": "Disminuir uno"
-                  },
-                  {
-                    "id": "remove",
-                    "title": "Eliminar"
-                  },
-                  {
-                    "id": "human",
-                    "title": "Hablar con un asesor"
-                  }
+                  { "id": "save", "title": "Guardar cambios", "description": "Actualizar tamaño y cantidad" },
+                  { "id": "remove", "title": "Eliminar del pedido", "description": "Quitar este producto del carrito" }
                 ]
               },
-              {
-                "type": "TextHeading",
-                "text": "Total estimado: ${data.cart_total}"
-              },
+              { "type": "TextCaption", "text": "${data.help_text}" },
               {
                 "type": "Footer",
-                "label": "Aplicar",
+                "label": "${data.variant_footer_label}",
                 "on-click-action": {
                   "name": "data_exchange",
                   "payload": {
                     "product_id": "${form.product_id}",
+                    "quantity": "${form.quantity}",
                     "command": "${form.command}",
                     "_session_version": "${data._session_version}"
                   }
@@ -589,31 +226,42 @@
       }
     },
     {
-      "id": "BENEFITS",
-      "title": "Beneficios",
+      "id": "CART",
+      "title": "Tu pedido",
+      "refresh_on_back": true,
       "data": {
-        "_session_version": {
-          "type": "number",
-          "__example__": 6
-        },
-        "error_message": {
-          "type": "string",
-          "__example__": ""
-        },
-        "benefits": {
+        "_session_version": { "type": "number", "__example__": 4 },
+        "error_message": { "type": "string", "__example__": "" },
+        "help_text": { "type": "string", "__example__": "¿Necesitas ayuda? Cierra este menú y escribe ASESOR." },
+        "cart_subtotal_text": { "type": "string", "__example__": "Subtotal de productos: $40.000" },
+        "show_recommendations": { "type": "boolean", "__example__": true },
+        "cart_lines": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              }
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
             }
           },
-          "__example__": []
+          "__example__": [
+            { "id": "20", "title": "1 × Arroz paisa", "description": "Personal · $20.000" }
+          ]
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "31", "title": "Gaseosa", "description": "Personal · $5.000" }
+          ]
         }
       },
       "layout": {
@@ -623,19 +271,321 @@
             "type": "Form",
             "name": "form",
             "children": [
+              { "type": "TextHeading", "text": "Revisa tu carrito" },
+              { "type": "TextCaption", "text": "${data.error_message}" },
               {
-                "type": "TextCaption",
-                "text": "${data.error_message}"
+                "type": "RadioButtonsGroup",
+                "name": "cart_product_id",
+                "label": "Toca un producto para editarlo",
+                "required": false,
+                "data-source": "${data.cart_lines}",
+                "on-select-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "cart_product_id": "${form.cart_product_id}",
+                    "command": "edit",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              },
+              { "type": "TextSubheading", "text": "${data.cart_subtotal_text}" },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "recommendation_id",
+                "label": "¿Quieres agregar algo?",
+                "required": false,
+                "visible": "${data.show_recommendations}",
+                "data-source": "${data.recommendations}",
+                "on-select-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "recommendation_id": "${form.recommendation_id}",
+                    "command": "recommendation",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
               },
               {
-                "type": "Dropdown",
-                "name": "benefit_selection",
-                "label": "Beneficio",
-                "data-source": "${data.benefits}"
+                "type": "RadioButtonsGroup",
+                "name": "command",
+                "label": "Siguiente paso",
+                "required": true,
+                "data-source": [
+                  { "id": "continue", "title": "Continuar a entrega", "description": "Elegir domicilio o recogida" },
+                  { "id": "add", "title": "Agregar otro producto", "description": "Volver a las categorías" }
+                ]
               },
+              { "type": "TextCaption", "text": "Las sugerencias son opcionales y nunca bloquean tu pedido." },
+              { "type": "TextCaption", "text": "${data.help_text}" },
               {
                 "type": "Footer",
                 "label": "Continuar",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "cart_product_id": "${form.cart_product_id}",
+                    "recommendation_id": "${form.recommendation_id}",
+                    "command": "${form.command}",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "FULFILLMENT",
+      "title": "Entrega o recogida",
+      "refresh_on_back": true,
+      "data": {
+        "_session_version": { "type": "number", "__example__": 5 },
+        "error_message": { "type": "string", "__example__": "" },
+        "help_text": { "type": "string", "__example__": "¿Necesitas ayuda? Cierra este menú y escribe ASESOR." }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              { "type": "TextHeading", "text": "¿Cómo quieres recibirlo?" },
+              { "type": "TextCaption", "text": "${data.error_message}" },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "fulfillment_type",
+                "label": "Elige una opción",
+                "required": true,
+                "data-source": [
+                  { "id": "delivery", "title": "Domicilio", "description": "Lo llevamos a tu dirección" },
+                  { "id": "pickup", "title": "Recoger en una sede", "description": "Tú eliges la sede disponible" }
+                ]
+              },
+              { "type": "TextCaption", "text": "${data.help_text}" },
+              {
+                "type": "Footer",
+                "label": "Elegir dirección o sede",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "fulfillment_type": "${form.fulfillment_type}",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ADDRESS_PICKUP",
+      "title": "Datos de entrega",
+      "refresh_on_back": true,
+      "data": {
+        "_session_version": { "type": "number", "__example__": 6 },
+        "error_message": { "type": "string", "__example__": "" },
+        "help_text": { "type": "string", "__example__": "¿Necesitas ayuda? Cierra este menú y escribe ASESOR." },
+        "name": { "type": "string", "__example__": "Cliente" },
+        "address_summary_text": { "type": "string", "__example__": "Dirección encontrada: Calle 10 # 20-30" },
+        "normalized_address": { "type": "string", "__example__": "Calle 10 # 20-30, Medellín" },
+        "city": { "type": "string", "__example__": "Medellín" },
+        "address": { "type": "string", "__example__": "Calle 10 # 20-30" },
+        "address_additional_info": { "type": "string", "__example__": "Apartamento 201" },
+        "ambiguous_customer": { "type": "boolean", "__example__": false },
+        "show_saved_addresses": { "type": "boolean", "__example__": true },
+        "show_new_address": { "type": "boolean", "__example__": false },
+        "show_address_confirmation": { "type": "boolean", "__example__": false },
+        "is_pickup": { "type": "boolean", "__example__": false },
+        "saved_addresses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "1", "title": "Casa", "description": "Calle 10 # 20-30" },
+            { "id": "new", "title": "Usar otra dirección", "description": "Escribir una dirección diferente" }
+          ]
+        },
+        "branches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "10", "title": "Santander", "description": "Calle 1" }
+          ]
+        },
+        "cities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "Medellín", "title": "Medellín" }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "init-values": {
+              "name": "${data.name}",
+              "city": "${data.city}",
+              "address": "${data.address}",
+              "address_additional_info": "${data.address_additional_info}"
+            },
+            "children": [
+              { "type": "TextCaption", "text": "${data.error_message}" },
+              {
+                "type": "TextInput",
+                "name": "name",
+                "label": "Nombre de quien recibe",
+                "required": true,
+                "max-chars": 100
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "saved_address_id",
+                "label": "Elige una dirección",
+                "required": "${data.show_saved_addresses}",
+                "visible": "${data.show_saved_addresses}",
+                "data-source": "${data.saved_addresses}"
+              },
+              {
+                "type": "Dropdown",
+                "name": "city",
+                "label": "Ciudad",
+                "required": "${data.show_new_address}",
+                "visible": "${data.show_new_address}",
+                "data-source": "${data.cities}"
+              },
+              {
+                "type": "TextInput",
+                "name": "address",
+                "label": "Dirección",
+                "input-type": "text",
+                "required": "${data.show_new_address}",
+                "visible": "${data.show_new_address}",
+                "max-chars": 250
+              },
+              {
+                "type": "TextInput",
+                "name": "address_additional_info",
+                "label": "Indicaciones (opcional)",
+                "input-type": "text",
+                "required": false,
+                "visible": "${data.show_new_address}",
+                "max-chars": 160
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "branch_id",
+                "label": "Sede para recoger",
+                "required": "${data.is_pickup}",
+                "visible": "${data.is_pickup}",
+                "data-source": "${data.branches}"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "${data.address_summary_text}",
+                "visible": "${data.show_address_confirmation}"
+              },
+              {
+                "type": "OptIn",
+                "name": "address_confirmed",
+                "label": "Confirmo que esta dirección es correcta",
+                "required": "${data.show_address_confirmation}",
+                "visible": "${data.show_address_confirmation}"
+              },
+              { "type": "TextCaption", "text": "${data.help_text}" },
+              {
+                "type": "Footer",
+                "label": "Continuar al pago",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "name": "${form.name}",
+                    "saved_address_id": "${form.saved_address_id}",
+                    "city": "${form.city}",
+                    "address": "${form.address}",
+                    "address_additional_info": "${form.address_additional_info}",
+                    "branch_id": "${form.branch_id}",
+                    "address_confirmed": "${form.address_confirmed}",
+                    "command": "continue",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "BENEFITS",
+      "title": "Beneficios disponibles",
+      "refresh_on_back": true,
+      "data": {
+        "_session_version": { "type": "number", "__example__": 7 },
+        "error_message": { "type": "string", "__example__": "" },
+        "help_text": { "type": "string", "__example__": "¿Necesitas ayuda? Cierra este menú y escribe ASESOR." },
+        "cart_subtotal_text": { "type": "string", "__example__": "Subtotal de productos: $40.000" },
+        "benefits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "none", "title": "Continuar sin beneficio", "description": "No aplicar descuentos o premios" }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              { "type": "TextBody", "text": "Elige solo si quieres usar uno ahora." },
+              { "type": "TextSubheading", "text": "${data.cart_subtotal_text}" },
+              { "type": "TextCaption", "text": "${data.error_message}" },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "benefit_selection",
+                "label": "Beneficio",
+                "required": true,
+                "data-source": "${data.benefits}"
+              },
+              { "type": "TextCaption", "text": "${data.help_text}" },
+              {
+                "type": "Footer",
+                "label": "Continuar al pago",
                 "on-click-action": {
                   "name": "data_exchange",
                   "payload": {
@@ -651,15 +601,28 @@
     },
     {
       "id": "PAYMENT",
-      "title": "Pago",
+      "title": "Forma de pago",
+      "refresh_on_back": true,
       "data": {
-        "_session_version": {
-          "type": "number",
-          "__example__": 7
-        },
-        "error_message": {
-          "type": "string",
-          "__example__": ""
+        "_session_version": { "type": "number", "__example__": 8 },
+        "error_message": { "type": "string", "__example__": "" },
+        "help_text": { "type": "string", "__example__": "¿Necesitas ayuda? Cierra este menú y escribe ASESOR." },
+        "cart_subtotal_text": { "type": "string", "__example__": "Subtotal de productos: $40.000" },
+        "address_summary_text": { "type": "string", "__example__": "Recogida en Santander" },
+        "payment_methods": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "enabled": { "type": "boolean" }
+            }
+          },
+          "__example__": [
+            { "id": "cash", "title": "Efectivo", "description": "El pedido se confirma de inmediato", "enabled": true }
+          ]
         }
       },
       "layout": {
@@ -669,34 +632,28 @@
             "type": "Form",
             "name": "form",
             "children": [
-              {
-                "type": "TextCaption",
-                "text": "${data.error_message}"
-              },
+              { "type": "TextBody", "text": "${data.address_summary_text}" },
+              { "type": "TextSubheading", "text": "${data.cart_subtotal_text}" },
+              { "type": "TextCaption", "text": "${data.error_message}" },
               {
                 "type": "RadioButtonsGroup",
                 "name": "payment_method",
-                "label": "Medio de pago",
+                "label": "Elige cómo pagar",
                 "required": true,
-                "data-source": [
-                  {
-                    "id": "cash",
-                    "title": "Efectivo"
-                  },
-                  {
-                    "id": "online",
-                    "title": "Pago en línea"
-                  }
-                ]
+                "data-source": "${data.payment_methods}"
               },
               {
-                "type": "TextArea",
+                "type": "TextInput",
                 "name": "order_notes",
-                "label": "Notas generales"
+                "label": "Nota para el pedido (opcional)",
+                "input-type": "text",
+                "required": false,
+                "max-chars": 200
               },
+              { "type": "TextCaption", "text": "${data.help_text}" },
               {
                 "type": "Footer",
-                "label": "Ver resumen",
+                "label": "Revisar pedido",
                 "on-click-action": {
                   "name": "data_exchange",
                   "payload": {
@@ -715,19 +672,65 @@
       "id": "SUMMARY",
       "title": "Confirma tu pedido",
       "terminal": true,
-      "success": true,
+      "refresh_on_back": true,
       "data": {
-        "_session_version": {
-          "type": "number",
-          "__example__": 8
-        },
-        "error_message": {
-          "type": "string",
-          "__example__": ""
-        },
-        "summary": {
-          "type": "string",
-          "__example__": "Resumen"
+        "_session_version": { "type": "number", "__example__": 9 },
+        "error_message": { "type": "string", "__example__": "" },
+        "help_text": { "type": "string", "__example__": "¿Necesitas ayuda? Cierra este menú y escribe ASESOR." },
+        "order_summary_text": { "type": "string", "__example__": "Recogida en Santander\n1 × Arroz paisa\nTotal: $20.000\nPago: Efectivo" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              { "type": "TextBody", "text": "Revisa productos, entrega, descuentos, total y pago." },
+              { "type": "TextCaption", "text": "${data.error_message}" },
+              { "type": "TextBody", "text": "${data.order_summary_text}" },
+              { "type": "TextCaption", "text": "Usa la flecha atrás si quieres modificar algo." },
+              { "type": "TextCaption", "text": "${data.help_text}" },
+              {
+                "type": "Footer",
+                "label": "Confirmar y pedir",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "command": "confirm",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "RECOVERY",
+      "title": "Podemos recuperarlo",
+      "terminal": true,
+      "refresh_on_back": true,
+      "data": {
+        "_session_version": { "type": "number", "__example__": 10 },
+        "error_message": { "type": "string", "__example__": "No pudimos continuar." },
+        "help_text": { "type": "string", "__example__": "También puedes cerrar este menú y escribir ASESOR." },
+        "recovery_options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "retry", "title": "Reintentar", "description": "Volver al último paso guardado" },
+            { "id": "restart", "title": "Comenzar nuevamente", "description": "Vaciar este carrito y volver al menú" },
+            { "id": "human", "title": "Hablar con un asesor", "description": "Conservar el contexto para recibir ayuda" }
+          ]
         }
       },
       "layout": {
@@ -737,38 +740,16 @@
             "type": "Form",
             "name": "form",
             "children": [
-              {
-                "type": "TextCaption",
-                "text": "${data.error_message}"
-              },
-              {
-                "type": "TextBody",
-                "text": "${data.summary}"
-              },
+              { "type": "TextHeading", "text": "Tu pedido está protegido" },
+              { "type": "TextBody", "text": "${data.error_message}" },
               {
                 "type": "RadioButtonsGroup",
                 "name": "command",
-                "label": "¿Qué deseas hacer?",
+                "label": "¿Qué quieres hacer?",
                 "required": true,
-                "data-source": [
-                  {
-                    "id": "confirm",
-                    "title": "Confirmar pedido"
-                  },
-                  {
-                    "id": "address",
-                    "title": "Cambiar dirección"
-                  },
-                  {
-                    "id": "pickup",
-                    "title": "Recoger en una sede"
-                  },
-                  {
-                    "id": "human",
-                    "title": "Hablar con un asesor"
-                  }
-                ]
+                "data-source": "${data.recovery_options}"
               },
+              { "type": "TextCaption", "text": "${data.help_text}" },
               {
                 "type": "Footer",
                 "label": "Continuar",

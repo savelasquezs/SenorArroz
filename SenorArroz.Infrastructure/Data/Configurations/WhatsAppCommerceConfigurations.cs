@@ -118,6 +118,24 @@ public sealed class WhatsAppFlowExchangeConfiguration : IEntityTypeConfiguration
     }
 }
 
+public sealed class WhatsAppCommerceSessionTokenConfiguration : IEntityTypeConfiguration<WhatsAppCommerceSessionToken>
+{
+    public void Configure(EntityTypeBuilder<WhatsAppCommerceSessionToken> builder)
+    {
+        builder.ToTable("whatsapp_commerce_session_token");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id");
+        builder.Property(x => x.TenantId).HasColumnName("tenant_id");
+        builder.Property(x => x.SessionId).HasColumnName("session_id");
+        builder.Property(x => x.TokenHash).HasColumnName("token_hash").HasMaxLength(64);
+        builder.Property(x => x.ExpiresAt).HasColumnName("expires_at");
+        WhatsAppChannelSettingConfiguration.Timestamps(builder);
+        builder.HasIndex(x => x.TokenHash).IsUnique().HasDatabaseName("ux_whatsapp_commerce_session_token_hash");
+        builder.HasIndex(x => new { x.SessionId, x.ExpiresAt }).HasDatabaseName("ix_whatsapp_commerce_session_token_active");
+        builder.HasOne(x => x.Session).WithMany(x => x.Tokens).HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class WhatsAppCommerceOutboxMessageConfiguration : IEntityTypeConfiguration<WhatsAppCommerceOutboxMessage>
 {
     public void Configure(EntityTypeBuilder<WhatsAppCommerceOutboxMessage> builder)

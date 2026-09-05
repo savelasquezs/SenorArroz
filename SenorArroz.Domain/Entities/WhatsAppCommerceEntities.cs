@@ -63,8 +63,18 @@ public sealed class WhatsAppCommerceSession : BaseEntity
     public WhatsAppConversation Conversation { get; set; } = null!;
     public Branch? Branch { get; set; }
     public Customer? Customer { get; set; }
+    public ICollection<WhatsAppCommerceSessionToken> Tokens { get; set; } = [];
     public ICollection<WhatsAppFlowExchange> Exchanges { get; set; } = [];
     public ICollection<WhatsAppCommerceEvent> Events { get; set; } = [];
+}
+
+public sealed class WhatsAppCommerceSessionToken : BaseEntity
+{
+    public int TenantId { get; set; } = 1;
+    public int SessionId { get; set; }
+    public string TokenHash { get; set; } = string.Empty;
+    public DateTime ExpiresAt { get; set; }
+    public WhatsAppCommerceSession Session { get; set; } = null!;
 }
 
 public sealed class WhatsAppFlowExchange : BaseEntity

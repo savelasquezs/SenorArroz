@@ -294,13 +294,15 @@ Reglas:
 
 ## WhatsApp Flow comercial central
 
-- La v1 opera únicamente con `TenantId = 1`; tenant y canal se resuelven en backend y nunca desde datos editables del Flow.
+- La v2 opera únicamente con `TenantId = 1`; tenant y canal se resuelven en backend y nunca desde datos editables del Flow.
 - El canal central es independiente de la sucursal histórica. Las conversaciones nacen sin sede operativa y solo se asignan al cotizar domicilio o elegir recogida.
 - Admin y Superadmin ven la cola central sin sede. Después de la asignación, la conversación es visible para la sede asignada y Superadmin.
 - Los comandos normalizados `pedido`, `pedir`, `comprar`, `hacer pedido` y `ver menú` abren el Flow independientemente de la IA y del modo de atención. También funciona durante atención humana o IA pausada, sin cambiar el modo ni el asesor asignado. No se introduce un modo de conversación adicional.
-- Un saludo simple (`hola`, `buenas`, `buenos días`, `buenas tardes` o `buenas noches`) responde con una bienvenida y el botón del Flow. Saludos repetidos durante una sesión vigente no duplican la invitación ni reinician el carrito; `pedido` permite volver a enviarla conservando las selecciones y recotizando.
-- El token del Flow es aleatorio, dura dos horas y solo se persiste como hash. El estado puede guardar selecciones, pero nunca precios o totales como autoridad.
-- Cada resumen y confirmación vuelve a validar producto, stock, precio, beneficio, cobertura, sede y total mediante el motor del storefront.
+- Un saludo simple (`hola`, `buenas`, `buenos días`, `buenas tardes` o `buenas noches`) responde con una bienvenida y el botón del Flow. Saludos repetidos durante una sesión vigente no duplican la invitación ni reinician el carrito; `pedido` genera otro botón para la misma sesión.
+- Cada token del Flow es aleatorio, dura hasta dos horas y solo se persiste como hash. Los botones vigentes comparten una sesión y una única clave de idempotencia. El estado puede guardar una cotización cacheada con su huella, pero nunca se acepta como autoridad al confirmar.
+- La ruta comercial es categoría, grupo/receta, variante/tamaño, carrito y luego logística. Beneficios se omite si el storefront no devuelve opciones reales.
+- La cotización solo se solicita con carrito y logística completos, se invalida al cambiar carrito, dirección o beneficio y siempre se vuelve a calcular al confirmar.
+- Cada confirmación vuelve a validar producto, stock, precio, beneficio, cobertura, sede y total mediante el motor del storefront.
 - Una identidad telefónica ambigua no recibe direcciones guardadas y debe pasar a atención humana.
 - Fuera de cobertura no se confirma un domicilio. El cliente puede cambiar dirección, elegir recogida o solicitar asesor.
 - Efectivo materializa el pedido idempotente. Wompi materializa el pedido únicamente tras una aprobación válida del servicio existente.
@@ -308,6 +310,7 @@ Reglas:
 - Un envío de resultado incierto requiere conciliación; no se repite automáticamente un mensaje que Meta pudo haber entregado.
 - `reintentar pago` opera únicamente sobre el checkout propio de la conversación y conserva su vencimiento original de quince minutos.
 - Logs y métricas del Flow no incluyen nombres, teléfonos, direcciones, tokens, mensajes ni contenido del carrito.
+- Errores comerciales, expiración y concurrencia responden cifrados con HTTP 200 hacia `RECOVERY`; HTTP 421 se reserva para fallos criptográficos.
 - `FlowEnabled` permanece apagado hasta validar cifrado, endpoint, allowlist y publicación en Meta.
 
 ## WhatsApp y horarios de atención

@@ -47,8 +47,10 @@ public sealed class WhatsAppFlowSecurityTests
         db.Add(conversation);
         await db.SaveChangesAsync();
         var cloud = new Mock<IWhatsAppCloudClient>();
+        var flowTokens = new List<string>();
         cloud.Setup(x => x.SendFlowMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, string, string, string, string, string, CancellationToken>((_, _, _, _, _, _, token, _, _) => flowTokens.Add(token))
             .ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.test", null));
         var auth = new StorefrontCustomerAuthService(db, cloud.Object, clock,
             Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }), Mock.Of<ILogger<StorefrontCustomerAuthService>>());
@@ -71,8 +73,43 @@ public sealed class WhatsAppFlowSecurityTests
 
         Assert.True(await service.StartAsync(1, 1, default));
         Assert.Equal(2, await db.WhatsAppMessages.CountAsync());
+        Assert.Single(await db.WhatsAppCommerceSessions.ToListAsync());
         Assert.Single(await db.WhatsAppCommerceSessions.Where(x => x.Status == "active").ToListAsync());
+        Assert.Equal(2, await db.WhatsAppCommerceSessionTokens.CountAsync());
+        Assert.Equal(2, flowTokens.Count);
+        Assert.Equal(session.Id, (await service.FindSessionAsync(channel.Id, flowTokens[0], default))?.Id);
+        Assert.Equal(session.Id, (await service.FindSessionAsync(channel.Id, flowTokens[1], default))?.Id);
+        Assert.All(flowTokens, token => Assert.DoesNotContain(token, session.StateJson));
         Assert.Equal(mode, conversation.AttentionMode);
+    }
+
+    [Fact]
+    public void FlowV2UsesGroupedNavigationCompleteBindingsAndRecovery()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "WhatsAppFlows", "storefront-flow.json");
+        var json = File.ReadAllText(path);
+        using var document = JsonDocument.Parse(json);
+        var screens = document.RootElement.GetProperty("screens").EnumerateArray()
+            .Select(x => x.GetProperty("id").GetString()!).ToArray();
+
+        Assert.Equal(
+            ["CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_PICKUP", "BENEFITS", "PAYMENT", "SUMMARY", "RECOVERY"],
+            screens);
+        Assert.DoesNotContain("\"id\": \"PRODUCTS\"", json);
+        Assert.DoesNotContain("Dirección encontrada: ${data.", json);
+        Assert.DoesNotContain("Total estimado: ${data.", json);
+        Assert.Contains("\"text\": \"${data.address_summary_text}\"", json);
+        Assert.Contains("\"text\": \"${data.order_summary_text}\"", json);
+    }
+
+    [Fact]
+    public void RecoveryResponseAlwaysUsesAValidFlowScreen()
+    {
+        var response = WhatsAppCommerceFlowService.Recovery(7, "Error seguro", true);
+        Assert.Equal("RECOVERY", response["screen"]);
+        var data = Assert.IsType<Dictionary<string, object?>>(response["data"]);
+        Assert.Equal(7, data["_session_version"]);
+        Assert.Equal("Error seguro", data["error_message"]);
     }
 
     [Theory]

@@ -1,14 +1,16 @@
 # WhatsApp Storefront Flow
 
-## Alcance v1
+## Alcance v2
 
 El canal central de WhatsApp atiende exclusivamente al tenant `1` y reutiliza el motor comercial del storefront. El número puede conservar temporalmente su configuración histórica por sucursal, pero una conversación recibida por `whatsapp_channel_setting` es tenant-wide y su `OperationalBranchId` permanece nulo hasta cotizar domicilio o seleccionar recogida.
 
-El recorrido publicado en Meta, habilitado para pruebas internas y todavía pendiente de homologación completa, es:
+El recorrido V2 es:
 
 ```text
-FULFILLMENT -> ADDRESS_PICKUP -> CATEGORY -> PRODUCTS -> CART -> BENEFITS -> PAYMENT -> SUMMARY -> SUCCESS
+CATEGORY -> PRODUCT_GROUP -> PRODUCT_VARIANT -> CART -> FULFILLMENT -> ADDRESS_PICKUP -> BENEFITS (si aplica) -> PAYMENT -> SUMMARY -> SUCCESS
 ```
+
+`RECOVERY` recibe errores comerciales, expiración y concurrencia mediante una respuesta cifrada HTTP 200. `BACK` reconstruye la pantalla desde el estado autoritativo.
 
 Efectivo crea el pedido de forma idempotente. Wompi crea un checkout de 15 minutos y el pedido solo se materializa al procesar una aprobación válida. Los mensajes posteriores salen por `whatsapp_commerce_outbox`.
 
@@ -16,14 +18,15 @@ Efectivo crea el pedido de forma idempotente. Wompi crea un checkout de 15 minut
 
 Un saludo simple o un comando de compra (`pedido`, `pedir`, `comprar`, `hacer pedido`, `ver menú`) ofrece el botón interactivo sin consultar la IA. Funciona en atención humana, esperando asesor y con la IA pausada, conservando la asignación y el modo actuales. La bienvenida y el botón forman un mismo mensaje de WhatsApp.
 
-Un saludo repetido durante una sesión activa no vuelve a enviar el botón ni reemplaza el token. El comando `pedido` permite reenviar la invitación conservando las selecciones; el nuevo token reemplaza al anterior y los importes se recotizan. Las invitaciones y el estado «Menú interactivo disponible» se notifican también a la bandeja.
+Un saludo repetido durante una sesión activa no vuelve a enviar el botón. El comando `pedido` crea otra invitación para la misma sesión, conserva selecciones e idempotencia y mantiene funcionales los botones anteriores. Cada token se persiste únicamente como hash.
 
 La configuración se encuentra en `/whatsapp/settings` (menú «Canal central WhatsApp», Admin/Superadmin). «IA activa» solo controla el asistente conversacional; no es requisito de Flow. La atención de una conversación se cambia desde la bandeja, independientemente del menú de compra.
 
 ## Componentes
 
 - `StorefrontCommerceService`: motor comercial compartido, sin contexto HTTP ni llamadas al propio backend; el controlador público conserva sus contratos.
-- `WhatsAppCommerceFlowService`: sesión, catálogo paginado, carrito, recotización y confirmación.
+- `WhatsAppCommerceFlowService`: sesión, catálogo agrupado, carrito, recotización estructurada, recuperación y confirmación.
+- `StorefrontRecommendationSelector`: máximo tres bebidas/adiciones disponibles según porciones, excluyendo el carrito.
 - `WhatsAppFlowsController`: endpoint cifrado `POST /api/whatsapp/flows/{channelPublicId}/data-exchange`.
 - `WhatsAppFlowCrypto`: RSA-OAEP/SHA-256 y AES-GCM con IV de 16 bytes y respuesta usando el IV invertido.
 - `WhatsAppCommerceOutboxWorker`: entrega reintentable de enlaces y confirmaciones.
@@ -37,6 +40,7 @@ El webhook habitual conserva `X-Hub-Signature-256`. El endpoint de datos identif
 - `whatsapp_channel_setting`: credenciales tenant-wide y activación independiente de Flow.
 - `tenant_ai_setting`: configuración de IA central.
 - `whatsapp_commerce_session`: estado JSON versionado, hash del token, expiración, idempotencia y correlación.
+- `whatsapp_commerce_session_token`: hashes de invitaciones activas que apuntan a una sola sesión.
 - `whatsapp_flow_exchange`: replay seguro de cada solicitud.
 - `whatsapp_commerce_outbox`: mensajes posteriores idempotentes.
 - `whatsapp_commerce_event`: embudo sin PII por correlación, pantalla y resultado.
@@ -49,7 +53,7 @@ Meta no ofrece una clave de idempotencia de cliente para `/messages`. La outbox 
 
 ## Despliegue seguro
 
-1. Ejecutar `SenorArroz.Infrastructure/Scripts/add_whatsapp_tenant_flow.sql` en PostgreSQL antes del backend.
+1. Ejecutar `SenorArroz.Infrastructure/Scripts/add_whatsapp_commerce_session_tokens.sql` en PostgreSQL antes del backend. Las instalaciones nuevas también lo reciben desde `add_whatsapp_tenant_flow.sql`.
 2. Desplegar API, panel y storefront con `WhatsAppFlow:Enabled=false` y `flow_enabled=false`.
 3. Generar una clave RSA dedicada. Guardar clave privada y passphrase únicamente como `WHATSAPP_FLOW_PRIVATE_KEY` y `WHATSAPP_FLOW_PRIVATE_KEY_PASSPHRASE` en Railway.
 4. Registrar solo la clave pública en Meta y configurar el endpoint con el `public_id` del canal.
@@ -61,7 +65,7 @@ Rollback del Flow: apagar `flow_enabled`; el clasificador deja de enviarlo. Para
 
 ## Métricas
 
-`whatsapp_commerce_event` registra `flow_started`, `screen_reached`, `validation_error`, `human_transfer`, `checkout_created`, `payment_approved`, resultados fallidos y `order_created`. La duración y el abandono se calculan con `created_at`, `completed_at`, `expires_at` y `status` de la sesión.
+`whatsapp_commerce_event` registra inicio, pantalla, retroceso, reanudación, recomendaciones, errores categorizados, recuperación, transferencia, checkout y pedido sin PII. El panel muestra versión, pantalla, categoría y correlación de las sesiones recientes.
 
 ## Límites
 
@@ -75,11 +79,11 @@ Rollback del Flow: apagar `flow_enabled`; el clasificador deja de enviarlo. Para
 
 ## Validaciones pendientes antes de producción
 
-- Homologación de la navegación atrás y del recorrido real en Meta, domicilio y pagos; la validación estática del JSON ya pasó.
+- Validar el JSON V2 en Meta, homologar navegación atrás y recorrer domicilio, recogida y pagos en Android/iOS.
 - Homologar el reintento de Wompi desde el chat y conciliar envíos con resultado incierto.
 - Completar pruebas de enrutamiento entre sedes sobre PostgreSQL.
 - Completar la prueba real en atención humana e IA apagada después de desplegar el inicio independiente.
-- Corregir y verificar la conexión en vivo de la bandeja desde una sesión administrativa autenticada.
+- Verificar en producción la conexión compartida de SignalR y su polling silencioso de respaldo.
 
 ## Validación del 3 de septiembre de 2026
 
@@ -97,3 +101,4 @@ Rollback del Flow: apagar `flow_enabled`; el clasificador deja de enviarlo. Para
 - Health check cifrado de producción: HTTP 200 con estado `active`. Campo `flows` suscrito en la app correcta.
 - App Secret corregido tanto en Santander como en el canal central; Meta aceptó la autenticación de la app y los mensajes entrantes reales quedaron persistidos con webhooks HTTP 200.
 - La dependencia accidental entre atención Humana y envío del Flow se elimina mediante las reglas de «Inicio sin IA». No requiere modificar el Flow publicado ni el esquema de PostgreSQL.
+- V2 implementa jerarquía de catálogo idéntica al storefront, sesión multiinvitación, recuperación cifrada, beneficios condicionales, recomendaciones y una conexión SignalR compartida por hub. El Flow publicado V1 permanece intacto hasta terminar la validación del nuevo Flow.

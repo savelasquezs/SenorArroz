@@ -53,6 +53,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<TenantAiSetting> TenantAiSettings { get; set; }
 
         public virtual DbSet<WhatsAppCommerceSession> WhatsAppCommerceSessions { get; set; }
+        public virtual DbSet<WhatsAppCommerceSessionToken> WhatsAppCommerceSessionTokens { get; set; }
 
         public virtual DbSet<WhatsAppFlowExchange> WhatsAppFlowExchanges { get; set; }
         public virtual DbSet<WhatsAppCommerceOutboxMessage> WhatsAppCommerceOutboxMessages { get; set; }
@@ -177,6 +178,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new WhatsAppChannelSettingConfiguration());
             modelBuilder.ApplyConfiguration(new TenantAiSettingConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppCommerceSessionConfiguration());
+            modelBuilder.ApplyConfiguration(new WhatsAppCommerceSessionTokenConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppFlowExchangeConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppCommerceOutboxMessageConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppCommerceEventConfiguration());
