@@ -393,6 +393,9 @@
             "type": "Form",
             "name": "form",
             "init-values": {
+              "cart_product_id": "",
+              "recommendation_id": "",
+              "command": "",
               "cart_category": "${data.selected_category}",
               "cart_product_group": "${data.selected_product_group}",
               "selected_variant_id": "${data.selected_product_id}",
@@ -855,11 +858,30 @@
           {
             "type": "Form",
             "name": "form",
+            "init-values": {
+              "summary_action": ""
+            },
             "children": [
               { "type": "TextBody", "text": "Revisa productos, entrega, descuentos, total y pago." },
               { "type": "TextCaption", "text": "${data.error_message}" },
               { "type": "TextBody", "text": "${data.order_summary_text}" },
-              { "type": "TextCaption", "text": "Usa la flecha atrás si quieres modificar algo." },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "summary_action",
+                "label": "¿Quieres cambiar algo?",
+                "required": false,
+                "data-source": [
+                  { "id": "cart", "title": "Editar productos", "description": "Cambiar cantidades, tamaños o productos" },
+                  { "id": "delivery", "title": "Cambiar entrega", "description": "Modificar domicilio, recogida o dirección" }
+                ],
+                "on-select-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "command": "${form.summary_action}",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              },
               { "type": "TextCaption", "text": "${data.help_text}" },
               {
                 "type": "Footer",

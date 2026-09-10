@@ -222,6 +222,20 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
+    public async Task Quote_PreservesTheAddressConfirmedByTheCustomer()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        await db.SaveChangesAsync();
+        var request = Request();
+
+        var action = await Controller(db, 1800).Quote(request, default);
+
+        var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.Equal(request.Address, response.Data!.FormattedAddress);
+    }
+
+    [Fact]
     public async Task Quote_RejectsCartWithoutMainProduct()
     {
         await using var db = CreateDb();
@@ -1225,11 +1239,14 @@ public class PublicStorefrontControllerTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            const string json = """
+            var formattedAddress = request.RequestUri?.Query.Contains("latlng=", StringComparison.OrdinalIgnoreCase) == true
+                ? "Calle 10 # 20-28, Medellín, Antioquia, Colombia"
+                : "Calle 10 # 20-30, Medellín, Antioquia, Colombia";
+            var json = $$"""
                 {
                   "status": "OK",
                   "results": [{
-                    "formatted_address": "Calle 10 # 20-30, Medellín, Antioquia, Colombia",
+                    "formatted_address": "{{formattedAddress}}",
                     "types": ["street_address"],
                     "address_components": [
                       {"long_name":"Calle 10","types":["route"]},

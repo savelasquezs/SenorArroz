@@ -108,6 +108,9 @@ public sealed class WhatsAppFlowSecurityTests
         Assert.DoesNotContain("Total estimado: ${data.", json);
         Assert.Contains("\"text\": \"${data.address_summary_text}\"", json);
         Assert.Contains("\"text\": \"${data.order_summary_text}\"", json);
+        Assert.Contains("\"recommendation_id\": \"\"", json);
+        Assert.Contains("\"summary_action\": \"\"", json);
+        Assert.Contains("\"title\": \"Cambiar entrega\"", json);
     }
 
     [Fact]

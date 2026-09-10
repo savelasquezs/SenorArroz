@@ -406,6 +406,15 @@ public sealed class StorefrontCommerceService(
                 .ToList();
         }
 
+        if (resolvedAddress is not null)
+        {
+            var confirmedAddress = savedAddress?.NormalizedAddressText
+                ?? savedAddress?.AddressText
+                ?? request.Address;
+            if (!string.IsNullOrWhiteSpace(confirmedAddress))
+                resolvedAddress = resolvedAddress with { FormattedAddress = confirmedAddress.Trim() };
+        }
+
         var promotion = await GetActivePromotion(checkoutBranch.Id, cancellationToken);
         if (promotion?.MinimumOrderValue is int minimumOrderValue && subtotal < minimumOrderValue)
             promotion = null;
