@@ -263,7 +263,6 @@ public sealed class WhatsAppCommerceFlowService(
         {
             var target = ResolveBackScreen(screen, state);
             state.LastScreen = target;
-            session.Version++;
             TrackEvent(session, "back_navigation", session.BranchId, target, state.Category);
             return await BuildScreenAsync(session, state, target, null, ct);
         }

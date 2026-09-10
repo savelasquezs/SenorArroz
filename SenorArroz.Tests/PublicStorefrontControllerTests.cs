@@ -986,6 +986,26 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
+    public async Task Flow_BackKeepsFormVersionSoTheNextSelectionIsAccepted()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState
+        {
+            LastScreen = "PRODUCT_GROUP", Category = "beverage"
+        });
+        var version = session.Version;
+
+        var back = await flow.HandleAsync(session, "BACK", "PRODUCT_GROUP", "token", default, default);
+        Assert.Equal("CATEGORY", back["screen"]);
+        Assert.Equal(version, session.Version);
+
+        var data = JsonSerializer.SerializeToElement(new { category = "addition", _session_version = version });
+        var result = await flow.HandleAsync(session, "data_exchange", "CATEGORY", "token", data, default);
+        Assert.Equal("PRODUCT_GROUP", result["screen"]);
+        Assert.Equal("Adiciones", JsonSerializer.SerializeToElement(result["data"]).GetProperty("category_title").GetString());
+    }
+
+    [Fact]
     public async Task Flow_AmbiguousPhoneNeverDisplaysSavedAddresses()
     {
         await using var db = CreateDb();
