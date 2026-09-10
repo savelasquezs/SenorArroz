@@ -655,7 +655,7 @@ public sealed class WhatsAppCommerceFlowService(
             ? state.Cart.FirstOrDefault(x => x.ProductId == state.EditingProductId.Value)
             : null;
         payload["selected_product_id"] = editing?.ProductId.ToString(CultureInfo.InvariantCulture) ?? state.PendingRecommendationProductId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
-        payload["quantity"] = (editing?.Quantity ?? 1).ToString(CultureInfo.InvariantCulture);
+        payload["quantity"] = editing?.Quantity ?? 1;
         payload["editing_product"] = editing is not null;
         payload["variant_footer_label"] = editing is null ? "Agregar al pedido" : "Guardar cambios";
     }

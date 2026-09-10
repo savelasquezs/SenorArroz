@@ -2,16 +2,16 @@
   "version": "7.1",
   "data_api_version": "3.0",
   "routing_model": {
-    "CATEGORY": ["PRODUCT_GROUP"],
-    "PRODUCT_GROUP": ["CATEGORY", "PRODUCT_VARIANT"],
-    "PRODUCT_VARIANT": ["PRODUCT_GROUP", "CATEGORY", "CART"],
-    "CART": ["CATEGORY", "PRODUCT_VARIANT", "FULFILLMENT"],
-    "FULFILLMENT": ["CART", "ADDRESS_PICKUP"],
-    "ADDRESS_PICKUP": ["FULFILLMENT", "BENEFITS", "PAYMENT", "RECOVERY"],
-    "BENEFITS": ["ADDRESS_PICKUP", "PAYMENT", "RECOVERY"],
-    "PAYMENT": ["ADDRESS_PICKUP", "SUMMARY", "RECOVERY"],
-    "SUMMARY": ["PAYMENT", "CART", "FULFILLMENT", "RECOVERY"],
-    "RECOVERY": ["CATEGORY", "CART", "FULFILLMENT", "ADDRESS_PICKUP", "BENEFITS", "PAYMENT", "SUMMARY"]
+    "CATEGORY": ["PRODUCT_GROUP", "RECOVERY"],
+    "PRODUCT_GROUP": ["PRODUCT_VARIANT", "RECOVERY"],
+    "PRODUCT_VARIANT": ["CART", "RECOVERY"],
+    "CART": ["FULFILLMENT", "RECOVERY"],
+    "FULFILLMENT": ["ADDRESS_PICKUP", "RECOVERY"],
+    "ADDRESS_PICKUP": ["BENEFITS", "PAYMENT", "RECOVERY"],
+    "BENEFITS": ["PAYMENT", "RECOVERY"],
+    "PAYMENT": ["SUMMARY", "RECOVERY"],
+    "SUMMARY": ["RECOVERY"],
+    "RECOVERY": []
   },
   "screens": [
     {
@@ -146,7 +146,7 @@
         "product_group_name": { "type": "string", "__example__": "Arroz paisa" },
         "product_group_description": { "type": "string", "__example__": "Una receta para compartir" },
         "selected_product_id": { "type": "string", "__example__": "20" },
-        "quantity": { "type": "string", "__example__": "1" },
+        "quantity": { "type": "number", "__example__": 1 },
         "editing_product": { "type": "boolean", "__example__": false },
         "variant_footer_label": { "type": "string", "__example__": "Agregar al pedido" },
         "product_variants": {
