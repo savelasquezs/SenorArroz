@@ -91,26 +91,44 @@ public sealed class WhatsAppFlowSecurityTests
     }
 
     [Fact]
-    public void FlowV2UsesGroupedNavigationCompleteBindingsAndRecovery()
+    public void FlowV2UsesAcyclicRoutingNativeBackAndTerminalRecovery()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "WhatsAppFlows", "storefront-flow.json");
         var json = File.ReadAllText(path);
         using var document = JsonDocument.Parse(json);
-        var screens = document.RootElement.GetProperty("screens").EnumerateArray()
-            .Select(x => x.GetProperty("id").GetString()!).ToArray();
+        var root = document.RootElement;
+        var screens = root.GetProperty("screens").EnumerateArray().ToArray();
+        var screenIds = screens.Select(x => x.GetProperty("id").GetString()!).ToArray();
 
         Assert.Equal(
             ["HOME", "CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_PICKUP", "BENEFITS", "PAYMENT", "SUMMARY", "RECOVERY"],
-            screens);
-        Assert.Contains("\"title\": \"Bienvenido a Señor Arroz\"", json);
-        Assert.DoesNotContain("\"id\": \"PRODUCTS\"", json);
-        Assert.DoesNotContain("Dirección encontrada: ${data.", json);
-        Assert.DoesNotContain("Total estimado: ${data.", json);
-        Assert.Contains("\"text\": \"${data.address_summary_text}\"", json);
-        Assert.Contains("\"text\": \"${data.order_summary_text}\"", json);
-        Assert.Contains("\"recommendation_id\": \"\"", json);
-        Assert.Contains("\"summary_action\": \"\"", json);
-        Assert.Contains("\"title\": \"Cambiar entrega\"", json);
+            screenIds);
+        Assert.DoesNotContain("PRODUCTS", screenIds);
+
+        var routing = root.GetProperty("routing_model");
+        Assert.Equal(["RECOVERY"], routing.GetProperty("SUMMARY").EnumerateArray().Select(x => x.GetString()).ToArray());
+        Assert.Empty(routing.GetProperty("RECOVERY").EnumerateArray());
+
+        var cart = screens.Single(x => x.GetProperty("id").GetString() == "CART");
+        var cartJson = cart.GetRawText();
+        Assert.Contains("\"recommendation_id\":\"\"", cartJson);
+        Assert.Contains("\"cart_command\":\"${form.command}\"", cartJson);
+        Assert.Contains("\"command\":\"cart_submit\"", cartJson);
+
+        var summary = screens.Single(x => x.GetProperty("id").GetString() == "SUMMARY");
+        var summaryJson = summary.GetRawText();
+        Assert.True(summary.GetProperty("terminal").GetBoolean());
+        Assert.DoesNotContain("summary_action", summaryJson);
+        Assert.DoesNotContain("Cambiar entrega", summaryJson);
+        Assert.Contains("Usa la flecha atrás si quieres modificar algo.", summaryJson);
+        Assert.Contains("\"command\":\"confirm\"", summaryJson);
+
+        var recovery = screens.Single(x => x.GetProperty("id").GetString() == "RECOVERY");
+        Assert.True(recovery.GetProperty("terminal").GetBoolean());
+        var recoveryForm = recovery.GetProperty("layout").GetProperty("children")[0];
+        var recoveryFooter = recoveryForm.GetProperty("children").EnumerateArray()
+            .Single(x => x.GetProperty("type").GetString() == "Footer");
+        Assert.Equal("complete", recoveryFooter.GetProperty("on-click-action").GetProperty("name").GetString());
     }
 
     [Fact]
