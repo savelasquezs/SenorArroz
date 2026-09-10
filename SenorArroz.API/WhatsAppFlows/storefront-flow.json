@@ -2,6 +2,7 @@
   "version": "7.1",
   "data_api_version": "3.0",
   "routing_model": {
+    "HOME": ["CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_PICKUP", "BENEFITS", "PAYMENT", "SUMMARY", "RECOVERY"],
     "CATEGORY": ["PRODUCT_GROUP", "RECOVERY"],
     "PRODUCT_GROUP": ["PRODUCT_VARIANT", "RECOVERY"],
     "PRODUCT_VARIANT": ["CART", "RECOVERY"],
@@ -14,6 +15,67 @@
     "RECOVERY": []
   },
   "screens": [
+    {
+      "id": "HOME",
+      "title": "Bienvenido a Señor Arroz",
+      "refresh_on_back": true,
+      "data": {
+        "_session_version": { "type": "number", "__example__": 1 },
+        "error_message": { "type": "string", "__example__": "" },
+        "help_text": { "type": "string", "__example__": "También puedes cerrar este menú y escribirnos normalmente." },
+        "home_title": { "type": "string", "__example__": "¡Hola! ¿Qué quieres hacer?" },
+        "home_description": { "type": "string", "__example__": "Te acompañaremos paso a paso." },
+        "home_options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "order", "title": "Hacer un pedido", "description": "Elegir productos paso a paso" },
+            { "id": "menu", "title": "Ver la carta", "description": "Recibir la carta en el chat" },
+            { "id": "human", "title": "Hablar con un asesor", "description": "Recibir ayuda de una persona" }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "children": [
+              { "type": "TextHeading", "text": "${data.home_title}" },
+              { "type": "TextBody", "text": "${data.home_description}" },
+              { "type": "TextCaption", "text": "${data.error_message}" },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "command",
+                "label": "Elige una opción",
+                "required": true,
+                "data-source": "${data.home_options}"
+              },
+              { "type": "TextCaption", "text": "${data.help_text}" },
+              {
+                "type": "Footer",
+                "label": "Continuar",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "command": "${form.command}",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
     {
       "id": "CATEGORY",
       "title": "¿Qué quieres pedir?",
@@ -233,8 +295,68 @@
         "_session_version": { "type": "number", "__example__": 4 },
         "error_message": { "type": "string", "__example__": "" },
         "help_text": { "type": "string", "__example__": "¿Necesitas ayuda? Cierra este menú y escribe ASESOR." },
+        "cart_heading": { "type": "string", "__example__": "Revisa tu carrito" },
+        "cart_description": { "type": "string", "__example__": "Toca un producto para editarlo." },
+        "cart_footer_label": { "type": "string", "__example__": "Continuar" },
+        "cart_tip": { "type": "string", "__example__": "Las sugerencias son opcionales y nunca bloquean tu pedido." },
         "cart_subtotal_text": { "type": "string", "__example__": "Subtotal de productos: $40.000" },
+        "show_cart_summary": { "type": "boolean", "__example__": true },
+        "show_cart_category": { "type": "boolean", "__example__": false },
+        "show_cart_group": { "type": "boolean", "__example__": false },
+        "show_cart_variant": { "type": "boolean", "__example__": false },
         "show_recommendations": { "type": "boolean", "__example__": true },
+        "editing_product": { "type": "boolean", "__example__": false },
+        "selected_category": { "type": "string", "__example__": "" },
+        "selected_product_group": { "type": "string", "__example__": "" },
+        "selected_product_id": { "type": "string", "__example__": "" },
+        "quantity": { "type": "number", "__example__": 1 },
+        "product_group_name": { "type": "string", "__example__": "Arroz paisa" },
+        "product_group_description": { "type": "string", "__example__": "Una receta para compartir" },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "rice", "title": "Arroces", "description": "Nuestras recetas en cinco tamaños" }
+          ]
+        },
+        "product_groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "enabled": { "type": "boolean" },
+              "image": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "rice:profile:1", "title": "Arroz paisa", "description": "Desde $20.000", "enabled": true, "image": "" }
+          ]
+        },
+        "product_variants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "enabled": { "type": "boolean" }
+            }
+          },
+          "__example__": [
+            { "id": "20", "title": "Personal", "description": "$20.000 · Para 1 persona", "enabled": true }
+          ]
+        },
         "cart_lines": {
           "type": "array",
           "items": {
@@ -270,14 +392,22 @@
           {
             "type": "Form",
             "name": "form",
+            "init-values": {
+              "cart_category": "${data.selected_category}",
+              "cart_product_group": "${data.selected_product_group}",
+              "selected_variant_id": "${data.selected_product_id}",
+              "cart_quantity": "${data.quantity}"
+            },
             "children": [
-              { "type": "TextHeading", "text": "Revisa tu carrito" },
+              { "type": "TextHeading", "text": "${data.cart_heading}" },
+              { "type": "TextBody", "text": "${data.cart_description}" },
               { "type": "TextCaption", "text": "${data.error_message}" },
               {
                 "type": "RadioButtonsGroup",
                 "name": "cart_product_id",
                 "label": "Toca un producto para editarlo",
                 "required": false,
+                "visible": "${data.show_cart_summary}",
                 "data-source": "${data.cart_lines}",
                 "on-select-action": {
                   "name": "data_exchange",
@@ -309,23 +439,63 @@
                 "type": "RadioButtonsGroup",
                 "name": "command",
                 "label": "Siguiente paso",
-                "required": true,
+                "required": "${data.show_cart_summary}",
+                "visible": "${data.show_cart_summary}",
                 "data-source": [
                   { "id": "continue", "title": "Continuar a entrega", "description": "Elegir domicilio o recogida" },
                   { "id": "add", "title": "Agregar otro producto", "description": "Volver a las categorías" }
                 ]
               },
-              { "type": "TextCaption", "text": "Las sugerencias son opcionales y nunca bloquean tu pedido." },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "cart_category",
+                "label": "Categorías",
+                "required": "${data.show_cart_category}",
+                "visible": "${data.show_cart_category}",
+                "data-source": "${data.categories}"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "cart_product_group",
+                "label": "Recetas y productos",
+                "required": "${data.show_cart_group}",
+                "visible": "${data.show_cart_group}",
+                "media-size": "regular",
+                "data-source": "${data.product_groups}"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "selected_variant_id",
+                "label": "Tamaño y precio",
+                "required": "${data.show_cart_variant}",
+                "visible": "${data.show_cart_variant}",
+                "data-source": "${data.product_variants}"
+              },
+              {
+                "type": "TextInput",
+                "name": "cart_quantity",
+                "label": "Cantidad",
+                "input-type": "number",
+                "required": "${data.show_cart_variant}",
+                "visible": "${data.show_cart_variant}",
+                "max-chars": 2
+              },
+              { "type": "TextCaption", "text": "${data.cart_tip}" },
               { "type": "TextCaption", "text": "${data.help_text}" },
               {
                 "type": "Footer",
-                "label": "Continuar",
+                "label": "${data.cart_footer_label}",
                 "on-click-action": {
                   "name": "data_exchange",
                   "payload": {
                     "cart_product_id": "${form.cart_product_id}",
                     "recommendation_id": "${form.recommendation_id}",
-                    "command": "${form.command}",
+                    "cart_command": "${form.command}",
+                    "cart_category": "${form.cart_category}",
+                    "cart_product_group": "${form.cart_product_group}",
+                    "selected_variant_id": "${form.selected_variant_id}",
+                    "cart_quantity": "${form.cart_quantity}",
+                    "command": "cart_submit",
                     "_session_version": "${data._session_version}"
                   }
                 }
@@ -491,7 +661,7 @@
               {
                 "type": "TextInput",
                 "name": "address_additional_info",
-                "label": "Indicaciones (opcional)",
+                "label": "Indicaciones",
                 "input-type": "text",
                 "required": false,
                 "visible": "${data.show_new_address}",
@@ -645,7 +815,7 @@
               {
                 "type": "TextInput",
                 "name": "order_notes",
-                "label": "Nota para el pedido (opcional)",
+                "label": "Nota para el pedido",
                 "input-type": "text",
                 "required": false,
                 "max-chars": 200

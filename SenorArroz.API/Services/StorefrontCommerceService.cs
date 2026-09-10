@@ -1245,7 +1245,9 @@ public sealed class StorefrontCommerceService(
     private static string FormatOpening(DateTime openingAtUtc)
     {
         var local = ColombiaTimeHelper.GetNowInColombiaFromUtc(openingAtUtc);
-        return local.ToString("dddd d 'de' MMMM 'a las' h:mm tt", CultureInfo.GetCultureInfo("es-CO"));
+        return local.ToString("dddd d 'de' MMMM 'a las' h:mm tt", CultureInfo.GetCultureInfo("es-CO"))
+            .Replace('\u00a0', ' ')
+            .TrimEnd('.');
     }
     private static int ToMinutes(int durationSeconds) => (int)Math.Ceiling(durationSeconds / 60m);
     private static bool IsWithinCoverage(DrivingRouteMetrics metrics) =>

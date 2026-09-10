@@ -35,7 +35,7 @@ public sealed class WhatsAppCommerceFlowService(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> Screens =
     [
-        "CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_PICKUP",
+        "HOME", "CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_PICKUP",
         "BENEFITS", "PAYMENT", "SUMMARY", "RECOVERY"
     ];
     private readonly WhatsAppFlowOptions _options = options.Value;
@@ -114,8 +114,6 @@ public sealed class WhatsAppCommerceFlowService(
         var session = await db.WhatsAppCommerceSessions.Include(x => x.Tokens)
             .Where(x => x.ConversationId == conversation.Id && x.Status == "active" && x.ExpiresAt > clock.UtcNow)
             .OrderByDescending(x => x.Id).FirstOrDefaultAsync(ct);
-        if (greeting && session is not null) return true;
-
         if (session is null)
         {
             var customerSession = await customerAuth.ResolveTrustedPhoneAsync(conversation.PhoneNumber ?? recipient, ct);
@@ -123,7 +121,8 @@ public sealed class WhatsAppCommerceFlowService(
             {
                 Name = customerSession.Customer?.Name ?? conversation.ContactName ?? conversation.WhatsAppUsername ?? string.Empty,
                 AmbiguousCustomer = customerSession.AmbiguousCustomer,
-                LastScreen = "CATEGORY"
+                LastScreen = greeting ? "HOME" : "CATEGORY",
+                ResumeScreen = "CATEGORY"
             };
             var initialToken = Base64Url(RandomNumberGenerator.GetBytes(32));
             var initialHash = Sha256(initialToken);
@@ -147,6 +146,13 @@ public sealed class WhatsAppCommerceFlowService(
             return await SendInvitationAsync(session, channel, conversation, recipient, initialToken, true, ct);
         }
 
+        var state = DeserializeState(session.StateJson);
+        if (state.LastScreen != "HOME") state.ResumeScreen = state.LastScreen;
+        if (!Screens.Contains(state.ResumeScreen ?? string.Empty) || state.ResumeScreen == "HOME") state.ResumeScreen = "CATEGORY";
+        state.LastScreen = "HOME";
+        session.StateJson = JsonSerializer.Serialize(state, JsonOptions);
+        session.Version++;
+
         var rawToken = Base64Url(RandomNumberGenerator.GetBytes(32));
         var expiration = NextExpiration();
         session.ExpiresAt = expiration;
@@ -159,7 +165,7 @@ public sealed class WhatsAppCommerceFlowService(
             ExpiresAt = expiration
         };
         session.Tokens.Add(alias);
-        TrackEvent(session, "session_resumed", session.BranchId, DeserializeState(session.StateJson).LastScreen, "v2");
+        TrackEvent(session, "session_resumed", session.BranchId, state.ResumeScreen, "v2");
         await db.SaveChangesAsync(ct);
         var sent = await SendInvitationAsync(session, channel, conversation, recipient, rawToken, false, ct);
         if (!sent)
@@ -180,14 +186,19 @@ public sealed class WhatsAppCommerceFlowService(
         CancellationToken ct)
     {
         var state = DeserializeState(session.StateJson);
+        var showHome = state.LastScreen == "HOME";
         var sent = await cloud.SendFlowMessageAsync(
             channel.PhoneNumberId,
             channel.AccessToken,
             recipient,
-            isNew
+            showHome
+                ? state.Cart.Count > 0
+                    ? "Tu pedido sigue guardado. Aquí puedes continuarlo, empezar de cero, ver la carta o pedir ayuda."
+                    : "¡Hola! Aquí puedes hacer tu pedido, ver la carta o hablar con un asesor."
+                : isNew
                 ? "¡Hola! Te acompaño paso a paso para hacer tu pedido. Toca Ver menú para comenzar."
                 : "Tu pedido sigue guardado. Toca Continuar pedido para seguir donde quedaste.",
-            isNew ? "Ver menú" : "Continuar pedido",
+            showHome ? "Abrir opciones" : isNew ? "Ver menú" : "Continuar pedido",
             channel.FlowId!,
             rawToken,
             state.LastScreen,
@@ -275,6 +286,29 @@ public sealed class WhatsAppCommerceFlowService(
             : null;
         switch (current)
         {
+            case "HOME":
+                if (command is "order" or "continue")
+                {
+                    next = command == "continue" && Screens.Contains(state.ResumeScreen ?? string.Empty)
+                        && state.ResumeScreen is not ("HOME" or "RECOVERY")
+                            ? state.ResumeScreen!
+                            : "CATEGORY";
+                }
+                else if (command == "restart")
+                {
+                    state = ResetState(state);
+                    next = "CATEGORY";
+                    TrackEvent(session, "flow_restarted", session.BranchId, next, "home");
+                }
+                else if (command == "menu")
+                {
+                    error = await SendMenuAsync(session, ct)
+                        ? "Te enviamos la carta al chat. Puedes seguir aquí cuando quieras."
+                        : "No pudimos enviar la carta ahora. Reintenta o solicita un asesor.";
+                    next = "HOME";
+                }
+                else error = "Elige qué quieres hacer.";
+                break;
             case "CATEGORY":
                 state.Category = GetString(data, "category");
                 if (state.Category is not ("rice" or "combo" or "beverage" or "addition"))
@@ -333,22 +367,21 @@ public sealed class WhatsAppCommerceFlowService(
                             TrackEvent(session, "recommendation_added", session.BranchId, current, selected.ProductId.ToString(CultureInfo.InvariantCulture));
                         state.EditingProductId = null;
                         state.PendingRecommendationProductId = null;
+                        state.CartMode = "summary";
                         InvalidateQuote(state);
                         next = "CART";
                     }
                 }
                 break;
             case "CART":
-                if (state.Cart.Count == 0)
-                {
-                    error = "Tu carrito está vacío. Agrega un producto para continuar.";
-                    next = "CATEGORY";
-                    break;
-                }
                 if (command == "add")
                 {
                     state.Category = null;
-                    next = "CATEGORY";
+                    state.SelectedProductGroup = null;
+                    state.EditingProductId = null;
+                    state.PendingRecommendationProductId = null;
+                    state.CartMode = "category";
+                    next = "CART";
                     break;
                 }
                 if (command == "edit")
@@ -362,7 +395,9 @@ public sealed class WhatsAppCommerceFlowService(
                         state.Category = match.Value.Category;
                         state.SelectedProductGroup = match.Value.Group.Key;
                         state.EditingProductId = editId;
-                        next = "PRODUCT_VARIANT";
+                        state.PendingRecommendationProductId = null;
+                        state.CartMode = "variant";
+                        next = "CART";
                     }
                     break;
                 }
@@ -376,13 +411,24 @@ public sealed class WhatsAppCommerceFlowService(
                         state.Category = match.Value.Category;
                         state.SelectedProductGroup = match.Value.Group.Key;
                         state.PendingRecommendationProductId = recommendationId;
-                        next = "PRODUCT_VARIANT";
+                        state.EditingProductId = null;
+                        state.CartMode = "variant";
+                        next = "CART";
                     }
+                    break;
+                }
+                if (command == "cart_submit")
+                {
+                    (next, error) = HandleCartBuilder(session, state, catalog!, data);
                     break;
                 }
                 if (command != "continue") error = "Elige cómo quieres continuar.";
                 else if (!ContainsMainProduct(catalog!, state.Cart)) error = "Agrega al menos un arroz o combo para continuar.";
-                else next = "FULFILLMENT";
+                else
+                {
+                    state.CartMode = "summary";
+                    next = "FULFILLMENT";
+                }
                 break;
             case "FULFILLMENT":
                 state.FulfillmentType = GetString(data, "fulfillment_type");
@@ -432,9 +478,7 @@ public sealed class WhatsAppCommerceFlowService(
                 if (command == "human") return await TransferToHumanAsync(session, current, flowToken, ct);
                 if (command == "restart")
                 {
-                    var name = state.Name;
-                    var ambiguous = state.AmbiguousCustomer;
-                    state = new WhatsAppCommerceState { Name = name, AmbiguousCustomer = ambiguous, LastScreen = "CATEGORY" };
+                    state = ResetState(state);
                     next = "CATEGORY";
                     TrackEvent(session, "flow_restarted", session.BranchId, next, "v2");
                 }
@@ -455,6 +499,95 @@ public sealed class WhatsAppCommerceFlowService(
         session.BranchId = state.SelectedBranchId;
         session.Version++;
         return await BuildScreenAsync(session, state, next, error, ct);
+    }
+
+    private (string Next, string? Error) HandleCartBuilder(
+        WhatsAppCommerceSession session,
+        WhatsAppCommerceState state,
+        PublicCatalogDto catalog,
+        JsonElement data)
+    {
+        var mode = state.CartMode is "category" or "group" or "variant" ? state.CartMode : "summary";
+        if (mode == "category")
+        {
+            state.Category = GetString(data, "cart_category");
+            if (state.Category == "cancel") return CancelCartBuilder(state);
+            if (state.Category is not ("rice" or "combo" or "beverage" or "addition"))
+                return ("CART", "Elige una categoría para continuar.");
+            state.SelectedProductGroup = null;
+            state.CartMode = "group";
+            return ("CART", null);
+        }
+
+        if (mode == "group")
+        {
+            state.SelectedProductGroup = GetString(data, "cart_product_group");
+            if (state.SelectedProductGroup == "cancel") return CancelCartBuilder(state);
+            if (GetGroups(catalog, state.Category).All(x => x.Key != state.SelectedProductGroup))
+                return ("CART", "Elige una receta o producto disponible.");
+            state.CartMode = "variant";
+            return ("CART", null);
+        }
+
+        if (mode == "variant")
+        {
+            var selectedValue = GetString(data, "selected_variant_id");
+            if (selectedValue == "cancel") return CancelCartBuilder(state);
+            if (selectedValue == "remove" && state.EditingProductId.HasValue)
+            {
+                state.Cart.RemoveAll(x => x.ProductId == state.EditingProductId.Value);
+                state.EditingProductId = null;
+                state.PendingRecommendationProductId = null;
+                state.CartMode = state.Cart.Count == 0 ? "category" : "summary";
+                InvalidateQuote(state);
+                return ("CART", null);
+            }
+
+            var group = GetGroups(catalog, state.Category).FirstOrDefault(x => x.Key == state.SelectedProductGroup);
+            var productId = GetInt(data, "selected_variant_id");
+            var quantity = GetInt(data, "cart_quantity");
+            var selected = group?.Options.FirstOrDefault(x => x.ProductId == productId);
+            if (selected is null || selected.AvailabilityStatus == "unavailable")
+                return ("CART", "Elige un tamaño disponible.");
+            if (quantity is null or < 1 or > 50)
+                return ("CART", "La cantidad debe estar entre 1 y 50.");
+            if (state.EditingProductId.HasValue && state.EditingProductId != selected.ProductId)
+                state.Cart.RemoveAll(x => x.ProductId == state.EditingProductId.Value);
+            if (!AddOrReplace(state.Cart, selected.ProductId, quantity.Value))
+                return ("CART", "El carrito admite máximo 30 productos distintos.");
+            if (state.PendingRecommendationProductId == selected.ProductId)
+                TrackEvent(session, "recommendation_added", session.BranchId, "CART", selected.ProductId.ToString(CultureInfo.InvariantCulture));
+            state.EditingProductId = null;
+            state.PendingRecommendationProductId = null;
+            state.CartMode = "summary";
+            InvalidateQuote(state);
+            return ("CART", null);
+        }
+
+        var cartCommand = GetString(data, "cart_command");
+        if (cartCommand == "add")
+        {
+            state.Category = null;
+            state.SelectedProductGroup = null;
+            state.EditingProductId = null;
+            state.PendingRecommendationProductId = null;
+            state.CartMode = "category";
+            return ("CART", null);
+        }
+        if (cartCommand != "continue") return ("CART", "Elige cómo quieres continuar.");
+        if (!ContainsMainProduct(catalog, state.Cart)) return ("CART", "Agrega al menos un arroz o combo para continuar.");
+        state.CartMode = "summary";
+        return ("FULFILLMENT", null);
+    }
+
+    private static (string Next, string? Error) CancelCartBuilder(WhatsAppCommerceState state)
+    {
+        state.Category = null;
+        state.SelectedProductGroup = null;
+        state.EditingProductId = null;
+        state.PendingRecommendationProductId = null;
+        state.CartMode = "summary";
+        return ("CART", null);
     }
 
     private async Task<(string Next, string? Error)> HandleAddressAsync(
@@ -482,7 +615,7 @@ public sealed class WhatsAppCommerceFlowService(
         else
         {
             var savedValue = GetString(data, "saved_address_id");
-            if (savedValue == "new" || GetString(data, "command") == "new_address")
+            if ((state.AddressMode == "saved" && savedValue == "new") || GetString(data, "command") == "new_address")
             {
                 state.AddressMode = "new";
                 state.SavedAddressId = null;
@@ -555,6 +688,29 @@ public sealed class WhatsAppCommerceFlowService(
             ["order_summary_text"] = string.Empty
         };
 
+        if (screen == "HOME")
+        {
+            var hasCart = state.Cart.Count > 0;
+            payload["home_title"] = hasCart ? "Tu pedido sigue guardado" : "¡Hola! ¿Qué quieres hacer?";
+            payload["home_description"] = hasCart
+                ? "Puedes continuar donde quedaste o empezar un pedido nuevo."
+                : "Te acompañaremos paso a paso.";
+            payload["home_options"] = hasCart
+                ? new[]
+                {
+                    new { id = "continue", title = "Continuar pedido", description = "Seguir donde quedaste" },
+                    new { id = "restart", title = "Empezar de cero", description = "Vaciar el carrito actual" },
+                    new { id = "menu", title = "Ver la carta", description = "Recibir la carta en el chat" },
+                    new { id = "human", title = "Hablar con un asesor", description = "Recibir ayuda de una persona" }
+                }
+                : new[]
+                {
+                    new { id = "order", title = "Hacer un pedido", description = "Elegir productos paso a paso" },
+                    new { id = "menu", title = "Ver la carta", description = "Recibir la carta en el chat" },
+                    new { id = "human", title = "Hablar con un asesor", description = "Recibir ayuda de una persona" }
+                };
+        }
+
         if (screen is "CATEGORY" or "PRODUCT_GROUP" or "PRODUCT_VARIANT" or "CART")
         {
             var catalog = await GetCatalogAsync(ct);
@@ -562,7 +718,7 @@ public sealed class WhatsAppCommerceFlowService(
             payload["category_title"] = CategoryTitle(state.Category);
             if (screen == "PRODUCT_GROUP") await PopulateGroupsAsync(payload, catalog, state, ct);
             if (screen == "PRODUCT_VARIANT") PopulateVariants(payload, catalog, state);
-            if (screen == "CART") PopulateCart(payload, catalog, state, session);
+            if (screen == "CART") await PopulateCartAsync(payload, catalog, state, session, ct);
         }
 
         if (screen == "ADDRESS_PICKUP")
@@ -607,7 +763,7 @@ public sealed class WhatsAppCommerceFlowService(
         WhatsAppCommerceState state,
         CancellationToken ct)
     {
-        var groups = GetGroups(catalog, state.Category).ToArray();
+        var groups = GetGroups(catalog, state.Category).Take(20).ToArray();
         var groupImages = images is null
             ? new string?[groups.Length]
             : await Task.WhenAll(groups.Select(group => string.IsNullOrWhiteSpace(group.PhotoUrl)
@@ -642,13 +798,13 @@ public sealed class WhatsAppCommerceFlowService(
     private static void PopulateVariants(Dictionary<string, object?> payload, PublicCatalogDto catalog, WhatsAppCommerceState state)
     {
         var group = GetGroups(catalog, state.Category).FirstOrDefault(x => x.Key == state.SelectedProductGroup);
-        payload["product_group_name"] = group?.Name ?? "Producto";
-        payload["product_group_description"] = group?.Description ?? group?.Ingredients ?? string.Empty;
-        payload["product_variants"] = group?.Options.Select(x => new
+        payload["product_group_name"] = ShortTitle(group?.Name ?? "Producto");
+        payload["product_group_description"] = ShortDescription(group?.Description ?? group?.Ingredients ?? string.Empty);
+        payload["product_variants"] = group?.Options.Take(20).Select(x => new
         {
             id = x.ProductId.ToString(CultureInfo.InvariantCulture),
             title = ShortTitle(x.VariantLabel),
-            description = $"{Money(x.Price)} · {PeopleText(x.ServesPeopleMin, x.ServesPeopleMax)}{(x.AvailabilityStatus == "lowStock" ? " · Pocas unidades" : string.Empty)}",
+            description = VariantDescription(state.Category, x),
             enabled = x.AvailabilityStatus != "unavailable"
         }).ToArray() ?? [];
         var editing = state.EditingProductId.HasValue
@@ -660,11 +816,12 @@ public sealed class WhatsAppCommerceFlowService(
         payload["variant_footer_label"] = editing is null ? "Agregar al pedido" : "Guardar cambios";
     }
 
-    private void PopulateCart(
+    private async Task PopulateCartAsync(
         Dictionary<string, object?> payload,
         PublicCatalogDto catalog,
         WhatsAppCommerceState state,
-        WhatsAppCommerceSession session)
+        WhatsAppCommerceSession session,
+        CancellationToken ct)
     {
         var products = AllProducts(catalog).ToDictionary(x => x.Option.ProductId);
         payload["cart_lines"] = state.Cart.Select(item =>
@@ -679,15 +836,90 @@ public sealed class WhatsAppCommerceFlowService(
         }).ToArray();
         payload["cart_subtotal_text"] = $"Subtotal de productos: {Money(CalculateSubtotal(catalog, state.Cart))}";
         var recommendations = StorefrontRecommendationSelector.Select(catalog, state.Cart, 3).ToArray();
-        payload["show_recommendations"] = recommendations.Length > 0;
+        var mode = state.CartMode is "category" or "group" or "variant" ? state.CartMode : "summary";
+        state.CartMode = mode;
+        payload["show_cart_summary"] = mode == "summary";
+        payload["show_cart_category"] = mode == "category";
+        payload["show_cart_group"] = mode == "group";
+        payload["show_cart_variant"] = mode == "variant";
+        payload["show_recommendations"] = mode == "summary" && recommendations.Length > 0;
         payload["recommendations"] = recommendations.Select(x => new
         {
             id = x.Option.ProductId.ToString(CultureInfo.InvariantCulture),
             title = ShortTitle(x.Group.Name),
             description = $"{x.Option.VariantLabel} · {Money(x.Option.Price)}"
         }).ToArray();
-        foreach (var recommendation in recommendations)
-            TrackEvent(session, "recommendation_shown", session.BranchId, "CART", recommendation.Option.ProductId.ToString(CultureInfo.InvariantCulture));
+        payload["selected_category"] = state.Category ?? string.Empty;
+        payload["selected_product_group"] = state.SelectedProductGroup ?? string.Empty;
+        payload["product_groups"] = Array.Empty<object>();
+        payload["product_variants"] = Array.Empty<object>();
+        payload["product_group_name"] = string.Empty;
+        payload["product_group_description"] = string.Empty;
+        payload["selected_product_id"] = string.Empty;
+        payload["quantity"] = 1;
+        payload["editing_product"] = false;
+        payload["cart_heading"] = mode switch
+        {
+            "category" => "¿Qué quieres agregar?",
+            "group" => CategoryTitle(state.Category),
+            "variant" => "Elige tamaño y cantidad",
+            _ => "Revisa tu carrito"
+        };
+        payload["cart_description"] = mode switch
+        {
+            "category" => "Elige una categoría para continuar.",
+            "group" => "Elige una receta o producto.",
+            "variant" => "Agregaremos una unidad por defecto.",
+            _ => "Toca un producto para cambiar tamaño, cantidad o eliminarlo."
+        };
+        payload["cart_footer_label"] = mode switch
+        {
+            "category" => "Ver productos",
+            "group" => "Ver tamaños",
+            "variant" => state.EditingProductId.HasValue ? "Guardar cambios" : "Agregar al pedido",
+            _ => "Continuar"
+        };
+        payload["cart_tip"] = mode == "summary"
+            ? "Las sugerencias son opcionales y nunca bloquean tu pedido."
+            : "Puedes elegir Volver al carrito sin agregar ni cambiar nada.";
+
+        if (mode == "category")
+            payload["categories"] = CategoryOptions.Append(new
+            {
+                id = "cancel",
+                title = "Volver al carrito",
+                description = "No agregar otro producto"
+            }).ToArray();
+
+        if (mode == "group")
+        {
+            await PopulateGroupsAsync(payload, catalog, state, ct);
+            var rows = ((IEnumerable<Dictionary<string, object?>>)payload["product_groups"]!).Take(19).ToList();
+            rows.Add(new Dictionary<string, object?>
+            {
+                ["id"] = "cancel",
+                ["title"] = "Volver al carrito",
+                ["description"] = "No elegir este producto",
+                ["enabled"] = true
+            });
+            payload["product_groups"] = rows.ToArray();
+        }
+        else if (mode == "variant")
+        {
+            PopulateVariants(payload, catalog, state);
+            var reservedActions = state.EditingProductId.HasValue ? 2 : 1;
+            var variants = ((IEnumerable<object>)payload["product_variants"]!).Take(20 - reservedActions).ToList();
+            if (state.EditingProductId.HasValue)
+                variants.Add(new { id = "remove", title = "Quitar del pedido", description = "Eliminar este producto", enabled = true });
+            variants.Add(new { id = "cancel", title = "Volver al carrito", description = "No guardar cambios", enabled = true });
+            payload["product_variants"] = variants.ToArray();
+            payload["cart_heading"] = payload["product_group_name"];
+            payload["cart_description"] = payload["product_group_description"];
+        }
+
+        if (mode == "summary")
+            foreach (var recommendation in recommendations)
+                TrackEvent(session, "recommendation_shown", session.BranchId, "CART", recommendation.Option.ProductId.ToString(CultureInfo.InvariantCulture));
     }
 
     private async Task PopulateAddressAsync(
@@ -901,6 +1133,69 @@ public sealed class WhatsAppCommerceFlowService(
         return Complete(flowToken, "Un asesor continuará contigo por este chat. Tu carrito quedó guardado.");
     }
 
+    private async Task<bool> SendMenuAsync(WhatsAppCommerceSession session, CancellationToken ct)
+    {
+        var channel = await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(
+            x => x.Id == session.ChannelSettingId && x.TenantId == session.TenantId && x.IsActive && x.IsVerified, ct);
+        var recipient = WhatsAppRecipientResolver.Resolve(session.Conversation);
+        if (channel is null || recipient is null) return false;
+
+        var preferredBranchId = session.BranchId ?? session.Conversation.OperationalBranchId ?? session.Conversation.BranchId;
+        var menu = await db.Branches.AsNoTracking()
+            .Where(x => x.Id == preferredBranchId && (x.MenuImageUrl1 != null || x.MenuImageUrl2 != null))
+            .Select(x => new { x.Id, x.MenuImageUrl1, x.MenuImageUrl2 })
+            .FirstOrDefaultAsync(ct)
+            ?? await db.Branches.AsNoTracking()
+                .Where(x => x.IsActive && (x.MenuImageUrl1 != null || x.MenuImageUrl2 != null))
+                .OrderBy(x => x.Id)
+                .Select(x => new { x.Id, x.MenuImageUrl1, x.MenuImageUrl2 })
+                .FirstOrDefaultAsync(ct);
+        if (menu is null) return false;
+
+        var imageUrls = new[] { menu.MenuImageUrl1, menu.MenuImageUrl2 }
+            .Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>().ToArray();
+        var sentAny = false;
+        for (var index = 0; index < imageUrls.Length; index++)
+        {
+            var dispatchKey = $"flow-menu:{session.Id}:{session.Version}:{index + 1}";
+            if (await db.WhatsAppMessages.AsNoTracking().AnyAsync(
+                    x => x.AgentDispatchKey == dispatchKey && x.Status == WhatsAppMessageStatus.Sent, ct))
+            {
+                sentAny = true;
+                continue;
+            }
+
+            var caption = index == 0 ? "Nuestra carta actual" : "Carta (continuación)";
+            var result = await cloud.SendImageLinkMessageAsync(
+                channel.PhoneNumberId, channel.AccessToken, recipient, imageUrls[index], caption, ct);
+            if (!result.Success) break;
+            var timestamp = clock.UtcNow;
+            db.WhatsAppMessages.Add(new WhatsAppMessage
+            {
+                ConversationId = session.ConversationId,
+                WhatsAppMessageId = result.WhatsAppMessageId,
+                Direction = WhatsAppMessageDirection.Outbound,
+                Type = WhatsAppMessageType.Image,
+                TextBody = caption,
+                MediaUrl = imageUrls[index],
+                Status = WhatsAppMessageStatus.Sent,
+                Timestamp = timestamp,
+                SentByAi = false,
+                AgentDispatchKey = dispatchKey,
+                RawPayload = JsonSerializer.Serialize(new { origin = "whatsapp_flow_home_menu", branchId = menu.Id, slot = index + 1 })
+            });
+            session.Conversation.LastMessageAt = timestamp;
+            session.Conversation.LastMessagePreview = "Carta enviada";
+            sentAny = true;
+        }
+        if (sentAny)
+        {
+            TrackEvent(session, "menu_sent", menu.Id, "HOME", "v2");
+            await db.SaveChangesAsync(ct);
+        }
+        return sentAny;
+    }
+
     private PublicStorefrontOrderRequest BuildOrderRequest(WhatsAppCommerceSession session, WhatsAppCommerceState state) => new()
     {
         FulfillmentType = state.FulfillmentType ?? "delivery",
@@ -1001,6 +1296,7 @@ public sealed class WhatsAppCommerceFlowService(
             "PAYMENT" => "ADDRESS_PICKUP",
             "SUMMARY" => "PAYMENT",
             "RECOVERY" => state.RecoveryScreen ?? "CATEGORY",
+            "HOME" => "HOME",
             _ => "CATEGORY"
         };
     }
@@ -1069,6 +1365,14 @@ public sealed class WhatsAppCommerceFlowService(
         state.PaymentMethod = null;
     }
 
+    private static WhatsAppCommerceState ResetState(WhatsAppCommerceState state) => new()
+    {
+        Name = state.Name,
+        AmbiguousCustomer = state.AmbiguousCustomer,
+        LastScreen = "CATEGORY",
+        ResumeScreen = "CATEGORY"
+    };
+
     private static bool CanQuote(WhatsAppCommerceState state) => state.Cart.Count > 0
         && state.FulfillmentType is "delivery" or "pickup"
         && (state.FulfillmentType == "pickup" && state.SelectedBranchId.HasValue
@@ -1109,11 +1413,17 @@ public sealed class WhatsAppCommerceFlowService(
     private static WhatsAppQuoteStatus ClassifyQuoteFailure(int? statusCode, string message)
     {
         if (message.Contains("cobertura", StringComparison.OrdinalIgnoreCase)) return WhatsAppQuoteStatus.OutsideCoverage;
-        if (message.Contains("sede", StringComparison.OrdinalIgnoreCase)
-            && message.Contains("dispon", StringComparison.OrdinalIgnoreCase)) return WhatsAppQuoteStatus.NoBranch;
+        if (message.Contains("cerrad", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("horario", StringComparison.OrdinalIgnoreCase)
+            || (message.Contains("dispon", StringComparison.OrdinalIgnoreCase)
+                && (message.Contains("sede", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("sucursal", StringComparison.OrdinalIgnoreCase)))) return WhatsAppQuoteStatus.NoBranch;
+        if (message.Contains("producto", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("stock", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("catálogo", StringComparison.OrdinalIgnoreCase)) return WhatsAppQuoteStatus.CatalogChanged;
         return statusCode switch
         {
-            409 => WhatsAppQuoteStatus.CatalogChanged,
+            409 => WhatsAppQuoteStatus.NoBranch,
             >= 500 => WhatsAppQuoteStatus.TemporaryFailure,
             _ => WhatsAppQuoteStatus.Validation
         };
@@ -1158,9 +1468,16 @@ public sealed class WhatsAppCommerceFlowService(
         _ => "Menú"
     };
 
+    private static string VariantDescription(string? category, PublicProductOptionDto option)
+    {
+        var people = category is "rice" or "combo" ? PeopleText(option.ServesPeopleMin, option.ServesPeopleMax) : string.Empty;
+        var availability = option.AvailabilityStatus == "lowStock" ? " · Pocas unidades" : string.Empty;
+        return ShortDescription($"{Money(option.Price)}{(string.IsNullOrEmpty(people) ? string.Empty : $" · {people}")}{availability}");
+    }
+
     private static string PeopleText(int? min, int? max) => (min, max) switch
     {
-        (null, null) => "1 unidad",
+        (null, null) => string.Empty,
         (var from, var to) when from == to => $"Para {from} persona{(from == 1 ? string.Empty : "s")}",
         _ => $"Para {min ?? 1} a {max ?? min ?? 1} personas"
     };
@@ -1196,8 +1513,14 @@ public sealed class WhatsAppCommerceFlowService(
     private static string Sha256(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     private static string Base64Url(byte[] value) => Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     private static string Money(int value) => value.ToString("C0", CultureInfo.GetCultureInfo("es-CO"));
-    private static string ShortTitle(string value) => value.Length <= 30 ? value : value[..29] + "…";
-    private static string ShortDescription(string value) => value.Length <= 300 ? value : value[..299] + "…";
+    private static string ShortTitle(string value) => CompactText(value, 30);
+    private static string ShortDescription(string value) => CompactText(value, 300);
+    private static string CompactText(string value, int maxLength)
+    {
+        var clean = string.Join(' ', new string(value.Where(x => !char.IsControl(x)).ToArray())
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return clean.Length <= maxLength ? clean : clean[..(maxLength - 1)] + "…";
+    }
     private static string? GetString(JsonElement data, string name) => data.ValueKind == JsonValueKind.Object
         && data.TryGetProperty(name, out var value)
         && value.ValueKind == JsonValueKind.String
@@ -1239,6 +1562,7 @@ public sealed class WhatsAppCommerceState
     public string AddressMode { get; set; } = "saved";
     public string? Category { get; set; }
     public string? SelectedProductGroup { get; set; }
+    public string CartMode { get; set; } = "summary";
     public int? EditingProductId { get; set; }
     public int? PendingRecommendationProductId { get; set; }
     public List<WhatsAppCartItemState> Cart { get; set; } = [];
@@ -1249,6 +1573,7 @@ public sealed class WhatsAppCommerceState
     public string? LastQuoteJson { get; set; }
     public string? LastErrorCode { get; set; }
     public string? RecoveryScreen { get; set; }
+    public string? ResumeScreen { get; set; }
     public string LastScreen { get; set; } = "CATEGORY";
 }
 

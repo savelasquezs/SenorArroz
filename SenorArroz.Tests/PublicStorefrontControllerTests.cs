@@ -691,8 +691,13 @@ public class PublicStorefrontControllerTests
         await Exchange(flow, session, "PRODUCT_GROUP", new { product_group = "rice:product:20" });
         await Exchange(flow, session, "PRODUCT_VARIANT", new { product_id = "20", quantity = "2", command = "save" });
         var edit = await Exchange(flow, session, "CART", new { command = "edit", cart_product_id = "20" });
-        Assert.Equal("PRODUCT_VARIANT", edit["screen"]);
-        await Exchange(flow, session, "PRODUCT_VARIANT", new { product_id = "20", quantity = "3", command = "save" });
+        Assert.Equal("CART", edit["screen"]);
+        await Exchange(flow, session, "CART", new
+        {
+            command = "cart_submit",
+            selected_variant_id = "20",
+            cart_quantity = "3"
+        });
         await Exchange(flow, session, "CART", new { command = "continue" });
         await Exchange(flow, session, "FULFILLMENT", new { fulfillment_type = "pickup" });
         var address = await Exchange(flow, session, "ADDRESS_PICKUP", new { branch_id = "10", name = "Cliente Flow" });
@@ -711,6 +716,180 @@ public class PublicStorefrontControllerTests
         await Exchange(flow, session, "SUMMARY", new { command = "confirm" });
         Assert.Single(db.Orders);
         Assert.Single(db.WhatsAppCommerceOutboxMessages);
+    }
+
+    [Fact]
+    public async Task Flow_CartBuilderAddsSeveralProductsWithoutLeavingCartScreen()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState());
+        var rice = db.ProductCategories.Local.Single(x => x.StorefrontRole == "rice");
+        var addition = new ProductCategory { Id = 13, BranchId = rice.BranchId, Branch = rice.Branch, Name = "Adiciones", StorefrontRole = "addition" };
+        db.AddRange(
+            new Product { Id = 21, CategoryId = rice.Id, Category = rice, Name = "Arroz carbonara", Price = 33_000, Stock = 10, Active = true },
+            addition,
+            new Product { Id = 30, CategoryId = addition.Id, Category = addition, Name = "Chicharrón", Price = 8_000, Stock = 10, Active = true });
+        await db.SaveChangesAsync();
+
+        await Exchange(flow, session, "CATEGORY", new { category = "rice" });
+        await Exchange(flow, session, "PRODUCT_GROUP", new { product_group = "rice:product:20" });
+        await Exchange(flow, session, "PRODUCT_VARIANT", new { product_id = "20", quantity = 1, command = "save" });
+
+        Assert.Equal("CART", (await Exchange(flow, session, "CART", new { command = "add" }))["screen"]);
+        Assert.Equal("CART", (await Exchange(flow, session, "CART", new { command = "cart_submit", cart_category = "rice" }))["screen"]);
+        Assert.Equal("CART", (await Exchange(flow, session, "CART", new { command = "cart_submit", cart_product_group = "rice:product:21" }))["screen"]);
+        Assert.Equal("CART", (await Exchange(flow, session, "CART", new
+        {
+            command = "cart_submit",
+            selected_variant_id = "21",
+            cart_quantity = 1
+        }))["screen"]);
+
+        Assert.Equal("CART", (await Exchange(flow, session, "CART", new { command = "add" }))["screen"]);
+        Assert.Equal("CART", (await Exchange(flow, session, "CART", new { command = "cart_submit", cart_category = "addition" }))["screen"]);
+        Assert.Equal("CART", (await Exchange(flow, session, "CART", new { command = "cart_submit", cart_product_group = "addition:product:30" }))["screen"]);
+        Assert.Equal("CART", (await Exchange(flow, session, "CART", new
+        {
+            command = "cart_submit",
+            selected_variant_id = "30",
+            cart_quantity = 2
+        }))["screen"]);
+
+        var state = JsonSerializer.Deserialize<WhatsAppCommerceState>(session.StateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal("summary", state.CartMode);
+        Assert.Equal(3, state.Cart.Count);
+        Assert.Equal(2, state.Cart.Single(x => x.ProductId == 30).Quantity);
+
+        await Exchange(flow, session, "CART", new { command = "add" });
+        await Exchange(flow, session, "CART", new { command = "cart_submit", cart_category = "addition" });
+        await Exchange(flow, session, "CART", new { command = "cart_submit", cart_product_group = "addition:product:30" });
+        Assert.Equal("CART", (await Exchange(flow, session, "CART", new
+        {
+            command = "cart_submit",
+            selected_variant_id = "cancel",
+            cart_quantity = 1
+        }))["screen"]);
+        state = JsonSerializer.Deserialize<WhatsAppCommerceState>(session.StateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal("summary", state.CartMode);
+        Assert.Equal(3, state.Cart.Count);
+    }
+
+    [Fact]
+    public async Task Flow_AllCatalogCategoriesAndRopaViejaRenderAndSupportNativeBack()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState());
+        var branch = db.Branches.Local.Single(x => x.Id == 10);
+        var rice = db.ProductCategories.Local.Single(x => x.StorefrontRole == "rice");
+        var ropaVieja = new CommercialProfile
+        {
+            Id = 50,
+            BranchId = branch.Id,
+            Branch = branch,
+            Name = "Ropa vieja",
+            Description = new string('R', 340)
+        };
+        var combo = new ProductCategory { Id = 51, BranchId = branch.Id, Branch = branch, Name = "Combos", StorefrontRole = "combo" };
+        var beverage = new ProductCategory { Id = 52, BranchId = branch.Id, Branch = branch, Name = "Bebidas", StorefrontRole = "beverage" };
+        var addition = new ProductCategory { Id = 53, BranchId = branch.Id, Branch = branch, Name = "Adiciones", StorefrontRole = "addition" };
+        db.AddRange(
+            ropaVieja,
+            combo,
+            beverage,
+            addition,
+            new Product { Id = 54, Category = rice, CategoryId = rice.Id, CommercialProfile = ropaVieja, CommercialProfileId = ropaVieja.Id, Name = "Ropa vieja Personal", StorefrontVariantLabel = "Personal", Price = 24_000, Stock = 10, Active = true },
+            new Product { Id = 55, Category = combo, CategoryId = combo.Id, Name = "Combo familiar", Price = 60_000, Stock = 10, Active = true },
+            new Product { Id = 56, Category = beverage, CategoryId = beverage.Id, Name = "Coca-Cola 1.5 L", Price = 8_000, Stock = 10, Active = true },
+            new Product { Id = 57, Category = addition, CategoryId = addition.Id, Name = "Yuca 5 unidades", StorefrontVariantLabel = "5 unidades", Price = 5_000, Stock = 10, Active = true });
+        await db.SaveChangesAsync();
+
+        var cases = new[]
+        {
+            (Category: "rice", Group: "rice:profile:50"),
+            (Category: "combo", Group: "combo:product:55"),
+            (Category: "beverage", Group: "beverage:product:56"),
+            (Category: "addition", Group: "addition:product:57")
+        };
+        foreach (var item in cases)
+        {
+            var groups = await Exchange(flow, session, "CATEGORY", new { category = item.Category });
+            Assert.Equal("PRODUCT_GROUP", groups["screen"]);
+            var groupsData = JsonSerializer.SerializeToElement(groups["data"]);
+            Assert.Contains(groupsData.GetProperty("product_groups").EnumerateArray(), x => x.GetProperty("id").GetString() == item.Group);
+
+            var variants = await Exchange(flow, session, "PRODUCT_GROUP", new { product_group = item.Group });
+            Assert.Equal("PRODUCT_VARIANT", variants["screen"]);
+            var variantsData = JsonSerializer.SerializeToElement(variants["data"]);
+            Assert.NotEmpty(variantsData.GetProperty("product_variants").EnumerateArray());
+            Assert.True(variantsData.GetProperty("product_group_description").GetString()!.Length <= 300);
+
+            Assert.Equal("PRODUCT_GROUP", (await flow.HandleAsync(session, "BACK", "PRODUCT_VARIANT", "token", default, default))["screen"]);
+            Assert.Equal("CATEGORY", (await flow.HandleAsync(session, "BACK", "PRODUCT_GROUP", "token", default, default))["screen"]);
+        }
+    }
+
+    [Fact]
+    public async Task Flow_NewAddressSubmissionIgnoresHiddenNewMarkerAndContinuesToPayment()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState
+        {
+            LastScreen = "ADDRESS_PICKUP",
+            Name = "Santiago",
+            FulfillmentType = "delivery",
+            AddressMode = "new",
+            Cart = [new WhatsAppCartItemState { ProductId = 20, Quantity = 1 }]
+        });
+
+        var response = await Exchange(flow, session, "ADDRESS_PICKUP", new
+        {
+            name = "Santiago",
+            saved_address_id = "new",
+            city = "Medellín",
+            address = "Calle 30 # 82-30",
+            address_additional_info = "Portería"
+        });
+
+        Assert.Equal("PAYMENT", response["screen"]);
+        var state = JsonSerializer.Deserialize<WhatsAppCommerceState>(session.StateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal("Medellín", state.City);
+        Assert.Contains("Calle 10", state.Address);
+        Assert.Equal("Portería", state.AddressAdditionalInfo);
+    }
+
+    [Fact]
+    public async Task Flow_HomeOffersResumeAndRestartWithoutCreatingAnotherSession()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState
+        {
+            LastScreen = "HOME",
+            ResumeScreen = "PRODUCT_VARIANT",
+            Category = "rice",
+            SelectedProductGroup = "rice:product:20",
+            Cart = [new WhatsAppCartItemState { ProductId = 20, Quantity = 2 }]
+        });
+
+        var home = await flow.HandleAsync(session, "INIT", "HOME", "token", default, default);
+        Assert.Equal("HOME", home["screen"]);
+        var homeData = JsonSerializer.SerializeToElement(home["data"]);
+        Assert.Equal(
+            ["continue", "restart", "menu", "human"],
+            homeData.GetProperty("home_options").EnumerateArray().Select(x => x.GetProperty("id").GetString()!).ToArray());
+
+        Assert.Equal("PRODUCT_VARIANT", (await Exchange(flow, session, "HOME", new { command = "continue" }))["screen"]);
+
+        var state = JsonSerializer.Deserialize<WhatsAppCommerceState>(session.StateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        state.LastScreen = "HOME";
+        state.ResumeScreen = "PRODUCT_VARIANT";
+        session.StateJson = JsonSerializer.Serialize(state, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        await db.SaveChangesAsync();
+
+        Assert.Equal("CATEGORY", (await Exchange(flow, session, "HOME", new { command = "restart" }))["screen"]);
+        state = JsonSerializer.Deserialize<WhatsAppCommerceState>(session.StateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Empty(state.Cart);
+        Assert.Equal("CATEGORY", state.ResumeScreen);
+        Assert.Single(await db.WhatsAppCommerceSessions.ToListAsync());
     }
 
     [FlowPostgreSqlFact]

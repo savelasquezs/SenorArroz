@@ -48,9 +48,14 @@ public sealed class WhatsAppFlowSecurityTests
         await db.SaveChangesAsync();
         var cloud = new Mock<IWhatsAppCloudClient>();
         var flowTokens = new List<string>();
+        var initialScreens = new List<string>();
         cloud.Setup(x => x.SendFlowMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<string, string, string, string, string, string, string, string, CancellationToken>((_, _, _, _, _, _, token, _, _) => flowTokens.Add(token))
+            .Callback<string, string, string, string, string, string, string, string, CancellationToken>((_, _, _, _, _, _, token, initialScreen, _) =>
+            {
+                flowTokens.Add(token);
+                initialScreens.Add(initialScreen);
+            })
             .ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.test", null));
         var auth = new StorefrontCustomerAuthService(db, cloud.Object, clock,
             Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }), Mock.Of<ILogger<StorefrontCustomerAuthService>>());
@@ -64,7 +69,7 @@ public sealed class WhatsAppFlowSecurityTests
         var tokenHash = session.FlowTokenHash;
         Assert.True(await service.StartAsync(1, 1, default, greeting: true));
         Assert.Single(await db.WhatsAppCommerceSessions.ToListAsync());
-        Assert.Single(await db.WhatsAppMessages.ToListAsync());
+        Assert.Equal(2, await db.WhatsAppMessages.CountAsync());
         Assert.Equal(tokenHash, session.FlowTokenHash);
         Assert.Equal("active", session.Status);
         Assert.Equal(mode, conversation.AttentionMode);
@@ -72,11 +77,13 @@ public sealed class WhatsAppFlowSecurityTests
         Assert.Empty(await db.TenantAiSettings.ToListAsync());
 
         Assert.True(await service.StartAsync(1, 1, default));
-        Assert.Equal(2, await db.WhatsAppMessages.CountAsync());
+        Assert.Equal(3, await db.WhatsAppMessages.CountAsync());
         Assert.Single(await db.WhatsAppCommerceSessions.ToListAsync());
         Assert.Single(await db.WhatsAppCommerceSessions.Where(x => x.Status == "active").ToListAsync());
-        Assert.Equal(2, await db.WhatsAppCommerceSessionTokens.CountAsync());
-        Assert.Equal(2, flowTokens.Count);
+        Assert.Equal(3, await db.WhatsAppCommerceSessionTokens.CountAsync());
+        Assert.Equal(3, flowTokens.Count);
+        Assert.Equal(["HOME", "HOME", "HOME"], initialScreens);
+        Assert.Equal("HOME", JsonSerializer.Deserialize<WhatsAppCommerceState>(session.StateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.LastScreen);
         Assert.Equal(session.Id, (await service.FindSessionAsync(channel.Id, flowTokens[0], default))?.Id);
         Assert.Equal(session.Id, (await service.FindSessionAsync(channel.Id, flowTokens[1], default))?.Id);
         Assert.All(flowTokens, token => Assert.DoesNotContain(token, session.StateJson));
@@ -93,8 +100,9 @@ public sealed class WhatsAppFlowSecurityTests
             .Select(x => x.GetProperty("id").GetString()!).ToArray();
 
         Assert.Equal(
-            ["CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_PICKUP", "BENEFITS", "PAYMENT", "SUMMARY", "RECOVERY"],
+            ["HOME", "CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_PICKUP", "BENEFITS", "PAYMENT", "SUMMARY", "RECOVERY"],
             screens);
+        Assert.Contains("\"title\": \"Bienvenido a Señor Arroz\"", json);
         Assert.DoesNotContain("\"id\": \"PRODUCTS\"", json);
         Assert.DoesNotContain("Dirección encontrada: ${data.", json);
         Assert.DoesNotContain("Total estimado: ${data.", json);
