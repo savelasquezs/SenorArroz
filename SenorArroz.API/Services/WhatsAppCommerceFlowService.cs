@@ -259,7 +259,22 @@ public sealed class WhatsAppCommerceFlowService(
             return Complete(flowToken, "Este pedido ya fue procesado. Revisa los mensajes del chat.");
 
         var state = DeserializeState(session.StateJson);
-        if (action == "INIT") return await BuildScreenAsync(session, state, state.LastScreen, null, ct);
+        if (action == "INIT")
+        {
+            if (state.LastScreen != "HOME")
+            {
+                state.ResumeScreen = state.LastScreen;
+                if (!Screens.Contains(state.ResumeScreen) || state.ResumeScreen is "HOME" or "RECOVERY")
+                    state.ResumeScreen = "CATEGORY";
+                state.LastScreen = "HOME";
+                state.BackStack.Clear();
+                session.StateJson = JsonSerializer.Serialize(state, JsonOptions);
+                session.Version++;
+                TrackEvent(session, "session_resumed", session.BranchId, "HOME", state.ResumeScreen);
+                await db.SaveChangesAsync(ct);
+            }
+            return await BuildScreenAsync(session, state, "HOME", null, ct);
+        }
         if (action == "BACK")
         {
             var target = ResolveBackScreen(screen, state);

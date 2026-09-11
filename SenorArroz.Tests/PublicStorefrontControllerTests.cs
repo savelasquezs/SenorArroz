@@ -1062,6 +1062,25 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
+    public async Task Flow_ReopeningAnInvitationStartsAtHomeAndCanResumeTheSavedScreen()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState
+        {
+            LastScreen = "FULFILLMENT",
+            BackStack = ["CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART"]
+        });
+
+        Assert.Equal("HOME", (await flow.HandleAsync(session, "INIT", "FULFILLMENT", "token", default, default))["screen"]);
+        var state = JsonSerializer.Deserialize<WhatsAppCommerceState>(session.StateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal("FULFILLMENT", state.ResumeScreen);
+        Assert.Empty(state.BackStack);
+
+        Assert.Equal("FULFILLMENT", (await Exchange(flow, session, "HOME", new { command = "continue" }))["screen"]);
+        Assert.Equal("HOME", (await flow.HandleAsync(session, "BACK", "FULFILLMENT", "token", default, default))["screen"]);
+    }
+
+    [Fact]
     public async Task Flow_RecommendationsMatchStorefrontAndStopAfterEachRoleIsPresent()
     {
         await using var db = CreateDb();
@@ -1086,19 +1105,19 @@ public class PublicStorefrontControllerTests
             new Product { Id = 91, Category = addition, CategoryId = addition.Id, Name = "Chicharrón", StorefrontVariantLabel = "250 g", Price = 12_000, Stock = 10, Active = true });
         await db.SaveChangesAsync();
 
-        var cart = await flow.HandleAsync(session, "INIT", "CART", "token", default, default);
+        var cart = await Refresh(flow, session, "CART");
         var recommendations = JsonSerializer.SerializeToElement(cart["data"]).GetProperty("recommendations");
         Assert.Equal(["45", "43"], recommendations.EnumerateArray().Select(x => x.GetProperty("id").GetString()!).ToArray());
 
         rice.ServesPeopleMax = 6;
         await db.SaveChangesAsync();
-        cart = await flow.HandleAsync(session, "INIT", "CART", "token", default, default);
+        cart = await Refresh(flow, session, "CART");
         recommendations = JsonSerializer.SerializeToElement(cart["data"]).GetProperty("recommendations");
         Assert.Equal(["49", "44"], recommendations.EnumerateArray().Select(x => x.GetProperty("id").GetString()!).ToArray());
 
         rice.Category.StorefrontRole = "combo";
         await db.SaveChangesAsync();
-        cart = await flow.HandleAsync(session, "INIT", "CART", "token", default, default);
+        cart = await Refresh(flow, session, "CART");
         recommendations = JsonSerializer.SerializeToElement(cart["data"]).GetProperty("recommendations");
         Assert.Equal(["49"], recommendations.EnumerateArray().Select(x => x.GetProperty("id").GetString()!).ToArray());
 
@@ -1113,7 +1132,7 @@ public class PublicStorefrontControllerTests
         session.StateJson = JsonSerializer.Serialize(state, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         await db.SaveChangesAsync();
 
-        cart = await flow.HandleAsync(session, "INIT", "CART", "token", default, default);
+        cart = await Refresh(flow, session, "CART");
         recommendations = JsonSerializer.SerializeToElement(cart["data"]).GetProperty("recommendations");
         Assert.Empty(recommendations.EnumerateArray());
     }
@@ -1127,7 +1146,9 @@ public class PublicStorefrontControllerTests
             new Customer { BranchId = 10, Name = "Uno", Phone1 = "3008889900", Active = true },
             new Customer { BranchId = 10, Name = "Dos", Phone1 = "3008889900", Active = true });
         await db.SaveChangesAsync();
-        var result = await flow.HandleAsync(session, "INIT", null, "token", default, default);
+        Assert.Equal("HOME", (await flow.HandleAsync(session, "INIT", null, "token", default, default))["screen"]);
+        var result = await Exchange(flow, session, "HOME", new { command = "continue" });
+        Assert.Equal("ADDRESS_PICKUP", result["screen"]);
         var data = JsonSerializer.SerializeToElement(result["data"]);
         Assert.True(data.GetProperty("ambiguous_customer").GetBoolean());
         Assert.Equal("", data.GetProperty("name").GetString());
@@ -1203,6 +1224,12 @@ public class PublicStorefrontControllerTests
         var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(JsonSerializer.Serialize(fields))!;
         data["_session_version"] = session.Version;
         return flow.HandleAsync(session, "data_exchange", screen, "token", JsonSerializer.SerializeToElement(data), default);
+    }
+
+    private static Task<Dictionary<string, object?>> Refresh(WhatsAppCommerceFlowService flow, WhatsAppCommerceSession session, string screen)
+    {
+        var data = JsonSerializer.SerializeToElement(new Dictionary<string, object?> { ["_session_version"] = session.Version - 1 });
+        return flow.HandleAsync(session, "data_exchange", screen, "token", data, default);
     }
 
     private static PublicDeliveryQuoteRequest Request() => new()
