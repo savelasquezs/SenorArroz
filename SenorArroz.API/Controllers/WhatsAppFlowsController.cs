@@ -10,6 +10,7 @@ using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Infrastructure.Helpers;
 
 namespace SenorArroz.API.Controllers;
 
@@ -126,7 +127,7 @@ public sealed class WhatsAppFlowsController(
             }
             return Content(crypto.Encrypt(responseJson, decrypted.AesKey, decrypted.InitialVector), "text/plain", Encoding.UTF8);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (Exception ex) when (ex is DbUpdateConcurrencyException || PostgresExceptionHelper.IsTransactionConflict(ex))
         {
             if (transaction is not null) await transaction.RollbackAsync(ct);
             logger.LogInformation("WhatsApp Flow concurrency recovered. CorrelationId={CorrelationId}", session.CorrelationId);
