@@ -36,6 +36,8 @@
 - [x] Validar regresión completa: 657 pruebas aprobadas, 3 pruebas PostgreSQL omitidas y 0 fallos.
 - [ ] Desplegar el backend corregido y validar la experiencia en el Flow V3 publicado sin confirmar un pedido real.
 
+Nota operativa: WhatsApp conserva localmente la pantalla de una invitación ya abierta y no aplica un salto de `INIT` a una pantalla anterior. Para evitar estados divergentes, no se fuerza ese salto; al escribir `PEDIDO` el backend emite una invitación nueva que abre en `HOME`, conserva el carrito y permite `Continuar pedido`.
+
 ## Correcciones de la prueba real del 10 de septiembre
 
 - [ ] Eliminar los errores de transición en Combos, Bebidas y recetas como Ropa vieja.
