@@ -106,22 +106,24 @@ public sealed class WhatsAppFlowSecurityTests
         Assert.DoesNotContain("PRODUCTS", screenIds);
 
         var routing = root.GetProperty("routing_model");
-        Assert.Equal(["RECOVERY"], routing.GetProperty("SUMMARY").EnumerateArray().Select(x => x.GetString()).ToArray());
+        Assert.Equal(["RECOVERY"], routing.GetProperty("SUMMARY").EnumerateArray().Select(x => x.GetString()!).ToArray());
         Assert.Empty(routing.GetProperty("RECOVERY").EnumerateArray());
 
         var cart = screens.Single(x => x.GetProperty("id").GetString() == "CART");
-        var cartJson = cart.GetRawText();
+        var cartJson = JsonSerializer.Serialize(cart);
         Assert.Contains("\"recommendation_id\":\"\"", cartJson);
         Assert.Contains("\"cart_command\":\"${form.command}\"", cartJson);
         Assert.Contains("\"command\":\"cart_submit\"", cartJson);
 
         var summary = screens.Single(x => x.GetProperty("id").GetString() == "SUMMARY");
-        var summaryJson = summary.GetRawText();
+        var summaryJson = JsonSerializer.Serialize(summary);
         Assert.True(summary.GetProperty("terminal").GetBoolean());
         Assert.DoesNotContain("summary_action", summaryJson);
         Assert.DoesNotContain("Cambiar entrega", summaryJson);
-        Assert.Contains("Usa la flecha atrás si quieres modificar algo.", summaryJson);
-        Assert.Contains("\"command\":\"confirm\"", summaryJson);
+        var summaryChildren = summary.GetProperty("layout").GetProperty("children")[0].GetProperty("children").EnumerateArray().ToArray();
+        Assert.Contains(summaryChildren, x => x.TryGetProperty("text", out var text) && text.GetString() == "Usa la flecha atrás si quieres modificar algo.");
+        var summaryFooter = summaryChildren.Single(x => x.GetProperty("type").GetString() == "Footer");
+        Assert.Equal("confirm", summaryFooter.GetProperty("on-click-action").GetProperty("payload").GetProperty("command").GetString());
 
         var recovery = screens.Single(x => x.GetProperty("id").GetString() == "RECOVERY");
         Assert.True(recovery.GetProperty("terminal").GetBoolean());

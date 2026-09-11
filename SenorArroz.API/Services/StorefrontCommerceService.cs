@@ -147,7 +147,10 @@ public sealed class StorefrontCommerceService(
         if (normalizedCity is null)
             return BadRequest(ApiResponse<PublicAddressPreviewDto>.ErrorResponse("La ciudad debe ser Medellín, Bello o Copacabana."));
 
-        var resolved = await ResolveAddressCached(request.Address, null, null, cancellationToken);
+        var geocodingAddress = AddressMatchesCity(request.Address, normalizedCity)
+            ? request.Address.Trim()
+            : $"{request.Address.Trim()}, {normalizedCity}, Antioquia, Colombia";
+        var resolved = await ResolveAddressCached(geocodingAddress, null, null, cancellationToken);
         if (resolved.Result is null)
             return BadRequest(ApiResponse<PublicAddressPreviewDto>.ErrorResponse(resolved.Error ?? "No fue posible ubicar la dirección."));
 

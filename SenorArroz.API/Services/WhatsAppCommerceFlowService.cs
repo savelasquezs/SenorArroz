@@ -121,7 +121,7 @@ public sealed class WhatsAppCommerceFlowService(
             {
                 Name = customerSession.Customer?.Name ?? conversation.ContactName ?? conversation.WhatsAppUsername ?? string.Empty,
                 AmbiguousCustomer = customerSession.AmbiguousCustomer,
-                LastScreen = greeting ? "HOME" : "CATEGORY",
+                LastScreen = "HOME",
                 ResumeScreen = "CATEGORY"
             };
             var initialToken = Base64Url(RandomNumberGenerator.GetBytes(32));
@@ -150,6 +150,7 @@ public sealed class WhatsAppCommerceFlowService(
         if (state.LastScreen != "HOME") state.ResumeScreen = state.LastScreen;
         if (!Screens.Contains(state.ResumeScreen ?? string.Empty) || state.ResumeScreen == "HOME") state.ResumeScreen = "CATEGORY";
         state.LastScreen = "HOME";
+        state.BackStack.Clear();
         session.StateJson = JsonSerializer.Serialize(state, JsonOptions);
         session.Version++;
 
@@ -280,6 +281,7 @@ public sealed class WhatsAppCommerceFlowService(
 
         string next = current;
         string? error = null;
+        var resetNavigation = false;
         var catalog = current is "CATEGORY" or "PRODUCT_GROUP" or "PRODUCT_VARIANT" or "CART"
             ? await GetCatalogAsync(ct)
             : null;
@@ -296,6 +298,7 @@ public sealed class WhatsAppCommerceFlowService(
                 else if (command == "restart")
                 {
                     state = ResetState(state);
+                    resetNavigation = true;
                     next = "CATEGORY";
                     TrackEvent(session, "flow_restarted", session.BranchId, next, "home");
                 }
@@ -478,6 +481,7 @@ public sealed class WhatsAppCommerceFlowService(
                 if (command == "restart")
                 {
                     state = ResetState(state);
+                    resetNavigation = true;
                     next = "CATEGORY";
                     TrackEvent(session, "flow_restarted", session.BranchId, next, "v2");
                 }
@@ -494,6 +498,11 @@ public sealed class WhatsAppCommerceFlowService(
                 return await ShowRecoveryAsync(session, state, "Perdimos el paso actual, pero tu carrito sigue guardado.", true, ct);
         }
 
+        if (next != current)
+        {
+            if (resetNavigation) state.BackStack.Clear();
+            else PushBackScreen(state, current);
+        }
         state.LastScreen = next;
         session.BranchId = state.SelectedBranchId;
         session.Version++;
@@ -1283,9 +1292,19 @@ public sealed class WhatsAppCommerceFlowService(
     private static string ResolveBackScreen(string? requestedScreen, WhatsAppCommerceState state)
     {
         var requested = requestedScreen?.ToUpperInvariant();
-        if (requested is not null && Screens.Contains(requested) && requested != state.LastScreen) return requested;
+        if (state.BackStack.Count > 0)
+        {
+            var requestedIndex = requested is not null && requested != state.LastScreen
+                ? state.BackStack.FindLastIndex(x => x == requested)
+                : -1;
+            var index = requestedIndex >= 0 ? requestedIndex : state.BackStack.Count - 1;
+            var target = state.BackStack[index];
+            state.BackStack.RemoveRange(index, state.BackStack.Count - index);
+            return target;
+        }
         return state.LastScreen switch
         {
+            "CATEGORY" => "HOME",
             "PRODUCT_GROUP" => "CATEGORY",
             "PRODUCT_VARIANT" => "PRODUCT_GROUP",
             "CART" => "CATEGORY",
@@ -1298,6 +1317,13 @@ public sealed class WhatsAppCommerceFlowService(
             "HOME" => "HOME",
             _ => "CATEGORY"
         };
+    }
+
+    private static void PushBackScreen(WhatsAppCommerceState state, string screen)
+    {
+        if (!Screens.Contains(screen) || state.BackStack.LastOrDefault() == screen) return;
+        state.BackStack.Add(screen);
+        if (state.BackStack.Count > 16) state.BackStack.RemoveAt(0);
     }
 
     private static IReadOnlyCollection<PublicProductGroupDto> GetGroups(PublicCatalogDto catalog, string? category) => category switch
@@ -1573,6 +1599,7 @@ public sealed class WhatsAppCommerceState
     public string? LastErrorCode { get; set; }
     public string? RecoveryScreen { get; set; }
     public string? ResumeScreen { get; set; }
+    public List<string> BackStack { get; set; } = [];
     public string LastScreen { get; set; } = "CATEGORY";
 }
 

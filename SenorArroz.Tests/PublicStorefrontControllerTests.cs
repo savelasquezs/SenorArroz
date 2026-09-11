@@ -194,8 +194,9 @@ public class PublicStorefrontControllerTests
         await using var db = CreateDb();
         Seed(db);
         await db.SaveChangesAsync();
+        var geocoding = new GeocodingHandler();
 
-        var action = await Controller(db, 1800).PreviewAddress(new PublicAddressPreviewRequest
+        var action = await Controller(db, 1800, geocodingHandler: geocoding).PreviewAddress(new PublicAddressPreviewRequest
         {
             City = "Medellín",
             Address = "Calle 10 # 20-30",
@@ -205,6 +206,7 @@ public class PublicStorefrontControllerTests
         Assert.Equal(6.25m, response.Data!.Latitude);
         Assert.Equal(-75.56m, response.Data.Longitude);
         Assert.Contains("Medellín", response.Data.FormattedAddress);
+        Assert.Contains("Calle 10 # 20-30, Medellín, Antioquia, Colombia", Uri.UnescapeDataString(geocoding.LastRequestUri!.Query));
     }
 
     [Fact]
@@ -1020,6 +1022,103 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
+    public async Task Flow_BackFollowsTheVisitedScreensFromSummaryToHome()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState { LastScreen = "HOME" });
+
+        await Exchange(flow, session, "HOME", new { command = "order" });
+        await Exchange(flow, session, "CATEGORY", new { category = "rice" });
+        await Exchange(flow, session, "PRODUCT_GROUP", new { product_group = "rice:product:20" });
+        await Exchange(flow, session, "PRODUCT_VARIANT", new { product_id = "20", quantity = 1, command = "save" });
+        await Exchange(flow, session, "CART", new { command = "continue" });
+        await Exchange(flow, session, "FULFILLMENT", new { fulfillment_type = "pickup" });
+        await Exchange(flow, session, "ADDRESS_PICKUP", new { branch_id = "10", name = "Cliente Flow" });
+        await Exchange(flow, session, "PAYMENT", new { payment_method = "cash" });
+
+        var expected = new[] { "PAYMENT", "ADDRESS_PICKUP", "FULFILLMENT", "CART", "PRODUCT_VARIANT", "PRODUCT_GROUP", "CATEGORY", "HOME" };
+        var current = "SUMMARY";
+        foreach (var screen in expected)
+        {
+            var back = await flow.HandleAsync(session, "BACK", current, "token", default, default);
+            Assert.Equal(screen, back["screen"]);
+            current = screen;
+        }
+    }
+
+    [Fact]
+    public async Task Flow_ResumeFromHomeCanReturnToHomeFromFulfillment()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState
+        {
+            LastScreen = "HOME",
+            ResumeScreen = "FULFILLMENT",
+            Cart = [new WhatsAppCartItemState { ProductId = 20, Quantity = 1 }]
+        });
+
+        Assert.Equal("FULFILLMENT", (await Exchange(flow, session, "HOME", new { command = "continue" }))["screen"]);
+        Assert.Equal("HOME", (await flow.HandleAsync(session, "BACK", "FULFILLMENT", "token", default, default))["screen"]);
+    }
+
+    [Fact]
+    public async Task Flow_RecommendationsMatchStorefrontAndStopAfterEachRoleIsPresent()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState
+        {
+            LastScreen = "CART",
+            Cart = [new WhatsAppCartItemState { ProductId = 20, Quantity = 1 }]
+        });
+        var branch = db.Branches.Local.Single(x => x.Id == 10);
+        var rice = db.Products.Local.Single(x => x.Id == 20);
+        rice.ServesPeopleMax = 4;
+        var beverage = new ProductCategory { Id = 52, BranchId = branch.Id, Branch = branch, Name = "Bebidas", StorefrontRole = "beverage" };
+        var addition = new ProductCategory { Id = 53, BranchId = branch.Id, Branch = branch, Name = "Adiciones", StorefrontRole = "addition" };
+        db.AddRange(
+            beverage,
+            addition,
+            new Product { Id = 45, Category = beverage, CategoryId = beverage.Id, Name = "Coca-Cola 1.5 L", StorefrontVariantLabel = "1.5 L", Price = 8_000, Stock = 10, Active = true },
+            new Product { Id = 49, Category = beverage, CategoryId = beverage.Id, Name = "Coca-Cola 3 L", StorefrontVariantLabel = "3 L", Price = 12_000, Stock = 10, Active = true },
+            new Product { Id = 43, Category = addition, CategoryId = addition.Id, Name = "Papas a la francesa 250 g", StorefrontVariantLabel = "250 g", Price = 5_000, Stock = 10, Active = true },
+            new Product { Id = 44, Category = addition, CategoryId = addition.Id, Name = "Papas a la francesa 500 g", StorefrontVariantLabel = "500 g", Price = 10_000, Stock = 10, Active = true },
+            new Product { Id = 90, Category = beverage, CategoryId = beverage.Id, Name = "Agua", StorefrontVariantLabel = "600 ml", Price = 4_000, Stock = 10, Active = true },
+            new Product { Id = 91, Category = addition, CategoryId = addition.Id, Name = "Chicharrón", StorefrontVariantLabel = "250 g", Price = 12_000, Stock = 10, Active = true });
+        await db.SaveChangesAsync();
+
+        var cart = await flow.HandleAsync(session, "INIT", "CART", "token", default, default);
+        var recommendations = JsonSerializer.SerializeToElement(cart["data"]).GetProperty("recommendations");
+        Assert.Equal(["45", "43"], recommendations.EnumerateArray().Select(x => x.GetProperty("id").GetString()!).ToArray());
+
+        rice.ServesPeopleMax = 6;
+        await db.SaveChangesAsync();
+        cart = await flow.HandleAsync(session, "INIT", "CART", "token", default, default);
+        recommendations = JsonSerializer.SerializeToElement(cart["data"]).GetProperty("recommendations");
+        Assert.Equal(["49", "44"], recommendations.EnumerateArray().Select(x => x.GetProperty("id").GetString()!).ToArray());
+
+        rice.Category.StorefrontRole = "combo";
+        await db.SaveChangesAsync();
+        cart = await flow.HandleAsync(session, "INIT", "CART", "token", default, default);
+        recommendations = JsonSerializer.SerializeToElement(cart["data"]).GetProperty("recommendations");
+        Assert.Equal(["49"], recommendations.EnumerateArray().Select(x => x.GetProperty("id").GetString()!).ToArray());
+
+        rice.Category.StorefrontRole = "rice";
+        rice.ServesPeopleMax = 4;
+
+        var state = JsonSerializer.Deserialize<WhatsAppCommerceState>(session.StateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        state.Cart.AddRange([
+            new WhatsAppCartItemState { ProductId = 90, Quantity = 1 },
+            new WhatsAppCartItemState { ProductId = 91, Quantity = 1 }
+        ]);
+        session.StateJson = JsonSerializer.Serialize(state, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        await db.SaveChangesAsync();
+
+        cart = await flow.HandleAsync(session, "INIT", "CART", "token", default, default);
+        recommendations = JsonSerializer.SerializeToElement(cart["data"]).GetProperty("recommendations");
+        Assert.Empty(recommendations.EnumerateArray());
+    }
+
+    [Fact]
     public async Task Flow_AmbiguousPhoneNeverDisplaysSavedAddresses()
     {
         await using var db = CreateDb();
@@ -1118,19 +1217,19 @@ public class PublicStorefrontControllerTests
         Items = [new() { ProductId = 20, Quantity = 2 }],
     };
 
-    private static PublicStorefrontController Controller(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000, string? routePolyline = "encoded-route")
+    private static PublicStorefrontController Controller(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000, string? routePolyline = "encoded-route", HttpMessageHandler? geocodingHandler = null)
         => new(db, new FakeClock(Now), Mock.Of<IWompiPaymentService>(),
             Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }),
-            Commerce(db, routeSeconds, routeDistanceMeters, routePolyline));
+            Commerce(db, routeSeconds, routeDistanceMeters, routePolyline, geocodingHandler));
 
-    private static StorefrontCommerceService Commerce(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000, string? routePolyline = "encoded-route")
+    private static StorefrontCommerceService Commerce(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000, string? routePolyline = "encoded-route", HttpMessageHandler? geocodingHandler = null)
     {
         var routeService = new Mock<IGoogleRoutesDrivingMetricsService>();
         routeService
             .Setup(x => x.ComputeRouteAsync(It.IsAny<IReadOnlyList<(double Latitude, double Longitude)>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DrivingRouteMetrics(routeDistanceMeters, routeSeconds, 0, 0, routePolyline));
         var geocoder = new GoogleAddressGeocoder(
-            new HttpClient(new GeocodingHandler()),
+            new HttpClient(geocodingHandler ?? new GeocodingHandler()),
             Options.Create(new GoogleMapsRouteOptions { GeocodingApiKey = "test" }));
         var configuration = new ConfigurationBuilder().Build();
         var wompi = new Mock<IWompiPaymentService>();
@@ -1237,8 +1336,11 @@ public class PublicStorefrontControllerTests
 
     private sealed class GeocodingHandler : HttpMessageHandler
     {
+        public Uri? LastRequestUri { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            LastRequestUri = request.RequestUri;
             var formattedAddress = request.RequestUri?.Query.Contains("latlng=", StringComparison.OrdinalIgnoreCase) == true
                 ? "Calle 10 # 20-28, Medellín, Antioquia, Colombia"
                 : "Calle 10 # 20-30, Medellín, Antioquia, Colombia";

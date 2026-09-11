@@ -1,4 +1,4 @@
-# WhatsApp Ordering Flow V2
+# WhatsApp Ordering Flow V2 / V3
 
 ## Implementado
 
@@ -24,6 +24,17 @@
 - [x] Backend y panel desplegados; backend V2 activo en Railway.
 - [x] Flow V2 publicado y configurado para el número de prueba manteniendo V1 intacto.
 - [x] Navegación real verificada hasta pago con la sede Santander disponible por horario.
+
+## Correcciones focalizadas de V3 del 10 de septiembre
+
+- [x] Conservar la ruta V3 existente y registrar el historial real de pantallas visitadas.
+- [x] Corregir `BACK` desde `FULFILLMENT` y desde cada paso previo sin introducir ciclos en el JSON de Meta.
+- [x] Abrir cada nueva invitación en `HOME` y mantener la sesión activa disponible mediante `Continuar pedido`.
+- [x] Geocodificar direcciones nuevas con ciudad, departamento y país antes de validar que pertenezcan a Medellín, Bello o Copacabana.
+- [x] Alinear el cross-selling de WhatsApp con storefront: Coca-Cola y papas por porciones, solo para los roles faltantes.
+- [x] Omitir papas en carritos compuestos únicamente por combos y omitir cualquier rol que el cliente ya haya agregado.
+- [x] Validar regresión completa: 657 pruebas aprobadas, 3 pruebas PostgreSQL omitidas y 0 fallos.
+- [ ] Desplegar el backend corregido y validar la experiencia en el Flow V3 publicado sin confirmar un pedido real.
 
 ## Correcciones de la prueba real del 10 de septiembre
 
