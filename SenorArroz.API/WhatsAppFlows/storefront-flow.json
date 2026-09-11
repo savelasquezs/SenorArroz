@@ -812,10 +812,6 @@
                 ]
               },
               {
-                "type": "TextCaption",
-                "text": "Las sugerencias son opcionales y nunca bloquean tu pedido."
-              },
-              {
                 "type": "RadioButtonsGroup",
                 "name": "cart_category",
                 "label": "Categorías",
