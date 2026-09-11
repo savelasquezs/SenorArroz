@@ -33,7 +33,7 @@
 - [x] Geocodificar direcciones nuevas con ciudad, departamento y país antes de validar que pertenezcan a Medellín, Bello o Copacabana.
 - [x] Alinear el cross-selling de WhatsApp con storefront: Coca-Cola y papas por porciones, solo para los roles faltantes.
 - [x] Omitir papas en carritos compuestos únicamente por combos y omitir cualquier rol que el cliente ya haya agregado.
-- [x] Validar regresión completa: 658 pruebas aprobadas, 3 pruebas PostgreSQL omitidas y 0 fallos.
+- [x] Validar regresión completa: 657 pruebas aprobadas, 3 pruebas PostgreSQL omitidas y 0 fallos.
 - [ ] Desplegar el backend corregido y validar la experiencia en el Flow V3 publicado sin confirmar un pedido real.
 
 ## Correcciones de la prueba real del 10 de septiembre
