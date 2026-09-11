@@ -27,6 +27,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.DeliveryAppConnectionId).HasColumnName("delivery_app_connection_id");
         builder.Property(o => o.ExternalOrderId).HasColumnName("external_order_id").HasMaxLength(160);
         builder.Property(o => o.OrderSource).HasColumnName("order_source").HasMaxLength(40);
+        builder.Property(o => o.WhatsAppConversationId).HasColumnName("whatsapp_conversation_id");
         builder.Property(o => o.StorefrontIdempotencyKey).HasColumnName("storefront_idempotency_key").HasMaxLength(80);
         builder.Property(o => o.ExternalFulfillmentProvider).HasColumnName("external_fulfillment_provider").HasMaxLength(40);
         builder.Property(o => o.ExternalStoreName).HasColumnName("external_store_name").HasMaxLength(200);
@@ -95,6 +96,9 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.PaidInStoreCash).HasColumnName("paid_in_store_cash").HasDefaultValue(false);
         builder.Property(o => o.PaidInStoreCashAt).HasColumnName("paid_in_store_cash_at");
         builder.Property(o => o.PaidInStoreCashAmount).HasColumnName("paid_in_store_cash_amount");
+
+        builder.HasIndex(o => o.WhatsAppConversationId).HasDatabaseName("ix_order_whatsapp_conversation");
+        builder.HasOne(o => o.WhatsAppConversation).WithMany().HasForeignKey(o => o.WhatsAppConversationId).OnDelete(DeleteBehavior.SetNull);
 
         builder.Property(o => o.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

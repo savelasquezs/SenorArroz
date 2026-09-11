@@ -1,0 +1,295 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Net;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Org.BouncyCastle.Crypto.Engines;
+using Org.BouncyCastle.Crypto.Modes;
+using Org.BouncyCastle.Crypto.Parameters;
+using SenorArroz.API.Services;
+using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Options;
+using SenorArroz.Infrastructure.WhatsApp;
+using AutoMapper;
+using Microsoft.EntityFrameworkCore;
+using Moq;
+using SenorArroz.API.Controllers;
+using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
+using SenorArroz.Infrastructure.Data;
+
+namespace SenorArroz.Tests;
+
+public sealed class WhatsAppFlowSecurityTests
+{
+    [Theory]
+    [InlineData(WhatsAppAttentionMode.Human)]
+    [InlineData(WhatsAppAttentionMode.WaitingForHuman)]
+    [InlineData(WhatsAppAttentionMode.Paused)]
+    [InlineData(WhatsAppAttentionMode.Ai)]
+    public async Task GreetingStartsFlowWithoutAiAndPreservesAttentionAndActiveCart(WhatsAppAttentionMode mode)
+    {
+        await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var now = DateTime.UtcNow;
+        var clock = Mock.Of<IClock>(x => x.UtcNow == now);
+        var channel = new WhatsAppChannelSetting
+        {
+            Id = 1, TenantId = 1, IsActive = true, IsVerified = true, FlowEnabled = true,
+            PhoneNumberId = "phone", AccessToken = "test", FlowId = "flow"
+        };
+        var conversation = new WhatsAppConversation
+        {
+            Id = 1, TenantId = 1, ChannelSettingId = 1, ChannelSetting = channel,
+            PhoneNumber = "3000000000", AttentionMode = mode, AssignedUserId = 42
+        };
+        db.Add(conversation);
+        await db.SaveChangesAsync();
+        var cloud = new Mock<IWhatsAppCloudClient>();
+        var flowTokens = new List<string>();
+        var initialScreens = new List<string>();
+        cloud.Setup(x => x.SendFlowMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, string, string, string, string, string, CancellationToken>((_, _, _, _, _, _, token, initialScreen, _) =>
+            {
+                flowTokens.Add(token);
+                initialScreens.Add(initialScreen);
+            })
+            .ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.test", null));
+        var auth = new StorefrontCustomerAuthService(db, cloud.Object, clock,
+            Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }), Mock.Of<ILogger<StorefrontCustomerAuthService>>());
+        var service = new WhatsAppCommerceFlowService(db, cloud.Object, clock,
+            Options.Create(new WhatsAppFlowOptions { Enabled = true, RestrictToAllowlist = false }),
+            null!, auth, Mock.Of<IMapper>(), Mock.Of<IOrderNotificationService>(),
+            Mock.Of<ILogger<PublicStorefrontController>>(), Mock.Of<ILogger<WhatsAppCommerceFlowService>>());
+
+        Assert.True(await service.StartAsync(1, 1, default, greeting: true));
+        var session = await db.WhatsAppCommerceSessions.SingleAsync();
+        var tokenHash = session.FlowTokenHash;
+        Assert.True(await service.StartAsync(1, 1, default, greeting: true));
+        Assert.Single(await db.WhatsAppCommerceSessions.ToListAsync());
+        Assert.Equal(2, await db.WhatsAppMessages.CountAsync());
+        Assert.Equal(tokenHash, session.FlowTokenHash);
+        Assert.Equal("active", session.Status);
+        Assert.Equal(mode, conversation.AttentionMode);
+        Assert.Equal(42, conversation.AssignedUserId);
+        Assert.Empty(await db.TenantAiSettings.ToListAsync());
+
+        Assert.True(await service.StartAsync(1, 1, default));
+        Assert.Equal(3, await db.WhatsAppMessages.CountAsync());
+        Assert.Single(await db.WhatsAppCommerceSessions.ToListAsync());
+        Assert.Single(await db.WhatsAppCommerceSessions.Where(x => x.Status == "active").ToListAsync());
+        Assert.Equal(3, await db.WhatsAppCommerceSessionTokens.CountAsync());
+        Assert.Equal(3, flowTokens.Count);
+        Assert.Equal(["HOME", "HOME", "HOME"], initialScreens);
+        Assert.Equal("HOME", JsonSerializer.Deserialize<WhatsAppCommerceState>(session.StateJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.LastScreen);
+        Assert.Equal(session.Id, (await service.FindSessionAsync(channel.Id, flowTokens[0], default))?.Id);
+        Assert.Equal(session.Id, (await service.FindSessionAsync(channel.Id, flowTokens[1], default))?.Id);
+        Assert.All(flowTokens, token => Assert.DoesNotContain(token, session.StateJson));
+        Assert.Equal(mode, conversation.AttentionMode);
+    }
+
+    [Fact]
+    public void FlowV2UsesAcyclicRoutingNativeBackAndTerminalRecovery()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "WhatsAppFlows", "storefront-flow.json");
+        var json = File.ReadAllText(path);
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var screens = root.GetProperty("screens").EnumerateArray().ToArray();
+        var screenIds = screens.Select(x => x.GetProperty("id").GetString()!).ToArray();
+
+        Assert.Equal(
+            ["HOME", "CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_PICKUP", "BENEFITS", "PAYMENT", "SUMMARY", "RECOVERY"],
+            screenIds);
+        Assert.DoesNotContain("PRODUCTS", screenIds);
+
+        var routing = root.GetProperty("routing_model");
+        Assert.Equal(["RECOVERY"], routing.GetProperty("SUMMARY").EnumerateArray().Select(x => x.GetString()!).ToArray());
+        Assert.Empty(routing.GetProperty("RECOVERY").EnumerateArray());
+
+        var cart = screens.Single(x => x.GetProperty("id").GetString() == "CART");
+        var cartJson = JsonSerializer.Serialize(cart);
+        Assert.Contains("\"recommendation_id\":\"\"", cartJson);
+        Assert.Contains("\"cart_command\":\"${form.command}\"", cartJson);
+        Assert.Contains("\"command\":\"cart_submit\"", cartJson);
+        var cartChildren = cart.GetProperty("layout").GetProperty("children")[0].GetProperty("children").EnumerateArray().ToArray();
+        Assert.DoesNotContain(cartChildren, x => x.TryGetProperty("text", out var text)
+            && text.GetString() == "Las sugerencias son opcionales y nunca bloquean tu pedido.");
+        Assert.Contains(cartChildren, x => x.TryGetProperty("text", out var text) && text.GetString() == "${data.cart_tip}");
+
+        var summary = screens.Single(x => x.GetProperty("id").GetString() == "SUMMARY");
+        var summaryJson = JsonSerializer.Serialize(summary);
+        Assert.True(summary.GetProperty("terminal").GetBoolean());
+        Assert.DoesNotContain("summary_action", summaryJson);
+        Assert.DoesNotContain("Cambiar entrega", summaryJson);
+        var summaryChildren = summary.GetProperty("layout").GetProperty("children")[0].GetProperty("children").EnumerateArray().ToArray();
+        Assert.Contains(summaryChildren, x => x.TryGetProperty("text", out var text) && text.GetString() == "Usa la flecha atrás si quieres modificar algo.");
+        var summaryFooter = summaryChildren.Single(x => x.GetProperty("type").GetString() == "Footer");
+        Assert.Equal("confirm", summaryFooter.GetProperty("on-click-action").GetProperty("payload").GetProperty("command").GetString());
+
+        var recovery = screens.Single(x => x.GetProperty("id").GetString() == "RECOVERY");
+        Assert.True(recovery.GetProperty("terminal").GetBoolean());
+        var recoveryForm = recovery.GetProperty("layout").GetProperty("children")[0];
+        var recoveryFooter = recoveryForm.GetProperty("children").EnumerateArray()
+            .Single(x => x.GetProperty("type").GetString() == "Footer");
+        Assert.Equal("complete", recoveryFooter.GetProperty("on-click-action").GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public void RecoveryResponseAlwaysUsesAValidFlowScreen()
+    {
+        var response = WhatsAppCommerceFlowService.Recovery(7, "Error seguro", true);
+        Assert.Equal("RECOVERY", response["screen"]);
+        var data = Assert.IsType<Dictionary<string, object?>>(response["data"]);
+        Assert.Equal(7, data["_session_version"]);
+        Assert.Equal("Error seguro", data["error_message"]);
+    }
+
+    [Theory]
+    [InlineData("¡Hola!")]
+    [InlineData("  Hola, buenos días. ")]
+    [InlineData("BUENAS\tTARDES")]
+    public void SimpleGreetingsOfferFlow(string text) => Assert.True(WhatsAppCommerceFlowService.IsGreeting(text));
+
+    [Theory]
+    [InlineData("Hola, necesito un asesor")]
+    [InlineData("Buenos días, no llegó mi pedido")]
+    public void GreetingsWithRequestsKeepTheirNormalAttention(string text) => Assert.False(WhatsAppCommerceFlowService.IsGreeting(text));
+
+    [Fact]
+    public void EncryptedRequestUsesMetaWireFieldNames()
+    {
+        const string json = """{"encrypted_aes_key":"key","encrypted_flow_data":"data","initial_vector":"iv"}""";
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var request = JsonSerializer.Deserialize<WhatsAppEncryptedFlowRequest>(json, options);
+
+        Assert.NotNull(request);
+        Assert.Equal("key", request.EncryptedAesKey);
+        Assert.Equal("data", request.EncryptedFlowData);
+        Assert.Equal("iv", request.InitialVector);
+        Assert.Equal(json, JsonSerializer.Serialize(request, options));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FlowSendDoesNotExposeProviderPayloadOrUseNavigateParameters(bool networkFailure)
+    {
+        const string sensitive = "private-flow-token private-address private-phone";
+        var handler = new FlowResponseHandler(sensitive, networkFailure);
+        using var http = new HttpClient(handler);
+        var logger = new FlowLogger();
+        var client = new WhatsAppCloudClient(http, Options.Create(new WhatsAppCloudOptions()), logger);
+
+        var result = await client.SendFlowMessageAsync("123", "test-access-token", "573000000000",
+            "Tu pedido", "Comprar", "456", sensitive, "FULFILLMENT");
+
+        Assert.False(result.Success);
+        Assert.DoesNotContain(sensitive, result.ErrorMessage ?? string.Empty);
+        Assert.All(logger.Messages, message => Assert.DoesNotContain(sensitive, message));
+        using var document = JsonDocument.Parse(handler.Payload!);
+        var parameters = document.RootElement.GetProperty("interactive").GetProperty("action").GetProperty("parameters");
+        Assert.Equal("data_exchange", parameters.GetProperty("flow_action").GetString());
+        Assert.False(parameters.TryGetProperty("flow_action_payload", out _));
+        Assert.Equal(sensitive, parameters.GetProperty("flow_token").GetString());
+    }
+
+    private sealed class FlowResponseHandler(string sensitive, bool networkFailure) : HttpMessageHandler
+    {
+        public string? Payload { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Payload = await request.Content!.ReadAsStringAsync(ct);
+            if (networkFailure) throw new HttpRequestException(sensitive);
+            return new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new { error = new { message = sensitive } }))
+            };
+        }
+    }
+
+    private sealed class FlowLogger : ILogger<WhatsAppCloudClient>
+    {
+        public List<string> Messages { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
+    }
+
+    [Theory]
+    [InlineData("pedido")]
+    [InlineData("  Hacer   PEDIDO ")]
+    [InlineData("ver menú")]
+    [InlineData("comprar")]
+    public void PurchaseIntentRecognizesOnlyDeterministicCommands(string value) =>
+        Assert.True(WhatsAppCommerceFlowService.IsPurchaseIntent(value));
+
+    [Theory]
+    [InlineData("¿Cuándo abren?")]
+    [InlineData("Quiero saber dónde están")]
+    [InlineData("pedido de ayer")]
+    public void PurchaseIntentLeavesOtherMessagesForAi(string value) =>
+        Assert.False(WhatsAppCommerceFlowService.IsPurchaseIntent(value));
+
+    [Fact]
+    public void CryptoUsesOaepSha256AndFlippedResponseIv()
+    {
+        using var rsa = RSA.Create(2048);
+        var service = new WhatsAppFlowCrypto(Options.Create(new WhatsAppFlowOptions
+        {
+            PrivateKey = rsa.ExportPkcs8PrivateKeyPem()
+        }));
+        var key = RandomNumberGenerator.GetBytes(32);
+        var iv = RandomNumberGenerator.GetBytes(16);
+        const string json = "{\"version\":\"3.0\",\"action\":\"ping\"}";
+        var encryptedKey = rsa.Encrypt(key, RSAEncryptionPadding.OaepSHA256);
+        var requestData = Encrypt(json, key, iv);
+
+        var decrypted = service.Decrypt(new WhatsAppEncryptedFlowRequest(
+            Convert.ToBase64String(encryptedKey), Convert.ToBase64String(requestData), Convert.ToBase64String(iv)));
+        Assert.Equal(json, decrypted.Json);
+
+        var response = service.Encrypt("{\"ok\":true}", decrypted.AesKey, decrypted.InitialVector);
+        var flippedIv = iv.Select(x => (byte)~x).ToArray();
+        Assert.Equal("{\"ok\":true}", Decrypt(Convert.FromBase64String(response), key, flippedIv));
+    }
+
+    [Fact]
+    public void CryptoRejectsAlteredCiphertext()
+    {
+        using var rsa = RSA.Create(2048);
+        var service = new WhatsAppFlowCrypto(Options.Create(new WhatsAppFlowOptions { PrivateKey = rsa.ExportPkcs8PrivateKeyPem() }));
+        var key = RandomNumberGenerator.GetBytes(32);
+        var iv = RandomNumberGenerator.GetBytes(16);
+        var encrypted = Encrypt("{}", key, iv);
+        encrypted[0] ^= 0xff;
+        Assert.Throws<CryptographicException>(() => service.Decrypt(new(
+            Convert.ToBase64String(rsa.Encrypt(key, RSAEncryptionPadding.OaepSHA256)),
+            Convert.ToBase64String(encrypted), Convert.ToBase64String(iv))));
+    }
+
+    private static byte[] Encrypt(string value, byte[] key, byte[] iv)
+    {
+        var plain = Encoding.UTF8.GetBytes(value);
+        var cipher = new GcmBlockCipher(new AesEngine());
+        cipher.Init(true, new AeadParameters(new KeyParameter(key), 128, iv));
+        var output = new byte[cipher.GetOutputSize(plain.Length)];
+        var length = cipher.ProcessBytes(plain, 0, plain.Length, output, 0);
+        length += cipher.DoFinal(output, length);
+        return output.AsSpan(0, length).ToArray();
+    }
+
+    private static string Decrypt(byte[] value, byte[] key, byte[] iv)
+    {
+        var cipher = new GcmBlockCipher(new AesEngine());
+        cipher.Init(false, new AeadParameters(new KeyParameter(key), 128, iv));
+        var plain = new byte[cipher.GetOutputSize(value.Length)];
+        var length = cipher.ProcessBytes(value, 0, value.Length, plain, 0);
+        length += cipher.DoFinal(plain, length);
+        return Encoding.UTF8.GetString(plain, 0, length);
+    }
+}

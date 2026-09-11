@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations.Schema;
 using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Domain.Enums;
 
@@ -67,6 +66,8 @@ public sealed class StorefrontCheckout : BaseEntity
     public int? CustomerId { get; set; }
     public int? SavedAddressId { get; set; }
     public int? OrderId { get; set; }
+    public int? WhatsAppConversationId { get; set; }
+    public string OrderSource { get; set; } = "web";
     public string CustomerPhone { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
     public string FulfillmentType { get; set; } = "delivery";
@@ -90,7 +91,6 @@ public sealed class StorefrontCheckout : BaseEntity
     public string? AppliedBenefitSnapshot { get; set; }
     public string Status { get; set; } = "pending";
     public DateTime ExpiresAt { get; set; }
-    [Column("meta_consent_granted")]
     public bool MetaConsentGranted { get; set; }
     public string? MetaClientUserAgent { get; set; }
     public string? MetaClientIpAddress { get; set; }
@@ -101,6 +101,7 @@ public sealed class StorefrontCheckout : BaseEntity
     public Customer? Customer { get; set; }
     public Address? SavedAddress { get; set; }
     public Order? Order { get; set; }
+    public WhatsAppConversation? WhatsAppConversation { get; set; }
     public ICollection<WompiPaymentAttempt> PaymentAttempts { get; set; } = [];
 }
 
@@ -157,7 +158,6 @@ public sealed class PaymentNotificationOutboxMessage : BaseEntity
     public DateTime? MetaNextAttemptAt { get; set; }
     public DateTime? MetaProcessedAt { get; set; }
     public string? MetaLastError { get; set; }
-    [Column("meta_consent_granted")]
     public bool MetaConsentGranted { get; set; }
     public string? MetaCustomerPhone { get; set; }
     public string? MetaClientUserAgent { get; set; }

@@ -93,6 +93,8 @@ public sealed class StorefrontCheckoutConfiguration : IEntityTypeConfiguration<S
         builder.Property(x => x.CustomerId).HasColumnName("customer_id");
         builder.Property(x => x.SavedAddressId).HasColumnName("saved_address_id");
         builder.Property(x => x.OrderId).HasColumnName("order_id");
+        builder.Property(x => x.WhatsAppConversationId).HasColumnName("whatsapp_conversation_id");
+        builder.Property(x => x.OrderSource).HasColumnName("order_source").HasMaxLength(40);
         builder.Property(x => x.CustomerPhone).HasColumnName("customer_phone").HasMaxLength(20);
         builder.Property(x => x.CustomerName).HasColumnName("customer_name").HasMaxLength(150);
         builder.Property(x => x.FulfillmentType).HasColumnName("fulfillment_type").HasMaxLength(20);
@@ -116,6 +118,7 @@ public sealed class StorefrontCheckoutConfiguration : IEntityTypeConfiguration<S
         builder.Property(x => x.AppliedBenefitSnapshot).HasColumnName("applied_benefit_snapshot").HasColumnType("jsonb");
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(30);
         builder.Property(x => x.ExpiresAt).HasColumnName("expires_at");
+        builder.Property(x => x.MetaConsentGranted).HasColumnName("meta_consent_granted");
         builder.Property(x => x.MetaClientUserAgent).HasColumnName("meta_client_user_agent").HasMaxLength(512);
         builder.Property(x => x.MetaClientIpAddress).HasColumnName("meta_client_ip_address").HasMaxLength(64);
         builder.Property(x => x.MetaFbp).HasColumnName("meta_fbp").HasMaxLength(255);
@@ -124,10 +127,12 @@ public sealed class StorefrontCheckoutConfiguration : IEntityTypeConfiguration<S
         builder.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ux_storefront_checkout_public_id");
         builder.HasIndex(x => x.IdempotencyKey).IsUnique().HasDatabaseName("ux_storefront_checkout_idempotency_key");
         builder.HasIndex(x => new { x.TenantId, x.CustomerPhone, x.Status }).HasDatabaseName("ix_storefront_checkout_customer_status");
+        builder.HasIndex(x => x.WhatsAppConversationId).HasDatabaseName("ix_storefront_checkout_whatsapp_conversation");
         builder.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.SavedAddress).WithMany().HasForeignKey(x => x.SavedAddressId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.WhatsAppConversation).WithMany().HasForeignKey(x => x.WhatsAppConversationId).OnDelete(DeleteBehavior.SetNull);
     }
 }
 
@@ -196,6 +201,7 @@ public sealed class PaymentNotificationOutboxMessageConfiguration : IEntityTypeC
         builder.Property(x => x.MetaProcessedAt).HasColumnName("meta_processed_at");
         builder.Property(x => x.MetaLastError).HasColumnName("meta_last_error").HasMaxLength(1000);
         builder.Property(x => x.MetaCustomerPhone).HasColumnName("meta_customer_phone").HasMaxLength(20);
+        builder.Property(x => x.MetaConsentGranted).HasColumnName("meta_consent_granted");
         builder.Property(x => x.MetaClientUserAgent).HasColumnName("meta_client_user_agent").HasMaxLength(512);
         builder.Property(x => x.MetaClientIpAddress).HasColumnName("meta_client_ip_address").HasMaxLength(64);
         builder.Property(x => x.MetaFbp).HasColumnName("meta_fbp").HasMaxLength(255);

@@ -13,6 +13,7 @@ namespace SenorArroz.API.Controllers;
 [Route("api/integrations/meta/conversions")]
 public sealed class MetaConversionsDiagnosticsController(
     IApplicationDbContext db,
+    IBranchContext branchContext,
     IOptions<MetaConversionsOptions> metaOptions,
     IOptions<StorefrontCustomerAuthOptions> storefrontOptions) : ControllerBase
 {
@@ -23,8 +24,10 @@ public sealed class MetaConversionsDiagnosticsController(
     {
         var tenantId = Math.Max(1, storefrontOptions.Value.TenantId);
         var since = DateTime.UtcNow.AddDays(-7);
+        var branchId = branchContext.ResolveOptional();
         var query = db.PaymentNotificationOutboxMessages.AsNoTracking()
             .Where(x => x.TenantId == tenantId
+                && (!branchId.HasValue || x.BranchId == branchId.Value)
                 && PurchaseEventTypes.Contains(x.EventType)
                 && x.CreatedAt >= since);
 

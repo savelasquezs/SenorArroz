@@ -8,6 +8,19 @@ namespace SenorArroz.Tests;
 public sealed class StorefrontMetaAttributionInterceptorTests
 {
     [Fact]
+    public void Consent_mapping_preserves_the_existing_database_column()
+    {
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=mapping_test").Options);
+        foreach (var type in new[] { typeof(StorefrontCheckout), typeof(PaymentNotificationOutboxMessage) })
+        {
+            var entity = db.Model.FindEntityType(type)!;
+            var table = Microsoft.EntityFrameworkCore.Metadata.StoreObjectIdentifier.Table(entity.GetTableName()!, entity.GetSchema());
+            Assert.Equal("meta_consent_granted", entity.FindProperty("MetaConsentGranted")!.GetColumnName(table));
+        }
+    }
+
+    [Fact]
     public async Task Granted_consent_captures_attribution_on_checkout_and_outbox()
     {
         var accessor = ContextWithHeaders("granted");

@@ -181,6 +181,38 @@ public sealed class WompiPaymentServiceTests
         Assert.Empty(await db.AppPayments.ToListAsync());
     }
 
+    [Fact]
+    public async Task WhatsApp_payment_retry_preserves_original_checkout_expiration()
+    {
+        await using var db = CreateDb(nameof(WhatsApp_payment_retry_preserves_original_checkout_expiration));
+        var setup = await SeedAsync(db);
+        var checkout = Checkout(setup.Integration);
+        checkout.OrderSource = "whatsapp_flow";
+        db.StorefrontCheckouts.Add(checkout);
+        await db.SaveChangesAsync();
+        var service = CreateService(db, new FakeClock(Now));
+        var first = service.CreateCheckoutAttempt(checkout, setup.Integration, Now);
+        await db.SaveChangesAsync();
+        var retry = service.CreateCheckoutAttempt(checkout, setup.Integration, Now.AddMinutes(10));
+        Assert.NotEqual(first.Reference, retry.Reference);
+        Assert.Equal(first.ExpiresAt, retry.ExpiresAt);
+        Assert.Equal(Now.AddMinutes(15), checkout.ExpiresAt);
+    }
+
+    [Fact]
+    public async Task WhatsApp_payment_retry_rejects_expired_checkout()
+    {
+        await using var db = CreateDb(nameof(WhatsApp_payment_retry_rejects_expired_checkout));
+        var setup = await SeedAsync(db);
+        var checkout = Checkout(setup.Integration);
+        checkout.OrderSource = "whatsapp_flow";
+        db.StorefrontCheckouts.Add(checkout);
+        await db.SaveChangesAsync();
+        var service = CreateService(db, new FakeClock(Now));
+        Assert.Throws<SenorArroz.Domain.Exceptions.BusinessException>(() => service.CreateCheckoutAttempt(checkout, setup.Integration, Now.AddMinutes(15)));
+        Assert.Empty(db.WompiPaymentAttempts);
+    }
+
     [Theory]
     [InlineData(2_199_900, "COP")]
     [InlineData(2_200_000, "USD")]

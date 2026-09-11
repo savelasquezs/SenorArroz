@@ -98,6 +98,7 @@ public static partial class WhatsAppAiDiagnosticsMapper
             return null;
 
         var value = error.ToLowerInvariant();
+        if (value == "whatsapp_flow_started") return "flow";
         if (ContainsAny(value, "429", "quota", "cuota", "resource_exhausted", "rate limit", "too many requests", "billing"))
             return "quota";
         if (ContainsAny(value, "401", "403", "api key", "apikey", "unauthenticated", "permission_denied", "credential", "credencial", "unauthorized", "forbidden"))
@@ -131,6 +132,8 @@ public static partial class WhatsAppAiDiagnosticsMapper
     {
         return status switch
         {
+            WhatsAppAiProcessingStatus.Ignored when category == "flow" =>
+                ("success", "Menú interactivo disponible", "El cliente puede continuar su pedido con los botones de WhatsApp, sin usar IA."),
             WhatsAppAiProcessingStatus.Pending when !string.IsNullOrWhiteSpace(technicalDetail) =>
                 ("warning", "Reintento programado", FriendlyError(category, willRetry)),
             WhatsAppAiProcessingStatus.Pending =>

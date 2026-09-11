@@ -41,6 +41,12 @@ public static class DependencyInjection
         services.Configure<WhatsAppAiOrchestratorOptions>(configuration.GetSection(WhatsAppAiOrchestratorOptions.SectionName));
         services.Configure<WhatsAppAiPricingOptions>(configuration.GetSection(WhatsAppAiPricingOptions.SectionName));
         services.Configure<MetaConversionsOptions>(configuration.GetSection(MetaConversionsOptions.SectionName));
+        services.Configure<WhatsAppFlowOptions>(configuration.GetSection(WhatsAppFlowOptions.SectionName));
+        services.PostConfigure<WhatsAppFlowOptions>(options =>
+        {
+            options.PrivateKey = FirstNonEmpty(configuration["WHATSAPP_FLOW_PRIVATE_KEY"], options.PrivateKey) ?? string.Empty;
+            options.PrivateKeyPassphrase = FirstNonEmpty(configuration["WHATSAPP_FLOW_PRIVATE_KEY_PASSPHRASE"], options.PrivateKeyPassphrase) ?? string.Empty;
+        });
         services.PostConfigure<WhatsAppCloudOptions>(options =>
         {
             options.AccessToken = FirstNonEmpty(configuration["WHATSAPP_TOKEN"], options.AccessToken);
@@ -86,6 +92,7 @@ public static class DependencyInjection
         services.AddSingleton<IRoutingCostMatrixProvider, ApproximateRoutingCostMatrixProvider>();
         services.AddSingleton<IDeliveryRouteOptimizer, OrToolsDeliveryRouteOptimizer>();
         services.AddHttpClient<IWhatsAppCloudClient, WhatsAppCloudClient>();
+        services.AddSingleton<IWhatsAppFlowCrypto, WhatsAppFlowCrypto>();
         services.AddSingleton<IIntegrationSecretProtector, IntegrationSecretProtector>();
         services.AddHttpClient<IWompiPaymentService, WompiPaymentService>(client => client.Timeout = TimeSpan.FromSeconds(15));
         services.AddHttpClient<MetaConversionsClient>(client => client.Timeout = TimeSpan.FromSeconds(15));

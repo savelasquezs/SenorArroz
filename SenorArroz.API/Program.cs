@@ -151,6 +151,11 @@ builder.Services.Configure<StorefrontCustomerAuthOptions>(
     builder.Configuration.GetSection("StorefrontCustomerAuth"));
 builder.Services.AddSingleton<StorefrontApiKeyValidator>();
 builder.Services.AddScoped<SenorArroz.API.Services.StorefrontCustomerAuthService>();
+builder.Services.AddScoped<SenorArroz.API.Services.StorefrontCommerceService>();
+builder.Services.AddHttpClient<SenorArroz.API.Services.WhatsAppFlowImageService>(client => client.Timeout = TimeSpan.FromSeconds(3))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddScoped<SenorArroz.API.Services.WhatsAppCommerceFlowService>();
+builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppCommerceOutboxWorker>();
 builder.Services.AddScoped<IPaymentReviewNotificationService, SenorArroz.API.Services.PaymentReviewNotificationService>();
 builder.Services.Configure<DeliveryAppVersionOptions>(
     builder.Configuration.GetSection(DeliveryAppVersionOptions.SectionName));
@@ -374,6 +379,7 @@ var rappiWebhookWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimi
 var storefrontCatalogPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontCatalog:PermitLimit", 120));
 var storefrontQuotePermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontQuote:PermitLimit", 60));
 var storefrontAuthPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontAuth:PermitLimit", 30));
+var whatsAppFlowPermit = Math.Max(1, builder.Configuration.GetValue("RateLimiting:WhatsAppFlow:PermitLimit", 120));
 var storefrontWindowSec = Math.Max(1, builder.Configuration.GetValue("RateLimiting:StorefrontQuote:WindowSeconds", 60));
 var globalWindow = TimeSpan.FromSeconds(globalWindowSec);
 var authenticatedWindow = TimeSpan.FromSeconds(authenticatedWindowSec);
@@ -478,6 +484,20 @@ builder.Services.AddRateLimiter(options =>
             {
                 AutoReplenishment = true,
                 PermitLimit = storefrontAuthPermit,
+                Window = TimeSpan.FromSeconds(storefrontWindowSec),
+                QueueLimit = 0
+            });
+    });
+
+    options.AddPolicy("whatsapp-flow", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            $"whatsapp-flow:{ip}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = whatsAppFlowPermit,
                 Window = TimeSpan.FromSeconds(storefrontWindowSec),
                 QueueLimit = 0
             });

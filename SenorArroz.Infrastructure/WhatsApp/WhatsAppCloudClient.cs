@@ -120,6 +120,25 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return new(false, null, CreateClientError("send_image_link", ex, accessToken)); }
     }
 
+    public async Task<WhatsAppCloudSendResult> SendFlowMessageAsync(string phoneNumberId,string accessToken,string toPhoneNumber,string body,string buttonText,string flowId,string flowToken,string initialScreen,CancellationToken cancellationToken=default)
+    {
+        using var request=new HttpRequestMessage(HttpMethod.Post,BuildGraphUrl($"{phoneNumberId}/messages"));
+        request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",accessToken);
+        request.Content=JsonContent.Create(new{messaging_product="whatsapp",to=toPhoneNumber,type="interactive",interactive=new{type="flow",body=new{text=body},action=new{name="flow",parameters=new{flow_message_version="3",flow_token=flowToken,flow_id=flowId,flow_cta=buttonText,flow_action="data_exchange"}}}});
+        try
+        {
+            using var response=await _httpClient.SendAsync(request,cancellationToken);
+            var json=await response.Content.ReadAsStringAsync(cancellationToken);
+            if(!response.IsSuccessStatusCode)return new(false,null,CreateMetaHttpError("send_flow",json,response.StatusCode,accessToken));
+            using var document=JsonDocument.Parse(json);
+            return new(true,TryGetFirstMessageId(document.RootElement),null);
+        }
+        catch(Exception ex)when(ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            return new(false,null,CreateClientError("send_flow",ex,accessToken));
+        }
+    }
+
     public async Task<WhatsAppCloudTemplateSyncResult> GetMessageTemplatesAsync(
         string businessAccountId,
         string accessToken,
@@ -405,6 +424,11 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
 
     private string CreateMetaHttpError(string operation, string body, HttpStatusCode statusCode, string accessToken)
     {
+        if (operation == "send_flow")
+        {
+            _logger.LogWarning("Meta WhatsApp Flow request failed StatusCode={StatusCode}", (int)statusCode);
+            return $"Meta WhatsApp HTTP {(int)statusCode}: flow_request_rejected";
+        }
         var safeBody = Sanitize(body, accessToken);
         var providerMessage = ExtractMetaProviderMessage(safeBody);
         _logger.LogWarning(
@@ -426,7 +450,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
             JsonException => "invalid_response",
             _ => "client_error"
         };
-        var safeMessage = Sanitize(exception.Message, accessToken);
+        var safeMessage = operation == "send_flow" ? failureType : Sanitize(exception.Message, accessToken);
         _logger.LogWarning(
             "Meta WhatsApp client failure Operation={Operation} FailureType={FailureType} ExceptionType={ExceptionType} Error={ProviderError}",
             operation,

@@ -143,6 +143,9 @@ public class WhatsAppConversationDto
     public int Id { get; set; }
     public int BranchId { get; set; }
     public string? BranchName { get; set; }
+    public bool IsCentralChannel { get; set; }
+    public int? OperationalBranchId { get; set; }
+    public string? OperationalBranchName { get; set; }
     public int? CustomerId { get; set; }
     public string? CustomerName { get; set; }
     public string? PhoneNumber { get; set; }

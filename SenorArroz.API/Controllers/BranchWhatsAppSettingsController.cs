@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
 using SenorArroz.Domain.Entities;
@@ -116,7 +117,8 @@ public class BranchWhatsAppSettingsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(dto.AccessToken))
             setting.AccessToken = dto.AccessToken.Trim();
         setting.WebhookVerifyToken = dto.WebhookVerifyToken.Trim();
-        setting.AppSecret = string.IsNullOrWhiteSpace(dto.AppSecret) ? null : dto.AppSecret.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.AppSecret))
+            setting.AppSecret = dto.AppSecret.Trim();
         setting.IsActive = dto.IsActive;
         if (dto.AwayMessageEnabled.HasValue)
         {
@@ -199,6 +201,8 @@ public class BranchWhatsAppSettingsController : ControllerBase
             return "Access Token es requerido.";
         if (string.IsNullOrWhiteSpace(dto.WebhookVerifyToken))
             return "Webhook Verify Token es requerido.";
+        if (!string.IsNullOrWhiteSpace(dto.AppSecret) && !WhatsAppWebhookSignature.IsValidAppSecret(dto.AppSecret))
+            return WhatsAppWebhookSignature.InvalidAppSecretMessage;
         return null;
     }
 
@@ -223,7 +227,7 @@ public class BranchWhatsAppSettingsController : ControllerBase
             AccessTokenConfigured = !string.IsNullOrWhiteSpace(setting.AccessToken),
             AccessTokenMasked = string.IsNullOrWhiteSpace(setting.AccessToken) ? null : "••••••••",
             WebhookVerifyToken = setting.WebhookVerifyToken,
-            AppSecretConfigured = !string.IsNullOrWhiteSpace(setting.AppSecret),
+            AppSecretConfigured = WhatsAppWebhookSignature.IsValidAppSecret(setting.AppSecret),
             IsActive = setting.IsActive,
             IsVerified = setting.IsVerified,
             LastVerifiedAt = setting.LastVerifiedAt,

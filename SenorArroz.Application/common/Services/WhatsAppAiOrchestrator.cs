@@ -65,6 +65,7 @@ public class WhatsAppAiOrchestrator(
 
             if (conversation is null)
                 return await Ignore(message, "Conversación inexistente.", ct);
+            var effectiveBranchId = conversation.OperationalBranchId ?? conversation.BranchId;
 
             await NotifyCurrentStatusAsync(message.Id, conversation.BranchId, ct);
 
@@ -73,9 +74,15 @@ public class WhatsAppAiOrchestrator(
             if (message.Type != WhatsAppMessageType.Text || string.IsNullOrWhiteSpace(message.TextBody))
                 return await Ignore(message, "Tipo no soportado.", ct, conversation.BranchId);
 
-            var setting = await db.BranchAiSettings
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.BranchId == conversation.BranchId, ct);
+            var setting = conversation.ChannelSettingId.HasValue
+                ? await db.TenantAiSettings.AsNoTracking().Where(x => x.TenantId == conversation.TenantId)
+                    .Select(x => new ResolvedAiSetting(x.Provider, x.Model, x.IsActive, x.IsVerified, x.Temperature, x.MaxContextMessages,
+                        x.AssistantName, x.PromptObjective, x.PromptPersonality, x.PromptRequiredRules, x.PromptFixedBranchInfo, x.PromptAdditionalInstructions, x.TransferMessage))
+                    .FirstOrDefaultAsync(ct)
+                : await db.BranchAiSettings.AsNoTracking().Where(x => x.BranchId == conversation.BranchId)
+                    .Select(x => new ResolvedAiSetting(x.Provider, x.Model, x.IsActive, x.IsVerified, x.Temperature, x.MaxContextMessages,
+                        x.AssistantName, x.PromptObjective, x.PromptPersonality, x.PromptRequiredRules, x.PromptFixedBranchInfo, x.PromptAdditionalInstructions, x.TransferMessage))
+                    .FirstOrDefaultAsync(ct);
             if (setting is null)
                 return await Ignore(message, "IA no configurada.", ct, conversation.BranchId);
             if (!setting.IsActive)
@@ -147,10 +154,14 @@ public class WhatsAppAiOrchestrator(
                     null,
                     null))
                 .ToListAsync(ct);
-            var systemPrompt=await promptBuilder.Build(conversation.BranchId,ct);
+            var promptConfiguration = new WhatsAppPromptConfiguration(setting.AssistantName, setting.PromptObjective, setting.PromptPersonality,
+                setting.PromptRequiredRules, setting.PromptFixedBranchInfo, setting.PromptAdditionalInstructions);
+            var systemPrompt = conversation.ChannelSettingId.HasValue
+                ? await promptBuilder.BuildTenant(conversation.OperationalBranchId, promptConfiguration, ct)
+                : await promptBuilder.Build(conversation.BranchId, promptConfiguration, ct);
             var simpleState=await orderState.LoadAsync(conversationId,ct);
-            var cart=await orderState.BuildSummaryAsync(conversation.BranchId,simpleState,ct);
-            var customer=conversation.CustomerId.HasValue?await db.Customers.AsNoTracking().Where(x=>x.Id==conversation.CustomerId&&x.BranchId==conversation.BranchId).Select(x=>new
+            var cart=await orderState.BuildSummaryAsync(effectiveBranchId,simpleState,ct);
+            var customer=conversation.CustomerId.HasValue?await db.Customers.AsNoTracking().Where(x=>x.Id==conversation.CustomerId&&(conversation.ChannelSettingId!=null||x.BranchId==effectiveBranchId)).Select(x=>new
             {
                 id=x.Id,
                 name=x.Name,
@@ -168,7 +179,7 @@ public class WhatsAppAiOrchestrator(
                         isPrimary=a.IsPrimary
                     }).ToList()
             }).FirstOrDefaultAsync(ct):null;
-            var catalog=await db.Products.AsNoTracking().Include(x=>x.Category).Include(x=>x.CommercialProfile).Where(x=>x.Category.BranchId==conversation.BranchId&&x.Active).OrderBy(x=>x.Name).Select(x=>new{id=x.Id,name=x.Name,price=x.Price,available=!x.Stock.HasValue||x.Stock>0,x.ServesPeopleMin,x.ServesPeopleMax,commercialProfile=x.CommercialProfile==null?null:x.CommercialProfile.Name}).ToListAsync(ct);
+            var catalog=await db.Products.AsNoTracking().Include(x=>x.Category).Include(x=>x.CommercialProfile).Where(x=>(!conversation.ChannelSettingId.HasValue||conversation.OperationalBranchId.HasValue)&&x.Category.BranchId==effectiveBranchId&&x.Active).OrderBy(x=>x.Name).Select(x=>new{id=x.Id,name=x.Name,price=x.Price,available=!x.Stock.HasValue||x.Stock>0,x.ServesPeopleMin,x.ServesPeopleMax,commercialProfile=x.CommercialProfile==null?null:x.CommercialProfile.Name}).ToListAsync(ct);
             var operationalContext=JsonSerializer.Serialize(new
             {
                 architecture="simple_v1",
@@ -295,7 +306,7 @@ public class WhatsAppAiOrchestrator(
                         call.Name,
                         new(
                             conversationId,
-                            conversation.BranchId,
+                            effectiveBranchId,
                             incomingMessageId,
                             conversation.PhoneNumber,
                             conversation.CustomerId,
@@ -665,11 +676,9 @@ public class WhatsAppAiOrchestrator(
                     current.Id);
             }
 
-            var configured = await db.BranchAiSettings
-                .AsNoTracking()
-                .Where(x => x.BranchId == conversation.BranchId)
-                .Select(x => x.TransferMessage)
-                .FirstOrDefaultAsync(cancellationToken);
+            var configured = conversation.ChannelSettingId.HasValue
+                ? await db.TenantAiSettings.AsNoTracking().Where(x => x.TenantId == conversation.TenantId).Select(x => x.TransferMessage).FirstOrDefaultAsync(cancellationToken)
+                : await db.BranchAiSettings.AsNoTracking().Where(x => x.BranchId == conversation.BranchId).Select(x => x.TransferMessage).FirstOrDefaultAsync(cancellationToken);
             var text = string.IsNullOrWhiteSpace(configured)
                 ? "Un asesor continuará con tu atención."
                 : configured.Trim();
@@ -813,4 +822,19 @@ public class WhatsAppAiOrchestrator(
     private static string FormatProviderError(AiChatResponse response) => response.HttpStatusCode.HasValue
         ? $"HTTP {response.HttpStatusCode.Value}: {response.Error}"
         : response.Error ?? "Error desconocido del proveedor.";
+
+    private sealed record ResolvedAiSetting(
+        string Provider,
+        string Model,
+        bool IsActive,
+        bool IsVerified,
+        double? Temperature,
+        int MaxContextMessages,
+        string AssistantName,
+        string? PromptObjective,
+        string? PromptPersonality,
+        string? PromptRequiredRules,
+        string? PromptFixedBranchInfo,
+        string? PromptAdditionalInstructions,
+        string TransferMessage);
 }

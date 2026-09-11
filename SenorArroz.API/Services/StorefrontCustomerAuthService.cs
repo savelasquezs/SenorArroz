@@ -135,6 +135,9 @@ public sealed class StorefrontCustomerAuthService(
         return await ResolveCustomerAsync(challenge.Phone, ct);
     }
 
+    public Task<StorefrontCustomerSessionResult> ResolveTrustedPhoneAsync(string phone, CancellationToken ct) =>
+        ResolveCustomerAsync(NormalizePhone(phone), ct);
+
     private async Task<StorefrontCustomerSessionResult> ResolveCustomerAsync(string phone, CancellationToken ct)
     {
         var matches = await db.Customers.AsNoTracking()
