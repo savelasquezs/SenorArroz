@@ -427,13 +427,16 @@ public sealed class StorefrontCommerceService(
         if (promotion is not null) availableBenefits.Add(ToBenefitDto(promotion));
         if (loyaltyBenefit is not null) availableBenefits.Add(loyaltyBenefit);
         var selectedBenefit = Normalize(request.BenefitSelection);
-        var appliedBenefit = availableBenefits.Count switch
-        {
-            0 => null,
-            1 => availableBenefits[0],
-            _ => availableBenefits.FirstOrDefault(x => Normalize(x.Source) == selectedBenefit),
-        };
-        var benefitConflict = availableBenefits.Count > 1 && appliedBenefit is null;
+        var skipBenefits = selectedBenefit == "none";
+        var appliedBenefit = skipBenefits
+            ? null
+            : availableBenefits.Count switch
+            {
+                0 => null,
+                1 => availableBenefits[0],
+                _ => availableBenefits.FirstOrDefault(x => Normalize(x.Source) == selectedBenefit),
+            };
+        var benefitConflict = availableBenefits.Count > 1 && appliedBenefit is null && !skipBenefits;
         var applied = await ApplyBenefitAsync(cartLines, checkoutDeliveryFee, appliedBenefit, cancellationToken);
         cartLines = applied.Items;
         checkoutDeliveryFee = applied.DeliveryFee;

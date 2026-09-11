@@ -114,6 +114,10 @@ public sealed class WhatsAppFlowSecurityTests
         Assert.Contains("\"recommendation_id\":\"\"", cartJson);
         Assert.Contains("\"cart_command\":\"${form.command}\"", cartJson);
         Assert.Contains("\"command\":\"cart_submit\"", cartJson);
+        var cartChildren = cart.GetProperty("layout").GetProperty("children")[0].GetProperty("children").EnumerateArray().ToArray();
+        Assert.DoesNotContain(cartChildren, x => x.TryGetProperty("text", out var text)
+            && text.GetString() == "Las sugerencias son opcionales y nunca bloquean tu pedido.");
+        Assert.Contains(cartChildren, x => x.TryGetProperty("text", out var text) && text.GetString() == "${data.cart_tip}");
 
         var summary = screens.Single(x => x.GetProperty("id").GetString() == "SUMMARY");
         var summaryJson = JsonSerializer.Serialize(summary);

@@ -406,15 +406,22 @@ public sealed class WhatsAppCommerceFlowService(
                 if (command == "recommendation")
                 {
                     var recommendationId = GetInt(data, "recommendation_id");
-                    var match = FindProduct(catalog!, recommendationId);
-                    if (match is null) error = "Elige una sugerencia disponible.";
+                    var recommendation = StorefrontRecommendationSelector.Select(catalog!, state.Cart, 3)
+                        .FirstOrDefault(x => x.Option.ProductId == recommendationId);
+                    if (recommendation is null || recommendation.Option.AvailabilityStatus == "unavailable")
+                        error = "Elige una sugerencia disponible.";
+                    else if (!AddOrReplace(state.Cart, recommendation.Option.ProductId, 1))
+                        error = "El carrito admite máximo 30 productos distintos.";
                     else
                     {
-                        state.Category = match.Value.Category;
-                        state.SelectedProductGroup = match.Value.Group.Key;
-                        state.PendingRecommendationProductId = recommendationId;
+                        TrackEvent(session, "recommendation_added", session.BranchId, current,
+                            recommendation.Option.ProductId.ToString(CultureInfo.InvariantCulture));
+                        state.Category = null;
+                        state.SelectedProductGroup = null;
+                        state.PendingRecommendationProductId = null;
                         state.EditingProductId = null;
-                        state.CartMode = "variant";
+                        state.CartMode = "summary";
+                        InvalidateQuote(state);
                         next = "CART";
                     }
                     break;
@@ -448,12 +455,11 @@ public sealed class WhatsAppCommerceFlowService(
                 break;
             case "BENEFITS":
                 state.BenefitSelection = GetString(data, "benefit_selection");
-                if (state.BenefitSelection == "none") state.BenefitSelection = null;
                 InvalidateQuote(state);
                 var benefitQuote = await GetQuoteAsync(session, state, ct);
                 if (!benefitQuote.Success)
                     return await HandleQuoteFailureAsync(session, state, benefitQuote, ct);
-                if (benefitQuote.Quote!.BenefitConflict)
+                if (benefitQuote.Quote!.BenefitConflict && state.BenefitSelection != "none")
                     error = "Elige solo un beneficio para continuar.";
                 else next = "PAYMENT";
                 break;
@@ -671,7 +677,15 @@ public sealed class WhatsAppCommerceFlowService(
             return ("ADDRESS_PICKUP", quote.Message);
         }
         ApplyQuoteState(session, state, quote.Quote!);
-        return (quote.Quote!.AvailableBenefits.Count > 0 ? "BENEFITS" : "PAYMENT", null);
+        var availableBenefits = quote.Quote!.AvailableBenefits;
+        if (availableBenefits.Count == 1)
+        {
+            state.BenefitSelection = availableBenefits.Single().Source;
+            InvalidateQuote(state);
+            return ("PAYMENT", null);
+        }
+        state.BenefitSelection = null;
+        return (availableBenefits.Count > 1 ? "BENEFITS" : "PAYMENT", null);
     }
 
     private async Task<Dictionary<string, object?>> BuildScreenAsync(
@@ -783,11 +797,12 @@ public sealed class WhatsAppCommerceFlowService(
         {
             var group = groups[index];
             var available = group.Options.Where(x => x.AvailabilityStatus != "unavailable").ToArray();
+            var minimumPrice = available.Length == 0 ? 0 : available.Min(x => x.Price);
             var row = new Dictionary<string, object?>
             {
                 ["id"] = group.Key,
                 ["title"] = ShortTitle(group.Name),
-                ["description"] = available.Length == 0 ? "Agotado" : $"Desde {Money(available.Min(x => x.Price))}",
+                ["description"] = available.Length == 0 ? "Agotado" : minimumPrice <= 0 ? "Gratis" : $"Desde {Money(minimumPrice)}",
                 ["enabled"] = available.Length > 0
             };
             var image = groupImages[index];
@@ -839,7 +854,9 @@ public sealed class WhatsAppCommerceFlowService(
             {
                 id = item.ProductId.ToString(CultureInfo.InvariantCulture),
                 title = ShortTitle($"{item.Quantity} × {value.Option?.Name ?? "Producto no disponible"}"),
-                description = value.Option is null ? "Ya no está disponible" : $"{value.Option.VariantLabel} · {Money(value.Option.Price * item.Quantity)}"
+                description = value.Option is null
+                    ? "Ya no está disponible"
+                    : ShortDescription($"{value.Option.VariantLabel} · {PriceLabel(value.Option.Price * item.Quantity)}")
             };
         }).ToArray();
         payload["cart_subtotal_text"] = $"Subtotal de productos: {Money(CalculateSubtotal(catalog, state.Cart))}";
@@ -855,7 +872,7 @@ public sealed class WhatsAppCommerceFlowService(
         {
             id = x.Option.ProductId.ToString(CultureInfo.InvariantCulture),
             title = ShortTitle(x.Group.Name),
-            description = $"{x.Option.VariantLabel} · {Money(x.Option.Price)}"
+            description = ShortDescription($"{x.Option.VariantLabel} · {PriceLabel(x.Option.Price)}")
         }).ToArray();
         payload["selected_category"] = state.Category ?? string.Empty;
         payload["selected_product_group"] = state.SelectedProductGroup ?? string.Empty;
@@ -1275,10 +1292,22 @@ public sealed class WhatsAppCommerceFlowService(
 
     private static string BuildSummary(PublicDeliveryQuoteDto quote, string? paymentMethod)
     {
-        var lines = string.Join("\n", quote.Items.Select(x => $"{x.Quantity} × {x.Name}: {Money(x.Subtotal)}"));
+        var lines = string.Join("\n", quote.Items.Select(x =>
+            $"{x.Quantity} × {FixDisplayEncoding(x.Name)}: {PriceLabel(x.Subtotal)}"));
         var discount = quote.DiscountTotal > 0 ? $"\nDescuentos: -{Money(quote.DiscountTotal)}" : string.Empty;
-        var delivery = quote.FulfillmentType == "delivery" ? $"\nDomicilio: {Money(quote.EstimatedDeliveryFee)}" : string.Empty;
-        return $"{BuildAddressSummary(quote)}\n\n{lines}\nSubtotal: {Money(quote.Subtotal)}{discount}{delivery}\nTotal: {Money(quote.Total)}\nPago: {(paymentMethod == "online" ? "Wompi" : "Efectivo")}";
+        var benefit = quote.AppliedBenefit is null
+            ? string.Empty
+            : $"\nBeneficio: {FixDisplayEncoding(quote.AppliedBenefit.Title)}";
+        var delivery = string.Empty;
+        if (quote.FulfillmentType == "delivery")
+        {
+            var originalDeliveryFee = quote.Branches.FirstOrDefault(x => x.Id == quote.CheckoutBranchId)?.EstimatedDeliveryFee
+                ?? quote.EstimatedDeliveryFee;
+            delivery = originalDeliveryFee > 0 && quote.EstimatedDeliveryFee == 0
+                ? $"\nDomicilio: Gratis (antes {Money(originalDeliveryFee)})"
+                : $"\nDomicilio: {PriceLabel(quote.EstimatedDeliveryFee)}";
+        }
+        return $"{BuildAddressSummary(quote)}\n\n{lines}\nSubtotal: {Money(quote.Subtotal)}{discount}{benefit}{delivery}\nTotal: {Money(quote.Total)}\nPago: {(paymentMethod == "online" ? "Wompi" : "Efectivo")}";
     }
 
     private static string BuildAddressSummary(PublicDeliveryQuoteDto quote)
@@ -1497,7 +1526,7 @@ public sealed class WhatsAppCommerceFlowService(
     {
         var people = category is "rice" or "combo" ? PeopleText(option.ServesPeopleMin, option.ServesPeopleMax) : string.Empty;
         var availability = option.AvailabilityStatus == "lowStock" ? " · Pocas unidades" : string.Empty;
-        return ShortDescription($"{Money(option.Price)}{(string.IsNullOrEmpty(people) ? string.Empty : $" · {people}")}{availability}");
+        return ShortDescription($"{PriceLabel(option.Price)}{(string.IsNullOrEmpty(people) ? string.Empty : $" · {people}")}{availability}");
     }
 
     private static string PeopleText(int? min, int? max) => (min, max) switch
@@ -1538,14 +1567,25 @@ public sealed class WhatsAppCommerceFlowService(
     private static string Sha256(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     private static string Base64Url(byte[] value) => Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     private static string Money(int value) => value.ToString("C0", CultureInfo.GetCultureInfo("es-CO"));
+    private static string PriceLabel(int value) => value <= 0 ? "Gratis" : Money(value);
     private static string ShortTitle(string value) => CompactText(value, 30);
     private static string ShortDescription(string value) => CompactText(value, 300);
     private static string CompactText(string value, int maxLength)
     {
+        value = FixDisplayEncoding(value);
         var clean = string.Join(' ', new string(value.Where(x => !char.IsControl(x)).ToArray())
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         return clean.Length <= maxLength ? clean : clean[..(maxLength - 1)] + "…";
     }
+    private static string FixDisplayEncoding(string value)
+    {
+        if (string.IsNullOrEmpty(value) || (!value.Contains('Ã') && !value.Contains('Â'))) return value;
+        var decoded = Encoding.UTF8.GetString(Encoding.Latin1.GetBytes(value));
+        return decoded.Contains('�') || SuspiciousEncodingScore(decoded) >= SuspiciousEncodingScore(value)
+            ? value
+            : decoded;
+    }
+    private static int SuspiciousEncodingScore(string value) => value.Count(x => x is 'Ã' or 'Â' or '�');
     private static string? GetString(JsonElement data, string name) => data.ValueKind == JsonValueKind.Object
         && data.TryGetProperty(name, out var value)
         && value.ValueKind == JsonValueKind.String

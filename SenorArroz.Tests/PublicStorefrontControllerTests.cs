@@ -539,6 +539,12 @@ public class PublicStorefrontControllerTests
         Assert.Equal(2, conflict.AvailableBenefits.Count);
         Assert.Null(conflict.AppliedBenefit);
 
+        request.BenefitSelection = "none";
+        var noneAction = await controller.Quote(request, default, auth);
+        var none = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(noneAction.Result).Value).Data!;
+        Assert.False(none.BenefitConflict);
+        Assert.Null(none.AppliedBenefit);
+
         request.BenefitSelection = "loyalty";
         var selectedAction = await controller.Quote(request, default, auth);
         var selected = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(selectedAction.Result).Value).Data!;

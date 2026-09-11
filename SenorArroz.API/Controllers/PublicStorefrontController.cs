@@ -367,7 +367,7 @@ public class PublicDeliveryQuoteRequest
     [StringLength(60)]
     public string? AddressLabel { get; set; }
 
-    [RegularExpression("^(daily_promotion|loyalty)?$")]
+    [RegularExpression("^(daily_promotion|loyalty|none)?$")]
     public string? BenefitSelection { get; set; }
 
     public List<PublicCartItemRequest> Items { get; set; } = [];
