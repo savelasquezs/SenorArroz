@@ -148,6 +148,29 @@ Notas:
 - El esquema de OTP, direcciones web y pedidos directos se instala con `SenorArroz.Infrastructure/Scripts/add_storefront_customer_otp.sql` antes de desplegar el API.
 - `wompi_payment_attempt.app_payment_id` usa `ON DELETE SET NULL`; el ajuste para instalaciones existentes está en `SenorArroz.Infrastructure/Scripts/fix_wompi_order_deletion.sql`.
 
+### Meta Conversions API: atribución y entrega de Purchase
+
+El mapping reside exclusivamente en `WompiPaymentConfigurations.cs` mediante Fluent API. El script idempotente `SenorArroz.Infrastructure/Scripts/add_meta_conversions_api.sql` debe ejecutarse antes de desplegar el backend.
+
+| Tabla | Campos Meta | Tipo y propósito |
+|---|---|---|
+| `storefront_checkout` y `payment_notification_outbox` | `meta_consent_granted` | Booleano no nulo, inicialmente `false`; autorización de medición |
+| Ambas | `meta_client_user_agent`, `meta_client_ip_address` | Texto opcional de hasta 512 y 64 caracteres |
+| Ambas | `meta_fbp`, `meta_fbc` | Identificadores opcionales de hasta 255 caracteres |
+| `payment_notification_outbox` | `meta_customer_phone` | Teléfono opcional de hasta 20 caracteres; se transforma con SHA-256 antes de enviarlo a Meta |
+| `payment_notification_outbox` | `meta_status` | Estado independiente del envío a cocina: `pending`, `processed`, `failed`, `ignored` |
+| `payment_notification_outbox` | `meta_attempt_count` | Número de fallos, inicialmente cero |
+| `payment_notification_outbox` | `meta_next_attempt_at`, `meta_processed_at` | Fechas UTC opcionales de reintento y procesamiento |
+| `payment_notification_outbox` | `meta_last_error` | Último error, máximo 1000 caracteres |
+
+- Los registros históricos reciben `meta_status = ignored` mediante el valor inicial SQL; los nuevos mensajes creados por la aplicación comienzan en `pending`. No se reenvían compras históricas al activar CAPI.
+- `pending -> processed`: Meta acepta Purchase. Se registra la fecha y se limpian error y próximo intento.
+- `pending -> ignored`: falta consentimiento, el origen del pedido no es `web` o el tipo de evento no es `order_created_web_cash` / `order_payment_approved`.
+- Un fallo transitorio mantiene `pending`, incrementa el contador y programa espera exponencial de 30 a 480 segundos; el décimo fallo cambia a `failed`. Un rechazo permanente cambia directamente a `failed` y registra fecha/error. No hay reintento automático de estados terminales.
+- Sin configuración válida de CAPI, el worker conserva los mensajes pendientes. El estado y los reintentos de cocina permanecen independientes.
+- El pago aprobado recupera consentimiento y atribución del checkout del mismo tenant. Los pedidos de WhatsApp conservan su origen y quedan excluidos de Purchase web.
+- Se conserva el aislamiento mediante `tenant_id` del storefront resuelto en servidor y el filtro de sucursal en diagnósticos. El índice `ix_payment_notification_outbox_meta_pending` cubre estado y fecha; la unicidad existente `(order_id, event_type)` y el identificador estable del evento permiten deduplicación.
+
 ### Bancos, apps y pagos
 
 | Entidad | Tenant-owned | Backfill sugerido |

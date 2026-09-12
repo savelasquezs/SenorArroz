@@ -24,6 +24,18 @@ namespace SenorArroz.Tests;
 public sealed class WhatsAppFlowSecurityTests
 {
     [Theory]
+    [InlineData("40001", true)]
+    [InlineData("40P01", true)]
+    [InlineData("23503", false)]
+    public void Transaction_conflicts_are_recognized_through_ef_wrappers(string sqlState, bool expected)
+    {
+        var postgres = new Npgsql.PostgresException("test", "ERROR", "ERROR", sqlState);
+        var wrapped = new InvalidOperationException("transient", new DbUpdateException("save", postgres));
+
+        Assert.Equal(expected, SenorArroz.Infrastructure.Helpers.PostgresExceptionHelper.IsTransactionConflict(wrapped));
+    }
+
+    [Theory]
     [InlineData(WhatsAppAttentionMode.Human)]
     [InlineData(WhatsAppAttentionMode.WaitingForHuman)]
     [InlineData(WhatsAppAttentionMode.Paused)]
