@@ -34,7 +34,7 @@ public sealed class MetaConversionsClientTests
         Assert.NotNull(handler.Request);
         Assert.Equal(HttpMethod.Post, handler.Request!.Method);
         Assert.Equal(
-            "https://graph.facebook.com/v25.0/1941546679814779/events",
+            "https://graph.facebook.com/v25.0/2113461422629399/events",
             handler.Request.RequestUri!.ToString());
         Assert.Equal("Bearer", handler.Request.Headers.Authorization?.Scheme);
         Assert.Equal("server-token", handler.Request.Headers.Authorization?.Parameter);
@@ -151,7 +151,7 @@ public sealed class MetaConversionsClientTests
     {
         var options = Options.Create(new MetaConversionsOptions
         {
-            PixelId = "1941546679814779",
+            PixelId = "2113461422629399",
             AccessToken = "server-token",
             GraphApiVersion = "v25.0",
             EventSourceUrl = "https://senorarroz.com",
