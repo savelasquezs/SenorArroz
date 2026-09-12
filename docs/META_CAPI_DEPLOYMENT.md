@@ -16,13 +16,13 @@ Esto permite la deduplicación Pixel + CAPI.
 
 1. Aplicar `SenorArroz.Infrastructure/Scripts/add_meta_conversions_api.sql` en PostgreSQL.
 2. Configurar en el backend de Railway:
-   - `META_PIXEL_ID=2113461422629399`
+   - `META_PIXEL_ID=1941546679814779`
    - `META_CAPI_ACCESS_TOKEN=<secreto>`
    - `META_GRAPH_API_VERSION=v25.0`
    - `META_EVENT_SOURCE_URL=https://senorarroz.com`
-   - `META_CAPI_TEST_EVENT_CODE=<código actual de Probar eventos del dataset 2113461422629399>` únicamente durante la validación. No reutilizar automáticamente un código generado para otro Pixel.
+   - `META_CAPI_TEST_EVENT_CODE=<código actual de Probar eventos del dataset 1941546679814779>` únicamente durante la validación. No reutilizar automáticamente un código generado para el Pixel anterior.
 3. Configurar en el storefront:
-   - `NEXT_PUBLIC_META_PIXEL_ID=2113461422629399`
+   - `NEXT_PUBLIC_META_PIXEL_ID=1941546679814779`
 4. Desplegar el storefront con el consentimiento de medición.
 5. Desplegar el backend con CAPI.
 6. Hacer una compra de prueba aceptando medición.
@@ -70,7 +70,7 @@ Si CAPI presenta problemas después del despliegue:
 3. El checkout, cocina y pagos continúan funcionando sin CAPI.
 4. Investigar `meta_last_error` y el endpoint de diagnóstico antes de volver a habilitar el token.
 
-Si se necesita detener también la medición del navegador, revertir el storefront o elegir `Solo esenciales` durante las pruebas. No reutilizar otro Pixel como fallback accidental.
+Si se necesita detener también la medición del navegador, revertir el storefront o elegir `Solo esenciales` durante las pruebas. No reutilizar el Pixel anterior como fallback accidental.
 
 ## Seguridad
 
