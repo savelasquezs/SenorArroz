@@ -15,6 +15,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.HasKey(o => o.Id);
         builder.Property(o => o.Id).HasColumnName("id");
 
+        builder.Property(o => o.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
         builder.Property(o => o.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(o => o.TakenById).HasColumnName("taken_by_id").IsRequired();
         builder.Property(o => o.CustomerId).HasColumnName("customer_id");
@@ -149,6 +150,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         // Índices
         builder.HasIndex(o => o.BranchId).HasDatabaseName("idx_order_branch");
         builder.HasIndex(o => o.CustomerId).HasDatabaseName("idx_order_customer");
+        builder.HasIndex(o => new { o.TenantId, o.CustomerId, o.BranchId }).HasDatabaseName("ix_order_tenant_customer_branch");
         builder.HasIndex(o => o.Status).HasDatabaseName("idx_order_status");
         builder.HasIndex(o => o.Type).HasDatabaseName("idx_order_type");
         builder.HasIndex(o => o.CreatedAt).HasDatabaseName("idx_order_date");

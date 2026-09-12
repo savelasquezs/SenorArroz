@@ -56,7 +56,7 @@ public sealed class WhatsAppFlowsController(
         var action = GetString(root, "action") ?? string.Empty;
         var version = GetString(root, "version") ?? "3.0";
         var channel = await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(
-            x => x.PublicId == channelPublicId && x.TenantId == 1, ct);
+            x => x.PublicId == channelPublicId && x.TenantId == commerce.TenantId, ct);
         if (channel is null)
             return Encrypted(WhatsAppCommerceFlowService.Recovery(1, "Este menú ya no está disponible. Cierra y escribe PEDIDO.", false), decrypted);
         if (action == "ping")

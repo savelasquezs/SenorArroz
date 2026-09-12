@@ -29,7 +29,8 @@ public class CreateAddressHandler : IRequestHandler<CreateAddressCommand, Custom
     public async Task<CustomerAddressDto> Handle(CreateAddressCommand request, CancellationToken cancellationToken)
     {
         // Validate customer exists
-        if (!await _customerRepository.ExistsAsync(request.CustomerId))
+        var customer = await _customerRepository.GetByIdAsync(request.CustomerId, cancellationToken);
+        if (customer is null)
         {
             throw new NotFoundException($"Cliente con ID {request.CustomerId} no encontrado");
         }
@@ -40,6 +41,8 @@ public class CreateAddressHandler : IRequestHandler<CreateAddressCommand, Custom
         {
             throw new NotFoundException($"Barrio con ID {request.NeighborhoodId} no encontrado");
         }
+        if (neighborhood.TenantId != customer.TenantId)
+            throw new BusinessException("El barrio y el cliente pertenecen a restaurantes diferentes");
 
         // If this address should be primary, first unset all other primary addresses
         if (request.IsPrimary)
@@ -49,6 +52,7 @@ public class CreateAddressHandler : IRequestHandler<CreateAddressCommand, Custom
 
         var address = new Address
         {
+            TenantId = customer.TenantId,
             CustomerId = request.CustomerId,
             NeighborhoodId = request.NeighborhoodId,
             AddressText = request.Address.Trim(),

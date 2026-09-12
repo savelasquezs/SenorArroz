@@ -125,6 +125,33 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         await ValidateAndStampManualBenefitAsync(request.Order, branchId, cancellationToken);
 
         var order = _mapper.Map<Order>(request.Order);
+        var branchTenantId = await _db.Branches.AsNoTracking()
+            .Where(x => x.Id == branchId)
+            .Select(x => x.TenantId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (branchTenantId <= 0 && !_db.Database.IsRelational())
+            branchTenantId = 1;
+        if (branchTenantId <= 0)
+            throw new BusinessException("La sucursal no pertenece a un tenant válido");
+        order.TenantId = branchTenantId;
+        if (order.CustomerId.HasValue && !await _db.Customers.AsNoTracking().AnyAsync(
+                x => x.Id == order.CustomerId && x.TenantId == branchTenantId && x.Active, cancellationToken))
+            throw new BusinessException("El cliente no pertenece al restaurante actual");
+        if (order.AddressId.HasValue && !await _db.Addresses.AsNoTracking().AnyAsync(
+                x => x.Id == order.AddressId && x.TenantId == branchTenantId && x.CustomerId == order.CustomerId, cancellationToken))
+            throw new BusinessException("La dirección no pertenece al cliente o al restaurante actual");
+        if (order.AddressId.HasValue)
+        {
+            var addressService = await _db.AddressBranches.AsNoTracking().FirstOrDefaultAsync(x =>
+                x.TenantId == branchTenantId && x.AddressId == order.AddressId && x.BranchId == branchId,
+                cancellationToken);
+            if (addressService is not null)
+            {
+                if (!addressService.IsCovered)
+                    throw new BusinessException("La dirección está fuera de cobertura para la sucursal actual");
+                order.DeliveryFee = addressService.DeliveryFee;
+            }
+        }
         order.WhatsAppConversationId = request.Order.WhatsAppConversationId;
         if (request.Order.AppliedBenefitType == OrderBenefitType.Manual)
         {

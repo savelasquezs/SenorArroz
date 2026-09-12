@@ -20,5 +20,16 @@ namespace SenorArroz.Application.Features.Customers.DTOs
         public decimal? Longitude { get; set; }
         public bool IsPrimary { get; set; }
         public DateTime CreatedAt { get; set; }
+        public List<CustomerAddressBranchDto> BranchServices { get; set; } = new();
+    }
+
+    public sealed class CustomerAddressBranchDto
+    {
+        public int BranchId { get; set; }
+        public int? NeighborhoodId { get; set; }
+        public string? NeighborhoodName { get; set; }
+        public int DeliveryFee { get; set; }
+        public bool IsCovered { get; set; }
+        public DateTime? ValidatedAt { get; set; }
     }
 }

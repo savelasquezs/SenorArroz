@@ -9,6 +9,7 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
+using SenorArroz.Infrastructure.Services;
 
 namespace SenorArroz.Infrastructure.Integrations;
 
@@ -593,7 +594,7 @@ public sealed class WompiPaymentService(
     {
         if (checkout.Order is not null) return checkout.Order;
 
-        var branch = await db.Branches.FirstOrDefaultAsync(x => x.Id == checkout.BranchId && x.IsActive, cancellationToken)
+        var branch = await db.Branches.FirstOrDefaultAsync(x => x.TenantId == checkout.TenantId && x.Id == checkout.BranchId && x.IsActive, cancellationToken)
             ?? throw new BusinessException("La sucursal del checkout ya no está disponible.");
         if (!branch.StorefrontTakenByUserId.HasValue)
             throw new BusinessException("La sucursal no tiene usuario técnico para pedidos web.");
@@ -601,46 +602,94 @@ public sealed class WompiPaymentService(
         Customer customer;
         if (checkout.CustomerId.HasValue)
         {
-            customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == checkout.CustomerId && x.Active, cancellationToken)
+            customer = await db.Customers.FirstOrDefaultAsync(x => x.TenantId == checkout.TenantId && x.Id == checkout.CustomerId && x.Active, cancellationToken)
                 ?? throw new BusinessException("El cliente verificado ya no está disponible.");
         }
         else
         {
-            customer = await db.Customers.FirstOrDefaultAsync(x => x.Active && (x.Phone1 == checkout.CustomerPhone || x.Phone2 == checkout.CustomerPhone), cancellationToken)
+            customer = await db.Customers.FirstOrDefaultAsync(x => x.TenantId == checkout.TenantId && x.Active &&
+                    (x.Phones.Any(p => p.Active && p.PhoneNormalized == checkout.CustomerPhone) || x.Phone1 == checkout.CustomerPhone || x.Phone2 == checkout.CustomerPhone), cancellationToken)
                 ?? new Customer
                 {
+                    TenantId = checkout.TenantId,
                     BranchId = checkout.BranchId,
                     Name = checkout.CustomerName,
                     Phone1 = checkout.CustomerPhone,
                     Active = true,
                 };
-            if (customer.Id == 0) db.Customers.Add(customer);
+            if (customer.Id == 0)
+            {
+                customer.Phones.Add(new CustomerPhone { TenantId = checkout.TenantId, PhoneNormalized = checkout.CustomerPhone, IsPrimary = true });
+                db.Customers.Add(customer);
+            }
         }
 
         Address? address = checkout.SavedAddress;
+        if (address is not null && (address.TenantId != checkout.TenantId || address.CustomerId != customer.Id))
+            throw new BusinessException("La dirección guardada no pertenece al cliente y tenant del checkout.");
         if (checkout.FulfillmentType == "delivery" && address is null)
         {
-            var hasAddresses = customer.Id != 0 && await db.Addresses.AnyAsync(x => x.CustomerId == customer.Id, cancellationToken);
-            address = new Address
+            var normalizedAddress = CustomerAddressResolutionService.NormalizeAddress(checkout.OriginalAddress ?? checkout.FormattedAddress!);
+            List<Address> customerAddresses = customer.Id == 0
+                ? []
+                : await db.Addresses.Where(x => x.TenantId == checkout.TenantId && x.CustomerId == customer.Id)
+                    .ToListAsync(cancellationToken);
+            address = customerAddresses.FirstOrDefault(x =>
+                x.NormalizedAddressText == normalizedAddress
+                || CustomerAddressResolutionService.NormalizeAddress(x.AddressText) == normalizedAddress
+                || (!string.IsNullOrWhiteSpace(x.OriginalAddressText)
+                    && CustomerAddressResolutionService.NormalizeAddress(x.OriginalAddressText) == normalizedAddress));
+            if (address is not null)
             {
-                Customer = customer,
-                Label = string.IsNullOrWhiteSpace(checkout.AddressLabel) ? "Casa" : checkout.AddressLabel,
-                AddressText = checkout.FormattedAddress!,
-                AdditionalInfo = checkout.AddressAdditionalInfo,
-                DeliveryFee = checkout.DeliveryFee,
-                Latitude = checkout.Latitude,
-                Longitude = checkout.Longitude,
-                IsPrimary = !hasAddresses,
-                OriginalAddressText = checkout.OriginalAddress,
-                NormalizedAddressText = checkout.FormattedAddress,
-                ValidationSource = "storefront_google",
-                ValidatedAt = observedAt,
-            };
-            db.Addresses.Add(address);
+                var service = await db.AddressBranches.FirstOrDefaultAsync(x =>
+                    x.TenantId == checkout.TenantId && x.AddressId == address.Id && x.BranchId == checkout.BranchId,
+                    cancellationToken);
+                service ??= new AddressBranch
+                {
+                    TenantId = checkout.TenantId,
+                    AddressId = address.Id,
+                    BranchId = checkout.BranchId
+                };
+                if (service.Id == 0) db.AddressBranches.Add(service);
+                service.DeliveryFee = checkout.DeliveryFee;
+                service.IsCovered = true;
+                service.ValidatedAt = observedAt;
+                service.LastUsedAt = observedAt;
+            }
+            else
+            {
+                address = new Address
+                {
+                    TenantId = checkout.TenantId,
+                    Customer = customer,
+                    Label = string.IsNullOrWhiteSpace(checkout.AddressLabel) ? "Casa" : checkout.AddressLabel,
+                    AddressText = checkout.FormattedAddress!,
+                    AdditionalInfo = checkout.AddressAdditionalInfo,
+                    DeliveryFee = checkout.DeliveryFee,
+                    Latitude = checkout.Latitude,
+                    Longitude = checkout.Longitude,
+                    IsPrimary = customerAddresses.Count == 0,
+                    OriginalAddressText = checkout.OriginalAddress,
+                    NormalizedAddressText = normalizedAddress,
+                    ValidationSource = "storefront_google",
+                    ValidatedAt = observedAt,
+                };
+                address.BranchServices.Add(new AddressBranch
+                {
+                    TenantId = checkout.TenantId,
+                    BranchId = checkout.BranchId,
+                    DeliveryFee = checkout.DeliveryFee,
+                    IsCovered = true,
+                    ValidatedAt = observedAt,
+                    LastUsedAt = observedAt
+                });
+                db.Addresses.Add(address);
+            }
         }
 
         var order = new Order
         {
+            TenantId = checkout.TenantId,
             BranchId = checkout.BranchId,
             TakenById = branch.StorefrontTakenByUserId.Value,
             Customer = customer,

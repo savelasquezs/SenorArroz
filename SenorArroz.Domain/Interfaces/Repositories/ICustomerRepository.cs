@@ -21,13 +21,13 @@ namespace SenorArroz.Domain.Interfaces.Repositories
 
         Task<Customer?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
         Task<Customer?> GetByIdWithAddressesAsync(int id, CancellationToken cancellationToken = default);
-        Task<Customer?> GetByPhoneAsync(string phone, int branchId, CancellationToken cancellationToken = default);
+        Task<Customer?> GetByPhoneAsync(string phone, int tenantId, CancellationToken cancellationToken = default);
         Task<IEnumerable<Customer>> GetByBranchIdAsync(int branchId, CancellationToken cancellationToken = default);
         Task<Customer> CreateAsync(Customer customer, CancellationToken cancellationToken = default);
         Task<Customer> UpdateAsync(Customer customer, CancellationToken cancellationToken = default);
         Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
         Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
-        Task<bool> PhoneExistsAsync(string phone, int branchId, int? excludeId = null, CancellationToken cancellationToken = default);
+        Task<bool> PhoneExistsAsync(string phone, int tenantId, int? excludeId = null, CancellationToken cancellationToken = default);
         /// <summary>Pedidos no cancelados.</summary>
         Task<int> GetTotalOrdersAsync(int customerId, CancellationToken cancellationToken = default);
         /// <summary>

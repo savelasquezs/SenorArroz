@@ -15,12 +15,14 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
     private readonly IBranchRepository _branchRepository;
     private readonly IApplicationDbContext _db;
     private readonly IMapper _mapper;
+    private readonly ICurrentTenant? _currentTenant;
 
-    public CreateBranchHandler(IBranchRepository branchRepository, IApplicationDbContext db, IMapper mapper)
+    public CreateBranchHandler(IBranchRepository branchRepository, IApplicationDbContext db, IMapper mapper, ICurrentTenant? currentTenant = null)
     {
         _branchRepository = branchRepository;
         _db = db;
         _mapper = mapper;
+        _currentTenant = currentTenant;
     }
 
     public async Task<BranchDto> Handle(CreateBranchCommand request, CancellationToken cancellationToken)
@@ -50,6 +52,7 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
 
         var branch = new Branch
         {
+            TenantId = _currentTenant?.TenantId ?? 1,
             Name = request.Name.Trim(),
             BusinessName = NullIfWhiteSpace(request.BusinessName),
             Nit = NullIfWhiteSpace(request.Nit),

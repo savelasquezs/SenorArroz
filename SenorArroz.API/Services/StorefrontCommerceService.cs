@@ -264,7 +264,8 @@ public sealed class StorefrontCommerceService(
             if (verifiedSession?.Customer is null)
                 return Unauthorized(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Verifica tu celular para usar una dirección guardada."));
             savedAddress = await db.Addresses.AsNoTracking().FirstOrDefaultAsync(
-                x => x.Id == request.SavedAddressId && x.CustomerId == verifiedSession.Customer.Id, cancellationToken);
+                x => x.TenantId == Math.Max(1, storefrontOptions.Value.TenantId)
+                    && x.Id == request.SavedAddressId && x.CustomerId == verifiedSession.Customer.Id, cancellationToken);
             if (savedAddress is null)
                 return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La dirección guardada ya no está disponible."));
             request.Address = savedAddress.AddressText;
@@ -385,9 +386,70 @@ public sealed class StorefrontCommerceService(
             branchOptions = routeResults.Select(x => ToBranchQuote(x, nearest.Branch.Id, selected.Branch.Id)).ToList();
             if (savedAddress is not null)
             {
-                estimatedDeliveryFee = savedAddress.DeliveryFee;
-                checkoutDeliveryFee = savedAddress.DeliveryFee;
-                branchOptions = branchOptions.Select(x => x with { EstimatedDeliveryFee = savedAddress.DeliveryFee }).ToList();
+                var savedServices = await db.AddressBranches.AsNoTracking()
+                    .Where(x => x.TenantId == savedAddress.TenantId && x.AddressId == savedAddress.Id)
+                    .ToDictionaryAsync(x => x.BranchId, cancellationToken);
+                if (!savedServices.ContainsKey(selectedBranchId))
+                {
+                    var selectedRoute = routeResults.Single(x => x.Branch.Id == selectedBranchId);
+                    var selectedAddressService = new AddressBranch
+                    {
+                        TenantId = savedAddress.TenantId,
+                        AddressId = savedAddress.Id,
+                        BranchId = selectedBranchId,
+                        DeliveryFee = estimatedDeliveryFee,
+                        IsCovered = IsWithinCoverage(selectedRoute.Metrics),
+                        ValidatedAt = clock.UtcNow,
+                        LastUsedAt = clock.UtcNow
+                    };
+                    if (db.Database.IsRelational())
+                        await db.Database.ExecuteSqlInterpolatedAsync($"""
+                            INSERT INTO address_branch
+                                (tenant_id,address_id,branch_id,delivery_fee,is_covered,validated_at,last_used_at,created_at,updated_at)
+                            VALUES ({selectedAddressService.TenantId},{selectedAddressService.AddressId},{selectedAddressService.BranchId},
+                                {selectedAddressService.DeliveryFee},{selectedAddressService.IsCovered},{selectedAddressService.ValidatedAt},
+                                {selectedAddressService.LastUsedAt},now(),now())
+                            ON CONFLICT (tenant_id,address_id,branch_id) DO UPDATE SET last_used_at=excluded.last_used_at
+                            """, cancellationToken);
+                    else
+                    {
+                        db.AddressBranches.Add(selectedAddressService);
+                        await db.SaveChangesAsync(cancellationToken);
+                    }
+                    savedServices[selectedBranchId] = selectedAddressService;
+                }
+                branchOptions = branchOptions.Select(x => savedServices.TryGetValue(x.Id, out var service)
+                    ? x with { EstimatedDeliveryFee = service.DeliveryFee, IsWithinCoverage = service.IsCovered }
+                    : x).ToList();
+                if (savedServices.TryGetValue(selectedBranchId, out var selectedService))
+                {
+                    estimatedDeliveryFee = selectedService.DeliveryFee;
+                    outsideCoverage = !selectedService.IsCovered;
+                }
+                if (savedServices.TryGetValue(checkoutBranch.Id, out var checkoutService))
+                    checkoutDeliveryFee = checkoutService.DeliveryFee;
+                else
+                {
+                    var checkoutRoute = routeResults.Single(x => x.Branch.Id == checkoutBranch.Id);
+                    if (db.Database.IsRelational())
+                        await db.Database.ExecuteSqlInterpolatedAsync($"""
+                            INSERT INTO address_branch
+                                (tenant_id,address_id,branch_id,delivery_fee,is_covered,validated_at,last_used_at,created_at,updated_at)
+                            VALUES ({savedAddress.TenantId},{savedAddress.Id},{checkoutBranch.Id},{checkoutDeliveryFee},
+                                {IsWithinCoverage(checkoutRoute.Metrics)},{clock.UtcNow},{clock.UtcNow},now(),now())
+                            ON CONFLICT (tenant_id,address_id,branch_id) DO UPDATE SET last_used_at=excluded.last_used_at
+                            """, cancellationToken);
+                    else
+                    {
+                        db.AddressBranches.Add(new AddressBranch
+                        {
+                            TenantId = savedAddress.TenantId, AddressId = savedAddress.Id, BranchId = checkoutBranch.Id,
+                            DeliveryFee = checkoutDeliveryFee, IsCovered = IsWithinCoverage(checkoutRoute.Metrics),
+                            ValidatedAt = clock.UtcNow, LastUsedAt = clock.UtcNow
+                        });
+                        await db.SaveChangesAsync(cancellationToken);
+                    }
+                }
             }
         }
         else
@@ -522,6 +584,7 @@ public sealed class StorefrontCommerceService(
         string? sessionToken = null)
     {
         idempotencyKey = (idempotencyKey ?? string.Empty).Trim();
+        var tenantId = Math.Max(1, storefrontOptions.Value.TenantId);
         if (idempotencyKey.Length is < 16 or > 80)
             return BadRequest(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La confirmación del pedido no tiene una clave válida."));
 
@@ -550,10 +613,11 @@ public sealed class StorefrontCommerceService(
 
         var existingOrder = await db.Orders.AsNoTracking()
             .Include(x => x.Customer)
-            .FirstOrDefaultAsync(x => x.StorefrontIdempotencyKey == idempotencyKey, cancellationToken);
+                .ThenInclude(x => x!.Phones)
+            .FirstOrDefaultAsync(x => x.TenantId == tenantId && x.StorefrontIdempotencyKey == idempotencyKey, cancellationToken);
         if (existingOrder is not null)
         {
-            if (existingOrder.Customer is null || (existingOrder.Customer.Phone1 != session.Phone && existingOrder.Customer.Phone2 != session.Phone))
+            if (!OrderBelongsToPhone(existingOrder, session.Phone))
                 return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
             return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(await ToPublicOrderResultAsync(existingOrder, cancellationToken)));
         }
@@ -590,11 +654,11 @@ public sealed class StorefrontCommerceService(
             if (db.Database.IsRelational() && db.Database.CurrentTransaction is null)
                 transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
-            existingOrder = await db.Orders.Include(x => x.Customer)
-                .FirstOrDefaultAsync(x => x.StorefrontIdempotencyKey == idempotencyKey, cancellationToken);
+            existingOrder = await db.Orders.Include(x => x.Customer).ThenInclude(x => x!.Phones)
+                .FirstOrDefaultAsync(x => x.TenantId == tenantId && x.StorefrontIdempotencyKey == idempotencyKey, cancellationToken);
             if (existingOrder is not null)
             {
-                if (existingOrder.Customer is null || (existingOrder.Customer.Phone1 != session.Phone && existingOrder.Customer.Phone2 != session.Phone))
+                if (!OrderBelongsToPhone(existingOrder, session.Phone))
                     throw new StorefrontOrderConflictException("La clave de confirmación ya fue utilizada.");
                 if (transaction is not null)
                     await transaction.CommitAsync(cancellationToken);
@@ -626,6 +690,10 @@ public sealed class StorefrontCommerceService(
                 : null;
             if (paymentMethod == "online" && wompiIntegration is null)
                 return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("Esta sucursal no tiene pago en línea disponible. Selecciona efectivo o elige otra sucursal."));
+
+            if (db.Database.IsRelational())
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"SELECT pg_advisory_xact_lock({tenantId}, hashtext({session.Phone}))", cancellationToken);
 
             if (paymentMethod == "online")
             {
@@ -677,24 +745,29 @@ public sealed class StorefrontCommerceService(
             Customer customer;
             if (session.Customer is not null)
             {
-                customer = await db.Customers.FirstOrDefaultAsync(x => x.Id == session.Customer.Id && x.Active, cancellationToken)
+                customer = await db.Customers.FirstOrDefaultAsync(x => x.TenantId == Math.Max(1, storefrontOptions.Value.TenantId) && x.Id == session.Customer.Id && x.Active, cancellationToken)
                     ?? throw new StorefrontOrderConflictException("El cliente verificado ya no está disponible.");
             }
             else
             {
-                var matches = await db.Customers.Where(x => x.Active && (x.Phone1 == session.Phone || x.Phone2 == session.Phone))
+                var matches = await db.Customers.Where(x => x.TenantId == tenantId && x.Active &&
+                        (x.Phones.Any(p => p.Active && p.PhoneNormalized == session.Phone) || x.Phone1 == session.Phone || x.Phone2 == session.Phone))
                     .OrderBy(x => x.Id).Take(2).ToListAsync(cancellationToken);
                 if (matches.Count > 1)
                     throw new StorefrontOrderConflictException("El celular quedó asociado a más de un cliente.");
                 customer = matches.SingleOrDefault() ?? new Customer
                 {
+                    TenantId = tenantId,
                     BranchId = branch.Id,
                     Name = request.Name.Trim(),
                     Phone1 = session.Phone,
                     Active = true
                 };
                 if (customer.Id == 0)
+                {
+                    customer.Phones.Add(new CustomerPhone { TenantId = tenantId, PhoneNormalized = session.Phone, IsPrimary = true });
                     db.Customers.Add(customer);
+                }
             }
 
             Address? address = null;
@@ -708,28 +781,70 @@ public sealed class StorefrontCommerceService(
                 }
                 else
                 {
-                    var hasAddresses = customer.Id != 0 && await db.Addresses.AnyAsync(x => x.CustomerId == customer.Id, cancellationToken);
-                    address = new Address
+                    var normalizedAddress = CustomerAddressResolutionService.NormalizeAddress(request.Address!);
+                    List<Address> customerAddresses = customer.Id == 0
+                        ? []
+                        : await db.Addresses.Where(x => x.TenantId == tenantId && x.CustomerId == customer.Id)
+                            .ToListAsync(cancellationToken);
+                    address = customerAddresses.FirstOrDefault(x =>
+                        x.NormalizedAddressText == normalizedAddress
+                        || CustomerAddressResolutionService.NormalizeAddress(x.AddressText) == normalizedAddress
+                        || (!string.IsNullOrWhiteSpace(x.OriginalAddressText)
+                            && CustomerAddressResolutionService.NormalizeAddress(x.OriginalAddressText) == normalizedAddress));
+                    if (address is not null)
                     {
-                        Customer = customer,
-                        Label = string.IsNullOrWhiteSpace(request.AddressLabel) ? "Casa" : request.AddressLabel.Trim(),
-                        AddressText = quote.FormattedAddress!,
-                        AdditionalInfo = request.AddressAdditionalInfo?.Trim(),
-                        DeliveryFee = quote.Total - (quote.Subtotal - quote.DiscountTotal),
-                        Latitude = quote.Latitude,
-                        Longitude = quote.Longitude,
-                        IsPrimary = !hasAddresses,
-                        OriginalAddressText = request.Address,
-                        NormalizedAddressText = quote.FormattedAddress,
-                        ValidationSource = "storefront_google",
-                        ValidatedAt = clock.UtcNow
-                    };
-                    db.Addresses.Add(address);
+                        var service = await db.AddressBranches.FirstOrDefaultAsync(x =>
+                            x.TenantId == tenantId && x.AddressId == address.Id && x.BranchId == branch.Id,
+                            cancellationToken);
+                        service ??= new AddressBranch
+                        {
+                            TenantId = tenantId,
+                            AddressId = address.Id,
+                            BranchId = branch.Id
+                        };
+                        if (service.Id == 0) db.AddressBranches.Add(service);
+                        service.DeliveryFee = quote.Total - (quote.Subtotal - quote.DiscountTotal);
+                        service.IsCovered = true;
+                        service.ValidatedAt = clock.UtcNow;
+                        service.LastUsedAt = clock.UtcNow;
+                        address.Label ??= string.IsNullOrWhiteSpace(request.AddressLabel) ? "Casa" : request.AddressLabel.Trim();
+                        address.AdditionalInfo ??= request.AddressAdditionalInfo?.Trim();
+                    }
+                    else
+                    {
+                        address = new Address
+                        {
+                            TenantId = tenantId,
+                            Customer = customer,
+                            Label = string.IsNullOrWhiteSpace(request.AddressLabel) ? "Casa" : request.AddressLabel.Trim(),
+                            AddressText = quote.FormattedAddress!,
+                            AdditionalInfo = request.AddressAdditionalInfo?.Trim(),
+                            DeliveryFee = quote.Total - (quote.Subtotal - quote.DiscountTotal),
+                            Latitude = quote.Latitude,
+                            Longitude = quote.Longitude,
+                            IsPrimary = customerAddresses.Count == 0,
+                            OriginalAddressText = request.Address,
+                            NormalizedAddressText = normalizedAddress,
+                            ValidationSource = "storefront_google",
+                            ValidatedAt = clock.UtcNow
+                        };
+                        address.BranchServices.Add(new AddressBranch
+                        {
+                            TenantId = address.TenantId,
+                            BranchId = branch.Id,
+                            DeliveryFee = address.DeliveryFee,
+                            IsCovered = true,
+                            ValidatedAt = clock.UtcNow,
+                            LastUsedAt = clock.UtcNow
+                        });
+                        db.Addresses.Add(address);
+                    }
                 }
             }
 
             var order = new Order
             {
+                TenantId = Math.Max(1, storefrontOptions.Value.TenantId),
                 BranchId = branch.Id,
                 TakenById = branch.StorefrontTakenByUserId.Value,
                 Customer = customer,
@@ -792,11 +907,11 @@ public sealed class StorefrontCommerceService(
         {
             if (transaction is not null)
                 await transaction.RollbackAsync(cancellationToken);
-            existingOrder = await db.Orders.AsNoTracking().Include(x => x.Customer)
-                .FirstOrDefaultAsync(x => x.StorefrontIdempotencyKey == idempotencyKey, cancellationToken);
+            existingOrder = await db.Orders.AsNoTracking().Include(x => x.Customer).ThenInclude(x => x!.Phones)
+                .FirstOrDefaultAsync(x => x.TenantId == tenantId && x.StorefrontIdempotencyKey == idempotencyKey, cancellationToken);
             if (existingOrder is not null)
             {
-                if (existingOrder.Customer is null || (existingOrder.Customer.Phone1 != session.Phone && existingOrder.Customer.Phone2 != session.Phone))
+                if (!OrderBelongsToPhone(existingOrder, session.Phone))
                     return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
                 return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(await ToPublicOrderResultAsync(existingOrder, cancellationToken)));
             }
@@ -863,7 +978,7 @@ public sealed class StorefrontCommerceService(
 
     private IQueryable<Branch> EligibleBranchesQuery() => db.Branches
         .AsNoTracking()
-        .Where(x => x.IsActive
+        .Where(x => x.TenantId == Math.Max(1, storefrontOptions.Value.TenantId) && x.IsActive
             && x.Latitude.HasValue
             && x.Longitude.HasValue
             && (x.Phone1.Trim() != "" || (x.Phone2 != null && x.Phone2.Trim() != "")));
@@ -1229,6 +1344,12 @@ public sealed class StorefrontCommerceService(
             sb.AppendLine($"*Beneficio aplicado:* {appliedBenefit.Title}");
         return sb.ToString().Trim();
     }
+
+    private static bool OrderBelongsToPhone(Order order, string phone) =>
+        order.Customer is not null
+        && (order.Customer.Phone1 == phone
+            || order.Customer.Phone2 == phone
+            || order.Customer.Phones.Any(x => x.Active && x.PhoneNormalized == phone));
 
     private static bool AddressMatchesCity(string formattedAddress, string city) =>
         Normalize(formattedAddress).Contains(Normalize(city), StringComparison.Ordinal);

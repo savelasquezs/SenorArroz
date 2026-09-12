@@ -189,11 +189,14 @@ public sealed class PublicStorefrontController(
         {
             return null;
         }
-        return await db.Orders.Include(x => x.Customer).FirstOrDefaultAsync(x =>
+        var tenantId = Math.Max(1, storefrontOptions.Value.TenantId);
+        return await db.Orders.Include(x => x.Customer).ThenInclude(x => x!.Phones).FirstOrDefaultAsync(x =>
             x.Id == orderId
+            && x.TenantId == tenantId
             && x.OrderSource == "web"
             && x.Customer != null
-            && (x.Customer.Phone1 == session.Phone || x.Customer.Phone2 == session.Phone), cancellationToken);
+            && (x.Customer.Phones.Any(p => p.Active && p.PhoneNormalized == session.Phone)
+                || x.Customer.Phone1 == session.Phone || x.Customer.Phone2 == session.Phone), cancellationToken);
     }
 
     private async Task<StorefrontCheckout?> GetVerifiedCustomerCheckoutAsync(

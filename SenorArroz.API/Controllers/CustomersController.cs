@@ -54,8 +54,6 @@ public class CustomersController : ControllerBase
 
         if (result == null)
             return NotFound(ApiResponse<CustomerDto>.ErrorResponse("Cliente no encontrado"));
-        _branchContext.EnsureAccess(result.BranchId);
-
         return Ok(ApiResponse<CustomerDto>.SuccessResponse(result, "Cliente obtenido exitosamente"));
     }
 
@@ -94,10 +92,12 @@ public class CustomersController : ControllerBase
         command.BranchId = _branchContext.RequireBranch(command.BranchId);
         
         var result = await _mediator.Send(command);
-        return CreatedAtAction(
-            nameof(GetCustomer),
-            new { id = result.Id },
-            ApiResponse<CustomerDto>.SuccessResponse(result, "Cliente creado exitosamente"));
+        var response = ApiResponse<CustomerDto>.SuccessResponse(
+            result,
+            result.WasCreated ? "Cliente creado exitosamente" : "Cliente existente reutilizado");
+        return result.WasCreated
+            ? CreatedAtAction(nameof(GetCustomer), new { id = result.Id }, response)
+            : Ok(response);
     }
 
     /// <summary>
@@ -114,7 +114,6 @@ public class CustomersController : ControllerBase
         command.Id = id;
 
         var result = await _mediator.Send(command);
-        _branchContext.EnsureAccess(result.BranchId);
         return Ok(ApiResponse<CustomerDto>.SuccessResponse(result, "Cliente actualizado exitosamente"));
     }
 
@@ -130,7 +129,6 @@ public class CustomersController : ControllerBase
         var existing = await _mediator.Send(new GetCustomerByIdQuery { Id = id });
         if (existing == null)
             return NotFound(ApiResponse.Error("Cliente no encontrado"));
-        _branchContext.EnsureAccess(existing.BranchId);
         var command = new DeleteCustomerCommand { Id = id };
         var result = await _mediator.Send(command);
 

@@ -1,6 +1,5 @@
 using AutoMapper;
 using MediatR;
-using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -12,18 +11,15 @@ public class GetCustomerAddressByIdHandler : IRequestHandler<GetCustomerAddressB
     private readonly IAddressRepository _addressRepository;
     private readonly ICustomerRepository _customerRepository;
     private readonly IMapper _mapper;
-    private readonly ICurrentUser _currentUser;
 
     public GetCustomerAddressByIdHandler(
         IAddressRepository addressRepository,
         ICustomerRepository customerRepository,
-        IMapper mapper,
-        ICurrentUser currentUser)
+        IMapper mapper)
     {
         _addressRepository = addressRepository;
         _customerRepository = customerRepository;
         _mapper = mapper;
-        _currentUser = currentUser;
     }
 
     public async Task<CustomerAddressDto?> Handle(GetCustomerAddressByIdQuery request, CancellationToken cancellationToken)
@@ -40,12 +36,6 @@ public class GetCustomerAddressByIdHandler : IRequestHandler<GetCustomerAddressB
         if (customer == null)
         {
             throw new BusinessException("El cliente asociado a esta dirección no existe");
-        }
-
-        // Check if user has access to this customer's branch
-        if (!Roles.IsSuperadmin(_currentUser.Role) && customer.BranchId != _currentUser.BranchId)
-        {
-            throw new BusinessException("No tienes permisos para acceder a esta dirección");
         }
 
         return _mapper.Map<CustomerAddressDto>(address);

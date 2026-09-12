@@ -19,6 +19,19 @@ El sistema ya tiene clientes reales. Por eso la migración debe ser progresiva y
 
 No se debe agregar `TenantId` a todas las tablas de golpe sin plan de backfill, pruebas y despliegue controlado.
 
+## Fase implementada: núcleo de clientes
+
+La primera base real agrega `TenantId` a `Branch`, `Customer`, `Address`, `Neighborhood` y `Order`, y crea `CustomerPhone` y `AddressBranch`. El tenant se toma del claim/configuración segura del backend; nunca del request público. El resto de tablas tenant-owned continúa en las fases progresivas de este documento.
+
+El modelo conceptual de clientes es:
+
+```text
+Tenant -> Customers -> CustomerPhones
+Tenant -> Branches
+Customer -> Addresses -> AddressBranches -> Branch
+Customer -> Orders -> Branch
+```
+
 ## Objetivo final
 
 Modelo lógico esperado:

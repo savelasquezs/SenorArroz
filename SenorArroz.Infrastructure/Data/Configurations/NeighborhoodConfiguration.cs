@@ -14,6 +14,7 @@ public class NeighborhoodConfiguration : IEntityTypeConfiguration<Neighborhood>
         builder.HasKey(n => n.Id);
         builder.Property(n => n.Id).HasColumnName("id");
 
+        builder.Property(n => n.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
         builder.Property(n => n.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(n => n.Name).HasColumnName("name").HasMaxLength(150).IsRequired();
         builder.Property(n => n.DeliveryFee).HasColumnName("delivery_fee").IsRequired();
@@ -28,5 +29,7 @@ public class NeighborhoodConfiguration : IEntityTypeConfiguration<Neighborhood>
             .WithMany(b => b.Neighborhoods)
             .HasForeignKey(n => n.BranchId)
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(n => n.Tenant).WithMany().HasForeignKey(n => n.TenantId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(n => new { n.TenantId, n.BranchId }).HasDatabaseName("ix_neighborhood_tenant_branch");
     }
 }

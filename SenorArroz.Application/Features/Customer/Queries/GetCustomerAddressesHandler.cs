@@ -31,12 +31,6 @@ public class GetCustomerAddressesHandler : IRequestHandler<GetCustomerAddressesQ
             throw new BusinessException("Cliente no encontrado");
         }
 
-        // Check if user has access to this customer's branch
-        if (!Roles.IsSuperadmin(_currentUser.Role) && customer.BranchId != _currentUser.BranchId)
-        {
-            throw new BusinessException("No tienes permisos para acceder a las direcciones de este cliente");
-        }
-
         var addresses = await _addressRepository.GetByCustomerIdAsync(request.CustomerId, cancellationToken);
         return _mapper.Map<IEnumerable<CustomerAddressDto>>(addresses);
     }

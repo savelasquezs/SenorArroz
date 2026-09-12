@@ -24,6 +24,7 @@ public class CustomerMappingProfile : Profile
             .ForMember(dest => dest.LoyaltyNextRewardLabel, opt => opt.Ignore())
             .ForMember(dest => dest.LoyaltyDeliveriesUntilNextReward, opt => opt.Ignore())
             .ForMember(dest => dest.LoyaltyRewardDueOnCurrentOrder, opt => opt.Ignore())
+            .ForMember(dest => dest.WasCreated, opt => opt.Ignore())
             .ForMember(dest => dest.LoyaltyNextRewardMessage, opt => opt.Ignore());
 
         CreateMap<CreateCustomerDto, CreateCustomerCommand>();
@@ -35,6 +36,9 @@ public class CustomerMappingProfile : Profile
             .ForMember(dest => dest.NeighborhoodName, opt => opt.MapFrom(src => src.Neighborhood != null ? src.Neighborhood.Name : null))
             .ForMember(dest => dest.Address, opt => opt.MapFrom(src => src.AddressText))
             .ForMember(dest => dest.IsPrimary, opt => opt.MapFrom(src => src.IsPrimary));
+
+        CreateMap<AddressBranch, CustomerAddressBranchDto>()
+            .ForMember(dest => dest.NeighborhoodName, opt => opt.MapFrom(src => src.Neighborhood != null ? src.Neighborhood.Name : null));
 
         CreateMap<CreateCustomerAddressDto, CreateAddressCommand>()
             .ForMember(dest => dest.CustomerId, opt => opt.Ignore()); // Will be set from route

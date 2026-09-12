@@ -87,7 +87,7 @@ public class WhatsAppAutomaticMessageSender(ApplicationDbContext db,IWhatsAppClo
  {
   if(conversation.ChannelSettingId.HasValue)
   {
-   var channel=await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==conversation.ChannelSettingId&&x.TenantId==1&&x.IsActive&&x.IsVerified&&(!requireAway||x.AwayMessageEnabled),ct);
+   var channel=await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==conversation.ChannelSettingId&&x.TenantId==conversation.TenantId&&x.IsActive&&x.IsVerified&&(!requireAway||x.AwayMessageEnabled),ct);
    return channel==null?null:new(channel.PhoneNumberId,channel.AccessToken);
   }
   var branch=await db.WhatsAppBranchSettings.AsNoTracking().FirstOrDefaultAsync(x=>x.BranchId==conversation.BranchId&&x.IsActive&&x.IsVerified&&(!requireAway||x.AwayMessageEnabled),ct);

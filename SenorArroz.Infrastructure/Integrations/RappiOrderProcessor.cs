@@ -167,6 +167,10 @@ public sealed class RappiOrderProcessor(
             if (!technicalUserId.HasValue || !external.Connection.CustomerId.HasValue)
                 throw new InvalidOperationException(
                     "Configura el cliente Rappi y el usuario técnico antes de aceptar órdenes.");
+            var tenantId = await db.Branches.AsNoTracking()
+                .Where(x => x.Id == external.BranchId)
+                .Select(x => x.TenantId)
+                .SingleAsync(ct);
 
             var mappings = external.Connection.ProductMappings
                 .Where(x => x.IsSelected)
@@ -177,6 +181,7 @@ public sealed class RappiOrderProcessor(
 
             var order = new Order
             {
+                TenantId = tenantId,
                 BranchId = external.BranchId,
                 TakenById = technicalUserId.Value,
                 CustomerId = external.Connection.CustomerId,

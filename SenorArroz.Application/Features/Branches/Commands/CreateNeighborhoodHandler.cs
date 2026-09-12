@@ -49,6 +49,7 @@ public class CreateNeighborhoodHandler : IRequestHandler<CreateNeighborhoodComma
 
         var neighborhood = new Neighborhood
         {
+            TenantId = (await _branchRepository.GetByIdAsync(request.BranchId, cancellationToken))!.TenantId,
             BranchId = request.BranchId,
             Name = request.Name.Trim(),
             DeliveryFee = request.DeliveryFee

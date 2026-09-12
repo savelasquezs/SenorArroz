@@ -45,6 +45,7 @@ public class JwtService : IJwtService
             new(ClaimTypes.Name, user.Name),
             new(ClaimTypes.Role, user.Role?.ToString() ?? string.Empty),
             new("branch_id", user.BranchId.ToString()),
+            new("tenant_id", (user.Branch?.TenantId ?? 1).ToString()),
             new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
         };

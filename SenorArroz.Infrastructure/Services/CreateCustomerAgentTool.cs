@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Models;
 using SenorArroz.Application.Common.Services;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
@@ -75,18 +76,22 @@ public sealed class CreateCustomerAgentTool(
             await using var transaction = db.Database.IsRelational()
                 ? await db.Database.BeginTransactionAsync(cancellationToken)
                 : null;
+            if (db.Database.IsRelational() && phone is not null)
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"SELECT pg_advisory_xact_lock({conversation.TenantId}, hashtext({phone}))", cancellationToken);
 
             var customerByUserId = userId is null
                 ? null
                 : await db.Customers
-                    .Where(x => x.BranchId == context.BranchId && x.WhatsAppUserId == userId)
+                    .Where(x => x.TenantId == conversation.TenantId && x.WhatsAppUserId == userId)
                     .OrderByDescending(x => x.Active)
                     .ThenBy(x => x.Id)
                     .FirstOrDefaultAsync(cancellationToken);
             var phoneMatches = phone is null
                 ? new List<Customer>()
                 : await db.Customers
-                    .Where(x => x.BranchId == context.BranchId && (x.Phone1 == phone || x.Phone2 == phone))
+                    .Where(x => x.TenantId == conversation.TenantId &&
+                        (x.Phones.Any(p => p.Active && p.PhoneNormalized == phone) || x.Phone1 == phone || x.Phone2 == phone))
                     .OrderByDescending(x => x.Active)
                     .ThenBy(x => x.Id)
                     .ToListAsync(cancellationToken);
@@ -104,6 +109,7 @@ public sealed class CreateCustomerAgentTool(
             {
                 customer = new Customer
                 {
+                    TenantId = conversation.TenantId,
                     BranchId = context.BranchId,
                     Name = request.Name,
                     Phone1 = phone,
@@ -111,6 +117,13 @@ public sealed class CreateCustomerAgentTool(
                     WhatsAppUsername = conversation.WhatsAppUsername,
                     Active = true
                 };
+                if (phone is not null)
+                    customer.Phones.Add(new CustomerPhone
+                    {
+                        TenantId = conversation.TenantId,
+                        PhoneNormalized = phone,
+                        IsPrimary = true
+                    });
                 db.Customers.Add(customer);
             }
             else if (!customer.Active)
@@ -128,6 +141,23 @@ public sealed class CreateCustomerAgentTool(
             }
             if (string.IsNullOrWhiteSpace(customer.Phone1) && phone is not null)
                 customer.Phone1 = phone;
+            if (!created && phone is not null)
+            {
+                var storedPhone = await db.CustomerPhones.FirstOrDefaultAsync(x =>
+                    x.TenantId == conversation.TenantId && x.CustomerId == customer.Id && x.PhoneNormalized == phone,
+                    cancellationToken);
+                if (storedPhone is null)
+                    db.CustomerPhones.Add(new CustomerPhone
+                    {
+                        TenantId = conversation.TenantId,
+                        CustomerId = customer.Id,
+                        PhoneNormalized = phone,
+                        IsPrimary = customer.Phone1 == phone,
+                        Active = true
+                    });
+                else
+                    storedPhone.Active = true;
+            }
 
             await db.SaveChangesAsync(cancellationToken);
             conversation.CustomerId = customer.Id;
@@ -270,10 +300,7 @@ public sealed class CreateCustomerAgentTool(
 
     private static string? NormalizePhone(string? value)
     {
-        var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
-        if (digits.Length < 10) return null;
-        var phone = digits[^10..];
-        return phone.Length == 10 ? phone : null;
+        return ColombianPhoneNormalizer.TryNormalize(value, out var normalized) ? normalized : null;
     }
 
     private sealed record CreateCustomerRequest(string Name, CustomerAddressInput? Address);

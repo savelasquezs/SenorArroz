@@ -146,7 +146,7 @@ public class CreateCustomerAgentToolTests
     }
 
     [Fact]
-    public async Task SamePhoneInAnotherBranch_IsNotReused()
+    public async Task SamePhoneInAnotherBranch_IsReusedWithinTenant()
     {
         await using var fixture = await Fixture.Create();
         fixture.Db.Customers.Add(new Customer { Id = 20, BranchId = 2, Name = "Otra sede", Phone1 = "3001234567", Active = true });
@@ -155,9 +155,8 @@ public class CreateCustomerAgentToolTests
         var result = await fixture.Execute(new { name = "Cliente Centro" });
 
         Assert.True(result.Success);
-        var local = await fixture.Db.Customers.SingleAsync(x => x.BranchId == 1);
-        Assert.Equal("Cliente Centro", local.Name);
-        Assert.Equal(2, await fixture.Db.Customers.CountAsync());
+        Assert.Equal(20, result.Data!.GetType().GetProperty("customerId")!.GetValue(result.Data));
+        Assert.Single(await fixture.Db.Customers.ToListAsync());
     }
 
     [Fact]

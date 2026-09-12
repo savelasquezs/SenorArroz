@@ -14,6 +14,7 @@ public class AddressConfiguration : IEntityTypeConfiguration<Address>
         builder.HasKey(a => a.Id);
         builder.Property(a => a.Id).HasColumnName("id");
 
+        builder.Property(a => a.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
         builder.Property(a => a.CustomerId).HasColumnName("customer_id").IsRequired();
         builder.Property(a => a.NeighborhoodId).HasColumnName("neighborhood_id");
         builder.Property(a => a.Label).HasColumnName("label").HasMaxLength(60);
@@ -39,6 +40,7 @@ public class AddressConfiguration : IEntityTypeConfiguration<Address>
             .WithMany(c => c.Addresses)
             .HasForeignKey(a => a.CustomerId)
             .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(a => a.Tenant).WithMany().HasForeignKey(a => a.TenantId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(a => a.Neighborhood)
             .WithMany(n => n.Addresses)
@@ -47,6 +49,11 @@ public class AddressConfiguration : IEntityTypeConfiguration<Address>
 
         // Índices
         builder.HasIndex(a => a.CustomerId).HasDatabaseName("idx_address_customer");
+        builder.HasIndex(a => new { a.TenantId, a.CustomerId }).HasDatabaseName("ix_address_tenant_customer");
+        builder.HasIndex(a => new { a.TenantId, a.CustomerId, a.NormalizedAddressText })
+            .IsUnique()
+            .HasFilter("normalized_address IS NOT NULL AND btrim(normalized_address) <> ''")
+            .HasDatabaseName("ux_address_tenant_customer_normalized");
         builder.HasIndex(a => a.NeighborhoodId).HasDatabaseName("idx_address_neighborhood");
     }
 }

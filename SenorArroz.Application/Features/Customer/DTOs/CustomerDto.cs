@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Text.Json.Serialization;
 
 namespace SenorArroz.Application.Features.Customers.DTOs
 {
@@ -10,6 +11,9 @@ namespace SenorArroz.Application.Features.Customers.DTOs
     {
         public int Id { get; set; }
         public int BranchId { get; set; }
+        public int OriginBranchId => BranchId;
+        [JsonIgnore]
+        public bool WasCreated { get; set; }
         public string BranchName { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string? Phone1 { get; set; }

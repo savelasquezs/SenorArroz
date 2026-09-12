@@ -2,6 +2,12 @@
 
 Este mapa existe para que Codex encuentre rápido dónde modificar sin escanear todo el repositorio.
 
+## Modelo de clientes vigente durante la transición
+
+El cliente pertenece al tenant y conserva una sucursal de origen legacy. La identidad se resuelve en `CustomerPhone`; las condiciones de servicio de una dirección se resuelven en `AddressBranch`. Storefront, WhatsApp y POS deben compartir estos servicios y no consultar `Phone1/Phone2 + BranchId` como autoridad.
+
+Scripts de despliegue y consolidación: `SenorArroz.Infrastructure/Scripts/customer_tenant_01_additive_schema.sql` hasta `customer_tenant_08_enable_constraints.sql`.
+
 ## Tipo de repo
 
 Backend principal de Señor Arroz.

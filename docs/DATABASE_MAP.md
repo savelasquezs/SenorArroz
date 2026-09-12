@@ -15,6 +15,15 @@ Una sola base de datos PostgreSQL
 + índices compuestos por tenant
 ```
 
+## Clientes globales por tenant (fase aditiva)
+
+- `Customer` pertenece al tenant; `branch_id` conserva únicamente la sucursal de origen.
+- `CustomerPhone` es la identidad telefónica, única por `(tenant_id, phone_normalized)` tras el merge.
+- `Address` describe la ubicación física; `AddressBranch` contiene barrio, tarifa y cobertura por sucursal.
+- `Order.customer_id`, `Order.address_id` y `Order.delivery_fee` siguen siendo referencias/snapshots históricos.
+- `customer.phone1/phone2` y `address.neighborhood_id/delivery_fee` permanecen temporalmente para compatibilidad.
+- Los scripts `customer_tenant_01` a `customer_tenant_08` se ejecutan en orden y separan precheck, merge y postcheck.
+
 ## Fuente principal
 
 DbContext:

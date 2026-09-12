@@ -4,17 +4,22 @@ using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Common;
 using SenorArroz.Infrastructure.Data;
+using SenorArroz.Application.Common.Helpers;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Shared.Models;
+using Npgsql;
 
 namespace SenorArroz.Infrastructure.Repositories;
 
 public class CustomerRepository : ICustomerRepository
 {
     private readonly ApplicationDbContext _context;
+    private readonly int _tenantId;
 
-    public CustomerRepository(ApplicationDbContext context)
+    public CustomerRepository(ApplicationDbContext context, ICurrentTenant? currentTenant = null)
     {
         _context = context;
+        _tenantId = currentTenant?.TenantId ?? 1;
     }
 
     public async Task<PagedResult<Customer>> GetPagedAsync(
@@ -35,7 +40,11 @@ public class CustomerRepository : ICustomerRepository
             .Include(c => c.Branch)
             .Include(c => c.Addresses)
             .ThenInclude(a => a.Neighborhood)
+            .Include(c => c.Addresses)
+            .ThenInclude(a => a.BranchServices)
+            .ThenInclude(s => s.Neighborhood)
             .AsQueryable();
+        query = query.Where(c => c.TenantId == _tenantId);
 
         if (branchId.HasValue)
             query = query.Where(c => c.BranchId == branchId.Value);
@@ -86,7 +95,8 @@ public class CustomerRepository : ICustomerRepository
         return await _context.Customers
             .AsNoTracking()
             .Include(c => c.Branch)
-            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+            .Include(c => c.Phones)
+            .FirstOrDefaultAsync(c => c.TenantId == _tenantId && c.Id == id, cancellationToken);
     }
 
     public async Task<Customer?> GetByIdWithAddressesAsync(int id, CancellationToken cancellationToken = default)
@@ -94,17 +104,28 @@ public class CustomerRepository : ICustomerRepository
         return await _context.Customers
             .AsNoTracking()
             .Include(c => c.Branch)
+            .Include(c => c.Phones)
             .Include(c => c.Addresses)
             .ThenInclude(a => a.Neighborhood)
-            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+            .Include(c => c.Addresses)
+            .ThenInclude(a => a.BranchServices)
+            .ThenInclude(s => s.Neighborhood)
+            .FirstOrDefaultAsync(c => c.TenantId == _tenantId && c.Id == id, cancellationToken);
     }
 
-    public async Task<Customer?> GetByPhoneAsync(string phone, int branchId, CancellationToken cancellationToken = default)
+    public async Task<Customer?> GetByPhoneAsync(string phone, int tenantId, CancellationToken cancellationToken = default)
     {
+        if (tenantId != _tenantId)
+            return null;
+        if (!ColombianPhoneNormalizer.TryNormalize(phone, out var normalized))
+            return null;
         return await _context.Customers
             .AsNoTracking()
             .Include(c => c.Branch)
-            .FirstOrDefaultAsync(c => (c.Phone1 == phone || c.Phone2 == phone) && c.BranchId == branchId && c.Active, cancellationToken);
+            .Include(c => c.Phones)
+            .FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Active &&
+                (c.Phones.Any(p => p.Active && p.PhoneNormalized == normalized)
+                 || c.Phone1 == normalized || c.Phone2 == normalized), cancellationToken);
     }
 
     public async Task<IEnumerable<Customer>> GetByBranchIdAsync(int branchId, CancellationToken cancellationToken = default)
@@ -112,21 +133,63 @@ public class CustomerRepository : ICustomerRepository
         return await _context.Customers
             .AsNoTracking()
             .Include(c => c.Branch)
-            .Where(c => c.BranchId == branchId && c.Active)
+            .Include(c => c.Phones)
+            .Where(c => c.TenantId == _tenantId && c.BranchId == branchId && c.Active)
             .OrderBy(c => c.Name)
             .ToListAsync(cancellationToken);
     }
 
     public async Task<Customer> CreateAsync(Customer customer, CancellationToken cancellationToken = default)
     {
+        if (customer.TenantId != _tenantId)
+            throw new InvalidOperationException("No se puede crear un cliente para otro tenant.");
+        foreach (var phone in customer.Phones)
+        {
+            phone.TenantId = customer.TenantId;
+            phone.Customer = customer;
+        }
         _context.Customers.Add(customer);
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation }
+            && customer.Phones.FirstOrDefault()?.PhoneNormalized is string winningPhone)
+        {
+            _context.ChangeTracker.Clear();
+            var winner = await GetByPhoneAsync(winningPhone, customer.TenantId, cancellationToken);
+            if (winner is not null)
+                return winner;
+            throw;
+        }
 
-        return await GetByIdWithAddressesAsync(customer.Id, cancellationToken) ?? customer;
+        return customer;
     }
 
     public async Task<Customer> UpdateAsync(Customer customer, CancellationToken cancellationToken = default)
     {
+        if (customer.TenantId != _tenantId)
+            throw new InvalidOperationException("No se puede actualizar un cliente de otro tenant.");
+        var normalizedPhones = new[] { customer.Phone1, customer.Phone2 }
+            .Where(x => ColombianPhoneNormalizer.TryNormalize(x, out _))
+            .Select(x => ColombianPhoneNormalizer.Normalize(x))
+            .Distinct()
+            .ToList();
+        var primaryPhone = normalizedPhones.FirstOrDefault();
+        var storedPhones = await _context.CustomerPhones.Where(x => x.TenantId == _tenantId && x.CustomerId == customer.Id).ToListAsync(cancellationToken);
+        foreach (var stored in storedPhones)
+            stored.Active = normalizedPhones.Contains(stored.PhoneNormalized);
+        foreach (var normalized in normalizedPhones.Where(x => storedPhones.All(p => p.PhoneNormalized != x)))
+            _context.CustomerPhones.Add(new CustomerPhone
+            {
+                TenantId = customer.TenantId,
+                CustomerId = customer.Id,
+                PhoneNormalized = normalized,
+                IsPrimary = normalized == primaryPhone,
+                Active = true
+            });
+        foreach (var stored in storedPhones)
+            stored.IsPrimary = stored.Active && stored.PhoneNormalized == primaryPhone;
         _context.Customers.Update(customer);
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -135,7 +198,7 @@ public class CustomerRepository : ICustomerRepository
 
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var customer = await _context.Customers.FindAsync([id], cancellationToken);
+        var customer = await _context.Customers.FirstOrDefaultAsync(x => x.TenantId == _tenantId && x.Id == id, cancellationToken);
         if (customer == null)
             return false;
 
@@ -147,13 +210,19 @@ public class CustomerRepository : ICustomerRepository
 
     public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await _context.Customers.AnyAsync(c => c.Id == id, cancellationToken);
+        return await _context.Customers.AnyAsync(c => c.TenantId == _tenantId && c.Id == id, cancellationToken);
     }
 
-    public async Task<bool> PhoneExistsAsync(string phone, int branchId, int? excludeId = null, CancellationToken cancellationToken = default)
+    public async Task<bool> PhoneExistsAsync(string phone, int tenantId, int? excludeId = null, CancellationToken cancellationToken = default)
     {
+        if (tenantId != _tenantId)
+            return false;
+        if (!ColombianPhoneNormalizer.TryNormalize(phone, out var normalized))
+            return false;
         var query = _context.Customers
-            .Where(c => (c.Phone1 == phone || c.Phone2 == phone) && c.BranchId == branchId && c.Active);
+            .Where(c => c.TenantId == tenantId && c.Active &&
+                (c.Phones.Any(p => p.Active && p.PhoneNormalized == normalized)
+                 || c.Phone1 == normalized || c.Phone2 == normalized));
 
         if (excludeId.HasValue)
             query = query.Where(c => c.Id != excludeId.Value);
@@ -165,6 +234,7 @@ public class CustomerRepository : ICustomerRepository
     {
         return await _context.Orders
             .CountAsync(o =>
+                o.TenantId == _tenantId &&
                 o.CustomerId == customerId &&
                 o.Status != OrderStatus.Cancelled &&
                 o.Status != OrderStatus.AwaitingPayment, cancellationToken);
@@ -174,7 +244,7 @@ public class CustomerRepository : ICustomerRepository
     {
         var result = await _context.Orders
             .AsNoTracking()
-            .Where(o => o.CustomerId == customerId
+            .Where(o => o.TenantId == _tenantId && o.CustomerId == customerId
                 && o.Status != OrderStatus.Cancelled
                 && o.Status != OrderStatus.AwaitingPayment)
             .GroupBy(_ => 1)
@@ -192,6 +262,7 @@ public class CustomerRepository : ICustomerRepository
     {
         return await _context.Orders
             .Where(o =>
+                o.TenantId == _tenantId &&
                 o.CustomerId == customerId &&
                 o.Status != OrderStatus.Cancelled &&
                 o.Status != OrderStatus.AwaitingPayment)

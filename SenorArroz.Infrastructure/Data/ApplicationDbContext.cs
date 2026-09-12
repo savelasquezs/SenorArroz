@@ -17,6 +17,7 @@ namespace SenorArroz.Infrastructure.Data
         }
 
         public virtual DbSet<Address> Addresses { get; set; }
+        public virtual DbSet<AddressBranch> AddressBranches { get; set; }
 
         public virtual DbSet<App> Apps { get; set; }
 
@@ -87,6 +88,9 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<PrintJob> PrintJobs { get; set; }
 
         public virtual DbSet<Customer> Customers { get; set; }
+        public virtual DbSet<CustomerPhone> CustomerPhones { get; set; }
+        public virtual DbSet<CustomerMergeHistory> CustomerMergeHistories { get; set; }
+        public virtual DbSet<Tenant> Tenants { get; set; }
 
         public virtual DbSet<StorefrontCustomerAuthChallenge> StorefrontCustomerAuthChallenges { get; set; }
 
@@ -170,6 +174,7 @@ namespace SenorArroz.Infrastructure.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.ApplyConfiguration(new BranchConfiguration());
+            modelBuilder.ApplyConfiguration(new TenantConfiguration());
             modelBuilder.ApplyConfiguration(new BranchBusinessHourConfiguration());
             modelBuilder.ApplyConfiguration(new BranchAiSettingConfiguration());
             modelBuilder.ApplyConfiguration(new BranchPrintSettingsConfiguration());
@@ -205,9 +210,12 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new PrintJobConfiguration());
             modelBuilder.ApplyConfiguration(new UserConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerConfiguration());
+            modelBuilder.ApplyConfiguration(new CustomerPhoneConfiguration());
+            modelBuilder.ApplyConfiguration(new CustomerMergeHistoryConfiguration());
             modelBuilder.ApplyConfiguration(new StorefrontCustomerAuthChallengeConfiguration());
             modelBuilder.ApplyConfiguration(new NeighborhoodConfiguration());
             modelBuilder.ApplyConfiguration(new AddressConfiguration());
+            modelBuilder.ApplyConfiguration(new AddressBranchConfiguration());
             modelBuilder.ApplyConfiguration(new ProductCategoryConfiguration());
             modelBuilder.ApplyConfiguration(new ProductConfiguration());
             modelBuilder.ApplyConfiguration(new CommercialProfileConfiguration());

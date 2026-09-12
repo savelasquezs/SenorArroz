@@ -8,6 +8,7 @@ namespace SenorArroz.Application.Common.Interfaces
     {
         DatabaseFacade Database { get; }
         DbSet<Address> Addresses { get; set; }
+        DbSet<AddressBranch> AddressBranches { get; set; }
 
         DbSet<App> Apps { get; set; }
 
@@ -74,6 +75,9 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<PrintJob> PrintJobs { get; set; }
 
         DbSet<Customer> Customers { get; set; }
+        DbSet<CustomerPhone> CustomerPhones { get; set; }
+        DbSet<CustomerMergeHistory> CustomerMergeHistories { get; set; }
+        DbSet<Tenant> Tenants { get; set; }
 
         DbSet<StorefrontCustomerAuthChallenge> StorefrontCustomerAuthChallenges { get; set; }
 

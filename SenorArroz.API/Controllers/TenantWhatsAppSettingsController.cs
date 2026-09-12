@@ -25,15 +25,16 @@ public sealed class TenantWhatsAppSettingsController(
     IAiChatProviderResolver aiChatProviders,
     IAgentToolCatalog toolCatalog,
     IAiToolSchemaValidator toolSchemaValidator,
+    ICurrentTenant currentTenant,
     IOptions<WhatsAppFlowOptions> flowOptions) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<ApiResponse<TenantWhatsAppSettingsDto>>> Get(CancellationToken ct)
     {
-        var channel = await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(x => x.TenantId == 1, ct);
-        var ai = await db.TenantAiSettings.AsNoTracking().FirstOrDefaultAsync(x => x.TenantId == 1, ct);
+        var channel = await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(x => x.TenantId == currentTenant.TenantId, ct);
+        var ai = await db.TenantAiSettings.AsNoTracking().FirstOrDefaultAsync(x => x.TenantId == currentTenant.TenantId, ct);
         var sessions = await db.WhatsAppCommerceSessions.AsNoTracking()
-            .Where(x => x.TenantId == 1)
+            .Where(x => x.TenantId == currentTenant.TenantId)
             .OrderByDescending(x => x.UpdatedAt)
             .Take(20)
             .ToListAsync(ct);
@@ -48,12 +49,12 @@ public sealed class TenantWhatsAppSettingsController(
         if (!string.IsNullOrWhiteSpace(dto.AppSecret) && !WhatsAppWebhookSignature.IsValidAppSecret(dto.AppSecret))
             return BadRequest(ApiResponse<TenantWhatsAppChannelDto>.ErrorResponse(WhatsAppWebhookSignature.InvalidAppSecretMessage));
 
-        var channel = await db.WhatsAppChannelSettings.FirstOrDefaultAsync(x => x.TenantId == 1, ct);
+        var channel = await db.WhatsAppChannelSettings.FirstOrDefaultAsync(x => x.TenantId == currentTenant.TenantId, ct);
         if (channel is null)
         {
             if (string.IsNullOrWhiteSpace(dto.AccessToken))
                 return BadRequest(ApiResponse<TenantWhatsAppChannelDto>.ErrorResponse("El Access Token es obligatorio al crear el canal."));
-            channel = new WhatsAppChannelSetting { TenantId = 1 };
+            channel = new WhatsAppChannelSetting { TenantId = currentTenant.TenantId };
             db.WhatsAppChannelSettings.Add(channel);
         }
 
@@ -86,7 +87,7 @@ public sealed class TenantWhatsAppSettingsController(
     [HttpPost("channel/test-connection")]
     public async Task<ActionResult<ApiResponse<TenantWhatsAppChannelDto>>> TestChannel(CancellationToken ct)
     {
-        var channel = await db.WhatsAppChannelSettings.FirstOrDefaultAsync(x => x.TenantId == 1, ct);
+        var channel = await db.WhatsAppChannelSettings.FirstOrDefaultAsync(x => x.TenantId == currentTenant.TenantId, ct);
         if (channel is null) return NotFound(ApiResponse<TenantWhatsAppChannelDto>.ErrorResponse("Canal no configurado."));
         var result = await cloud.TestConnectionAsync(channel.PhoneNumberId, channel.AccessToken, ct);
         channel.IsVerified = result.Success;
@@ -107,10 +108,10 @@ public sealed class TenantWhatsAppSettingsController(
         var provider = dto.Provider.Trim().ToLowerInvariant();
         if (provider is not ("openai" or "gemini"))
             return BadRequest(ApiResponse<TenantAiSettingDto>.ErrorResponse("El proveedor debe ser openai o gemini."));
-        var ai = await db.TenantAiSettings.FirstOrDefaultAsync(x => x.TenantId == 1, ct);
+        var ai = await db.TenantAiSettings.FirstOrDefaultAsync(x => x.TenantId == currentTenant.TenantId, ct);
         if (ai is null)
         {
-            ai = new TenantAiSetting { TenantId = 1 };
+            ai = new TenantAiSetting { TenantId = currentTenant.TenantId };
             db.TenantAiSettings.Add(ai);
         }
         var criticalChange = ai.Provider != provider || ai.Model != dto.Model.Trim();
@@ -138,7 +139,7 @@ public sealed class TenantWhatsAppSettingsController(
     [HttpPost("ai/test-connection")]
     public async Task<ActionResult<ApiResponse<TenantAiSettingDto>>> TestAi(CancellationToken ct)
     {
-        var ai = await db.TenantAiSettings.FirstOrDefaultAsync(x => x.TenantId == 1, ct);
+        var ai = await db.TenantAiSettings.FirstOrDefaultAsync(x => x.TenantId == currentTenant.TenantId, ct);
         if (ai is null) return NotFound(ApiResponse<TenantAiSettingDto>.ErrorResponse("IA central no configurada."));
         ai.LastTestedAt = clock.UtcNow;
         var apiKey = aiApiKeys.GetApiKey(ai.Provider);

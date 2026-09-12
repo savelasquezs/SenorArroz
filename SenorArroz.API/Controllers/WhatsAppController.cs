@@ -43,6 +43,7 @@ public class WhatsAppController : ControllerBase
     private readonly IBranchBusinessHoursService _businessHoursService;
     private readonly WhatsAppAwayMessageService _awayMessageService;
     private readonly WhatsAppCommerceFlowService _commerceFlow;
+    private readonly int _tenantId;
     private readonly int _aiMaxPersistentAttempts;
 
     public WhatsAppController(
@@ -81,6 +82,7 @@ public class WhatsAppController : ControllerBase
         _businessHoursService = businessHoursService;
         _awayMessageService = awayMessageService;
         _commerceFlow = commerceFlow;
+        _tenantId = commerceFlow?.TenantId ?? 1;
     }
 
     [HttpGet("status")]
@@ -90,7 +92,7 @@ public class WhatsAppController : ControllerBase
         var branchIds = await GetAllowedVerifiedBranchIdsQuery()
             .ToListAsync(cancellationToken);
         var centralEnabled = await _db.WhatsAppChannelSettings.AsNoTracking()
-            .AnyAsync(x => x.TenantId == 1 && x.IsActive && x.IsVerified, cancellationToken);
+            .AnyAsync(x => x.TenantId == _tenantId && x.IsActive && x.IsVerified, cancellationToken);
 
         return Ok(ApiResponse<WhatsAppStatusDto>.SuccessResponse(new WhatsAppStatusDto
         {
@@ -118,7 +120,7 @@ public class WhatsAppController : ControllerBase
     {
         var branchIds = await GetAllowedVerifiedBranchIdsQuery().ToListAsync(cancellationToken);
         var centralEnabled = await _db.WhatsAppChannelSettings.AsNoTracking()
-            .AnyAsync(x => x.TenantId == 1 && x.IsActive && x.IsVerified, cancellationToken);
+            .AnyAsync(x => x.TenantId == _tenantId && x.IsActive && x.IsVerified, cancellationToken);
         if (branchIds.Count == 0 && !centralEnabled)
         {
             return Ok(ApiResponse<WhatsAppUnreadSummaryDto>.SuccessResponse(
@@ -132,7 +134,7 @@ public class WhatsAppController : ControllerBase
             .AsNoTracking()
             .Where(x => x.UnreadCount > 0 && (
                 (x.ChannelSettingId == null && branchIds.Contains(x.BranchId))
-                || (x.ChannelSettingId != null && x.TenantId == 1
+                || (x.ChannelSettingId != null && x.TenantId == _tenantId
                     && (isSuperadmin
                         || isBranchInboxUser && (x.OperationalBranchId == null
                             || x.OperationalBranchId == _currentUser.BranchId
@@ -503,7 +505,7 @@ public class WhatsAppController : ControllerBase
         }
 
         var exists = await _db.WhatsAppChannelSettings.AsNoTracking()
-            .AnyAsync(x => x.TenantId == 1 && x.WebhookVerifyToken == verifyToken, cancellationToken)
+            .AnyAsync(x => x.TenantId == _tenantId && x.WebhookVerifyToken == verifyToken, cancellationToken)
             || await _db.WhatsAppBranchSettings.AsNoTracking()
                 .AnyAsync(x => x.WebhookVerifyToken == verifyToken, cancellationToken);
 
@@ -649,7 +651,7 @@ public class WhatsAppController : ControllerBase
             .Where(x =>
                 (x.ChannelSettingId == null && allowedBranchIds.Contains(x.BranchId))
                 || (x.ChannelSettingId != null
-                    && x.TenantId == 1
+                    && x.TenantId == _tenantId
                     && (isSuperadmin || isBranchInboxUser && (x.OperationalBranchId == null
                         || x.OperationalBranchId == adminBranchId
                         || x.AssignedUserId == _currentUser.Id))));
@@ -948,7 +950,7 @@ public class WhatsAppController : ControllerBase
                     ? previousCustomer.Id
                     : (int?)null;
             var conflictingCustomer = await _db.Customers.AsNoTracking().AnyAsync(x =>
-                x.BranchId == conversation.BranchId
+                x.TenantId == conversation.TenantId
                 && x.Id != customer.Id
                 && (!transferablePreviousCustomerId.HasValue || x.Id != transferablePreviousCustomerId.Value)
                 && x.WhatsAppUserId == conversation.WhatsAppUserId,
@@ -966,8 +968,16 @@ public class WhatsAppController : ControllerBase
         if (string.IsNullOrWhiteSpace(customer.Phone1) && !string.IsNullOrWhiteSpace(conversation.PhoneNumber))
         {
             var customerPhone = NormalizeCustomerPhone(conversation.PhoneNumber);
-            if (customerPhone is not null && await CanAssignPhoneToCustomerAsync(conversation.BranchId, customer.Id, customerPhone, cancellationToken))
+            if (customerPhone is not null && await CanAssignPhoneToCustomerAsync(customer.Id, customerPhone, cancellationToken))
+            {
                 customer.Phone1 = customerPhone;
+                customer.Phones.Add(new CustomerPhone
+                {
+                    TenantId = customer.TenantId,
+                    PhoneNormalized = customerPhone,
+                    IsPrimary = true
+                });
+            }
         }
 
         conversation.CustomerId = customer.Id;
@@ -1552,7 +1562,7 @@ public class WhatsAppController : ControllerBase
         if (!conversation.ChannelSettingId.HasValue)
             return await CanAccessVerifiedBranchAsync(conversation.BranchId, cancellationToken);
         var channelReady = await _db.WhatsAppChannelSettings.AsNoTracking().AnyAsync(
-            x => x.Id == conversation.ChannelSettingId.Value && x.TenantId == 1 && x.IsActive && x.IsVerified,
+            x => x.Id == conversation.ChannelSettingId.Value && x.TenantId == _tenantId && x.IsActive && x.IsVerified,
             cancellationToken);
         if (!channelReady) return false;
         if (Roles.IsSuperadmin(_currentUser.Role)) return true;
@@ -1569,7 +1579,7 @@ public class WhatsAppController : ControllerBase
         if (conversation.ChannelSettingId.HasValue)
         {
             return await _db.WhatsAppChannelSettings.AsNoTracking()
-                .Where(x => x.Id == conversation.ChannelSettingId.Value && x.TenantId == 1 && x.IsActive && x.IsVerified)
+                .Where(x => x.Id == conversation.ChannelSettingId.Value && x.TenantId == _tenantId && x.IsActive && x.IsVerified)
                 .Select(x => new ConversationChannelCredentials(x.PhoneNumberId, x.AccessToken))
                 .FirstOrDefaultAsync(cancellationToken);
         }
@@ -1925,7 +1935,7 @@ public class WhatsAppController : ControllerBase
 
                 var channel = await _db.WhatsAppChannelSettings
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.TenantId == 1 && x.PhoneNumberId == phoneNumberId && x.IsActive && x.IsVerified, cancellationToken);
+                    .FirstOrDefaultAsync(x => x.TenantId == _tenantId && x.PhoneNumberId == phoneNumberId && x.IsActive && x.IsVerified, cancellationToken);
                 var setting = channel is null
                     ? await _db.WhatsAppBranchSettings.AsNoTracking()
                         .FirstOrDefaultAsync(x => x.PhoneNumberId == phoneNumberId && x.IsActive && x.IsVerified, cancellationToken)
@@ -2042,11 +2052,11 @@ public class WhatsAppController : ControllerBase
             if (conversation is null)
             {
                 var aiActive = channelSettingId.HasValue
-                    ? await _db.TenantAiSettings.AsNoTracking().AnyAsync(x => x.TenantId == 1 && x.IsActive && x.IsVerified, cancellationToken)
+                    ? await _db.TenantAiSettings.AsNoTracking().AnyAsync(x => x.TenantId == _tenantId && x.IsActive && x.IsVerified, cancellationToken)
                     : await IsBranchAiActiveAsync(setting.BranchId, cancellationToken);
                 conversation = new WhatsAppConversation
                 {
-                    TenantId = 1,
+                    TenantId = _tenantId,
                     ChannelSettingId = channelSettingId,
                     BranchId = setting.BranchId,
                     PhoneNumber = phoneIdentityMismatch ? null : identity.PhoneNumber,
@@ -2063,20 +2073,18 @@ public class WhatsAppController : ControllerBase
             if (conversation.CustomerId.HasValue)
             {
                 customer = await _db.Customers.FirstOrDefaultAsync(x =>
-                    x.Id == conversation.CustomerId.Value && (!channelSettingId.HasValue || x.Active) && (channelSettingId.HasValue || x.BranchId == setting.BranchId),
+                    x.TenantId == _tenantId && x.Id == conversation.CustomerId.Value && (!channelSettingId.HasValue || x.Active),
                     cancellationToken);
             }
             if (customer is null && identity.UserId is not null)
             {
-                var matches = await _db.Customers.Where(x => x.Active && x.WhatsAppUserId == identity.UserId && (channelSettingId.HasValue || x.BranchId == setting.BranchId))
+                var matches = await _db.Customers.Where(x => x.TenantId == _tenantId && x.Active && x.WhatsAppUserId == identity.UserId)
                     .OrderBy(x => x.Id).Take(2).ToListAsync(cancellationToken);
                 customer = matches.Count == 1 ? matches[0] : null;
             }
             customer ??= identity.PhoneNumber is null || phoneIdentityMismatch
                 ? null
-                : channelSettingId.HasValue
-                    ? await FindUniqueCustomerByPhoneAsync(identity.PhoneNumber, cancellationToken)
-                    : await FindCustomerByPhoneAsync(setting.BranchId, identity.PhoneNumber, cancellationToken);
+                : await FindUniqueCustomerByPhoneAsync(identity.PhoneNumber, cancellationToken);
 
             if (channelSettingId.HasValue)
             {
@@ -2098,8 +2106,16 @@ public class WhatsAppController : ControllerBase
                 if (!channelSettingId.HasValue && string.IsNullOrWhiteSpace(customer.Phone1) && identity.PhoneNumber is not null)
                 {
                     var customerPhone = NormalizeCustomerPhone(identity.PhoneNumber);
-                    if (customerPhone is not null && await CanAssignPhoneToCustomerAsync(setting.BranchId, customer.Id, customerPhone, cancellationToken))
+                    if (customerPhone is not null && await CanAssignPhoneToCustomerAsync(customer.Id, customerPhone, cancellationToken))
+                    {
                         customer.Phone1 = customerPhone;
+                        customer.Phones.Add(new CustomerPhone
+                        {
+                            TenantId = customer.TenantId,
+                            PhoneNormalized = customerPhone,
+                            IsPrimary = true
+                        });
+                    }
                 }
             }
 
@@ -2545,22 +2561,15 @@ public class WhatsAppController : ControllerBase
         return false;
     }
 
-    private async Task<Customer?> FindCustomerByPhoneAsync(int branchId, string whatsappPhone, CancellationToken cancellationToken)
-    {
-        var digits = OnlyDigits(whatsappPhone);
-        var last10 = digits.Length > 10 ? digits[^10..] : digits;
-        return await _db.Customers
-            .Where(x => x.BranchId == branchId && (x.Phone1 == digits || x.Phone2 == digits || x.Phone1 == last10 || x.Phone2 == last10))
-            .OrderByDescending(x => x.Active)
-            .FirstOrDefaultAsync(cancellationToken);
-    }
-
     private async Task<Customer?> FindUniqueCustomerByPhoneAsync(string whatsappPhone, CancellationToken cancellationToken)
     {
         var digits = OnlyDigits(whatsappPhone);
-        var last10 = digits.Length > 10 ? digits[^10..] : digits;
+        if (!ColombianPhoneNormalizer.TryNormalize(whatsappPhone, out var last10))
+            return null;
         var matches = await _db.Customers
-            .Where(x => x.Active && (x.Phone1 == digits || x.Phone2 == digits || x.Phone1 == last10 || x.Phone2 == last10))
+            .Where(x => x.TenantId == _tenantId && x.Active
+                && (x.Phones.Any(p => p.Active && p.PhoneNormalized == last10)
+                    || x.Phone1 == digits || x.Phone2 == digits || x.Phone1 == last10 || x.Phone2 == last10))
             .OrderBy(x => x.Id)
             .Take(2)
             .ToListAsync(cancellationToken);
@@ -2578,7 +2587,7 @@ public class WhatsAppController : ControllerBase
                             phoneNumberIds.Add(phoneNumberId);
         if (phoneNumberIds.Count == 0) return false;
         var channelSecrets = await _db.WhatsAppChannelSettings.AsNoTracking()
-            .Where(x => x.TenantId == 1 && phoneNumberIds.Contains(x.PhoneNumberId) && x.IsActive && x.AppSecret != null)
+            .Where(x => x.TenantId == _tenantId && phoneNumberIds.Contains(x.PhoneNumberId) && x.IsActive && x.AppSecret != null)
             .Select(x => x.AppSecret!)
             .ToListAsync(cancellationToken);
         var branchSecrets = await _db.WhatsAppBranchSettings.AsNoTracking()
@@ -2712,19 +2721,17 @@ public class WhatsAppController : ControllerBase
 
     private static string? NormalizeCustomerPhone(string? value)
     {
-        var digits = OnlyDigits(value);
-        return digits.Length >= 10 ? digits[^10..] : null;
+        return ColombianPhoneNormalizer.TryNormalize(value, out var normalized) ? normalized : null;
     }
 
     private async Task<bool> CanAssignPhoneToCustomerAsync(
-        int branchId,
         int customerId,
         string phone,
         CancellationToken cancellationToken) =>
         !await _db.Customers.AsNoTracking().AnyAsync(x =>
-            x.BranchId == branchId
+            x.TenantId == _tenantId
             && x.Id != customerId
-            && (x.Phone1 == phone || x.Phone2 == phone),
+            && (x.Phones.Any(p => p.Active && p.PhoneNormalized == phone) || x.Phone1 == phone || x.Phone2 == phone),
             cancellationToken);
 
     private static string? TryGetString(JsonElement element, string propertyName)

@@ -4,6 +4,7 @@ namespace SenorArroz.Domain.Entities;
 
 public class Address : BaseEntity
 {
+    public int TenantId { get; set; } = 1;
     public int CustomerId { get; set; }
     public int? NeighborhoodId { get; set; }
     public string? Label { get; set; }
@@ -21,6 +22,8 @@ public class Address : BaseEntity
 
     // Navigation Properties
     public virtual Customer Customer { get; set; } = null!;
+    public virtual Tenant Tenant { get; set; } = null!;
     public virtual Neighborhood? Neighborhood { get; set; }
+    public virtual ICollection<AddressBranch> BranchServices { get; set; } = new List<AddressBranch>();
     public virtual ICollection<Order> Orders { get; set; } = new List<Order>();
 }

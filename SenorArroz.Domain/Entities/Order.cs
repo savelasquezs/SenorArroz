@@ -9,6 +9,7 @@ public class Order : BaseEntity
     /// <summary>Clave en <see cref="StatusTimes"/> para el instante UTC en que se asignó o reasignó el domiciliario.</summary>
     public const string DeliveryManAssignedStatusTimeKey = "delivery_man_assigned";
 
+    public int TenantId { get; set; } = 1;
     public int BranchId { get; set; }
     public int TakenById { get; set; }
     public int? CustomerId { get; set; }

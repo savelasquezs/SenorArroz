@@ -17,34 +17,28 @@ namespace SenorArroz.Application.Features.Customers.Queries
         private readonly ICustomerRepository _customerRepository;
         private readonly IMapper _mapper;
         private readonly ICurrentUser _currentUser;
+        private readonly ICurrentTenant _currentTenant;
         private readonly ILoyaltyCycleService _loyaltyCycle;
 
         public GetCustomerByPhoneHandler(
             ICustomerRepository customerRepository,
             IMapper mapper,
             ICurrentUser currentUser,
-            ILoyaltyCycleService loyaltyCycle)
+            ILoyaltyCycleService loyaltyCycle,
+            ICurrentTenant currentTenant)
         {
             _customerRepository = customerRepository;
             _mapper = mapper;
             _currentUser = currentUser;
             _loyaltyCycle = loyaltyCycle;
+            _currentTenant = currentTenant;
         }
 
         public async Task<CustomerDto?> Handle(GetCustomerByPhoneQuery request, CancellationToken cancellationToken)
         {
-            // Determine branch filter based on user role
-            int branchFilter = Roles.IsSuperadmin(_currentUser.Role) ? request.BranchId : _currentUser.BranchId;
-
-            var customer = await _customerRepository.GetByPhoneAsync(request.Phone, branchFilter, cancellationToken);
+            var customer = await _customerRepository.GetByPhoneAsync(request.Phone, _currentTenant.TenantId, cancellationToken);
             if (customer == null)
                 return null;
-
-            // Additional check for non-superadmin users
-            if (!Roles.IsSuperadmin(_currentUser.Role) && customer.BranchId != _currentUser.BranchId)
-            {
-                throw new BusinessException("No tienes permisos para acceder a este cliente");
-            }
 
             var customerDto = _mapper.Map<CustomerDto>(customer);
 

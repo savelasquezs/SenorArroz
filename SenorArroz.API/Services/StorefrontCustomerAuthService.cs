@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 
@@ -143,7 +144,12 @@ public sealed class StorefrontCustomerAuthService(
         var matches = await db.Customers.AsNoTracking()
             .Include(x => x.Addresses)
             .ThenInclude(x => x.Neighborhood)
-            .Where(x => x.Active && (x.Phone1 == phone || x.Phone2 == phone))
+            .Include(x => x.Addresses)
+            .ThenInclude(x => x.BranchServices)
+            .ThenInclude(x => x.Neighborhood)
+            .Where(x => x.TenantId == _options.TenantId && x.Active &&
+                (x.Phones.Any(p => p.Active && p.PhoneNormalized == phone)
+                 || x.Phone1 == phone || x.Phone2 == phone))
             .OrderBy(x => x.Id)
             .Take(2)
             .ToListAsync(ct);
@@ -166,7 +172,10 @@ public sealed class StorefrontCustomerAuthService(
                 x.Latitude,
                 x.Longitude,
                 x.IsPrimary,
-                x.Neighborhood?.Name))
+                x.Neighborhood?.Name,
+                x.BranchServices.Select(b => new StorefrontAddressBranchResult(
+                    b.BranchId, b.NeighborhoodId, b.Neighborhood != null ? b.Neighborhood.Name : null,
+                    b.DeliveryFee, b.IsCovered, b.ValidatedAt)).ToList()))
             .ToList();
         return new(phone, true, false, new(customer.Id, customer.Name), addresses);
     }
@@ -185,12 +194,9 @@ public sealed class StorefrontCustomerAuthService(
 
     private static string NormalizePhone(string? value)
     {
-        var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
-        if (digits.Length > 10)
-            digits = digits[^10..];
-        if (digits.Length != 10 || digits[0] != '3')
+        if (!ColombianPhoneNormalizer.TryNormalize(value, out var normalized))
             throw new StorefrontAuthInvalidPhoneException();
-        return digits;
+        return normalized;
     }
 
     private static string Sha256Hex(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
@@ -202,7 +208,8 @@ public sealed record StorefrontOtpRequestResult(Guid ChallengeId, int ExpiresInS
 public sealed record StorefrontOtpVerificationResult(string SessionToken, int SessionExpiresInSeconds, StorefrontCustomerSessionResult CustomerSession);
 public sealed record StorefrontCustomerSessionResult(string Phone, bool ExistingCustomer, bool AmbiguousCustomer, StorefrontCustomerResult? Customer, IReadOnlyCollection<StorefrontCustomerAddressResult> Addresses);
 public sealed record StorefrontCustomerResult(int Id, string Name);
-public sealed record StorefrontCustomerAddressResult(int Id, string? Label, string Address, string? AdditionalInfo, int DeliveryFee, decimal? Latitude, decimal? Longitude, bool IsPrimary, string? NeighborhoodName);
+public sealed record StorefrontCustomerAddressResult(int Id, string? Label, string Address, string? AdditionalInfo, int DeliveryFee, decimal? Latitude, decimal? Longitude, bool IsPrimary, string? NeighborhoodName, IReadOnlyCollection<StorefrontAddressBranchResult>? BranchServices = null);
+public sealed record StorefrontAddressBranchResult(int BranchId, int? NeighborhoodId, string? NeighborhoodName, int DeliveryFee, bool IsCovered, DateTime? ValidatedAt);
 
 public sealed class StorefrontAuthInvalidPhoneException : Exception;
 public sealed class StorefrontAuthInvalidCodeException : Exception;

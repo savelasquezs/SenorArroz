@@ -579,7 +579,7 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
-    public async Task Quote_SavedAddressPreservesHistoricalDeliveryFee()
+    public async Task Quote_SavedAddressWithoutBranchServiceUsesCurrentBranchQuote()
     {
         await using var db = CreateDb();
         Seed(db);
@@ -619,8 +619,10 @@ public class PublicStorefrontControllerTests
 
         var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(action.Result).Value);
         Assert.Equal("saved", response.Data!.DeliveryFeeSource);
-        Assert.Equal(9_000, response.Data.EstimatedDeliveryFee);
-        Assert.Equal(response.Data.Subtotal + 9_000, response.Data.Total);
+        Assert.Equal(4_000, response.Data.EstimatedDeliveryFee);
+        Assert.Equal(response.Data.Subtotal + 4_000, response.Data.Total);
+        var service = await db.AddressBranches.SingleAsync(x => x.AddressId == 31 && x.BranchId == 10);
+        Assert.Equal(4_000, service.DeliveryFee);
     }
 
     [Fact]

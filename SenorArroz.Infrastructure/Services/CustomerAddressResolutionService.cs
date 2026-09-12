@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Data;
@@ -67,7 +68,7 @@ public sealed class CustomerAddressResolutionService(
         CancellationToken cancellationToken)
     {
         var rows = await db.Addresses
-            .Where(x => x.CustomerId == customerId)
+            .Where(x => x.TenantId == resolved.Neighborhood.TenantId && x.CustomerId == customerId)
             .ToListAsync(cancellationToken);
         var existing = rows.FirstOrDefault(x =>
             NormalizeAddress(x.AddressText) == resolved.NormalizedAddress
@@ -76,14 +77,14 @@ public sealed class CustomerAddressResolutionService(
 
         if (existing is not null)
         {
-            return existing.NeighborhoodId == resolved.Neighborhood.Id
-                ? new(existing, false, null)
-                : new(null, false, "La dirección existente tiene un barrio diferente al validado para esta solicitud.");
+            await EnsureBranchServiceAsync(existing, resolved, cancellationToken);
+            return new(existing, false, null);
         }
 
         var created = new Address
         {
             CustomerId = customerId,
+            TenantId = resolved.Neighborhood.TenantId,
             NeighborhoodId = resolved.Neighborhood.Id,
             AddressText = resolved.Input.Address,
             OriginalAddressText = resolved.Input.Address,
@@ -97,9 +98,67 @@ public sealed class CustomerAddressResolutionService(
             ValidatedAt = clock.UtcNow
         };
         db.Addresses.Add(created);
-        await db.SaveChangesAsync(cancellationToken);
+        var createdService = ToBranchService(created, resolved);
+        created.BranchServices.Add(createdService);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (
+            exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            db.Entry(createdService).State = EntityState.Detached;
+            db.Entry(created).State = EntityState.Detached;
+            var winner = await db.Addresses.FirstOrDefaultAsync(x =>
+                x.TenantId == resolved.Neighborhood.TenantId
+                && x.CustomerId == customerId
+                && x.NormalizedAddressText == resolved.NormalizedAddress,
+                cancellationToken);
+            if (winner is null)
+                throw;
+            await EnsureBranchServiceAsync(winner, resolved, cancellationToken);
+            return new(winner, false, null);
+        }
         return new(created, true, null);
     }
+
+    private async Task EnsureBranchServiceAsync(Address address, ResolvedCustomerAddress resolved, CancellationToken ct)
+    {
+        if (db.Database.IsRelational())
+        {
+            var now = clock.UtcNow;
+            await db.Database.ExecuteSqlInterpolatedAsync($@"
+                INSERT INTO address_branch
+                    (tenant_id,address_id,branch_id,neighborhood_id,delivery_fee,is_covered,validated_at,last_used_at,created_at,updated_at)
+                VALUES
+                    ({address.TenantId},{address.Id},{resolved.Neighborhood.BranchId},{resolved.Neighborhood.Id},
+                     {resolved.Neighborhood.DeliveryFee},TRUE,{now},{now},{now},{now})
+                ON CONFLICT (tenant_id,address_id,branch_id)
+                DO UPDATE SET last_used_at=EXCLUDED.last_used_at,updated_at=EXCLUDED.updated_at", ct);
+            return;
+        }
+
+        var current = await db.AddressBranches.FirstOrDefaultAsync(x =>
+            x.TenantId == address.TenantId && x.AddressId == address.Id && x.BranchId == resolved.Neighborhood.BranchId, ct);
+        if (current is null)
+            db.AddressBranches.Add(ToBranchService(address, resolved));
+        else
+            current.LastUsedAt = clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
+    private AddressBranch ToBranchService(Address address, ResolvedCustomerAddress resolved) => new()
+    {
+        TenantId = address.TenantId,
+        Address = address,
+        AddressId = address.Id,
+        BranchId = resolved.Neighborhood.BranchId,
+        NeighborhoodId = resolved.Neighborhood.Id,
+        DeliveryFee = resolved.Neighborhood.DeliveryFee,
+        IsCovered = true,
+        ValidatedAt = clock.UtcNow,
+        LastUsedAt = clock.UtcNow
+    };
 
     private async Task<(GeocodedAddress? Result, string? Error)> ResolveExactAddress(
         string originalAddress,
@@ -194,7 +253,7 @@ public sealed class CustomerAddressResolutionService(
         return alternatives;
     }
 
-    internal static string NormalizeAddress(string value)
+    public static string NormalizeAddress(string value)
     {
         var decomposed = value.ToLowerInvariant().Normalize(NormalizationForm.FormD);
         var builder = new StringBuilder();

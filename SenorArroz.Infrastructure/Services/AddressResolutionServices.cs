@@ -8,7 +8,7 @@ using SenorArroz.Infrastructure.Data;
 
 namespace SenorArroz.Infrastructure.Services;
 
-public record NeighborhoodMatch(int Id, string Name, string BranchName, int DeliveryFee, bool RequiresBranchReassignment);
+public record NeighborhoodMatch(int Id, string Name, string BranchName, int DeliveryFee, bool RequiresBranchReassignment, int BranchId = 0, int TenantId = 1);
 public record NeighborhoodResolution(bool Matched, bool RequiresConfirmation, NeighborhoodMatch? Match, IReadOnlyList<NeighborhoodMatch> Options, string? SuggestedQuestion);
 
 public class RegisteredNeighborhoodResolver(ApplicationDbContext db)
@@ -23,7 +23,7 @@ public class RegisteredNeighborhoodResolver(ApplicationDbContext db)
             .AsNoTracking()
             .Where(x => x.Active && x.BranchId == conversationBranchId)
             .Include(x => x.Branch)
-            .Select(x => new { x.Id, x.Name, BranchName = x.Branch.Name, x.DeliveryFee })
+            .Select(x => new { x.Id, x.Name, BranchName = x.Branch.Name, x.DeliveryFee, x.BranchId, x.TenantId })
             .ToListAsync(ct);
         var ranked = rows
             .Select(x => new { Row = x, Score = Score(sought, Normalize(x.Name)) })
@@ -36,7 +36,7 @@ public class RegisteredNeighborhoodResolver(ApplicationDbContext db)
             return new(false, false, null, [], null);
 
         var options = ranked
-            .Select(x => new NeighborhoodMatch(x.Row.Id, x.Row.Name, x.Row.BranchName, x.Row.DeliveryFee, false))
+            .Select(x => new NeighborhoodMatch(x.Row.Id, x.Row.Name, x.Row.BranchName, x.Row.DeliveryFee, false, x.Row.BranchId, x.Row.TenantId))
             .ToList();
         var safe = ranked[0].Score >= .82
             && (ranked.Count == 1 || ranked[0].Score - ranked[1].Score >= .12);

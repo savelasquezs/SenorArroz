@@ -14,6 +14,7 @@ public class CustomerConfiguration : IEntityTypeConfiguration<Customer>
         builder.HasKey(c => c.Id);
         builder.Property(c => c.Id).HasColumnName("id");
 
+        builder.Property(c => c.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
         builder.Property(c => c.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(c => c.Name).HasColumnName("name").HasMaxLength(150).IsRequired();
         builder.Property(c => c.Phone1).HasColumnName("phone1").HasMaxLength(10);
@@ -38,9 +39,11 @@ public class CustomerConfiguration : IEntityTypeConfiguration<Customer>
             .WithMany(b => b.Customers)
             .HasForeignKey(c => c.BranchId)
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(c => c.Tenant).WithMany(t => t.Customers).HasForeignKey(c => c.TenantId).OnDelete(DeleteBehavior.Restrict);
 
         // Índices
         builder.HasIndex(c => c.BranchId).HasDatabaseName("idx_customer_branch");
+        builder.HasIndex(c => c.TenantId).HasDatabaseName("ix_customer_tenant");
         builder.HasIndex(c => c.Phone1).HasDatabaseName("idx_customer_phone");
         builder.HasIndex(c => new { c.BranchId, c.WhatsAppUserId })
             .IsUnique()

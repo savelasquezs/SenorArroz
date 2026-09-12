@@ -36,6 +36,8 @@ public class UpdateAddressHandler : IRequestHandler<UpdateAddressCommand, Custom
         {
             throw new NotFoundException($"Barrio con ID {request.NeighborhoodId} no encontrado");
         }
+        if (neighborhood.TenantId != address.TenantId)
+            throw new BusinessException("El barrio y la dirección pertenecen a restaurantes diferentes");
 
         // If this address should be primary, first unset all other primary addresses
         if (request.IsPrimary && !address.IsPrimary)
