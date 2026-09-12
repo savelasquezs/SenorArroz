@@ -12,6 +12,7 @@ public class WhatsAppHub : Hub
     public override async Task OnConnectedAsync()
     {
         var branchId = Context.User?.FindFirst("branch_id")?.Value;
+        var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
 
         if (role == "Superadmin")
@@ -26,6 +27,8 @@ public class WhatsAppHub : Hub
             await Groups.AddToGroupAsync(Context.ConnectionId, "Tenant_1_WhatsApp_Unassigned");
         if (role == "Superadmin")
             await Groups.AddToGroupAsync(Context.ConnectionId, "Tenant_1_WhatsApp_Superadmin");
+        if (int.TryParse(userId, out var parsedUserId) && parsedUserId > 0)
+            await Groups.AddToGroupAsync(Context.ConnectionId, WhatsAppRealtimeGroupResolver.User(parsedUserId));
 
         await base.OnConnectedAsync();
     }
@@ -33,6 +36,7 @@ public class WhatsAppHub : Hub
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var branchId = Context.User?.FindFirst("branch_id")?.Value;
+        var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
 
         if (role == "Superadmin")
@@ -47,6 +51,8 @@ public class WhatsAppHub : Hub
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, "Tenant_1_WhatsApp_Unassigned");
         if (role == "Superadmin")
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, "Tenant_1_WhatsApp_Superadmin");
+        if (int.TryParse(userId, out var parsedUserId) && parsedUserId > 0)
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, WhatsAppRealtimeGroupResolver.User(parsedUserId));
 
         await base.OnDisconnectedAsync(exception);
     }

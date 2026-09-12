@@ -13,6 +13,7 @@ public interface IWhatsAppNotificationService
     Task NotifyConversationRoutingChangedAsync(
         int branchId,
         int? previousOperationalBranchId,
+        int? previousAssignedUserId,
         WhatsAppConversationDto conversation,
         CancellationToken cancellationToken = default);
     Task NotifyAiProcessingChangedAsync(

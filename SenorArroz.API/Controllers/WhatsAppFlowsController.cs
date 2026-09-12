@@ -98,6 +98,7 @@ public sealed class WhatsAppFlowsController(
             : null;
         var screen = GetString(root, "screen");
         var previousBranchId = session.Conversation.OperationalBranchId;
+        var previousAssignedUserId = session.Conversation.AssignedUserId;
         var previousMode = session.Conversation.AttentionMode;
         try
         {
@@ -119,7 +120,12 @@ public sealed class WhatsAppFlowsController(
                 {
                     var conversation = WhatsAppConversationMapper.ToDto(session.Conversation);
                     if (previousBranchId != session.Conversation.OperationalBranchId)
-                        await notifications.NotifyConversationRoutingChangedAsync(session.Conversation.BranchId, previousBranchId, conversation, ct);
+                        await notifications.NotifyConversationRoutingChangedAsync(
+                            session.Conversation.BranchId,
+                            previousBranchId,
+                            previousAssignedUserId,
+                            conversation,
+                            ct);
                     else
                         await notifications.NotifyAttentionChangedAsync(session.Conversation.BranchId, conversation, ct);
                 }

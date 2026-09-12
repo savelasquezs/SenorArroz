@@ -234,6 +234,7 @@ public sealed class WhatsAppFlowSecurityTests
 
     [Theory]
     [InlineData("pedido")]
+    [InlineData("pedir")]
     [InlineData("  Hacer   PEDIDO ")]
     [InlineData("ver menú")]
     [InlineData("comprar")]
