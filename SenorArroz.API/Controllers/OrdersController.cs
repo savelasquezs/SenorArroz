@@ -180,8 +180,17 @@ public class OrdersController : ControllerBase
     [Authorize(Roles = "Admin,Superadmin,Cashier")]
     public async Task<ActionResult<OrderDto>> CreateOrder([FromBody] CreateOrderDto orderDto)
     {
-        orderDto.BranchId = _branchContext.RequireBranch(orderDto.BranchId);
-        var command = new CreateOrderCommand { Order = orderDto };
+        var allowAssignedWhatsAppOperationalBranch = orderDto.WhatsAppConversationId.HasValue
+            && orderDto.BranchId != _currentUser.BranchId
+            && Roles.IsCashier(_currentUser.Role);
+        if (!allowAssignedWhatsAppOperationalBranch)
+            orderDto.BranchId = _branchContext.RequireBranch(orderDto.BranchId);
+
+        var command = new CreateOrderCommand
+        {
+            Order = orderDto,
+            AllowAssignedWhatsAppOperationalBranch = allowAssignedWhatsAppOperationalBranch
+        };
         var result = await _mediator.Send(command);
         
         return CreatedAtAction(nameof(GetOrder), new { id = result.Id }, result);

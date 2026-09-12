@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc.Filters;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Features.Users.DTOs;
 
 namespace SenorArroz.API.Filters;
@@ -38,7 +39,7 @@ public sealed class BranchScopeActionFilter : IAsyncActionFilter
                     | System.Reflection.BindingFlags.Instance
                     | System.Reflection.BindingFlags.IgnoreCase);
 
-                if (value is UpdateUserDto)
+                if (value is UpdateUserDto || value is CreateOrderDto { WhatsAppConversationId: > 0 })
                     continue;
 
                 if (property is not null

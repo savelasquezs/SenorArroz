@@ -116,8 +116,11 @@ public sealed class WhatsAppFlowsController(
             {
                 try
                 {
-                    await notifications.NotifyAttentionChangedAsync(session.Conversation.BranchId,
-                        WhatsAppConversationMapper.ToDto(session.Conversation), ct);
+                    var conversation = WhatsAppConversationMapper.ToDto(session.Conversation);
+                    if (previousBranchId != session.Conversation.OperationalBranchId)
+                        await notifications.NotifyConversationRoutingChangedAsync(session.Conversation.BranchId, previousBranchId, conversation, ct);
+                    else
+                        await notifications.NotifyAttentionChangedAsync(session.Conversation.BranchId, conversation, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

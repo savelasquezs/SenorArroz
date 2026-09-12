@@ -1,10 +1,13 @@
 using SenorArroz.Domain.Enums;
+using System.Text.Json.Serialization;
 
 namespace SenorArroz.Application.Features.Orders.DTOs;
 
 public class CreateOrderDto
 {
     public int BranchId { get; set; }
+    [JsonPropertyName("whatsappConversationId")]
+    public int? WhatsAppConversationId { get; set; }
     public int TakenById { get; set; }
     public int? CustomerId { get; set; }
     public int? AddressId { get; set; }

@@ -138,6 +138,18 @@ public class UpsertWhatsAppQuickReplyDto
     public bool IsActive { get; set; } = true;
 }
 
+public sealed class UpdateWhatsAppOperationalBranchDto
+{
+    [System.Text.Json.Serialization.JsonPropertyName("branchId")]
+    public int? OperationalBranchId { get; set; }
+}
+
+public sealed class WhatsAppOperationalBranchOptionDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
 public class WhatsAppConversationDto
 {
     public int Id { get; set; }

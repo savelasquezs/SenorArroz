@@ -99,6 +99,19 @@ public class WhatsAppController : ControllerBase
         }, "Estado de WhatsApp obtenido."));
     }
 
+    [HttpGet("operational-branches")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<WhatsAppOperationalBranchOptionDto>>>> GetOperationalBranches(CancellationToken cancellationToken)
+    {
+        var branches = await _db.Branches.AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.Name)
+            .Select(x => new WhatsAppOperationalBranchOptionDto { Id = x.Id, Name = x.Name })
+            .ToListAsync(cancellationToken);
+
+        return Ok(ApiResponse<IReadOnlyList<WhatsAppOperationalBranchOptionDto>>.SuccessResponse(branches, "Sucursales operativas obtenidas."));
+    }
+
     [HttpGet("unread-summary")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppUnreadSummaryDto>>> GetUnreadSummary(CancellationToken cancellationToken)
@@ -114,14 +127,14 @@ public class WhatsAppController : ControllerBase
         }
 
         var isSuperadmin = Roles.IsSuperadmin(_currentUser.Role);
-        var isAdmin = Roles.IsAdmin(_currentUser.Role);
+        var canSeeUnassigned = Roles.IsAdminOrCashier(_currentUser.Role);
         var query = _db.WhatsAppConversations
             .AsNoTracking()
             .Where(x => x.UnreadCount > 0 && (
                 (x.ChannelSettingId == null && branchIds.Contains(x.BranchId))
                 || (x.ChannelSettingId != null && x.TenantId == 1
                     && (isSuperadmin
-                        || x.OperationalBranchId == null && isAdmin
+                        || x.OperationalBranchId == null && canSeeUnassigned
                         || x.OperationalBranchId == _currentUser.BranchId))));
 
         var unreadConversations = await query.CountAsync(cancellationToken);
@@ -622,7 +635,7 @@ public class WhatsAppController : ControllerBase
     {
         var allowedBranchIds = await GetAllowedVerifiedBranchIdsQuery().ToListAsync(cancellationToken);
         var isSuperadmin = Roles.IsSuperadmin(_currentUser.Role);
-        var isAdmin = Roles.IsAdmin(_currentUser.Role);
+        var canSeeUnassigned = Roles.IsAdminOrCashier(_currentUser.Role);
         var adminBranchId = _currentUser.BranchId;
         if (search.BranchId.HasValue && !isSuperadmin && search.BranchId != adminBranchId)
             return Forbid();
@@ -636,7 +649,7 @@ public class WhatsAppController : ControllerBase
                 (x.ChannelSettingId == null && allowedBranchIds.Contains(x.BranchId))
                 || (x.ChannelSettingId != null
                     && x.TenantId == 1
-                    && (isSuperadmin || x.OperationalBranchId == null && isAdmin || x.OperationalBranchId == adminBranchId)));
+                    && (isSuperadmin || x.OperationalBranchId == null && canSeeUnassigned || x.OperationalBranchId == adminBranchId)));
 
         if (search.BranchId.HasValue)
             query = query.Where(x => x.ChannelSettingId == null
@@ -698,6 +711,59 @@ public class WhatsAppController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<WhatsAppConversationDto>>.SuccessResponse(conversations, "Conversaciones obtenidas."));
     }
 
+    [HttpPut("conversations/{conversationId:int}/operational-branch")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppConversationDto>>> UpdateOperationalBranch(
+        int conversationId,
+        [FromBody] UpdateWhatsAppOperationalBranchDto request,
+        CancellationToken cancellationToken)
+    {
+        var conversation = await _db.WhatsAppConversations
+            .Include(x => x.OperationalBranch)
+            .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
+        if (conversation is null)
+            return NotFound(ApiResponse<WhatsAppConversationDto>.ErrorResponse("Conversación no encontrada."));
+        if (!conversation.ChannelSettingId.HasValue || !await CanAccessConversationAsync(conversation, cancellationToken))
+            return Forbid();
+
+        Branch? operationalBranch = null;
+        if (request.OperationalBranchId.HasValue)
+        {
+            operationalBranch = await _db.Branches
+                .FirstOrDefaultAsync(x => x.Id == request.OperationalBranchId.Value && x.IsActive, cancellationToken);
+            if (operationalBranch is null)
+                return BadRequest(ApiResponse<WhatsAppConversationDto>.ErrorResponse("La sucursal operativa no existe o está inactiva."));
+        }
+
+        var previousOperationalBranchId = conversation.OperationalBranchId;
+        if (previousOperationalBranchId == request.OperationalBranchId)
+            return Ok(ApiResponse<WhatsAppConversationDto>.SuccessResponse(ToConversationDto(conversation), "La sucursal operativa no cambió."));
+
+        conversation.OperationalBranchId = request.OperationalBranchId;
+        conversation.OperationalBranch = operationalBranch;
+        if (previousOperationalBranchId.HasValue && request.OperationalBranchId.HasValue)
+            conversation.AssignedUserId = null;
+        conversation.UpdatedAt = _clock.UtcNow;
+
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(ApiResponse<WhatsAppConversationDto>.ErrorResponse("La conversación fue modificada por otro usuario. Actualiza e inténtalo de nuevo."));
+        }
+
+        var dto = ToConversationDto(conversation);
+        await _whatsAppNotificationService.NotifyConversationRoutingChangedAsync(
+            conversation.BranchId,
+            previousOperationalBranchId,
+            dto,
+            cancellationToken);
+
+        return Ok(ApiResponse<WhatsAppConversationDto>.SuccessResponse(dto, "Sucursal operativa actualizada."));
+    }
+
     [HttpGet("conversations/{conversationId:int}/messages")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<WhatsAppMessageDto>>>> GetMessages(
@@ -744,8 +810,9 @@ public class WhatsAppController : ControllerBase
         if (!await CanAccessConversationAsync(conversation, cancellationToken))
             return Forbid();
 
+        var operationalBranchId = conversation.OperationalBranchId ?? conversation.BranchId;
         var state = await orderState.LoadAsync(conversationId, cancellationToken);
-        var summary = await orderState.BuildSummaryAsync(conversation.BranchId, state, cancellationToken);
+        var summary = await orderState.BuildSummaryAsync(operationalBranchId, state, cancellationToken);
         WhatsAppOrderDraftAddressDto? selectedAddress = null;
         if (state.SelectedAddressId.HasValue && conversation.CustomerId.HasValue)
         {
@@ -767,7 +834,7 @@ public class WhatsAppController : ControllerBase
         var dto = new WhatsAppOrderDraftDto
         {
             ConversationId = conversation.Id,
-            BranchId = conversation.BranchId,
+            BranchId = operationalBranchId,
             CustomerId = conversation.CustomerId,
             CustomerName = conversation.Customer?.Name ?? conversation.ContactName,
             PhoneNumber = conversation.PhoneNumber,
@@ -1485,8 +1552,9 @@ public class WhatsAppController : ControllerBase
         if (!channelReady) return false;
         if (Roles.IsSuperadmin(_currentUser.Role)) return true;
         if (!conversation.OperationalBranchId.HasValue)
-            return Roles.IsAdmin(_currentUser.Role);
-        return conversation.OperationalBranchId == _currentUser.BranchId;
+            return Roles.IsAdminOrCashier(_currentUser.Role);
+        return conversation.OperationalBranchId == _currentUser.BranchId
+            || Roles.IsCashier(_currentUser.Role) && conversation.AssignedUserId == _currentUser.Id;
     }
 
     private async Task<ConversationChannelCredentials?> ResolveConversationChannelAsync(

@@ -22,7 +22,7 @@ public class WhatsAppHub : Hub
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, $"Branch_{branchId}_WhatsApp");
         }
-        if (role is "Admin" or "Superadmin")
+        if (role is "Admin" or "Cashier" or "Superadmin")
             await Groups.AddToGroupAsync(Context.ConnectionId, "Tenant_1_WhatsApp_Unassigned");
         if (role == "Superadmin")
             await Groups.AddToGroupAsync(Context.ConnectionId, "Tenant_1_WhatsApp_Superadmin");
@@ -43,7 +43,7 @@ public class WhatsAppHub : Hub
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Branch_{branchId}_WhatsApp");
         }
-        if (role is "Admin" or "Superadmin")
+        if (role is "Admin" or "Cashier" or "Superadmin")
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, "Tenant_1_WhatsApp_Unassigned");
         if (role == "Superadmin")
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, "Tenant_1_WhatsApp_Superadmin");

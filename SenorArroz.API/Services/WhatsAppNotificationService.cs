@@ -55,6 +55,33 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
         await _hubContext.Clients.Groups(ResolveGroups(branchId, conversation)).SendAsync("WhatsAppAttentionChanged", payload, cancellationToken);
     }
 
+    public async Task NotifyConversationRoutingChangedAsync(
+        int branchId,
+        int? previousOperationalBranchId,
+        WhatsAppConversationDto conversation,
+        CancellationToken cancellationToken = default)
+    {
+        await ResolveCentralRoutingAsync(conversation, cancellationToken);
+        var previous = new WhatsAppConversationDto
+        {
+            IsCentralChannel = true,
+            OperationalBranchId = previousOperationalBranchId
+        };
+        var groups = ResolveGroups(branchId, previous)
+            .Concat(ResolveGroups(branchId, conversation))
+            .Distinct()
+            .ToArray();
+        var payload = new
+        {
+            branchId = conversation.OperationalBranchId ?? branchId,
+            previousOperationalBranchId,
+            conversation
+        };
+
+        await _hubContext.Clients.Groups(groups)
+            .SendAsync("WhatsAppConversationRoutingChanged", payload, cancellationToken);
+    }
+
     public async Task NotifyAiProcessingChangedAsync(
         int branchId,
         WhatsAppAiProcessingDto processing,

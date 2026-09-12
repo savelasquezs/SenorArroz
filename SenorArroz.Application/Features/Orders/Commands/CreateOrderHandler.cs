@@ -52,8 +52,24 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         }
         else if (Roles.IsAdminOrCashier(_currentUser.Role))
         {
-            // Admin and Cashier use their branch
-            branchId = _currentUser.BranchId;
+            branchId = request.AllowAssignedWhatsAppOperationalBranch
+                ? request.Order.BranchId
+                : _currentUser.BranchId;
+
+            if (request.AllowAssignedWhatsAppOperationalBranch)
+            {
+                if (!Roles.IsCashier(_currentUser.Role) || !request.Order.WhatsAppConversationId.HasValue || branchId <= 0)
+                    throw new BusinessException("La conversación de WhatsApp y su sucursal operativa son obligatorias.");
+
+                var canCreateOperationalOrder = await _db.WhatsAppConversations.AsNoTracking().AnyAsync(x =>
+                    x.Id == request.Order.WhatsAppConversationId.Value
+                    && x.ChannelSettingId.HasValue
+                    && x.OperationalBranchId == branchId
+                    && x.AssignedUserId == _currentUser.Id,
+                    cancellationToken);
+                if (!canCreateOperationalOrder)
+                    throw new BusinessException("No tienes permiso para crear este pedido de WhatsApp en otra sucursal.");
+            }
         }
         else
         {
@@ -63,6 +79,19 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         // Validar que el pedido tenga al menos un producto
         if (request.Order.OrderDetails == null || !request.Order.OrderDetails.Any())
             throw new BusinessException("El pedido debe tener al menos un producto");
+
+        if (request.Order.WhatsAppConversationId.HasValue)
+        {
+            var canLinkWhatsAppConversation = await _db.WhatsAppConversations.AsNoTracking().AnyAsync(x =>
+                x.Id == request.Order.WhatsAppConversationId.Value
+                && (Roles.IsSuperadmin(_currentUser.Role)
+                    || !x.ChannelSettingId.HasValue && x.BranchId == branchId
+                    || x.ChannelSettingId.HasValue && x.OperationalBranchId == branchId
+                        && (x.OperationalBranchId == _currentUser.BranchId || x.AssignedUserId == _currentUser.Id)),
+                cancellationToken);
+            if (!canLinkWhatsAppConversation)
+                throw new BusinessException("No tienes permiso para vincular esta conversación de WhatsApp al pedido.");
+        }
 
         // Validate order type specific requirements
         if (request.Order.Type == Domain.Enums.OrderType.Delivery)
@@ -96,6 +125,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         await ValidateAndStampManualBenefitAsync(request.Order, branchId, cancellationToken);
 
         var order = _mapper.Map<Order>(request.Order);
+        order.WhatsAppConversationId = request.Order.WhatsAppConversationId;
         if (request.Order.AppliedBenefitType == OrderBenefitType.Manual)
         {
             var grantedByName = await _db.Users.AsNoTracking()

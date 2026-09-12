@@ -6,4 +6,5 @@ namespace SenorArroz.Application.Features.Orders.Commands;
 public class CreateOrderCommand : IRequest<OrderDto>
 {
     public CreateOrderDto Order { get; set; } = null!;
+    public bool AllowAssignedWhatsAppOperationalBranch { get; set; }
 }

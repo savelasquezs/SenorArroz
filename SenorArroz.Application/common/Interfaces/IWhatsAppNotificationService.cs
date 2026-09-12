@@ -10,6 +10,11 @@ public interface IWhatsAppNotificationService
         WhatsAppMessageDto message,
         CancellationToken cancellationToken = default);
     Task NotifyAttentionChangedAsync(int branchId, WhatsAppConversationDto conversation, CancellationToken cancellationToken = default);
+    Task NotifyConversationRoutingChangedAsync(
+        int branchId,
+        int? previousOperationalBranchId,
+        WhatsAppConversationDto conversation,
+        CancellationToken cancellationToken = default);
     Task NotifyAiProcessingChangedAsync(
         int branchId,
         WhatsAppAiProcessingDto processing,
