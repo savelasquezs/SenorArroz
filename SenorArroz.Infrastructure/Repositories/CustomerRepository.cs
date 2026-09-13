@@ -35,9 +35,14 @@ public class CustomerRepository : ICustomerRepository
         string sortOrder = "asc",
         CancellationToken cancellationToken = default)
     {
+        var mobileIdentity = new[] { phone, search }
+            .Select(candidate => ColombianPhoneNormalizer.TryNormalize(candidate, out var normalized) ? normalized : null)
+            .FirstOrDefault(normalized => normalized is not null);
+
         var query = _context.Customers
             .AsNoTracking()
             .Include(c => c.Branch)
+            .Include(c => c.Phones)
             .Include(c => c.Addresses)
             .ThenInclude(a => a.Neighborhood)
             .Include(c => c.Addresses)
@@ -46,10 +51,17 @@ public class CustomerRepository : ICustomerRepository
             .AsQueryable();
         query = query.Where(c => c.TenantId == _tenantId);
 
-        if (branchId.HasValue)
+        // BranchId is origin-branch compatibility data, not customer identity.
+        // An exact mobile lookup must therefore work from every authorized branch
+        // in the current tenant; ordinary POS lists remain branch-filtered.
+        if (branchId.HasValue && mobileIdentity is null)
             query = query.Where(c => c.BranchId == branchId.Value);
 
-        if (!string.IsNullOrWhiteSpace(search))
+        if (mobileIdentity is not null)
+        {
+            query = query.Where(c => c.Phones.Any(p => p.Active && p.PhoneNormalized == mobileIdentity));
+        }
+        else if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim();
             var usernameTerm = term.TrimStart('@');
@@ -65,7 +77,7 @@ public class CustomerRepository : ICustomerRepository
         if (!string.IsNullOrWhiteSpace(name))
             query = query.Where(c => EF.Functions.ILike(c.Name, $"%{name}%"));
 
-        if (!string.IsNullOrWhiteSpace(phone))
+        if (mobileIdentity is null && !string.IsNullOrWhiteSpace(phone))
             query = query.Where(c => (c.Phone1 != null && c.Phone1.Contains(phone)) ||
                                    (c.Phone2 != null && c.Phone2.Contains(phone)));
 

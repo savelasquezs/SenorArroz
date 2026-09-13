@@ -37,11 +37,9 @@ namespace SenorArroz.Application.Features.Customers.Queries
             if (customer == null)
                 return null;
 
-            // Check if user has access to this customer's branch
-            if (!Roles.IsSuperadmin(_currentUser.Role) && customer.BranchId != _currentUser.BranchId)
-            {
-                throw new BusinessException("No tienes permisos para acceder a este cliente");
-            }
+            // The repository already scopes the customer to the resolved tenant.
+            // BranchId is only the origin branch, so it must not block a POS user
+            // from reading a customer selected by global mobile identity.
 
             var customerDto = _mapper.Map<CustomerDto>(customer);
 

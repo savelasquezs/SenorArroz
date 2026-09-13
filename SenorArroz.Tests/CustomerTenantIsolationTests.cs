@@ -30,6 +30,29 @@ public sealed class CustomerTenantIsolationTests
     }
 
     [Fact]
+    public async Task ExactMobileSearch_IsGlobalWithinTenant_RegardlessOfOriginBranch()
+    {
+        await using var db = CreateDb();
+        var originBranch = new Branch { Id = 1, TenantId = 1, Name = "Origin", Address = "A", Phone1 = "1" };
+        var operatingBranch = new Branch { Id = 2, TenantId = 1, Name = "Operating", Address = "B", Phone1 = "2" };
+        db.Branches.AddRange(originBranch, operatingBranch);
+        db.Customers.Add(Customer(10, 1, originBranch, "Global mobile", "3022074761"));
+        await db.SaveChangesAsync();
+
+        var repository = new CustomerRepository(db, new FixedTenant(1));
+
+        var result = await repository.GetPagedAsync(
+            branchId: operatingBranch.Id,
+            search: "3022074761",
+            active: true,
+            page: 1,
+            pageSize: 10);
+
+        Assert.Single(result.Items);
+        Assert.Equal(10, result.Items.Single().Id);
+    }
+
+    [Fact]
     public async Task AddressRepository_DoesNotExposeAnotherTenant()
     {
         await using var db = CreateDb();
