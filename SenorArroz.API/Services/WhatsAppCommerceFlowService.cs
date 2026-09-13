@@ -36,7 +36,7 @@ public sealed class WhatsAppCommerceFlowService(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> Screens =
     [
-        "HOME", "CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_PICKUP",
+        "HOME", "CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_DELIVERY", "ADDRESS_PICKUP",
         "BENEFITS", "PAYMENT", "SUMMARY", "RECOVERY"
     ];
     private readonly WhatsAppFlowOptions _options = options.Value;
@@ -448,9 +448,10 @@ public sealed class WhatsAppCommerceFlowService(
                     ClearFulfillment(state);
                     state.AddressMode = state.FulfillmentType == "pickup" ? "pickup" : "saved";
                     InvalidateQuote(state);
-                    next = "ADDRESS_PICKUP";
+                    next = AddressScreen(state);
                 }
                 break;
+            case "ADDRESS_DELIVERY":
             case "ADDRESS_PICKUP":
                 (next, error) = await HandleAddressAsync(session, state, data, ct);
                 break;
@@ -611,20 +612,21 @@ public sealed class WhatsAppCommerceFlowService(
         JsonElement data,
         CancellationToken ct)
     {
+        var addressScreen = AddressScreen(state);
         state.Name = GetString(data, "name") ?? state.Name;
-        if (state.Name.Length is < 2 or > 100) return ("ADDRESS_PICKUP", "Escribe el nombre de quien recibe.");
+        if (state.Name.Length is < 2 or > 100) return (addressScreen, "Escribe el nombre de quien recibe.");
         var customer = await customerAuth.ResolveTrustedPhoneAsync(session.Conversation.PhoneNumber ?? string.Empty, ct);
         state.AmbiguousCustomer = customer.AmbiguousCustomer;
         session.CustomerId = customer.Customer?.Id;
         if (customer.AmbiguousCustomer)
-            return ("ADDRESS_PICKUP", "Este número corresponde a varios clientes. Cierra el menú y escribe ASESOR.");
+            return (addressScreen, "Este número corresponde a varios clientes. Cierra el menú y escribe ASESOR.");
 
         if (state.FulfillmentType == "pickup")
         {
             state.SelectedBranchId = GetInt(data, "branch_id");
             state.SavedAddressId = null;
             if (!state.SelectedBranchId.HasValue || !await IsAvailableBranchAsync(state.SelectedBranchId.Value, ct))
-                return ("ADDRESS_PICKUP", "Elige una sede disponible.");
+                return (addressScreen, "Elige una sede disponible.");
             session.Conversation.OperationalBranchId = state.SelectedBranchId;
         }
         else
@@ -634,12 +636,12 @@ public sealed class WhatsAppCommerceFlowService(
             {
                 state.AddressMode = "new";
                 state.SavedAddressId = null;
-                return ("ADDRESS_PICKUP", null);
+                return (addressScreen, null);
             }
             if (state.AddressMode == "confirm" || state.AddressRequiresConfirmation)
             {
                 var confirmationError = await ResolveNewAddressAsync(state, GetBool(data, "address_confirmed"), ct);
-                if (confirmationError is not null) return ("ADDRESS_PICKUP", confirmationError);
+                if (confirmationError is not null) return (addressScreen, confirmationError);
             }
             else
             {
@@ -647,7 +649,7 @@ public sealed class WhatsAppCommerceFlowService(
                 if (state.SavedAddressId.HasValue)
                 {
                     if (customer.Addresses.All(x => x.Id != state.SavedAddressId.Value))
-                        return ("ADDRESS_PICKUP", "Elige una dirección guardada válida.");
+                        return (addressScreen, "Elige una dirección guardada válida.");
                     state.AddressMode = "saved";
                 }
                 else
@@ -657,9 +659,9 @@ public sealed class WhatsAppCommerceFlowService(
                     state.Address = GetString(data, "address");
                     state.AddressAdditionalInfo = GetString(data, "address_additional_info");
                     if (string.IsNullOrWhiteSpace(state.City) || string.IsNullOrWhiteSpace(state.Address))
-                        return ("ADDRESS_PICKUP", "Completa ciudad y dirección.");
+                        return (addressScreen, "Completa ciudad y dirección.");
                     var addressError = await ResolveNewAddressAsync(state, false, ct);
-                    if (addressError is not null) return ("ADDRESS_PICKUP", addressError);
+                    if (addressError is not null) return (addressScreen, addressError);
                 }
             }
         }
@@ -669,13 +671,13 @@ public sealed class WhatsAppCommerceFlowService(
         if (!quote.Success)
         {
             state.LastErrorCode = QuoteStatusName(quote.Status);
-            TrackEvent(session, "quote_error", session.BranchId, "ADDRESS_PICKUP", state.LastErrorCode);
+            TrackEvent(session, "quote_error", session.BranchId, addressScreen, state.LastErrorCode);
             if (quote.Status is WhatsAppQuoteStatus.CatalogChanged or WhatsAppQuoteStatus.TemporaryFailure)
             {
-                state.RecoveryScreen = "ADDRESS_PICKUP";
+                state.RecoveryScreen = addressScreen;
                 return ("RECOVERY", quote.Message);
             }
-            return ("ADDRESS_PICKUP", quote.Message);
+            return (addressScreen, quote.Message);
         }
         ApplyQuoteState(session, state, quote.Quote!);
         var availableBenefits = quote.Quote!.AvailableBenefits;
@@ -744,7 +746,7 @@ public sealed class WhatsAppCommerceFlowService(
             if (screen == "CART") await PopulateCartAsync(payload, catalog, state, session, ct);
         }
 
-        if (screen == "ADDRESS_PICKUP")
+        if (screen is "ADDRESS_DELIVERY" or "ADDRESS_PICKUP")
             await PopulateAddressAsync(payload, session, state, ct);
 
         if (screen is "BENEFITS" or "PAYMENT" or "SUMMARY")
@@ -1000,7 +1002,7 @@ public sealed class WhatsAppCommerceFlowService(
     {
         var customer = await customerAuth.ResolveTrustedPhoneAsync(session.Conversation.PhoneNumber ?? string.Empty, ct);
         if (customer.AmbiguousCustomer)
-            return await BuildScreenAsync(session, state, "ADDRESS_PICKUP", "Este número corresponde a varios clientes. Cierra el menú y escribe ASESOR.", ct);
+            return await BuildScreenAsync(session, state, AddressScreen(state), "Este número corresponde a varios clientes. Cierra el menú y escribe ASESOR.", ct);
         InvalidateQuote(state);
         var quote = await GetQuoteAsync(session, state, ct);
         if (!quote.Success) return await HandleQuoteFailureAsync(session, state, quote, ct);
@@ -1103,7 +1105,7 @@ public sealed class WhatsAppCommerceFlowService(
         TrackEvent(session, "quote_error", session.BranchId, state.LastScreen, state.LastErrorCode);
         if (result.Status is WhatsAppQuoteStatus.OutsideCoverage or WhatsAppQuoteStatus.NoBranch or WhatsAppQuoteStatus.Validation)
         {
-            state.LastScreen = result.Status == WhatsAppQuoteStatus.Validation ? "CART" : "ADDRESS_PICKUP";
+            state.LastScreen = result.Status == WhatsAppQuoteStatus.Validation ? "CART" : AddressScreen(state);
             session.Version++;
             return await BuildScreenAsync(session, state, state.LastScreen, result.Message, ct);
         }
@@ -1319,6 +1321,9 @@ public sealed class WhatsAppCommerceFlowService(
             : $"Domicilio desde {branch?.Name}\n{quote.FormattedAddress}";
     }
 
+    private static string AddressScreen(WhatsAppCommerceState state) =>
+        state.FulfillmentType == "pickup" ? "ADDRESS_PICKUP" : "ADDRESS_DELIVERY";
+
     private static string ResolveBackScreen(string? requestedScreen, WhatsAppCommerceState state)
     {
         var requested = requestedScreen?.ToUpperInvariant();
@@ -1339,9 +1344,10 @@ public sealed class WhatsAppCommerceFlowService(
             "PRODUCT_VARIANT" => "PRODUCT_GROUP",
             "CART" => "CATEGORY",
             "FULFILLMENT" => "CART",
+            "ADDRESS_DELIVERY" => "FULFILLMENT",
             "ADDRESS_PICKUP" => "FULFILLMENT",
-            "BENEFITS" => "ADDRESS_PICKUP",
-            "PAYMENT" => "ADDRESS_PICKUP",
+            "BENEFITS" => AddressScreen(state),
+            "PAYMENT" => AddressScreen(state),
             "SUMMARY" => "PAYMENT",
             "RECOVERY" => state.RecoveryScreen ?? "CATEGORY",
             "HOME" => "HOME",
