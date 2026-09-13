@@ -8,6 +8,7 @@
       "PRODUCT_VARIANT",
       "CART",
       "FULFILLMENT",
+      "ADDRESS_DELIVERY",
       "ADDRESS_PICKUP",
       "BENEFITS",
       "PAYMENT",
@@ -31,7 +32,13 @@
       "RECOVERY"
     ],
     "FULFILLMENT": [
+      "ADDRESS_DELIVERY",
       "ADDRESS_PICKUP",
+      "RECOVERY"
+    ],
+    "ADDRESS_DELIVERY": [
+      "BENEFITS",
+      "PAYMENT",
       "RECOVERY"
     ],
     "ADDRESS_PICKUP": [
@@ -948,8 +955,8 @@
       }
     },
     {
-      "id": "ADDRESS_PICKUP",
-      "title": "Datos de entrega",
+      "id": "ADDRESS_DELIVERY",
+      "title": "Datos de domicilio",
       "refresh_on_back": true,
       "data": {
         "_session_version": {
@@ -1177,6 +1184,102 @@
                     "address_additional_info": "${form.address_additional_info}",
                     "branch_id": "${form.branch_id}",
                     "address_confirmed": "${form.address_confirmed}",
+                    "command": "continue",
+                    "_session_version": "${data._session_version}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ADDRESS_PICKUP",
+      "title": "Recoger en una sede",
+      "refresh_on_back": true,
+      "data": {
+        "_session_version": {
+          "type": "number",
+          "__example__": 6
+        },
+        "error_message": {
+          "type": "string",
+          "__example__": ""
+        },
+        "help_text": {
+          "type": "string",
+          "__example__": "¿Necesitas ayuda? Cierra este menú y escribe ASESOR."
+        },
+        "name": {
+          "type": "string",
+          "__example__": "Cliente"
+        },
+        "branches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "10",
+              "title": "Santander",
+              "description": "Calle 1"
+            }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "form",
+            "init-values": {
+              "name": "${data.name}"
+            },
+            "children": [
+              {
+                "type": "TextCaption",
+                "text": "${data.error_message}"
+              },
+              {
+                "type": "TextInput",
+                "name": "name",
+                "label": "Nombre de quien recoge",
+                "required": true,
+                "max-chars": 100
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "branch_id",
+                "label": "Sede para recoger",
+                "required": true,
+                "data-source": "${data.branches}"
+              },
+              {
+                "type": "TextCaption",
+                "text": "${data.help_text}"
+              },
+              {
+                "type": "Footer",
+                "label": "Continuar al pago",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "name": "${form.name}",
+                    "branch_id": "${form.branch_id}",
                     "command": "continue",
                     "_session_version": "${data._session_version}"
                   }
