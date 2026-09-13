@@ -113,7 +113,7 @@ public sealed class WhatsAppFlowSecurityTests
         var screenIds = screens.Select(x => x.GetProperty("id").GetString()!).ToArray();
 
         Assert.Equal(
-            ["HOME", "CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_PICKUP", "BENEFITS", "PAYMENT", "SUMMARY", "RECOVERY"],
+            ["HOME", "CATEGORY", "PRODUCT_GROUP", "PRODUCT_VARIANT", "CART", "FULFILLMENT", "ADDRESS_DELIVERY", "ADDRESS_PICKUP", "BENEFITS", "PAYMENT", "SUMMARY", "RECOVERY"],
             screenIds);
         Assert.DoesNotContain("PRODUCTS", screenIds);
 
