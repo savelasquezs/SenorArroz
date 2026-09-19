@@ -1,5 +1,5 @@
 using System.ComponentModel.DataAnnotations;
-using SenorArroz.Domain.Entities;
+using BranchPrintSettingsEntity = SenorArroz.Domain.Entities.BranchPrintSettings;
 
 namespace SenorArroz.Application.Features.BranchPrintSettings.DTOs;
 
@@ -40,7 +40,7 @@ public class UpdateBranchPrintSettingsDto
 
     [Required]
     [RegularExpression("^(whenMarkedReady|whenOrderCreated)$")]
-    public string KitchenAutoPrintTrigger { get; set; } = BranchPrintSettings.KitchenAutoPrintWhenMarkedReady;
+    public string KitchenAutoPrintTrigger { get; set; } = BranchPrintSettingsEntity.KitchenAutoPrintWhenMarkedReady;
 
     [StringLength(128)]
     public string? PrinterQueueKitchen { get; set; }

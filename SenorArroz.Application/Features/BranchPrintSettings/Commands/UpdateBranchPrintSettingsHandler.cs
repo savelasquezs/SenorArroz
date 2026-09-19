@@ -3,7 +3,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BranchPrintSettings.DTOs;
-using SenorArroz.Domain.Entities;
+using BranchPrintSettingsEntity = SenorArroz.Domain.Entities.BranchPrintSettings;
 using SenorArroz.Domain.Exceptions;
 
 namespace SenorArroz.Application.Features.BranchPrintSettings.Commands;
@@ -58,8 +58,8 @@ public class UpdateBranchPrintSettingsHandler : IRequestHandler<UpdateBranchPrin
 
     private static string NormalizeKitchenAutoPrintTrigger(string? trigger) => trigger switch
     {
-        BranchPrintSettings.KitchenAutoPrintWhenMarkedReady => BranchPrintSettings.KitchenAutoPrintWhenMarkedReady,
-        BranchPrintSettings.KitchenAutoPrintWhenOrderCreated => BranchPrintSettings.KitchenAutoPrintWhenOrderCreated,
+        BranchPrintSettingsEntity.KitchenAutoPrintWhenMarkedReady => BranchPrintSettingsEntity.KitchenAutoPrintWhenMarkedReady,
+        BranchPrintSettingsEntity.KitchenAutoPrintWhenOrderCreated => BranchPrintSettingsEntity.KitchenAutoPrintWhenOrderCreated,
         _ => throw new BusinessException("Momento de impresión automática de cocina inválido."),
     };
 

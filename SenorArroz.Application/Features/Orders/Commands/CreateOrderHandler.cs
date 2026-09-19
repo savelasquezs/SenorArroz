@@ -9,6 +9,7 @@ using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
+using BranchPrintSettingsEntity = SenorArroz.Domain.Entities.BranchPrintSettings;
 
 namespace SenorArroz.Application.Features.Orders.Commands;
 
@@ -269,7 +270,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         var shouldPrint = await _db.BranchPrintSettings.AsNoTracking().AnyAsync(
             s => s.BranchId == order.BranchId
                 && s.EnableKitchenJobs
-                && s.KitchenAutoPrintTrigger == BranchPrintSettings.KitchenAutoPrintWhenOrderCreated,
+                && s.KitchenAutoPrintTrigger == BranchPrintSettingsEntity.KitchenAutoPrintWhenOrderCreated,
             cancellationToken);
         if (!shouldPrint)
             return;

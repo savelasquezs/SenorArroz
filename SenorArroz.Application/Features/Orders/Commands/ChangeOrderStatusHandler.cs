@@ -9,6 +9,7 @@ using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
+using BranchPrintSettingsEntity = SenorArroz.Domain.Entities.BranchPrintSettings;
 
 namespace SenorArroz.Application.Features.Orders.Commands;
 
@@ -386,7 +387,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
 
             if (settings is not null
                 && (!settings.EnableKitchenJobs
-                    || settings.KitchenAutoPrintTrigger == BranchPrintSettings.KitchenAutoPrintWhenOrderCreated))
+                    || settings.KitchenAutoPrintTrigger == BranchPrintSettingsEntity.KitchenAutoPrintWhenOrderCreated))
             {
                 return;
             }
