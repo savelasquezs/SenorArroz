@@ -153,6 +153,7 @@ Notas:
 - `Order` es una de las tablas más sensibles.
 - Cualquier query de pedidos debe filtrar por tenant y luego por branch cuando aplique.
 - `OrderDetail` debe copiar tenant desde su pedido, no desde frontend.
+- `Order.ManualBenefitGrantedAt` se almacena como `timestamp with time zone` porque representa un instante UTC; el ajuste idempotente para instalaciones existentes está en `SenorArroz.Infrastructure/Scripts/fix_manual_benefit_granted_at_utc.sql`.
 - `Order.StorefrontIdempotencyKey` evita pedidos duplicados por reintentos del checkout y nunca se acepta como sustituto de la sesión verificada.
 - El esquema de OTP, direcciones web y pedidos directos se instala con `SenorArroz.Infrastructure/Scripts/add_storefront_customer_otp.sql` antes de desplegar el API.
 - `wompi_payment_attempt.app_payment_id` usa `ON DELETE SET NULL`; el ajuste para instalaciones existentes está en `SenorArroz.Infrastructure/Scripts/fix_wompi_order_deletion.sql`.
