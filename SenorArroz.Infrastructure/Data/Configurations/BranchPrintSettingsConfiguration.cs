@@ -33,6 +33,11 @@ public class BranchPrintSettingsConfiguration : IEntityTypeConfiguration<BranchP
         builder.Property(s => s.EnableKitchenJobs).HasColumnName("enable_kitchen_jobs");
         builder.Property(s => s.EnableDeliveryJobs).HasColumnName("enable_delivery_jobs");
         builder.Property(s => s.EnableCashierJobs).HasColumnName("enable_cashier_jobs");
+        builder.Property(s => s.KitchenAutoPrintTrigger)
+            .HasColumnName("kitchen_auto_print_trigger")
+            .HasMaxLength(32)
+            .HasDefaultValue(BranchPrintSettings.KitchenAutoPrintWhenMarkedReady)
+            .IsRequired();
         builder.Property(s => s.PrinterQueueKitchen).HasColumnName("printer_queue_kitchen").HasMaxLength(128);
         builder.Property(s => s.PrinterQueueDelivery).HasColumnName("printer_queue_delivery").HasMaxLength(128);
         builder.Property(s => s.PrinterQueueCashier).HasColumnName("printer_queue_cashier").HasMaxLength(128);

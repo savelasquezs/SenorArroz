@@ -1,8 +1,10 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using AutoMapper;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Common.Interfaces;
@@ -51,6 +53,8 @@ public class ReservationNotificationService : BackgroundService
         var notificationService = scope.ServiceProvider.GetRequiredService<IOrderNotificationService>();
         var mapper = scope.ServiceProvider.GetRequiredService<IMapper>();
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
+        var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
+        var printQueue = scope.ServiceProvider.GetRequiredService<IPrintQueueService>();
 
         var now = clock.UtcNow;
         var twoHoursFromNow = now.AddHours(2);
@@ -65,6 +69,28 @@ public class ReservationNotificationService : BackgroundService
         {
             var orderDto = mapper.Map<OrderDto>(reservation);
             await notificationService.NotifyReservationToKitchen(orderDto);
+
+            var shouldPrint = await db.BranchPrintSettings.AsNoTracking().AnyAsync(
+                s => s.BranchId == reservation.BranchId
+                    && s.EnableKitchenJobs
+                    && s.KitchenAutoPrintTrigger == BranchPrintSettings.KitchenAutoPrintWhenOrderCreated);
+            if (shouldPrint)
+            {
+                try
+                {
+                    await printQueue.EnqueueAsync(
+                        reservation.BranchId,
+                        PrintJobKind.Kitchen,
+                        [reservation.Id]);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "No se encoló comanda de cocina para reserva {OrderId} al llegar su hora de preparación.",
+                        reservation.Id);
+                }
+            }
 
             // Marcar como notificado para evitar duplicados
             reservation.PreparedNotifiedAt = clock.UtcNow;

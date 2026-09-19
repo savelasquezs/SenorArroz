@@ -18,6 +18,7 @@ using SenorArroz.API.Filters;
 using SenorArroz.API.Security;
 using SenorArroz.Application;
 using Microsoft.Extensions.Options;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -559,6 +560,19 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+
+// Compatibilidad de despliegue: Railway no ejecuta automáticamente las migraciones EF.
+// Esta alteración es idempotente y debe existir antes de que EF consulte BranchPrintSettings.
+if (app.Environment.IsProduction())
+{
+    using var schemaScope = app.Services.CreateScope();
+    var schemaDb = schemaScope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
+    await schemaDb.Database.ExecuteSqlRawAsync("""
+        ALTER TABLE branch_print_settings
+        ADD COLUMN IF NOT EXISTS kitchen_auto_print_trigger character varying(32)
+        NOT NULL DEFAULT 'whenMarkedReady';
+        """);
+}
 
 if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {

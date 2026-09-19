@@ -29,6 +29,7 @@ public class BranchPrintSettingsDto
     public bool EnableKitchenJobs { get; set; }
     public bool EnableDeliveryJobs { get; set; }
     public bool EnableCashierJobs { get; set; }
+    public string KitchenAutoPrintTrigger { get; set; } = "whenMarkedReady";
 
     public string? PrinterQueueKitchen { get; set; }
     public string? PrinterQueueDelivery { get; set; }

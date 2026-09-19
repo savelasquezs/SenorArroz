@@ -377,6 +377,21 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         if (previousStatus == OrderStatus.Ready)
             return;
 
+        if (_context is not null)
+        {
+            var settings = await _context.BranchPrintSettings.AsNoTracking()
+                .Where(s => s.BranchId == order.BranchId)
+                .Select(s => new { s.EnableKitchenJobs, s.KitchenAutoPrintTrigger })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (settings is not null
+                && (!settings.EnableKitchenJobs
+                    || settings.KitchenAutoPrintTrigger == BranchPrintSettings.KitchenAutoPrintWhenOrderCreated))
+            {
+                return;
+            }
+        }
+
         var isRappiOrder = order.ExternalFulfillmentProvider?.Equals(
             "rappi",
             StringComparison.OrdinalIgnoreCase) == true;

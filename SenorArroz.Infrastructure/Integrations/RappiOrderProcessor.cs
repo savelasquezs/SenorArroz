@@ -22,7 +22,8 @@ public sealed class RappiOrderProcessor(
     IMapper mapper,
     IOrderNotificationService notifications,
     IDeliveryRouteWorkflowService deliveryRouteWorkflow,
-    ILogger<RappiOrderProcessor> logger) : IRappiOrderProcessor
+    ILogger<RappiOrderProcessor> logger,
+    IPrintQueueService? printQueue = null) : IRappiOrderProcessor
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -247,7 +248,10 @@ public sealed class RappiOrderProcessor(
 
             var fullOrder = await orders.GetByIdWithFullDetailsAsync(order.Id, ct);
             if (fullOrder is not null)
+            {
                 await notifications.NotifyNewOrderToKitchen(mapper.Map<OrderDto>(fullOrder));
+                await TryEnqueueKitchenPrintWhenOrderCreatedAsync(fullOrder, ct);
+            }
             return new(true, external.Id, order.Id);
         }
         catch (DbUpdateException ex)
@@ -270,6 +274,33 @@ public sealed class RappiOrderProcessor(
             external.LastError = Limit(ex.Message, 1000);
             await db.SaveChangesAsync(ct);
             return new(false, external.Id, Error: external.LastError);
+        }
+    }
+
+    private async Task TryEnqueueKitchenPrintWhenOrderCreatedAsync(Order order, CancellationToken ct)
+    {
+        if (printQueue is null)
+            return;
+
+        var shouldPrint = await db.BranchPrintSettings.AsNoTracking().AnyAsync(
+            s => s.BranchId == order.BranchId
+                && s.EnableKitchenJobs
+                && s.KitchenAutoPrintTrigger == BranchPrintSettings.KitchenAutoPrintWhenOrderCreated,
+            ct);
+        if (!shouldPrint)
+            return;
+
+        try
+        {
+            await printQueue.EnqueueAsync(order.BranchId, PrintJobKind.Kitchen, [order.Id], ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "No se encoló comanda de cocina al aceptar pedido Rappi {OrderId} (sucursal {BranchId}).",
+                order.Id,
+                order.BranchId);
         }
     }
 

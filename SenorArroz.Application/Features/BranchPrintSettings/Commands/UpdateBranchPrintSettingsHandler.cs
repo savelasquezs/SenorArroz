@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BranchPrintSettings.DTOs;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
 
 namespace SenorArroz.Application.Features.BranchPrintSettings.Commands;
@@ -45,6 +46,7 @@ public class UpdateBranchPrintSettingsHandler : IRequestHandler<UpdateBranchPrin
         entity.EnableKitchenJobs = d.EnableKitchenJobs;
         entity.EnableDeliveryJobs = d.EnableDeliveryJobs;
         entity.EnableCashierJobs = d.EnableCashierJobs;
+        entity.KitchenAutoPrintTrigger = NormalizeKitchenAutoPrintTrigger(d.KitchenAutoPrintTrigger);
         entity.PrinterQueueKitchen = NullIfWhiteSpace(d.PrinterQueueKitchen);
         entity.PrinterQueueDelivery = NullIfWhiteSpace(d.PrinterQueueDelivery);
         entity.PrinterQueueCashier = NullIfWhiteSpace(d.PrinterQueueCashier);
@@ -53,6 +55,13 @@ public class UpdateBranchPrintSettingsHandler : IRequestHandler<UpdateBranchPrin
 
         return _mapper.Map<BranchPrintSettingsDto>(entity);
     }
+
+    private static string NormalizeKitchenAutoPrintTrigger(string? trigger) => trigger switch
+    {
+        BranchPrintSettings.KitchenAutoPrintWhenMarkedReady => BranchPrintSettings.KitchenAutoPrintWhenMarkedReady,
+        BranchPrintSettings.KitchenAutoPrintWhenOrderCreated => BranchPrintSettings.KitchenAutoPrintWhenOrderCreated,
+        _ => throw new BusinessException("Momento de impresión automática de cocina inválido."),
+    };
 
     private static string? NullIfWhiteSpace(string? s) =>
         string.IsNullOrWhiteSpace(s) ? null : s.Trim();

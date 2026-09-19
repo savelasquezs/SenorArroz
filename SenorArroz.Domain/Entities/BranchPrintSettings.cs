@@ -3,6 +3,9 @@ namespace SenorArroz.Domain.Entities;
 /// <summary>Configuración de impresión de comandas por sucursal (1:1 con Branch).</summary>
 public class BranchPrintSettings
 {
+    public const string KitchenAutoPrintWhenMarkedReady = "whenMarkedReady";
+    public const string KitchenAutoPrintWhenOrderCreated = "whenOrderCreated";
+
     public int BranchId { get; set; }
 
     public string? KitchenHeaderLine1 { get; set; }
@@ -30,6 +33,9 @@ public class BranchPrintSettings
     public bool EnableKitchenJobs { get; set; } = true;
     public bool EnableDeliveryJobs { get; set; } = true;
     public bool EnableCashierJobs { get; set; }
+
+    /// <summary>Momento de impresión automática de cocina por sucursal.</summary>
+    public string KitchenAutoPrintTrigger { get; set; } = KitchenAutoPrintWhenMarkedReady;
 
     /// <summary>Nombre exacto de la cola Windows para cocina (desde panel de impresión).</summary>
     public string? PrinterQueueKitchen { get; set; }

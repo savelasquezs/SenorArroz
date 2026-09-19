@@ -1,6 +1,7 @@
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
@@ -19,6 +20,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     private readonly ICurrentUser _currentUser;
     private readonly IOrderNotificationService _notificationService;
     private readonly IClock _clock;
+    private readonly IPrintQueueService? _printQueue;
+    private readonly ILogger<CreateOrderHandler>? _logger;
 
     public CreateOrderHandler(
         IOrderRepository orderRepository,
@@ -26,7 +29,9 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         IMapper mapper,
         ICurrentUser currentUser,
         IOrderNotificationService notificationService,
-        IClock clock)
+        IClock clock,
+        IPrintQueueService? printQueue = null,
+        ILogger<CreateOrderHandler>? logger = null)
     {
         _orderRepository = orderRepository;
         _db = db;
@@ -34,6 +39,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         _currentUser = currentUser;
         _notificationService = notificationService;
         _clock = clock;
+        _printQueue = printQueue;
+        _logger = logger;
     }
 
     public async Task<OrderDto> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
@@ -248,9 +255,41 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         if (shouldNotifyNow)
         {
             await _notificationService.NotifyNewOrderToKitchen(result);
+            await TryEnqueueKitchenPrintWhenOrderCreatedAsync(fullOrder, cancellationToken);
         }
 
         return result;
+    }
+
+    private async Task TryEnqueueKitchenPrintWhenOrderCreatedAsync(Order order, CancellationToken cancellationToken)
+    {
+        if (_printQueue is null)
+            return;
+
+        var shouldPrint = await _db.BranchPrintSettings.AsNoTracking().AnyAsync(
+            s => s.BranchId == order.BranchId
+                && s.EnableKitchenJobs
+                && s.KitchenAutoPrintTrigger == BranchPrintSettings.KitchenAutoPrintWhenOrderCreated,
+            cancellationToken);
+        if (!shouldPrint)
+            return;
+
+        try
+        {
+            await _printQueue.EnqueueAsync(
+                order.BranchId,
+                PrintJobKind.Kitchen,
+                [order.Id],
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(
+                ex,
+                "No se encoló comanda de cocina al crear pedido {OrderId} (sucursal {BranchId}). El pedido sí fue creado.",
+                order.Id,
+                order.BranchId);
+        }
     }
 
     private async Task ValidateAndStampManualBenefitAsync(CreateOrderDto dto, int branchId, CancellationToken ct)
