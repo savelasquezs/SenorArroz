@@ -19,12 +19,18 @@ public class BranchPrintSettingsController : ControllerBase
     private readonly IMediator _mediator;
     private readonly ICurrentUser _currentUser;
     private readonly IPrintAgentNotificationService _printAgentNotifications;
+    private readonly ILogger<BranchPrintSettingsController> _logger;
 
-    public BranchPrintSettingsController(IMediator mediator, ICurrentUser currentUser, IPrintAgentNotificationService printAgentNotifications)
+    public BranchPrintSettingsController(
+        IMediator mediator,
+        ICurrentUser currentUser,
+        IPrintAgentNotificationService printAgentNotifications,
+        ILogger<BranchPrintSettingsController> logger)
     {
         _mediator = mediator;
         _currentUser = currentUser;
         _printAgentNotifications = printAgentNotifications;
+        _logger = logger;
     }
 
     /// <summary>Sube el logo del ticket (PNG, JPEG, WebP o GIF, máx. 1,5 MB). Campo multipart: file.</summary>
@@ -157,7 +163,19 @@ public class BranchPrintSettingsController : ControllerBase
             var result = await _mediator.Send(new UpdateBranchPrintSettingsCommand(branchId, dto), cancellationToken);
             var config = await _mediator.Send(new GetPrintAgentConfigQuery(branchId), cancellationToken);
             if (config is not null)
-                await _printAgentNotifications.NotifyConfigChangedAsync(branchId, config, cancellationToken);
+            {
+                try
+                {
+                    await _printAgentNotifications.NotifyConfigChangedAsync(branchId, config, cancellationToken);
+                }
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "La configuración de impresión de la sucursal {BranchId} se guardó, pero no se pudo notificar al agente.",
+                        branchId);
+                }
+            }
             return Ok(ApiResponse<BranchPrintSettingsDto>.SuccessResponse(result, "Configuración de impresión actualizada."));
         }
         catch (NotFoundException ex)

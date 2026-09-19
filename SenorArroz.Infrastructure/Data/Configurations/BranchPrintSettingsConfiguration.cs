@@ -38,6 +38,9 @@ public class BranchPrintSettingsConfiguration : IEntityTypeConfiguration<BranchP
             .HasMaxLength(32)
             .HasDefaultValue(BranchPrintSettings.KitchenAutoPrintWhenMarkedReady)
             .IsRequired();
+        builder.ToTable(t => t.HasCheckConstraint(
+            "CK_branch_print_settings_kitchen_auto_print_trigger",
+            "kitchen_auto_print_trigger IN ('whenMarkedReady', 'whenOrderCreated')"));
         builder.Property(s => s.PrinterQueueKitchen).HasColumnName("printer_queue_kitchen").HasMaxLength(128);
         builder.Property(s => s.PrinterQueueDelivery).HasColumnName("printer_queue_delivery").HasMaxLength(128);
         builder.Property(s => s.PrinterQueueCashier).HasColumnName("printer_queue_cashier").HasMaxLength(128);
