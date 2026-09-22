@@ -43,7 +43,7 @@ public class PasswordResetRepositoryTrackingTests
         context.Users.Add(user);
         await context.SaveChangesAsync();
 
-        var token = PasswordResetToken.Create(user.Id, user.Email, 60, now);
+        var token = PasswordResetToken.Create(1, user.Id, user.Email, 60, now);
         context.PasswordResetTokens.Add(token);
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();

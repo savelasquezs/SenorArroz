@@ -8,7 +8,7 @@ public class PasswordResetTokenClockTests
     public void IsExpiredAt_e_IsValidAt_usan_el_instante_suministrado()
     {
         var created = new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Utc);
-        var token = PasswordResetToken.Create(1, "x@y.co", 60, created);
+        var token = PasswordResetToken.Create(1, 1, "x@y.co", 60, created);
 
         Assert.False(token.IsExpiredAt(created.AddMinutes(59)));
         Assert.True(token.IsExpiredAt(created.AddMinutes(60)));

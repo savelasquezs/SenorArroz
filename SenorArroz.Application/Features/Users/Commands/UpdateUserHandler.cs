@@ -69,9 +69,14 @@ namespace SenorArroz.Application.Features.Users.Commands
                 if (newBranchId <= 0)
                     throw new BusinessException("Sucursal inválida");
 
-                var branchExists = await _context.Branches.AnyAsync(b => b.Id == newBranchId, cancellationToken);
-                if (!branchExists)
+                var newBranch = await _context.Branches.AsNoTracking().FirstOrDefaultAsync(
+                    branch => branch.Id == newBranchId,
+                    cancellationToken);
+                if (newBranch is null)
                     throw new NotFoundException($"Sucursal con ID {newBranchId} no encontrada");
+
+                if (newBranch.TenantId != existingUser.TenantId)
+                    throw new BusinessException("No se puede asignar un usuario a una sucursal de otro tenant.");
 
                 existingUser.BranchId = newBranchId;
             }

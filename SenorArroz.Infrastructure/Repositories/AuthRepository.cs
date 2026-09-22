@@ -21,6 +21,7 @@ public class AuthRepository : IAuthRepository
     {
         return await _context.Users
             .AsNoTracking()
+            .Include(u => u.Tenant)
             .Include(u => u.Branch)
             .FirstOrDefaultAsync(u => u.Email == email && u.Active, cancellationToken);
     }
@@ -29,6 +30,7 @@ public class AuthRepository : IAuthRepository
     {
         return await _context.Users
             .AsNoTracking()
+            .Include(u => u.Tenant)
             .Include(u => u.Branch)
             .FirstOrDefaultAsync(u => u.Id == userId && u.Active, cancellationToken);
     }

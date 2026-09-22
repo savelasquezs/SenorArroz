@@ -37,7 +37,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 await _passwordResetRepository.InvalidateAllUserTokensAsync(user.Id, cancellationToken);
 
                 // Create new reset token
-                var resetToken = PasswordResetToken.Create(user.Id, request.Email, expirationMinutes: 60, _clock.UtcNow);
+                var resetToken = PasswordResetToken.Create(user.TenantId, user.Id, request.Email, expirationMinutes: 60, _clock.UtcNow);
                 await _passwordResetRepository.CreateAsync(resetToken, cancellationToken);
 
                 // Send email

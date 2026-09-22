@@ -2,6 +2,20 @@
 
 Este documento resume reglas funcionales que Codex debe respetar antes de modificar pedidos, pagos, cocina, domicilios, impresión, caja o módulos relacionados.
 
+## Núcleo multitenant de identidad y autenticación
+
+- Todo usuario pertenece directamente a un tenant y a una sucursal del mismo tenant.
+- El tenant nunca se toma de ruta, query, body ni headers enviados por el frontend. Login, refresh, tokens de credenciales y device tokens lo derivan de entidades persistidas.
+- Un tenant puede autenticarse únicamente cuando `Status = Active` e `IsActive = true`.
+- El JWT conserva los claims operativos existentes y agrega `tenant_id`, `tenant_public_id` y `tenant_access_version` desde el tenant cargado por backend.
+- Un refresh token sólo puede renovarse cuando su `TenantId`, el claim expirado y el `TenantId` actual del usuario coinciden.
+- `RefreshToken`, `PasswordResetToken` y `UserDeviceToken` deben conservar el mismo tenant que su usuario.
+- `X-Branch-Id` sólo selecciona contexto operativo dentro del tenant autenticado; no concede autoridad sobre otro tenant.
+- Requests autenticados resuelven tenant desde JWT. Procesos públicos y background actuales usan el tenant configurado por servidor, hoy el tenant `1` de Señor Arroz.
+- `IsActive` es compatibilidad temporal con código legacy; cualquier suspensión o cancelación debe sincronizarlo con `Status`.
+
+Pendiente para bloques posteriores: filtros globales EF Core, write guards generales, RLS, aislamiento completo de SignalR y archivos, capabilities, control plane, planes, add-ons, suscripciones, cobro SaaS, metering, invitaciones y portal `/platform`.
+
 ## Regla general
 
 El sistema ya opera con clientes reales. Todo cambio debe ser pequeño, seguro y compatible con datos existentes.

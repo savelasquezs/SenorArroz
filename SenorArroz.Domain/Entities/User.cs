@@ -5,6 +5,7 @@ namespace SenorArroz.Domain.Entities;
 
 public class User : BaseEntity
 {
+    public int TenantId { get; set; } = 1;
     public int BranchId { get; set; }
     public UserRole? Role { get; set; }
     public string Name { get; set; } = string.Empty;
@@ -26,10 +27,14 @@ public class User : BaseEntity
     public int? PayrollExpenseId { get; set; }
 
     // Navigation Properties
+    public virtual Tenant Tenant { get; set; } = null!;
     public virtual Branch Branch { get; set; } = null!;
     public virtual Expense? PayrollExpense { get; set; }
     public virtual ICollection<Order> TakenOrders { get; set; } = new List<Order>();
     public virtual ICollection<Order> DeliveryOrders { get; set; } = new List<Order>();
     public virtual ICollection<ExpenseHeader> CreatedExpenseHeaders { get; set; } = new List<ExpenseHeader>();
     public virtual ICollection<DailyPromotion> CreatedDailyPromotions { get; set; } = new List<DailyPromotion>();
+    public virtual ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
+    public virtual ICollection<PasswordResetToken> PasswordResetTokens { get; set; } = new List<PasswordResetToken>();
+    public virtual ICollection<UserDeviceToken> DeviceTokens { get; set; } = new List<UserDeviceToken>();
 }

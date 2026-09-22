@@ -305,8 +305,17 @@ public class AsNoTrackingRegressionTests
         const string db = nameof(RefreshToken_GetAllByUserId_WithAsNoTracking_DoesNotTrackEntities);
         using var ctx = CreateContext(db);
 
+        var tenant = new Tenant
+        {
+            Id = 1,
+            PublicId = Guid.Parse("86ae3576-33db-483a-9a83-d9087a660651"),
+            Name = "Señor Arroz",
+            Slug = "senor-arroz",
+            Status = TenantStatus.Active,
+        };
         var branch = MakeBranch();
-        ctx.Branches.Add(branch);
+        branch.Tenant = tenant;
+        ctx.AddRange(tenant, branch);
         await ctx.SaveChangesAsync();
 
         var user = new User
@@ -316,6 +325,7 @@ public class AsNoTrackingRegressionTests
             PasswordHash = "hash",
             Role = UserRole.Cashier,
             BranchId = branch.Id,
+            Tenant = tenant,
             Active = true,
             CreatedAt = DateTime.UtcNow
         };

@@ -5,6 +5,7 @@ namespace SenorArroz.Domain.Entities;
 /// <summary>Token FCM registrado por el domiciliario para recibir push notifications.</summary>
 public class UserDeviceToken : BaseEntity
 {
+    public int TenantId { get; set; } = 1;
     public int UserId { get; set; }
 
     /// <summary>Token FCM emitido por Firebase en el dispositivo.</summary>
@@ -17,5 +18,6 @@ public class UserDeviceToken : BaseEntity
     public DateTime LastSeenAt { get; set; } = DateTime.UtcNow;
 
     // Navigation
+    public virtual Tenant Tenant { get; set; } = null!;
     public virtual User User { get; set; } = null!;
 }

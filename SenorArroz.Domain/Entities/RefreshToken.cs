@@ -4,6 +4,7 @@ namespace SenorArroz.Domain.Entities;
 
 public class RefreshToken : BaseEntity
 {
+    public int TenantId { get; set; } = 1;
     public int UserId { get; set; }
     public Guid? SessionId { get; set; }
     public string Token { get; set; } = string.Empty;
@@ -14,6 +15,7 @@ public class RefreshToken : BaseEntity
     public string? RevokedByIp { get; set; }
 
     // Navigation properties
+    public virtual Tenant Tenant { get; set; } = null!;
     public virtual User User { get; set; } = null!;
 
     public bool IsExpiredAt(DateTime utcNow) => utcNow >= ExpiresAt;

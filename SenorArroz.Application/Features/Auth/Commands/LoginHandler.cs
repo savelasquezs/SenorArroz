@@ -2,6 +2,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Auth.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -35,6 +36,9 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
             // Validar contraseña
             if (!await _authRepository.ValidatePasswordAsync(user, request.Password))
+                throw new BusinessException("Credenciales inválidas");
+
+            if (!TenantAccessRules.CanAuthenticate(user))
                 throw new BusinessException("Credenciales inválidas");
 
             var isDeliveryman = user.Role == UserRole.Deliveryman;
@@ -97,6 +101,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             // Crear refresh token entity
             var refreshTokenEntity = new RefreshToken
             {
+                TenantId = user.TenantId,
                 UserId = user.Id,
                 SessionId = sessionId,
                 Token = refreshToken,

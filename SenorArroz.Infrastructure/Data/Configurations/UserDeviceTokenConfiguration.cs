@@ -15,6 +15,7 @@ public class UserDeviceTokenConfiguration : IEntityTypeConfiguration<UserDeviceT
         builder.Property(t => t.Id).HasColumnName("id");
 
         builder.Property(t => t.UserId).HasColumnName("user_id").IsRequired();
+        builder.Property(t => t.TenantId).HasColumnName("tenant_id").IsRequired();
         builder.Property(t => t.Token).HasColumnName("token").HasMaxLength(512).IsRequired();
         builder.Property(t => t.Platform).HasColumnName("platform").HasMaxLength(20).HasDefaultValue("android");
         builder.Property(t => t.LastSeenAt).HasColumnName("last_seen_at").HasDefaultValueSql("NOW()");
@@ -32,12 +33,19 @@ public class UserDeviceTokenConfiguration : IEntityTypeConfiguration<UserDeviceT
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
 
         builder.HasOne(t => t.User)
-            .WithMany()
-            .HasForeignKey(t => t.UserId)
+            .WithMany(u => u.DeviceTokens)
+            .HasForeignKey(t => new { t.TenantId, t.UserId })
+            .HasPrincipalKey(u => new { u.TenantId, u.Id })
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(t => t.Tenant)
+            .WithMany(tenant => tenant.UserDeviceTokens)
+            .HasForeignKey(t => t.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Un usuario puede tener varios dispositivos pero no duplicar el mismo token
         builder.HasIndex(t => t.Token).IsUnique().HasDatabaseName("uq_user_device_token_token");
         builder.HasIndex(t => t.UserId).HasDatabaseName("idx_user_device_token_user");
+        builder.HasIndex(t => new { t.TenantId, t.UserId }).HasDatabaseName("idx_user_device_token_tenant_user");
     }
 }

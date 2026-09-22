@@ -1,6 +1,7 @@
 ﻿// SenorArroz.Application/Features/Users/Commands/CreateUserHandler.cs
 using AutoMapper;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Users;
 using SenorArroz.Application.Features.Users.DTOs;
@@ -19,6 +20,7 @@ namespace SenorArroz.Application.Features.Users.Commands
         private readonly IMapper _mapper;
         private readonly ICurrentUser _currentUser;
         private readonly IBranchContext _branchContext;
+        private readonly ICurrentTenant _currentTenant;
         private readonly IApplicationDbContext _db;
 
         public CreateUserHandler(
@@ -27,6 +29,7 @@ namespace SenorArroz.Application.Features.Users.Commands
             IMapper mapper,
             ICurrentUser currentUser,
             IBranchContext branchContext,
+            ICurrentTenant currentTenant,
             IApplicationDbContext db)
         {
             _userRepository = userRepository;
@@ -34,6 +37,7 @@ namespace SenorArroz.Application.Features.Users.Commands
             _mapper = mapper;
             _currentUser = currentUser;
             _branchContext = branchContext;
+            _currentTenant = currentTenant;
             _db = db;
         }
 
@@ -43,6 +47,14 @@ namespace SenorArroz.Application.Features.Users.Commands
             string creatorRole = _currentUser.Role;
             int creatorBranchId= _currentUser.BranchId;
             request.UserData.BranchId = _branchContext.RequireBranch(request.UserData.BranchId);
+            if (!_currentTenant.HasTenant)
+                throw new BusinessException("No se pudo determinar el tenant autenticado.");
+
+            var branch = await _db.Branches.AsNoTracking().FirstOrDefaultAsync(
+                candidate => candidate.Id == request.UserData.BranchId
+                             && candidate.TenantId == _currentTenant.TenantId,
+                cancellationToken)
+                ?? throw new BusinessException("La sucursal no pertenece al tenant autenticado.");
        
             // 1. Validar que el email no exista
             if (await _userRepository.EmailExistsAsync(request.UserData.Email, cancellationToken: cancellationToken))
@@ -121,6 +133,7 @@ namespace SenorArroz.Application.Features.Users.Commands
 
             // 2. Mapear DTO a entidad
             var user = _mapper.Map<User>(request.UserData);
+            user.TenantId = branch.TenantId;
             user.WebAccessEnabled = user.Role != UserRole.Deliveryman;
 
             // 3. Hashear la contraseña

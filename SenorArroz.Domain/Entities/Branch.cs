@@ -4,6 +4,7 @@ namespace SenorArroz.Domain.Entities;
 
 public class Branch : BaseEntity
 {
+    public int TenantId { get; set; } = 1;
     public string Name { get; set; } = string.Empty;
 
     /// <summary>Nombre comercial en ticket (opcional). Si está vacío, se usa <see cref="Name"/>.</summary>
@@ -63,6 +64,7 @@ public class Branch : BaseEntity
     public string? MenuImageUrl2 { get; set; }
 
     // Navigation Properties
+    public virtual Tenant Tenant { get; set; } = null!;
     public virtual ICollection<User> Users { get; set; } = new List<User>();
     public virtual ICollection<Customer> Customers { get; set; } = new List<Customer>();
     public virtual ICollection<Neighborhood> Neighborhoods { get; set; } = new List<Neighborhood>();

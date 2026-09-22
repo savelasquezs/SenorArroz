@@ -10,6 +10,7 @@ public interface IJwtService
         string? deviceInstallationId = null);
     string GenerateRefreshToken();
     int? GetUserIdFromExpiredToken(string token);
+    int? GetTenantIdFromExpiredToken(string token);
     Guid? GetSessionIdFromExpiredToken(string token);
     string? GetDeviceInstallationIdFromExpiredToken(string token);
     bool IsTokenExpired(string token);

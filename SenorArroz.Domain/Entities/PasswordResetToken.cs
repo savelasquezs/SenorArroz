@@ -4,6 +4,7 @@ namespace SenorArroz.Domain.Entities;
 
 public class PasswordResetToken : BaseEntity
 {
+    public int TenantId { get; set; } = 1;
     public int UserId { get; set; }
     public string Token { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }
@@ -13,6 +14,7 @@ public class PasswordResetToken : BaseEntity
     public string Email { get; set; } = string.Empty; // Store email for verification
 
     // Navigation properties
+    public virtual Tenant Tenant { get; set; } = null!;
     public virtual User User { get; set; } = null!;
 
     public bool IsExpiredAt(DateTime utcNow) => utcNow >= ExpiresAt;
@@ -26,10 +28,11 @@ public class PasswordResetToken : BaseEntity
         UsedByIp = ipAddress;
     }
 
-    public static PasswordResetToken Create(int userId, string email, int expirationMinutes, DateTime utcNow)
+    public static PasswordResetToken Create(int tenantId, int userId, string email, int expirationMinutes, DateTime utcNow)
     {
         return new PasswordResetToken
         {
+            TenantId = tenantId,
             UserId = userId,
             Email = email,
             Token = GenerateSecureToken(),

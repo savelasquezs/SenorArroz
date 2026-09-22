@@ -13,6 +13,7 @@ public class BranchConfiguration : IEntityTypeConfiguration<Branch>
 
         builder.HasKey(b => b.Id);
         builder.Property(b => b.Id).HasColumnName("id");
+        builder.Property(b => b.TenantId).HasColumnName("tenant_id").IsRequired();
 
         builder.Property(b => b.Name).HasColumnName("name").HasMaxLength(100).IsRequired();
         builder.Property(b => b.BusinessName).HasColumnName("business_name").HasMaxLength(150);
@@ -78,5 +79,13 @@ public class BranchConfiguration : IEntityTypeConfiguration<Branch>
         ;
         builder.Property(b => b.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAddOrUpdate()
     .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore); ;
+
+        builder.HasAlternateKey(b => new { b.TenantId, b.Id })
+            .HasName("ak_branch_tenant_id_id");
+        builder.HasOne(b => b.Tenant)
+            .WithMany(t => t.Branches)
+            .HasForeignKey(b => b.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(b => b.TenantId).HasDatabaseName("idx_branch_tenant_id");
     }
 }

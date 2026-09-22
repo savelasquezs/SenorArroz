@@ -53,7 +53,6 @@ public class ExclusiveDeliverySessionTests
         {
             Id = 1,
             BranchId = 7,
-            Branch = branch,
             Role = UserRole.Deliveryman,
             Name = "Domiciliario",
             Email = "domiciliario@example.com",
@@ -61,6 +60,7 @@ public class ExclusiveDeliverySessionTests
             PasswordHash = "hash",
             Active = true,
         };
+        AttachTenant(loginUser);
         var auth = new Mock<IAuthRepository>();
         auth.Setup(x => x.GetUserByEmailAsync(loginUser.Email, It.IsAny<CancellationToken>()))
             .ReturnsAsync(loginUser);
@@ -145,17 +145,18 @@ public class ExclusiveDeliverySessionTests
             .ReturnsAsync(refreshToken);
         var jwt = new Mock<IJwtService>();
         jwt.Setup(x => x.GetUserIdFromExpiredToken("old-access")).Returns(1);
+        jwt.Setup(x => x.GetTenantIdFromExpiredToken("old-access")).Returns(1);
         jwt.Setup(x => x.GetSessionIdFromExpiredToken("old-access")).Returns(oldSessionId);
         jwt.Setup(x => x.GetDeviceInstallationIdFromExpiredToken("old-access")).Returns("device-a");
         var auth = new Mock<IAuthRepository>();
         auth.Setup(x => x.GetUserByIdWithBranchAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new User
+            .ReturnsAsync(AttachTenant(new User
             {
                 Id = 1,
                 Role = UserRole.Deliveryman,
                 ActiveSessionId = currentSessionId,
                 Active = true,
-            });
+            }));
 
         var handler = new RefreshTokenHandler(
             auth.Object,
@@ -193,6 +194,7 @@ public class ExclusiveDeliverySessionTests
             PasswordHash = "hash",
             Active = true,
         };
+        AttachTenant(user);
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
@@ -251,6 +253,7 @@ public class ExclusiveDeliverySessionTests
             PasswordHash = "hash",
             Active = true,
         };
+        AttachTenant(user);
         var auth = new Mock<IAuthRepository>();
         auth.Setup(x => x.GetUserByEmailAsync(user.Email, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
@@ -311,16 +314,17 @@ public class ExclusiveDeliverySessionTests
             .ReturnsAsync(refreshToken);
         var jwt = new Mock<IJwtService>();
         jwt.Setup(x => x.GetUserIdFromExpiredToken("access")).Returns(1);
+        jwt.Setup(x => x.GetTenantIdFromExpiredToken("access")).Returns(1);
         jwt.Setup(x => x.GetSessionIdFromExpiredToken("access")).Returns(sessionId);
         var auth = new Mock<IAuthRepository>();
         auth.Setup(x => x.GetUserByIdWithBranchAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new User
+            .ReturnsAsync(AttachTenant(new User
             {
                 Id = 1,
                 Role = UserRole.Deliveryman,
                 ActiveSessionId = sessionId,
                 Active = true,
-            });
+            }));
         var policy = new Mock<IDeliveryAppVersionPolicy>();
         policy.Setup(x => x.EnsureCompatible(It.IsAny<DeliveryAppClientVersion?>()))
             .Throws(new DeliveryAppUpdateRequiredException("1.2.5", 11, "play"));
@@ -419,5 +423,32 @@ public class ExclusiveDeliverySessionTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         return new ApplicationDbContext(options);
+    }
+
+    private static User AttachTenant(User user)
+    {
+        var tenant = new Tenant
+        {
+            Id = 1,
+            PublicId = Guid.Parse("86ae3576-33db-483a-9a83-d9087a660651"),
+            Name = "Señor Arroz",
+            Slug = "senor-arroz",
+            IsActive = true,
+            Status = TenantStatus.Active,
+            AccessVersion = 1,
+        };
+        var branch = user.Branch ?? new Branch
+        {
+            Id = user.BranchId > 0 ? user.BranchId : 1,
+            Name = "Centro",
+            Address = "Sucursal",
+        };
+        branch.TenantId = tenant.Id;
+        branch.Tenant = tenant;
+        user.TenantId = tenant.Id;
+        user.Tenant = tenant;
+        user.BranchId = branch.Id;
+        user.Branch = branch;
+        return user;
     }
 }

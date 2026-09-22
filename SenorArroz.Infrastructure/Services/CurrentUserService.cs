@@ -33,6 +33,15 @@ namespace SenorArroz.Infrastructure.Services
             }
         }
 
+        public int TenantId
+        {
+            get
+            {
+                var value = _httpContextAccessor.HttpContext?.User?.FindFirst("tenant_id")?.Value;
+                return int.TryParse(value, out var tenantId) ? tenantId : 0;
+            }
+        }
+
         public bool IsAuthenticated => _httpContextAccessor.HttpContext?.User?.Identity?.IsAuthenticated ?? false;
 
         public Guid? SessionId
