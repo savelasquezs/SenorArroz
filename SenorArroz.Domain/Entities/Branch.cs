@@ -64,8 +64,8 @@ public class Branch : BaseEntity
     public string? MenuImageUrl2 { get; set; }
 
     // Navigation Properties
-    public virtual ICollection<User> Users { get; set; } = new List<User>();
     public virtual Tenant Tenant { get; set; } = null!;
+    public virtual ICollection<User> Users { get; set; } = new List<User>();
     public virtual ICollection<AddressBranch> AddressServices { get; set; } = new List<AddressBranch>();
     public virtual ICollection<Customer> Customers { get; set; } = new List<Customer>();
     public virtual ICollection<Neighborhood> Neighborhoods { get; set; } = new List<Neighborhood>();

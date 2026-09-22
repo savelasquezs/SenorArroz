@@ -15,9 +15,13 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
     private readonly IBranchRepository _branchRepository;
     private readonly IApplicationDbContext _db;
     private readonly IMapper _mapper;
-    private readonly ICurrentTenant? _currentTenant;
+    private readonly ICurrentTenant _currentTenant;
 
-    public CreateBranchHandler(IBranchRepository branchRepository, IApplicationDbContext db, IMapper mapper, ICurrentTenant? currentTenant = null)
+    public CreateBranchHandler(
+        IBranchRepository branchRepository,
+        IApplicationDbContext db,
+        IMapper mapper,
+        ICurrentTenant currentTenant)
     {
         _branchRepository = branchRepository;
         _db = db;
@@ -27,6 +31,9 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
 
     public async Task<BranchDto> Handle(CreateBranchCommand request, CancellationToken cancellationToken)
     {
+        if (!_currentTenant.HasTenant)
+            throw new BusinessException("No se pudo determinar el tenant autenticado.");
+
         // Validate name doesn't exist
         if (await _branchRepository.NameExistsAsync(request.Name))
         {
@@ -52,7 +59,7 @@ public class CreateBranchHandler : IRequestHandler<CreateBranchCommand, BranchDt
 
         var branch = new Branch
         {
-            TenantId = _currentTenant?.TenantId ?? 1,
+            TenantId = _currentTenant.TenantId,
             Name = request.Name.Trim(),
             BusinessName = NullIfWhiteSpace(request.BusinessName),
             Nit = NullIfWhiteSpace(request.Nit),

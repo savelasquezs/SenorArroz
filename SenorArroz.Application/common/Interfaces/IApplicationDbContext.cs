@@ -30,6 +30,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<BranchInformalLoanExemptOrder> BranchInformalLoanExemptOrders { get; set; }
 
         DbSet<Branch> Branches { get; set; }
+        DbSet<Tenant> Tenants { get; set; }
         DbSet<BranchBusinessHour> BranchBusinessHours { get; set; }
 
         DbSet<BranchAiSetting> BranchAiSettings { get; set; }
@@ -77,7 +78,6 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<Customer> Customers { get; set; }
         DbSet<CustomerPhone> CustomerPhones { get; set; }
         DbSet<CustomerMergeHistory> CustomerMergeHistories { get; set; }
-        DbSet<Tenant> Tenants { get; set; }
 
         DbSet<StorefrontCustomerAuthChallenge> StorefrontCustomerAuthChallenges { get; set; }
 

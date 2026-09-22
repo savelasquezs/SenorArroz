@@ -20,6 +20,10 @@ public class PasswordResetTokenConfiguration : IEntityTypeConfiguration<Password
             .HasColumnName("user_id")
             .IsRequired();
 
+        builder.Property(prt => prt.TenantId)
+            .HasColumnName("tenant_id")
+            .IsRequired();
+
         builder.Property(prt => prt.Token)
             .HasColumnName("token")
             .HasMaxLength(500)
@@ -55,9 +59,15 @@ public class PasswordResetTokenConfiguration : IEntityTypeConfiguration<Password
 
         // Relationships
         builder.HasOne(prt => prt.User)
-            .WithMany()
-            .HasForeignKey(prt => prt.UserId)
+            .WithMany(u => u.PasswordResetTokens)
+            .HasForeignKey(prt => new { prt.TenantId, prt.UserId })
+            .HasPrincipalKey(u => new { u.TenantId, u.Id })
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(prt => prt.Tenant)
+            .WithMany(t => t.PasswordResetTokens)
+            .HasForeignKey(prt => prt.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Indexes
         builder.HasIndex(prt => prt.Token)
@@ -66,6 +76,9 @@ public class PasswordResetTokenConfiguration : IEntityTypeConfiguration<Password
 
         builder.HasIndex(prt => prt.UserId)
             .HasDatabaseName("idx_password_reset_token_user_id");
+
+        builder.HasIndex(prt => new { prt.TenantId, prt.UserId })
+            .HasDatabaseName("idx_password_reset_token_tenant_user");
 
         builder.HasIndex(prt => prt.Email)
             .HasDatabaseName("idx_password_reset_token_email");

@@ -19,7 +19,7 @@ El sistema ya tiene clientes reales. Por eso la migración debe ser progresiva y
 
 No se debe agregar `TenantId` a todas las tablas de golpe sin plan de backfill, pruebas y despliegue controlado.
 
-## Fase implementada: núcleo de clientes
+## Estado actual: núcleo organizacional y de clientes implementado
 
 La primera base real agrega `TenantId` a `Branch`, `Customer`, `Address`, `Neighborhood` y `Order`, y crea `CustomerPhone` y `AddressBranch`. El tenant se toma del claim/configuración segura del backend; nunca del request público. El resto de tablas tenant-owned continúa en las fases progresivas de este documento.
 
@@ -31,6 +31,17 @@ Tenant -> Branches
 Customer -> Addresses -> AddressBranches -> Branch
 Customer -> Orders -> Branch
 ```
+
+- `Tenant` es la raíz organizacional y conserva `Name`, `Slug`, `IsActive`, `CreatedAt` y `UpdatedAt`.
+- `Tenant` incorpora `PublicId`, `Status`, `StatusReason`, `AccessVersion`, datos de contacto/facturación y fechas de suspensión/cancelación.
+- `Branch` y `User` pertenecen directamente a un tenant. La FK compuesta `(tenant_id, branch_id)` impide asignar un usuario a una sucursal de otro tenant.
+- `RefreshToken`, `PasswordResetToken` y `UserDeviceToken` pertenecen al mismo tenant que su usuario mediante FKs compuestas.
+- Login y refresh cargan `Tenant`, `Branch` y `User`, validan consistencia y emiten `tenant_id`, `tenant_public_id` y `tenant_access_version` desde datos persistidos.
+- `ICurrentTenant` resuelve requests autenticados desde JWT y procesos públicos/background desde configuración segura del servidor.
+- `X-Branch-Id` mantiene su semántica operativa, pero una selección autenticada debe pertenecer al tenant del JWT.
+- El esquema se instala con `SenorArroz.Infrastructure/Scripts/multitenant_core_v2.sql`.
+
+`IsActive` se mantiene por compatibilidad. Mientras exista, el acceso exige simultáneamente `IsActive = true` y `Status = Active`; todo cambio de estado debe mantener ambos valores sincronizados.
 
 ## Objetivo final
 
@@ -77,7 +88,7 @@ Crear y mantener:
 
 Objetivo: que Codex y los humanos sepan dónde tocar sin escanear todo.
 
-### Fase 1 - Introducir entidad Tenant sin romper operación
+### Fase 1 - Introducir entidad Tenant sin romper operación (completada)
 
 Crear entidad `Tenant`.
 
@@ -103,7 +114,7 @@ Name = Señor Arroz
 Slug = senor-arroz
 ```
 
-### Fase 2 - Asociar Branch a Tenant
+### Fase 2 - Asociar Branch a Tenant (completada)
 
 Estado previo implementado: existe `IBranchContext` y el selector de Superadmin usa
 `X-Branch-Id`. Este header solo selecciona una sucursal operativa; nunca es autoridad
@@ -124,7 +135,11 @@ Después de validar datos:
 - Crear índice `ix_branches_tenant_id`.
 - Crear índice único recomendado: `(tenant_id, name)` si aplica.
 
-### Fase 3 - Propagar TenantId a tablas dependientes
+### Fase 3 - Propagar TenantId a tablas dependientes (en progreso)
+
+Completado en el Bloque 1: `User`, `RefreshToken`, `PasswordResetToken` y `UserDeviceToken`.
+
+Pendiente para los siguientes bloques: propagación completa al resto de entidades tenant-owned, filtros globales, write guards, RLS, aislamiento completo de SignalR/archivos, control plane, planes, add-ons, suscripciones, metering, invitaciones, portal `/platform` y alta del segundo restaurante real.
 
 Agregar `TenantId` progresivamente a tablas operativas.
 

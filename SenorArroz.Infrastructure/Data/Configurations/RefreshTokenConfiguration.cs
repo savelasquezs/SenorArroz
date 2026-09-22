@@ -20,6 +20,10 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
             .HasColumnName("user_id")
             .IsRequired();
 
+        builder.Property(rt => rt.TenantId)
+            .HasColumnName("tenant_id")
+            .IsRequired();
+
         builder.Property(rt => rt.SessionId)
             .HasColumnName("session_id");
 
@@ -57,9 +61,15 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
 
         // Relationships
         builder.HasOne(rt => rt.User)
-            .WithMany()
-            .HasForeignKey(rt => rt.UserId)
+            .WithMany(u => u.RefreshTokens)
+            .HasForeignKey(rt => new { rt.TenantId, rt.UserId })
+            .HasPrincipalKey(u => new { u.TenantId, u.Id })
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(rt => rt.Tenant)
+            .WithMany(t => t.RefreshTokens)
+            .HasForeignKey(rt => rt.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Indexes
         builder.HasIndex(rt => rt.Token)
@@ -68,6 +78,9 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
 
         builder.HasIndex(rt => rt.UserId)
             .HasDatabaseName("idx_refresh_token_user_id");
+
+        builder.HasIndex(rt => new { rt.TenantId, rt.UserId })
+            .HasDatabaseName("idx_refresh_token_tenant_user");
 
         builder.HasIndex(rt => rt.SessionId)
             .HasDatabaseName("idx_refresh_token_session_id");

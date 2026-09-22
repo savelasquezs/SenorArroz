@@ -20,6 +20,9 @@ public class RefreshTokenRepository : IRefreshTokenRepository
     public async Task<RefreshToken?> GetByTokenAsync(string token, CancellationToken cancellationToken = default)
     {
         return await _context.RefreshTokens
+            .Include(rt => rt.Tenant)
+            .Include(rt => rt.User)
+            .ThenInclude(u => u.Tenant)
             .Include(rt => rt.User)
             .ThenInclude(u => u.Branch)
             .FirstOrDefaultAsync(rt => rt.Token == token, cancellationToken);
@@ -29,6 +32,9 @@ public class RefreshTokenRepository : IRefreshTokenRepository
     {
         var now = _clock.UtcNow;
         return await _context.RefreshTokens
+            .Include(rt => rt.Tenant)
+            .Include(rt => rt.User)
+            .ThenInclude(u => u.Tenant)
             .Include(rt => rt.User)
             .ThenInclude(u => u.Branch)
             .FirstOrDefaultAsync(rt => rt.UserId == userId &&

@@ -22,6 +22,8 @@ namespace SenorArroz.Application.Mappings
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.Branch, opt => opt.Ignore())
+                .ForMember(dest => dest.TenantId, opt => opt.Ignore())
+                .ForMember(dest => dest.Tenant, opt => opt.Ignore())
                 .ForMember(dest => dest.PasswordHash, opt => opt.Ignore())
                 .ForMember(dest => dest.PayrollExpense, opt => opt.Ignore())
                 .ForMember(dest => dest.ProfileImageUrl, opt => opt.Ignore())
@@ -31,6 +33,9 @@ namespace SenorArroz.Application.Mappings
                 .ForMember(dest => dest.DeliveryOrders, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedExpenseHeaders, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedDailyPromotions, opt => opt.Ignore())
+                .ForMember(dest => dest.RefreshTokens, opt => opt.Ignore())
+                .ForMember(dest => dest.PasswordResetTokens, opt => opt.Ignore())
+                .ForMember(dest => dest.DeviceTokens, opt => opt.Ignore())
                 .ForMember(dest => dest.Active, opt => opt.MapFrom(src => true));
 
             // UpdateUserDto -> User (para actualizar)
@@ -39,6 +44,8 @@ namespace SenorArroz.Application.Mappings
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.Branch, opt => opt.Ignore())
+                .ForMember(dest => dest.TenantId, opt => opt.Ignore())
+                .ForMember(dest => dest.Tenant, opt => opt.Ignore())
                 .ForMember(dest => dest.BranchId, opt => opt.Ignore())
                 .ForMember(dest => dest.PasswordHash, opt => opt.Ignore())
                 .ForMember(dest => dest.PayrollExpense, opt => opt.Ignore())
@@ -48,7 +55,10 @@ namespace SenorArroz.Application.Mappings
                 .ForMember(dest => dest.TakenOrders, opt => opt.Ignore())
                 .ForMember(dest => dest.DeliveryOrders, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedExpenseHeaders, opt => opt.Ignore())
-                .ForMember(dest => dest.CreatedDailyPromotions, opt => opt.Ignore());
+                .ForMember(dest => dest.CreatedDailyPromotions, opt => opt.Ignore())
+                .ForMember(dest => dest.RefreshTokens, opt => opt.Ignore())
+                .ForMember(dest => dest.PasswordResetTokens, opt => opt.Ignore())
+                .ForMember(dest => dest.DeviceTokens, opt => opt.Ignore());
         }
     }
 }

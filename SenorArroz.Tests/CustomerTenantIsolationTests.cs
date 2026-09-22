@@ -99,6 +99,8 @@ public sealed class CustomerTenantIsolationTests
 
     private sealed record FixedTenant(int TenantId) : ICurrentTenant
     {
+        public Guid? TenantPublicId => null;
+        public long? AccessVersion => null;
         public bool HasTenant => true;
     }
 }

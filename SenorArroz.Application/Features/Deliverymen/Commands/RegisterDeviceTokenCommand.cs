@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Exceptions;
 
 namespace SenorArroz.Application.Features.Deliverymen.Commands;
 
@@ -29,6 +30,11 @@ public class RegisterDeviceTokenHandler : IRequestHandler<RegisterDeviceTokenCom
         if (!_currentUser.IsAuthenticated)
             throw new UnauthorizedAccessException("Usuario no autenticado.");
         var userId = _currentUser.Id;
+        var tenantId = await _db.Users
+            .Where(user => user.Id == userId && user.Active)
+            .Select(user => (int?)user.TenantId)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new BusinessException("Usuario no encontrado.");
 
         var existing = await _db.UserDeviceTokens
             .FirstOrDefaultAsync(t => t.Token == request.Token, cancellationToken);
@@ -37,6 +43,7 @@ public class RegisterDeviceTokenHandler : IRequestHandler<RegisterDeviceTokenCom
         {
             // Actualiza el usuario asociado (puede cambiar de dispositivo) y timestamp
             existing.UserId = userId;
+            existing.TenantId = tenantId;
             existing.Platform = request.Platform;
             existing.LastSeenAt = _clock.UtcNow;
         }
@@ -44,6 +51,7 @@ public class RegisterDeviceTokenHandler : IRequestHandler<RegisterDeviceTokenCom
         {
             _db.UserDeviceTokens.Add(new UserDeviceToken
             {
+                TenantId = tenantId,
                 UserId = userId,
                 Token = request.Token,
                 Platform = request.Platform,

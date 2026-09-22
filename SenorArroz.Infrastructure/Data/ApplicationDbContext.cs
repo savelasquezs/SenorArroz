@@ -39,6 +39,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<BranchInformalLoanExemptOrder> BranchInformalLoanExemptOrders { get; set; }
 
         public virtual DbSet<Branch> Branches { get; set; }
+        public virtual DbSet<Tenant> Tenants { get; set; }
         public virtual DbSet<BranchBusinessHour> BranchBusinessHours { get; set; }
 
         public virtual DbSet<BranchAiSetting> BranchAiSettings { get; set; }
@@ -90,7 +91,6 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<Customer> Customers { get; set; }
         public virtual DbSet<CustomerPhone> CustomerPhones { get; set; }
         public virtual DbSet<CustomerMergeHistory> CustomerMergeHistories { get; set; }
-        public virtual DbSet<Tenant> Tenants { get; set; }
 
         public virtual DbSet<StorefrontCustomerAuthChallenge> StorefrontCustomerAuthChallenges { get; set; }
 
@@ -173,6 +173,7 @@ namespace SenorArroz.Infrastructure.Data
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            modelBuilder.ApplyConfiguration(new TenantConfiguration());
             modelBuilder.ApplyConfiguration(new BranchConfiguration());
             modelBuilder.ApplyConfiguration(new TenantConfiguration());
             modelBuilder.ApplyConfiguration(new BranchBusinessHourConfiguration());

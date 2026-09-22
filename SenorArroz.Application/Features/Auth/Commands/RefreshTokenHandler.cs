@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Auth.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
@@ -38,6 +39,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
         {
             // Obtener usuario del token expirado
             var userId = _jwtService.GetUserIdFromExpiredToken(request.Token) ?? throw new BusinessException("Token inválido");
+            var tenantId = _jwtService.GetTenantIdFromExpiredToken(request.Token) ?? throw new BusinessException("Token inválido");
             var sessionId = _jwtService.GetSessionIdFromExpiredToken(request.Token);
             var deviceInstallationId = _jwtService.GetDeviceInstallationIdFromExpiredToken(request.Token);
 
@@ -48,6 +50,12 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
             // Obtener usuario actualizado
             var user = await _authRepository.GetUserByIdWithBranchAsync(userId, cancellationToken) ?? throw new BusinessException("Usuario no encontrado");
+            if (!TenantAccessRules.CanAuthenticate(user)
+                || user.TenantId != tenantId
+                || refreshToken.TenantId != user.TenantId)
+            {
+                throw new BusinessException("Refresh token inválido");
+            }
             if (user.Role == Domain.Enums.UserRole.Deliveryman)
             {
                 if (request.IsWebClient)
@@ -81,6 +89,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             // Crear nuevo refresh token entity
             var newRefreshTokenEntity = new RefreshToken
             {
+                TenantId = user.TenantId,
                 UserId = user.Id,
                 SessionId = sessionId,
                 Token = newRefreshToken,

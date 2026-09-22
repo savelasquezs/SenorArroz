@@ -44,11 +44,11 @@ Repositorios:
 SenorArroz.Infrastructure/Repositories
 ```
 
-## Entidad raíz futura
+## Entidad raíz actual
 
 ### Tenant
 
-Debe crearse como raíz SaaS.
+Es la raíz SaaS desde el Bloque 1 de multitenancy.
 
 Relación esperada:
 
@@ -71,6 +71,25 @@ CreatedAt
 UpdatedAt
 ```
 
+Campos estructurales implementados adicionalmente:
+
+```text
+PublicId
+Status (draft, active, suspended, cancelled)
+StatusReason
+AccessVersion
+ContactName
+ContactEmail
+ContactPhone
+LegalName
+TaxId
+BillingAddress
+SuspendedAt
+CancelledAt
+```
+
+`IsActive` permanece como compatibilidad legacy y debe mantenerse sincronizado con `Status`. La autenticación exige ambos habilitados. El tenant inicial `1` usa el `PublicId` estable `86ae3576-33db-483a-9a83-d9087a660651`, `Status = Active` y `AccessVersion = 1`.
+
 ## Clasificación de tablas
 
 ### Núcleo organizacional
@@ -86,6 +105,14 @@ UpdatedAt
 | RefreshToken | Sí | Desde `User.TenantId` |
 | PasswordResetToken | Sí | Desde `User.TenantId` |
 | UserDeviceToken | Sí | Desde `User.TenantId` |
+
+Estado del Bloque 1:
+
+- `branch.tenant_id` y `user.tenant_id` son obligatorios y referencian `tenant`.
+- `(user.tenant_id, user.branch_id)` referencia `(branch.tenant_id, branch.id)` y evita cruces entre tenants.
+- `refresh_token`, `password_reset_token` y `user_device_token` usan `(tenant_id, user_id)` contra `user`.
+- Login y refresh cargan el tenant y rechazan tenants inactivos, suspendidos, cancelados o inconsistentes.
+- El script idempotente `SenorArroz.Infrastructure/Scripts/multitenant_core_v2.sql` hace backfill, ejecuta prechecks y luego instala NOT NULL, índices y FKs.
 
 - `Branch.IsActive` (`branch.is_active`) determina si la sucursal participa en el storefront público. Se instala con `SenorArroz.Infrastructure/Scripts/add_branch_active_storefront.sql` y su valor por defecto es `true`.
 - `Branch.StorefrontTakenByUserId` (`branch.storefront_taken_by_user_id`) identifica el usuario técnico activo de la misma sede con el que se crean pedidos web directos.
