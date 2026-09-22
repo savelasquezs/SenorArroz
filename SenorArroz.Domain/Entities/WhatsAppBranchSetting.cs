@@ -2,7 +2,7 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class WhatsAppBranchSetting : BaseEntity
+public class WhatsAppBranchSetting : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public string PhoneNumberId { get; set; } = string.Empty;

@@ -13,6 +13,8 @@ public sealed class WhatsAppCommerceOutboxWorker(
     IServiceScopeFactory scopeFactory,
     ILogger<WhatsAppCommerceOutboxWorker> logger) : BackgroundService
 {
+    private sealed record PendingMessage(int Id, int TenantId);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -29,16 +31,26 @@ public sealed class WhatsAppCommerceOutboxWorker(
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
+        var executionContext = scope.ServiceProvider.GetRequiredService<ITenantExecutionContext>();
         var cloud = scope.ServiceProvider.GetRequiredService<IWhatsAppCloudClient>();
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
         var staleBefore = clock.UtcNow.AddMinutes(-5);
-        await db.WhatsAppCommerceOutboxMessages.Where(x => x.Status == "processing" && x.UpdatedAt <= staleBefore)
-            .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, "failed")
-                .SetProperty(x => x.LastError, "delivery_unknown_requires_review"), ct);
-        var candidateId = await db.WhatsAppCommerceOutboxMessages.AsNoTracking()
-            .Where(x => x.Status == "pending" && x.NextAttemptAt <= clock.UtcNow && x.ChannelSetting.IsActive && x.ChannelSetting.IsVerified)
-            .OrderBy(x => x.Id).Select(x => (int?)x.Id).FirstOrDefaultAsync(ct);
-        if (!candidateId.HasValue) return false;
+        PendingMessage? candidate;
+        using (executionContext.BeginSystemScope())
+        {
+            await db.WhatsAppCommerceOutboxMessages.Where(x => x.Status == "processing" && x.UpdatedAt <= staleBefore)
+                .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, "failed")
+                    .SetProperty(x => x.LastError, "delivery_unknown_requires_review"), ct);
+            candidate = await db.WhatsAppCommerceOutboxMessages.AsNoTracking()
+                .Where(x => x.Status == "pending" && x.NextAttemptAt <= clock.UtcNow && x.ChannelSetting.IsActive && x.ChannelSetting.IsVerified)
+                .OrderBy(x => x.Id)
+                .Select(x => new PendingMessage(x.Id, x.TenantId))
+                .FirstOrDefaultAsync(ct);
+        }
+        if (candidate is null) return false;
+        int candidateId = candidate.Id;
+        int tenantId = candidate.TenantId;
+        using var tenantScope = executionContext.BeginTenantScope(tenantId);
         var claimed = await db.WhatsAppCommerceOutboxMessages
             .Where(x => x.Id == candidateId && x.Status == "pending" && x.NextAttemptAt <= clock.UtcNow)
             .ExecuteUpdateAsync(setters => setters

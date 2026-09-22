@@ -15,7 +15,7 @@ public class SalesEffectiveDateAnalyticsTests
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(dbName)
             .Options;
-        return new ApplicationDbContext(options);
+        return new ApplicationDbContext(options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
     }
 
     private static async Task<(Branch Branch, User User)> SeedBaseAsync(ApplicationDbContext ctx)

@@ -27,7 +27,8 @@ public class WhatsAppAiOrchestrator(
     IOptions<WhatsAppAiOrchestratorOptions> options,
     ILogger<WhatsAppAiOrchestrator> logger,
     IOptions<WhatsAppAiPricingOptions>? pricing = null,
-    IWhatsAppAiTelemetryQueue? telemetryQueue = null) : IWhatsAppAiOrchestrator
+    IWhatsAppAiTelemetryQueue? telemetryQueue = null,
+    ICurrentTenant? currentTenant = null) : IWhatsAppAiOrchestrator
 {
     private readonly WhatsAppAiOrchestratorOptions _options = options.Value;
     private readonly WhatsAppAiPricingOptions _pricing = pricing?.Value ?? new();
@@ -460,6 +461,7 @@ public class WhatsAppAiOrchestrator(
         var error = SanitizeError(response.Error);
         var entity = new WhatsAppAiInvocation
         {
+            TenantId = currentTenant?.TenantId ?? 0,
             BranchId = branchId, ConversationId = conversationId, IncomingMessageId = messageId,
             Provider = provider, Model = model, InvocationIndex = invocationIndex, AttemptIndex = attemptIndex,
             StartedAt = startedAt, CompletedAt = startedAt.AddMilliseconds(durationMs), DurationMs = durationMs,

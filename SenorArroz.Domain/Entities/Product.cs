@@ -2,7 +2,7 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class Product : BaseEntity
+public class Product : TenantOwnedEntity
 {
     public int CategoryId { get; set; }
     public string Name { get; set; } = string.Empty;

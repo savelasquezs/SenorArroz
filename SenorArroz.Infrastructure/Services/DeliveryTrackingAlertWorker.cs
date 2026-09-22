@@ -25,11 +25,19 @@ public class DeliveryTrackingAlertWorker : BackgroundService
         {
             try
             {
-                await using var scope = _serviceProvider.CreateAsyncScope();
-                var service = scope.ServiceProvider.GetRequiredService<IDeliveryTrackingAlertService>();
-                var changes = await service.ProcessAsync(stoppingToken);
-                if (changes > 0)
-                    _logger.LogInformation("Se procesaron {AlertChanges} cambios de alertas de seguimiento.", changes);
+                await TenantWorkerRunner.RunForEachActiveTenantAsync(
+                    _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    async (services, tenantId) =>
+                    {
+                        var changes = await services.GetRequiredService<IDeliveryTrackingAlertService>()
+                            .ProcessAsync(stoppingToken);
+                        if (changes > 0)
+                            _logger.LogInformation(
+                                "Se procesaron {AlertChanges} cambios de alertas de seguimiento para tenant {TenantId}.",
+                                changes,
+                                tenantId);
+                    },
+                    stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

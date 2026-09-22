@@ -5,7 +5,7 @@ namespace SenorArroz.Domain.Entities;
 /// <summary>
 /// Representa un cuadre de caja (cierre de caja diario)
 /// </summary>
-public class CashRegisterClosure : BaseEntity
+public class CashRegisterClosure : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public DateTime ClosedAt { get; set; }

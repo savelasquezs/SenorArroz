@@ -18,7 +18,7 @@ public sealed class WompiIntegrationsController(
     IIntegrationSecretProtector protector,
     IWompiPaymentService wompi,
     IClock clock,
-    IOptions<StorefrontCustomerAuthOptions> storefrontOptions) : ControllerBase
+    ICurrentTenant currentTenant) : ControllerBase
 {
     [HttpGet("api/branches/{branchId:int}/payment-integrations/wompi")]
     public async Task<ActionResult<ApiResponse<object>>> Get(int branchId, CancellationToken cancellationToken)
@@ -163,7 +163,9 @@ public sealed class WompiIntegrationsController(
         return Ok(ApiResponse<object>.SuccessResponse(result, dto.Approve ? "Pago aprobado y pedido enviado a cocina." : "Pago dejado fuera del flujo operativo."));
     }
 
-    private int TenantId => Math.Max(1, storefrontOptions.Value.TenantId);
+    private int TenantId => currentTenant.HasTenant
+        ? currentTenant.TenantId
+        : throw new InvalidOperationException("No existe un tenant operativo para administrar Wompi.");
     private bool CanAdminister(int branchId) => currentUser.Role.Equals("superadmin", StringComparison.OrdinalIgnoreCase)
         || currentUser.Role.Equals("admin", StringComparison.OrdinalIgnoreCase) && currentUser.BranchId == branchId;
     private int? ResolveBranch(int? requested) => currentUser.Role.Equals("superadmin", StringComparison.OrdinalIgnoreCase)

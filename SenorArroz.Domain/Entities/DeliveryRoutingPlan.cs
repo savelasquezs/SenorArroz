@@ -3,7 +3,7 @@ using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class DeliveryRoutingPlan : BaseEntity
+public class DeliveryRoutingPlan : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public long GenerationNumber { get; set; }

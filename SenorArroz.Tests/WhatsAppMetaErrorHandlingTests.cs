@@ -157,7 +157,9 @@ public class WhatsAppMetaErrorHandlingTests
         await using var db = new ApplicationDbContext(
             new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options);
+                .Options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
         var branch = new Branch { Id = 1, Name = "Centro" };
         db.Branches.Add(branch);
         db.WhatsAppConversations.Add(new WhatsAppConversation

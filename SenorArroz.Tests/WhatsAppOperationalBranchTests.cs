@@ -245,7 +245,9 @@ public sealed class WhatsAppOperationalBranchTests
     }
 
     private static ApplicationDbContext CreateDb() => new(new DbContextOptionsBuilder<ApplicationDbContext>()
-        .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+        currentTenant: TestTenantContext.Default,
+        tenantExecutionContext: TestTenantContext.Default);
 
     private static async Task SeedCentralConversationAsync(
         ApplicationDbContext db,
@@ -311,7 +313,9 @@ public sealed class WhatsAppOperationalBranchTests
             Mock.Of<IWhatsAppAutomaticMessageSender>(),
             Mock.Of<IBranchBusinessHoursService>(),
             null!,
-            null!);
+            null!,
+            TestTenantContext.Default,
+            TestTenantContext.Default);
     }
 
     private static CreateOrderHandler CreateOrderHandler(ApplicationDbContext db, int userId, int branchId)

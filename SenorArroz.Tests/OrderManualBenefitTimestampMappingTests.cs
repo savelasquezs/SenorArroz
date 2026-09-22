@@ -10,7 +10,9 @@ public sealed class OrderManualBenefitTimestampMappingTests
     public void Manual_benefit_timestamp_is_mapped_as_utc_timestamptz()
     {
         using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql("Host=localhost;Database=mapping_test").Options);
+            .UseNpgsql("Host=localhost;Database=mapping_test").Options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
 
         var property = db.Model.FindEntityType(typeof(Order))!
             .FindProperty(nameof(Order.ManualBenefitGrantedAt))!;

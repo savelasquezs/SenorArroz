@@ -293,7 +293,9 @@ public sealed class WompiPaymentServiceTests
     }
 
     private static ApplicationDbContext CreateDb(string name) => new(
-        new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(name).Options);
+        new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(name).Options,
+        currentTenant: TestTenantContext.Default,
+        tenantExecutionContext: TestTenantContext.Default);
 
     private static WompiPaymentService CreateService(
         ApplicationDbContext db,

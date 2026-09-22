@@ -27,7 +27,7 @@ public sealed class RappiSettlementTests
             .UseInMemoryDatabase(nameof(Settlement_prorates_actual_deposit_by_expected_net_and_assigns_residue))
             .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
-        await using var db = new ApplicationDbContext(options);
+        await using var db = new ApplicationDbContext(options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
         var branch = new Branch { Id = 1, Name = "Santander", Address = "-", Phone1 = "-" };
         var user = new User
         {

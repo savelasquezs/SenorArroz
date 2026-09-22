@@ -2,7 +2,7 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class SupplierExpense : BaseEntity
+public class SupplierExpense : TenantOwnedEntity
 {
     public int SupplierId { get; set; }
     public int ExpenseId { get; set; }

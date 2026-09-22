@@ -6,7 +6,7 @@ namespace SenorArroz.Domain.Entities;
 /// <summary>
 /// Paso del programa de fidelidad por sucursal (ciclo 1..N; el premio del pedido entregado k-ésimo con cliente).
 /// </summary>
-public class LoyaltyCycleStep : BaseEntity
+public class LoyaltyCycleStep : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     /// <summary>Posición en el ciclo (1-based).</summary>

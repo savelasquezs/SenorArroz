@@ -7,7 +7,7 @@ namespace SenorArroz.Domain.Entities;
 /// El dinero se contabiliza en el cuadre del día en que se recibe (ReceivedAt),
 /// no en el día en que se entrega el pedido.
 /// </summary>
-public class ReservationDeposit : BaseEntity
+public class ReservationDeposit : TenantOwnedEntity
 {
     public int OrderId { get; set; }
     public int BranchId { get; set; }

@@ -27,7 +27,7 @@ public class CashRegisterExpectedHandlerPromotedDepositTests
         var opts = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(dbName)
             .Options;
-        return new ApplicationDbContext(opts);
+        return new ApplicationDbContext(opts, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
     }
 
     private static (Branch Branch, Bank Bank, User User) SeedBase(ApplicationDbContext db, DateTime utcNow)

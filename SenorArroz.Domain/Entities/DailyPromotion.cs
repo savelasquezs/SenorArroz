@@ -3,7 +3,7 @@ using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class DailyPromotion : BaseEntity
+public class DailyPromotion : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public int? CreatedByUserId { get; set; }

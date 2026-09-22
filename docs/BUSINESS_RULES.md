@@ -20,10 +20,20 @@ Este documento resume reglas funcionales que Codex debe respetar antes de modifi
 - Un refresh token sólo puede renovarse cuando su `TenantId`, el claim expirado y el `TenantId` actual del usuario coinciden.
 - `RefreshToken`, `PasswordResetToken` y `UserDeviceToken` deben conservar el mismo tenant que su usuario.
 - `X-Branch-Id` sólo selecciona contexto operativo dentro del tenant autenticado; no concede autoridad sobre otro tenant.
-- Requests autenticados resuelven tenant desde JWT. Procesos públicos y background actuales usan el tenant configurado por servidor, hoy el tenant `1` de Señor Arroz.
+- Requests autenticados resuelven tenant desde JWT; procesos públicos y background deben resolverlo desde configuración o datos persistidos del backend.
 - `IsActive` es compatibilidad temporal con código legacy; cualquier suspensión o cancelación debe sincronizarlo con `Status`.
 
-Pendiente para bloques posteriores: filtros globales EF Core, write guards generales, RLS, aislamiento completo de SignalR y archivos, capabilities, control plane, planes, add-ons, suscripciones, cobro SaaS, metering, invitaciones y portal `/platform`.
+Pendiente para bloques posteriores: RLS, aislamiento completo de SignalR y archivos, capabilities, control plane, planes, add-ons, suscripciones, cobro SaaS, metering, invitaciones y portal `/platform`.
+
+## Aislamiento multitenant v2
+
+- Requests autenticados resuelven tenant desde JWT. Procesos públicos resuelven un tenant configurado o una integración persistida; workers multiempresa iteran tenants activos dentro de scopes independientes. No existe fallback operativo implícito a `TenantId = 1`.
+- Toda entidad operativa implementa `ITenantOwned`; `Tenant` es la única entidad global del modelo EF.
+- Un request sin tenant no puede leer ni escribir filas tenant-owned.
+- Los scopes de sistema sólo se permiten para resolver tenant, seleccionar trabajo global o ejecutar limpiezas explícitas; el procesamiento funcional vuelve a `BeginTenantScope`.
+- Un alta sin `TenantId` recibe el tenant actual. Un alta, cambio o borrado cross-tenant se rechaza antes de guardar.
+- La matriz vinculante de entidades, workers y excepciones está en `docs/MULTITENANT_ISOLATION_AUDIT.md`.
+- RLS queda explícitamente fuera del Bloque 2.
 
 ## Regla general
 
@@ -317,7 +327,7 @@ Reglas:
 
 ## WhatsApp Flow comercial central
 
-- La v2 opera únicamente con `TenantId = 1`; tenant y canal se resuelven en backend y nunca desde datos editables del Flow.
+- La v2 resuelve tenant y canal en backend desde configuración persistida y nunca desde datos editables del Flow.
 - El canal central es independiente de la sucursal histórica. Las conversaciones nacen sin sede operativa y el Flow puede asignarla al cotizar domicilio o elegir recogida.
 - Admin, Cajero y Superadmin ven la cola central sin sede. Después de la asignación, la conversación es visible para la sede asignada, Superadmin y el asesor asignado aunque pertenezca a otra sede; ningún usuario de sucursal recibe las demás conversaciones de otra sede.
 - `OperationalBranchId` define la sede operativa y `AssignedUserId` define quién atiende: tomar una conversación no asigna sede. Al transferir una conversación de una sede operativa a otra, se libera el asesor asignado.

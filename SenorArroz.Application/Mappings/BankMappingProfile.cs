@@ -25,6 +25,7 @@ public class BankMappingProfile : Profile
             .ForMember(dest => dest.BalanceBreakdown, opt => opt.Ignore());
 
         CreateMap<CreateBankDto, Bank>()
+            .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.Branch, opt => opt.Ignore())
             .ForMember(dest => dest.Apps, opt => opt.Ignore())
             .ForMember(dest => dest.BankPayments, opt => opt.Ignore())
@@ -34,6 +35,7 @@ public class BankMappingProfile : Profile
             .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
 
         CreateMap<UpdateBankDto, Bank>()
+            .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.BranchId, opt => opt.Ignore())
             .ForMember(dest => dest.Branch, opt => opt.Ignore())
             .ForMember(dest => dest.Apps, opt => opt.Ignore())

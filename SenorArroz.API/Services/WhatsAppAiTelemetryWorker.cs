@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Data;
 
@@ -16,7 +17,8 @@ public sealed class WhatsAppAiTelemetryWorker(
     WhatsAppAiTelemetryQueue queue,
     IDbContextFactory<ApplicationDbContext> factory,
     IOptions<WhatsAppAiTelemetryWorkerOptions> options,
-    ILogger<WhatsAppAiTelemetryWorker> logger) : IHostedService
+    ILogger<WhatsAppAiTelemetryWorker> logger,
+    ITenantExecutionContext tenantExecutionContext) : IHostedService
 {
     private readonly CancellationTokenSource _forceStop = new();
     private Task? _execution;
@@ -54,9 +56,15 @@ public sealed class WhatsAppAiTelemetryWorker(
                 if (batch.Count == 0) continue;
                 try
                 {
-                    await using var db = await factory.CreateDbContextAsync(forceStop);
-                    db.WhatsAppAiInvocations.AddRange(batch);
-                    await db.SaveChangesAsync(forceStop);
+                    foreach (var tenantBatch in batch.GroupBy(x => x.TenantId))
+                    {
+                        if (tenantBatch.Key <= 0)
+                            throw new InvalidOperationException("La telemetrÃ­a de WhatsApp AI no tiene tenant.");
+                        using var tenantScope = tenantExecutionContext.BeginTenantScope(tenantBatch.Key);
+                        await using var db = await factory.CreateDbContextAsync(forceStop);
+                        db.WhatsAppAiInvocations.AddRange(tenantBatch);
+                        await db.SaveChangesAsync(forceStop);
+                    }
                 }
                 catch (Exception ex) when (!forceStop.IsCancellationRequested)
                 {

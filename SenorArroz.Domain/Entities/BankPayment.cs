@@ -2,7 +2,7 @@
 
 namespace SenorArroz.Domain.Entities;
 
-public class BankPayment : BaseEntity
+public class BankPayment : TenantOwnedEntity
 {
     public int OrderId { get; set; }
     public int BankId { get; set; }

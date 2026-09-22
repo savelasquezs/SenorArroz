@@ -3,7 +3,7 @@ using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class Bank : BaseEntity
+public class Bank : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public string Name { get; set; } = string.Empty;

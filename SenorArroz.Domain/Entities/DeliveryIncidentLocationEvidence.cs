@@ -1,10 +1,12 @@
+using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class DeliveryIncidentLocationEvidence
+public class DeliveryIncidentLocationEvidence : ITenantOwned
 {
     public long Id { get; set; }
+    public int TenantId { get; set; }
     public long IncidentId { get; set; }
     public long SourceLocationId { get; set; }
     public Guid? ClientPointId { get; set; }

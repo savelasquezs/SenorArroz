@@ -18,6 +18,7 @@ public class BankPaymentMappingProfile : Profile
             .ForMember(dest => dest.SourceReservationDepositId, opt => opt.MapFrom(src => src.SourceReservationDepositId));
 
         CreateMap<CreateBankPaymentDto, BankPayment>()
+            .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.SourceReservationDepositId, opt => opt.Ignore())
             .ForMember(dest => dest.IsAppSettlement, opt => opt.Ignore())
             .ForMember(dest => dest.AppSettlementSourcePaymentIds, opt => opt.Ignore())
@@ -30,6 +31,7 @@ public class BankPaymentMappingProfile : Profile
             .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
 
         CreateMap<VerifyBankPaymentDto, BankPayment>()
+            .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.VerifiedAt, opt => opt.MapFrom(src => src.VerifiedAt))
             .ForMember(dest => dest.OrderId, opt => opt.Ignore())
             .ForMember(dest => dest.BankId, opt => opt.Ignore())

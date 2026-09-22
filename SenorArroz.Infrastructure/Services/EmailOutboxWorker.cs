@@ -46,10 +46,19 @@ public class EmailOutboxWorker : BackgroundService
 
     private async Task ProcessPendingEmailsAsync(CancellationToken cancellationToken)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
-        var sender = scope.ServiceProvider.GetRequiredService<ResendEmailDeliveryService>();
-        var clock = scope.ServiceProvider.GetRequiredService<IClock>();
+        await TenantWorkerRunner.RunForEachActiveTenantAsync(
+            _scopeFactory,
+            (services, _) => ProcessTenantEmailsAsync(services, cancellationToken),
+            cancellationToken);
+    }
+
+    private static async Task ProcessTenantEmailsAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        var context = services.GetRequiredService<IApplicationDbContext>();
+        var sender = services.GetRequiredService<ResendEmailDeliveryService>();
+        var clock = services.GetRequiredService<IClock>();
         var now = clock.UtcNow;
 
         var staleProcessingMessages = await context.EmailOutboxMessages

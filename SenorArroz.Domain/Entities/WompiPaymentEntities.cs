@@ -3,9 +3,8 @@ using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public sealed class WompiPaymentIntegration : BaseEntity
+public sealed class WompiPaymentIntegration : TenantOwnedEntity
 {
-    public int TenantId { get; set; }
     public int BranchId { get; set; }
     public int FinancialAppId { get; set; }
     public string ActiveEnvironment { get; set; } = "sandbox";
@@ -27,9 +26,8 @@ public sealed class WompiPaymentIntegration : BaseEntity
     public ICollection<WompiPaymentAttempt> PaymentAttempts { get; set; } = [];
 }
 
-public sealed class WompiPaymentAttempt : BaseEntity
+public sealed class WompiPaymentAttempt : TenantOwnedEntity
 {
-    public int TenantId { get; set; }
     public int? OrderId { get; set; }
     public int? StorefrontCheckoutId { get; set; }
     public int IntegrationId { get; set; }
@@ -57,9 +55,8 @@ public sealed class WompiPaymentAttempt : BaseEntity
     public ICollection<WompiProviderTransaction> ProviderTransactions { get; set; } = [];
 }
 
-public sealed class StorefrontCheckout : BaseEntity
+public sealed class StorefrontCheckout : TenantOwnedEntity
 {
-    public int TenantId { get; set; }
     public string PublicId { get; set; } = string.Empty;
     public string IdempotencyKey { get; set; } = string.Empty;
     public int BranchId { get; set; }
@@ -113,7 +110,7 @@ public sealed record StorefrontCheckoutLine(
     int Subtotal,
     string? Notes);
 
-public sealed class WompiProviderTransaction : BaseEntity
+public sealed class WompiProviderTransaction : TenantOwnedEntity
 {
     public int PaymentAttemptId { get; set; }
     public string ProviderTransactionId { get; set; } = string.Empty;
@@ -127,9 +124,8 @@ public sealed class WompiProviderTransaction : BaseEntity
     public WompiPaymentAttempt PaymentAttempt { get; set; } = null!;
 }
 
-public sealed class WompiWebhookEvent : BaseEntity
+public sealed class WompiWebhookEvent : TenantOwnedEntity
 {
-    public int TenantId { get; set; }
     public int IntegrationId { get; set; }
     public string Environment { get; set; } = string.Empty;
     public string EventFingerprint { get; set; } = string.Empty;
@@ -142,9 +138,8 @@ public sealed class WompiWebhookEvent : BaseEntity
     public WompiPaymentIntegration Integration { get; set; } = null!;
 }
 
-public sealed class PaymentNotificationOutboxMessage : BaseEntity
+public sealed class PaymentNotificationOutboxMessage : TenantOwnedEntity
 {
-    public int TenantId { get; set; }
     public int BranchId { get; set; }
     public int OrderId { get; set; }
     public string EventType { get; set; } = "order_payment_approved";

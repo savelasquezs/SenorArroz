@@ -58,14 +58,14 @@ public class DeliveryWorkSessionAutoCloseService : BackgroundService
 
     private async Task<TimeSpan> GetNextDelayAsync(CancellationToken cancellationToken)
     {
-        await using var scope = _serviceProvider.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var nextAutoClose = await db.DeliveryWorkSessions
-            .AsNoTracking()
-            .Where(x => x.Status == DeliveryWorkSessionStatus.Active)
-            .OrderBy(x => x.AutoCloseAt)
-            .Select(x => (DateTime?)x.AutoCloseAt)
-            .FirstOrDefaultAsync(cancellationToken);
+        var nextAutoClose = await TenantWorkerRunner.RunInSystemScopeAsync(
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            services => services.GetRequiredService<ApplicationDbContext>().DeliveryWorkSessions
+                .AsNoTracking()
+                .Where(x => x.Status == DeliveryWorkSessionStatus.Active)
+                .OrderBy(x => x.AutoCloseAt)
+                .Select(x => (DateTime?)x.AutoCloseAt)
+                .FirstOrDefaultAsync(cancellationToken));
         if (!nextAutoClose.HasValue)
             return TimeSpan.FromMinutes(15);
         var delay = nextAutoClose.Value - DateTime.UtcNow;
@@ -75,10 +75,19 @@ public class DeliveryWorkSessionAutoCloseService : BackgroundService
 
     private async Task CloseExpiredSessionsAsync(CancellationToken cancellationToken)
     {
-        await using var scope = _serviceProvider.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var clock = scope.ServiceProvider.GetRequiredService<IClock>();
-        var fcm = scope.ServiceProvider.GetRequiredService<IFcmPushService>();
+        await TenantWorkerRunner.RunForEachActiveTenantAsync(
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            (services, _) => CloseExpiredSessionsForTenantAsync(services, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task CloseExpiredSessionsForTenantAsync(
+        IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        var db = services.GetRequiredService<ApplicationDbContext>();
+        var clock = services.GetRequiredService<IClock>();
+        var fcm = services.GetRequiredService<IFcmPushService>();
         var nowUtc = ColombiaTimeHelper.EnsureUtc(clock.UtcNow);
 
         var sessions = await db.DeliveryWorkSessions

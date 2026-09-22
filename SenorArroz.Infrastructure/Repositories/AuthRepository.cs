@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Domain.Interfaces.Services;
 using SenorArroz.Infrastructure.Data;
@@ -10,15 +11,21 @@ public class AuthRepository : IAuthRepository
 {
     private readonly ApplicationDbContext _context;
     private readonly IPasswordService _passwordService;
+    private readonly ITenantExecutionContext? _tenantExecutionContext;
 
-    public AuthRepository(ApplicationDbContext context, IPasswordService passwordService)
+    public AuthRepository(
+        ApplicationDbContext context,
+        IPasswordService passwordService,
+        ITenantExecutionContext? tenantExecutionContext = null)
     {
         _context = context;
         _passwordService = passwordService;
+        _tenantExecutionContext = tenantExecutionContext;
     }
 
     public async Task<User?> GetUserByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
+        using var systemScope = _tenantExecutionContext?.BeginSystemScope();
         return await _context.Users
             .AsNoTracking()
             .Include(u => u.Tenant)
@@ -28,6 +35,7 @@ public class AuthRepository : IAuthRepository
 
     public async Task<User?> GetUserByIdWithBranchAsync(int userId, CancellationToken cancellationToken = default)
     {
+        using var systemScope = _tenantExecutionContext?.BeginSystemScope();
         return await _context.Users
             .AsNoTracking()
             .Include(u => u.Tenant)

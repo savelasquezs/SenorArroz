@@ -2,9 +2,8 @@
 
 namespace SenorArroz.Domain.Entities;
 
-public class PasswordResetToken : BaseEntity
+public class PasswordResetToken : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public int UserId { get; set; }
     public string Token { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }

@@ -1,10 +1,12 @@
+using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class DeliveryTrackingAlert
+public class DeliveryTrackingAlert : ITenantOwned
 {
     public long Id { get; set; }
+    public int TenantId { get; set; }
     public int BranchId { get; set; }
     public int DeliverymanId { get; set; }
     public int? WorkSessionId { get; set; }

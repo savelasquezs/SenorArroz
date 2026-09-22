@@ -9,6 +9,7 @@ using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
+using SenorArroz.Infrastructure.Services;
 
 namespace SenorArroz.API.Services;
 
@@ -62,6 +63,26 @@ public class WhatsAppAiBackgroundService(
             try
             {
                 using var scope = scopes.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var executionContext = scope.ServiceProvider.GetRequiredService<ITenantExecutionContext>();
+                int tenantId;
+                using (executionContext.BeginSystemScope())
+                {
+                    tenantId = await db.WhatsAppMessages.AsNoTracking()
+                        .Where(x => x.Id == item.MessageId && x.ConversationId == item.ConversationId)
+                        .Select(x => x.TenantId)
+                        .SingleOrDefaultAsync(stoppingToken);
+                }
+                if (tenantId <= 0)
+                {
+                    logger.LogWarning(
+                        "WhatsApp AI item ignored because tenant ownership could not be resolved ConversationId={ConversationId} MessageId={MessageId}",
+                        item.ConversationId,
+                        item.MessageId);
+                    continue;
+                }
+
+                using var tenantScope = executionContext.BeginTenantScope(tenantId);
                 await scope.ServiceProvider
                     .GetRequiredService<IWhatsAppAiOrchestrator>()
                     .ProcessIncomingMessageAsync(item.ConversationId, item.MessageId, stoppingToken);
@@ -101,7 +122,7 @@ public class WhatsAppAiRecoveryService(
         {
             try
             {
-                await RecoverOnceAsync(cancellationToken);
+                await RecoverAllTenantsAsync(cancellationToken);
                 await Task.Delay(recoveryInterval, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -121,6 +142,14 @@ public class WhatsAppAiRecoveryService(
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var notifications = scope.ServiceProvider.GetService<IWhatsAppNotificationService>();
+        await RecoverTenantAsync(db, notifications, cancellationToken);
+    }
+
+    private async Task RecoverTenantAsync(
+        ApplicationDbContext db,
+        IWhatsAppNotificationService? notifications,
+        CancellationToken cancellationToken)
+    {
         var configuration = options.Value;
         var now = DateTime.UtcNow;
         var staleBefore = now.AddSeconds(-Math.Max(1, configuration.ProcessingStaleAfterSeconds));
@@ -227,6 +256,17 @@ public class WhatsAppAiRecoveryService(
             queue.TryEnqueue(message.ConversationId, message.Id);
         }
     }
+
+    private Task RecoverAllTenantsAsync(CancellationToken cancellationToken) =>
+        TenantWorkerRunner.RunForEachActiveTenantAsync(
+            scopes,
+            async (services, _) =>
+            {
+                var db = services.GetRequiredService<ApplicationDbContext>();
+                var notifications = services.GetService<IWhatsAppNotificationService>();
+                await RecoverTenantAsync(db, notifications, cancellationToken);
+            },
+            cancellationToken);
 
     private static void ResetForSafeRetry(WhatsAppMessage message, DateTime now, string reason)
     {

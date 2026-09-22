@@ -2,7 +2,7 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class WhatsAppTemplate : BaseEntity
+public class WhatsAppTemplate : TenantOwnedEntity
 {
     public int? BranchId { get; set; }
     public string? BusinessAccountId { get; set; }

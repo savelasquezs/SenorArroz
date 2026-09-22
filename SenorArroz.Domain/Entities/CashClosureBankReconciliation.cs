@@ -6,7 +6,7 @@ namespace SenorArroz.Domain.Entities;
 /// Conciliación por banco en un cuadre de caja
 /// Difference = ExpectedBalance - ActualBalance - Sum(Adjustments) debe ser 0 para guardar
 /// </summary>
-public class CashClosureBankReconciliation : BaseEntity
+public class CashClosureBankReconciliation : TenantOwnedEntity
 {
     public int CashClosureId { get; set; }
     public int BankId { get; set; }

@@ -3,7 +3,7 @@ using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class DeliveryWorkSession : BaseEntity
+public class DeliveryWorkSession : TenantOwnedEntity
 {
     public int DeliverymanId { get; set; }
     public int BranchId { get; set; }

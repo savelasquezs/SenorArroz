@@ -170,7 +170,9 @@ public static class DependencyInjection
         services.AddScoped<IPasswordService, PasswordService>();
         services.AddScoped<IJwtService, JwtService>();
         services.AddScoped<ICurrentUser, CurrentUserService>();
-        services.AddScoped<ICurrentTenant, CurrentTenantService>();
+        services.AddSingleton<CurrentTenantService>();
+        services.AddSingleton<ICurrentTenant>(sp => sp.GetRequiredService<CurrentTenantService>());
+        services.AddSingleton<ITenantExecutionContext>(sp => sp.GetRequiredService<CurrentTenantService>());
         services.AddScoped<IBranchContext, BranchContextService>();
         services.AddHttpClient<ResendEmailDeliveryService>();
         services.AddScoped<IEmailService, EmailService>();

@@ -17,7 +17,9 @@ public sealed class MetaConversionOutboxWorker(
 {
     private static readonly HashSet<string> PurchaseEventTypes = ["order_created_web_cash", "order_payment_approved"];
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(30);
-    private readonly int _tenantId = Math.Max(1, storefrontOptions.Value.TenantId);
+    private readonly int _tenantId = storefrontOptions.Value.TenantId > 0
+        ? storefrontOptions.Value.TenantId
+        : throw new InvalidOperationException("StorefrontCustomerAuth:TenantId debe ser mayor que cero.");
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -52,6 +54,8 @@ public sealed class MetaConversionOutboxWorker(
     private async Task<TimeSpan> ProcessPendingAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
+        using var tenantScope = scope.ServiceProvider.GetRequiredService<ITenantExecutionContext>()
+            .BeginTenantScope(_tenantId);
         var client = scope.ServiceProvider.GetRequiredService<MetaConversionsClient>();
         if (!client.IsConfigured) return IdleDelay;
 

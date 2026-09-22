@@ -6,7 +6,7 @@ namespace SenorArroz.Domain.Entities;
 /// <summary>
 /// Ruta de entrega de un domiciliario: métricas planeadas (Google + buffers) vs tiempo real.
 /// </summary>
-public class DeliveryRoute : BaseEntity
+public class DeliveryRoute : TenantOwnedEntity
 {
     public int DeliverymanId { get; set; }
     public int BranchId { get; set; }

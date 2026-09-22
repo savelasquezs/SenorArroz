@@ -137,8 +137,6 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             .Where(x => x.Id == branchId)
             .Select(x => x.TenantId)
             .SingleOrDefaultAsync(cancellationToken);
-        if (branchTenantId <= 0 && !_db.Database.IsRelational())
-            branchTenantId = 1;
         if (branchTenantId <= 0)
             throw new BusinessException("La sucursal no pertenece a un tenant válido");
         order.TenantId = branchTenantId;

@@ -15,6 +15,7 @@ public class DeliverymanAdvanceMappingProfile : Profile
             .ForMember(dest => dest.BankName, opt => opt.MapFrom(src => src.Bank != null ? src.Bank.Name : null));
 
         CreateMap<CreateDeliverymanAdvanceDto, DeliverymanAdvance>()
+            .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.Id, opt => opt.Ignore())
             .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
             .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
@@ -26,6 +27,7 @@ public class DeliverymanAdvanceMappingProfile : Profile
             .ForMember(dest => dest.Bank, opt => opt.Ignore())
             .ForMember(dest => dest.ExpenseHeader, opt => opt.Ignore());
         CreateMap<UpdateDeliverymanAdvanceDto, DeliverymanAdvance>()
+            .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.DeliverymanId, opt => opt.Ignore())
             .ForMember(dest => dest.PaymentMethod, opt => opt.Ignore())
             .ForMember(dest => dest.BankId, opt => opt.Ignore())

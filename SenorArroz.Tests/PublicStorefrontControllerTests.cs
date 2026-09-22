@@ -920,7 +920,10 @@ public class PublicStorefrontControllerTests
     public async Task Flow_ConfirmationParticipatesInOuterPostgresTransaction()
     {
         var connection = Environment.GetEnvironmentVariable("FLOW_POSTGRES_TEST_CONNECTION")!;
-        await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options);
+        await using var db = new ApplicationDbContext(
+            new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
         await db.Database.EnsureCreatedAsync();
         var state = new WhatsAppCommerceState
         {
@@ -947,7 +950,10 @@ public class PublicStorefrontControllerTests
         });
         async Task<IActionResult> ConfirmConcurrently()
         {
-            await using var concurrentDb = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options);
+            await using var concurrentDb = new ApplicationDbContext(
+                new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options,
+                currentTenant: TestTenantContext.Default,
+                tenantExecutionContext: TestTenantContext.Default);
             var crypto = new Mock<IWhatsAppFlowCrypto>();
             crypto.Setup(x => x.Decrypt(It.IsAny<WhatsAppEncryptedFlowRequest>()))
                 .Returns(new WhatsAppDecryptedFlowRequest(requestJson, new byte[16], new byte[16]));
@@ -1201,7 +1207,7 @@ public class PublicStorefrontControllerTests
         var auth = new StorefrontCustomerAuthService(db, Mock.Of<IWhatsAppCloudClient>(), new FakeClock(Now),
             Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }), Mock.Of<ILogger<StorefrontCustomerAuthService>>());
         var flow = new WhatsAppCommerceFlowService(db, Mock.Of<IWhatsAppCloudClient>(), new FakeClock(Now),
-            Options.Create(new WhatsAppFlowOptions()), Commerce(db, 720), auth, Mock.Of<IMapper>(),
+            Options.Create(new WhatsAppFlowOptions { TenantId = 1 }), Commerce(db, 720), auth, Mock.Of<IMapper>(),
             Mock.Of<IOrderNotificationService>(), Mock.Of<ILogger<PublicStorefrontController>>(), Mock.Of<ILogger<WhatsAppCommerceFlowService>>());
         return flow;
     }
@@ -1340,7 +1346,9 @@ public class PublicStorefrontControllerTests
     private static ApplicationDbContext CreateDb() => new(
         new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options);
+            .Options,
+        currentTenant: TestTenantContext.Default,
+        tenantExecutionContext: TestTenantContext.Default);
 
     private sealed class GeocodingHandler : HttpMessageHandler
     {

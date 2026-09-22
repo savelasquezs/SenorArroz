@@ -122,7 +122,9 @@ public class HumanAssistanceAgentToolTests
         var db = new ApplicationDbContext(
             new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options);
+                .Options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
         db.WhatsAppConversations.Add(new WhatsAppConversation
         {
             Id = 1,

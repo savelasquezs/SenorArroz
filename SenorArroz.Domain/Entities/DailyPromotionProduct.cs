@@ -2,7 +2,7 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class DailyPromotionProduct : BaseEntity
+public class DailyPromotionProduct : TenantOwnedEntity
 {
     public int DailyPromotionId { get; set; }
     public int ProductId { get; set; }

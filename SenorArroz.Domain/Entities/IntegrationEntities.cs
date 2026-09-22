@@ -3,7 +3,7 @@ using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class DeliveryAppConnection : BaseEntity
+public class DeliveryAppConnection : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public string Provider { get; set; } = string.Empty;
@@ -36,7 +36,7 @@ public class DeliveryAppConnection : BaseEntity
     public virtual ICollection<RappiMenuPublication> MenuPublications { get; set; } = [];
 }
 
-public class DeliveryAppStore : BaseEntity
+public class DeliveryAppStore : TenantOwnedEntity
 {
     public int ConnectionId { get; set; }
     public string RappiStoreId { get; set; } = string.Empty;
@@ -52,7 +52,7 @@ public class DeliveryAppStore : BaseEntity
     public virtual DeliveryAppConnection Connection { get; set; } = null!;
 }
 
-public class DeliveryAppWebhookSubscription : BaseEntity
+public class DeliveryAppWebhookSubscription : TenantOwnedEntity
 {
     public int ConnectionId { get; set; }
     public string EventType { get; set; } = string.Empty;
@@ -64,7 +64,7 @@ public class DeliveryAppWebhookSubscription : BaseEntity
     public virtual DeliveryAppConnection Connection { get; set; } = null!;
 }
 
-public class DeliveryAppProductMapping : BaseEntity
+public class DeliveryAppProductMapping : TenantOwnedEntity
 {
     public int ConnectionId { get; set; }
     public int ProductId { get; set; }
@@ -85,7 +85,7 @@ public class DeliveryAppProductMapping : BaseEntity
     public virtual Product Product { get; set; } = null!;
 }
 
-public class ExternalDeliveryOrder : BaseEntity
+public class ExternalDeliveryOrder : TenantOwnedEntity
 {
     public int ConnectionId { get; set; }
     public int? StoreId { get; set; }
@@ -121,7 +121,7 @@ public class ExternalDeliveryOrder : BaseEntity
     public virtual Order? InternalOrder { get; set; }
 }
 
-public class IntegrationWebhookEvent : BaseEntity
+public class IntegrationWebhookEvent : TenantOwnedEntity
 {
     public int ConnectionId { get; set; }
     public string Provider { get; set; } = string.Empty;
@@ -135,7 +135,7 @@ public class IntegrationWebhookEvent : BaseEntity
     public DateTime? ProcessedAt { get; set; }
 }
 
-public class RappiMenuPublication : BaseEntity
+public class RappiMenuPublication : TenantOwnedEntity
 {
     public int ConnectionId { get; set; }
     public string StoreId { get; set; } = string.Empty;
@@ -148,7 +148,7 @@ public class RappiMenuPublication : BaseEntity
     public virtual DeliveryAppConnection Connection { get; set; } = null!;
 }
 
-public class RappiAvailabilityState : BaseEntity
+public class RappiAvailabilityState : TenantOwnedEntity
 {
     public int ConnectionId { get; set; }
     public int StoreId { get; set; }

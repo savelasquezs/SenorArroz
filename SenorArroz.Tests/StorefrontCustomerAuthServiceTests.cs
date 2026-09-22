@@ -16,7 +16,9 @@ public class StorefrontCustomerAuthServiceTests
     public async Task RequestAndVerify_UsesAuthenticationTemplateAndReturnsSavedCustomerData()
     {
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
         var branch = new Branch { Id = 1, Name = "Centro", Address = "Calle 1", Phone1 = "3000000000" };
         var customer = new Customer { Id = 10, BranchId = 1, Branch = branch, Name = "Santiago", Phone1 = "3001234567", Active = true };
         customer.Addresses.Add(new Address
@@ -125,7 +127,9 @@ public class StorefrontCustomerAuthServiceTests
     }
 
     private static ApplicationDbContext CreateDb() => new(new DbContextOptionsBuilder<ApplicationDbContext>()
-        .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+        currentTenant: TestTenantContext.Default,
+        tenantExecutionContext: TestTenantContext.Default);
 
     private static Branch SeedAuthenticationBranch(ApplicationDbContext db)
     {

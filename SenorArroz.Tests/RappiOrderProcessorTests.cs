@@ -378,7 +378,7 @@ public sealed class RappiOrderProcessorTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
-        return new ApplicationDbContext(options);
+        return new ApplicationDbContext(options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
     }
 
     private static async Task SeedAsync(ApplicationDbContext db)

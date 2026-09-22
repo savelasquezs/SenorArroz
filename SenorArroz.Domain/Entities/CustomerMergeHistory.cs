@@ -2,9 +2,8 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public sealed class CustomerMergeHistory : BaseEntity
+public sealed class CustomerMergeHistory : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public int OldCustomerId { get; set; }
     public int NewCustomerId { get; set; }
     public DateTime MergedAt { get; set; }

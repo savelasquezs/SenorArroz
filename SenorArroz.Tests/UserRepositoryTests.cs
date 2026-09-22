@@ -14,7 +14,7 @@ public sealed class UserRepositoryTests
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        await using var db = new ApplicationDbContext(options);
+        await using var db = new ApplicationDbContext(options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
         var now = new DateTime(2026, 8, 6, 12, 0, 0, DateTimeKind.Utc);
         var santander = new Branch
         {

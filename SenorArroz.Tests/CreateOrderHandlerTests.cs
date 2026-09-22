@@ -111,7 +111,7 @@ public class CreateOrderHandlerTests
         var opts = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(name)
             .Options;
-        return new ApplicationDbContext(opts);
+        return new ApplicationDbContext(opts, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
     }
 
     private static CreateOrderHandler BuildHandler(ICurrentUser currentUser, ApplicationDbContext db)

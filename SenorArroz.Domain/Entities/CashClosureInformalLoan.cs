@@ -7,7 +7,7 @@ namespace SenorArroz.Domain.Entities;
 /// Positivo = dinero que salió de caja (préstamo dado)
 /// Negativo = dinero que nos deben (ej. "Deudas Maikol -300000")
 /// </summary>
-public class CashClosureInformalLoan : BaseEntity
+public class CashClosureInformalLoan : TenantOwnedEntity
 {
     public int CashClosureId { get; set; }
     public string Concept { get; set; } = string.Empty;

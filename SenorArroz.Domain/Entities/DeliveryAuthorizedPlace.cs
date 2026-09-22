@@ -2,7 +2,7 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class DeliveryAuthorizedPlace : BaseEntity
+public class DeliveryAuthorizedPlace : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public string Name { get; set; } = string.Empty;

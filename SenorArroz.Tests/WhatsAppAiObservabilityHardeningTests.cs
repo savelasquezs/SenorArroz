@@ -56,7 +56,7 @@ public class WhatsAppAiObservabilityHardeningTests
         var factory = new TestFactory(options); var queue = NewQueue();
         Assert.True(queue.TryEnqueue(Invocation())); Assert.True(queue.TryEnqueue(Invocation()));
         var worker = Worker(queue, factory, 5); await worker.StartAsync(default); await worker.StopAsync(default);
-        await using var verification = new ApplicationDbContext(options);
+        await using var verification = new ApplicationDbContext(options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
         Assert.Equal(2, await verification.WhatsAppAiInvocations.CountAsync());
         Assert.True(factory.CreatedCount > 0);
     }
@@ -87,13 +87,13 @@ public class WhatsAppAiObservabilityHardeningTests
     public void P95_position_uses_only_duration_count(int count, int expected) => Assert.Equal(expected, WhatsAppAiUsageController.P95Index(count));
 
     private static WhatsAppAiTelemetryQueue NewQueue() => new(NullLogger<WhatsAppAiTelemetryQueue>.Instance);
-    private static WhatsAppAiInvocation Invocation() => new() { BranchId=1,ConversationId=1,IncomingMessageId=1,Provider="openai",Model="m",StartedAt=DateTime.UtcNow,CreatedAt=DateTime.UtcNow };
-    private static WhatsAppAiTelemetryWorker Worker(WhatsAppAiTelemetryQueue queue, IDbContextFactory<ApplicationDbContext> factory, int timeout) => new(queue,factory,Options.Create(new WhatsAppAiTelemetryWorkerOptions{DrainTimeoutSeconds=timeout,BatchSize=50}),NullLogger<WhatsAppAiTelemetryWorker>.Instance);
+    private static WhatsAppAiInvocation Invocation() => new() { TenantId=1,BranchId=1,ConversationId=1,IncomingMessageId=1,Provider="openai",Model="m",StartedAt=DateTime.UtcNow,CreatedAt=DateTime.UtcNow };
+    private static WhatsAppAiTelemetryWorker Worker(WhatsAppAiTelemetryQueue queue, IDbContextFactory<ApplicationDbContext> factory, int timeout) => new(queue,factory,Options.Create(new WhatsAppAiTelemetryWorkerOptions{DrainTimeoutSeconds=timeout,BatchSize=50}),NullLogger<WhatsAppAiTelemetryWorker>.Instance,TestTenantContext.Default);
 
     private sealed class TestFactory(DbContextOptions<ApplicationDbContext> options) : IDbContextFactory<ApplicationDbContext>
     {
         public int CreatedCount { get; private set; }
-        public ApplicationDbContext CreateDbContext() { CreatedCount++; return new(options); }
+        public ApplicationDbContext CreateDbContext() { CreatedCount++; return new(options,currentTenant:TestTenantContext.Default,tenantExecutionContext:TestTenantContext.Default); }
         public ValueTask<ApplicationDbContext> CreateDbContextAsync(CancellationToken cancellationToken=default) => ValueTask.FromResult(CreateDbContext());
     }
     private sealed class ThrowingFactory : IDbContextFactory<ApplicationDbContext>
@@ -107,7 +107,8 @@ public class WhatsAppAiObservabilityHardeningTests
         public ApplicationDbContext CreateDbContext() => new BlockingDbContext(_options);
         public ValueTask<ApplicationDbContext> CreateDbContextAsync(CancellationToken cancellationToken=default) => ValueTask.FromResult(CreateDbContext());
     }
-    private sealed class BlockingDbContext(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
+    private sealed class BlockingDbContext(DbContextOptions<ApplicationDbContext> options)
+        : ApplicationDbContext(options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default)
     {
         public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken=default) { await Task.Delay(Timeout.Infinite,cancellationToken); return 0; }
     }

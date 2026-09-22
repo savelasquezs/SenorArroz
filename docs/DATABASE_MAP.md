@@ -2,6 +2,16 @@
 
 Este mapa existe para que Codex ubique rápido las entidades y entienda cómo prepararlas para SaaS multitenant.
 
+## Estado de aislamiento v2
+
+- Inventario EF: 94 entidades; `Tenant` global y 93 tenant-owned.
+- Contrato común: `ITenantOwned` y `TenantOwnedEntity`.
+- EF aplica centralmente `tenant_id` obligatorio, índice, concurrency token y query filter.
+- `SaveChanges` asigna el tenant actual en altas sin tenant y rechaza altas, cambios o borrados cross-tenant.
+- El esquema puntual se aplica con `SenorArroz.Infrastructure/Scripts/multitenant_isolation_v2.sql`, incluido al final de `local-init-completo.sql`.
+- La matriz por dominio, estrategia de backfill y workers está en `docs/MULTITENANT_ISOLATION_AUDIT.md`.
+- RLS no forma parte de este bloque.
+
 ## Decisión confirmada
 
 Todo el negocio será `tenant-owned`.

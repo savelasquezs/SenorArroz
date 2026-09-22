@@ -2,9 +2,8 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class Branch : BaseEntity
+public class Branch : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public string Name { get; set; } = string.Empty;
 
     /// <summary>Nombre comercial en ticket (opcional). Si está vacío, se usa <see cref="Name"/>.</summary>

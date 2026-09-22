@@ -43,7 +43,9 @@ public sealed class WhatsAppFlowSecurityTests
     public async Task GreetingStartsFlowWithoutAiAndPreservesAttentionAndActiveCart(WhatsAppAttentionMode mode)
     {
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
         var now = DateTime.UtcNow;
         var clock = Mock.Of<IClock>(x => x.UtcNow == now);
         var channel = new WhatsAppChannelSetting
@@ -72,7 +74,7 @@ public sealed class WhatsAppFlowSecurityTests
         var auth = new StorefrontCustomerAuthService(db, cloud.Object, clock,
             Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }), Mock.Of<ILogger<StorefrontCustomerAuthService>>());
         var service = new WhatsAppCommerceFlowService(db, cloud.Object, clock,
-            Options.Create(new WhatsAppFlowOptions { Enabled = true, RestrictToAllowlist = false }),
+            Options.Create(new WhatsAppFlowOptions { TenantId = 1, Enabled = true, RestrictToAllowlist = false }),
             null!, auth, Mock.Of<IMapper>(), Mock.Of<IOrderNotificationService>(),
             Mock.Of<ILogger<PublicStorefrontController>>(), Mock.Of<ILogger<WhatsAppCommerceFlowService>>());
 

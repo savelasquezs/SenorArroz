@@ -6,7 +6,7 @@ namespace SenorArroz.Domain.Entities;
 /// <summary>
 /// Estado de liquidación del día por domiciliario (fecha operativa en Colombia).
 /// </summary>
-public class DeliverymanDayState : BaseEntity
+public class DeliverymanDayState : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public int DeliverymanId { get; set; }

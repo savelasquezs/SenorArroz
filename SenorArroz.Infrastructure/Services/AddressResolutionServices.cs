@@ -8,7 +8,7 @@ using SenorArroz.Infrastructure.Data;
 
 namespace SenorArroz.Infrastructure.Services;
 
-public record NeighborhoodMatch(int Id, string Name, string BranchName, int DeliveryFee, bool RequiresBranchReassignment, int BranchId = 0, int TenantId = 1);
+public record NeighborhoodMatch(int Id, string Name, string BranchName, int DeliveryFee, bool RequiresBranchReassignment, int BranchId = 0, int TenantId = 0);
 public record NeighborhoodResolution(bool Matched, bool RequiresConfirmation, NeighborhoodMatch? Match, IReadOnlyList<NeighborhoodMatch> Options, string? SuggestedQuestion);
 
 public class RegisteredNeighborhoodResolver(ApplicationDbContext db)

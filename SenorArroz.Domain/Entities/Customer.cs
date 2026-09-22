@@ -2,9 +2,8 @@
 
 namespace SenorArroz.Domain.Entities;
 
-public class Customer : BaseEntity
+public class Customer : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     /// <summary>Legacy physical column branch_id. It only records the branch where the customer was created.</summary>
     public int BranchId { get; set; }
     public string Name { get; set; } = string.Empty;

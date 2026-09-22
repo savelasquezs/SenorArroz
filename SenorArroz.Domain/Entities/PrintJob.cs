@@ -1,10 +1,12 @@
+using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class PrintJob
+public class PrintJob : ITenantOwned
 {
     public long Id { get; set; }
+    public int TenantId { get; set; }
     public int BranchId { get; set; }
     public PrintJobKind Kind { get; set; }
     public PrintJobStatus Status { get; set; }

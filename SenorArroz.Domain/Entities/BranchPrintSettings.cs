@@ -1,11 +1,14 @@
+using SenorArroz.Domain.Entities.Common;
+
 namespace SenorArroz.Domain.Entities;
 
 /// <summary>Configuración de impresión de comandas por sucursal (1:1 con Branch).</summary>
-public class BranchPrintSettings
+public class BranchPrintSettings : ITenantOwned
 {
     public const string KitchenAutoPrintWhenMarkedReady = "whenMarkedReady";
     public const string KitchenAutoPrintWhenOrderCreated = "whenOrderCreated";
 
+    public int TenantId { get; set; }
     public int BranchId { get; set; }
 
     public string? KitchenHeaderLine1 { get; set; }

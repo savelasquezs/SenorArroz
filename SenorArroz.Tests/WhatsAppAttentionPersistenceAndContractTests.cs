@@ -20,7 +20,7 @@ public class WhatsAppAttentionPersistenceAndContractTests
     public void ConversationModel_HasOptionalUserForeignKeysWithSetNull()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
-        using var db = new ApplicationDbContext(options);
+        using var db = new ApplicationDbContext(options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
         var entity = db.Model.FindEntityType(typeof(WhatsAppConversation))!;
         var assigned = entity.GetForeignKeys().Single(x => x.Properties.Single().Name == nameof(WhatsAppConversation.AssignedUserId));
         var updatedBy = entity.GetForeignKeys().Single(x => x.Properties.Single().Name == nameof(WhatsAppConversation.AttentionModeUpdatedByUserId));

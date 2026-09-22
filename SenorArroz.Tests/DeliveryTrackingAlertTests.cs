@@ -652,7 +652,9 @@ public class DeliveryTrackingAlertTests
 
     private static ApplicationDbContext CreateDb() => new(
         new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+        currentTenant: TestTenantContext.Default,
+        tenantExecutionContext: TestTenantContext.Default);
 
     private static DeliveryTrackingAlertService CreateService(
         ApplicationDbContext db,

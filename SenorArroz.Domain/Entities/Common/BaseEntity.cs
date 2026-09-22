@@ -6,3 +6,13 @@ public abstract class BaseEntity
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
+
+public interface ITenantOwned
+{
+    int TenantId { get; set; }
+}
+
+public abstract class TenantOwnedEntity : BaseEntity, ITenantOwned
+{
+    public int TenantId { get; set; }
+}

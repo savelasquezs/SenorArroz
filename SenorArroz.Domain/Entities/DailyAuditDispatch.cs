@@ -1,8 +1,11 @@
+using SenorArroz.Domain.Entities.Common;
+
 namespace SenorArroz.Domain.Entities;
 
-public class DailyAuditDispatch
+public class DailyAuditDispatch : ITenantOwned
 {
     public int Id { get; set; }
+    public int TenantId { get; set; }
     public int BranchId { get; set; }
     public DateTime BusinessDate { get; set; }
     public int CashRegisterClosureId { get; set; }

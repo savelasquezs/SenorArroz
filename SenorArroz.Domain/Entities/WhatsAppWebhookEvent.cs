@@ -2,7 +2,7 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class WhatsAppWebhookEvent : BaseEntity
+public class WhatsAppWebhookEvent : TenantOwnedEntity
 {
     public string EventType { get; set; } = string.Empty;
     public string? WhatsAppMessageId { get; set; }

@@ -73,7 +73,7 @@ public sealed class WompiPaymentPostgreSqlConcurrencyTests : IAsyncLifetime
         Assert.Single(await verificationDb.WompiWebhookEvents.AsNoTracking().ToListAsync());
     }
 
-    private ApplicationDbContext CreateDb() => new(_options);
+    private ApplicationDbContext CreateDb() => new(_options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
 
     private static WompiPaymentService CreateService(ApplicationDbContext db, HttpMessageHandler handler)
     {

@@ -134,6 +134,7 @@ public class ExclusiveDeliverySessionTests
         var now = new DateTime(2026, 7, 23, 15, 0, 0, DateTimeKind.Utc);
         var refreshToken = new RefreshToken
         {
+            TenantId = 1,
             UserId = 1,
             SessionId = oldSessionId,
             Token = "old-refresh",
@@ -304,6 +305,7 @@ public class ExclusiveDeliverySessionTests
         var sessionId = Guid.NewGuid();
         var refreshToken = new RefreshToken
         {
+            TenantId = 1,
             UserId = 1,
             SessionId = sessionId,
             Token = "refresh",
@@ -422,7 +424,7 @@ public class ExclusiveDeliverySessionTests
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        return new ApplicationDbContext(options);
+        return new ApplicationDbContext(options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
     }
 
     private static User AttachTenant(User user)

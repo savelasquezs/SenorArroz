@@ -19,6 +19,7 @@ public class AppMappingProfile : Profile
             .ForMember(dest => dest.UnsettledPaymentsCount, opt => opt.Ignore());
 
         CreateMap<CreateAppDto, App>()
+            .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.Bank, opt => opt.Ignore())
             .ForMember(dest => dest.AppPayments, opt => opt.Ignore())
             .ForMember(dest => dest.Id, opt => opt.Ignore())
@@ -26,6 +27,7 @@ public class AppMappingProfile : Profile
             .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore());
 
         CreateMap<UpdateAppDto, App>()
+            .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.Bank, opt => opt.Ignore())
             .ForMember(dest => dest.AppPayments, opt => opt.Ignore())
             .ForMember(dest => dest.Id, opt => opt.Ignore())

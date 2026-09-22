@@ -30,9 +30,10 @@ public sealed class WhatsAppCommerceFlowService(
     ILogger<PublicStorefrontController> storefrontLogger,
     ILogger<WhatsAppCommerceFlowService> logger,
     WhatsAppFlowImageService? images = null,
-    IWompiPaymentService? wompi = null)
+    IWompiPaymentService? wompi = null,
+    ICurrentTenant? currentTenant = null)
 {
-    public int TenantId => _options.TenantId;
+    public int TenantId => currentTenant?.TenantId ?? _options.TenantId;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> Screens =
     [
@@ -53,9 +54,9 @@ public sealed class WhatsAppCommerceFlowService(
 
     public async Task<bool> RetryPaymentAsync(int conversationId, int incomingMessageId, CancellationToken ct)
     {
-        if (!_options.Enabled || _options.TenantId <= 0 || wompi is null) return false;
+        if (!_options.Enabled || TenantId <= 0 || wompi is null) return false;
         var conversation = await db.WhatsAppConversations.Include(x => x.ChannelSetting).FirstOrDefaultAsync(
-            x => x.Id == conversationId && x.TenantId == _options.TenantId && x.ChannelSettingId != null, ct);
+            x => x.Id == conversationId && x.TenantId == TenantId && x.ChannelSettingId != null, ct);
         if (conversation?.ChannelSetting is not { IsActive: true, IsVerified: true, FlowEnabled: true } channel) return false;
         var phone = ColombianMobilePhone.Normalize(conversation.PhoneNumber);
         if (!ColombianMobilePhone.IsValid(phone)
@@ -64,7 +65,7 @@ public sealed class WhatsAppCommerceFlowService(
         if (await db.WhatsAppCommerceOutboxMessages.AnyAsync(x => x.EventKey == eventKey, ct)) return true;
         await using var transaction = db.Database.IsRelational() && db.Database.CurrentTransaction is null
             ? await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct) : null;
-        var checkout = await db.StorefrontCheckouts.Where(x => x.TenantId == _options.TenantId && x.WhatsAppConversationId == conversationId
+        var checkout = await db.StorefrontCheckouts.Where(x => x.TenantId == TenantId && x.WhatsAppConversationId == conversationId
                 && x.OrderSource == "whatsapp_flow" && x.CustomerPhone == phone)
             .OrderByDescending(x => x.Id).FirstOrDefaultAsync(ct);
         WompiCheckoutData? payment = null;
@@ -73,7 +74,7 @@ public sealed class WhatsAppCommerceFlowService(
         {
             try
             {
-                payment = await wompi.RetryCheckoutAsync(_options.TenantId, checkout, clock.UtcNow, ct);
+                payment = await wompi.RetryCheckoutAsync(TenantId, checkout, clock.UtcNow, ct);
                 body = "Puedes reintentar el pago dentro del plazo original de tu pedido. Te confirmaremos la aprobación por este chat.";
             }
             catch (BusinessException)
@@ -83,7 +84,7 @@ public sealed class WhatsAppCommerceFlowService(
         }
         db.WhatsAppCommerceOutboxMessages.Add(new WhatsAppCommerceOutboxMessage
         {
-            TenantId = _options.TenantId,
+            TenantId = TenantId,
             ChannelSettingId = channel.Id,
             ConversationId = conversationId,
             EventKey = eventKey,
@@ -99,12 +100,12 @@ public sealed class WhatsAppCommerceFlowService(
 
     public async Task<bool> StartAsync(int conversationId, int channelSettingId, CancellationToken ct, bool greeting = false)
     {
-        if (!_options.Enabled || _options.TenantId <= 0) return false;
+        if (!_options.Enabled || TenantId <= 0) return false;
         var channel = await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(
-            x => x.Id == channelSettingId && x.TenantId == _options.TenantId && x.IsActive && x.IsVerified && x.FlowEnabled, ct);
+            x => x.Id == channelSettingId && x.TenantId == TenantId && x.IsActive && x.IsVerified && x.FlowEnabled, ct);
         if (channel is null || string.IsNullOrWhiteSpace(channel.FlowId)) return false;
         var conversation = await db.WhatsAppConversations.FirstOrDefaultAsync(
-            x => x.Id == conversationId && x.TenantId == _options.TenantId && x.ChannelSettingId == channel.Id, ct);
+            x => x.Id == conversationId && x.TenantId == TenantId && x.ChannelSettingId == channel.Id, ct);
         if (conversation is null) return false;
         var phone = ColombianMobilePhone.Normalize(conversation.PhoneNumber);
         if (!ColombianMobilePhone.IsValid(phone)
@@ -130,7 +131,7 @@ public sealed class WhatsAppCommerceFlowService(
             var expiresAt = NextExpiration();
             session = new WhatsAppCommerceSession
             {
-                TenantId = _options.TenantId,
+                TenantId = TenantId,
                 ChannelSettingId = channel.Id,
                 ConversationId = conversation.Id,
                 CustomerId = customerSession.Customer?.Id,
@@ -139,7 +140,7 @@ public sealed class WhatsAppCommerceFlowService(
                 StateJson = JsonSerializer.Serialize(initialState, JsonOptions),
                 IdempotencyKey = $"waf_{Guid.NewGuid():N}",
                 ExpiresAt = expiresAt,
-                Tokens = [new WhatsAppCommerceSessionToken { TenantId = _options.TenantId, TokenHash = initialHash, ExpiresAt = expiresAt }]
+                Tokens = [new WhatsAppCommerceSessionToken { TenantId = TenantId, TokenHash = initialHash, ExpiresAt = expiresAt }]
             };
             db.WhatsAppCommerceSessions.Add(session);
             TrackEvent(session, "flow_started", session.BranchId, initialState.LastScreen, "v2");
@@ -161,7 +162,7 @@ public sealed class WhatsAppCommerceFlowService(
         foreach (var token in session.Tokens) token.ExpiresAt = expiration;
         var alias = new WhatsAppCommerceSessionToken
         {
-            TenantId = _options.TenantId,
+            TenantId = TenantId,
             Session = session,
             TokenHash = Sha256(rawToken),
             ExpiresAt = expiration
@@ -249,7 +250,7 @@ public sealed class WhatsAppCommerceFlowService(
         JsonElement data,
         CancellationToken ct)
     {
-        if (session.TenantId != _options.TenantId || session.ExpiresAt <= clock.UtcNow)
+        if (session.TenantId != TenantId || session.ExpiresAt <= clock.UtcNow)
         {
             session.Status = "expired";
             TrackEvent(session, "flow_expired", session.BranchId, screen, "expired");
@@ -1042,7 +1043,7 @@ public sealed class WhatsAppCommerceFlowService(
         {
             db.WhatsAppCommerceOutboxMessages.Add(new WhatsAppCommerceOutboxMessage
             {
-                TenantId = _options.TenantId,
+                TenantId = TenantId,
                 ChannelSettingId = session.ChannelSettingId,
                 ConversationId = session.ConversationId,
                 EventKey = eventKey,

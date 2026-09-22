@@ -22,7 +22,8 @@ public sealed class WhatsAppFlowsController(
     IWhatsAppFlowCrypto crypto,
     WhatsAppCommerceFlowService commerce,
     IWhatsAppNotificationService notifications,
-    ILogger<WhatsAppFlowsController> logger) : ControllerBase
+    ILogger<WhatsAppFlowsController> logger,
+    ITenantExecutionContext? tenantExecutionContext = null) : ControllerBase
 {
     [HttpPost("{channelPublicId:guid}/data-exchange")]
     [RequestSizeLimit(256 * 1024)]
@@ -55,10 +56,15 @@ public sealed class WhatsAppFlowsController(
             return Encrypted(WhatsAppCommerceFlowService.Recovery(1, "No pudimos leer la solicitud. Cierra este menú y escribe PEDIDO.", false), decrypted);
         var action = GetString(root, "action") ?? string.Empty;
         var version = GetString(root, "version") ?? "3.0";
-        var channel = await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(
-            x => x.PublicId == channelPublicId && x.TenantId == commerce.TenantId, ct);
+        WhatsAppChannelSetting? channel;
+        using (tenantExecutionContext?.BeginSystemScope())
+        {
+            channel = await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(
+                x => x.PublicId == channelPublicId, ct);
+        }
         if (channel is null)
             return Encrypted(WhatsAppCommerceFlowService.Recovery(1, "Este menú ya no está disponible. Cierra y escribe PEDIDO.", false), decrypted);
+        using var tenantScope = tenantExecutionContext?.BeginTenantScope(channel.TenantId);
         if (action == "ping")
             return Encrypted(new Dictionary<string, object?> { ["version"] = version, ["data"] = new { status = "active" } }, decrypted);
         if (action is "client_error" or "data_exchange_error"

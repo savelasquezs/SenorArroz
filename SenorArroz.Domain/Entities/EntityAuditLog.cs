@@ -1,8 +1,11 @@
+using SenorArroz.Domain.Entities.Common;
+
 namespace SenorArroz.Domain.Entities;
 
-public class EntityAuditLog
+public class EntityAuditLog : ITenantOwned
 {
     public int Id { get; set; }
+    public int TenantId { get; set; }
     public int BranchId { get; set; }
     public string EntityType { get; set; } = string.Empty;
     public int EntityId { get; set; }

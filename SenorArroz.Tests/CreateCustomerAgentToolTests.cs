@@ -253,7 +253,9 @@ public class CreateCustomerAgentToolTests
         {
             response ??= address => Exact(address, "Santander");
             var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+                .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+                currentTenant: TestTenantContext.Default,
+                tenantExecutionContext: TestTenantContext.Default);
             db.Branches.AddRange(new Branch { Id = 1, Name = "Centro" }, new Branch { Id = 2, Name = "Norte" });
             db.Neighborhoods.Add(new Neighborhood { Id = 100, BranchId = 1, Name = "Santander", Active = true, DeliveryFee = 7000 });
             db.WhatsAppConversations.Add(new WhatsAppConversation { Id = 1, BranchId = 1, PhoneNumber = phone, WhatsAppUserId = userId, WhatsAppUsername = username, AttentionMode = WhatsAppAttentionMode.Ai });

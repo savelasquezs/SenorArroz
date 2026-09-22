@@ -45,14 +45,13 @@ public sealed class PaymentNotificationOutboxWorker(
 
     private async Task<TimeSpan> GetNextDelayAsync(CancellationToken cancellationToken)
     {
-        using var scope = scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
-        var nextAttempt = await db.PaymentNotificationOutboxMessages
-            .AsNoTracking()
-            .Where(x => x.Status == "pending")
-            .OrderBy(x => x.NextAttemptAt)
-            .Select(x => x.NextAttemptAt)
-            .FirstOrDefaultAsync(cancellationToken);
+        var nextAttempt = await TenantWorkerRunner.RunInSystemScopeAsync(scopeFactory, services =>
+            services.GetRequiredService<IApplicationDbContext>().PaymentNotificationOutboxMessages
+                .AsNoTracking()
+                .Where(x => x.Status == "pending")
+                .OrderBy(x => x.NextAttemptAt)
+                .Select(x => x.NextAttemptAt)
+                .FirstOrDefaultAsync(cancellationToken));
         if (!nextAttempt.HasValue)
             return TimeSpan.FromMinutes(5);
         var delay = nextAttempt.Value - DateTime.UtcNow;
@@ -61,10 +60,17 @@ public sealed class PaymentNotificationOutboxWorker(
 
     private async Task ProcessPendingAsync(CancellationToken cancellationToken)
     {
-        using var scope = scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
-        var mapper = scope.ServiceProvider.GetRequiredService<IMapper>();
-        var notifications = scope.ServiceProvider.GetRequiredService<IOrderNotificationService>();
+        await TenantWorkerRunner.RunForEachActiveTenantAsync(
+            scopeFactory,
+            (services, _) => ProcessTenantAsync(services, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task ProcessTenantAsync(IServiceProvider services, CancellationToken cancellationToken)
+    {
+        var db = services.GetRequiredService<IApplicationDbContext>();
+        var mapper = services.GetRequiredService<IMapper>();
+        var notifications = services.GetRequiredService<IOrderNotificationService>();
         var now = DateTime.UtcNow;
         var messages = await db.PaymentNotificationOutboxMessages
             .Where(x => x.Status == "pending" && (x.NextAttemptAt == null || x.NextAttemptAt <= now))

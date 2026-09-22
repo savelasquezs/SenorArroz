@@ -1,8 +1,11 @@
+using SenorArroz.Domain.Entities.Common;
+
 namespace SenorArroz.Domain.Entities;
 
-public class WhatsAppAiInvocation
+public class WhatsAppAiInvocation : ITenantOwned
 {
     public long Id { get; set; }
+    public int TenantId { get; set; }
     public int BranchId { get; set; }
     public int ConversationId { get; set; }
     public int IncomingMessageId { get; set; }

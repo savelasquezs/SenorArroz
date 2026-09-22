@@ -1,10 +1,12 @@
+using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class DeliveryDeviceEvent
+public class DeliveryDeviceEvent : ITenantOwned
 {
     public long Id { get; set; }
+    public int TenantId { get; set; }
     public int DeliverymanId { get; set; }
     public int WorkSessionId { get; set; }
     public Guid? ClientEventId { get; set; }
@@ -29,6 +31,7 @@ public class DeliveryDeviceEvent
         DateTime nowUtc,
         DeliveryWorkSessionEndReason reason) => new()
     {
+        TenantId = session.TenantId,
         DeliverymanId = session.DeliverymanId,
         WorkSessionId = session.Id,
         EventType = reason == DeliveryWorkSessionEndReason.TotalSettlement

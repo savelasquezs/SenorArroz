@@ -15,14 +15,14 @@ public sealed class MetaConversionsDiagnosticsController(
     IApplicationDbContext db,
     IBranchContext branchContext,
     IOptions<MetaConversionsOptions> metaOptions,
-    IOptions<StorefrontCustomerAuthOptions> storefrontOptions) : ControllerBase
+    ICurrentTenant currentTenant) : ControllerBase
 {
     private static readonly string[] PurchaseEventTypes = ["order_created_web_cash", "order_payment_approved"];
 
     [HttpGet("status")]
     public async Task<ActionResult<ApiResponse<object>>> Status(CancellationToken cancellationToken)
     {
-        var tenantId = Math.Max(1, storefrontOptions.Value.TenantId);
+        var tenantId = currentTenant.TenantId;
         var since = DateTime.UtcNow.AddDays(-7);
         var branchId = branchContext.ResolveOptional();
         var query = db.PaymentNotificationOutboxMessages.AsNoTracking()

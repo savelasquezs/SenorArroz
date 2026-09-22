@@ -4,7 +4,7 @@ using SenorArroz.Domain.Enums;
 namespace SenorArroz.Domain.Entities;
 
 /// <summary>Enlaza un gasto de catálogo a categorías o productos de menú para reparto proporcional por gramos vendidos.</summary>
-public class ExpenseMenuTarget : BaseEntity
+public class ExpenseMenuTarget : TenantOwnedEntity
 {
     public int ExpenseId { get; set; }
     public ExpenseMenuTargetType TargetType { get; set; }

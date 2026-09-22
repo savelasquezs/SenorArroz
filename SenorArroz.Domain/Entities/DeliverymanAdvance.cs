@@ -6,7 +6,7 @@ namespace SenorArroz.Domain.Entities;
 /// <summary>
 /// Representa un abono/adelanto realizado a un domiciliario
 /// </summary>
-public class DeliverymanAdvance : BaseEntity
+public class DeliverymanAdvance : TenantOwnedEntity
 {
     /// <summary>
     /// ID del domiciliario que recibe el abono

@@ -2,9 +2,8 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public sealed class CustomerPhone : BaseEntity
+public sealed class CustomerPhone : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public int CustomerId { get; set; }
     public string PhoneNormalized { get; set; } = string.Empty;
     public bool IsPrimary { get; set; }

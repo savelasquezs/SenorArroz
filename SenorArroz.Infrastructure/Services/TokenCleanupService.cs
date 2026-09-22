@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Infrastructure.Services;
@@ -32,6 +33,8 @@ public class TokenCleanupService : BackgroundService
         {
             using var scope = _serviceProvider.CreateScope();
             var refreshTokenRepository = scope.ServiceProvider.GetRequiredService<IRefreshTokenRepository>();
+            using var systemScope = scope.ServiceProvider.GetRequiredService<ITenantExecutionContext>()
+                .BeginSystemScope();
 
             await refreshTokenRepository.DeleteExpiredTokensAsync();
 

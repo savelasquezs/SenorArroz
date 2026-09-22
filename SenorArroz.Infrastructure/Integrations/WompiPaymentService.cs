@@ -21,7 +21,8 @@ public sealed class WompiPaymentService(
     IWompiPaymentAttemptLock paymentAttemptLock,
     HttpClient httpClient,
     ILogger<WompiPaymentService> logger,
-    IBackgroundWorkSignal<PaymentNotificationOutboxWork>? notificationSignal = null) : IWompiPaymentService
+    IBackgroundWorkSignal<PaymentNotificationOutboxWork>? notificationSignal = null,
+    ITenantExecutionContext? tenantExecutionContext = null) : IWompiPaymentService
 {
     public Task<WompiPaymentIntegration?> GetEnabledIntegrationAsync(int tenantId, int branchId, CancellationToken cancellationToken) =>
         db.WompiPaymentIntegrations
@@ -126,6 +127,18 @@ public sealed class WompiPaymentService(
         var fingerprint = Sha256Hex($"{environment}|{timestamp}|{providerTransactionId}|{providerStatus}|{payloadHash}");
         var amountInCents = RequiredInt64(transaction, "amount_in_cents");
         var currency = RequiredString(transaction, "currency").ToUpperInvariant();
+        int tenantId;
+        using (tenantExecutionContext?.BeginSystemScope())
+        {
+            tenantId = await db.WompiPaymentAttempts.AsNoTracking()
+                .Where(x => x.Reference == reference && x.Environment == environment)
+                .Select(x => x.TenantId)
+                .SingleOrDefaultAsync(cancellationToken);
+        }
+        if (tenantId <= 0)
+            return new WompiWebhookProcessingResult(false, false, false, null, null, null, "Referencia desconocida.");
+
+        using var tenantScope = tenantExecutionContext?.BeginTenantScope(tenantId);
         var processed = await paymentAttemptLock.ExecuteAsync(reference, async lockCancellationToken =>
         {
             var attempt = await PaymentAttemptByReferenceQuery(reference, environment)

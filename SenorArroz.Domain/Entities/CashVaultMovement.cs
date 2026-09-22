@@ -7,7 +7,7 @@ namespace SenorArroz.Domain.Entities;
 /// Registro de abono o descarga de efectivo contra el banco tipo <see cref="BankType.CashVault"/>.
 /// No usa <see cref="BankTransfer"/> porque el efectivo físico no es una cuenta bancaria.
 /// </summary>
-public class CashVaultMovement : BaseEntity
+public class CashVaultMovement : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public int BankId { get; set; }

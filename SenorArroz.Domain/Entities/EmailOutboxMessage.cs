@@ -2,7 +2,7 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class EmailOutboxMessage : BaseEntity
+public class EmailOutboxMessage : TenantOwnedEntity
 {
     public string MessageType { get; set; } = string.Empty;
     public string ToEmailsJson { get; set; } = "[]";

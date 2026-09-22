@@ -2,9 +2,8 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class StorefrontCustomerAuthChallenge : BaseEntity
+public class StorefrontCustomerAuthChallenge : TenantOwnedEntity
 {
-    public int TenantId { get; set; }
     public Guid PublicId { get; set; }
     public string Phone { get; set; } = string.Empty;
     public string CodeHmac { get; set; } = string.Empty;

@@ -2,7 +2,7 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class BusinessDocument : BaseEntity
+public class BusinessDocument : TenantOwnedEntity
 {
     public Guid PublicId { get; set; }
     public string Name { get; set; } = string.Empty;

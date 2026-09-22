@@ -22,6 +22,7 @@ public class AppPaymentMappingProfile : Profile
                     : string.Empty));
 
         CreateMap<CreateAppPaymentDto, AppPayment>()
+            .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.IsSetted, opt => opt.Ignore())
             .ForMember(dest => dest.IsReversed, opt => opt.Ignore())
             .ForMember(dest => dest.EstimatedCommissionRate, opt => opt.Ignore())

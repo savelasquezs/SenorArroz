@@ -47,6 +47,9 @@ public sealed class StorefrontCommerceService(
     private const int DeliveryBaseFee = 3_000;
     private const int DeliveryFeePerAdditionalKilometer = 1_000;
     private const int MaxWhatsAppMessageLength = 3500;
+    private int StorefrontTenantId => storefrontOptions.Value.TenantId > 0
+        ? storefrontOptions.Value.TenantId
+        : throw new InvalidOperationException("StorefrontCustomerAuth:TenantId debe ser mayor que cero.");
     private static readonly HashSet<string> PublicRoles = ["rice", "combo", "beverage", "addition"];
     private static readonly HashSet<string> MainRoles = ["rice", "combo"];
     private static readonly TimeSpan MapCacheDuration = TimeSpan.FromMinutes(5);
@@ -264,7 +267,7 @@ public sealed class StorefrontCommerceService(
             if (verifiedSession?.Customer is null)
                 return Unauthorized(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("Verifica tu celular para usar una dirección guardada."));
             savedAddress = await db.Addresses.AsNoTracking().FirstOrDefaultAsync(
-                x => x.TenantId == Math.Max(1, storefrontOptions.Value.TenantId)
+                x => x.TenantId == StorefrontTenantId
                     && x.Id == request.SavedAddressId && x.CustomerId == verifiedSession.Customer.Id, cancellationToken);
             if (savedAddress is null)
                 return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse("La dirección guardada ya no está disponible."));
@@ -519,7 +522,7 @@ public sealed class StorefrontCommerceService(
         var whatsappUrl = $"{BuildWhatsAppUrl(checkoutBranch.ContactPhone)}?text={Uri.EscapeDataString(message)}";
 
         var onlinePaymentAvailable = await db.WompiPaymentIntegrations.AsNoTracking().AnyAsync(x =>
-            x.TenantId == Math.Max(1, storefrontOptions.Value.TenantId)
+            x.TenantId == StorefrontTenantId
             && x.BranchId == checkoutBranch.Id
             && x.IsEnabled
             && x.FinancialApp.Active
@@ -584,7 +587,7 @@ public sealed class StorefrontCommerceService(
         string? sessionToken = null)
     {
         idempotencyKey = (idempotencyKey ?? string.Empty).Trim();
-        var tenantId = Math.Max(1, storefrontOptions.Value.TenantId);
+        var tenantId = StorefrontTenantId;
         if (idempotencyKey.Length is < 16 or > 80)
             return BadRequest(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La confirmación del pedido no tiene una clave válida."));
 
@@ -628,7 +631,7 @@ public sealed class StorefrontCommerceService(
             if (existingCheckout.CustomerPhone != session.Phone)
                 return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
             var payment = await wompi.GetCheckoutPaymentStatusAsync(
-                Math.Max(1, storefrontOptions.Value.TenantId), existingCheckout.PublicId, cancellationToken);
+                StorefrontTenantId, existingCheckout.PublicId, cancellationToken);
             return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicCheckoutResult(existingCheckout, payment)));
         }
 
@@ -672,7 +675,7 @@ public sealed class StorefrontCommerceService(
                     throw new StorefrontOrderConflictException("La clave de confirmación ya fue utilizada.");
                 if (transaction is not null) await transaction.CommitAsync(cancellationToken);
                 var existingPayment = await wompi.GetCheckoutPaymentStatusAsync(
-                    Math.Max(1, storefrontOptions.Value.TenantId), existingCheckout.PublicId, cancellationToken);
+                    StorefrontTenantId, existingCheckout.PublicId, cancellationToken);
                 return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicCheckoutResult(existingCheckout, existingPayment)));
             }
 
@@ -686,7 +689,7 @@ public sealed class StorefrontCommerceService(
                 return StatusCode(StatusCodes.Status503ServiceUnavailable,
                     ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("El usuario técnico de pedidos web no está disponible para esta sucursal."));
             var wompiIntegration = paymentMethod == "online"
-                ? await wompi.GetEnabledIntegrationAsync(Math.Max(1, storefrontOptions.Value.TenantId), branch.Id, cancellationToken)
+                ? await wompi.GetEnabledIntegrationAsync(StorefrontTenantId, branch.Id, cancellationToken)
                 : null;
             if (paymentMethod == "online" && wompiIntegration is null)
                 return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("Esta sucursal no tiene pago en línea disponible. Selecciona efectivo o elige otra sucursal."));
@@ -699,7 +702,7 @@ public sealed class StorefrontCommerceService(
             {
                 var checkout = new StorefrontCheckout
                 {
-                    TenantId = Math.Max(1, storefrontOptions.Value.TenantId),
+                    TenantId = StorefrontTenantId,
                     PublicId = Guid.NewGuid().ToString("N"),
                     IdempotencyKey = idempotencyKey,
                     BranchId = branch.Id,
@@ -745,7 +748,7 @@ public sealed class StorefrontCommerceService(
             Customer customer;
             if (session.Customer is not null)
             {
-                customer = await db.Customers.FirstOrDefaultAsync(x => x.TenantId == Math.Max(1, storefrontOptions.Value.TenantId) && x.Id == session.Customer.Id && x.Active, cancellationToken)
+                customer = await db.Customers.FirstOrDefaultAsync(x => x.TenantId == StorefrontTenantId && x.Id == session.Customer.Id && x.Active, cancellationToken)
                     ?? throw new StorefrontOrderConflictException("El cliente verificado ya no está disponible.");
             }
             else
@@ -844,7 +847,7 @@ public sealed class StorefrontCommerceService(
 
             var order = new Order
             {
-                TenantId = Math.Max(1, storefrontOptions.Value.TenantId),
+                TenantId = StorefrontTenantId,
                 BranchId = branch.Id,
                 TakenById = branch.StorefrontTakenByUserId.Value,
                 Customer = customer,
@@ -883,7 +886,7 @@ public sealed class StorefrontCommerceService(
             await db.SaveChangesAsync(cancellationToken);
             db.PaymentNotificationOutboxMessages.Add(new PaymentNotificationOutboxMessage
             {
-                TenantId = Math.Max(1, storefrontOptions.Value.TenantId),
+                TenantId = StorefrontTenantId,
                 BranchId = order.BranchId,
                 Order = order,
                 EventType = "order_created_web_cash",
@@ -922,7 +925,7 @@ public sealed class StorefrontCommerceService(
                 if (existingCheckout.CustomerPhone != session.Phone)
                     return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse("La clave de confirmación ya fue utilizada."));
                 var payment = await wompi.GetCheckoutPaymentStatusAsync(
-                    Math.Max(1, storefrontOptions.Value.TenantId), existingCheckout.PublicId, cancellationToken);
+                    StorefrontTenantId, existingCheckout.PublicId, cancellationToken);
                 return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicCheckoutResult(existingCheckout, payment)));
             }
             throw;
@@ -936,7 +939,7 @@ public sealed class StorefrontCommerceService(
 
     private async Task<PublicStorefrontOrderResult> ToPublicOrderResultAsync(Order order, CancellationToken cancellationToken)
     {
-        var payment = await wompi.GetOrderPaymentStatusAsync(Math.Max(1, storefrontOptions.Value.TenantId), order.Id, cancellationToken);
+        var payment = await wompi.GetOrderPaymentStatusAsync(StorefrontTenantId, order.Id, cancellationToken);
         return ToPublicOrderResult(order, payment is null ? "cash" : "online", payment?.Checkout, payment?.PaymentStatus);
     }
 
@@ -978,7 +981,7 @@ public sealed class StorefrontCommerceService(
 
     private IQueryable<Branch> EligibleBranchesQuery() => db.Branches
         .AsNoTracking()
-        .Where(x => x.TenantId == Math.Max(1, storefrontOptions.Value.TenantId) && x.IsActive
+        .Where(x => x.TenantId == StorefrontTenantId && x.IsActive
             && x.Latitude.HasValue
             && x.Longitude.HasValue
             && (x.Phone1.Trim() != "" || (x.Phone2 != null && x.Phone2.Trim() != "")));

@@ -14,7 +14,7 @@ public class PasswordResetRepositoryTrackingTests
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(nameof(UpdateAsync_DoesNotAttachDetachedUserGraph_WhenSameUserIsTracked))
             .Options;
-        await using var context = new ApplicationDbContext(options);
+        await using var context = new ApplicationDbContext(options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
         var now = new DateTime(2026, 7, 19, 21, 0, 0, DateTimeKind.Utc);
         var clock = new FakeClock(now);
 

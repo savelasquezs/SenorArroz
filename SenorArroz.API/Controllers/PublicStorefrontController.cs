@@ -35,6 +35,9 @@ public sealed class PublicStorefrontController(
     StorefrontCommerceService commerce) : ControllerBase
 {
     private readonly StorefrontCommerceService _commerce = commerce;
+    private int StorefrontTenantId => storefrontOptions.Value.TenantId > 0
+        ? storefrontOptions.Value.TenantId
+        : throw new InvalidOperationException("StorefrontCustomerAuth:TenantId debe ser mayor que cero.");
 
     [HttpGet("catalog")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
@@ -92,7 +95,7 @@ public sealed class PublicStorefrontController(
     {
         var order = await GetVerifiedCustomerOrderAsync(orderId, customerAuth, cancellationToken);
         if (order is null) return NotFound(ApiResponse<WompiPaymentStatusResult>.ErrorResponse("Pedido no encontrado."));
-        var result = await wompi.GetOrderPaymentStatusAsync(Math.Max(1, storefrontOptions.Value.TenantId), orderId, cancellationToken);
+        var result = await wompi.GetOrderPaymentStatusAsync(StorefrontTenantId, orderId, cancellationToken);
         return result is null
             ? NotFound(ApiResponse<WompiPaymentStatusResult>.ErrorResponse("Este pedido no tiene un pago en línea."))
             : Ok(ApiResponse<WompiPaymentStatusResult>.SuccessResponse(result));
@@ -108,7 +111,7 @@ public sealed class PublicStorefrontController(
     {
         var order = await GetVerifiedCustomerOrderAsync(orderId, customerAuth, cancellationToken);
         if (order is null) return NotFound(ApiResponse<WompiPaymentStatusResult>.ErrorResponse("Pedido no encontrado."));
-        var result = await wompi.SynchronizeTransactionAsync(Math.Max(1, storefrontOptions.Value.TenantId), orderId, transactionId, cancellationToken);
+        var result = await wompi.SynchronizeTransactionAsync(StorefrontTenantId, orderId, transactionId, cancellationToken);
         return result is null
             ? NotFound(ApiResponse<WompiPaymentStatusResult>.ErrorResponse("Este pedido no tiene un pago en línea."))
             : Ok(ApiResponse<WompiPaymentStatusResult>.SuccessResponse(result));
@@ -123,7 +126,7 @@ public sealed class PublicStorefrontController(
     {
         var order = await GetVerifiedCustomerOrderAsync(orderId, customerAuth, cancellationToken);
         if (order is null) return NotFound(ApiResponse<WompiCheckoutData>.ErrorResponse("Pedido no encontrado."));
-        var checkout = await wompi.RetryAsync(Math.Max(1, storefrontOptions.Value.TenantId), order, clock.UtcNow, cancellationToken);
+        var checkout = await wompi.RetryAsync(StorefrontTenantId, order, clock.UtcNow, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return Ok(ApiResponse<WompiCheckoutData>.SuccessResponse(checkout));
     }
@@ -137,7 +140,7 @@ public sealed class PublicStorefrontController(
     {
         var checkout = await GetVerifiedCustomerCheckoutAsync(checkoutId, customerAuth, cancellationToken);
         if (checkout is null) return NotFound(ApiResponse<WompiStorefrontCheckoutStatusResult>.ErrorResponse("Checkout no encontrado."));
-        var result = await wompi.GetCheckoutPaymentStatusAsync(Math.Max(1, storefrontOptions.Value.TenantId), checkoutId, cancellationToken);
+        var result = await wompi.GetCheckoutPaymentStatusAsync(StorefrontTenantId, checkoutId, cancellationToken);
         return result is null
             ? NotFound(ApiResponse<WompiStorefrontCheckoutStatusResult>.ErrorResponse("Este checkout no tiene un pago en línea."))
             : Ok(ApiResponse<WompiStorefrontCheckoutStatusResult>.SuccessResponse(result));
@@ -154,7 +157,7 @@ public sealed class PublicStorefrontController(
         var checkout = await GetVerifiedCustomerCheckoutAsync(checkoutId, customerAuth, cancellationToken);
         if (checkout is null) return NotFound(ApiResponse<WompiStorefrontCheckoutStatusResult>.ErrorResponse("Checkout no encontrado."));
         var result = await wompi.SynchronizeCheckoutTransactionAsync(
-            Math.Max(1, storefrontOptions.Value.TenantId), checkoutId, transactionId, cancellationToken);
+            StorefrontTenantId, checkoutId, transactionId, cancellationToken);
         return result is null
             ? NotFound(ApiResponse<WompiStorefrontCheckoutStatusResult>.ErrorResponse("Este checkout no tiene un pago en línea."))
             : Ok(ApiResponse<WompiStorefrontCheckoutStatusResult>.SuccessResponse(result));
@@ -170,7 +173,7 @@ public sealed class PublicStorefrontController(
         var checkout = await GetVerifiedCustomerCheckoutAsync(checkoutId, customerAuth, cancellationToken);
         if (checkout is null) return NotFound(ApiResponse<WompiCheckoutData>.ErrorResponse("Checkout no encontrado."));
         var result = await wompi.RetryCheckoutAsync(
-            Math.Max(1, storefrontOptions.Value.TenantId), checkout, clock.UtcNow, cancellationToken);
+            StorefrontTenantId, checkout, clock.UtcNow, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return Ok(ApiResponse<WompiCheckoutData>.SuccessResponse(result));
     }
@@ -189,7 +192,7 @@ public sealed class PublicStorefrontController(
         {
             return null;
         }
-        var tenantId = Math.Max(1, storefrontOptions.Value.TenantId);
+        var tenantId = StorefrontTenantId;
         return await db.Orders.Include(x => x.Customer).ThenInclude(x => x!.Phones).FirstOrDefaultAsync(x =>
             x.Id == orderId
             && x.TenantId == tenantId

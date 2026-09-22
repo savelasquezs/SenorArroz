@@ -14,13 +14,16 @@ public class GetDeliverymanAssignedBranchSummaryHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly decimal _deliveryFeePayRate;
+    private readonly ICurrentTenant? _currentTenant;
 
     public GetDeliverymanAssignedBranchSummaryHandler(
         IApplicationDbContext context,
-        IOptions<DeliveryPayrollOptions> payrollOptions)
+        IOptions<DeliveryPayrollOptions> payrollOptions,
+        ICurrentTenant? currentTenant = null)
     {
         _context = context;
         _deliveryFeePayRate = ClampPayRate(payrollOptions.Value.DeliveryFeePayRate);
+        _currentTenant = currentTenant;
     }
 
     private static decimal ClampPayRate(decimal rate)
@@ -97,6 +100,7 @@ public class GetDeliverymanAssignedBranchSummaryHandler
                        COALESCE(SUM(COALESCE(o.delivery_fee, 0)), 0)::decimal AS "TotalDeliveryFee"
                 FROM "order" o
                 WHERE o.delivery_man_id = {0}
+                  AND o.tenant_id = {3}
                   AND (
                 """
                 + statusPred
@@ -116,7 +120,7 @@ public class GetDeliverymanAssignedBranchSummaryHandler
                 """;
 
             var rows = await _context.Database
-                .SqlQueryRaw<BranchAggRow>(sql, request.DeliveryManId, fromUtc!.Value, toUtc!.Value)
+                .SqlQueryRaw<BranchAggRow>(sql, request.DeliveryManId, fromUtc!.Value, toUtc!.Value, _currentTenant?.TenantId ?? 0)
                 .ToListAsync(cancellationToken);
 
             grouped = rows.Select(r => (r.BranchId, r.OrderCount, r.TotalDeliveryFee)).ToList();

@@ -20,7 +20,9 @@ public class BranchAiSettingsControllerTests
         await using var db = new ApplicationDbContext(
             new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options);
+                .Options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
         db.BranchAiSettings.Add(new BranchAiSetting
         {
             Id = 1,

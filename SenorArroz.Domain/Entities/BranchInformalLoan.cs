@@ -6,7 +6,7 @@ namespace SenorArroz.Domain.Entities;
 /// Préstamo informal vigente por sucursal (única fuente de verdad; no se duplica en cada cierre).
 /// Positivo = dinero que salió de caja; negativo = ajuste tipo deuda a favor de caja.
 /// </summary>
-public class BranchInformalLoan : BaseEntity
+public class BranchInformalLoan : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public string Concept { get; set; } = string.Empty;

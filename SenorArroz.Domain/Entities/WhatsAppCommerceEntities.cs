@@ -2,9 +2,8 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public sealed class WhatsAppChannelSetting : BaseEntity
+public sealed class WhatsAppChannelSetting : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public Guid PublicId { get; set; } = Guid.NewGuid();
     public string PhoneNumberId { get; set; } = string.Empty;
     public string BusinessAccountId { get; set; } = string.Empty;
@@ -24,9 +23,8 @@ public sealed class WhatsAppChannelSetting : BaseEntity
     public ICollection<WhatsAppCommerceSession> CommerceSessions { get; set; } = [];
 }
 
-public sealed class TenantAiSetting : BaseEntity
+public sealed class TenantAiSetting : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public string Provider { get; set; } = string.Empty;
     public string Model { get; set; } = string.Empty;
     public bool IsActive { get; set; }
@@ -43,9 +41,8 @@ public sealed class TenantAiSetting : BaseEntity
     public string TransferMessage { get; set; } = "Un asesor continuará con tu atención.";
 }
 
-public sealed class WhatsAppCommerceSession : BaseEntity
+public sealed class WhatsAppCommerceSession : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public Guid CorrelationId { get; set; } = Guid.NewGuid();
     public int ChannelSettingId { get; set; }
     public int ConversationId { get; set; }
@@ -68,16 +65,15 @@ public sealed class WhatsAppCommerceSession : BaseEntity
     public ICollection<WhatsAppCommerceEvent> Events { get; set; } = [];
 }
 
-public sealed class WhatsAppCommerceSessionToken : BaseEntity
+public sealed class WhatsAppCommerceSessionToken : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public int SessionId { get; set; }
     public string TokenHash { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }
     public WhatsAppCommerceSession Session { get; set; } = null!;
 }
 
-public sealed class WhatsAppFlowExchange : BaseEntity
+public sealed class WhatsAppFlowExchange : TenantOwnedEntity
 {
     public int SessionId { get; set; }
     public string RequestFingerprint { get; set; } = string.Empty;
@@ -85,9 +81,8 @@ public sealed class WhatsAppFlowExchange : BaseEntity
     public WhatsAppCommerceSession Session { get; set; } = null!;
 }
 
-public sealed class WhatsAppCommerceOutboxMessage : BaseEntity
+public sealed class WhatsAppCommerceOutboxMessage : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public int ChannelSettingId { get; set; }
     public int ConversationId { get; set; }
     public string EventKey { get; set; } = string.Empty;
@@ -103,9 +98,8 @@ public sealed class WhatsAppCommerceOutboxMessage : BaseEntity
     public WhatsAppConversation Conversation { get; set; } = null!;
 }
 
-public sealed class WhatsAppCommerceEvent : BaseEntity
+public sealed class WhatsAppCommerceEvent : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public int SessionId { get; set; }
     public int ConversationId { get; set; }
     public int? BranchId { get; set; }

@@ -2,7 +2,7 @@
 
 namespace SenorArroz.Domain.Entities;
 
-public class App : BaseEntity
+public class App : TenantOwnedEntity
 {
     public int BankId { get; set; }
     public string Name { get; set; } = string.Empty;

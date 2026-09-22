@@ -2,9 +2,8 @@
 
 namespace SenorArroz.Domain.Entities;
 
-public class Address : BaseEntity
+public class Address : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public int CustomerId { get; set; }
     public int? NeighborhoodId { get; set; }
     public string? Label { get; set; }

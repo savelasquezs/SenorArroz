@@ -88,5 +88,5 @@ public class WhatsAppSimpleOrderStateTests
     {
         db.Branches.AddRange(new Branch{Id=1,Name="Uno"},new Branch{Id=2,Name="Dos"});var category=new ProductCategory{Id=productBranch,BranchId=productBranch,Name="Arroces"};db.ProductCategories.Add(category);db.Products.Add(new Product{Id=productId,CategoryId=category.Id,Name="Paisa Dúo",Price=price,Stock=stock,Active=true});db.WhatsAppConversations.Add(new(){Id=1,BranchId=1,PhoneNumber="300",AttentionMode=WhatsAppAttentionMode.Ai});
     }
-    private static ApplicationDbContext Db()=>new(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+    private static ApplicationDbContext Db()=>new(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,currentTenant:TestTenantContext.Default,tenantExecutionContext:TestTenantContext.Default);
 }

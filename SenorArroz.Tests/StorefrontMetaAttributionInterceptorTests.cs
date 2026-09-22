@@ -11,7 +11,9 @@ public sealed class StorefrontMetaAttributionInterceptorTests
     public void Consent_mapping_preserves_the_existing_database_column()
     {
         using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql("Host=localhost;Database=mapping_test").Options);
+            .UseNpgsql("Host=localhost;Database=mapping_test").Options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
         foreach (var type in new[] { typeof(StorefrontCheckout), typeof(PaymentNotificationOutboxMessage) })
         {
             var entity = db.Model.FindEntityType(type)!;
@@ -83,7 +85,7 @@ public sealed class StorefrontMetaAttributionInterceptorTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .AddInterceptors(interceptor)
             .Options;
-        return new ApplicationDbContext(options);
+        return new ApplicationDbContext(options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
     }
 
     private static StorefrontCheckout Checkout() => new()

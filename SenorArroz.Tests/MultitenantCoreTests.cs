@@ -82,9 +82,12 @@ public sealed class MultitenantCoreTests
     public async Task CreateUser_rejects_branch_from_another_tenant()
     {
         await using var db = CreateDb();
-        db.Tenants.AddRange(CreateTenant(1), CreateTenant(2));
-        db.Branches.Add(CreateBranch(20, 2));
-        await db.SaveChangesAsync();
+        using (TestTenantContext.Default.BeginSystemScope())
+        {
+            db.Tenants.AddRange(CreateTenant(1), CreateTenant(2));
+            db.Branches.Add(CreateBranch(20, 2));
+            await db.SaveChangesAsync();
+        }
 
         var dto = new CreateUserDto
         {
@@ -193,6 +196,7 @@ public sealed class MultitenantCoreTests
     public async Task Device_and_password_reset_tokens_derive_tenant_from_user()
     {
         await using var db = CreateDb();
+        using var tenantScope = TestTenantContext.Default.BeginTenantScope(2);
         var tenant = CreateTenant(2);
         var branch = CreateBranch(20, 2);
         var user = CreateAuthenticatedUser(2, 20);
@@ -220,9 +224,12 @@ public sealed class MultitenantCoreTests
     public async Task Branch_context_rejects_selected_branch_from_another_tenant()
     {
         await using var db = CreateDb();
-        db.Tenants.AddRange(CreateTenant(1), CreateTenant(2));
-        db.Branches.Add(CreateBranch(20, 2));
-        await db.SaveChangesAsync();
+        using (TestTenantContext.Default.BeginSystemScope())
+        {
+            db.Tenants.AddRange(CreateTenant(1), CreateTenant(2));
+            db.Branches.Add(CreateBranch(20, 2));
+            await db.SaveChangesAsync();
+        }
         var http = new DefaultHttpContext();
         http.Request.Headers[BranchContextService.HeaderName] = "20";
         var service = new BranchContextService(
@@ -269,7 +276,9 @@ public sealed class MultitenantCoreTests
     private static ApplicationDbContext CreateDb() => new(
         new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options);
+            .Options,
+        currentTenant: TestTenantContext.Default,
+        tenantExecutionContext: TestTenantContext.Default);
 
     private static Tenant CreateTenant(int id) => new()
     {

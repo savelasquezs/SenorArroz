@@ -3,7 +3,7 @@ using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class DiscountCode : BaseEntity
+public class DiscountCode : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public string Code { get; set; } = string.Empty;

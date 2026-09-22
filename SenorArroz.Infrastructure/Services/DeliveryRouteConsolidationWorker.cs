@@ -31,12 +31,20 @@ public class DeliveryRouteConsolidationWorker : BackgroundService
             var delay = TimeSpan.FromSeconds(30);
             try
             {
-                using var scope = _serviceProvider.CreateScope();
-                var workflow = scope.ServiceProvider.GetRequiredService<IDeliveryRouteWorkflowService>();
-                var n = await workflow.ConsolidatePendingRoutesAsync(stoppingToken);
-                if (n > 0)
-                    _logger.LogInformation("Consolidadas {Count} rutas de domicilio.", n);
-                var next = await workflow.GetNextPendingConsolidationAtAsync(stoppingToken);
+                DateTime? next = null;
+                await TenantWorkerRunner.RunForEachActiveTenantAsync(
+                    _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    async (services, tenantId) =>
+                    {
+                        var workflow = services.GetRequiredService<IDeliveryRouteWorkflowService>();
+                        var count = await workflow.ConsolidatePendingRoutesAsync(stoppingToken);
+                        if (count > 0)
+                            _logger.LogInformation("Consolidadas {Count} rutas del tenant {TenantId}.", count, tenantId);
+                        var tenantNext = await workflow.GetNextPendingConsolidationAtAsync(stoppingToken);
+                        if (tenantNext.HasValue && (!next.HasValue || tenantNext.Value < next.Value))
+                            next = tenantNext;
+                    },
+                    stoppingToken);
                 delay = next.HasValue ? next.Value - DateTime.UtcNow : TimeSpan.FromMinutes(5);
                 if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
                 if (delay > TimeSpan.FromMinutes(5)) delay = TimeSpan.FromMinutes(5);

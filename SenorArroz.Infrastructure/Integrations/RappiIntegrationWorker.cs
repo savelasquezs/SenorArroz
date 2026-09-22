@@ -9,6 +9,7 @@ using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
+using SenorArroz.Infrastructure.Services;
 
 namespace SenorArroz.Infrastructure.Integrations;
 
@@ -29,35 +30,38 @@ public sealed class RappiIntegrationWorker(
         {
             try
             {
-                using var scope = scopeFactory.CreateScope();
-                var processor = scope.ServiceProvider.GetRequiredService<IRappiOrderProcessor>();
-                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                var rappi = scope.ServiceProvider.GetRequiredService<IRappiDeliveryProvider>();
-                var clock = scope.ServiceProvider.GetRequiredService<IClock>();
-
-                await processor.ProcessPendingWebhookEventsAsync(stoppingToken);
-                await ProcessReadyOutboxAsync(db, rappi, clock, stoppingToken);
-                await ReconcileAvailabilityStateAsync(db, clock, stoppingToken);
-                await ProcessAvailabilityAsync(db, rappi, clock, stoppingToken);
-
                 var now = DateTimeOffset.UtcNow;
-                if (now >= nextCapabilitySync)
-                {
-                    await SyncCapabilitiesAsync(db, rappi, stoppingToken);
-                    nextCapabilitySync = now.AddMinutes(15);
-                }
-                if (now >= nextRecovery)
-                {
-                    await RecoverSentOrdersAsync(db, rappi, processor, stoppingToken);
-                    await RecoverAcceptedOrdersAsync(db, processor, stoppingToken);
-                    await RecoverMenuApprovalsAsync(db, rappi, clock, stoppingToken);
-                    nextRecovery = now.AddSeconds(Math.Max(15, options.RecoveryIntervalSeconds));
-                }
-                if (now >= nextCleanup)
-                {
-                    await PurgePiiAsync(db, clock, stoppingToken);
-                    nextCleanup = now.AddHours(Math.Max(1, options.PiiCleanupIntervalHours));
-                }
+                var syncCapabilities = now >= nextCapabilitySync;
+                var runRecovery = now >= nextRecovery;
+                var runCleanup = now >= nextCleanup;
+                await TenantWorkerRunner.RunForEachActiveTenantAsync(
+                    scopeFactory,
+                    async (services, _) =>
+                    {
+                        var processor = services.GetRequiredService<IRappiOrderProcessor>();
+                        var db = services.GetRequiredService<ApplicationDbContext>();
+                        var rappi = services.GetRequiredService<IRappiDeliveryProvider>();
+                        var clock = services.GetRequiredService<IClock>();
+
+                        await processor.ProcessPendingWebhookEventsAsync(stoppingToken);
+                        await ProcessReadyOutboxAsync(db, rappi, clock, stoppingToken);
+                        await ReconcileAvailabilityStateAsync(db, clock, stoppingToken);
+                        await ProcessAvailabilityAsync(db, rappi, clock, stoppingToken);
+                        if (syncCapabilities)
+                            await SyncCapabilitiesAsync(db, rappi, stoppingToken);
+                        if (runRecovery)
+                        {
+                            await RecoverSentOrdersAsync(db, rappi, processor, stoppingToken);
+                            await RecoverAcceptedOrdersAsync(db, processor, stoppingToken);
+                            await RecoverMenuApprovalsAsync(db, rappi, clock, stoppingToken);
+                        }
+                        if (runCleanup)
+                            await PurgePiiAsync(db, clock, stoppingToken);
+                    },
+                    stoppingToken);
+                if (syncCapabilities) nextCapabilitySync = now.AddMinutes(15);
+                if (runRecovery) nextRecovery = now.AddSeconds(Math.Max(15, options.RecoveryIntervalSeconds));
+                if (runCleanup) nextCleanup = now.AddHours(Math.Max(1, options.PiiCleanupIntervalHours));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

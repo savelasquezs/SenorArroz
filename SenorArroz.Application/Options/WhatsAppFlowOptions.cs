@@ -3,7 +3,7 @@ namespace SenorArroz.Application.Options;
 public sealed class WhatsAppFlowOptions
 {
     public const string SectionName = "WhatsAppFlow";
-    public int TenantId { get; set; } = 1;
+    public int TenantId { get; set; }
     public bool Enabled { get; set; }
     public bool RestrictToAllowlist { get; set; } = true;
     public string[] AllowedPhoneHashes { get; set; } = [];

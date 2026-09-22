@@ -231,7 +231,9 @@ public class ResolveAndCreateCustomerAddressAgentToolTests
         public static async Task<Fixture> Create(Func<string, string> response, bool configured = true)
         {
             var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+                .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+                currentTenant: TestTenantContext.Default,
+                tenantExecutionContext: TestTenantContext.Default);
             db.Branches.AddRange(new Branch { Id = 1, Name = "Centro" }, new Branch { Id = 2, Name = "Norte" });
             db.Neighborhoods.Add(new Neighborhood { Id = 100, BranchId = 1, Name = "Santander", Active = true, DeliveryFee = 7000 });
             db.Customers.Add(new Customer { Id = 10, BranchId = 1, Name = "María", Phone1 = "300", Active = true });

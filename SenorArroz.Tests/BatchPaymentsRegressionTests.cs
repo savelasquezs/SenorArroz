@@ -143,7 +143,10 @@ public class BatchPaymentsRegressionTests
         var opts = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(dbName)
             .Options;
-        return new ApplicationDbContext(opts);
+        var db = new ApplicationDbContext(opts, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
+        db.Branches.Add(new Branch { Id = 1, Name = "Test", Address = "-", Phone1 = "-" });
+        db.SaveChanges();
+        return db;
     }
 
     private static CreateOrderHandler BuildHandler(ApplicationDbContext db, string role = Roles.Cashier, int branchId = 1)

@@ -48,13 +48,20 @@ public class ReservationNotificationService : BackgroundService
 
     private async Task CheckAndNotifyReservations()
     {
-        using var scope = _serviceProvider.CreateScope();
-        var orderRepository = scope.ServiceProvider.GetRequiredService<IOrderRepository>();
-        var notificationService = scope.ServiceProvider.GetRequiredService<IOrderNotificationService>();
-        var mapper = scope.ServiceProvider.GetRequiredService<IMapper>();
-        var clock = scope.ServiceProvider.GetRequiredService<IClock>();
-        var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
-        var printQueue = scope.ServiceProvider.GetRequiredService<IPrintQueueService>();
+        await TenantWorkerRunner.RunForEachActiveTenantAsync(
+            _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            (services, _) => CheckTenantReservationsAsync(services),
+            CancellationToken.None);
+    }
+
+    private async Task CheckTenantReservationsAsync(IServiceProvider services)
+    {
+        var orderRepository = services.GetRequiredService<IOrderRepository>();
+        var notificationService = services.GetRequiredService<IOrderNotificationService>();
+        var mapper = services.GetRequiredService<IMapper>();
+        var clock = services.GetRequiredService<IClock>();
+        var db = services.GetRequiredService<IApplicationDbContext>();
+        var printQueue = services.GetRequiredService<IPrintQueueService>();
 
         var now = clock.UtcNow;
         var twoHoursFromNow = now.AddHours(2);

@@ -26,11 +26,13 @@ public class OrderRepository : IOrderRepository
 
     private readonly ApplicationDbContext _context;
     private readonly IClock _clock;
+    private readonly ICurrentTenant? _currentTenant;
 
-    public OrderRepository(ApplicationDbContext context, IClock clock)
+    public OrderRepository(ApplicationDbContext context, IClock clock, ICurrentTenant? currentTenant = null)
     {
         _context = context;
         _clock = clock;
+        _currentTenant = currentTenant;
     }
 
     public async Task<Order?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
@@ -982,8 +984,9 @@ public class OrderRepository : IOrderRepository
             "(o.status_times ->> 'delivered') ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}[Tt ][0-9]{{2}}:[0-9]{{2}}'",
             "(o.status_times ->> 'delivered')::timestamptz >= {1}",
             "(o.status_times ->> 'delivered')::timestamptz <= {2}",
+            "o.tenant_id = {3}",
         };
-        var sqlParams = new List<object> { typeDb, fromUtc, toUtc };
+        var sqlParams = new List<object> { typeDb, fromUtc, toUtc, _currentTenant?.TenantId ?? 0 };
         if (branchId.HasValue)
         {
             conditions.Add($"o.branch_id = {{{sqlParams.Count}}}");

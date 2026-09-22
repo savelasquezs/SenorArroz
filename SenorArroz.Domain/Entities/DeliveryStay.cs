@@ -1,3 +1,4 @@
+using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
@@ -6,9 +7,10 @@ namespace SenorArroz.Domain.Entities;
 /// Permanencia detectada a partir de puntos GPS consecutivos de una jornada.
 /// Su clasificación operativa se realiza en una etapa posterior.
 /// </summary>
-public class DeliveryStay
+public class DeliveryStay : ITenantOwned
 {
     public long Id { get; set; }
+    public int TenantId { get; set; }
     public int DeliverymanId { get; set; }
     public int WorkSessionId { get; set; }
     public int? DeliveryRouteId { get; set; }

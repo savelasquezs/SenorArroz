@@ -381,7 +381,9 @@ public class DeliveryAutoCompletionTests
             var db = new ApplicationDbContext(
                 new DbContextOptionsBuilder<ApplicationDbContext>()
                     .UseInMemoryDatabase(databaseName)
-                    .Options);
+                    .Options,
+                currentTenant: TestTenantContext.Default,
+                tenantExecutionContext: TestTenantContext.Default);
             var clock = new FakeClock(new DateTime(2026, 8, 13, 18, 0, 0, DateTimeKind.Utc));
             return new Fixture(db, clock, new Mock<ISender>());
         }

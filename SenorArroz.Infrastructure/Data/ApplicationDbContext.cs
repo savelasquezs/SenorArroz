@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using System.Linq.Expressions;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Infrastructure.Data.Configurations;
 
 namespace SenorArroz.Infrastructure.Data
@@ -9,12 +11,23 @@ namespace SenorArroz.Infrastructure.Data
     public class ApplicationDbContext : DbContext, IApplicationDbContext
     {
         private readonly ICurrentUser? _currentUser;
+        private readonly ICurrentTenant? _currentTenant;
+        private readonly ITenantExecutionContext? _tenantExecutionContext;
 
-        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ICurrentUser? currentUser = null)
+        public ApplicationDbContext(
+            DbContextOptions<ApplicationDbContext> options,
+            ICurrentUser? currentUser = null,
+            ICurrentTenant? currentTenant = null,
+            ITenantExecutionContext? tenantExecutionContext = null)
             : base(options)
         {
             _currentUser = currentUser;
+            _currentTenant = currentTenant;
+            _tenantExecutionContext = tenantExecutionContext;
         }
+
+        public int CurrentTenantIdForFilter => _currentTenant?.HasTenant == true ? _currentTenant.TenantId : 0;
+        public bool IsTenantSystemScope => _tenantExecutionContext?.IsSystemScope == true;
 
         public virtual DbSet<Address> Addresses { get; set; }
         public virtual DbSet<AddressBranch> AddressBranches { get; set; }
@@ -173,7 +186,6 @@ namespace SenorArroz.Infrastructure.Data
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.ApplyConfiguration(new TenantConfiguration());
             modelBuilder.ApplyConfiguration(new BranchConfiguration());
             modelBuilder.ApplyConfiguration(new TenantConfiguration());
             modelBuilder.ApplyConfiguration(new BranchBusinessHourConfiguration());
@@ -269,10 +281,13 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new PasswordResetTokenConfiguration());
             modelBuilder.ApplyConfiguration(new UserDeviceTokenConfiguration());
 
+            ApplyTenantOwnership(modelBuilder);
+
             base.OnModelCreating(modelBuilder);
         }
         public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
+            ApplyAndValidateTenantOwnership();
             ConvertDateTimesToUtc();
             await ApplyAuditSessionContextAsync(cancellationToken);
             return await base.SaveChangesAsync(cancellationToken);
@@ -280,6 +295,7 @@ namespace SenorArroz.Infrastructure.Data
 
         public override int SaveChanges()
         {
+            ApplyAndValidateTenantOwnership();
             ConvertDateTimesToUtc();
             ApplyAuditSessionContext();
             return base.SaveChanges();
@@ -330,6 +346,74 @@ namespace SenorArroz.Infrastructure.Data
                     }
                 }
             }
+        }
+
+        private void ApplyTenantOwnership(ModelBuilder modelBuilder)
+        {
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes()
+                         .Where(x => typeof(ITenantOwned).IsAssignableFrom(x.ClrType)))
+            {
+                var builder = modelBuilder.Entity(entityType.ClrType);
+                builder.Property<int>(nameof(ITenantOwned.TenantId))
+                    .HasColumnName("tenant_id")
+                    .IsRequired()
+                    .ValueGeneratedNever()
+                    .IsConcurrencyToken();
+                builder.HasIndex(nameof(ITenantOwned.TenantId));
+
+                var entity = Expression.Parameter(entityType.ClrType, "entity");
+                var tenantId = Expression.Property(entity, nameof(ITenantOwned.TenantId));
+                var context = Expression.Constant(this);
+                var systemScope = Expression.Property(context, nameof(IsTenantSystemScope));
+                var currentTenantId = Expression.Property(context, nameof(CurrentTenantIdForFilter));
+                var hasTenant = Expression.GreaterThan(currentTenantId, Expression.Constant(0));
+                var belongsToTenant = Expression.Equal(tenantId, currentTenantId);
+                var body = Expression.OrElse(systemScope, Expression.AndAlso(hasTenant, belongsToTenant));
+
+                builder.HasQueryFilter(Expression.Lambda(body, entity));
+            }
+        }
+
+        private void ApplyAndValidateTenantOwnership()
+        {
+            var entries = ChangeTracker.Entries<ITenantOwned>()
+                .Where(x => x.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+
+            foreach (var entry in entries)
+            {
+                var tenantId = entry.Entity.TenantId;
+
+                if (entry.State == EntityState.Added)
+                {
+                    if (tenantId == 0 && !IsTenantSystemScope && CurrentTenantIdForFilter > 0)
+                    {
+                        var tenantProperty = entry.Property(x => x.TenantId);
+                        tenantProperty.CurrentValue = CurrentTenantIdForFilter;
+                        tenantProperty.IsTemporary = false;
+                        tenantId = CurrentTenantIdForFilter;
+                    }
+
+                    if (tenantId <= 0)
+                        throw new InvalidOperationException($"{entry.Metadata.ClrType.Name} requiere un TenantId explícito.");
+                }
+                else
+                {
+                    var tenantProperty = entry.Property(x => x.TenantId);
+                    if (tenantProperty.IsModified && !Equals(tenantProperty.OriginalValue, tenantProperty.CurrentValue))
+                        throw new InvalidOperationException("No se puede cambiar el tenant de una entidad existente.");
+                }
+
+                if (!IsTenantSystemScope)
+                {
+                    if (CurrentTenantIdForFilter <= 0)
+                        throw new InvalidOperationException("No existe un tenant operativo para la escritura.");
+
+                    if (tenantId != CurrentTenantIdForFilter)
+                        throw new InvalidOperationException("La operación intenta escribir datos de otro tenant.");
+                }
+            }
+
+            ChangeTracker.DetectChanges();
         }
     }
 }

@@ -1,3 +1,4 @@
+using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
@@ -5,9 +6,10 @@ namespace SenorArroz.Domain.Entities;
 /// <summary>
 /// Punto GPS registrado por un domiciliario durante una jornada laboral.
 /// </summary>
-public class DeliverymanLocation
+public class DeliverymanLocation : ITenantOwned
 {
     public long Id { get; set; }
+    public int TenantId { get; set; }
     public int DeliverymanId { get; set; }
     public int? WorkSessionId { get; set; }
     public int? DeliveryRouteId { get; set; }

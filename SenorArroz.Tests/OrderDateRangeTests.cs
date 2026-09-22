@@ -17,7 +17,7 @@ public class OrderDateRangeTests
         var opts = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(dbName)
             .Options;
-        return new ApplicationDbContext(opts);
+        return new ApplicationDbContext(opts, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
     }
 
     private static async Task<(Branch branch, User user, Customer customer)> SeedBaseEntitiesAsync(

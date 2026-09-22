@@ -25,31 +25,25 @@ public class DeliveryStayDetectionWorker : BackgroundService
         {
             try
             {
-                await using var scope = _serviceProvider.CreateAsyncScope();
-                var detector = scope.ServiceProvider.GetRequiredService<IDeliveryStayDetectionService>();
-                var processedSessions = await detector.ProcessPendingSessionsAsync(stoppingToken);
-                var classifier = scope.ServiceProvider.GetRequiredService<IDeliveryStayClassificationService>();
-                var classifiedStays = await classifier.ProcessPendingStaysAsync(stoppingToken);
-                var evidenceService = scope.ServiceProvider.GetRequiredService<IDeliveryIncidentEvidenceService>();
-                var incidentsCaptured = await evidenceService.ProcessPendingStaysAsync(stoppingToken);
-                if (processedSessions > 0)
-                {
-                    _logger.LogInformation(
-                        "Se analizaron {SessionCount} jornadas con nuevos puntos para detectar permanencias.",
-                        processedSessions);
-                }
-                if (classifiedStays > 0)
-                {
-                    _logger.LogInformation(
-                        "Se clasificaron {StayCount} permanencias de domiciliarios.",
-                        classifiedStays);
-                }
-                if (incidentsCaptured > 0)
-                {
-                    _logger.LogInformation(
-                        "Se actualizo la evidencia de {IncidentCount} incidentes de seguimiento.",
-                        incidentsCaptured);
-                }
+                await TenantWorkerRunner.RunForEachActiveTenantAsync(
+                    _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                    async (services, tenantId) =>
+                    {
+                        var detector = services.GetRequiredService<IDeliveryStayDetectionService>();
+                        var processedSessions = await detector.ProcessPendingSessionsAsync(stoppingToken);
+                        var classifier = services.GetRequiredService<IDeliveryStayClassificationService>();
+                        var classifiedStays = await classifier.ProcessPendingStaysAsync(stoppingToken);
+                        var evidenceService = services.GetRequiredService<IDeliveryIncidentEvidenceService>();
+                        var incidentsCaptured = await evidenceService.ProcessPendingStaysAsync(stoppingToken);
+                        if (processedSessions + classifiedStays + incidentsCaptured > 0)
+                            _logger.LogInformation(
+                                "Tenant {TenantId}: jornadas {SessionCount}, permanencias {StayCount}, incidentes {IncidentCount}.",
+                                tenantId,
+                                processedSessions,
+                                classifiedStays,
+                                incidentsCaptured);
+                    },
+                    stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

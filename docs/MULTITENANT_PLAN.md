@@ -135,11 +135,13 @@ Después de validar datos:
 - Crear índice `ix_branches_tenant_id`.
 - Crear índice único recomendado: `(tenant_id, name)` si aplica.
 
-### Fase 3 - Propagar TenantId a tablas dependientes (en progreso)
+### Fase 3 - Propagar TenantId a tablas dependientes (Bloque 2 completado)
 
-Completado en el Bloque 1: `User`, `RefreshToken`, `PasswordResetToken` y `UserDeviceToken`.
+El Bloque 2 propagó `TenantId` a las 93 entidades operativas, dejando `Tenant` como única entidad global. También incorporó filtros globales, write guards, scopes explícitos de sistema/tenant, aislamiento de workers y el script idempotente `multitenant_isolation_v2.sql`.
 
-Pendiente para los siguientes bloques: propagación completa al resto de entidades tenant-owned, filtros globales, write guards, RLS, aislamiento completo de SignalR/archivos, control plane, planes, add-ons, suscripciones, metering, invitaciones, portal `/platform` y alta del segundo restaurante real.
+La matriz completa y las excepciones están en `docs/MULTITENANT_ISOLATION_AUDIT.md`.
+
+Pendiente para el Bloque 3: RLS, SignalR/archivos, control plane, planes, add-ons, suscripciones, metering, invitaciones, portal `/platform` y alta controlada del segundo restaurante real.
 
 Agregar `TenantId` progresivamente a tablas operativas.
 

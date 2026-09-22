@@ -2,7 +2,7 @@
 
 namespace SenorArroz.Domain.Entities;
 
-public class Supplier : BaseEntity
+public class Supplier : TenantOwnedEntity
 {
     public int? BranchId { get; set; }
     public string Name { get; set; } = string.Empty;

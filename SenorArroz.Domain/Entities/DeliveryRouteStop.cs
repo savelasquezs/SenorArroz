@@ -5,7 +5,7 @@ namespace SenorArroz.Domain.Entities;
 /// <summary>
 /// Parada de ruta vinculada a un pedido; conserva snapshot de dirección y buffer justificado.
 /// </summary>
-public class DeliveryRouteStop : BaseEntity
+public class DeliveryRouteStop : TenantOwnedEntity
 {
     public int DeliveryRouteId { get; set; }
     public int OrderId { get; set; }

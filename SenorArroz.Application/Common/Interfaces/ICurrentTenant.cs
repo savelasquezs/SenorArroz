@@ -8,3 +8,10 @@ public interface ICurrentTenant
     long? AccessVersion { get; }
     bool HasTenant { get; }
 }
+
+public interface ITenantExecutionContext
+{
+    bool IsSystemScope { get; }
+    IDisposable BeginSystemScope();
+    IDisposable BeginTenantScope(int tenantId);
+}

@@ -2,7 +2,7 @@
 
 namespace SenorArroz.Domain.Entities;
 
-public class OrderDetail : BaseEntity
+public class OrderDetail : TenantOwnedEntity
 {
     public int OrderId { get; set; }
     public int ProductId { get; set; }

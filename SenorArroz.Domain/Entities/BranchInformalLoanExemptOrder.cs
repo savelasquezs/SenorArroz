@@ -1,10 +1,13 @@
+using SenorArroz.Domain.Entities.Common;
+
 namespace SenorArroz.Domain.Entities;
 
 /// <summary>
 /// Pedido que queda excluido del bloqueo de cuadre (listo/en camino) mientras el préstamo informal siga activo.
 /// </summary>
-public class BranchInformalLoanExemptOrder
+public class BranchInformalLoanExemptOrder : ITenantOwned
 {
+    public int TenantId { get; set; }
     public int LoanId { get; set; }
     public int OrderId { get; set; }
 

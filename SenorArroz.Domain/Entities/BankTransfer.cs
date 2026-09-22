@@ -5,7 +5,7 @@ namespace SenorArroz.Domain.Entities;
 /// <summary>
 /// Representa un movimiento de dinero entre dos bancos
 /// </summary>
-public class BankTransfer : BaseEntity
+public class BankTransfer : TenantOwnedEntity
 {
     /// <summary>Null = extremo efectivo de caja (sale hacia <see cref="ToBank"/>).</summary>
     public int? FromBankId { get; set; }

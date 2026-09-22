@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.API.Services;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
@@ -141,6 +142,8 @@ public class WhatsAppAiWorkQueueRecoveryTests
     {
         var services = new ServiceCollection();
         var databaseName = $"whatsapp-ai-recovery-{Guid.NewGuid():N}";
+        services.AddSingleton<ICurrentTenant>(TestTenantContext.Default);
+        services.AddSingleton<ITenantExecutionContext>(TestTenantContext.Default);
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseInMemoryDatabase(databaseName));
         return services.BuildServiceProvider();

@@ -2,7 +2,7 @@
 
 namespace SenorArroz.Domain.Entities;
 
-public class ExpenseCategory : BaseEntity
+public class ExpenseCategory : TenantOwnedEntity
 {
     public string Name { get; set; } = string.Empty;
 

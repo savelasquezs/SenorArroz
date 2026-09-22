@@ -21,7 +21,7 @@ public class ILikeRegressionTests
         var opts = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(dbName)
             .Options;
-        return new ApplicationDbContext(opts);
+        return new ApplicationDbContext(opts, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
     }
 
     private static Branch MakeBranch(string name = "Test") => new()

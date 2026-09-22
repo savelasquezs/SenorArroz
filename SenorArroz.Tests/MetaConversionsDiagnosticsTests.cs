@@ -22,10 +22,13 @@ public sealed class MetaConversionsDiagnosticsTests
     public async Task Diagnostics_respect_tenant_and_operational_branch(string role, string? selection, int expected)
     {
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
         db.PaymentNotificationOutboxMessages.AddRange(
             Message(1, 1, 1), Message(2, 1, 2), Message(3, 2, 1));
-        await db.SaveChangesAsync();
+        using (TestTenantContext.Default.BeginSystemScope())
+            await db.SaveChangesAsync();
         var user = new Mock<ICurrentUser>();
         user.SetupGet(x => x.Role).Returns(role);
         user.SetupGet(x => x.BranchId).Returns(1);
@@ -34,7 +37,7 @@ public sealed class MetaConversionsDiagnosticsTests
         var branch = new BranchContextService(new HttpContextAccessor { HttpContext = http }, user.Object);
         var controller = new MetaConversionsDiagnosticsController(db, branch,
             Options.Create(new MetaConversionsOptions()),
-            Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }));
+            TestTenantContext.Default);
 
         var result = await controller.Status(CancellationToken.None);
 

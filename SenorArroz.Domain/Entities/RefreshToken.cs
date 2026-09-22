@@ -2,9 +2,8 @@
 
 namespace SenorArroz.Domain.Entities;
 
-public class RefreshToken : BaseEntity
+public class RefreshToken : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public int UserId { get; set; }
     public Guid? SessionId { get; set; }
     public string Token { get; set; } = string.Empty;

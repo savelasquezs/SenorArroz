@@ -2,9 +2,8 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public sealed class AddressBranch : BaseEntity
+public sealed class AddressBranch : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public int AddressId { get; set; }
     public int BranchId { get; set; }
     public int? NeighborhoodId { get; set; }

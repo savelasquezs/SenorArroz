@@ -14,7 +14,9 @@ public class DailyAuditTrackingAlertsEmailTests
     {
         await using var db = new ApplicationDbContext(
             new DbContextOptionsBuilder<ApplicationDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+                .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
         var configuration = new ConfigurationBuilder().AddInMemoryCollection().Build();
         var service = new EmailService(
             db,

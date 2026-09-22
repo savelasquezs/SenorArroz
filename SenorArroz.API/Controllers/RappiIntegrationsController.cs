@@ -24,7 +24,8 @@ public sealed class RappiIntegrationsController(
     IRappiDeliveryProvider rappi,
     IRappiOrderProcessor orderProcessor,
     IOptions<ApiPublicOptions> apiPublicOptions,
-    IBackgroundWorkSignal<RappiWork> workSignal) : ControllerBase
+    IBackgroundWorkSignal<RappiWork> workSignal,
+    ITenantExecutionContext tenantExecutionContext) : ControllerBase
 {
     private static readonly string[] WebhookEvents =
     [
@@ -559,17 +560,22 @@ public sealed class RappiIntegrationsController(
         var normalizedEvent = eventType.Trim().ToUpperInvariant();
         if (!WebhookEvents.Contains(normalizedEvent))
             return NotFound();
-        var connection = await db.DeliveryAppConnections
-            .Include(x => x.Stores)
-            .Include(x => x.WebhookSubscriptions)
-            .FirstOrDefaultAsync(x =>
-                x.PublicId == publicId
-                && x.Provider == "rappi"
-                && x.IsActive, ct);
+        DeliveryAppConnection? connection;
+        using (tenantExecutionContext.BeginSystemScope())
+        {
+            connection = await db.DeliveryAppConnections
+                .Include(x => x.Stores)
+                .Include(x => x.WebhookSubscriptions)
+                .FirstOrDefaultAsync(x =>
+                    x.PublicId == publicId
+                    && x.Provider == "rappi"
+                    && x.IsActive, ct);
+        }
         var subscription = connection?.WebhookSubscriptions
             .FirstOrDefault(x => x.EventType == normalizedEvent && x.IsActive);
         if (connection is null || subscription is null)
             return NotFound();
+        using var tenantScope = tenantExecutionContext.BeginTenantScope(connection.TenantId);
 
         using var reader = new StreamReader(Request.Body, Encoding.UTF8);
         var payload = await reader.ReadToEndAsync(ct);

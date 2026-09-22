@@ -3,9 +3,8 @@ using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class WhatsAppConversation : BaseEntity
+public class WhatsAppConversation : TenantOwnedEntity
 {
-    public int TenantId { get; set; } = 1;
     public int? ChannelSettingId { get; set; }
     public int BranchId { get; set; }
     public int? OperationalBranchId { get; set; }

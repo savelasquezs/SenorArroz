@@ -14,7 +14,7 @@ public class AddressRepository : IAddressRepository
     public AddressRepository(ApplicationDbContext context, ICurrentTenant? currentTenant = null)
     {
         _context = context;
-        _tenantId = currentTenant?.TenantId ?? 1;
+        _tenantId = currentTenant?.TenantId ?? context.CurrentTenantIdForFilter;
     }
 
     public async Task<IEnumerable<Address>> GetByCustomerIdAsync(int customerId, CancellationToken cancellationToken = default)

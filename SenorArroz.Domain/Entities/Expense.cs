@@ -3,7 +3,7 @@ using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
-public class Expense : BaseEntity
+public class Expense : TenantOwnedEntity
 {
     public string Name { get; set; } = string.Empty;
     public int CategoryId { get; set; }

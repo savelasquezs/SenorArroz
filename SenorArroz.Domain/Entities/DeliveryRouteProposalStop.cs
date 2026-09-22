@@ -2,7 +2,7 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
-public class DeliveryRouteProposalStop : BaseEntity
+public class DeliveryRouteProposalStop : TenantOwnedEntity
 {
     public int DeliveryRoutingPlanId { get; set; }
     public int? DeliveryRouteProposalId { get; set; }

@@ -1,3 +1,4 @@
+using SenorArroz.Domain.Entities.Common;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
@@ -6,9 +7,10 @@ namespace SenorArroz.Domain.Entities;
 /// Snapshot estable de un hecho de seguimiento que requiere conservar evidencia.
 /// Los identificadores de origen no son llaves foraneas para que la limpieza no invalide el incidente.
 /// </summary>
-public class DeliveryTrackingIncident
+public class DeliveryTrackingIncident : ITenantOwned
 {
     public long Id { get; set; }
+    public int TenantId { get; set; }
     public DeliveryTrackingIncidentType IncidentType { get; set; } = DeliveryTrackingIncidentType.Stay;
     public int BranchId { get; set; }
     public int DeliverymanId { get; set; }

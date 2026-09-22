@@ -19,13 +19,15 @@ public sealed class CustomerTenantIsolationTests
         db.Customers.AddRange(
             Customer(10, 1, tenantOneBranchA, "Tenant one", "3001234567"),
             Customer(20, 2, tenantTwoBranch, "Tenant two", "3001234567"));
-        await db.SaveChangesAsync();
+        using (TestTenantContext.Default.BeginSystemScope())
+            await db.SaveChangesAsync();
 
         var tenantOne = new CustomerRepository(db, new FixedTenant(1));
         var tenantTwo = new CustomerRepository(db, new FixedTenant(2));
 
         Assert.Equal(10, (await tenantOne.GetByPhoneAsync("+57 300 123 4567", tenantOneBranchB.TenantId))!.Id);
-        Assert.Equal(20, (await tenantTwo.GetByPhoneAsync("3001234567", tenantTwoBranch.TenantId))!.Id);
+        using (TestTenantContext.Default.BeginTenantScope(2))
+            Assert.Equal(20, (await tenantTwo.GetByPhoneAsync("3001234567", tenantTwoBranch.TenantId))!.Id);
         Assert.Null(await tenantOne.GetByIdAsync(20));
     }
 
@@ -63,7 +65,8 @@ public sealed class CustomerTenantIsolationTests
         db.AddRange(branchOne, branchTwo, customerOne, customerTwo,
             new Address { Id = 100, TenantId = 1, CustomerId = 10, AddressText = "Calle 1", DeliveryFee = 1000 },
             new Address { Id = 200, TenantId = 2, CustomerId = 20, AddressText = "Calle 2", DeliveryFee = 2000 });
-        await db.SaveChangesAsync();
+        using (TestTenantContext.Default.BeginSystemScope())
+            await db.SaveChangesAsync();
 
         var repository = new AddressRepository(db, new FixedTenant(1));
 
@@ -95,7 +98,9 @@ public sealed class CustomerTenantIsolationTests
     }
 
     private static ApplicationDbContext CreateDb() => new(new DbContextOptionsBuilder<ApplicationDbContext>()
-        .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+        currentTenant: TestTenantContext.Default,
+        tenantExecutionContext: TestTenantContext.Default);
 
     private sealed record FixedTenant(int TenantId) : ICurrentTenant
     {

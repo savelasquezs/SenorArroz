@@ -65,7 +65,9 @@ public class SetOrderFulfillmentAgentToolTests
     private static async Task<ApplicationDbContext> Db()
     {
         var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
         db.Branches.Add(new Branch { Id = 1, Name = "Centro" });
         db.Neighborhoods.Add(new Neighborhood { Id = 1, BranchId = 1, Name = "Santander", Active = true });
         db.Customers.AddRange(

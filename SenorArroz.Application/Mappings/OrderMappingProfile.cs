@@ -130,6 +130,7 @@ public class OrderMappingProfile : Profile
 
         // CreateOrderDetailDto -> OrderDetail
         CreateMap<CreateOrderDetailDto, OrderDetail>()
+            .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.Id, opt => opt.Ignore())
             .ForMember(dest => dest.OrderId, opt => opt.Ignore())
             .ForMember(dest => dest.Subtotal, opt => opt.Ignore())
@@ -192,6 +193,7 @@ public class OrderMappingProfile : Profile
 
         // UpdateOrderDetailDto -> OrderDetail (para actualizaciones)
         CreateMap<UpdateOrderDetailDto, OrderDetail>()
+            .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.OrderId, opt => opt.Ignore())
             .ForMember(dest => dest.Subtotal, opt => opt.Ignore())
             .ForMember(dest => dest.Order, opt => opt.Ignore())

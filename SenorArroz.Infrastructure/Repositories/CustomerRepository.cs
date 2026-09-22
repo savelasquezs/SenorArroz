@@ -19,7 +19,7 @@ public class CustomerRepository : ICustomerRepository
     public CustomerRepository(ApplicationDbContext context, ICurrentTenant? currentTenant = null)
     {
         _context = context;
-        _tenantId = currentTenant?.TenantId ?? 1;
+        _tenantId = currentTenant?.TenantId ?? context.CurrentTenantIdForFilter;
     }
 
     public async Task<PagedResult<Customer>> GetPagedAsync(

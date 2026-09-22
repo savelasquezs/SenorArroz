@@ -123,7 +123,7 @@ public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLif
             NullLogger<DeliveryAutoCompletionService>.Instance,
             new PostgresDeliveryAutoCompletionRouteLock(db));
 
-    private ApplicationDbContext CreateDb() => new(_options);
+    private ApplicationDbContext CreateDb() => new(_options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
 
     private DeliverymanLocation DepartureLocation(long id) => new()
     {
