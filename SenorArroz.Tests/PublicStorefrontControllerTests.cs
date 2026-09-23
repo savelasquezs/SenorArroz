@@ -1302,6 +1302,12 @@ public class PublicStorefrontControllerTests
 
     private static void Seed(ApplicationDbContext db)
     {
+        db.Tenants.Add(new Tenant
+        {
+            Id = 1,
+            Name = "Señor Arroz",
+            Slug = "senor-arroz",
+        });
         var branch = new Branch
         {
             Id = 10,
