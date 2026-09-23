@@ -142,6 +142,8 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                             || (deviceEvent.Details != null
                                 && deviceEvent.Details.Contains("queued_location_count=")))))
                 && !_db.DeliveryTrackingAlerts.Any(alert => alert.SourceDeviceEventId == deviceEvent.Id)
+                && !_db.DeliveryTrackingAlerts.Any(alert =>
+                    alert.DeduplicationKey.StartsWith("device_event:" + deviceEvent.Id + ":"))
                 && !_db.DeliveryIncidentDeviceEventEvidence.Any(evidence =>
                     evidence.SourceDeviceEventId == deviceEvent.Id))
             .OrderBy(x => x.RecordedAt)
