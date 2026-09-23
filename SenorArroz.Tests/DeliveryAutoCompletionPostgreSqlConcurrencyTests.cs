@@ -140,6 +140,12 @@ public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLif
 
     private async Task SeedAsync(ApplicationDbContext db)
     {
+        db.Tenants.Add(new Tenant
+        {
+            Id = 1,
+            Name = "Señor Arroz",
+            Slug = "senor-arroz",
+        });
         db.Branches.Add(new Branch
         {
             Id = 7,
