@@ -5,6 +5,11 @@ using SenorArroz.Application.Features.Users.DTOs;
 
 namespace SenorArroz.API.Filters;
 
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class AllowCrossBranchOrderContextAttribute : Attribute
+{
+}
+
 /// <summary>
 /// Rejects explicit branch values that attempt to escape the resolved request scope.
 /// The feature handlers remain responsible for deriving the branch when no explicit
@@ -25,9 +30,13 @@ public sealed class BranchScopeActionFilter : IAsyncActionFilter
     {
         if (context.HttpContext.User.Identity?.IsAuthenticated == true)
         {
+            var allowCrossBranchOrderContext = context.ActionDescriptor.EndpointMetadata
+                .OfType<AllowCrossBranchOrderContextAttribute>()
+                .Any();
             foreach (var (name, value) in context.ActionArguments)
             {
                 if (name.Equals("branchId", StringComparison.OrdinalIgnoreCase)
+                    && !allowCrossBranchOrderContext
                     && TryGetPositiveBranchId(value, out var routeOrQueryBranchId))
                 {
                     _branchContext.ResolveOptional(routeOrQueryBranchId);
@@ -39,7 +48,7 @@ public sealed class BranchScopeActionFilter : IAsyncActionFilter
                     | System.Reflection.BindingFlags.Instance
                     | System.Reflection.BindingFlags.IgnoreCase);
 
-                if (value is UpdateUserDto || value is CreateOrderDto { WhatsAppConversationId: > 0 })
+                if (value is UpdateUserDto || value is CreateOrderDto)
                     continue;
 
                 if (property is not null

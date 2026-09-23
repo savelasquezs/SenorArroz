@@ -46,42 +46,32 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
 
     public async Task<OrderDto> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
     {
-        // Determine branch based on user role
-        int branchId;
-
-        if (Roles.IsSuperadmin(_currentUser.Role))
-        {
-            // Superadmin can specify branch or needs to provide it
-            if (request.Order.BranchId <= 0)
-            {
-                throw new BusinessException("Superadmin debe especificar la sucursal");
-            }
-            branchId = request.Order.BranchId;
-        }
-        else if (Roles.IsAdminOrCashier(_currentUser.Role))
-        {
-            branchId = request.AllowAssignedWhatsAppOperationalBranch
-                ? request.Order.BranchId
-                : _currentUser.BranchId;
-
-            if (request.AllowAssignedWhatsAppOperationalBranch)
-            {
-                if (!Roles.IsCashier(_currentUser.Role) || !request.Order.WhatsAppConversationId.HasValue || branchId <= 0)
-                    throw new BusinessException("La conversación de WhatsApp y su sucursal operativa son obligatorias.");
-
-                var canCreateOperationalOrder = await _db.WhatsAppConversations.AsNoTracking().AnyAsync(x =>
-                    x.Id == request.Order.WhatsAppConversationId.Value
-                    && x.ChannelSettingId.HasValue
-                    && x.OperationalBranchId == branchId
-                    && x.AssignedUserId == _currentUser.Id,
-                    cancellationToken);
-                if (!canCreateOperationalOrder)
-                    throw new BusinessException("No tienes permiso para crear este pedido de WhatsApp en otra sucursal.");
-            }
-        }
-        else
+        if (!Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))
         {
             throw new BusinessException("No tienes permisos para crear pedidos");
+        }
+
+        var branchId = request.Order.BranchId > 0
+            ? request.Order.BranchId
+            : Roles.IsSuperadmin(_currentUser.Role)
+                ? 0
+                : _currentUser.BranchId;
+        if (branchId <= 0)
+            throw new BusinessException("Debes especificar la sucursal que atenderá el pedido");
+
+        if (request.AllowAssignedWhatsAppOperationalBranch)
+        {
+            if (!Roles.IsCashier(_currentUser.Role) || !request.Order.WhatsAppConversationId.HasValue)
+                throw new BusinessException("La conversación de WhatsApp y su sucursal operativa son obligatorias.");
+
+            var canCreateOperationalOrder = await _db.WhatsAppConversations.AsNoTracking().AnyAsync(x =>
+                x.Id == request.Order.WhatsAppConversationId.Value
+                && x.ChannelSettingId.HasValue
+                && x.OperationalBranchId == branchId
+                && x.AssignedUserId == _currentUser.Id,
+                cancellationToken);
+            if (!canCreateOperationalOrder)
+                throw new BusinessException("No tienes permiso para crear este pedido de WhatsApp en otra sucursal.");
         }
 
         // Validar que el pedido tenga al menos un producto
@@ -130,15 +120,19 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             throw new BusinessException("La hora de preparación no puede ser posterior a la hora de entrega");
         }
 
+        var destinationBranch = await _db.Branches.AsNoTracking()
+            .Where(x => x.Id == branchId)
+            .Select(x => new { x.TenantId, x.IsActive })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (destinationBranch is null)
+            throw new BusinessException("La sucursal destino no existe o no pertenece al restaurante actual");
+        if (!destinationBranch.IsActive)
+            throw new BusinessException("La sucursal destino no está activa");
+
         await ValidateAndStampManualBenefitAsync(request.Order, branchId, cancellationToken);
 
         var order = _mapper.Map<Order>(request.Order);
-        var branchTenantId = await _db.Branches.AsNoTracking()
-            .Where(x => x.Id == branchId)
-            .Select(x => x.TenantId)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (branchTenantId <= 0)
-            throw new BusinessException("La sucursal no pertenece a un tenant válido");
+        var branchTenantId = destinationBranch.TenantId;
         order.TenantId = branchTenantId;
         if (order.CustomerId.HasValue && !await _db.Customers.AsNoTracking().AnyAsync(
                 x => x.Id == order.CustomerId && x.TenantId == branchTenantId && x.Active, cancellationToken))
@@ -151,13 +145,13 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             var addressService = await _db.AddressBranches.AsNoTracking().FirstOrDefaultAsync(x =>
                 x.TenantId == branchTenantId && x.AddressId == order.AddressId && x.BranchId == branchId,
                 cancellationToken);
-            if (addressService is not null)
-            {
-                if (!addressService.IsCovered)
-                    throw new BusinessException("La dirección está fuera de cobertura para la sucursal actual");
-                order.DeliveryFee = addressService.DeliveryFee;
-            }
+            if (addressService is null)
+                throw new BusinessException("La dirección no tiene servicio de domicilio configurado para la sucursal seleccionada");
+            if (!addressService.IsCovered)
+                throw new BusinessException("La dirección está fuera de cobertura para la sucursal seleccionada");
+            order.DeliveryFee = addressService.DeliveryFee;
         }
+        await ValidatePaymentsForBranchAsync(request.Order, branchId, cancellationToken);
         order.WhatsAppConversationId = request.Order.WhatsAppConversationId;
         if (request.Order.AppliedBenefitType == OrderBenefitType.Manual)
         {
@@ -178,6 +172,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         
         // Configurar valores obligatorios inmediatamente después del mapeo
         order.BranchId = branchId;
+        order.TakenById = _currentUser.Id;
         order.Status = Domain.Enums.OrderStatus.Taken;
         order.AddStatusTime(Domain.Enums.OrderStatus.Taken, _clock.UtcNow);
 
@@ -258,6 +253,32 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         }
 
         return result;
+    }
+
+    private async Task ValidatePaymentsForBranchAsync(
+        CreateOrderDto dto,
+        int branchId,
+        CancellationToken cancellationToken)
+    {
+        var bankIds = (dto.BankPayments ?? []).Select(x => x.BankId).Distinct().ToArray();
+        if (bankIds.Length > 0)
+        {
+            var validBankCount = await _db.Banks.AsNoTracking().CountAsync(
+                x => bankIds.Contains(x.Id) && x.BranchId == branchId && x.Active,
+                cancellationToken);
+            if (validBankCount != bankIds.Length)
+                throw new BusinessException("Los bancos del pedido deben estar activos y pertenecer a la sucursal seleccionada");
+        }
+
+        var appIds = (dto.AppPayments ?? []).Select(x => x.AppId).Distinct().ToArray();
+        if (appIds.Length > 0)
+        {
+            var validAppCount = await _db.Apps.AsNoTracking().CountAsync(
+                x => appIds.Contains(x.Id) && x.Active && x.Bank.Active && x.Bank.BranchId == branchId,
+                cancellationToken);
+            if (validAppCount != appIds.Length)
+                throw new BusinessException("Las apps del pedido deben estar activas y pertenecer a la sucursal seleccionada");
+        }
     }
 
     private async Task TryEnqueueKitchenPrintWhenOrderCreatedAsync(Order order, CancellationToken cancellationToken)

@@ -116,6 +116,9 @@ Reglas:
 Reglas esperadas:
 
 - Un pedido pertenece a una sucursal.
+- Admin, Cajero y Superadmin pueden crear un pedido para cualquier sucursal activa de su mismo tenant sin cambiar su sucursal de sesión. `Order.BranchId` identifica la sucursal operativa y `Order.TakenById` conserva al usuario autenticado que lo tomó.
+- En pedidos con dirección, `AddressBranch` de la sucursal operativa es la autoridad de cobertura y tarifa. La creación se rechaza si no existe, no está cubierta o pertenece a otro tenant; la tarifa enviada por el cliente siempre se sustituye por la configurada.
+- Cliente, dirección, bancos y apps usados al crear el pedido deben pertenecer al mismo tenant y, donde corresponda, a la sucursal operativa. `Customer.BranchId` sigue siendo únicamente el origen histórico del cliente.
 - En SaaS, un pedido también debe pertenecer a un tenant.
 - Los usuarios no superadmin solo deben consultar/modificar pedidos de su sucursal autorizada.
 - En el modelo multitenant, incluso superadmin debe operar con tenant explícito o contexto administrativo controlado.

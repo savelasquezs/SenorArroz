@@ -38,6 +38,7 @@ public class CustomerMappingProfile : Profile
             .ForMember(dest => dest.IsPrimary, opt => opt.MapFrom(src => src.IsPrimary));
 
         CreateMap<AddressBranch, CustomerAddressBranchDto>()
+            .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Branch.Name))
             .ForMember(dest => dest.NeighborhoodName, opt => opt.MapFrom(src => src.Neighborhood != null ? src.Neighborhood.Name : null));
 
         CreateMap<CreateCustomerAddressDto, CreateAddressCommand>()

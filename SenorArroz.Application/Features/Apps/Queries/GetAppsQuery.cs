@@ -10,6 +10,7 @@ public class GetAppsQuery : IRequest<PagedResult<AppDto>>
     public int? BankId { get; set; }
     public string? Name { get; set; }
     public int? BranchId { get; set; }
+    public bool ForOrderCreation { get; set; }
     public bool? Active { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 10;

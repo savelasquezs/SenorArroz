@@ -30,7 +30,9 @@ public class GetAppsHandler : IRequestHandler<GetAppsQuery, PagedResult<AppDto>>
     public async Task<PagedResult<AppDto>> Handle(GetAppsQuery request, CancellationToken cancellationToken)
     {
         // Determine branch filter based on user role
-        var branchFilter = _branchContext.ResolveOptional(request.BranchId);
+        var branchFilter = request.ForOrderCreation && Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role)
+            ? request.BranchId
+            : _branchContext.ResolveOptional(request.BranchId);
 
         var pagedApps = await _appRepository.GetPagedAsync(
             request.BankId,

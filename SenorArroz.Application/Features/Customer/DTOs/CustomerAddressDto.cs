@@ -26,6 +26,7 @@ namespace SenorArroz.Application.Features.Customers.DTOs
     public sealed class CustomerAddressBranchDto
     {
         public int BranchId { get; set; }
+        public string BranchName { get; set; } = string.Empty;
         public int? NeighborhoodId { get; set; }
         public string? NeighborhoodName { get; set; }
         public int DeliveryFee { get; set; }

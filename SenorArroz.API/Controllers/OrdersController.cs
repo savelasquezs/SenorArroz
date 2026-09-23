@@ -183,8 +183,6 @@ public class OrdersController : ControllerBase
         var allowAssignedWhatsAppOperationalBranch = orderDto.WhatsAppConversationId.HasValue
             && orderDto.BranchId != _currentUser.BranchId
             && Roles.IsCashier(_currentUser.Role);
-        if (!allowAssignedWhatsAppOperationalBranch)
-            orderDto.BranchId = _branchContext.RequireBranch(orderDto.BranchId);
 
         var command = new CreateOrderCommand
         {

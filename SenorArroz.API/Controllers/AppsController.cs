@@ -5,6 +5,7 @@ using MediatR;
 using SenorArroz.Application.Features.Apps.Commands;
 using SenorArroz.Application.Features.Apps.Queries;
 using SenorArroz.Application.Features.Apps.DTOs;
+using SenorArroz.API.Filters;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
@@ -25,10 +26,12 @@ public class AppsController : ControllerBase
     /// Obtiene una lista paginada de apps
     /// </summary>
     [HttpGet]
+    [AllowCrossBranchOrderContext]
     public async Task<ActionResult<PagedResult<AppDto>>> GetApps(
         [FromQuery] int? bankId = null,
         [FromQuery] string? name = null,
         [FromQuery] int? branchId = null,
+        [FromQuery] bool forOrderCreation = false,
         [FromQuery] bool? active = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10,
@@ -40,6 +43,7 @@ public class AppsController : ControllerBase
             BankId = bankId,
             Name = name,
             BranchId = branchId,
+            ForOrderCreation = forOrderCreation,
             Active = active,
             Page = page,
             PageSize = pageSize,

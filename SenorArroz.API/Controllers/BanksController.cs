@@ -5,6 +5,7 @@ using MediatR;
 using SenorArroz.Application.Features.Banks.Commands;
 using SenorArroz.Application.Features.Banks.Queries;
 using SenorArroz.Application.Features.Banks.DTOs;
+using SenorArroz.API.Filters;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
@@ -25,8 +26,10 @@ public class BanksController : ControllerBase
     /// Obtiene una lista paginada de bancos
     /// </summary>
     [HttpGet]
+    [AllowCrossBranchOrderContext]
     public async Task<ActionResult<PagedResult<BankDto>>> GetBanks(
         [FromQuery] int? branchId = null,
+        [FromQuery] bool forOrderCreation = false,
         [FromQuery] string? name = null,
         [FromQuery] bool? active = null,
         [FromQuery] int page = 1,
@@ -37,6 +40,7 @@ public class BanksController : ControllerBase
         var query = new GetBanksQuery
         {
             BranchId = branchId,
+            ForOrderCreation = forOrderCreation,
             Name = name,
             Active = active,
             Page = page,

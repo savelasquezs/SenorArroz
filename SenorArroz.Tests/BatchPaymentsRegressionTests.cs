@@ -145,6 +145,12 @@ public class BatchPaymentsRegressionTests
             .Options;
         var db = new ApplicationDbContext(opts, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
         db.Branches.Add(new Branch { Id = 1, Name = "Test", Address = "-", Phone1 = "-" });
+        db.Banks.AddRange(
+            new Bank { Id = 1, BranchId = 1, Name = "Banco 1", Active = true },
+            new Bank { Id = 2, BranchId = 1, Name = "Banco 2", Active = true });
+        db.Apps.AddRange(
+            new App { Id = 1, BankId = 1, Name = "App 1", Active = true },
+            new App { Id = 2, BankId = 1, Name = "App 2", Active = true });
         db.SaveChanges();
         return db;
     }

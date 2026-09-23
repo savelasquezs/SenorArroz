@@ -8,6 +8,7 @@ using SenorArroz.Application.Features.Branches.Queries;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Shared.Models;
+using SenorArroz.API.Filters;
 
 namespace SenorArroz.API.Controllers;
 
@@ -73,10 +74,14 @@ public class BranchesController : ControllerBase
     /// <param name="id">ID de la sucursal</param>
     /// <returns>Datos de la sucursal</returns>
     [HttpGet("{id}")]
-    [Authorize(Roles = "Superadmin, Admin")]
-    public async Task<ActionResult<ApiResponse<BranchDto>>> GetBranch(int id)
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    [AllowCrossBranchOrderContext]
+    public async Task<ActionResult<ApiResponse<BranchDto>>> GetBranch(
+        int id,
+        [FromQuery] bool forOrderCreation = false)
     {
-        _branchContext.EnsureAccess(id);
+        if (!forOrderCreation)
+            _branchContext.EnsureAccess(id);
         var query = new GetBranchByIdQuery { Id = id };
         var result = await _mediator.Send(query);
 

@@ -48,6 +48,9 @@ public class CustomerRepository : ICustomerRepository
             .Include(c => c.Addresses)
             .ThenInclude(a => a.BranchServices)
             .ThenInclude(s => s.Neighborhood)
+            .Include(c => c.Addresses)
+            .ThenInclude(a => a.BranchServices)
+            .ThenInclude(s => s.Branch)
             .AsQueryable();
         query = query.Where(c => c.TenantId == _tenantId);
 
@@ -122,6 +125,9 @@ public class CustomerRepository : ICustomerRepository
             .Include(c => c.Addresses)
             .ThenInclude(a => a.BranchServices)
             .ThenInclude(s => s.Neighborhood)
+            .Include(c => c.Addresses)
+            .ThenInclude(a => a.BranchServices)
+            .ThenInclude(s => s.Branch)
             .FirstOrDefaultAsync(c => c.TenantId == _tenantId && c.Id == id, cancellationToken);
     }
 

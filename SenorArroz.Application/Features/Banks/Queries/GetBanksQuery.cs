@@ -8,6 +8,7 @@ namespace SenorArroz.Application.Features.Banks.Queries;
 public class GetBanksQuery : IRequest<PagedResult<BankDto>>
 {
     public int? BranchId { get; set; }
+    public bool ForOrderCreation { get; set; }
     public string? Name { get; set; }
     public bool? Active { get; set; }
     public int Page { get; set; } = 1;

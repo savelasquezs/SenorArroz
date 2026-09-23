@@ -9,6 +9,7 @@ using SenorArroz.Application.Features.DailyPromotions.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Shared.Models;
+using SenorArroz.API.Filters;
 
 namespace SenorArroz.API.Controllers;
 
@@ -30,6 +31,7 @@ public class DailyPromotionsController : ControllerBase
 
     [HttpGet("active")]
     [Authorize(Roles = "Superadmin,Admin,Cashier")]
+    [AllowCrossBranchOrderContext]
     public async Task<ActionResult<ApiResponse<DailyPromotionDto?>>> GetActive(
         int branchId,
         CancellationToken cancellationToken)
@@ -274,11 +276,7 @@ public class DailyPromotionsController : ControllerBase
 
     private bool CanReadBranch(int branchId)
     {
-        if (Roles.IsSuperadmin(_currentUser.Role))
-            return true;
-        return Roles.IsAdmin(_currentUser.Role) || Roles.IsCashier(_currentUser.Role)
-            ? _currentUser.BranchId == branchId
-            : false;
+        return branchId > 0 && Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role);
     }
 
     private bool CanManageBranch(int branchId)

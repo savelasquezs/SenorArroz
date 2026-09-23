@@ -30,7 +30,9 @@ public class GetBanksHandler : IRequestHandler<GetBanksQuery, PagedResult<BankDt
     public async Task<PagedResult<BankDto>> Handle(GetBanksQuery request, CancellationToken cancellationToken)
     {
         // Determine branch filter based on user role
-        var branchFilter = _branchContext.ResolveOptional(request.BranchId);
+        var branchFilter = request.ForOrderCreation && Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role)
+            ? request.BranchId
+            : _branchContext.ResolveOptional(request.BranchId);
 
         // Cashier cannot see hidden banks (CashVault, RealVault)
         var excludeHidden = !Roles.IsAdminOrSuperadmin(_currentUser.Role);
