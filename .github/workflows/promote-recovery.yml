@@ -1,0 +1,306 @@
+name: Promote Recovery Database
+
+on:
+  workflow_dispatch:
+    inputs:
+      recovery_service:
+        description: Exact Railway recovery PostgreSQL service name from the Database Recovery summary
+        required: true
+        type: string
+      confirmation:
+        description: Type PROMOTE to point production at the verified recovery database
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-disaster-recovery
+  cancel-in-progress: false
+
+env:
+  RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+  RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+  RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT || 'production' }}
+  RAILWAY_BACKUP_SERVICE: ${{ vars.RAILWAY_BACKUP_SERVICE || 'postgres-backup-cron' }}
+  RAILWAY_BACKEND_SERVICE: ${{ vars.RAILWAY_BACKEND_SERVICE }}
+  DR_API_HEALTH_URL: ${{ vars.DR_API_HEALTH_URL }}
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Confirm promotion request
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirmation }}" != "PROMOTE" ]; then
+            echo "Refusing promotion: confirmation must be exactly PROMOTE." >&2
+            exit 1
+          fi
+          for name in RAILWAY_API_TOKEN RAILWAY_PROJECT_ID RAILWAY_BACKEND_SERVICE; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required GitHub Actions secret/variable: ${name}." >&2
+              exit 1
+            fi
+          done
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        shell: bash
+        run: npm install --global @railway/cli
+
+      - name: Link Railway project
+        shell: bash
+        run: |
+          set -euo pipefail
+          railway link \
+            --project "$RAILWAY_PROJECT_ID" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --json >/tmp/railway-link.json
+
+      - name: Load and validate recovery metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          RECOVERY_VARS="$(railway variable list --json \
+            --service "${{ inputs.recovery_service }}" \
+            --environment "$RAILWAY_ENVIRONMENT")"
+
+          get_recovery_var() {
+            printf '%s' "$RECOVERY_VARS" | jq -r --arg key "$1" '.[$key] // empty'
+          }
+
+          DR_VERIFIED="$(get_recovery_var DR_VERIFIED)"
+          RUNTIME_ROLE="$(get_recovery_var DR_RUNTIME_ROLE)"
+          RUNTIME_PASSWORD="$(get_recovery_var DR_RUNTIME_PASSWORD)"
+          RECOVERY_PRIVATE_DATABASE_URL="$(get_recovery_var DATABASE_URL)"
+          RECOVERY_PGUSER="$(get_recovery_var PGUSER)"
+          RECOVERY_PGPASSWORD="$(get_recovery_var PGPASSWORD)"
+          RECOVERY_PGHOST="$(get_recovery_var PGHOST)"
+          RECOVERY_PGPORT="$(get_recovery_var PGPORT)"
+          RECOVERY_PGDATABASE="$(get_recovery_var PGDATABASE)"
+          RESTORED_BACKUP_KEY="$(get_recovery_var DR_BACKUP_KEY)"
+          RECOVERY_SOURCE="$(get_recovery_var DR_SOURCE)"
+
+          if [ "$DR_VERIFIED" != "YES" ]; then
+            echo "Refusing promotion: selected service is not marked DR_VERIFIED=YES." >&2
+            exit 1
+          fi
+          for name in RUNTIME_ROLE RUNTIME_PASSWORD RECOVERY_PRIVATE_DATABASE_URL RECOVERY_PGUSER RECOVERY_PGPASSWORD RECOVERY_PGHOST RECOVERY_PGPORT RECOVERY_PGDATABASE; do
+            if [ -z "${!name:-}" ]; then
+              echo "Refusing promotion: recovery metadata is incomplete (${name})." >&2
+              exit 1
+            fi
+          done
+
+          echo "::add-mask::$RUNTIME_PASSWORD"
+          echo "::add-mask::$RECOVERY_PRIVATE_DATABASE_URL"
+          echo "::add-mask::$RECOVERY_PGPASSWORD"
+          {
+            echo "RUNTIME_ROLE=$RUNTIME_ROLE"
+            echo "RUNTIME_PASSWORD=$RUNTIME_PASSWORD"
+            echo "RECOVERY_PRIVATE_DATABASE_URL=$RECOVERY_PRIVATE_DATABASE_URL"
+            echo "RECOVERY_PGUSER=$RECOVERY_PGUSER"
+            echo "RECOVERY_PGPASSWORD=$RECOVERY_PGPASSWORD"
+            echo "RECOVERY_PGHOST=$RECOVERY_PGHOST"
+            echo "RECOVERY_PGPORT=$RECOVERY_PGPORT"
+            echo "RECOVERY_PGDATABASE=$RECOVERY_PGDATABASE"
+            echo "RESTORED_BACKUP_KEY=$RESTORED_BACKUP_KEY"
+            echo "RECOVERY_SOURCE=$RECOVERY_SOURCE"
+          } >> "$GITHUB_ENV"
+
+      - name: Open private Railway database tunnel
+        shell: bash
+        run: |
+          set -euo pipefail
+          railway connect "${{ inputs.recovery_service }}" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --tunnel-only \
+            --port 15432 >/tmp/railway-recovery-tunnel.log 2>&1 &
+          TUNNEL_PID=$!
+          echo "TUNNEL_PID=$TUNNEL_PID" >> "$GITHUB_ENV"
+
+          for attempt in $(seq 1 60); do
+            if (echo > /dev/tcp/127.0.0.1/15432) >/dev/null 2>&1; then
+              exit 0
+            fi
+            if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+              echo "Railway tunnel stopped unexpectedly:" >&2
+              cat /tmp/railway-recovery-tunnel.log >&2 || true
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "Timed out waiting for Railway database tunnel." >&2
+          exit 1
+
+      - name: Reverify recovery runtime isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME_LOCAL_URL="$(python3 ops/postgres-recovery/build-database-url.py \
+            --base "$RECOVERY_PRIVATE_DATABASE_URL" \
+            --user "$RUNTIME_ROLE" \
+            --password "$RUNTIME_PASSWORD" \
+            --host 127.0.0.1 \
+            --port 15432)"
+          NPGSQL_RUNTIME_CONNECTION="$(python3 ops/postgres-recovery/build-npgsql-connection-string.py \
+            --host "$RECOVERY_PGHOST" \
+            --port "$RECOVERY_PGPORT" \
+            --database "$RECOVERY_PGDATABASE" \
+            --user "$RUNTIME_ROLE" \
+            --password "$RUNTIME_PASSWORD")"
+
+          echo "::add-mask::$RUNTIME_LOCAL_URL"
+          echo "::add-mask::$NPGSQL_RUNTIME_CONNECTION"
+          echo "NPGSQL_RUNTIME_CONNECTION=$NPGSQL_RUNTIME_CONNECTION" >> "$GITHUB_ENV"
+
+          docker run --rm --network host \
+            -v "$PWD:/repo:ro" \
+            postgres:17-alpine \
+            psql "$RUNTIME_LOCAL_URL" -v ON_ERROR_STOP=1 \
+              -f /repo/SenorArroz.Infrastructure/Scripts/verify_multitenant_runtime_role.sql
+
+      - name: Save rollback state
+        shell: bash
+        run: |
+          set -euo pipefail
+          BACKEND_VARS="$(railway variable list --json \
+            --service "$RAILWAY_BACKEND_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT")"
+          BACKUP_VARS="$(railway variable list --json \
+            --service "$RAILWAY_BACKUP_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT")"
+
+          PREVIOUS_CONNECTION="$(printf '%s' "$BACKEND_VARS" | jq -r '.["ConnectionStrings__DefaultConnection"] // empty')"
+          PREVIOUS_BACKUP_DATABASE_URL="$(printf '%s' "$BACKUP_VARS" | jq -r '.DATABASE_URL // empty')"
+
+          if [ -z "$PREVIOUS_CONNECTION" ]; then
+            echo "Cannot safely promote: current backend connection string could not be retrieved for rollback." >&2
+            echo "If it is sealed, make it retrievable before using automated promotion." >&2
+            exit 1
+          fi
+          if [ -z "$PREVIOUS_BACKUP_DATABASE_URL" ]; then
+            echo "Cannot safely promote: current backup DATABASE_URL could not be retrieved for rollback." >&2
+            exit 1
+          fi
+
+          echo "::add-mask::$PREVIOUS_CONNECTION"
+          echo "::add-mask::$PREVIOUS_BACKUP_DATABASE_URL"
+
+          printf '%s' "$PREVIOUS_CONNECTION" | railway variable set DR_PREVIOUS_CONNECTION --stdin \
+            --service "$RAILWAY_BACKEND_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --skip-deploys >/dev/null
+          railway variable set \
+            "DR_ACTIVE_RECOVERY_SERVICE=${{ inputs.recovery_service }}" \
+            "DR_PROMOTION_RUN=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --service "$RAILWAY_BACKEND_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --skip-deploys >/dev/null
+
+          printf '%s' "$PREVIOUS_BACKUP_DATABASE_URL" | railway variable set DR_PREVIOUS_DATABASE_URL --stdin \
+            --service "$RAILWAY_BACKUP_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --skip-deploys >/dev/null
+
+      - name: Point backend at recovery database
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE_DEPLOYMENT="$(railway deployment list \
+            --service "$RAILWAY_BACKEND_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --limit 1 \
+            --json | jq -r '.[0].id // empty')"
+
+          printf '%s' "$NPGSQL_RUNTIME_CONNECTION" | railway variable set ConnectionStrings__DefaultConnection --stdin \
+            --service "$RAILWAY_BACKEND_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" >/dev/null
+
+          STATUS=""
+          NEW_DEPLOYMENT=""
+          for attempt in $(seq 1 90); do
+            DEPLOYMENTS="$(railway deployment list \
+              --service "$RAILWAY_BACKEND_SERVICE" \
+              --environment "$RAILWAY_ENVIRONMENT" \
+              --limit 1 \
+              --json)"
+            NEW_DEPLOYMENT="$(printf '%s' "$DEPLOYMENTS" | jq -r '.[0].id // empty')"
+            STATUS="$(printf '%s' "$DEPLOYMENTS" | jq -r '.[0].status // empty')"
+            if [ -n "$NEW_DEPLOYMENT" ] && [ "$NEW_DEPLOYMENT" != "$BEFORE_DEPLOYMENT" ]; then
+              case "$STATUS" in
+                SUCCESS) break ;;
+                FAILED|CRASHED|REMOVED)
+                  echo "Backend deployment failed after promotion with status ${STATUS}." >&2
+                  exit 1
+                  ;;
+              esac
+            fi
+            sleep 5
+          done
+
+          if [ -z "$NEW_DEPLOYMENT" ] || [ "$NEW_DEPLOYMENT" = "$BEFORE_DEPLOYMENT" ] || [ "$STATUS" != "SUCCESS" ]; then
+            echo "Timed out waiting for the promoted backend deployment." >&2
+            exit 1
+          fi
+
+      - name: Check public backend
+        if: env.DR_API_HEALTH_URL != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --retry 12 --retry-delay 5 --retry-all-errors \
+            "$DR_API_HEALTH_URL" >/dev/null
+
+      - name: Point backup cron at promoted database
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$RECOVERY_PRIVATE_DATABASE_URL" | railway variable set DATABASE_URL --stdin \
+            --service "$RAILWAY_BACKUP_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" >/dev/null
+
+      - name: Promotion summary
+        shell: bash
+        run: |
+          {
+            echo "## Recovery database promoted"
+            echo
+            echo "- Recovery service: \`${{ inputs.recovery_service }}\`"
+            echo "- Backup source: \`${RECOVERY_SOURCE:-unknown}\`"
+            echo "- Restored object: \`${RESTORED_BACKUP_KEY:-unknown}\`"
+            echo "- Runtime role/RLS: reverified immediately before cutover"
+            echo "- Backend: redeployed successfully against the recovery database"
+            echo "- Backup cron: now targets the promoted recovery database"
+            echo "- Former production database: not deleted"
+            echo
+            echo "Manual smoke tests still required: login, POS/order creation, customer lookup, kitchen, storefront, WhatsApp, printing and critical payment/delivery integrations."
+            echo "If the cutover is not acceptable, run **Rollback Recovery Database** and type ROLLBACK."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Promotion failure notice
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "## Promotion did not complete cleanly"
+            echo
+            echo "Inspect the failed step before making more database changes."
+            echo "If the backend connection had already been changed, run **Rollback Recovery Database** using recovery service \`${{ inputs.recovery_service }}\`."
+            echo "Neither the former production database nor the recovery database is deleted automatically."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Close Railway tunnel
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${TUNNEL_PID:-}" ]; then
+            kill "$TUNNEL_PID" 2>/dev/null || true
+          fi
