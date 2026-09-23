@@ -29,6 +29,7 @@ public class PrintQueueService : IPrintQueueService
     private readonly IClock _clock;
     private readonly IPrintAgentNotifier _printAgentNotifier;
     private readonly ILogger<PrintQueueService> _logger;
+    private readonly ITenantExecutionContext _tenantExecutionContext;
 
     public PrintQueueService(
         ApplicationDbContext db,
@@ -38,6 +39,7 @@ public class PrintQueueService : IPrintQueueService
         ILoyaltyCycleStepRepository loyaltyCycleStepRepository,
         IClock clock,
         IPrintAgentNotifier printAgentNotifier,
+        ITenantExecutionContext tenantExecutionContext,
         ILogger<PrintQueueService> logger)
     {
         _db = db;
@@ -48,16 +50,21 @@ public class PrintQueueService : IPrintQueueService
         _orderRepository = orderRepository;
         _loyaltyCycleStepRepository = loyaltyCycleStepRepository;
         _printAgentNotifier = printAgentNotifier;
+        _tenantExecutionContext = tenantExecutionContext;
         _logger = logger;
     }
 
-    public async Task<bool> IsAgentTokenValidAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default)
+    public async Task<PrintAgentIdentity?> AuthenticateAgentAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default)
     {
+        using var systemScope = _tenantExecutionContext.BeginSystemScope();
         var settings = await _db.BranchPrintSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.BranchId == branchId, cancellationToken);
-        if (settings == null) return false;
-        return PrintAgentTokenCrypto.IsValid(plainToken, settings);
+        if (settings == null || !PrintAgentTokenCrypto.IsValid(plainToken, settings)) return null;
+        return new PrintAgentIdentity(settings.TenantId, branchId);
     }
+
+    public async Task<bool> IsAgentTokenValidAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default) =>
+        await AuthenticateAgentAsync(branchId, plainToken, cancellationToken) is not null;
 
     public async Task<PrintJob> EnqueueAsync(int branchId, PrintJobKind kind, IReadOnlyList<int> orderIds, CancellationToken cancellationToken = default)
     {

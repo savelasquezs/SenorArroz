@@ -157,7 +157,7 @@ public sealed class WhatsAppCommerceOutboxMessageConfiguration : IEntityTypeConf
         builder.Property(x => x.LastError).HasColumnName("last_error").HasMaxLength(1000);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
-        builder.HasIndex(x => x.EventKey).IsUnique().HasDatabaseName("ux_whatsapp_commerce_outbox_event");
+        builder.HasIndex(x => new { x.TenantId, x.EventKey }).IsUnique().HasDatabaseName("ux_whatsapp_commerce_outbox_event");
         builder.HasIndex(x => new { x.Status, x.NextAttemptAt }).HasDatabaseName("ix_whatsapp_commerce_outbox_pending");
         builder.HasOne(x => x.ChannelSetting).WithMany().HasForeignKey(x => x.ChannelSettingId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Conversation).WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Cascade);
@@ -180,7 +180,7 @@ public sealed class WhatsAppCommerceEventConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.Screen).HasColumnName("screen").HasMaxLength(40);
         builder.Property(x => x.ReferenceId).HasColumnName("reference_id").HasMaxLength(100);
         WhatsAppChannelSettingConfiguration.Timestamps(builder);
-        builder.HasIndex(x => x.EventKey).IsUnique().HasDatabaseName("ux_whatsapp_commerce_event_key");
+        builder.HasIndex(x => new { x.TenantId, x.EventKey }).IsUnique().HasDatabaseName("ux_whatsapp_commerce_event_key");
         builder.HasIndex(x => new { x.TenantId, x.EventName, x.CreatedAt }).HasDatabaseName("ix_whatsapp_commerce_event_metrics");
         builder.HasIndex(x => new { x.SessionId, x.CreatedAt }).HasDatabaseName("ix_whatsapp_commerce_event_session");
         builder.HasOne(x => x.Session).WithMany(x => x.Events).HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);

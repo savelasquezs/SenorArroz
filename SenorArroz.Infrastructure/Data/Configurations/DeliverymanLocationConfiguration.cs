@@ -63,7 +63,7 @@ public class DeliverymanLocationConfiguration : IEntityTypeConfiguration<Deliver
         builder.HasIndex(e => e.RecordedAt).HasDatabaseName("idx_dloc_recorded");
         builder.HasIndex(e => new { e.DeliverymanId, e.RecordedAt, e.Id })
             .HasDatabaseName("idx_dloc_deliveryman_recorded_id");
-        builder.HasIndex(e => e.ClientPointId)
+        builder.HasIndex(e => new { e.TenantId, e.ClientPointId })
             .IsUnique()
             .HasFilter("client_point_id IS NOT NULL")
             .HasDatabaseName("uq_dloc_client_point_id");

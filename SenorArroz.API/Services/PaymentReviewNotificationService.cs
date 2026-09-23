@@ -4,7 +4,7 @@ using SenorArroz.Application.Common.Interfaces;
 
 namespace SenorArroz.API.Services;
 
-public sealed class PaymentReviewNotificationService(IHubContext<OrderHub> hubContext) : IPaymentReviewNotificationService
+public sealed class PaymentReviewNotificationService(IHubContext<OrderHub> hubContext, ICurrentTenant tenant) : IPaymentReviewNotificationService
 {
     public Task NotifyReviewRequiredAsync(
         int branchId,
@@ -12,7 +12,7 @@ public sealed class PaymentReviewNotificationService(IHubContext<OrderHub> hubCo
         int paymentAttemptId,
         string reason,
         CancellationToken cancellationToken) =>
-        hubContext.Clients.Group($"Branch_{branchId}_Admin").SendAsync(
+        hubContext.Clients.Group(TenantRealtimeGroups.BranchRole(tenant.TenantId, branchId, "Admin")).SendAsync(
             "PaymentReviewRequired",
             new { branchId, orderId, paymentAttemptId, reason },
             cancellationToken);

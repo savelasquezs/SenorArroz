@@ -5,6 +5,8 @@ namespace SenorArroz.Application.Common.Interfaces;
 
 public interface IPrintQueueService
 {
+    Task<PrintAgentIdentity?> AuthenticateAgentAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
     Task<bool> IsAgentTokenValidAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default);
 
     Task<PrintJob> EnqueueAsync(int branchId, PrintJobKind kind, IReadOnlyList<int> orderIds, CancellationToken cancellationToken = default);
@@ -47,6 +49,8 @@ public interface IPrintQueueService
 
     Task<bool> TryFailJobAsync(int branchId, long jobId, string message, CancellationToken cancellationToken = default);
 }
+
+public sealed record PrintAgentIdentity(int TenantId, int BranchId);
 
 public interface IPrintAgentNotifier
 {

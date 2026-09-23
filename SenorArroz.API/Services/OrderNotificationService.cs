@@ -12,30 +12,33 @@ public class OrderNotificationService : IOrderNotificationService
     private readonly IFcmPushService _fcm;
     private readonly IFreeDeliverymanFcmTokenResolver _freeDeliverymanTokens;
     private readonly ILogger<OrderNotificationService> _logger;
+    private readonly ICurrentTenant _tenant;
 
     public OrderNotificationService(
         IHubContext<OrderHub> hubContext,
         IFcmPushService fcm,
         IFreeDeliverymanFcmTokenResolver freeDeliverymanTokens,
+        ICurrentTenant tenant,
         ILogger<OrderNotificationService> logger)
     {
         _hubContext = hubContext;
         _fcm = fcm;
         _freeDeliverymanTokens = freeDeliverymanTokens;
+        _tenant = tenant;
         _logger = logger;
     }
 
     public async Task NotifyNewOrderToKitchen(OrderDto order)
     {
         await _hubContext.Clients
-            .Group($"Branch_{order.BranchId}_Kitchen")
+            .Group(Group(order.BranchId, "Kitchen"))
             .SendAsync("NewOrder", order);
     }
 
     public async Task NotifyOrderReadyToDelivery(OrderDto order)
     {
         await _hubContext.Clients
-            .Group($"Branch_{order.BranchId}_Delivery")
+            .Group(Group(order.BranchId, "Delivery"))
             .SendAsync("OrderReady", order);
 
         await SendPushToFreeDeliverymenAsync(order);
@@ -44,14 +47,14 @@ public class OrderNotificationService : IOrderNotificationService
     public async Task NotifyReservationToKitchen(OrderDto order)
     {
         await _hubContext.Clients
-            .Group($"Branch_{order.BranchId}_Kitchen")
+            .Group(Group(order.BranchId, "Kitchen"))
             .SendAsync("ReservationReady", order);
     }
 
     public async Task NotifyOrderAssignedToDelivery(OrderDto order)
     {
         await _hubContext.Clients
-            .Group($"Branch_{order.BranchId}_Delivery")
+            .Group(Group(order.BranchId, "Delivery"))
             .SendAsync("OrderAssigned", order);
     }
 
@@ -59,36 +62,36 @@ public class OrderNotificationService : IOrderNotificationService
     {
         var payload = new { branchId, planId, version };
         await Task.WhenAll(
-            _hubContext.Clients.Group($"Branch_{branchId}_Delivery").SendAsync("DeliveryRoutingPlanChanged", payload),
-            _hubContext.Clients.Group($"Branch_{branchId}_Admin").SendAsync("DeliveryRoutingPlanChanged", payload));
+            _hubContext.Clients.Group(Group(branchId, "Delivery")).SendAsync("DeliveryRoutingPlanChanged", payload),
+            _hubContext.Clients.Group(Group(branchId, "Admin")).SendAsync("DeliveryRoutingPlanChanged", payload));
     }
 
     public async Task NotifyRouteProposalClaimed(int branchId, int proposalId, int deliverymanId)
     {
         var payload = new { branchId, proposalId, deliverymanId };
         await Task.WhenAll(
-            _hubContext.Clients.Group($"Branch_{branchId}_Delivery").SendAsync("RouteProposalClaimed", payload),
-            _hubContext.Clients.Group($"Branch_{branchId}_Admin").SendAsync("RouteProposalClaimed", payload));
+            _hubContext.Clients.Group(Group(branchId, "Delivery")).SendAsync("RouteProposalClaimed", payload),
+            _hubContext.Clients.Group(Group(branchId, "Admin")).SendAsync("RouteProposalClaimed", payload));
     }
 
     public async Task NotifyOrderModifiedToKitchen(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null)
     {
         await _hubContext.Clients
-            .Group($"Branch_{order.BranchId}_Kitchen")
+            .Group(Group(order.BranchId, "Kitchen"))
             .SendAsync("OrderModified", new { order, modificationKind, kitchenChanges });
     }
 
     public async Task NotifyOrderModifiedToDelivery(OrderDto order, string modificationKind, KitchenOrderModificationSummary? kitchenChanges = null)
     {
         await _hubContext.Clients
-            .Group($"Branch_{order.BranchId}_Delivery")
+            .Group(Group(order.BranchId, "Delivery"))
             .SendAsync("OrderModified", new { order, modificationKind, kitchenChanges });
     }
 
     public async Task NotifyOrderCancelledToKitchen(int branchId, int orderId, string? reasonPreview = null)
     {
         await _hubContext.Clients
-            .Group($"Branch_{branchId}_Kitchen")
+            .Group(Group(branchId, "Kitchen"))
             .SendAsync("OrderCancelled", new { orderId, reasonPreview });
     }
 
@@ -101,7 +104,7 @@ public class OrderNotificationService : IOrderNotificationService
         DateTime recordedAt)
     {
         await _hubContext.Clients
-            .Group($"Branch_{branchId}_Admin")
+            .Group(Group(branchId, "Admin"))
             .SendAsync("DeliverymanLocationUpdate", new
             {
                 deliverymanId,
@@ -158,5 +161,11 @@ public class OrderNotificationService : IOrderNotificationService
                 "FCM_ORDER_READY [{Corr}] STEP exception branchId={BranchId}",
                 correlationId, order.BranchId);
         }
+    }
+
+    private string Group(int branchId, string role)
+    {
+        if (!_tenant.HasTenant) throw new InvalidOperationException("Tenant context is required for realtime notifications.");
+        return TenantRealtimeGroups.BranchRole(_tenant.TenantId, branchId, role);
     }
 }

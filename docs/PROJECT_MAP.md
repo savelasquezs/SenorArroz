@@ -219,7 +219,7 @@ Buscar primero:
 - `SenorArroz.Infrastructure/Scripts/add_whatsapp_commerce_session_tokens.sql`
 - `docs/WHATSAPP_STOREFRONT_FLOW.md`
 
-El canal central opera con `TenantId = 1`, asigna sucursal al cotizar o elegir recogida y llama directamente al motor del storefront. `POST /api/whatsapp/flows/{channelPublicId}/data-exchange` usa el protocolo cifrado de Meta; nunca se consume el BFF ni se hace HTTP contra el mismo backend.
+El canal central opera dentro del tenant persistido en `WhatsAppChannelSetting`, asigna sucursal al cotizar o elegir recogida y llama directamente al motor del storefront. En producción actual esa configuración pertenece explícitamente al Tenant 1. `POST /api/whatsapp/flows/{channelPublicId}/data-exchange` usa el protocolo cifrado de Meta; nunca se consume el BFF ni se hace HTTP contra el mismo backend.
 
 ### Usuarios y autenticación
 

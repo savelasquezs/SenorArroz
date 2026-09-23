@@ -15,11 +15,13 @@ public class BranchPrintAgentController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IPrintQueueService _printQueue;
+    private readonly ITenantExecutionContext _tenantExecutionContext;
 
-    public BranchPrintAgentController(IMediator mediator, IPrintQueueService printQueue)
+    public BranchPrintAgentController(IMediator mediator, IPrintQueueService printQueue, ITenantExecutionContext tenantExecutionContext)
     {
         _mediator = mediator;
         _printQueue = printQueue;
+        _tenantExecutionContext = tenantExecutionContext;
     }
 
     /// <summary>Configuración operativa para el agente (colas, flags). Requiere el mismo token que la cola de jobs.</summary>
@@ -29,12 +31,14 @@ public class BranchPrintAgentController : ControllerBase
         CancellationToken cancellationToken)
     {
         var token = Request.Headers[BranchPrintJobsController.PrintAgentTokenHeader].FirstOrDefault();
-        if (!await _printQueue.IsAgentTokenValidAsync(branchId, token, cancellationToken))
+        var identity = await _printQueue.AuthenticateAgentAsync(branchId, token, cancellationToken);
+        if (identity is null)
         {
             return Unauthorized(ApiResponse<PrintAgentConfigDto>.ErrorResponse(
                 "Token de agente inválido o no configurado."));
         }
 
+        using var tenantScope = _tenantExecutionContext.BeginTenantScope(identity.TenantId);
         var cfg = await _mediator.Send(new GetPrintAgentConfigQuery(branchId), cancellationToken);
         if (cfg is null)
             return NotFound(ApiResponse<PrintAgentConfigDto>.ErrorResponse("Sin configuración de impresión para la sucursal."));

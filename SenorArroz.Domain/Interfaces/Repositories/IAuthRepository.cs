@@ -7,6 +7,7 @@ public interface IAuthRepository
     Task<User?> GetUserByEmailAsync(string email, CancellationToken cancellationToken = default);
     Task<User?> GetUserByIdWithBranchAsync(int userId, CancellationToken cancellationToken = default);
     Task<bool> IsSessionCurrentAsync(int userId, Guid? sessionId, CancellationToken cancellationToken = default);
+    Task<bool> IsTenantAccessCurrentAsync(int userId, int tenantId, long accessVersion, CancellationToken cancellationToken = default);
     Task<bool> CanDeliverymanAccessWebAsync(int userId, CancellationToken cancellationToken = default);
     Task EndSessionIfCurrentAsync(int userId, Guid sessionId, CancellationToken cancellationToken = default);
     Task<bool> ValidatePasswordAsync(User user, string password, CancellationToken cancellationToken = default);

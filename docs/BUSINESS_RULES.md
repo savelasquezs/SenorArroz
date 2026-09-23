@@ -1,5 +1,15 @@
 # Señor Arroz Backend - Business Rules
 
+## Fundación multitenant terminada
+
+- Las 93 entidades operativas tienen filtro EF, write guard, `tenant_id NOT NULL`, FK y RLS forzado.
+- PostgreSQL recibe `app.current_tenant_id` y `app.system_scope` en cada conexión/comando; el pool limpia el contexto y prohíbe `No Reset On Close`.
+- El rol runtime de producción debe ser `NOSUPERUSER NOBYPASSRLS`; el backend aborta el arranque cuando el rol o la cobertura RLS son inseguros.
+- SignalR, almacenamiento y agente de impresión usan namespaces de tenant. El token del agente resuelve su tenant persistido antes de procesar.
+- Cada JWT se contrasta con `Tenant.Status`, `IsActive` y `AccessVersion`; suspensión, cancelación o incremento de versión revocan tokens emitidos.
+- Tenant 1 se mantiene por configuración explícita del entorno actual. Tenant 2 sólo se usa en pruebas/local hasta que exista onboarding de producto.
+- Sólo quedan pendientes funciones SaaS de producto: control plane, planes, suscripciones, metering, invitaciones y portal `/platform`.
+
 Este documento resume reglas funcionales que Codex debe respetar antes de modificar pedidos, pagos, cocina, domicilios, impresión, caja o módulos relacionados.
 
 ## Clientes, direcciones y sucursales
@@ -23,7 +33,7 @@ Este documento resume reglas funcionales que Codex debe respetar antes de modifi
 - Requests autenticados resuelven tenant desde JWT; procesos públicos y background deben resolverlo desde configuración o datos persistidos del backend.
 - `IsActive` es compatibilidad temporal con código legacy; cualquier suspensión o cancelación debe sincronizarlo con `Status`.
 
-Pendiente para bloques posteriores: RLS, aislamiento completo de SignalR y archivos, capabilities, control plane, planes, add-ons, suscripciones, cobro SaaS, metering, invitaciones y portal `/platform`.
+Pendiente de producto SaaS: capabilities, control plane, planes, add-ons, suscripciones, cobro, metering, invitaciones y portal `/platform`.
 
 ## Aislamiento multitenant v2
 
@@ -33,7 +43,7 @@ Pendiente para bloques posteriores: RLS, aislamiento completo de SignalR y archi
 - Los scopes de sistema sólo se permiten para resolver tenant, seleccionar trabajo global o ejecutar limpiezas explícitas; el procesamiento funcional vuelve a `BeginTenantScope`.
 - Un alta sin `TenantId` recibe el tenant actual. Un alta, cambio o borrado cross-tenant se rechaza antes de guardar.
 - La matriz vinculante de entidades, workers y excepciones está en `docs/MULTITENANT_ISOLATION_AUDIT.md`.
-- RLS queda explícitamente fuera del Bloque 2.
+- La matriz vinculante incluye RLS, contexto PostgreSQL, unicidades, tiempo real, archivos e impresión.
 
 ## Regla general
 

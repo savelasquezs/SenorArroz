@@ -2760,7 +2760,7 @@ public class WhatsAppController : ControllerBase
         var ext = Path.GetExtension(fileName);
         if (string.IsNullOrWhiteSpace(ext))
             ext = ExtensionFromContentType(contentType, MediaTypeFromContentType(contentType, fileName));
-        var objectName = $"{prefix}/{branchId}/{conversationId}/{_clock.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}{ext}";
+        var objectName = $"tenants/{TenantId}/{prefix}/{branchId}/{conversationId}/{_clock.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}{ext}";
         return await _firebaseStorage.UploadPublicObjectAsync(content, objectName, contentType, cancellationToken);
     }
 

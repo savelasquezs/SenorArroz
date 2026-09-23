@@ -4,28 +4,28 @@ namespace SenorArroz.API.Hubs;
 
 public static class WhatsAppRealtimeGroupResolver
 {
-    public static string User(int userId) => $"User_{userId}_WhatsApp";
+    public static string User(int tenantId, int userId) => TenantRealtimeGroups.User(tenantId, userId, "WhatsApp");
 
-    public static IReadOnlyList<string> Resolve(int legacyBranchId, WhatsAppConversationDto conversation)
+    public static IReadOnlyList<string> Resolve(int tenantId, int legacyBranchId, WhatsAppConversationDto conversation)
     {
         var groups = new List<string>();
 
         if (!conversation.IsCentralChannel)
         {
-            groups.Add($"Branch_{legacyBranchId}_WhatsApp");
+            groups.Add(TenantRealtimeGroups.BranchRole(tenantId, legacyBranchId, "WhatsApp"));
         }
         else if (!conversation.OperationalBranchId.HasValue)
         {
-            groups.Add("Tenant_1_WhatsApp_Unassigned");
+            groups.Add(TenantRealtimeGroups.TenantChannel(tenantId, "WhatsApp_Unassigned"));
         }
         else
         {
-            groups.Add($"Branch_{conversation.OperationalBranchId.Value}_WhatsApp");
-            groups.Add("Tenant_1_WhatsApp_Superadmin");
+            groups.Add(TenantRealtimeGroups.BranchRole(tenantId, conversation.OperationalBranchId.Value, "WhatsApp"));
+            groups.Add(TenantRealtimeGroups.TenantChannel(tenantId, "WhatsApp_Superadmin"));
         }
 
         if (conversation.AssignedUserId.HasValue)
-            groups.Add(User(conversation.AssignedUserId.Value));
+            groups.Add(User(tenantId, conversation.AssignedUserId.Value));
 
         return groups.Distinct().ToArray();
     }

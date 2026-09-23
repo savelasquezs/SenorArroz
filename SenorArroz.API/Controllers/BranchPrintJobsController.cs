@@ -17,14 +17,17 @@ public class BranchPrintJobsController : ControllerBase
     private readonly IPrintQueueService _printQueue;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<BranchPrintJobsController> _logger;
+    private readonly ITenantExecutionContext _tenantExecutionContext;
 
     public BranchPrintJobsController(
         IPrintQueueService printQueue,
         ICurrentUser currentUser,
+        ITenantExecutionContext tenantExecutionContext,
         ILogger<BranchPrintJobsController> logger)
     {
         _printQueue = printQueue;
         _currentUser = currentUser;
+        _tenantExecutionContext = tenantExecutionContext;
         _logger = logger;
     }
 
@@ -131,13 +134,15 @@ public class BranchPrintJobsController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var token = Request.Headers[PrintAgentTokenHeader].FirstOrDefault();
-        if (!await _printQueue.IsAgentTokenValidAsync(branchId, token, cancellationToken))
+        var identity = await _printQueue.AuthenticateAgentAsync(branchId, token, cancellationToken);
+        if (identity is null)
             return Unauthorized(ApiResponse<IReadOnlyList<PrintJobAgentItemDto>>.ErrorResponse("Token de agente inválido o no configurado."));
 
         if (!TryParseKinds(kinds, out var kindList))
             return BadRequest(ApiResponse<IReadOnlyList<PrintJobAgentItemDto>>.ErrorResponse(
                 "Parámetro kinds requerido (ej. kitchen,delivery)."));
 
+        using var tenantScope = _tenantExecutionContext.BeginTenantScope(identity.TenantId);
         var jobs = await _printQueue.ClaimPendingForAgentAsync(branchId, kindList, take, cancellationToken);
         return Ok(ApiResponse<IReadOnlyList<PrintJobAgentItemDto>>.SuccessResponse(jobs, "OK"));
     }
@@ -151,9 +156,11 @@ public class BranchPrintJobsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var token = Request.Headers[PrintAgentTokenHeader].FirstOrDefault();
-        if (!await _printQueue.IsAgentTokenValidAsync(branchId, token, cancellationToken))
+        var identity = await _printQueue.AuthenticateAgentAsync(branchId, token, cancellationToken);
+        if (identity is null)
             return Unauthorized(ApiResponse<PrintJobAgentItemDto>.ErrorResponse("Token de agente invalido o no configurado."));
 
+        using var tenantScope = _tenantExecutionContext.BeginTenantScope(identity.TenantId);
         var job = await _printQueue.ClaimSpecificForAgentAsync(branchId, jobId, cancellationToken);
         if (job is null)
             return NotFound(ApiResponse<PrintJobAgentItemDto>.ErrorResponse("Trabajo no encontrado o ya reclamado."));
@@ -195,9 +202,11 @@ public class BranchPrintJobsController : ControllerBase
     public async Task<ActionResult<ApiResponse<object>>> Complete(int branchId, long jobId, CancellationToken cancellationToken)
     {
         var token = Request.Headers[PrintAgentTokenHeader].FirstOrDefault();
-        if (!await _printQueue.IsAgentTokenValidAsync(branchId, token, cancellationToken))
+        var identity = await _printQueue.AuthenticateAgentAsync(branchId, token, cancellationToken);
+        if (identity is null)
             return Unauthorized(ApiResponse<object>.ErrorResponse("Token de agente inválido."));
 
+        using var tenantScope = _tenantExecutionContext.BeginTenantScope(identity.TenantId);
         var ok = await _printQueue.TryCompleteJobAsync(branchId, jobId, cancellationToken);
         if (!ok)
             return NotFound(ApiResponse<object>.ErrorResponse("Trabajo no encontrado o no está en procesamiento."));
@@ -214,9 +223,11 @@ public class BranchPrintJobsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var token = Request.Headers[PrintAgentTokenHeader].FirstOrDefault();
-        if (!await _printQueue.IsAgentTokenValidAsync(branchId, token, cancellationToken))
+        var identity = await _printQueue.AuthenticateAgentAsync(branchId, token, cancellationToken);
+        if (identity is null)
             return Unauthorized(ApiResponse<object>.ErrorResponse("Token de agente inválido."));
 
+        using var tenantScope = _tenantExecutionContext.BeginTenantScope(identity.TenantId);
         var message = string.IsNullOrWhiteSpace(body.Message) ? "Error desconocido" : body.Message;
         var ok = await _printQueue.TryFailJobAsync(branchId, jobId, message, cancellationToken);
         if (!ok)

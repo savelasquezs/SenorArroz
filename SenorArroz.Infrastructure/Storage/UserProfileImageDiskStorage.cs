@@ -1,21 +1,25 @@
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 
 namespace SenorArroz.Infrastructure.Storage;
 
 public sealed class UserProfileImageDiskStorage : IUserProfileImageStorage
 {
     private readonly string _webRoot;
+    private readonly ICurrentTenant _tenant;
 
-    public UserProfileImageDiskStorage(string webRoot)
+    public UserProfileImageDiskStorage(string webRoot, ICurrentTenant tenant)
     {
         _webRoot = webRoot ?? throw new ArgumentNullException(nameof(webRoot));
+        _tenant = tenant;
     }
 
     public async Task<string> SaveAndReplaceAsync(int userId, byte[] content, string fileExtension, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(content);
         var ext = NormalizeExtension(fileExtension);
-        var uploadsDir = Path.Combine(_webRoot, "uploads", "profile");
+        var tenantPrefix = TenantStoragePath.Prefix(_tenant);
+        var uploadsDir = Path.Combine(_webRoot, "uploads", tenantPrefix, "profile");
         Directory.CreateDirectory(uploadsDir);
 
         foreach (var old in Directory.GetFiles(uploadsDir, $"{userId}*.*"))
@@ -27,7 +31,7 @@ public sealed class UserProfileImageDiskStorage : IUserProfileImageStorage
         var fileName = $"{userId}_{Guid.NewGuid():N}{ext}";
         var physicalPath = Path.Combine(uploadsDir, fileName);
         await File.WriteAllBytesAsync(physicalPath, content, cancellationToken).ConfigureAwait(false);
-        return $"/uploads/profile/{fileName}";
+        return $"/uploads/{tenantPrefix}/profile/{fileName}";
     }
 
     private static string NormalizeExtension(string fileExtension)

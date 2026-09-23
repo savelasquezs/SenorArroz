@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -14,8 +15,9 @@ public class BranchMenuController : ControllerBase
     private readonly ApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IFirebaseGcsStorage _storage;
-    public BranchMenuController(ApplicationDbContext db, ICurrentUser currentUser, IFirebaseGcsStorage storage)
-    { _db = db; _currentUser = currentUser; _storage = storage; }
+    private readonly ICurrentTenant _tenant;
+    public BranchMenuController(ApplicationDbContext db, ICurrentUser currentUser, ICurrentTenant tenant, IFirebaseGcsStorage storage)
+    { _db = db; _currentUser = currentUser; _tenant = tenant; _storage = storage; }
 
     [HttpGet("api/branches/{branchId:int}/menu")]
     [Authorize(Roles = "Superadmin, Admin")]
@@ -38,9 +40,10 @@ public class BranchMenuController : ControllerBase
             return BadRequest(ApiResponse<BranchMenuDto>.ErrorResponse("Selecciona una imagen válida."));
         var branch = await _db.Branches.FirstOrDefaultAsync(x => x.Id == branchId, ct); if (branch is null) return NotFound();
         await using var input = file.OpenReadStream(); using var ms = new MemoryStream(); await input.CopyToAsync(ms, ct);
-        await _storage.DeleteObjectsWithPrefixAsync($"branch-menu/{branchId}/slot-{slot}/", ct);
+        var storagePrefix = TenantStoragePath.Combine(_tenant, $"branch-menu/{branchId}/slot-{slot}");
+        await _storage.DeleteObjectsWithPrefixAsync($"{storagePrefix}/", ct);
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var url = await _storage.UploadPublicObjectAsync(ms.ToArray(), $"branch-menu/{branchId}/slot-{slot}/{Guid.NewGuid():N}{ext}", file.ContentType, ct);
+        var url = await _storage.UploadPublicObjectAsync(ms.ToArray(), $"{storagePrefix}/{Guid.NewGuid():N}{ext}", file.ContentType, ct);
         if (slot == 1) branch.MenuImageUrl1 = url; else branch.MenuImageUrl2 = url;
         await _db.SaveChangesAsync(ct);
         return Ok(ApiResponse<BranchMenuDto>.SuccessResponse(new(branch.Id, branch.Name, branch.MenuImageUrl1, branch.MenuImageUrl2)));
@@ -52,7 +55,7 @@ public class BranchMenuController : ControllerBase
     {
         if (!CanAccess(branchId)) return Forbid(); if (slot is < 1 or > 2) return BadRequest();
         var branch = await _db.Branches.FirstOrDefaultAsync(x => x.Id == branchId, ct); if (branch is null) return NotFound();
-        await _storage.DeleteObjectsWithPrefixAsync($"branch-menu/{branchId}/slot-{slot}/", ct);
+        await _storage.DeleteObjectsWithPrefixAsync($"{TenantStoragePath.Combine(_tenant, $"branch-menu/{branchId}/slot-{slot}")}/", ct);
         if (slot == 1) branch.MenuImageUrl1 = null; else branch.MenuImageUrl2 = null;
         await _db.SaveChangesAsync(ct); return NoContent();
     }

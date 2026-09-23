@@ -1,21 +1,25 @@
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 
 namespace SenorArroz.Infrastructure.Storage;
 
 public sealed class BranchReceiptLogoStorage : IBranchReceiptLogoStorage
 {
     private readonly string _webRoot;
+    private readonly ICurrentTenant _tenant;
 
-    public BranchReceiptLogoStorage(string webRoot)
+    public BranchReceiptLogoStorage(string webRoot, ICurrentTenant tenant)
     {
         _webRoot = webRoot ?? throw new ArgumentNullException(nameof(webRoot));
+        _tenant = tenant;
     }
 
     public async Task<string> SaveAndReplaceAsync(int branchId, byte[] content, string fileExtension, CancellationToken cancellationToken = default)
     {
         var ext = NormalizeExtension(fileExtension);
-        var relativeDir = Path.Combine("uploads", "branch-print", branchId.ToString()).Replace('\\', '/');
-        var physicalDir = Path.Combine(_webRoot, "uploads", "branch-print", branchId.ToString());
+        var tenantPrefix = TenantStoragePath.Prefix(_tenant);
+        var relativeDir = Path.Combine("uploads", tenantPrefix, "branch-print", branchId.ToString()).Replace('\\', '/');
+        var physicalDir = Path.Combine(_webRoot, "uploads", tenantPrefix, "branch-print", branchId.ToString());
         Directory.CreateDirectory(physicalDir);
 
         foreach (var existing in Directory.EnumerateFiles(physicalDir, "logo.*"))
@@ -29,7 +33,7 @@ public sealed class BranchReceiptLogoStorage : IBranchReceiptLogoStorage
 
     public Task ClearAsync(int branchId, CancellationToken cancellationToken = default)
     {
-        var physicalDir = Path.Combine(_webRoot, "uploads", "branch-print", branchId.ToString());
+        var physicalDir = Path.Combine(_webRoot, "uploads", TenantStoragePath.Prefix(_tenant), "branch-print", branchId.ToString());
         if (!Directory.Exists(physicalDir))
             return Task.CompletedTask;
 

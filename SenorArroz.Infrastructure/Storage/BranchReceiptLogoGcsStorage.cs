@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Options;
 
 namespace SenorArroz.Infrastructure.Storage;
@@ -9,17 +10,19 @@ public sealed class BranchReceiptLogoGcsStorage : IBranchReceiptLogoStorage
 {
     private readonly IFirebaseGcsStorage _gcs;
     private readonly FirebaseStorageOptions _opt;
+    private readonly ICurrentTenant _tenant;
 
-    public BranchReceiptLogoGcsStorage(IFirebaseGcsStorage gcs, IOptions<FirebaseStorageOptions> options)
+    public BranchReceiptLogoGcsStorage(IFirebaseGcsStorage gcs, ICurrentTenant tenant, IOptions<FirebaseStorageOptions> options)
     {
         _gcs = gcs;
+        _tenant = tenant;
         _opt = options.Value;
     }
 
     public async Task<string> SaveAndReplaceAsync(int branchId, byte[] content, string fileExtension, CancellationToken cancellationToken = default)
     {
         var ext = NormalizeExtension(fileExtension);
-        var prefix = _opt.BranchPrintPrefix.Trim().TrimStart('/').TrimEnd('/');
+        var prefix = TenantStoragePath.Combine(_tenant, _opt.BranchPrintPrefix.Trim().Trim('/'));
         var folderPrefix = $"{prefix}/{branchId}/";
 
         await _gcs.DeleteObjectsWithPrefixAsync(folderPrefix, cancellationToken).ConfigureAwait(false);
@@ -31,7 +34,7 @@ public sealed class BranchReceiptLogoGcsStorage : IBranchReceiptLogoStorage
 
     public Task ClearAsync(int branchId, CancellationToken cancellationToken = default)
     {
-        var prefix = _opt.BranchPrintPrefix.Trim().TrimStart('/').TrimEnd('/');
+        var prefix = TenantStoragePath.Combine(_tenant, _opt.BranchPrintPrefix.Trim().Trim('/'));
         var folderPrefix = $"{prefix}/{branchId}/";
         return _gcs.DeleteObjectsWithPrefixAsync(folderPrefix, cancellationToken);
     }

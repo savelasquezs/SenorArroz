@@ -9,6 +9,7 @@ using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Services;
+using SenorArroz.Tests.Support;
 
 namespace SenorArroz.Tests;
 
@@ -114,6 +115,7 @@ public class PrintQueueServiceTests
             loyaltyRepository ?? Mock.Of<ILoyaltyCycleStepRepository>(),
             clock.Object,
             notifier,
+            TestTenantContext.Default,
             NullLogger<PrintQueueService>.Instance);
     }
 

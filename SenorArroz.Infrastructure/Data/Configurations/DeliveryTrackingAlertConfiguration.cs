@@ -46,7 +46,7 @@ public class DeliveryTrackingAlertConfiguration : IEntityTypeConfiguration<Deliv
             .ValueGeneratedOnAdd().Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
 
-        builder.HasIndex(x => x.DeduplicationKey).IsUnique().HasDatabaseName("uq_delivery_tracking_alert_dedup");
+        builder.HasIndex(x => new { x.TenantId, x.DeduplicationKey }).IsUnique().HasDatabaseName("uq_delivery_tracking_alert_dedup");
         builder.HasIndex(x => x.SourceDeviceEventId).IsUnique().HasFilter("source_device_event_id IS NOT NULL")
             .HasDatabaseName("uq_delivery_tracking_alert_device_event");
         builder.HasIndex(x => x.RecoveryDeviceEventId)

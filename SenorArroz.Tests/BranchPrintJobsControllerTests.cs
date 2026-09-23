@@ -4,6 +4,7 @@ using Moq;
 using SenorArroz.API.Controllers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Shared.Models;
+using SenorArroz.Tests.Support;
 
 namespace SenorArroz.Tests;
 
@@ -62,7 +63,7 @@ public class BranchPrintJobsControllerTests
     private static BranchPrintJobsController CreateController(
         IPrintQueueService queue,
         ICurrentUser user) =>
-        new(queue, user, NullLogger<BranchPrintJobsController>.Instance);
+        new(queue, user, TestTenantContext.Default, NullLogger<BranchPrintJobsController>.Instance);
 
     private static PrintJobStatusDto Status(long id) =>
         new(

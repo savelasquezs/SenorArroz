@@ -64,7 +64,7 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
         builder.HasIndex(x => x.MediaId).HasDatabaseName("idx_whatsapp_message_media_id");
         builder.HasIndex(x => x.Timestamp).HasDatabaseName("idx_whatsapp_message_timestamp");
         builder.HasIndex(x => x.AiProcessingStatus).HasDatabaseName("idx_whatsapp_message_ai_processing_status");
-        builder.HasIndex(x => x.AgentDispatchKey).IsUnique().HasFilter("agent_dispatch_key IS NOT NULL").HasDatabaseName("ux_whatsapp_message_agent_dispatch_key");
+        builder.HasIndex(x => new { x.TenantId, x.AgentDispatchKey }).IsUnique().HasFilter("agent_dispatch_key IS NOT NULL").HasDatabaseName("ux_whatsapp_message_agent_dispatch_key");
     }
 
     private static string DirectionToDb(WhatsAppMessageDirection direction) => direction switch

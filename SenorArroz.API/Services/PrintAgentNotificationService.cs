@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using SenorArroz.API.Hubs;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.BranchPrintSettings.DTOs;
 using SenorArroz.Domain.Enums;
 
@@ -9,16 +10,18 @@ public class PrintAgentNotificationService : IPrintAgentNotificationService
 {
     private readonly IHubContext<PrintAgentHub> _hubContext;
     private readonly ILogger<PrintAgentNotificationService> _logger;
+    private readonly ICurrentTenant _tenant;
 
-    public PrintAgentNotificationService(IHubContext<PrintAgentHub> hubContext, ILogger<PrintAgentNotificationService> logger)
+    public PrintAgentNotificationService(IHubContext<PrintAgentHub> hubContext, ICurrentTenant tenant, ILogger<PrintAgentNotificationService> logger)
     {
         _hubContext = hubContext;
+        _tenant = tenant;
         _logger = logger;
     }
 
     public async Task NotifyConfigChangedAsync(int branchId, PrintAgentConfigDto config, CancellationToken cancellationToken = default)
     {
-        await _hubContext.Clients.Group(PrintAgentHub.GetGroupName(branchId))
+        await _hubContext.Clients.Group(PrintAgentHub.GetGroupName(_tenant.TenantId, branchId))
             .SendAsync("PrintAgentConfigChanged", config, cancellationToken);
 
         _logger.LogInformation("PrintAgent config pushed to branch {BranchId}.", branchId);
@@ -35,7 +38,7 @@ public class PrintAgentNotificationService : IPrintAgentNotificationService
             branchId,
             KindToApiString(kind));
 
-        await _hubContext.Clients.Group(PrintAgentHub.GetGroupName(branchId))
+        await _hubContext.Clients.Group(PrintAgentHub.GetGroupName(_tenant.TenantId, branchId))
             .SendAsync("PrintJobsAvailable", notification, cancellationToken);
 
         _logger.LogInformation(

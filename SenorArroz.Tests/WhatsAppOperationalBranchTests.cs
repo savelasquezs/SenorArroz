@@ -197,41 +197,41 @@ public sealed class WhatsAppOperationalBranchTests
     [Fact]
     public void Central_realtime_groups_include_assigned_user_without_exposing_original_branch()
     {
-        var groups = WhatsAppRealtimeGroupResolver.Resolve(1, new WhatsAppConversationDto
+        var groups = WhatsAppRealtimeGroupResolver.Resolve(1, 1, new WhatsAppConversationDto
         {
             IsCentralChannel = true,
             OperationalBranchId = 2,
             AssignedUserId = 7
         });
 
-        Assert.Contains("Branch_2_WhatsApp", groups);
+        Assert.Contains("Tenant_1_Branch_2_WhatsApp", groups);
         Assert.Contains("Tenant_1_WhatsApp_Superadmin", groups);
-        Assert.Contains("User_7_WhatsApp", groups);
-        Assert.DoesNotContain("Branch_1_WhatsApp", groups);
+        Assert.Contains("Tenant_1_User_7_WhatsApp", groups);
+        Assert.DoesNotContain("Tenant_1_Branch_1_WhatsApp", groups);
     }
 
     [Fact]
     public void Unassigned_realtime_groups_also_include_assigned_user()
     {
-        var groups = WhatsAppRealtimeGroupResolver.Resolve(1, new WhatsAppConversationDto
+        var groups = WhatsAppRealtimeGroupResolver.Resolve(1, 1, new WhatsAppConversationDto
         {
             IsCentralChannel = true,
             AssignedUserId = 7
         });
 
-        Assert.Equal(["Tenant_1_WhatsApp_Unassigned", "User_7_WhatsApp"], groups);
+        Assert.Equal(["Tenant_1_WhatsApp_Unassigned", "Tenant_1_User_7_WhatsApp"], groups);
     }
 
     [Fact]
     public void Transfer_reaches_previous_user_once_but_future_groups_exclude_them()
     {
-        var previousGroups = WhatsAppRealtimeGroupResolver.Resolve(1, new WhatsAppConversationDto
+        var previousGroups = WhatsAppRealtimeGroupResolver.Resolve(1, 1, new WhatsAppConversationDto
         {
             IsCentralChannel = true,
             OperationalBranchId = 1,
             AssignedUserId = 7
         });
-        var currentGroups = WhatsAppRealtimeGroupResolver.Resolve(1, new WhatsAppConversationDto
+        var currentGroups = WhatsAppRealtimeGroupResolver.Resolve(1, 1, new WhatsAppConversationDto
         {
             IsCentralChannel = true,
             OperationalBranchId = 2,
@@ -239,9 +239,25 @@ public sealed class WhatsAppOperationalBranchTests
         });
         var routingChangeGroups = previousGroups.Concat(currentGroups).Distinct().ToArray();
 
-        Assert.Contains("User_7_WhatsApp", routingChangeGroups);
-        Assert.DoesNotContain("User_7_WhatsApp", currentGroups);
-        Assert.Contains("Branch_2_WhatsApp", currentGroups);
+        Assert.Contains("Tenant_1_User_7_WhatsApp", routingChangeGroups);
+        Assert.DoesNotContain("Tenant_1_User_7_WhatsApp", currentGroups);
+        Assert.Contains("Tenant_1_Branch_2_WhatsApp", currentGroups);
+    }
+
+    [Fact]
+    public void Equivalent_conversations_from_two_tenants_never_share_realtime_groups()
+    {
+        var conversation = new WhatsAppConversationDto
+        {
+            IsCentralChannel = true,
+            OperationalBranchId = 2,
+            AssignedUserId = 7
+        };
+
+        var tenantOne = WhatsAppRealtimeGroupResolver.Resolve(1, 1, conversation);
+        var tenantTwo = WhatsAppRealtimeGroupResolver.Resolve(2, 1, conversation);
+
+        Assert.Empty(tenantOne.Intersect(tenantTwo));
     }
 
     private static ApplicationDbContext CreateDb() => new(new DbContextOptionsBuilder<ApplicationDbContext>()

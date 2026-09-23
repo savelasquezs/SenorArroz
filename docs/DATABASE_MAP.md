@@ -10,7 +10,8 @@ Este mapa existe para que Codex ubique rápido las entidades y entienda cómo pr
 - `SaveChanges` asigna el tenant actual en altas sin tenant y rechaza altas, cambios o borrados cross-tenant.
 - El esquema puntual se aplica con `SenorArroz.Infrastructure/Scripts/multitenant_isolation_v2.sql`, incluido al final de `local-init-completo.sql`.
 - La matriz por dominio, estrategia de backfill y workers está en `docs/MULTITENANT_ISOLATION_AUDIT.md`.
-- RLS no forma parte de este bloque.
+- `tenant_scoped_unique_indexes_v3.sql` corrige claves funcionales cuyo namespace es empresarial.
+- `enable_multitenant_rls_v3.sql` habilita y fuerza RLS; `verify_multitenant_runtime_role.sql` valida el rol de ejecución.
 
 ## Decisión confirmada
 

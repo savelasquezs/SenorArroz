@@ -125,7 +125,7 @@ public sealed class StorefrontCheckoutConfiguration : IEntityTypeConfiguration<S
         builder.Property(x => x.MetaFbc).HasColumnName("meta_fbc").HasMaxLength(255);
         WompiPaymentIntegrationConfiguration.Timestamps(builder);
         builder.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ux_storefront_checkout_public_id");
-        builder.HasIndex(x => x.IdempotencyKey).IsUnique().HasDatabaseName("ux_storefront_checkout_idempotency_key");
+        builder.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique().HasDatabaseName("ux_storefront_checkout_idempotency_key");
         builder.HasIndex(x => new { x.TenantId, x.CustomerPhone, x.Status }).HasDatabaseName("ix_storefront_checkout_customer_status");
         builder.HasIndex(x => x.WhatsAppConversationId).HasDatabaseName("ix_storefront_checkout_whatsapp_conversation");
         builder.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);

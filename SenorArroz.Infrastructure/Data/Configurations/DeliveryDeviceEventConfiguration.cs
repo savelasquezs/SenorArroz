@@ -37,7 +37,7 @@ public class DeliveryDeviceEventConfiguration : IEntityTypeConfiguration<Deliver
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.WorkSession).WithMany().HasForeignKey(x => x.WorkSessionId)
             .OnDelete(DeleteBehavior.Restrict);
-        builder.HasIndex(x => x.ClientEventId).IsUnique().HasFilter("client_event_id IS NOT NULL")
+        builder.HasIndex(x => new { x.TenantId, x.ClientEventId }).IsUnique().HasFilter("client_event_id IS NOT NULL")
             .HasDatabaseName("uq_delivery_device_event_client_id");
         builder.HasIndex(x => new { x.WorkSessionId, x.RecordedAt })
             .HasDatabaseName("idx_delivery_device_event_session_recorded");

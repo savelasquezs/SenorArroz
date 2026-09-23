@@ -167,10 +167,11 @@ builder.Services.AddScoped<IBranchReceiptLogoStorage>(sp =>
     if (opts.Enabled && !string.IsNullOrWhiteSpace(opts.Bucket))
         return new BranchReceiptLogoGcsStorage(
             sp.GetRequiredService<IFirebaseGcsStorage>(),
+            sp.GetRequiredService<ICurrentTenant>(),
             sp.GetRequiredService<IOptions<FirebaseStorageOptions>>());
     var env = sp.GetRequiredService<IWebHostEnvironment>();
     var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
-    return new BranchReceiptLogoStorage(root);
+    return new BranchReceiptLogoStorage(root, sp.GetRequiredService<ICurrentTenant>());
 });
 
 builder.Services.AddScoped<IUserProfileImageStorage>(sp =>
@@ -179,10 +180,11 @@ builder.Services.AddScoped<IUserProfileImageStorage>(sp =>
     if (opts.Enabled && !string.IsNullOrWhiteSpace(opts.Bucket))
         return new UserProfileImageGcsStorage(
             sp.GetRequiredService<IFirebaseGcsStorage>(),
+            sp.GetRequiredService<ICurrentTenant>(),
             sp.GetRequiredService<IOptions<FirebaseStorageOptions>>());
     var env = sp.GetRequiredService<IWebHostEnvironment>();
     var root = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
-    return new UserProfileImageDiskStorage(root);
+    return new UserProfileImageDiskStorage(root, sp.GetRequiredService<ICurrentTenant>());
 });
 
 // SignalR
@@ -253,10 +255,6 @@ builder.Services.AddAuthentication(options =>
         OnTokenValidated = async context =>
         {
             var principal = context.Principal;
-            var role = principal?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
-            if (!string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase))
-                return;
-
             var userIdValue = principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             if (!int.TryParse(userIdValue, out var userId))
             {
@@ -264,12 +262,35 @@ builder.Services.AddAuthentication(options =>
                 return;
             }
 
+            var tenantIdValue = principal?.FindFirst("tenant_id")?.Value;
+            var accessVersionValue = principal?.FindFirst("tenant_access_version")?.Value;
+            if (!int.TryParse(tenantIdValue, out var tenantId)
+                || tenantId <= 0
+                || !long.TryParse(accessVersionValue, out var accessVersion))
+            {
+                context.Fail("Invalid multitenant identity.");
+                return;
+            }
+
+            var authRepository = context.HttpContext.RequestServices.GetRequiredService<IAuthRepository>();
+            if (!await authRepository.IsTenantAccessCurrentAsync(
+                    userId,
+                    tenantId,
+                    accessVersion,
+                    context.HttpContext.RequestAborted))
+            {
+                context.Fail("TENANT_ACCESS_REVOKED");
+                return;
+            }
+
+            var role = principal?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            if (!string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase))
+                return;
+
             var sessionValue = principal?.FindFirst("session_id")?.Value;
             Guid? sessionId = Guid.TryParse(sessionValue, out var parsedSessionId)
                 ? parsedSessionId
                 : null;
-            var authRepository = context.HttpContext.RequestServices
-                .GetRequiredService<IAuthRepository>();
             if (!await authRepository.IsSessionCurrentAsync(
                     userId,
                     sessionId,
@@ -566,30 +587,26 @@ var app = builder.Build();
 if (app.Environment.IsProduction())
 {
     using var schemaScope = app.Services.CreateScope();
-    var schemaDb = schemaScope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
-    await schemaDb.Database.ExecuteSqlRawAsync("""
-        ALTER TABLE branch_print_settings
-        ADD COLUMN IF NOT EXISTS kitchen_auto_print_trigger character varying(32)
-        NOT NULL DEFAULT 'whenMarkedReady';
-
-        ALTER TABLE branch_print_settings
-        DROP CONSTRAINT IF EXISTS "CK_branch_print_settings_kitchen_auto_print_trigger";
-
-        ALTER TABLE branch_print_settings
-        ALTER COLUMN kitchen_auto_print_trigger TYPE character varying(32),
-        ALTER COLUMN kitchen_auto_print_trigger SET DEFAULT 'whenMarkedReady';
-
-        UPDATE branch_print_settings
-        SET kitchen_auto_print_trigger = CASE kitchen_auto_print_trigger
-            WHEN 'when_marked_ready' THEN 'whenMarkedReady'
-            WHEN 'when_order_created' THEN 'whenOrderCreated'
-            ELSE kitchen_auto_print_trigger
-        END;
-
-        ALTER TABLE branch_print_settings
-        ADD CONSTRAINT "CK_branch_print_settings_kitchen_auto_print_trigger"
-        CHECK (kitchen_auto_print_trigger IN ('whenMarkedReady', 'whenOrderCreated'));
-        """);
+    var schemaDb = schemaScope.ServiceProvider.GetRequiredService<SenorArroz.Infrastructure.Data.ApplicationDbContext>();
+    var connection = schemaDb.Database.GetDbConnection();
+    await connection.OpenAsync();
+    await using var command = connection.CreateCommand();
+    command.CommandText = """
+        SELECT
+            r.rolsuper OR r.rolbypassrls AS unsafe_role,
+            (SELECT count(*)
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'public'
+               AND c.relrowsecurity
+               AND c.relforcerowsecurity) AS protected_tables
+        FROM pg_roles r
+        WHERE r.rolname = current_user
+        """;
+    await using var reader = await command.ExecuteReaderAsync();
+    if (!await reader.ReadAsync() || reader.GetBoolean(0) || reader.GetInt64(1) < 93)
+        throw new InvalidOperationException("PostgreSQL runtime role or RLS configuration is unsafe for multitenant production.");
+    await connection.CloseAsync();
 }
 
 if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled"))

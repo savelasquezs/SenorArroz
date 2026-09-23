@@ -141,7 +141,7 @@ El Bloque 2 propagó `TenantId` a las 93 entidades operativas, dejando `Tenant` 
 
 La matriz completa y las excepciones están en `docs/MULTITENANT_ISOLATION_AUDIT.md`.
 
-Pendiente para el Bloque 3: RLS, SignalR/archivos, control plane, planes, add-ons, suscripciones, metering, invitaciones, portal `/platform` y alta controlada del segundo restaurante real.
+La fundación técnica queda completada con RLS, contexto PostgreSQL seguro para pooling, SignalR y almacenamiento namespaced, agente de impresión tenant-aware y revocación por `AccessVersion`. Pendiente de producto: control plane, planes, add-ons, suscripciones, metering, invitaciones, portal `/platform` y onboarding controlado del segundo restaurante real.
 
 Agregar `TenantId` progresivamente a tablas operativas.
 

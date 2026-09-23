@@ -44,7 +44,7 @@ public class UserDeviceTokenConfiguration : IEntityTypeConfiguration<UserDeviceT
             .OnDelete(DeleteBehavior.Restrict);
 
         // Un usuario puede tener varios dispositivos pero no duplicar el mismo token
-        builder.HasIndex(t => t.Token).IsUnique().HasDatabaseName("uq_user_device_token_token");
+        builder.HasIndex(t => new { t.TenantId, t.Token }).IsUnique().HasDatabaseName("uq_user_device_token_token");
         builder.HasIndex(t => t.UserId).HasDatabaseName("idx_user_device_token_user");
         builder.HasIndex(t => new { t.TenantId, t.UserId }).HasDatabaseName("idx_user_device_token_tenant_user");
     }

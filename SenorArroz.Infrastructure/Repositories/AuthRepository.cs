@@ -56,6 +56,24 @@ public class AuthRepository : IAuthRepository
             cancellationToken);
     }
 
+    public async Task<bool> IsTenantAccessCurrentAsync(
+        int userId,
+        int tenantId,
+        long accessVersion,
+        CancellationToken cancellationToken = default)
+    {
+        using var systemScope = _tenantExecutionContext?.BeginSystemScope();
+        return await _context.Users.AsNoTracking().AnyAsync(
+            user => user.Id == userId
+                    && user.TenantId == tenantId
+                    && user.Active
+                    && user.Tenant.IsActive
+                    && user.Tenant.Status == Domain.Enums.TenantStatus.Active
+                    && user.Tenant.AccessVersion == accessVersion
+                    && (user.Branch == null || user.Branch.TenantId == tenantId),
+            cancellationToken);
+    }
+
     public Task<bool> CanDeliverymanAccessWebAsync(
         int userId,
         CancellationToken cancellationToken = default) =>

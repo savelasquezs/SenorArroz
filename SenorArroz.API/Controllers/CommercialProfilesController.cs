@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
@@ -16,9 +17,10 @@ public class CommercialProfilesController : ControllerBase
     private readonly ApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IFirebaseGcsStorage _storage;
+    private readonly ICurrentTenant _tenant;
 
-    public CommercialProfilesController(ApplicationDbContext db, ICurrentUser currentUser, IFirebaseGcsStorage storage)
-    { _db = db; _currentUser = currentUser; _storage = storage; }
+    public CommercialProfilesController(ApplicationDbContext db, ICurrentUser currentUser, ICurrentTenant tenant, IFirebaseGcsStorage storage)
+    { _db = db; _currentUser = currentUser; _tenant = tenant; _storage = storage; }
 
     [HttpGet]
     public async Task<ActionResult<ApiResponse<List<CommercialProfileDto>>>> Get([FromQuery] int branchId, CancellationToken ct)
@@ -61,7 +63,7 @@ public class CommercialProfilesController : ControllerBase
             return BadRequest(ApiResponse<CommercialProfileDto>.ErrorResponse("Selecciona una imagen válida."));
         await using var stream = file.OpenReadStream(); using var ms = new MemoryStream(); await stream.CopyToAsync(ms, ct);
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        row.PhotoUrl = await _storage.UploadPublicObjectAsync(ms.ToArray(), $"commercial-profiles/{row.BranchId}/{row.Id}/{Guid.NewGuid():N}{ext}", file.ContentType, ct);
+        row.PhotoUrl = await _storage.UploadPublicObjectAsync(ms.ToArray(), TenantStoragePath.Combine(_tenant, $"commercial-profiles/{row.BranchId}/{row.Id}/{Guid.NewGuid():N}{ext}"), file.ContentType, ct);
         await _db.SaveChangesAsync(ct);
         return Ok(ApiResponse<CommercialProfileDto>.SuccessResponse(ToDto(row)));
     }
@@ -71,7 +73,7 @@ public class CommercialProfilesController : ControllerBase
     {
         var row = await _db.CommercialProfiles.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (row is null) return NotFound(); if (!CanAccess(row.BranchId)) return Forbid();
-        await _storage.DeleteObjectsWithPrefixAsync($"commercial-profiles/{row.BranchId}/{row.Id}/", ct);
+        await _storage.DeleteObjectsWithPrefixAsync($"{TenantStoragePath.Combine(_tenant, $"commercial-profiles/{row.BranchId}/{row.Id}")}/", ct);
         row.PhotoUrl = null; await _db.SaveChangesAsync(ct); return NoContent();
     }
 

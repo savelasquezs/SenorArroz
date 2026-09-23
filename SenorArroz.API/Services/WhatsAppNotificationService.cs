@@ -12,14 +12,17 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
     private readonly IHubContext<WhatsAppHub> _hubContext;
     private readonly ILogger<WhatsAppNotificationService> _logger;
     private readonly IApplicationDbContext _db;
+    private readonly ICurrentTenant _tenant;
 
     public WhatsAppNotificationService(
         IHubContext<WhatsAppHub> hubContext,
         IApplicationDbContext db,
+        ICurrentTenant tenant,
         ILogger<WhatsAppNotificationService> logger)
     {
         _hubContext = hubContext;
         _db = db;
+        _tenant = tenant;
         _logger = logger;
     }
 
@@ -38,7 +41,7 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
         };
 
         await _hubContext.Clients
-            .Groups(WhatsAppRealtimeGroupResolver.Resolve(branchId, conversation))
+            .Groups(WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, conversation))
             .SendAsync("WhatsAppMessageCreated", payload, cancellationToken);
 
         _logger.LogInformation(
@@ -52,7 +55,7 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
     {
         await ResolveCentralRoutingAsync(conversation, cancellationToken);
         var payload = new { branchId = conversation.OperationalBranchId ?? branchId, conversation };
-        await _hubContext.Clients.Groups(WhatsAppRealtimeGroupResolver.Resolve(branchId, conversation)).SendAsync("WhatsAppAttentionChanged", payload, cancellationToken);
+        await _hubContext.Clients.Groups(WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, conversation)).SendAsync("WhatsAppAttentionChanged", payload, cancellationToken);
     }
 
     public async Task NotifyConversationRoutingChangedAsync(
@@ -69,8 +72,8 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
             OperationalBranchId = previousOperationalBranchId,
             AssignedUserId = previousAssignedUserId
         };
-        var groups = WhatsAppRealtimeGroupResolver.Resolve(branchId, previous)
-            .Concat(WhatsAppRealtimeGroupResolver.Resolve(branchId, conversation))
+        var groups = WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, previous)
+            .Concat(WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, conversation))
             .Distinct()
             .ToArray();
         var payload = new
@@ -114,7 +117,7 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
         await ResolveCentralRoutingAsync(conversation, cancellationToken);
         var payload = new { branchId = conversation.OperationalBranchId ?? branchId, processing = realtimeProcessing };
         await _hubContext.Clients
-            .Groups(WhatsAppRealtimeGroupResolver.Resolve(branchId, conversation))
+            .Groups(WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, conversation))
             .SendAsync("WhatsAppAiProcessingChanged", payload, cancellationToken);
         _logger.LogInformation(
             "WhatsApp AI processing update emitted. BranchId={BranchId} ConversationId={ConversationId} IncomingMessageId={IncomingMessageId} Status={Status} Attempts={Attempts}",

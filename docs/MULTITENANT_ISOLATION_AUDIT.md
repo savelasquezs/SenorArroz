@@ -2,7 +2,7 @@
 
 ## Resultado
 
-El modelo EF Core contiene 94 entidades: `Tenant` es la única entidad global y las otras 93 implementan `ITenantOwned`. Todas las entidades tenant-owned tienen `tenant_id` obligatorio, índice simple, filtro global y guard de escritura centralizado. No se implementó RLS en este bloque.
+El modelo EF Core contiene 94 entidades: `Tenant` es la única entidad global y las otras 93 implementan `ITenantOwned`. Todas las entidades tenant-owned tienen `tenant_id` obligatorio, índice simple, filtro global, guard de escritura centralizado y RLS forzado.
 
 El tenant se obtiene del JWT o de un scope interno explícito. Un request sin tenant ve cero filas tenant-owned y no puede escribir. `BeginSystemScope()` se reserva para resolución controlada de tenant, limpieza global y selección de trabajo; `BeginTenantScope(id)` delimita el procesamiento real.
 
@@ -12,7 +12,7 @@ En la columna EF, `F+G` significa filtro global y guard de escritura. `Relación
 
 | Dominio | Entidades y tablas | Ownership | EF | Backfill y FK | Workers / excepción / pendiente |
 |---|---|---|---|---|---|
-| Control plane | `Tenant` (`tenant`) | Global | Sin filtro tenant | Raíz de todas las FK | Única excepción global; RLS queda para Bloque 3 |
+| Control plane | `Tenant` (`tenant`) | Global | Sin filtro tenant | Raíz de todas las FK | Única excepción global intencional |
 | Organización e identidad | `Branch` (`branch`), `BranchBusinessHour` (`branch_business_hour`), `BranchAiSetting` (`branch_ai_setting`), `BranchPrintSettings` (`branch_print_settings`), `BusinessDocument` (`business_document`), `TenantAiSetting` (`tenant_ai_setting`), `User` (`user`), `RefreshToken` (`refresh_token`), `PasswordResetToken` (`password_reset_token`), `UserDeviceToken` (`user_device_token`) | Tenant | F+G | Branch/document/settings: raíz o branch; credenciales: user; `NOT NULL`, índice y FK a tenant | Auth hace lookup inicial en system scope y vuelve a tenant scope; limpiezas de tokens usan system scope explícito |
 | Clientes y direcciones | `Customer` (`customer`), `CustomerPhone` (`customer_phone`), `CustomerMergeHistory` (`customer_merge_history`), `Address` (`address`), `AddressBranch` (`address_branch`), `Neighborhood` (`neighborhood`), `StorefrontCustomerAuthChallenge` (`storefront_customer_auth_challenge`) | Tenant | F+G | branch → customer/neighborhood; customer → phone/address/history; address → address_branch; challenge: raíz segura | Storefront usa tenant configurado por servidor; no acepta tenant del cliente |
 | Catálogo y beneficios | `ProductCategory` (`product_category`), `Product` (`product`), `CommercialProfile` (`commercial_profile`), `DailyPromotion` (`daily_promotion`), `DailyPromotionProduct` (`daily_promotion_product`), `DiscountCode` (`discount_code`), `LoyaltyCycleStep` (`loyalty_cycle_step`) | Tenant | F+G | branch → categorías/perfiles/promociones/beneficios; categoría → producto; promoción → detalle | Sin worker global; todas las consultas quedan filtradas |
@@ -35,6 +35,13 @@ En la columna EF, `F+G` significa filtro global y guard de escritura. `Relación
 - System scope: puede mantener varios tenants, pero un alta debe traer `TenantId > 0` explícito.
 - `tenant_id` es concurrency token para incluirlo en actualizaciones y borrados desconectados.
 
+## Unicidades
+
+- Se mantienen globales los identificadores públicos aleatorios, hashes de credenciales/tokens, referencias Wompi, IDs del proveedor, fingerprints de webhook y claves que ya están namespaced por una integración padre.
+- Se mantienen por sucursal o entidad padre las claves cuyo padre tiene PK global y FK tenant-safe: categorías, promociones, rutas, conversaciones y configuraciones de sucursal.
+- Se hicieron explícitamente tenant-aware `client_event_id`, `client_point_id`, deduplicación de alertas, dispatch de WhatsApp, eventos/outbox de comercio, idempotencia de checkout y device token. El script aborta si los datos existentes no permiten crear estos índices.
+- `Tenant.PublicId` y `Tenant.Slug` son globales por ser identificadores del control plane.
+
 ## SQL y despliegue
 
 `SenorArroz.Infrastructure/Scripts/multitenant_isolation_v2.sql` es idempotente y transaccional. Agrega columnas nullable, elimina constraints heredados `tenant_id = 1`, hace backfill por relaciones confiables, aborta ante ambigüedad o relaciones cross-tenant, elimina defaults, aplica `NOT NULL`, índices y FK a `tenant`, y crea FK compuestas para relaciones críticas.
@@ -47,10 +54,7 @@ Orden de despliegue recomendado:
 4. Validar login, storefront, WhatsApp, Wompi, Rappi, impresión y workers con dos tenants.
 5. Ejecutar el script en producción dentro de la ventana acordada.
 
-## Pendiente para Bloque 3
+## Alcance pendiente de producto
 
-- PostgreSQL RLS y variables de sesión por tenant.
-- Unicidades funcionales compuestas adicionales tras auditar duplicados reales.
-- Aislamiento de SignalR, archivos y credenciales del agente de impresión.
-- Pruebas PostgreSQL de concurrencia en CI con Docker obligatorio.
-- Control plane SaaS: altas, invitaciones, planes, suscripciones, metering y portal `/platform`.
+- Control plane SaaS: onboarding real, altas, invitaciones, planes, suscripciones, metering y portal `/platform`.
+- Tenant 2 existe solamente en pruebas automatizadas y datos locales; estos scripts no lo crean en producción.
