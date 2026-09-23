@@ -1,0 +1,350 @@
+name: Database Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Backup source
+        required: true
+        type: choice
+        options:
+          - railway
+          - r2
+        default: railway
+      backup_key:
+        description: Optional exact object key. Leave empty to restore the latest backup from the selected source.
+        required: false
+        type: string
+      confirmation:
+        description: Type RESTORE to provision a new recovery database. MainDatabase is never overwritten.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-disaster-recovery
+  cancel-in-progress: false
+
+env:
+  RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+  RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+  RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT || 'production' }}
+  RAILWAY_BACKUP_SERVICE: ${{ vars.RAILWAY_BACKUP_SERVICE || 'postgres-backup-cron' }}
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Confirm recovery request
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirmation }}" != "RESTORE" ]; then
+            echo "Refusing recovery: confirmation must be exactly RESTORE." >&2
+            exit 1
+          fi
+          if [ -z "${RAILWAY_API_TOKEN:-}" ]; then
+            echo "Missing GitHub Actions secret RAILWAY_API_TOKEN." >&2
+            exit 1
+          fi
+          if [ -z "${RAILWAY_PROJECT_ID:-}" ]; then
+            echo "Missing GitHub Actions variable RAILWAY_PROJECT_ID." >&2
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        shell: bash
+        run: npm install --global @railway/cli
+
+      - name: Link Railway project
+        shell: bash
+        run: |
+          set -euo pipefail
+          railway link \
+            --project "$RAILWAY_PROJECT_ID" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --json >/tmp/railway-link.json
+
+      - name: Load selected backup credentials
+        id: backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          BACKUP_VARS="$(railway variable list --json \
+            --service "$RAILWAY_BACKUP_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT")"
+
+          get_var() {
+            printf '%s' "$BACKUP_VARS" | jq -r --arg key "$1" '.[$key] // empty'
+          }
+
+          if [ "${{ inputs.source }}" = "railway" ]; then
+            ACCESS_KEY_ID="$(get_var AWS_ACCESS_KEY_ID)"
+            SECRET_ACCESS_KEY="$(get_var AWS_SECRET_ACCESS_KEY)"
+            BUCKET="$(get_var BUCKET)"
+            ENDPOINT="$(get_var ENDPOINT)"
+            REGION="$(get_var REGION)"
+            PREFIX="backup-"
+          else
+            ACCESS_KEY_ID="$(get_var R2_ACCESS_KEY_ID)"
+            SECRET_ACCESS_KEY="$(get_var R2_SECRET_ACCESS_KEY)"
+            BUCKET="$(get_var R2_BUCKET)"
+            ENDPOINT="$(get_var R2_ENDPOINT)"
+            REGION="$(get_var R2_REGION)"
+            PREFIX="weekly/backup-"
+          fi
+
+          for name in ACCESS_KEY_ID SECRET_ACCESS_KEY BUCKET ENDPOINT; do
+            value="${!name:-}"
+            if [ -z "$value" ]; then
+              echo "Missing ${name} for backup source ${{ inputs.source }} in Railway service ${RAILWAY_BACKUP_SERVICE}." >&2
+              echo "If the corresponding Railway variable is sealed, the CLI cannot retrieve it." >&2
+              exit 1
+            fi
+          done
+
+          echo "::add-mask::$ACCESS_KEY_ID"
+          echo "::add-mask::$SECRET_ACCESS_KEY"
+          {
+            echo "SOURCE_ACCESS_KEY_ID=$ACCESS_KEY_ID"
+            echo "SOURCE_SECRET_ACCESS_KEY=$SECRET_ACCESS_KEY"
+            echo "SOURCE_BUCKET=$BUCKET"
+            echo "SOURCE_ENDPOINT=$ENDPOINT"
+            echo "SOURCE_REGION=$REGION"
+            echo "BACKUP_PREFIX=$PREFIX"
+          } >> "$GITHUB_ENV"
+
+      - name: Provision isolated PostgreSQL recovery service
+        id: provision
+        shell: bash
+        run: |
+          set -euo pipefail
+          CREATE_JSON="$(railway add --database postgres --json)"
+          RECOVERY_SERVICE_ID="$(printf '%s' "$CREATE_JSON" | jq -r '.serviceId // .id // .service.id // empty')"
+          RECOVERY_SERVICE_NAME="$(printf '%s' "$CREATE_JSON" | jq -r '.serviceName // .name // .service.name // empty')"
+
+          if [ -z "$RECOVERY_SERVICE_ID" ] || [ -z "$RECOVERY_SERVICE_NAME" ]; then
+            echo "Railway created a database but its service id/name could not be parsed." >&2
+            echo "$CREATE_JSON" >&2
+            exit 1
+          fi
+
+          echo "Created recovery PostgreSQL service: ${RECOVERY_SERVICE_NAME} (${RECOVERY_SERVICE_ID})"
+          {
+            echo "RECOVERY_SERVICE_ID=$RECOVERY_SERVICE_ID"
+            echo "RECOVERY_SERVICE_NAME=$RECOVERY_SERVICE_NAME"
+          } >> "$GITHUB_ENV"
+
+      - name: Wait for recovery PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS=""
+          for attempt in $(seq 1 90); do
+            DEPLOYMENTS="$(railway deployment list \
+              --service "$RECOVERY_SERVICE_ID" \
+              --environment "$RAILWAY_ENVIRONMENT" \
+              --limit 1 \
+              --json 2>/dev/null || printf '[]')"
+            STATUS="$(printf '%s' "$DEPLOYMENTS" | jq -r '.[0].status // empty' 2>/dev/null || true)"
+            case "$STATUS" in
+              SUCCESS) break ;;
+              FAILED|CRASHED|REMOVED)
+                echo "Recovery PostgreSQL deployment ended with status ${STATUS}." >&2
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+          if [ "$STATUS" != "SUCCESS" ]; then
+            echo "Timed out waiting for recovery PostgreSQL deployment. Last status: ${STATUS:-unknown}." >&2
+            exit 1
+          fi
+
+          DB_VARS="$(railway variable list --json \
+            --service "$RECOVERY_SERVICE_ID" \
+            --environment "$RAILWAY_ENVIRONMENT")"
+          PGUSER_VALUE="$(printf '%s' "$DB_VARS" | jq -r '.PGUSER // empty')"
+          PGPASSWORD_VALUE="$(printf '%s' "$DB_VARS" | jq -r '.PGPASSWORD // empty')"
+          PRIVATE_DATABASE_URL="$(printf '%s' "$DB_VARS" | jq -r '.DATABASE_URL // empty')"
+
+          if [ -z "$PGUSER_VALUE" ] || [ -z "$PGPASSWORD_VALUE" ] || [ -z "$PRIVATE_DATABASE_URL" ]; then
+            echo "Recovery database variables are incomplete." >&2
+            exit 1
+          fi
+
+          echo "::add-mask::$PGPASSWORD_VALUE"
+          echo "::add-mask::$PRIVATE_DATABASE_URL"
+          {
+            echo "RECOVERY_PGUSER=$PGUSER_VALUE"
+            echo "RECOVERY_PGPASSWORD=$PGPASSWORD_VALUE"
+            echo "RECOVERY_PRIVATE_DATABASE_URL=$PRIVATE_DATABASE_URL"
+          } >> "$GITHUB_ENV"
+
+      - name: Open private Railway database tunnel
+        shell: bash
+        run: |
+          set -euo pipefail
+          railway connect "$RECOVERY_SERVICE_NAME" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --tunnel-only \
+            --port 15432 >/tmp/railway-recovery-tunnel.log 2>&1 &
+          TUNNEL_PID=$!
+          echo "TUNNEL_PID=$TUNNEL_PID" >> "$GITHUB_ENV"
+
+          for attempt in $(seq 1 60); do
+            if (echo > /dev/tcp/127.0.0.1/15432) >/dev/null 2>&1; then
+              exit 0
+            fi
+            if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+              echo "Railway tunnel stopped unexpectedly:" >&2
+              cat /tmp/railway-recovery-tunnel.log >&2 || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Timed out waiting for Railway database tunnel." >&2
+          cat /tmp/railway-recovery-tunnel.log >&2 || true
+          exit 1
+
+      - name: Build local recovery connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          OWNER_LOCAL_URL="$(python3 ops/postgres-recovery/build-database-url.py \
+            --base "$RECOVERY_PRIVATE_DATABASE_URL" \
+            --user "$RECOVERY_PGUSER" \
+            --password "$RECOVERY_PGPASSWORD" \
+            --host 127.0.0.1 \
+            --port 15432)"
+          echo "::add-mask::$OWNER_LOCAL_URL"
+          echo "OWNER_LOCAL_URL=$OWNER_LOCAL_URL" >> "$GITHUB_ENV"
+
+      - name: Restore selected backup
+        id: restore
+        shell: bash
+        env:
+          RESTORE_BACKUP_KEY: ${{ inputs.backup_key }}
+        run: |
+          set -euo pipefail
+          docker build -t senorarroz-postgres-restore ops/postgres-restore
+
+          docker run --rm --network host \
+            -e RESTORE_DATABASE_URL="$OWNER_LOCAL_URL" \
+            -e BUCKET="$SOURCE_BUCKET" \
+            -e ENDPOINT="$SOURCE_ENDPOINT" \
+            -e REGION="$SOURCE_REGION" \
+            -e AWS_ACCESS_KEY_ID="$SOURCE_ACCESS_KEY_ID" \
+            -e AWS_SECRET_ACCESS_KEY="$SOURCE_SECRET_ACCESS_KEY" \
+            -e BACKUP_PREFIX="$BACKUP_PREFIX" \
+            -e RESTORE_BACKUP_KEY="$RESTORE_BACKUP_KEY" \
+            -e ALLOW_RESTORE=YES \
+            senorarroz-postgres-restore | tee /tmp/restore.log
+
+          RESTORED_BACKUP_KEY="$(sed -n 's/^RESTORED_BACKUP_KEY=//p' /tmp/restore.log | tail -n 1)"
+          if [ -z "$RESTORED_BACKUP_KEY" ]; then
+            echo "Restore completed without reporting RESTORED_BACKUP_KEY." >&2
+            exit 1
+          fi
+          echo "RESTORED_BACKUP_KEY=$RESTORED_BACKUP_KEY" >> "$GITHUB_ENV"
+
+      - name: Create restricted runtime role and verify RLS
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME_ROLE="senorarroz_runtime"
+          RUNTIME_PASSWORD="$(openssl rand -hex 24)"
+          RUNTIME_LOCAL_URL="$(python3 ops/postgres-recovery/build-database-url.py \
+            --base "$OWNER_LOCAL_URL" \
+            --user "$RUNTIME_ROLE" \
+            --password "$RUNTIME_PASSWORD")"
+          RUNTIME_PRIVATE_URL="$(python3 ops/postgres-recovery/build-database-url.py \
+            --base "$RECOVERY_PRIVATE_DATABASE_URL" \
+            --user "$RUNTIME_ROLE" \
+            --password "$RUNTIME_PASSWORD")"
+
+          echo "::add-mask::$RUNTIME_PASSWORD"
+          echo "::add-mask::$RUNTIME_LOCAL_URL"
+          echo "::add-mask::$RUNTIME_PRIVATE_URL"
+
+          docker run --rm --network host \
+            -v "$PWD:/repo:ro" \
+            -e OWNER_DATABASE_URL="$OWNER_LOCAL_URL" \
+            -e RUNTIME_DATABASE_URL="$RUNTIME_LOCAL_URL" \
+            -e RUNTIME_ROLE="$RUNTIME_ROLE" \
+            -e RUNTIME_PASSWORD="$RUNTIME_PASSWORD" \
+            postgres:17-alpine \
+            sh /repo/ops/postgres-recovery/prepare-runtime.sh
+
+          printf '%s' "$RUNTIME_PASSWORD" | railway variable set DR_RUNTIME_PASSWORD --stdin \
+            --service "$RECOVERY_SERVICE_ID" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --skip-deploys >/dev/null
+          railway variable set \
+            "DR_VERIFIED=YES" \
+            "DR_RUNTIME_ROLE=$RUNTIME_ROLE" \
+            "DR_SOURCE=${{ inputs.source }}" \
+            "DR_BACKUP_KEY=$RESTORED_BACKUP_KEY" \
+            "DR_CREATED_BY_RUN=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --service "$RECOVERY_SERVICE_ID" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --skip-deploys >/dev/null
+
+      - name: Capture verification counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          COUNTS="$(docker run --rm --network host postgres:17-alpine \
+            psql "$OWNER_LOCAL_URL" -v ON_ERROR_STOP=1 -Atqc \
+            "SELECT json_build_object(
+              'tenant', (SELECT count(*) FROM public.tenant),
+              'branch', (SELECT count(*) FROM public.branch),
+              'customer', (SELECT count(*) FROM public.customer),
+              'order', (SELECT count(*) FROM public.\"order\")
+            )::text;")"
+          echo "RECOVERY_COUNTS=$COUNTS" >> "$GITHUB_ENV"
+
+      - name: Recovery summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## PostgreSQL recovery ready"
+            echo
+            echo "- Railway service: \`$RECOVERY_SERVICE_NAME\`"
+            echo "- Service id: \`$RECOVERY_SERVICE_ID\`"
+            echo "- Backup source: \`${{ inputs.source }}\`"
+            echo "- Restored object: \`$RESTORED_BACKUP_KEY\`"
+            echo "- Counts: \`$RECOVERY_COUNTS\`"
+            echo "- Runtime role and forced RLS: verified"
+            echo "- Production database: unchanged"
+            echo
+            echo "Do not delete this recovery database if it is being evaluated for promotion."
+            echo "To switch production, run the separate **Promote Recovery Database** workflow and type PROMOTE."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Recovery failure notice
+        if: failure() && env.RECOVERY_SERVICE_ID != ''
+        shell: bash
+        run: |
+          {
+            echo "## Recovery did not complete"
+            echo
+            echo "A recovery PostgreSQL service may have been created: \`${RECOVERY_SERVICE_NAME:-$RECOVERY_SERVICE_ID}\`."
+            echo "Production was not modified. The recovery service is intentionally left in Railway for inspection or manual cleanup."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Close Railway tunnel
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${TUNNEL_PID:-}" ]; then
+            kill "$TUNNEL_PID" 2>/dev/null || true
+          fi

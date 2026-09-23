@@ -1,0 +1,181 @@
+name: Rollback Recovery Database
+
+on:
+  workflow_dispatch:
+    inputs:
+      recovery_service:
+        description: Recovery service that was promoted and must match DR_ACTIVE_RECOVERY_SERVICE
+        required: true
+        type: string
+      confirmation:
+        description: Type ROLLBACK to restore the pre-promotion database connections
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-disaster-recovery
+  cancel-in-progress: false
+
+env:
+  RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+  RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+  RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT || 'production' }}
+  RAILWAY_BACKUP_SERVICE: ${{ vars.RAILWAY_BACKUP_SERVICE || 'postgres-backup-cron' }}
+  RAILWAY_BACKEND_SERVICE: ${{ vars.RAILWAY_BACKEND_SERVICE }}
+  DR_API_HEALTH_URL: ${{ vars.DR_API_HEALTH_URL }}
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Confirm rollback request
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirmation }}" != "ROLLBACK" ]; then
+            echo "Refusing rollback: confirmation must be exactly ROLLBACK." >&2
+            exit 1
+          fi
+          for name in RAILWAY_API_TOKEN RAILWAY_PROJECT_ID RAILWAY_BACKEND_SERVICE; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required GitHub Actions secret/variable: ${name}." >&2
+              exit 1
+            fi
+          done
+
+      - name: Install Railway CLI
+        shell: bash
+        run: npm install --global @railway/cli
+
+      - name: Link Railway project
+        shell: bash
+        run: |
+          set -euo pipefail
+          railway link \
+            --project "$RAILWAY_PROJECT_ID" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --json >/tmp/railway-link.json
+
+      - name: Load rollback state
+        shell: bash
+        run: |
+          set -euo pipefail
+          BACKEND_VARS="$(railway variable list --json \
+            --service "$RAILWAY_BACKEND_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT")"
+          BACKUP_VARS="$(railway variable list --json \
+            --service "$RAILWAY_BACKUP_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT")"
+
+          ACTIVE_RECOVERY="$(printf '%s' "$BACKEND_VARS" | jq -r '.DR_ACTIVE_RECOVERY_SERVICE // empty')"
+          PREVIOUS_CONNECTION="$(printf '%s' "$BACKEND_VARS" | jq -r '.DR_PREVIOUS_CONNECTION // empty')"
+          PREVIOUS_BACKUP_DATABASE_URL="$(printf '%s' "$BACKUP_VARS" | jq -r '.DR_PREVIOUS_DATABASE_URL // empty')"
+
+          if [ "$ACTIVE_RECOVERY" != "${{ inputs.recovery_service }}" ]; then
+            echo "Refusing rollback: requested service does not match DR_ACTIVE_RECOVERY_SERVICE (${ACTIVE_RECOVERY:-unset})." >&2
+            exit 1
+          fi
+          if [ -z "$PREVIOUS_CONNECTION" ] || [ -z "$PREVIOUS_BACKUP_DATABASE_URL" ]; then
+            echo "Refusing rollback: previous database connection state is incomplete." >&2
+            exit 1
+          fi
+
+          echo "::add-mask::$PREVIOUS_CONNECTION"
+          echo "::add-mask::$PREVIOUS_BACKUP_DATABASE_URL"
+          {
+            echo "PREVIOUS_CONNECTION=$PREVIOUS_CONNECTION"
+            echo "PREVIOUS_BACKUP_DATABASE_URL=$PREVIOUS_BACKUP_DATABASE_URL"
+          } >> "$GITHUB_ENV"
+
+      - name: Restore backend connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE_DEPLOYMENT="$(railway deployment list \
+            --service "$RAILWAY_BACKEND_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --limit 1 \
+            --json | jq -r '.[0].id // empty')"
+
+          printf '%s' "$PREVIOUS_CONNECTION" | railway variable set ConnectionStrings__DefaultConnection --stdin \
+            --service "$RAILWAY_BACKEND_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" >/dev/null
+
+          STATUS=""
+          NEW_DEPLOYMENT=""
+          for attempt in $(seq 1 90); do
+            DEPLOYMENTS="$(railway deployment list \
+              --service "$RAILWAY_BACKEND_SERVICE" \
+              --environment "$RAILWAY_ENVIRONMENT" \
+              --limit 1 \
+              --json)"
+            NEW_DEPLOYMENT="$(printf '%s' "$DEPLOYMENTS" | jq -r '.[0].id // empty')"
+            STATUS="$(printf '%s' "$DEPLOYMENTS" | jq -r '.[0].status // empty')"
+            if [ -n "$NEW_DEPLOYMENT" ] && [ "$NEW_DEPLOYMENT" != "$BEFORE_DEPLOYMENT" ]; then
+              case "$STATUS" in
+                SUCCESS) break ;;
+                FAILED|CRASHED|REMOVED)
+                  echo "Backend rollback deployment failed with status ${STATUS}." >&2
+                  exit 1
+                  ;;
+              esac
+            fi
+            sleep 5
+          done
+
+          if [ -z "$NEW_DEPLOYMENT" ] || [ "$NEW_DEPLOYMENT" = "$BEFORE_DEPLOYMENT" ] || [ "$STATUS" != "SUCCESS" ]; then
+            echo "Timed out waiting for backend rollback deployment." >&2
+            exit 1
+          fi
+
+      - name: Check public backend after rollback
+        if: env.DR_API_HEALTH_URL != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --retry 12 --retry-delay 5 --retry-all-errors \
+            "$DR_API_HEALTH_URL" >/dev/null
+
+      - name: Restore backup cron connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$PREVIOUS_BACKUP_DATABASE_URL" | railway variable set DATABASE_URL --stdin \
+            --service "$RAILWAY_BACKUP_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" >/dev/null
+
+          railway variable set \
+            "DR_LAST_ROLLED_BACK_SERVICE=${{ inputs.recovery_service }}" \
+            "DR_ACTIVE_RECOVERY_SERVICE=" \
+            --service "$RAILWAY_BACKEND_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --skip-deploys >/dev/null
+
+      - name: Rollback summary
+        shell: bash
+        run: |
+          {
+            echo "## Recovery cutover rolled back"
+            echo
+            echo "- Backend connection restored to the value saved before promotion"
+            echo "- Backup cron connection restored"
+            echo "- Recovery database \`${{ inputs.recovery_service }}\` was not deleted"
+            echo "- No database data was overwritten by this workflow"
+            echo
+            echo "Run the normal application smoke tests before deleting or changing either database."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Rollback failure notice
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "## Rollback did not complete cleanly"
+            echo
+            echo "Do not delete either database. Inspect the failed step and the current backend/backup variables in Railway before retrying."
+          } >> "$GITHUB_STEP_SUMMARY"

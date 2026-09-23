@@ -13,6 +13,14 @@ if [ "$ALLOW_RESTORE" != "YES" ]; then
   exit 1
 fi
 
+BACKUP_PREFIX="${BACKUP_PREFIX:-backup-}"
+RESTORE_BACKUP_KEY="${RESTORE_BACKUP_KEY:-}"
+
+if [ -z "$BACKUP_PREFIX" ]; then
+  echo "BACKUP_PREFIX cannot be empty." >&2
+  exit 1
+fi
+
 s3api() {
   if [ -n "${REGION:-}" ]; then
     aws s3api "$@" --endpoint-url "$ENDPOINT" --region "$REGION"
@@ -44,19 +52,36 @@ if [ "$USER_TABLES" != "0" ]; then
   exit 1
 fi
 
-LATEST_KEY="$(s3api list-objects-v2 \
-  --bucket "$BUCKET" \
-  --prefix "backup-" \
-  --query 'reverse(sort_by(Contents,&LastModified))[0].Key' \
-  --output text)"
+if [ -n "$RESTORE_BACKUP_KEY" ]; then
+  case "$RESTORE_BACKUP_KEY" in
+    "${BACKUP_PREFIX}"*.dump) ;;
+    *)
+      echo "Refusing restore: RESTORE_BACKUP_KEY must match ${BACKUP_PREFIX}*.dump." >&2
+      exit 1
+      ;;
+  esac
 
-case "$LATEST_KEY" in
-  backup-*.dump) ;;
-  *)
-    echo "No valid backup-*.dump object found in bucket." >&2
+  echo "Checking requested backup object: ${RESTORE_BACKUP_KEY}"
+  if ! s3api head-object --bucket "$BUCKET" --key "$RESTORE_BACKUP_KEY" >/dev/null 2>&1; then
+    echo "Requested backup object was not found: ${RESTORE_BACKUP_KEY}" >&2
     exit 1
-    ;;
-esac
+  fi
+  BACKUP_KEY="$RESTORE_BACKUP_KEY"
+else
+  BACKUP_KEY="$(s3api list-objects-v2 \
+    --bucket "$BUCKET" \
+    --prefix "$BACKUP_PREFIX" \
+    --query 'reverse(sort_by(Contents,&LastModified))[0].Key' \
+    --output text)"
+
+  case "$BACKUP_KEY" in
+    "${BACKUP_PREFIX}"*.dump) ;;
+    *)
+      echo "No valid ${BACKUP_PREFIX}*.dump object found in bucket." >&2
+      exit 1
+      ;;
+  esac
+fi
 
 TMP="/tmp/restore.dump"
 cleanup() {
@@ -64,13 +89,13 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "Downloading latest backup: ${LATEST_KEY}"
-s3_cp "s3://${BUCKET}/${LATEST_KEY}" "$TMP"
+echo "Downloading backup: ${BACKUP_KEY}"
+s3_cp "s3://${BUCKET}/${BACKUP_KEY}" "$TMP"
 
 echo "Validating dump..."
 pg_restore --list "$TMP" >/dev/null
 
-echo "Restoring into empty test database..."
+echo "Restoring into empty recovery database..."
 pg_restore \
   --dbname="$RESTORE_DATABASE_URL" \
   --no-owner \
@@ -90,4 +115,5 @@ psql "$RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -P pager=off -c "
   SELECT 'order', count(*) FROM public.\"order\";
 "
 
-echo "Restore verification completed successfully from ${LATEST_KEY}."
+echo "RESTORED_BACKUP_KEY=${BACKUP_KEY}"
+echo "Restore verification completed successfully from ${BACKUP_KEY}."
