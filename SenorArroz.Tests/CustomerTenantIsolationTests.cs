@@ -75,6 +75,43 @@ public sealed class CustomerTenantIsolationTests
         Assert.False(await repository.DeleteAsync(200));
     }
 
+    [Fact]
+    public async Task AddressRepository_CreatesServiceForNeighborhoodBranchWithoutChangingCustomerOrigin()
+    {
+        await using var db = CreateDb();
+        var originBranch = new Branch { Id = 1, TenantId = 1, Name = "Origin", Address = "A", Phone1 = "1" };
+        var serviceBranch = new Branch { Id = 2, TenantId = 1, Name = "Service", Address = "B", Phone1 = "2" };
+        var customer = Customer(10, 1, originBranch, "Customer", "3001111111");
+        var neighborhood = new Neighborhood
+        {
+            Id = 20,
+            TenantId = 1,
+            BranchId = serviceBranch.Id,
+            Branch = serviceBranch,
+            Name = "Target",
+            DeliveryFee = 6500,
+            Active = true
+        };
+        db.AddRange(originBranch, serviceBranch, customer, neighborhood);
+        await db.SaveChangesAsync();
+        var repository = new AddressRepository(db, new FixedTenant(1));
+
+        var address = await repository.CreateAsync(new Address
+        {
+            TenantId = 1,
+            CustomerId = customer.Id,
+            NeighborhoodId = neighborhood.Id,
+            AddressText = "Calle 10 # 20-30",
+            DeliveryFee = neighborhood.DeliveryFee
+        });
+
+        Assert.Equal(originBranch.Id, (await db.Customers.FindAsync(customer.Id))!.BranchId);
+        var service = Assert.Single(address.BranchServices);
+        Assert.Equal(serviceBranch.Id, service.BranchId);
+        Assert.Equal(neighborhood.Id, service.NeighborhoodId);
+        Assert.Equal(neighborhood.DeliveryFee, service.DeliveryFee);
+    }
+
     private static Customer Customer(int id, int tenantId, Branch branch, string name, string phone)
     {
         var customer = new Customer

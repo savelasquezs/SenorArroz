@@ -56,6 +56,17 @@ namespace SenorArroz.Application.Features.Customers.Commands
                 return reused;
             }
 
+            if (request.InitialAddress is not null)
+            {
+                var neighborhood = await _neighborhoodRepository.GetByIdAsync(request.InitialAddress.NeighborhoodId, cancellationToken);
+                if (neighborhood is null)
+                    throw new NotFoundException($"Barrio con ID {request.InitialAddress.NeighborhoodId} no encontrado");
+                if (neighborhood.TenantId != _currentTenant.TenantId)
+                    throw new BusinessException("El barrio y el cliente pertenecen a restaurantes diferentes");
+                if (!neighborhood.Active || neighborhood.Branch is null || !neighborhood.Branch.IsActive)
+                    throw new BusinessException("El barrio seleccionado no está disponible");
+            }
+
             // Create customer
             var customer = new Customer
             {
@@ -79,15 +90,6 @@ namespace SenorArroz.Application.Features.Customers.Commands
             // Create initial address if provided
             if (request.InitialAddress != null)
             {
-                // Validate neighborhood exists
-                var neighborhood = await _neighborhoodRepository.GetByIdAsync(request.InitialAddress.NeighborhoodId, cancellationToken);
-                if (neighborhood == null)
-                {
-                    throw new NotFoundException($"Barrio con ID {request.InitialAddress.NeighborhoodId} no encontrado");
-                }
-                if (neighborhood.TenantId != _currentTenant.TenantId)
-                    throw new BusinessException("El barrio y el cliente pertenecen a restaurantes diferentes");
-
                 // Tarifa enviada por el cliente (puede ser 0 = envío bonificado). El formulario precarga la del barrio.
                 var address = new Address
                 {

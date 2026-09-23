@@ -43,6 +43,8 @@ public class CreateAddressHandler : IRequestHandler<CreateAddressCommand, Custom
         }
         if (neighborhood.TenantId != customer.TenantId)
             throw new BusinessException("El barrio y el cliente pertenecen a restaurantes diferentes");
+        if (!neighborhood.Active || neighborhood.Branch is null || !neighborhood.Branch.IsActive)
+            throw new BusinessException("El barrio seleccionado no está disponible");
 
         // If this address should be primary, first unset all other primary addresses
         if (request.IsPrimary)

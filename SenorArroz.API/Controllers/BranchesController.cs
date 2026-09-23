@@ -32,7 +32,7 @@ public class BranchesController : ControllerBase
     /// Obtener opciones ligeras para el selector global de sucursal.
     /// </summary>
     [HttpGet("options")]
-    [Authorize(Roles = "Superadmin")]
+    [Authorize(Roles = "Superadmin,Admin,Cashier")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<BranchOptionDto>>>> GetBranchOptions()
     {
         var result = await _mediator.Send(new GetBranchOptionsQuery());

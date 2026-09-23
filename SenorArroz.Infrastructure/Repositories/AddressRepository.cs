@@ -23,6 +23,7 @@ public class AddressRepository : IAddressRepository
             .AsNoTracking()
             .Include(a => a.Neighborhood)
             .Include(a => a.BranchServices).ThenInclude(x => x.Neighborhood)
+            .Include(a => a.BranchServices).ThenInclude(x => x.Branch)
             .Include(a => a.Customer)
             .Where(a => a.TenantId == _tenantId && a.CustomerId == customerId)
             .OrderByDescending(a => a.CreatedAt)
@@ -35,6 +36,7 @@ public class AddressRepository : IAddressRepository
             .AsNoTracking()
             .Include(a => a.Neighborhood)
             .Include(a => a.BranchServices).ThenInclude(x => x.Neighborhood)
+            .Include(a => a.BranchServices).ThenInclude(x => x.Branch)
             .Include(a => a.Customer)
             .FirstOrDefaultAsync(a => a.TenantId == _tenantId && a.Id == id, cancellationToken);
     }
@@ -45,6 +47,7 @@ public class AddressRepository : IAddressRepository
             .AsNoTracking()
             .Include(a => a.Neighborhood)
             .Include(a => a.BranchServices).ThenInclude(x => x.Neighborhood)
+            .Include(a => a.BranchServices).ThenInclude(x => x.Branch)
             .Include(a => a.Customer)
             .Where(a => a.TenantId == _tenantId && a.CustomerId == customerId && a.IsPrimary)
             .FirstOrDefaultAsync(cancellationToken);

@@ -20,6 +20,7 @@ public sealed class GetBranchOptionsHandler
     {
         var branches = await _branchRepository.GetAllAsync(cancellationToken);
         return branches
+            .Where(branch => branch.IsActive)
             .Select(branch => new BranchOptionDto { Id = branch.Id, Name = branch.Name })
             .OrderBy(branch => branch.Name)
             .ToList();

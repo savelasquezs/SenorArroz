@@ -2,6 +2,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SenorArroz.API.Filters;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.Commands;
 using SenorArroz.Application.Features.Customers.DTOs;
@@ -256,16 +257,26 @@ public class CustomersController : ControllerBase
     /// </summary>
     /// <returns>Lista de barrios</returns>
     [HttpGet("neighborhoods")]
-    public async Task<ActionResult<ApiResponse<IEnumerable<NeighborhoodDto>>>> GetNeighborhoods()
+    [Authorize(Roles = "Superadmin,Admin,Cashier")]
+    [AllowCrossBranchOrderContext]
+    public async Task<ActionResult<ApiResponse<IEnumerable<NeighborhoodDto>>>> GetNeighborhoods(
+        [FromQuery] int? branchId = null,
+        [FromQuery] bool forOrderAddress = false)
     {
-        var query = new GetNeighborhoodsQuery { BranchId = _branchContext.RequireBranch() };
+        var query = new GetNeighborhoodsQuery
+        {
+            BranchId = branchId ?? _branchContext.RequireBranch(),
+            ForOrderAddress = forOrderAddress
+        };
         var result = await _mediator.Send(query);
 
         var neighborhoods = result.Select(n => new NeighborhoodDto
         {
             Id = n.Id,
+            BranchId = n.BranchId,
             Name = n.Name,
-            DeliveryFee = n.DeliveryFee
+            DeliveryFee = n.DeliveryFee,
+            Active = n.Active
         });
 
         return Ok(ApiResponse<IEnumerable<NeighborhoodDto>>
