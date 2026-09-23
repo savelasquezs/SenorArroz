@@ -11,15 +11,24 @@ public sealed class MultitenantRlsPostgreSqlTests : IAsyncLifetime
     private PostgreSqlContainer? _postgres;
     private string _adminConnectionString = null!;
     private string _runtimeConnectionString = null!;
+    private string? _serverConnectionString;
+    private string? _temporaryDatabaseName;
+    private readonly string _runtimeRole = $"app_runtime_{Guid.NewGuid():N}";
 
     public async Task InitializeAsync()
     {
         _adminConnectionString = Environment.GetEnvironmentVariable("POSTGRES_TEST_CONNECTION") ?? string.Empty;
         if (string.IsNullOrWhiteSpace(_adminConnectionString))
         {
-            _postgres = new PostgreSqlBuilder("postgres:16-alpine").Build();
-            await _postgres.StartAsync();
-            _adminConnectionString = _postgres.GetConnectionString();
+            var sharedConnectionString = Environment.GetEnvironmentVariable("FLOW_POSTGRES_TEST_CONNECTION");
+            if (!string.IsNullOrWhiteSpace(sharedConnectionString))
+                await CreateIsolatedDatabaseAsync(sharedConnectionString);
+            else
+            {
+                _postgres = new PostgreSqlBuilder("postgres:16-alpine").Build();
+                await _postgres.StartAsync();
+                _adminConnectionString = _postgres.GetConnectionString();
+            }
         }
         var adminOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(_adminConnectionString).Options;
@@ -41,18 +50,18 @@ public sealed class MultitenantRlsPostgreSqlTests : IAsyncLifetime
         await admin.OpenAsync();
         await ExecuteAsync(admin, ReadScript("tenant_scoped_unique_indexes_v3.sql"));
         await ExecuteAsync(admin, ReadScript("enable_multitenant_rls_v3.sql"));
-        await ExecuteAsync(admin, """
-            CREATE ROLE app_runtime LOGIN PASSWORD 'runtime-test-password' NOSUPERUSER NOBYPASSRLS;
-            GRANT CONNECT ON DATABASE postgres TO app_runtime;
-            GRANT USAGE ON SCHEMA public, app TO app_runtime;
-            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_runtime;
-            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_runtime;
-            GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO app_runtime;
+        await ExecuteAsync(admin, $"""
+            CREATE ROLE {_runtimeRole} LOGIN PASSWORD 'runtime-test-password' NOSUPERUSER NOBYPASSRLS;
+            GRANT CONNECT ON DATABASE {admin.Database} TO {_runtimeRole};
+            GRANT USAGE ON SCHEMA public, app TO {_runtimeRole};
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {_runtimeRole};
+            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {_runtimeRole};
+            GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO {_runtimeRole};
             """);
 
         _runtimeConnectionString = new NpgsqlConnectionStringBuilder(_adminConnectionString)
         {
-            Username = "app_runtime",
+            Username = _runtimeRole,
             Password = "runtime-test-password",
             Pooling = true,
             NoResetOnClose = false
@@ -61,7 +70,32 @@ public sealed class MultitenantRlsPostgreSqlTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        if (_postgres is not null) await _postgres.DisposeAsync();
+        NpgsqlConnection.ClearAllPools();
+        if (_serverConnectionString is not null && _temporaryDatabaseName is not null)
+        {
+            await using var server = new NpgsqlConnection(_serverConnectionString);
+            await server.OpenAsync();
+            await ExecuteAsync(server, $"DROP DATABASE IF EXISTS {_temporaryDatabaseName} WITH (FORCE)");
+            await ExecuteAsync(server, $"DROP ROLE IF EXISTS {_runtimeRole}");
+        }
+        if (_postgres is not null)
+            await _postgres.DisposeAsync();
+    }
+
+    private async Task CreateIsolatedDatabaseAsync(string sharedConnectionString)
+    {
+        _temporaryDatabaseName = $"rls_test_{Guid.NewGuid():N}";
+        var serverBuilder = new NpgsqlConnectionStringBuilder(sharedConnectionString)
+        {
+            Database = "postgres",
+            Pooling = false,
+        };
+        _serverConnectionString = serverBuilder.ConnectionString;
+        await using var server = new NpgsqlConnection(_serverConnectionString);
+        await server.OpenAsync();
+        await ExecuteAsync(server, $"CREATE DATABASE {_temporaryDatabaseName}");
+        serverBuilder.Database = _temporaryDatabaseName;
+        _adminConnectionString = serverBuilder.ConnectionString;
     }
 
     [PostgreSqlIntegrationFact]
