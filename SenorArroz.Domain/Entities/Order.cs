@@ -71,6 +71,7 @@ public class Order : TenantOwnedEntity
     public int? ManualBenefitGiftProductId { get; set; }
     public string? Notes { get; set; }
     public string? CancelledReason { get; set; }
+    public string? InventoryIssue { get; set; }
 
     /// <summary>Efectivo pendiente ya cobrado en sucursal; el domiciliario no cobra en entrega.</summary>
     public bool PaidInStoreCash { get; set; }
@@ -96,6 +97,7 @@ public class Order : TenantOwnedEntity
     public virtual ICollection<AppPayment> AppPayments { get; set; } = new List<AppPayment>();
     public virtual ICollection<ReservationDeposit> Deposits { get; set; } = new List<ReservationDeposit>();
     public virtual ICollection<WompiPaymentAttempt> WompiPaymentAttempts { get; set; } = new List<WompiPaymentAttempt>();
+    public virtual ICollection<OrderInventoryAllocation> InventoryAllocations { get; set; } = new List<OrderInventoryAllocation>();
 
     // Helper methods para StatusTimes
     public Dictionary<string, DateTime> GetStatusTimes()

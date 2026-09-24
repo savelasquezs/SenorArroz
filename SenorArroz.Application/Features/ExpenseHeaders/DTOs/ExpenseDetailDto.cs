@@ -14,6 +14,9 @@ public class ExpenseDetailDto
     public bool IncludeVat { get; set; }
 
     public string? Notes { get; set; }
+    public int? InventoryConversionId { get; set; }
+    public decimal? InventoryBaseQuantity { get; set; }
+    public decimal? InventoryUnitCost { get; set; }
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

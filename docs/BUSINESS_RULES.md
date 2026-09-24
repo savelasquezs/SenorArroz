@@ -2,7 +2,7 @@
 
 ## Fundación multitenant terminada
 
-- Las 93 entidades operativas tienen filtro EF, write guard, `tenant_id NOT NULL`, FK y RLS forzado.
+- Las 102 entidades operativas tienen filtro EF, write guard, `tenant_id NOT NULL`, FK y RLS forzado.
 - PostgreSQL recibe `app.current_tenant_id` y `app.system_scope` en cada conexión/comando; el pool limpia el contexto y prohíbe `No Reset On Close`.
 - El rol runtime de producción debe ser `NOSUPERUSER NOBYPASSRLS`; el backend aborta el arranque cuando el rol o la cobertura RLS son inseguros.
 - SignalR, almacenamiento y agente de impresión usan namespaces de tenant. El token del agente resuelve su tenant persistido antes de procesar.
@@ -11,6 +11,21 @@
 - Sólo quedan pendientes funciones SaaS de producto: control plane, planes, suscripciones, metering, invitaciones y portal `/platform`.
 
 Este documento resume reglas funcionales que Codex debe respetar antes de modificar pedidos, pagos, cocina, domicilios, impresión, caja o módulos relacionados.
+
+## Inventario
+
+- Registrar una compra inventariable confirma que el insumo ya llegó: convierte la presentación a unidad base, aumenta existencia y actualiza el costo promedio en la misma transacción.
+- No existen recepciones separadas, compras en tránsito ni recepciones parciales.
+- Las recetas `Estimated` descuentan al iniciar preparación, admiten saldo teórico negativo y nunca bloquean un pedido.
+- Las recetas `Strict` reservan al quedar el pedido tomado, consumen al iniciar preparación y nunca admiten sobreventa. Inicialmente este modo corresponde a bebidas.
+- Las reservas programadas se realizan al llegar `PrepareAt`; si no hay existencia, el pedido conserva una alerta administrativa y no entra en preparación.
+- Editar un pedido tomado libera su reserva anterior y reserva el snapshot nuevo dentro de una sola transacción. Cancelar antes de preparación libera reservas; después de consumir no repone automáticamente.
+- Cada pedido conserva su snapshot de receta. Cambiar una receta no modifica pedidos históricos.
+- Un producto sólo activa inventario después de guardar una receta válida y confirmar conteo de apertura de todos sus insumos.
+- Los conteos físicos ajustan mediante ledger; no sobrescriben saldos sin movimiento. En insumos estrictos nunca pueden dejar menos existencia que la reservada.
+- Los movimientos son inmutables e idempotentes. Compras corregidas o eliminadas generan reversión, no edición del ledger.
+- Las transferencias siguen únicamente `Draft -> Dispatched -> Received/ReceivedWithDifference`; cualquier diferencia exige motivo y nunca cruza tenants.
+- Productos sin inventario activo continúan con `Product.Stock`; los arroces legacy sin stock permanecen ilimitados.
 
 ## Clientes, direcciones y sucursales
 

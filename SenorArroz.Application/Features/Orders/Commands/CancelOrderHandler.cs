@@ -7,6 +7,7 @@ using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
+using Microsoft.EntityFrameworkCore;
 
 namespace SenorArroz.Application.Features.Orders.Commands;
 
@@ -22,6 +23,8 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
     private readonly IClock _clock;
     private readonly IOrderNotificationService _notificationService;
+    private readonly IApplicationDbContext? _db;
+    private readonly IInventoryService? _inventory;
 
     public CancelOrderHandler(
         IOrderRepository orderRepository,
@@ -33,7 +36,9 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         ILoyaltyCycleService loyaltyCycle,
         IDeliveryRouteWorkflowService deliveryRouteWorkflow,
         IClock clock,
-        IOrderNotificationService notificationService)
+        IOrderNotificationService notificationService,
+        IApplicationDbContext? db = null,
+        IInventoryService? inventory = null)
     {
         _orderRepository = orderRepository;
         _bankPaymentRepository = bankPaymentRepository;
@@ -45,6 +50,8 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
         _clock = clock;
         _notificationService = notificationService;
+        _db = db;
+        _inventory = inventory;
     }
 
     public async Task<OrderDto> Handle(CancelOrderCommand request, CancellationToken cancellationToken)
@@ -77,6 +84,14 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
                 "Rappi no permite rechazar una orden delivery después de aceptarla. " +
                 "La cancelación debe realizarse en Rappi y se sincronizará automáticamente por webhook");
 
+        await using var inventoryTransaction = _inventory is not null && _db?.Database.IsRelational() == true
+            ? await _db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+        if (_inventory is not null && previousStatus == OrderStatus.Taken)
+            await _inventory.ReleaseOrderAsync(existingOrder, $"order:{existingOrder.Id}:cancel", cancellationToken);
+
         var appPayments = (await _appPaymentRepository.GetByOrderIdAsync(
             request.Id,
             cancellationToken)).ToList();
@@ -90,6 +105,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
             request.Id,
             cancellationReason,
             cancellationToken);
+        if (inventoryTransaction is not null) await inventoryTransaction.CommitAsync(cancellationToken);
 
         if (KitchenOrderNotificationEligibility.IsVisibleToActiveKitchen(existingOrder, _clock.UtcNow))
         {
@@ -117,6 +133,12 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         }
 
         return orderDto;
+        }
+        catch
+        {
+            if (inventoryTransaction is not null) await inventoryTransaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     private async Task CancelAssociatedPaymentsAsync(

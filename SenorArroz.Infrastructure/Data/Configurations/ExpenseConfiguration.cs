@@ -18,6 +18,11 @@ public class ExpenseConfiguration : IEntityTypeConfiguration<Expense>
         builder.Property(e => e.CategoryId).HasColumnName("category_id").IsRequired();
         builder.Property(e => e.Unit).HasColumnName("unit").HasMaxLength(50).HasConversion(v => v.ToString().ToLower(),           // Escribe en minúsculas
                 v => Enum.Parse<ExpenseUnit>(v, true)).HasDefaultValue(ExpenseUnit.Unit);
+        builder.Property(e => e.TracksInventory).HasColumnName("tracks_inventory").HasDefaultValue(false);
+        builder.Property(e => e.InventoryActive).HasColumnName("inventory_active").HasDefaultValue(false);
+        builder.Property(e => e.InventoryBaseUnit).HasColumnName("inventory_base_unit").HasMaxLength(20)
+            .HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<InventoryBaseUnit>(v, true))
+            .HasDefaultValue(InventoryBaseUnit.Unit);
 
         builder.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
         builder.Property(e => e.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");

@@ -1,3 +1,5 @@
+using SenorArroz.Domain.Enums;
+
 namespace SenorArroz.Application.Features.Products.DTOs;
 
 public class ProductDto
@@ -22,6 +24,8 @@ public class ProductDto
     public int? ServesPeopleMax { get; set; }
     public string? StorefrontVariantLabel { get; set; }
     public int StorefrontSortOrder { get; set; }
+    public bool InventoryEnabled { get; set; }
+    public InventoryControlMode InventoryControlMode { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

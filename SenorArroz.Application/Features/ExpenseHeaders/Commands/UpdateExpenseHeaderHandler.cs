@@ -21,6 +21,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
     private readonly ICurrentUser _currentUser;
     private readonly IBranchContext _branchContext;
     private readonly IClock _clock;
+    private readonly IInventoryService? _inventory;
 
     public UpdateExpenseHeaderHandler(
         IExpenseHeaderRepository expenseHeaderRepository,
@@ -29,7 +30,8 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         IMapper mapper,
         ICurrentUser currentUser,
         IBranchContext branchContext,
-        IClock clock)
+        IClock clock,
+        IInventoryService? inventory = null)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
         _bankRepository = bankRepository;
@@ -38,10 +40,15 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         _currentUser = currentUser;
         _branchContext = branchContext;
         _clock = clock;
+        _inventory = inventory;
     }
 
     public async Task<ExpenseHeaderDto> Handle(UpdateExpenseHeaderCommand request, CancellationToken cancellationToken)
     {
+        var operationKey = string.IsNullOrWhiteSpace(request.ExpenseHeader.IdempotencyKey)
+            ? Guid.NewGuid().ToString("N")
+            : request.ExpenseHeader.IdempotencyKey.Trim();
+        if (operationKey.Length > 120) throw new BusinessException("La clave de idempotencia no puede superar 120 caracteres");
         var expenseHeader = await _expenseHeaderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken);
 
         if (expenseHeader == null)
@@ -49,6 +56,21 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             throw new NotFoundException($"Gasto con ID {request.Id} no encontrado");
         }
         _branchContext.EnsureAccess(expenseHeader.BranchId);
+        var applyOperationKey = $"expense-header:{expenseHeader.Id}:update:{operationKey}:apply";
+        if (await _context.InventoryMovements.AsNoTracking().AnyAsync(x => x.OperationKey == applyOperationKey, cancellationToken))
+        {
+            var existingDto = _mapper.Map<ExpenseHeaderDto>(expenseHeader);
+            existingDto.CategoryNames = existingDto.ExpenseDetails.Select(x => x.ExpenseCategoryName).Distinct().ToList();
+            existingDto.BankNames = existingDto.ExpenseBankPayments.Select(x => x.BankName).Distinct().ToList();
+            existingDto.ExpenseNames = existingDto.ExpenseDetails.Select(x => x.ExpenseName).Distinct().ToList();
+            await ExpenseHeaderLinkedAdvancePopulator.PopulateAsync(_context, new[] { existingDto }, cancellationToken);
+            return existingDto;
+        }
+        await using var inventoryTransaction = _context.Database.IsRelational() ? await _context.Database.BeginTransactionAsync(cancellationToken) : null;
+        try
+        {
+        if (_inventory is not null)
+            await _inventory.ReversePurchaseAsync(expenseHeader, $"expense-header:{expenseHeader.Id}:update:{operationKey}:reverse", cancellationToken);
 
         // Validar acceso
         if (!Roles.IsSuperadmin(_currentUser.Role))
@@ -147,6 +169,9 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                             detailDto.Total);
                         existingDetail.IncludeVat = request.ExpenseHeader.IncludeVat || detailDto.IncludeVat;
                         existingDetail.Notes = NormalizeExpenseNote(detailDto.Notes, 1000);
+                        existingDetail.InventoryConversionId = detailDto.InventoryConversionId;
+                        existingDetail.InventoryBaseQuantity = null;
+                        existingDetail.InventoryUnitCost = null;
                     }
                 }
                 else
@@ -163,6 +188,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
                             detailDto.Total),
                         IncludeVat = request.ExpenseHeader.IncludeVat || detailDto.IncludeVat,
                         Notes = NormalizeExpenseNote(detailDto.Notes, 1000),
+                        InventoryConversionId = detailDto.InventoryConversionId,
                     };
                     expenseHeader.ExpenseDetails.Add(newDetail);
                     newDetailInfos.Add((newDetail.ExpenseId, (decimal)newDetail.Amount, (int)Math.Ceiling(newDetail.Quantity)));
@@ -228,6 +254,8 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         expenseHeader.Total = grossTotal;
 
         var updated = await _expenseHeaderRepository.UpdateAsync(expenseHeader, cancellationToken);
+        if (_inventory is not null)
+            await _inventory.RecordPurchaseAsync(expenseHeader, applyOperationKey, cancellationToken);
 
         await SyncLinkedDeliverymanAdvanceAmountAsync(updated.Id, updated.Total ?? 0, cancellationToken);
 
@@ -236,6 +264,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             await UpsertSupplierExpensesAsync(expenseHeader.SupplierId, newDetailInfos, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
         }
+        if (inventoryTransaction is not null) await inventoryTransaction.CommitAsync(cancellationToken);
         var updatedWithDetails = await _expenseHeaderRepository.GetByIdWithDetailsAsync(updated.Id, cancellationToken);
 
         if (updatedWithDetails == null)
@@ -264,6 +293,12 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         await ExpenseHeaderLinkedAdvancePopulator.PopulateAsync(_context, new[] { dto }, cancellationToken);
 
         return dto;
+        }
+        catch
+        {
+            if (inventoryTransaction is not null) await inventoryTransaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     private async Task SyncLinkedDeliverymanAdvanceAmountAsync(

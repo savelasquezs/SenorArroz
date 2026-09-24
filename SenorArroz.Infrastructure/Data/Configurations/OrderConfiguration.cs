@@ -106,6 +106,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.ManualBenefitGiftProductId).HasColumnName("manual_benefit_gift_product_id");
         builder.Property(o => o.Notes).HasColumnName("notes").HasMaxLength(200);
         builder.Property(o => o.CancelledReason).HasColumnName("cancelled_reason").HasMaxLength(200);
+        builder.Property(o => o.InventoryIssue).HasColumnName("inventory_issue").HasMaxLength(500);
 
         builder.Property(o => o.PaidInStoreCash).HasColumnName("paid_in_store_cash").HasDefaultValue(false);
         builder.Property(o => o.PaidInStoreCashAt).HasColumnName("paid_in_store_cash_at");

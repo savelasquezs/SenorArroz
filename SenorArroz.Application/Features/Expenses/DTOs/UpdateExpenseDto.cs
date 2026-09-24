@@ -1,6 +1,7 @@
 // SenorArroz.Application/Features/Expenses/DTOs/UpdateExpenseDto.cs
 using System.ComponentModel.DataAnnotations;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Application.Features.Inventory.DTOs;
 
 namespace SenorArroz.Application.Features.Expenses.DTOs;
 
@@ -17,6 +18,10 @@ public class UpdateExpenseDto
     public ExpenseUnit Unit { get; set; } = ExpenseUnit.Unit;
 
     public List<ExpenseMenuTargetInputDto> MenuTargets { get; set; } = new();
+    public bool TracksInventory { get; set; }
+    public bool InventoryActive { get; set; }
+    public InventoryBaseUnit InventoryBaseUnit { get; set; } = InventoryBaseUnit.Unit;
+    public List<InventoryConversionInput> InventoryConversions { get; set; } = new();
 }
 
 

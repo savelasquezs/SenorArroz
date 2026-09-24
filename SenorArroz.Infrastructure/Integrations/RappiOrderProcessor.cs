@@ -23,7 +23,8 @@ public sealed class RappiOrderProcessor(
     IOrderNotificationService notifications,
     IDeliveryRouteWorkflowService deliveryRouteWorkflow,
     ILogger<RappiOrderProcessor> logger,
-    IPrintQueueService? printQueue = null) : IRappiOrderProcessor
+    IPrintQueueService? printQueue = null,
+    IInventoryService? inventory = null) : IRappiOrderProcessor
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -223,6 +224,8 @@ public sealed class RappiOrderProcessor(
 
             db.Orders.Add(order);
             await db.SaveChangesAsync(ct);
+            if (inventory is not null)
+                await inventory.SnapshotAndReserveAsync(order, false, $"order:{order.Id}:rappi-taken", ct);
             var commission = decimal.Round(
                 external.Total * external.Connection.EstimatedCommissionRate,
                 2,
@@ -451,6 +454,8 @@ public sealed class RappiOrderProcessor(
             appPayment.ReversedAt = clock.UtcNow;
             appPayment.ReversalReason = cancellationReason;
         }
+        if (inventory is not null && external.InternalOrder.Status == OrderStatus.Taken)
+            await inventory.ReleaseOrderAsync(external.InternalOrder, $"order:{external.InternalOrder.Id}:rappi-cancel", ct);
         external.InternalOrder.Status = OrderStatus.Cancelled;
         external.InternalOrder.CancelledReason = cancellationReason;
         external.InternalOrder.AddStatusTime(OrderStatus.Cancelled, clock.UtcNow);
@@ -504,6 +509,8 @@ public sealed class RappiOrderProcessor(
         if (eventName.Equals("hand_to_domiciliary", StringComparison.OrdinalIgnoreCase)
             && external.InternalOrder.Status is not (OrderStatus.Delivered or OrderStatus.Cancelled))
         {
+            if (inventory is not null)
+                await inventory.ConsumeOrderAsync(external.InternalOrder, $"order:{external.InternalOrder.Id}:rappi-consume", ct);
             external.InternalOrder.Status = OrderStatus.OnTheWay;
             external.InternalOrder.AddStatusTime(OrderStatus.OnTheWay, clock.UtcNow);
         }

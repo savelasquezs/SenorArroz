@@ -4,6 +4,7 @@ namespace SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 
 public class UpdateExpenseHeaderDto
 {
+    public string? IdempotencyKey { get; set; }
     public int? SupplierId { get; set; }
 
     /// <summary>Domiciliario al que se imputa el gasto.</summary>
@@ -32,6 +33,7 @@ public class UpdateExpenseDetailDto
     public bool IncludeVat { get; set; }
 
     public string? Notes { get; set; }
+    public int? InventoryConversionId { get; set; }
 }
 
 

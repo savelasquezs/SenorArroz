@@ -24,8 +24,8 @@ public sealed class TenantIsolationV2Tests
             .ToList();
         var global = entityTypes.Except(tenantOwned).ToList();
 
-        Assert.Equal(94, entityTypes.Count);
-        Assert.Equal(93, tenantOwned.Count);
+        Assert.Equal(103, entityTypes.Count);
+        Assert.Equal(102, tenantOwned.Count);
         Assert.Single(global);
         Assert.Equal(typeof(Tenant), global[0].ClrType);
 

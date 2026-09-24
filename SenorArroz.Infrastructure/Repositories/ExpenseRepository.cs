@@ -30,6 +30,7 @@ public class ExpenseRepository : IExpenseRepository
             .AsNoTracking()
             .Include(e => e.Category)
             .Include(e => e.MenuTargets)
+            .Include(e => e.InventoryConversions)
             .AsQueryable();
 
         if (categoryId.HasValue)
@@ -56,6 +57,7 @@ public class ExpenseRepository : IExpenseRepository
             .AsNoTracking()
             .Include(e => e.Category)
             .Include(e => e.MenuTargets)
+            .Include(e => e.InventoryConversions)
             .OrderBy(e => e.Name)
             .ToListAsync(cancellationToken);
     }
@@ -66,6 +68,7 @@ public class ExpenseRepository : IExpenseRepository
             .AsNoTracking()
             .Include(e => e.Category)
             .Include(e => e.MenuTargets)
+            .Include(e => e.InventoryConversions)
             .Where(e => e.CategoryId == categoryId)
             .OrderBy(e => e.Name)
             .ToListAsync(cancellationToken);
@@ -77,6 +80,7 @@ public class ExpenseRepository : IExpenseRepository
             .AsNoTracking()
             .Include(e => e.Category)
             .Include(e => e.MenuTargets)
+            .Include(e => e.InventoryConversions)
             .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
     }
 
@@ -100,6 +104,7 @@ public class ExpenseRepository : IExpenseRepository
         // colisiona con el seguimiento. Los destinos de menú se reemplazan aparte.
         expense.Category = null!;
         expense.MenuTargets = [];
+        expense.InventoryConversions = [];
         _context.Expenses.Update(expense);
         await _context.SaveChangesAsync(cancellationToken);
 

@@ -4,7 +4,7 @@ Este mapa existe para que Codex ubique rápido las entidades y entienda cómo pr
 
 ## Estado de aislamiento v2
 
-- Inventario EF: 94 entidades; `Tenant` global y 93 tenant-owned.
+- Inventario EF: 103 entidades; `Tenant` global y 102 tenant-owned.
 - Contrato común: `ITenantOwned` y `TenantOwnedEntity`.
 - EF aplica centralmente `tenant_id` obligatorio, índice, concurrency token y query filter.
 - `SaveChanges` asigna el tenant actual en altas sin tenant y rechaza altas, cambios o borrados cross-tenant.
@@ -54,6 +54,17 @@ Repositorios:
 ```text
 SenorArroz.Infrastructure/Repositories
 ```
+
+## Inventario operativo
+
+- `ExpenseUnitConversion`: presentaciones compradas y equivalencia en unidad base.
+- `ProductExpenseRequirement`: receta vigente estimada o estricta del producto.
+- `InventoryBalance`: saldo y costo promedio único por tenant, sucursal e insumo.
+- `InventoryMovement`: ledger inmutable e idempotente de compras, reservas, consumos, ajustes, mermas, transferencias y reversos.
+- `OrderInventoryAllocation`: snapshot histórico de receta por pedido.
+- `InventoryCount` / `InventoryCountLine`: conteo físico y diferencia histórica.
+- `InventoryTransfer` / `InventoryTransferLine`: despacho y recepción entre sucursales del mismo tenant.
+- Script de despliegue: `SenorArroz.Infrastructure/Scripts/add_inventory_core.sql`, incluido en `local-init-completo.sql`.
 
 ## Entidad raíz actual
 

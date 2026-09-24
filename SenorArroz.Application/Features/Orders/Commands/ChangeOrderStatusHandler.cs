@@ -26,6 +26,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     private readonly ILoyaltyCycleService _loyaltyCycle;
     private readonly ILogger<ChangeOrderStatusHandler> _logger;
     private readonly IExternalDeliveryStatusSyncService? _externalDeliveryStatusSync;
+    private readonly IInventoryService? _inventory;
 
     public ChangeOrderStatusHandler(
         IOrderRepository orderRepository,
@@ -38,7 +39,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         IPrintQueueService printQueue,
         ILoyaltyCycleService loyaltyCycle,
         ILogger<ChangeOrderStatusHandler> logger,
-        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null)
+        IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null,
+        IInventoryService? inventory = null)
     {
         _orderRepository = orderRepository;
         _context = context;
@@ -51,6 +53,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         _loyaltyCycle = loyaltyCycle;
         _logger = logger;
         _externalDeliveryStatusSync = externalDeliveryStatusSync;
+        _inventory = inventory;
     }
 
     public ChangeOrderStatusHandler(
@@ -75,7 +78,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             printQueue,
             loyaltyCycle,
             logger,
-            externalDeliveryStatusSync)
+            externalDeliveryStatusSync,
+            inventory: null)
     {
     }
 
@@ -184,6 +188,14 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
                 request.StatusChange.Status,
                 request.StatusChange.Reason,
                 cancellationToken);
+
+            if (_inventory is not null
+                && previousStatus != request.StatusChange.Status
+                && (request.StatusChange.Status == OrderStatus.InPreparation
+                    || previousStatus == OrderStatus.Taken && request.StatusChange.Status == OrderStatus.Ready))
+            {
+                await _inventory.ConsumeOrderAsync(order, $"order:{order.Id}:consume", cancellationToken);
+            }
 
             if (previousStatus == OrderStatus.Delivered && request.StatusChange.Status != OrderStatus.Delivered)
                 await _loyaltyCycle.OnOrderLeftDeliveredAsync(order.Id, cancellationToken);

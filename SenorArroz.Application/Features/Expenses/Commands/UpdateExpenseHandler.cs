@@ -4,6 +4,7 @@ using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Expenses.DTOs;
 using SenorArroz.Application.Features.Expenses.Helpers;
+using SenorArroz.Application.Features.Inventory.Helpers;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -59,6 +60,7 @@ public class UpdateExpenseHandler : IRequestHandler<UpdateExpenseCommand, Expens
             _productRepository,
             _productCategoryRepository,
             cancellationToken);
+        InventoryCatalogHelper.ValidateConversions(request.TracksInventory, request.InventoryActive, request.InventoryConversions);
 
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
         try
@@ -66,6 +68,9 @@ public class UpdateExpenseHandler : IRequestHandler<UpdateExpenseCommand, Expens
             expense.Name = request.Name.Trim();
             expense.CategoryId = request.CategoryId;
             expense.Unit = request.Unit;
+            expense.TracksInventory = request.TracksInventory;
+            expense.InventoryActive = request.InventoryActive;
+            expense.InventoryBaseUnit = request.InventoryBaseUnit;
 
             await _expenseRepository.UpdateAsync(expense, cancellationToken);
 
@@ -74,6 +79,8 @@ public class UpdateExpenseHandler : IRequestHandler<UpdateExpenseCommand, Expens
                 menuTargets,
                 _context,
                 cancellationToken);
+            InventoryCatalogHelper.ReplaceConversions(request.Id, request.InventoryConversions, _context);
+            await _context.SaveChangesAsync(cancellationToken);
 
             await tx.CommitAsync(cancellationToken);
         }

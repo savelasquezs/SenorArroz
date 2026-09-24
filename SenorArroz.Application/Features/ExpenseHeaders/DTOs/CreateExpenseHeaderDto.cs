@@ -4,6 +4,7 @@ namespace SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 
 public class CreateExpenseHeaderDto
 {
+    public string? IdempotencyKey { get; set; }
     public int SupplierId { get; set; }
 
     /// <summary>Domiciliario al que se imputa el gasto (liquidación).</summary>
@@ -22,6 +23,7 @@ public class CreateExpenseHeaderDto
 public class CreateExpenseDetailDto
 {
     public int ExpenseId { get; set; }
+    public int? InventoryConversionId { get; set; }
     public decimal Quantity { get; set; }
     public int Amount { get; set; }
     /// <summary>Total de línea según factura (prioridad sobre cantidad × unitario).</summary>
