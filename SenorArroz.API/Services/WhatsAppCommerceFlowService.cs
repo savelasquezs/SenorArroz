@@ -153,6 +153,7 @@ public sealed class WhatsAppCommerceFlowService(
         if (!Screens.Contains(state.ResumeScreen ?? string.Empty) || state.ResumeScreen == "HOME") state.ResumeScreen = "CATEGORY";
         state.LastScreen = "HOME";
         state.BackStack.Clear();
+        state.NavigationHistory.Clear();
         session.StateJson = JsonSerializer.Serialize(state, JsonOptions);
         session.Version++;
 
@@ -266,6 +267,7 @@ public sealed class WhatsAppCommerceFlowService(
         {
             var target = ResolveBackScreen(screen, state);
             state.LastScreen = target;
+            session.BranchId = state.SelectedBranchId;
             TrackEvent(session, "back_navigation", session.BranchId, target, state.Category);
             return await BuildScreenAsync(session, state, target, null, ct);
         }
@@ -527,10 +529,11 @@ public sealed class WhatsAppCommerceFlowService(
         var mode = state.CartMode is "category" or "group" or "variant" ? state.CartMode : "summary";
         if (mode == "category")
         {
-            state.Category = GetString(data, "cart_category");
-            if (state.Category == "cancel") return CancelCartBuilder(state);
-            if (state.Category is not ("rice" or "combo" or "beverage" or "addition"))
+            var category = GetString(data, "cart_category");
+            if (category == "cancel") return CancelCartBuilder(state);
+            if (category is not ("rice" or "combo" or "beverage" or "addition"))
                 return ("CART", "Elige una categoría para continuar.");
+            state.Category = category;
             state.SelectedProductGroup = null;
             state.CartMode = "group";
             return ("CART", null);
@@ -538,10 +541,11 @@ public sealed class WhatsAppCommerceFlowService(
 
         if (mode == "group")
         {
-            state.SelectedProductGroup = GetString(data, "cart_product_group");
-            if (state.SelectedProductGroup == "cancel") return CancelCartBuilder(state);
-            if (GetGroups(catalog, state.Category).All(x => x.Key != state.SelectedProductGroup))
+            var selectedProductGroup = GetString(data, "cart_product_group");
+            if (selectedProductGroup == "cancel") return CancelCartBuilder(state);
+            if (GetGroups(catalog, state.Category).All(x => x.Key != selectedProductGroup))
                 return ("CART", "Elige una receta o producto disponible.");
+            state.SelectedProductGroup = selectedProductGroup;
             state.CartMode = "variant";
             return ("CART", null);
         }
@@ -599,8 +603,6 @@ public sealed class WhatsAppCommerceFlowService(
 
     private static (string Next, string? Error) CancelCartBuilder(WhatsAppCommerceState state)
     {
-        state.Category = null;
-        state.SelectedProductGroup = null;
         state.EditingProductId = null;
         state.PendingRecommendationProductId = null;
         state.CartMode = "summary";
@@ -740,6 +742,7 @@ public sealed class WhatsAppCommerceFlowService(
         if (screen is "CATEGORY" or "PRODUCT_GROUP" or "PRODUCT_VARIANT" or "CART")
         {
             var catalog = await GetCatalogAsync(ct);
+            RepairCatalogNavigationState(state, screen, catalog);
             payload["categories"] = CategoryOptions;
             payload["category_title"] = CategoryTitle(state.Category);
             if (screen == "PRODUCT_GROUP") await PopulateGroupsAsync(payload, catalog, state, ct);
@@ -778,6 +781,7 @@ public sealed class WhatsAppCommerceFlowService(
         }
 
         state.LastScreen = screen;
+        state.NavigationSnapshots[screen] = CaptureNavigationState(state, screen);
         session.StateJson = JsonSerializer.Serialize(state, JsonOptions);
         await db.SaveChangesAsync(ct);
         return new() { ["screen"] = screen, ["data"] = payload };
@@ -1328,6 +1332,25 @@ public sealed class WhatsAppCommerceFlowService(
     private static string ResolveBackScreen(string? requestedScreen, WhatsAppCommerceState state)
     {
         var requested = requestedScreen?.ToUpperInvariant();
+        if (state.NavigationHistory.Count > 0)
+        {
+            var requestedIndex = requested is not null && requested != state.LastScreen
+                ? state.NavigationHistory.FindLastIndex(x => x.Screen == requested)
+                : -1;
+            if (requested is not null && requested != state.LastScreen && requestedIndex < 0
+                && state.NavigationSnapshots.TryGetValue(requested, out var requestedSnapshot))
+            {
+                RestoreNavigationState(state, requestedSnapshot);
+                return requested;
+            }
+            var index = requestedIndex >= 0 ? requestedIndex : state.NavigationHistory.Count - 1;
+            var entry = state.NavigationHistory[index];
+            RestoreNavigationState(state, entry);
+            state.NavigationHistory.RemoveRange(index, state.NavigationHistory.Count - index);
+            if (state.BackStack.Count > index)
+                state.BackStack.RemoveRange(index, state.BackStack.Count - index);
+            return entry.Screen;
+        }
         if (state.BackStack.Count > 0)
         {
             var requestedIndex = requested is not null && requested != state.LastScreen
@@ -1337,6 +1360,12 @@ public sealed class WhatsAppCommerceFlowService(
             var target = state.BackStack[index];
             state.BackStack.RemoveRange(index, state.BackStack.Count - index);
             return target;
+        }
+        if (requested is not null && requested != state.LastScreen
+            && state.NavigationSnapshots.TryGetValue(requested, out var snapshot))
+        {
+            RestoreNavigationState(state, snapshot);
+            return requested;
         }
         return state.LastScreen switch
         {
@@ -1358,9 +1387,61 @@ public sealed class WhatsAppCommerceFlowService(
 
     private static void PushBackScreen(WhatsAppCommerceState state, string screen)
     {
-        if (!Screens.Contains(screen) || state.BackStack.LastOrDefault() == screen) return;
+        if (!Screens.Contains(screen)) return;
+        if (state.NavigationHistory.LastOrDefault()?.Screen == screen)
+            state.NavigationHistory[^1] = CaptureNavigationState(state, screen);
+        else
+            state.NavigationHistory.Add(CaptureNavigationState(state, screen));
+        state.NavigationSnapshots[screen] = CaptureNavigationState(state, screen);
+        if (state.NavigationHistory.Count > 16) state.NavigationHistory.RemoveAt(0);
+        if (state.BackStack.LastOrDefault() == screen) return;
         state.BackStack.Add(screen);
         if (state.BackStack.Count > 16) state.BackStack.RemoveAt(0);
+    }
+
+    private static WhatsAppNavigationEntryState CaptureNavigationState(WhatsAppCommerceState state, string screen) => new()
+    {
+        Screen = screen,
+        Category = state.Category,
+        SelectedProductGroup = state.SelectedProductGroup,
+        FulfillmentType = state.FulfillmentType,
+        SavedAddressId = state.SavedAddressId,
+        SelectedBranchId = state.SelectedBranchId,
+        City = state.City,
+        Address = state.Address,
+        FormattedAddress = state.FormattedAddress,
+        AddressAdditionalInfo = state.AddressAdditionalInfo,
+        Latitude = state.Latitude,
+        Longitude = state.Longitude,
+        AddressRequiresConfirmation = state.AddressRequiresConfirmation,
+        AddressMode = state.AddressMode,
+        BenefitSelection = state.BenefitSelection,
+        PaymentMethod = state.PaymentMethod,
+        OrderNotes = state.OrderNotes
+    };
+
+    private static void RestoreNavigationState(WhatsAppCommerceState state, WhatsAppNavigationEntryState entry)
+    {
+        state.Category = entry.Category;
+        state.SelectedProductGroup = entry.SelectedProductGroup;
+        state.FulfillmentType = entry.FulfillmentType;
+        state.SavedAddressId = entry.SavedAddressId;
+        state.SelectedBranchId = entry.SelectedBranchId;
+        state.City = entry.City;
+        state.Address = entry.Address;
+        state.FormattedAddress = entry.FormattedAddress;
+        state.AddressAdditionalInfo = entry.AddressAdditionalInfo;
+        state.Latitude = entry.Latitude;
+        state.Longitude = entry.Longitude;
+        state.AddressRequiresConfirmation = entry.AddressRequiresConfirmation;
+        state.AddressMode = entry.AddressMode;
+        state.BenefitSelection = entry.BenefitSelection;
+        state.PaymentMethod = entry.PaymentMethod;
+        state.OrderNotes = entry.OrderNotes;
+        state.CartMode = "summary";
+        state.EditingProductId = null;
+        state.PendingRecommendationProductId = null;
+        InvalidateQuote(state);
     }
 
     private static IReadOnlyCollection<PublicProductGroupDto> GetGroups(PublicCatalogDto catalog, string? category) => category switch
@@ -1370,6 +1451,36 @@ public sealed class WhatsAppCommerceFlowService(
         "addition" => catalog.AdditionGroups,
         _ => catalog.RiceGroups
     };
+
+    private static void RepairCatalogNavigationState(WhatsAppCommerceState state, string screen, PublicCatalogDto catalog)
+    {
+        if (screen is not ("PRODUCT_GROUP" or "PRODUCT_VARIANT" or "CART")) return;
+        var groups = new[]
+        {
+            (Category: "rice", Groups: catalog.RiceGroups),
+            (Category: "combo", Groups: catalog.ComboGroups),
+            (Category: "beverage", Groups: catalog.BeverageGroups),
+            (Category: "addition", Groups: catalog.AdditionGroups)
+        };
+        var selectedGroup = groups.FirstOrDefault(x => x.Groups.Any(group => group.Key == state.SelectedProductGroup));
+        if (selectedGroup.Groups is not null)
+            state.Category = selectedGroup.Category;
+        if (screen == "PRODUCT_GROUP" && groups.All(x => x.Category != state.Category))
+            state.Category = groups.FirstOrDefault(x => x.Groups.Count > 0).Category ?? "rice";
+        if (screen != "PRODUCT_VARIANT") return;
+        if (selectedGroup.Groups is not null) return;
+        var selectedProductId = state.EditingProductId ?? state.PendingRecommendationProductId ?? state.Cart.LastOrDefault()?.ProductId;
+        var product = FindProduct(catalog, selectedProductId);
+        if (product.HasValue)
+        {
+            state.Category = product.Value.Category;
+            state.SelectedProductGroup = product.Value.Group.Key;
+            return;
+        }
+        var fallback = groups.SelectMany(x => x.Groups.Select(group => (x.Category, Group: group))).FirstOrDefault();
+        state.Category = fallback.Category ?? "rice";
+        state.SelectedProductGroup = fallback.Group?.Key;
+    }
 
     private static IEnumerable<(string Category, PublicProductGroupDto Group, PublicProductOptionDto Option)> AllProducts(PublicCatalogDto catalog) =>
         new[]
@@ -1570,8 +1681,19 @@ public sealed class WhatsAppCommerceFlowService(
     }
 
     private DateTime NextExpiration() => clock.UtcNow.AddMinutes(Math.Clamp(_options.SessionLifetimeMinutes, 15, 120));
-    private static WhatsAppCommerceState DeserializeState(string json) =>
-        JsonSerializer.Deserialize<WhatsAppCommerceState>(json, JsonOptions) ?? new WhatsAppCommerceState();
+    private static WhatsAppCommerceState DeserializeState(string json)
+    {
+        var state = JsonSerializer.Deserialize<WhatsAppCommerceState>(json, JsonOptions) ?? new WhatsAppCommerceState();
+        state.Cart ??= [];
+        state.BackStack ??= [];
+        state.NavigationHistory ??= [];
+        state.NavigationSnapshots ??= new(StringComparer.Ordinal);
+        if (state.NavigationHistory.Count == 0 && state.BackStack.Count > 0)
+            state.NavigationHistory.AddRange(state.BackStack.Where(Screens.Contains).Select(screen => CaptureNavigationState(state, screen)));
+        foreach (var entry in state.NavigationHistory)
+            state.NavigationSnapshots[entry.Screen] = entry;
+        return state;
+    }
     private static string Sha256(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     private static string Base64Url(byte[] value) => Convert.ToBase64String(value).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     private static string Money(int value) => value.ToString("C0", CultureInfo.GetCultureInfo("es-CO"));
@@ -1619,7 +1741,7 @@ public sealed class WhatsAppCommerceFlowService(
 
 public sealed class WhatsAppCommerceState
 {
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public string Name { get; set; } = string.Empty;
     public bool AmbiguousCustomer { get; set; }
     public string? FulfillmentType { get; set; }
@@ -1647,8 +1769,31 @@ public sealed class WhatsAppCommerceState
     public string? LastErrorCode { get; set; }
     public string? RecoveryScreen { get; set; }
     public string? ResumeScreen { get; set; }
+    public List<WhatsAppNavigationEntryState> NavigationHistory { get; set; } = [];
+    public Dictionary<string, WhatsAppNavigationEntryState> NavigationSnapshots { get; set; } = new(StringComparer.Ordinal);
     public List<string> BackStack { get; set; } = [];
     public string LastScreen { get; set; } = "CATEGORY";
+}
+
+public sealed class WhatsAppNavigationEntryState
+{
+    public string Screen { get; set; } = "CATEGORY";
+    public string? Category { get; set; }
+    public string? SelectedProductGroup { get; set; }
+    public string? FulfillmentType { get; set; }
+    public int? SavedAddressId { get; set; }
+    public int? SelectedBranchId { get; set; }
+    public string? City { get; set; }
+    public string? Address { get; set; }
+    public string? FormattedAddress { get; set; }
+    public string? AddressAdditionalInfo { get; set; }
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
+    public bool AddressRequiresConfirmation { get; set; }
+    public string AddressMode { get; set; } = "saved";
+    public string? BenefitSelection { get; set; }
+    public string? PaymentMethod { get; set; }
+    public string? OrderNotes { get; set; }
 }
 
 public sealed class WhatsAppCartItemState

@@ -1061,6 +1061,129 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
+    public async Task Flow_BackReconstructsCatalogAfterCancellingAndRemovingCartEdits()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState { LastScreen = "HOME" });
+
+        await Exchange(flow, session, "HOME", new { command = "order" });
+        await Exchange(flow, session, "CATEGORY", new { category = "rice" });
+        await Exchange(flow, session, "PRODUCT_GROUP", new { product_group = "rice:product:20" });
+        await Exchange(flow, session, "PRODUCT_VARIANT", new { product_id = "20", quantity = 2, command = "save" });
+        await Exchange(flow, session, "CART", new { command = "edit", cart_product_id = "20" });
+        await Exchange(flow, session, "CART", new
+        {
+            command = "cart_submit",
+            selected_variant_id = "cancel",
+            cart_quantity = 2
+        });
+
+        var variant = await flow.HandleAsync(session, "BACK", "PRODUCT_VARIANT", "token", default, default);
+        Assert.Equal("PRODUCT_VARIANT", variant["screen"]);
+        var variantData = JsonSerializer.SerializeToElement(variant["data"]);
+        Assert.False(string.IsNullOrWhiteSpace(variantData.GetProperty("product_group_name").GetString()));
+        Assert.NotEmpty(variantData.GetProperty("product_variants").EnumerateArray());
+        Assert.Equal(string.Empty, variantData.GetProperty("error_message").GetString());
+
+        await Exchange(flow, session, "PRODUCT_VARIANT", new { product_id = "20", quantity = 2, command = "save" });
+        await Exchange(flow, session, "CART", new { command = "edit", cart_product_id = "20" });
+        var removed = await Exchange(flow, session, "CART", new
+        {
+            command = "cart_submit",
+            selected_variant_id = "remove",
+            cart_quantity = 2
+        });
+        Assert.Equal("CART", removed["screen"]);
+
+        variant = await flow.HandleAsync(session, "BACK", "PRODUCT_VARIANT", "token", default, default);
+        Assert.Equal("PRODUCT_VARIANT", variant["screen"]);
+        variantData = JsonSerializer.SerializeToElement(variant["data"]);
+        Assert.NotEmpty(variantData.GetProperty("product_variants").EnumerateArray());
+        Assert.Equal(string.Empty, variantData.GetProperty("error_message").GetString());
+    }
+
+    [Fact]
+    public async Task Flow_BackReconstructsAMetaScreenAfterItsStackEntryWasConsumed()
+    {
+        await using var db = CreateDb();
+        var state = new WhatsAppCommerceState
+        {
+            LastScreen = "CART",
+            Cart = [new WhatsAppCartItemState { ProductId = 20, Quantity = 1 }]
+        };
+        state.NavigationSnapshots["PRODUCT_VARIANT"] = new WhatsAppNavigationEntryState
+        {
+            Screen = "PRODUCT_VARIANT",
+            Category = "rice",
+            SelectedProductGroup = "rice:product:20"
+        };
+        var (flow, session) = await CreateFlow(db, state);
+
+        var variant = await flow.HandleAsync(session, "BACK", "PRODUCT_VARIANT", "token", default, default);
+
+        Assert.Equal("PRODUCT_VARIANT", variant["screen"]);
+        var data = JsonSerializer.SerializeToElement(variant["data"]);
+        Assert.NotEmpty(data.GetProperty("product_variants").EnumerateArray());
+        Assert.Equal(string.Empty, data.GetProperty("error_message").GetString());
+    }
+
+    [Fact]
+    public async Task Flow_BackCanTraverseFulfillmentAndAddressRepeatedly()
+    {
+        await using var db = CreateDb();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState { LastScreen = "HOME" });
+
+        await Exchange(flow, session, "HOME", new { command = "order" });
+        await Exchange(flow, session, "CATEGORY", new { category = "rice" });
+        await Exchange(flow, session, "PRODUCT_GROUP", new { product_group = "rice:product:20" });
+        await Exchange(flow, session, "PRODUCT_VARIANT", new { product_id = "20", quantity = 1, command = "save" });
+
+        for (var cycle = 0; cycle < 3; cycle++)
+        {
+            await Exchange(flow, session, "CART", new { command = "continue" });
+            var fulfillmentData = JsonSerializer.SerializeToElement(
+                (await flow.HandleAsync(session, "INIT", "FULFILLMENT", "token", default, default))["data"]);
+            Assert.Equal(string.Empty, fulfillmentData.GetProperty("error_message").GetString());
+
+            await Exchange(flow, session, "FULFILLMENT", new { fulfillment_type = "pickup" });
+            var address = await flow.HandleAsync(session, "INIT", "ADDRESS_PICKUP", "token", default, default);
+            var addressData = JsonSerializer.SerializeToElement(address["data"]);
+            Assert.NotEmpty(addressData.GetProperty("branches").EnumerateArray());
+            Assert.Equal(string.Empty, addressData.GetProperty("error_message").GetString());
+
+            var backToFulfillment = await flow.HandleAsync(session, "BACK", "FULFILLMENT", "token", default, default);
+            Assert.Equal("FULFILLMENT", backToFulfillment["screen"]);
+            Assert.Equal(string.Empty, JsonSerializer.SerializeToElement(backToFulfillment["data"]).GetProperty("error_message").GetString());
+
+            var backToCart = await flow.HandleAsync(session, "BACK", "FULFILLMENT", "token", default, default);
+            Assert.Equal("CART", backToCart["screen"]);
+            var cartData = JsonSerializer.SerializeToElement(backToCart["data"]);
+            Assert.True(cartData.GetProperty("show_cart_summary").GetBoolean());
+            Assert.NotEmpty(cartData.GetProperty("cart_lines").EnumerateArray());
+            Assert.Equal(string.Empty, cartData.GetProperty("error_message").GetString());
+        }
+
+        await Exchange(flow, session, "CART", new { command = "continue" });
+        await Exchange(flow, session, "FULFILLMENT", new { fulfillment_type = "delivery" });
+        var payment = await Exchange(flow, session, "ADDRESS_DELIVERY", new
+        {
+            name = "Cliente Flow",
+            city = "Medellín",
+            address = "Calle 30 # 82-30",
+            address_additional_info = "Portería"
+        });
+        Assert.Equal("PAYMENT", payment["screen"]);
+
+        var backToAddress = await flow.HandleAsync(session, "BACK", "ADDRESS_DELIVERY", "token", default, default);
+        Assert.Equal("ADDRESS_DELIVERY", backToAddress["screen"]);
+        var deliveryData = JsonSerializer.SerializeToElement(backToAddress["data"]);
+        Assert.Equal("Medellín", deliveryData.GetProperty("city").GetString());
+        Assert.Equal("Portería", deliveryData.GetProperty("address_additional_info").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(deliveryData.GetProperty("normalized_address").GetString()));
+        Assert.Equal(string.Empty, deliveryData.GetProperty("error_message").GetString());
+    }
+
+    [Fact]
     public async Task Flow_ResumeFromHomeCanReturnToHomeFromFulfillment()
     {
         await using var db = CreateDb();

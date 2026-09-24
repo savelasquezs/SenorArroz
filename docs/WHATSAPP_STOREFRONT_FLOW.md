@@ -10,7 +10,7 @@ El recorrido V2 es:
 CATEGORY -> PRODUCT_GROUP -> PRODUCT_VARIANT -> CART -> FULFILLMENT -> ADDRESS_PICKUP -> BENEFITS (si aplica) -> PAYMENT -> SUMMARY -> SUCCESS
 ```
 
-`RECOVERY` recibe errores comerciales, expiración y concurrencia mediante una respuesta cifrada HTTP 200. `BACK` reconstruye la pantalla desde el estado autoritativo.
+`RECOVERY` recibe errores comerciales, expiración y concurrencia mediante una respuesta cifrada HTTP 200. `BACK` reconstruye la pantalla desde una instantánea persistente del historial autoritativo. Las instantáneas conservan el contexto de catálogo, modalidad, dirección, beneficio y pago requerido por cada pantalla; los modos internos de agregar, editar, recomendar o eliminar productos son temporales y se normalizan al regresar.
 
 Efectivo crea el pedido de forma idempotente. Wompi crea un checkout de 15 minutos y el pedido solo se materializa al procesar una aprobación válida. Los mensajes posteriores salen por `whatsapp_commerce_outbox`.
 
