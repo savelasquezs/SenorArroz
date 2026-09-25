@@ -51,7 +51,6 @@ public class InventoryMovement : TenantOwnedEntity
     public virtual Branch Branch { get; set; } = null!;
     public virtual Expense Expense { get; set; } = null!;
     public virtual Order? Order { get; set; }
-    public virtual ExpenseHeader? ExpenseHeader { get; set; }
     public virtual ExpenseDetail? ExpenseDetail { get; set; }
     public virtual User CreatedBy { get; set; } = null!;
 }
