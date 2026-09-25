@@ -6,6 +6,7 @@ using SenorArroz.Application.Features.Inventory.Services;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
+using SenorArroz.Infrastructure.Repositories;
 using Testcontainers.PostgreSql;
 
 namespace SenorArroz.Tests;
@@ -125,6 +126,29 @@ public sealed class InventoryPostgreSqlConcurrencyTests : IAsyncLifetime
             """, connection);
 
         Assert.Equal(0, (int)(await command.ExecuteScalarAsync())!);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Order_repository_update_reuses_an_existing_transaction()
+    {
+        await using var db = CreateDb();
+        var order = await db.Orders
+            .AsNoTracking()
+            .Include(x => x.OrderDetails)
+            .SingleAsync(x => x.Id == 1);
+        order.Notes = "edited inside inventory transaction";
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var repository = new OrderRepository(db, new SystemUtcClock(), TestTenantContext.Default);
+
+        await repository.UpdateAsync(order);
+        await transaction.CommitAsync();
+
+        db.ChangeTracker.Clear();
+        Assert.Equal(
+            "edited inside inventory transaction",
+            (await db.Orders.AsNoTracking().SingleAsync(x => x.Id == 1)).Notes);
     }
 
     [PostgreSqlIntegrationFact]
