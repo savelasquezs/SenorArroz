@@ -90,6 +90,7 @@ public sealed class InventoryPostgreSqlConcurrencyTests : IAsyncLifetime
         Assert.Equal(36, (int)(await command.ExecuteScalarAsync())!);
     }
 
+    // Regression coverage for the inventory merge blockers: branch-scoped idempotency and historical purchase origins.
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
     public async Task Expense_header_inventory_idempotency_index_is_scoped_by_branch()
