@@ -92,6 +92,42 @@ public sealed class InventoryPostgreSqlConcurrencyTests : IAsyncLifetime
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Expense_header_inventory_idempotency_index_is_scoped_by_branch()
+    {
+        await using var connection = new NpgsqlConnection(postgres.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT indexdef
+            FROM pg_indexes
+            WHERE schemaname = 'public'
+              AND indexname = 'ux_expense_header_inventory_operation'
+            """, connection);
+
+        var definition = (string)(await command.ExecuteScalarAsync())!;
+        Assert.Contains("(tenant_id, branch_id, inventory_operation_key)", definition, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Inventory_movement_keeps_expense_header_id_without_delete_blocking_foreign_key()
+    {
+        await using var connection = new NpgsqlConnection(postgres.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT count(*)::integer
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
+            WHERE c.contype = 'f'
+              AND t.relname = 'inventory_movement'
+              AND a.attname = 'expense_header_id'
+            """, connection);
+
+        Assert.Equal(0, (int)(await command.ExecuteScalarAsync())!);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
     public async Task Inventory_balance_constraints_reject_invalid_reservations()
     {
         await using var connection = new NpgsqlConnection(postgres.GetConnectionString());
