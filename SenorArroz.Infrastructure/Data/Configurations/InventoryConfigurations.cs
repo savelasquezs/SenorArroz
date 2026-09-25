@@ -78,7 +78,6 @@ public sealed class InventoryMovementConfiguration : IEntityTypeConfiguration<In
         b.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Expense).WithMany().HasForeignKey(x => x.ExpenseId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);
-        b.HasOne(x => x.ExpenseHeader).WithMany().HasForeignKey(x => x.ExpenseHeaderId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.ExpenseDetail).WithMany().HasForeignKey(x => x.ExpenseDetailId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.CreatedBy).WithMany().HasForeignKey(x => x.CreatedById).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.TenantId, x.OperationKey, x.ExpenseId, x.Type }).IsUnique();
