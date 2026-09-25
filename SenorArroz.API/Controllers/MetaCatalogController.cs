@@ -25,10 +25,10 @@ public sealed class MetaCatalogController(IApplicationDbContext db) : Controller
         ["rice", "combo", "beverage", "addition"];
 
     private static readonly HashSet<string> MetaAdRiceCategories = new(StringComparer.OrdinalIgnoreCase)
-        ["Carbonara", "Paisa", "Ranchero", "Ropa Vieja", "Vegetariano"];
+        { "Carbonara", "Paisa", "Ranchero", "Ropa Vieja", "Vegetariano" };
 
     private static readonly HashSet<string> MetaAdComboProducts = new(StringComparer.OrdinalIgnoreCase)
-        ["Combochicharrón", "Costicombo"];
+        { "Combochicharrón", "Costicombo" };
 
     private const string MetaAdRepresentativeTag = "meta_ad_representative";
 
