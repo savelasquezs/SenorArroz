@@ -14,8 +14,12 @@ public class ExpenseDetail : TenantOwnedEntity
 
     /// <summary>Notas de la línea (opcional).</summary>
     public string? Notes { get; set; }
+    public int? InventoryConversionId { get; set; }
+    public decimal? InventoryBaseQuantity { get; set; }
+    public decimal? InventoryUnitCost { get; set; }
 
     // Navigation Properties
     public virtual ExpenseHeader Header { get; set; } = null!;
     public virtual Expense Expense { get; set; } = null!;
+    public virtual ExpenseUnitConversion? InventoryConversion { get; set; }
 }

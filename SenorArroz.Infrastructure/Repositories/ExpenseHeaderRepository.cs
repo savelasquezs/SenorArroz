@@ -134,7 +134,7 @@ public class ExpenseHeaderRepository : IExpenseHeaderRepository
             // Non-relational providers (notably EF InMemory in tests) do not
             // support transactions. Production uses PostgreSQL and retains the
             // atomic update behavior.
-            if (_context.Database.IsRelational())
+            if (_context.Database.IsRelational() && _context.Database.CurrentTransaction is null)
                 tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
             ExpenseHeaderUpdateGraphForPersistence.DetachReadOnlyNavigations(expenseHeader);

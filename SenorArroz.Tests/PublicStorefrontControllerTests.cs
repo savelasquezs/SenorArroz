@@ -17,6 +17,7 @@ using SenorArroz.API.Security;
 using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
+using SenorArroz.Application.Features.Inventory.DTOs;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
@@ -646,7 +647,8 @@ public class PublicStorefrontControllerTests
         db.Users.Add(technicalUser);
         await db.SaveChangesAsync();
         var (auth, token) = await CreateVerifiedSession(db, "3008889900");
-        var controller = Controller(db, 720);
+        var inventory = InventoryMock();
+        var controller = Controller(db, 720, inventory: inventory.Object);
         controller.ControllerContext = ContextWithSession(token);
         var request = new PublicStorefrontOrderRequest
         {
@@ -704,13 +706,15 @@ public class PublicStorefrontControllerTests
         var notification = Assert.Single(db.PaymentNotificationOutboxMessages);
         Assert.Equal(order.Id, notification.OrderId);
         Assert.Equal("order_created_web_cash", notification.EventType);
+        inventory.Verify(x => x.SnapshotAndReserveAsync(order, false, $"order:{order.Id}:storefront-cash-taken", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task Flow_PickupCartAndCashConfirmationReuseCommerceAndCreateOneOrder()
     {
         await using var db = CreateDb();
-        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState());
+        var inventory = InventoryMock();
+        var (flow, session) = await CreateFlow(db, new WhatsAppCommerceState(), inventory.Object);
         await Exchange(flow, session, "CATEGORY", new { category = "rice" });
         await Exchange(flow, session, "PRODUCT_GROUP", new { product_group = "rice:product:20" });
         await Exchange(flow, session, "PRODUCT_VARIANT", new { product_id = "20", quantity = "2", command = "save" });
@@ -737,6 +741,7 @@ public class PublicStorefrontControllerTests
         Assert.Equal(3, Assert.Single(order.OrderDetails).Quantity);
         Assert.Equal("Sin cubiertos", order.Notes);
         Assert.Single(db.WhatsAppCommerceOutboxMessages);
+        inventory.Verify(x => x.SnapshotAndReserveAsync(order, false, $"order:{order.Id}:storefront-cash-taken", It.IsAny<CancellationToken>()), Times.Once);
         await Exchange(flow, session, "SUMMARY", new { command = "confirm" });
         Assert.Single(db.Orders);
         Assert.Single(db.WhatsAppCommerceOutboxMessages);
@@ -1305,7 +1310,7 @@ public class PublicStorefrontControllerTests
         Assert.Equal(["restart", "human"], recoveryOptions);
     }
 
-    private static async Task<(WhatsAppCommerceFlowService Flow, WhatsAppCommerceSession Session)> CreateFlow(ApplicationDbContext db, WhatsAppCommerceState state)
+    private static async Task<(WhatsAppCommerceFlowService Flow, WhatsAppCommerceSession Session)> CreateFlow(ApplicationDbContext db, WhatsAppCommerceState state, IInventoryService? inventory = null)
     {
         Seed(db);
         var branch = db.Branches.Local.Single();
@@ -1322,15 +1327,15 @@ public class PublicStorefrontControllerTests
         };
         db.WhatsAppCommerceSessions.Add(session);
         await db.SaveChangesAsync();
-        return (FlowService(db), session);
+        return (FlowService(db, inventory), session);
     }
 
-    private static WhatsAppCommerceFlowService FlowService(ApplicationDbContext db)
+    private static WhatsAppCommerceFlowService FlowService(ApplicationDbContext db, IInventoryService? inventory = null)
     {
         var auth = new StorefrontCustomerAuthService(db, Mock.Of<IWhatsAppCloudClient>(), new FakeClock(Now),
             Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }), Mock.Of<ILogger<StorefrontCustomerAuthService>>());
         var flow = new WhatsAppCommerceFlowService(db, Mock.Of<IWhatsAppCloudClient>(), new FakeClock(Now),
-            Options.Create(new WhatsAppFlowOptions { TenantId = 1 }), Commerce(db, 720), auth, Mock.Of<IMapper>(),
+            Options.Create(new WhatsAppFlowOptions { TenantId = 1 }), Commerce(db, 720, inventory: inventory), auth, Mock.Of<IMapper>(),
             Mock.Of<IOrderNotificationService>(), Mock.Of<ILogger<PublicStorefrontController>>(), Mock.Of<ILogger<WhatsAppCommerceFlowService>>());
         return flow;
     }
@@ -1354,12 +1359,12 @@ public class PublicStorefrontControllerTests
         Items = [new() { ProductId = 20, Quantity = 2 }],
     };
 
-    private static PublicStorefrontController Controller(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000, string? routePolyline = "encoded-route", HttpMessageHandler? geocodingHandler = null)
+    private static PublicStorefrontController Controller(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000, string? routePolyline = "encoded-route", HttpMessageHandler? geocodingHandler = null, IInventoryService? inventory = null)
         => new(db, new FakeClock(Now), Mock.Of<IWompiPaymentService>(),
             Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }),
-            Commerce(db, routeSeconds, routeDistanceMeters, routePolyline, geocodingHandler));
+            Commerce(db, routeSeconds, routeDistanceMeters, routePolyline, geocodingHandler, inventory));
 
-    private static StorefrontCommerceService Commerce(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000, string? routePolyline = "encoded-route", HttpMessageHandler? geocodingHandler = null)
+    private static StorefrontCommerceService Commerce(ApplicationDbContext db, int routeSeconds, int routeDistanceMeters = 4_000, string? routePolyline = "encoded-route", HttpMessageHandler? geocodingHandler = null, IInventoryService? inventory = null)
     {
         var routeService = new Mock<IGoogleRoutesDrivingMetricsService>();
         routeService
@@ -1381,7 +1386,19 @@ public class PublicStorefrontControllerTests
             new MemoryCache(Options.Create(new MemoryCacheOptions())),
             new StorefrontQuoteConcurrencyGate(configuration),
             wompi.Object,
-            Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }));
+            Options.Create(new StorefrontCustomerAuthOptions { TenantId = 1 }),
+            inventory: inventory);
+    }
+
+    private static Mock<IInventoryService> InventoryMock()
+    {
+        var inventory = new Mock<IInventoryService>();
+        inventory.Setup(x => x.GetAvailabilityAsync(It.IsAny<IReadOnlyCollection<int>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<int> productIds, int _, CancellationToken _) =>
+                productIds.Select(id => new ProductAvailabilityDto(id, true, null, null, true, [])).ToArray());
+        inventory.Setup(x => x.SnapshotAndReserveAsync(It.IsAny<Order>(), false, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        return inventory;
     }
 
     private static async Task<(StorefrontCustomerAuthService Service, string Token)> CreateVerifiedSession(

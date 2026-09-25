@@ -7,7 +7,7 @@ using SenorArroz.Infrastructure.Data;
 
 namespace SenorArroz.Infrastructure.Services;
 
-public sealed class WhatsAppSimpleOrderStateService(ApplicationDbContext db,IClock clock):IWhatsAppSimpleOrderStateService
+public sealed class WhatsAppSimpleOrderStateService(ApplicationDbContext db,IClock clock,IInventoryService? inventory=null):IWhatsAppSimpleOrderStateService
 {
     private static readonly JsonSerializerOptions JsonOptions=CreateJsonOptions();
 
@@ -53,7 +53,8 @@ public sealed class WhatsAppSimpleOrderStateService(ApplicationDbContext db,IClo
     {
         var ids=state.Items.Select(x=>x.ProductId).ToList();
         var products=await db.Products.AsNoTracking().Include(x=>x.Category).Where(x=>ids.Contains(x.Id)&&x.Category.BranchId==branchId).ToDictionaryAsync(x=>x.Id,ct);
-        var items=state.Items.Where(x=>products.ContainsKey(x.ProductId)).Select(x=>{var p=products[x.ProductId];return new WhatsAppSimpleOrderSummaryItem(p.Id,p.Name,x.Quantity,p.Price,p.Price*x.Quantity,p.Active&&(!p.Stock.HasValue||p.Stock>=x.Quantity));}).ToList();
+        var availability=inventory is null?new Dictionary<int,SenorArroz.Application.Features.Inventory.DTOs.ProductAvailabilityDto>():(await inventory.GetAvailabilityAsync(ids,branchId,ct)).ToDictionary(x=>x.ProductId);
+        var items=state.Items.Where(x=>products.ContainsKey(x.ProductId)).Select(x=>{var p=products[x.ProductId];var available=inventory is null?p.Active:availability.TryGetValue(p.Id,out var value)&&value.Available&&(!value.MaximumQuantity.HasValue||value.MaximumQuantity.Value>=x.Quantity);return new WhatsAppSimpleOrderSummaryItem(p.Id,p.Name,x.Quantity,p.Price,p.Price*x.Quantity,available);}).ToList();
         return new(items,items.Sum(x=>x.Subtotal),items.Sum(x=>x.Quantity));
     }
 

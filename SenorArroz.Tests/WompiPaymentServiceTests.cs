@@ -11,6 +11,7 @@ using SenorArroz.API.Controllers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Exceptions;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Integrations;
 
@@ -161,6 +162,36 @@ public sealed class WompiPaymentServiceTests
     }
 
     [Fact]
+    public async Task Approved_webhook_requires_manual_review_when_strict_inventory_cannot_be_reserved()
+    {
+        await using var db = CreateDb(nameof(Approved_webhook_requires_manual_review_when_strict_inventory_cannot_be_reserved));
+        var setup = await SeedAsync(db);
+        var notifications = new Mock<IPaymentReviewNotificationService>();
+        var inventory = new Mock<IInventoryService>();
+        inventory.Setup(x => x.SnapshotAndReserveAsync(It.IsAny<Order>(), false, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new BusinessException("Bebida agotada"));
+        var service = CreateService(db, new FakeClock(Now), notifications, inventory.Object);
+        service.CreateAttempt(setup.Order, setup.Integration, Now);
+        await db.SaveChangesAsync();
+        var attempt = await db.WompiPaymentAttempts.SingleAsync();
+
+        var result = await service.ProcessWebhookAsync(
+            "sandbox",
+            Webhook(attempt, "tx-inventory-review", "APPROVED", 1788278400000),
+            null,
+            CancellationToken.None);
+
+        Assert.True(result.Accepted);
+        Assert.True(result.RequiresManualReview);
+        Assert.Equal(PaymentAttemptStatus.ReviewRequired, attempt.Status);
+        Assert.Equal(OrderStatus.AwaitingPayment, setup.Order.Status);
+        Assert.Empty(await db.AppPayments.ToListAsync());
+        Assert.Contains("inventario", attempt.ManualReviewReason, StringComparison.OrdinalIgnoreCase);
+        inventory.Verify(x => x.SnapshotAndReserveAsync(setup.Order, false, $"order:{setup.Order.Id}:wompi-taken", It.IsAny<CancellationToken>()), Times.Once);
+        notifications.Verify(x => x.NotifyReviewRequiredAsync(1, setup.Order.Id, attempt.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Invalid_webhook_signature_does_not_change_payment()
     {
         await using var db = CreateDb(nameof(Invalid_webhook_signature_does_not_change_payment));
@@ -300,7 +331,8 @@ public sealed class WompiPaymentServiceTests
     private static WompiPaymentService CreateService(
         ApplicationDbContext db,
         FakeClock clock,
-        Mock<IPaymentReviewNotificationService>? notifications = null)
+        Mock<IPaymentReviewNotificationService>? notifications = null,
+        IInventoryService? inventory = null)
     {
         var protector = new Mock<IIntegrationSecretProtector>();
         protector.Setup(x => x.Unprotect(It.IsAny<string>())).Returns((string value) => value);
@@ -311,7 +343,8 @@ public sealed class WompiPaymentServiceTests
             (notifications ?? new Mock<IPaymentReviewNotificationService>()).Object,
             new InlineWompiPaymentAttemptLock(),
             new HttpClient(new StubHttpHandler()),
-            NullLogger<WompiPaymentService>.Instance);
+            NullLogger<WompiPaymentService>.Instance,
+            inventory: inventory);
     }
 
     private static async Task<(Order Order, WompiPaymentIntegration Integration)> SeedAsync(ApplicationDbContext db)

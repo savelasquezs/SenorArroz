@@ -15,6 +15,18 @@ public class ExpenseDto
     public DateTime UpdatedAt { get; set; }
 
     public List<ExpenseMenuTargetDto> MenuTargets { get; set; } = new();
+    public bool TracksInventory { get; set; }
+    public bool InventoryActive { get; set; }
+    public InventoryBaseUnit InventoryBaseUnit { get; set; }
+    public List<ExpenseUnitConversionDto> InventoryConversions { get; set; } = new();
+}
+
+public sealed class ExpenseUnitConversionDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal BaseQuantity { get; set; }
+    public bool Active { get; set; }
 }
 
 

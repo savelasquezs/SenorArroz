@@ -37,6 +37,11 @@ DO $block$
 DECLARE
     table_name text;
     policy_name text;
+    inventory_tables text[] := ARRAY[
+        'expense_unit_conversion','inventory_balance','inventory_count','inventory_count_line',
+        'inventory_movement','inventory_transfer','inventory_transfer_line',
+        'order_inventory_allocation','product_expense_requirement'
+    ];
     tenant_tables text[] := ARRAY[
         'address','address_branch','app','app_payment','bank','bank_payment','bank_transfer',
         'branch','branch_ai_setting','branch_business_hour','branch_informal_loan',
@@ -51,7 +56,9 @@ DECLARE
         'delivery_tracking_alert','delivery_tracking_incident','delivery_work_session','deliveryman_advance',
         'deliveryman_day_state','deliveryman_location','discount_code','email_outbox_message',
         'entity_audit_log','expense','expense_bank_payment','expense_category','expense_detail',
-        'expense_header','expense_menu_target','external_delivery_order','integration_webhook_event',
+        'expense_header','expense_menu_target','expense_unit_conversion','external_delivery_order','integration_webhook_event',
+        'inventory_balance','inventory_count','inventory_count_line','inventory_movement','inventory_transfer',
+        'inventory_transfer_line','order_inventory_allocation','product_expense_requirement',
         'loyalty_cycle_step','neighborhood','order','order_detail','password_reset_token',
         'payment_notification_outbox','print_job','product','product_category','rappi_availability_state',
         'rappi_menu_publication','refresh_token','reservation_deposit','storefront_checkout',
@@ -65,6 +72,9 @@ DECLARE
 BEGIN
     FOREACH table_name IN ARRAY tenant_tables LOOP
         IF to_regclass('public.' || quote_ident(table_name)) IS NULL THEN
+            IF table_name = ANY(inventory_tables) THEN
+                CONTINUE;
+            END IF;
             RAISE EXCEPTION 'Falta la tabla tenant-owned requerida para RLS: %', table_name;
         END IF;
         IF NOT EXISTS (

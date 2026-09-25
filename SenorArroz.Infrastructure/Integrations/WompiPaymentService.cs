@@ -22,7 +22,8 @@ public sealed class WompiPaymentService(
     HttpClient httpClient,
     ILogger<WompiPaymentService> logger,
     IBackgroundWorkSignal<PaymentNotificationOutboxWork>? notificationSignal = null,
-    ITenantExecutionContext? tenantExecutionContext = null) : IWompiPaymentService
+    ITenantExecutionContext? tenantExecutionContext = null,
+    IInventoryService? inventory = null) : IWompiPaymentService
 {
     public Task<WompiPaymentIntegration?> GetEnabledIntegrationAsync(int tenantId, int branchId, CancellationToken cancellationToken) =>
         db.WompiPaymentIntegrations
@@ -372,7 +373,15 @@ public sealed class WompiPaymentService(
         return CreateCheckoutAttempt(checkout, integration, utcNow);
     }
 
-    public async Task<WompiManualReviewResult> ResolveManualReviewAsync(
+    public Task<WompiManualReviewResult> ResolveManualReviewAsync(
+        int attemptId,
+        int reviewedByUserId,
+        bool approve,
+        DateTime utcNow,
+        CancellationToken cancellationToken)
+        => ExecuteTransactionAsync(() => ResolveManualReviewCoreAsync(attemptId, reviewedByUserId, approve, utcNow, cancellationToken), cancellationToken);
+
+    private async Task<WompiManualReviewResult> ResolveManualReviewCoreAsync(
         int attemptId,
         int reviewedByUserId,
         bool approve,
@@ -390,7 +399,7 @@ public sealed class WompiPaymentService(
         {
             if (attempt.Order?.Status != OrderStatus.AwaitingPayment)
                 throw new BusinessException("El pedido ya no puede activarse desde esta revisión.");
-            ApproveAttempt(attempt, utcNow);
+            await ApproveAttemptAsync(attempt, utcNow, cancellationToken);
         }
         else
         {
@@ -475,10 +484,25 @@ public sealed class WompiPaymentService(
             }
             else
             {
-                ApproveAttempt(attempt, observedAt);
-                if (attempt.StorefrontCheckout is not null)
-                    await EnqueueWhatsAppCheckoutMessageAsync(attempt.StorefrontCheckout, "payment-approved",
-                        "Tu pago fue aprobado y el pedido quedó confirmado. La sede asignada continuará contigo por este chat.", observedAt, cancellationToken);
+                try
+                {
+                    await ApproveAttemptAsync(attempt, observedAt, cancellationToken);
+                    if (attempt.StorefrontCheckout is not null)
+                        await EnqueueWhatsAppCheckoutMessageAsync(attempt.StorefrontCheckout, "payment-approved",
+                            "Tu pago fue aprobado y el pedido quedó confirmado. La sede asignada continuará contigo por este chat.", observedAt, cancellationToken);
+                }
+                catch (BusinessException ex) when (inventory is not null)
+                {
+                    attempt.Status = PaymentAttemptStatus.ReviewRequired;
+                    attempt.RequiresManualReview = true;
+                    attempt.ManualReviewReason = $"Wompi aprobó el pago, pero el inventario estricto no permite confirmar el pedido: {ex.Message}";
+                    if (attempt.StorefrontCheckout is not null)
+                    {
+                        attempt.StorefrontCheckout.Status = "review_required";
+                        await EnqueueWhatsAppCheckoutMessageAsync(attempt.StorefrontCheckout, "payment-review-required",
+                            "Wompi reportó tu pago, pero el pedido requiere revisión de inventario. Un asesor debe verificarlo; no vuelvas a pagar.", observedAt, cancellationToken);
+                    }
+                }
             }
         }
         else if (attempt.Status != PaymentAttemptStatus.Approved && !attempt.RequiresManualReview)
@@ -508,9 +532,14 @@ public sealed class WompiPaymentService(
         return new(true, repeatedObservation, attempt.RequiresManualReview, AttemptBranchId(attempt), attempt.OrderId, attempt.Id);
     }
 
-    private void ApproveAttempt(WompiPaymentAttempt attempt, DateTime approvedAt)
+    private async Task ApproveAttemptAsync(WompiPaymentAttempt attempt, DateTime approvedAt, CancellationToken cancellationToken)
     {
         var order = attempt.Order ?? throw new BusinessException("No existe un pedido para aplicar el pago aprobado.");
+        if (inventory is not null)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await inventory.SnapshotAndReserveAsync(order, false, $"order:{order.Id}:wompi-taken", cancellationToken);
+        }
         var amount = attempt.ExpectedAmountInCents / 100m;
         var commission = Math.Round(amount * attempt.Integration.EstimatedCommissionRate, 2, MidpointRounding.AwayFromZero);
         var appPayment = new AppPayment
@@ -545,6 +574,16 @@ public sealed class WompiPaymentService(
             Status = "pending",
             NextAttemptAt = approvedAt,
         });
+    }
+
+    private async Task<T> ExecuteTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
+    {
+        if (!db.Database.IsRelational() || db.Database.CurrentTransaction is not null)
+            return await action();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var result = await action();
+        await transaction.CommitAsync(cancellationToken);
+        return result;
     }
 
     private IQueryable<WompiPaymentAttempt> LatestAttemptQuery(int tenantId, int orderId) =>

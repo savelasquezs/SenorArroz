@@ -23,7 +23,8 @@ public sealed class RappiOrderProcessor(
     IOrderNotificationService notifications,
     IDeliveryRouteWorkflowService deliveryRouteWorkflow,
     ILogger<RappiOrderProcessor> logger,
-    IPrintQueueService? printQueue = null) : IRappiOrderProcessor
+    IPrintQueueService? printQueue = null,
+    IInventoryService? inventory = null) : IRappiOrderProcessor
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -76,6 +77,7 @@ public sealed class RappiOrderProcessor(
         ApplyParsedOrder(external, connection, store, parsed);
 
         var validationErrors = Validate(connection, store, parsed);
+        await AppendInventoryValidationErrorsAsync(validationErrors, connection, parsed, ct);
         external.ValidationErrorsJson = validationErrors.Count == 0
             ? null
             : JsonSerializer.Serialize(validationErrors, JsonOptions);
@@ -113,6 +115,7 @@ public sealed class RappiOrderProcessor(
         var parsed = ParseOrder(external.RawPayloadJson);
         ApplyParsedOrder(external, external.Connection, external.Store, parsed);
         var errors = Validate(external.Connection, external.Store, parsed);
+        await AppendInventoryValidationErrorsAsync(errors, external.Connection, parsed, ct);
         external.ValidationErrorsJson = errors.Count == 0
             ? null
             : JsonSerializer.Serialize(errors, JsonOptions);
@@ -128,24 +131,6 @@ public sealed class RappiOrderProcessor(
         external.LastAttemptAt = clock.UtcNow;
         external.LastError = null;
         await db.SaveChangesAsync(ct);
-
-        var taken = await rappi.AcceptOrderAsync(
-            external.ExternalOrderId,
-            external.CookingTimeMinutes,
-            ct);
-        if (!taken.Success)
-        {
-            var alreadyTaken = await IsAlreadyTakenAsync(external.ExternalOrderId, ct);
-            if (!alreadyTaken)
-            {
-                external.Status = taken.StatusCode == 400
-                    ? ExternalOrderStatus.Expired
-                    : ExternalOrderStatus.SyncError;
-                external.LastError = Limit(taken.Error, 1000);
-                await db.SaveChangesAsync(ct);
-                return new(false, external.Id, Held: taken.StatusCode == 400, Error: external.LastError);
-            }
-        }
 
         try
         {
@@ -223,6 +208,22 @@ public sealed class RappiOrderProcessor(
 
             db.Orders.Add(order);
             await db.SaveChangesAsync(ct);
+            if (inventory is not null)
+                await inventory.SnapshotAndReserveAsync(order, false, $"order:{order.Id}:rappi-taken", ct);
+            var taken = await rappi.AcceptOrderAsync(
+                external.ExternalOrderId,
+                external.CookingTimeMinutes,
+                ct);
+            if (!taken.Success && !await IsAlreadyTakenAsync(external.ExternalOrderId, ct))
+            {
+                await transaction.RollbackAsync(ct);
+                ClearTracking();
+                var failed = await db.ExternalDeliveryOrders.SingleAsync(x => x.Id == externalOrderId, ct);
+                failed.Status = taken.StatusCode == 400 ? ExternalOrderStatus.Expired : ExternalOrderStatus.SyncError;
+                failed.LastError = Limit(taken.Error, 1000);
+                await db.SaveChangesAsync(ct);
+                return new(false, failed.Id, Held: taken.StatusCode == 400, Error: failed.LastError);
+            }
             var commission = decimal.Round(
                 external.Total * external.Connection.EstimatedCommissionRate,
                 2,
@@ -263,17 +264,31 @@ public sealed class RappiOrderProcessor(
                     && x.ExternalOrderId == external.ExternalOrderId, ct);
             if (duplicate is not null)
                 return new(true, external.Id, duplicate.Id);
-            external.Status = ExternalOrderStatus.SyncError;
-            external.LastError = "Rappi aceptó la orden, pero no fue posible crearla localmente. Se reintentará.";
+            ClearTracking();
+            var failed = await db.ExternalDeliveryOrders.SingleAsync(x => x.Id == externalOrderId, ct);
+            failed.Status = ExternalOrderStatus.SyncError;
+            failed.LastError = "No fue posible crear y reservar la orden local antes de aceptarla en Rappi. Se reintentará.";
             await db.SaveChangesAsync(ct);
-            return new(false, external.Id, Error: external.LastError);
+            return new(false, failed.Id, Error: failed.LastError);
+        }
+        catch (SenorArroz.Domain.Exceptions.BusinessException ex)
+        {
+            ClearTracking();
+            var failed = await db.ExternalDeliveryOrders.SingleAsync(x => x.Id == externalOrderId, ct);
+            failed.Status = ExternalOrderStatus.BlockedMapping;
+            failed.ValidationErrorsJson = JsonSerializer.Serialize(new[] { ex.Message }, JsonOptions);
+            failed.LastError = Limit(ex.Message, 1000);
+            await db.SaveChangesAsync(ct);
+            return new(false, failed.Id, Held: true, Error: failed.LastError);
         }
         catch (InvalidOperationException ex)
         {
-            external.Status = ExternalOrderStatus.SyncError;
-            external.LastError = Limit(ex.Message, 1000);
+            ClearTracking();
+            var failed = await db.ExternalDeliveryOrders.SingleAsync(x => x.Id == externalOrderId, ct);
+            failed.Status = ExternalOrderStatus.SyncError;
+            failed.LastError = Limit(ex.Message, 1000);
             await db.SaveChangesAsync(ct);
-            return new(false, external.Id, Error: external.LastError);
+            return new(false, failed.Id, Error: failed.LastError);
         }
     }
 
@@ -451,6 +466,8 @@ public sealed class RappiOrderProcessor(
             appPayment.ReversedAt = clock.UtcNow;
             appPayment.ReversalReason = cancellationReason;
         }
+        if (inventory is not null && external.InternalOrder.Status == OrderStatus.Taken)
+            await inventory.ReleaseOrderAsync(external.InternalOrder, $"order:{external.InternalOrder.Id}:rappi-cancel", ct);
         external.InternalOrder.Status = OrderStatus.Cancelled;
         external.InternalOrder.CancelledReason = cancellationReason;
         external.InternalOrder.AddStatusTime(OrderStatus.Cancelled, clock.UtcNow);
@@ -504,6 +521,8 @@ public sealed class RappiOrderProcessor(
         if (eventName.Equals("hand_to_domiciliary", StringComparison.OrdinalIgnoreCase)
             && external.InternalOrder.Status is not (OrderStatus.Delivered or OrderStatus.Cancelled))
         {
+            if (inventory is not null)
+                await inventory.ConsumeOrderAsync(external.InternalOrder, $"order:{external.InternalOrder.Id}:rappi-consume", ct);
             external.InternalOrder.Status = OrderStatus.OnTheWay;
             external.InternalOrder.AddStatusTime(OrderStatus.OnTheWay, clock.UtcNow);
         }
@@ -646,17 +665,34 @@ public sealed class RappiOrderProcessor(
                 errors.Add($"{line.Name}: no pertenece al último menú publicado.");
             else if (mapping.PublishedPrice.Value != line.UnitPrice)
                 errors.Add($"{line.Name}: precio distinto al último menú publicado.");
-            if (!IsProductAvailable(mapping.Product))
+            if (!mapping.Product.Active)
                 errors.Add($"{line.Name}: producto inactivo o agotado.");
         }
         return errors.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    private static bool IsProductAvailable(Product product) =>
-        product.Active
-        && (product.Category.Name.Contains("arroz", StringComparison.OrdinalIgnoreCase)
-            || !product.Stock.HasValue
-            || product.Stock.Value > 0);
+    private async Task AppendInventoryValidationErrorsAsync(List<string> errors, DeliveryAppConnection connection, ParsedRappiOrder order, CancellationToken ct)
+    {
+        if (inventory is null || errors.Count > 0) return;
+        var mappings = connection.ProductMappings.Where(x => x.IsSelected)
+            .ToDictionary(x => x.Sku, StringComparer.OrdinalIgnoreCase);
+        var requested = order.Lines
+            .Where(x => !string.IsNullOrWhiteSpace(x.Sku) && mappings.ContainsKey(x.Sku))
+            .GroupBy(x => mappings[x.Sku].ProductId)
+            .ToDictionary(x => x.Key, x => x.Sum(line => line.Quantity));
+        var availability = await inventory.GetAvailabilityAsync(requested.Keys.ToArray(), connection.BranchId, ct);
+        var byProduct = availability.ToDictionary(x => x.ProductId);
+        foreach (var item in requested)
+        {
+            if (!byProduct.TryGetValue(item.Key, out var available)
+                || !available.Available
+                || available.MaximumQuantity.HasValue && available.MaximumQuantity.Value < item.Value)
+            {
+                var name = mappings.Values.First(x => x.ProductId == item.Key).Product.Name;
+                errors.Add($"{name}: inventario insuficiente.");
+            }
+        }
+    }
 
     private void ApplyParsedOrder(
         ExternalDeliveryOrder external,
@@ -940,6 +976,12 @@ public sealed class RappiOrderProcessor(
             : value.Trim().Length <= maxLength
                 ? value.Trim()
                 : value.Trim()[..maxLength];
+
+    private void ClearTracking()
+    {
+        if (db is DbContext context)
+            context.ChangeTracker.Clear();
+    }
 
     private record ParsedRappiOrder(
         string OrderId,

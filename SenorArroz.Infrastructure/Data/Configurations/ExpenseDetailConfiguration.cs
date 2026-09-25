@@ -25,6 +25,9 @@ public class ExpenseDetailConfiguration : IEntityTypeConfiguration<ExpenseDetail
         builder.Property(ed => ed.Notes)
             .HasColumnName("notes")
             .HasMaxLength(1000);
+        builder.Property(ed => ed.InventoryConversionId).HasColumnName("inventory_conversion_id");
+        builder.Property(ed => ed.InventoryBaseQuantity).HasColumnName("inventory_base_quantity").HasPrecision(18, 4);
+        builder.Property(ed => ed.InventoryUnitCost).HasColumnName("inventory_unit_cost").HasPrecision(18, 6);
 
         builder.Property(ed => ed.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
         builder.Property(ed => ed.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
@@ -39,6 +42,8 @@ public class ExpenseDetailConfiguration : IEntityTypeConfiguration<ExpenseDetail
             .WithMany(e => e.ExpenseDetails)
             .HasForeignKey(ed => ed.ExpenseId)
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(ed => ed.InventoryConversion).WithMany()
+            .HasForeignKey(ed => ed.InventoryConversionId).OnDelete(DeleteBehavior.Restrict);
 
         // Índices
         builder.HasIndex(ed => ed.HeaderId).HasDatabaseName("idx_expense_detail_header");

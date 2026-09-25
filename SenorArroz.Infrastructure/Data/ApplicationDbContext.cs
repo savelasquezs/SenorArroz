@@ -157,6 +157,15 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<ExpenseHeader> ExpenseHeaders { get; set; }
 
         public virtual DbSet<ExpenseMenuTarget> ExpenseMenuTargets { get; set; }
+        public virtual DbSet<ExpenseUnitConversion> ExpenseUnitConversions { get; set; }
+        public virtual DbSet<ProductExpenseRequirement> ProductExpenseRequirements { get; set; }
+        public virtual DbSet<InventoryBalance> InventoryBalances { get; set; }
+        public virtual DbSet<InventoryMovement> InventoryMovements { get; set; }
+        public virtual DbSet<OrderInventoryAllocation> OrderInventoryAllocations { get; set; }
+        public virtual DbSet<InventoryTransfer> InventoryTransfers { get; set; }
+        public virtual DbSet<InventoryTransferLine> InventoryTransferLines { get; set; }
+        public virtual DbSet<InventoryCount> InventoryCounts { get; set; }
+        public virtual DbSet<InventoryCountLine> InventoryCountLines { get; set; }
 
         public virtual DbSet<LoyaltyCycleStep> LoyaltyCycleSteps { get; set; }
 
@@ -275,6 +284,15 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new ExpenseDetailConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseMenuTargetConfiguration());
             modelBuilder.ApplyConfiguration(new ExpenseBankPaymentConfiguration());
+            modelBuilder.ApplyConfiguration(new ExpenseUnitConversionConfiguration());
+            modelBuilder.ApplyConfiguration(new ProductExpenseRequirementConfiguration());
+            modelBuilder.ApplyConfiguration(new InventoryBalanceConfiguration());
+            modelBuilder.ApplyConfiguration(new InventoryMovementConfiguration());
+            modelBuilder.ApplyConfiguration(new OrderInventoryAllocationConfiguration());
+            modelBuilder.ApplyConfiguration(new InventoryTransferConfiguration());
+            modelBuilder.ApplyConfiguration(new InventoryTransferLineConfiguration());
+            modelBuilder.ApplyConfiguration(new InventoryCountConfiguration());
+            modelBuilder.ApplyConfiguration(new InventoryCountLineConfiguration());
             modelBuilder.ApplyConfiguration(new SupplierExpenseConfiguration());
             modelBuilder.ApplyConfiguration(new ReservationDepositConfiguration());
             modelBuilder.ApplyConfiguration(new RefreshTokenConfiguration());

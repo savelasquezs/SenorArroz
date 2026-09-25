@@ -21,6 +21,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
     private readonly ICurrentUser _currentUser;
     private readonly IBranchContext _branchContext;
     private readonly IClock _clock;
+    private readonly IInventoryService? _inventory;
 
     public CreateExpenseHeaderHandler(
         IExpenseHeaderRepository expenseHeaderRepository,
@@ -29,7 +30,8 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
         IMapper mapper,
         ICurrentUser currentUser,
         IBranchContext branchContext,
-        IClock clock)
+        IClock clock,
+        IInventoryService? inventory = null)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
         _bankRepository = bankRepository;
@@ -38,10 +40,22 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
         _currentUser = currentUser;
         _branchContext = branchContext;
         _clock = clock;
+        _inventory = inventory;
     }
 
     public async Task<ExpenseHeaderDto> Handle(CreateExpenseHeaderCommand request, CancellationToken cancellationToken)
     {
+        var operationKey = NormalizeOperationKey(request.ExpenseHeader.IdempotencyKey) ?? Guid.NewGuid().ToString("N");
+        var branchId = _branchContext.RequireBranch();
+        var existingHeaderId = await _context.ExpenseHeaders.AsNoTracking()
+            .Where(x => x.BranchId == branchId && x.InventoryOperationKey == operationKey)
+            .Select(x => (int?)x.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (existingHeaderId.HasValue)
+        {
+            var existingHeader = await _expenseHeaderRepository.GetByIdWithDetailsAsync(existingHeaderId.Value, cancellationToken);
+            return _mapper.Map<ExpenseHeaderDto>(existingHeader!);
+        }
         // Validar que el supplier existe
         var supplier = await _context.Suppliers.FindAsync(new object[] { request.ExpenseHeader.SupplierId }, cancellationToken);
         if (supplier == null)
@@ -63,7 +77,6 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             throw new NotFoundException($"Gastos con IDs {string.Join(", ", missingIds)} no encontrados");
         }
 
-        var branchId = _branchContext.RequireBranch();
         var subtotal = ExpenseInvoiceTotalsHelper.SubtotalFromCreateDetails(request.ExpenseHeader.ExpenseDetails);
         var taxableSubtotal = ExpenseInvoiceTotalsHelper.TaxableSubtotalFromCreateDetails(
             request.ExpenseHeader.ExpenseDetails,
@@ -109,6 +122,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             VatAmount = vatAmount,
             Total = grossTotal,
             Notes = NormalizeExpenseNote(request.ExpenseHeader.Notes, 2000),
+            InventoryOperationKey = operationKey,
             ExpenseDetails = request.ExpenseHeader.ExpenseDetails.Select(ed => new ExpenseDetail
             {
                 ExpenseId = ed.ExpenseId,
@@ -117,6 +131,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
                 Total = ExpenseInvoiceTotalsHelper.ResolveLineTotal(ed.Quantity, ed.Amount, ed.Total),
                 IncludeVat = request.ExpenseHeader.IncludeVat || ed.IncludeVat,
                 Notes = NormalizeExpenseNote(ed.Notes, 1000),
+                InventoryConversionId = ed.InventoryConversionId,
             }).ToList(),
             ExpenseBankPayments = request.ExpenseHeader.ExpenseBankPayments?.Select(ebp => new ExpenseBankPayment
             {
@@ -125,13 +140,19 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             }).ToList() ?? new List<ExpenseBankPayment>()
         };
 
+        await using var transaction = _context.Database.IsRelational() ? await _context.Database.BeginTransactionAsync(cancellationToken) : null;
+        try
+        {
         var created = await _expenseHeaderRepository.CreateAsync(expenseHeader, cancellationToken);
+        if (_inventory is not null)
+            await _inventory.RecordPurchaseAsync(expenseHeader, $"expense-header:{operationKey}:create", cancellationToken);
 
         var supplierExpenseDetails = expenseHeader.ExpenseDetails
             .Select(ed => (ed.ExpenseId, UnitAmount: (decimal)ed.Amount, Quantity: (int)Math.Ceiling(ed.Quantity)))
             .ToList();
         await UpsertSupplierExpensesAsync(expenseHeader.SupplierId, supplierExpenseDetails, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         var createdWithDetails = await _expenseHeaderRepository.GetByIdWithDetailsAsync(created.Id, cancellationToken);
 
         if (createdWithDetails == null)
@@ -160,6 +181,12 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
         await ExpenseHeaderLinkedAdvancePopulator.PopulateAsync(_context, new[] { dto }, cancellationToken);
 
         return dto;
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     private async Task UpsertSupplierExpensesAsync(
@@ -211,6 +238,14 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             return null;
         var t = notes.Trim();
         return t.Length <= maxLen ? t : t[..maxLen];
+    }
+
+    private static string? NormalizeOperationKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var normalized = value.Trim();
+        if (normalized.Length > 120) throw new BusinessException("La clave de idempotencia no puede superar 120 caracteres");
+        return normalized;
     }
 }
 

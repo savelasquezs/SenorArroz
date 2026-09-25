@@ -23,6 +23,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     private readonly IClock _clock;
     private readonly IPrintQueueService? _printQueue;
     private readonly ILogger<CreateOrderHandler>? _logger;
+    private readonly IInventoryService? _inventory;
 
     public CreateOrderHandler(
         IOrderRepository orderRepository,
@@ -32,7 +33,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         IOrderNotificationService notificationService,
         IClock clock,
         IPrintQueueService? printQueue = null,
-        ILogger<CreateOrderHandler>? logger = null)
+        ILogger<CreateOrderHandler>? logger = null,
+        IInventoryService? inventory = null)
     {
         _orderRepository = orderRepository;
         _db = db;
@@ -42,6 +44,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         _clock = clock;
         _printQueue = printQueue;
         _logger = logger;
+        _inventory = inventory;
     }
 
     public async Task<OrderDto> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
@@ -189,7 +192,27 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             OrderTotalsHelper.RecalculateFromOrderDetails(order);
         }
 
-        var createdOrder = await _orderRepository.CreateAsync(order, cancellationToken);
+        await using var inventoryTransaction = _inventory is not null && _db.Database.IsRelational()
+            ? await _db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        Order createdOrder;
+        try
+        {
+            createdOrder = await _orderRepository.CreateAsync(order, cancellationToken);
+            if (_inventory is not null)
+            {
+                var deferReservation = createdOrder.Type == OrderType.Reservation
+                    && createdOrder.PrepareAt.HasValue
+                    && createdOrder.PrepareAt.Value > _clock.UtcNow;
+                await _inventory.SnapshotAndReserveAsync(createdOrder, deferReservation, $"order:{createdOrder.Id}:taken", cancellationToken);
+            }
+            if (inventoryTransaction is not null) await inventoryTransaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            if (inventoryTransaction is not null) await inventoryTransaction.RollbackAsync(cancellationToken);
+            throw;
+        }
 
         // Batch insert de pagos: un único SaveChangesAsync en lugar de N roundtrips individuales
         var bankPayments = request.Order.BankPayments?

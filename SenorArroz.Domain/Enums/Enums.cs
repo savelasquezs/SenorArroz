@@ -9,6 +9,49 @@ namespace SenorArroz.Domain.Enums
         Gallon
     }
 
+    public enum InventoryBaseUnit
+    {
+        Unit,
+        Gram,
+        Milliliter
+    }
+
+    public enum InventoryControlMode
+    {
+        Estimated,
+        Strict
+    }
+
+    public enum InventoryMovementType
+    {
+        OpeningBalance,
+        Purchase,
+        Reservation,
+        ReservationRelease,
+        EstimatedConsumption,
+        StrictConsumption,
+        AdjustmentIncrease,
+        AdjustmentDecrease,
+        Waste,
+        TransferOut,
+        TransferIn,
+        Reversal
+    }
+
+    public enum InventoryTransferStatus
+    {
+        Draft,
+        Dispatched,
+        Received,
+        ReceivedWithDifference
+    }
+
+    public enum InventoryCountStatus
+    {
+        Draft,
+        Confirmed
+    }
+
     /// <summary>Destino de imputación de un gasto de catálogo hacia el menú (costo por gramo vendido).</summary>
     public enum ExpenseMenuTargetType
     {

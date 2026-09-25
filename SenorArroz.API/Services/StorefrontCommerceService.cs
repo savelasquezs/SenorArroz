@@ -36,7 +36,8 @@ public sealed class StorefrontCommerceService(
     StorefrontQuoteConcurrencyGate concurrencyGate,
     IWompiPaymentService wompi,
     IOptions<StorefrontCustomerAuthOptions> storefrontOptions,
-    IBackgroundWorkSignal<PaymentNotificationOutboxWork>? paymentNotificationSignal = null)
+    IBackgroundWorkSignal<PaymentNotificationOutboxWork>? paymentNotificationSignal = null,
+    IInventoryService? inventory = null)
 {
     private const int PreparationMinutes = 20;
     private const int DeliveryPromiseMinMinutes = 35;
@@ -75,6 +76,23 @@ public sealed class StorefrontCommerceService(
 
         var branchRows = await GetEligibleBranches(cancellationToken);
         var branchIds = branchRows.Select(x => x.Id).ToList();
+        Dictionary<int, (bool Available, int? MaximumQuantity)>? inventoryAvailability = null;
+        if (inventory is not null && products.Count > 0 && branchIds.Count > 0)
+        {
+            var availabilityByBranch = await Task.WhenAll(branchIds.Select(branchId =>
+                inventory.GetAvailabilityAsync(products.Select(x => x.Id).ToList(), branchId, cancellationToken)));
+            inventoryAvailability = availabilityByBranch
+                .SelectMany(x => x)
+                .GroupBy(x => x.ProductId)
+                .ToDictionary(
+                    x => x.Key,
+                    x => (
+                        x.Any(value => value.Available),
+                        x.Where(value => value.MaximumQuantity.HasValue)
+                            .Select(value => value.MaximumQuantity)
+                            .DefaultIfEmpty(null)
+                            .Max()));
+        }
         var hours = await businessHours.GetBusinessHoursMany(branchIds, cancellationToken);
         var branches = branchRows
             .OrderBy(x => x.Name)
@@ -92,10 +110,10 @@ public sealed class StorefrontCommerceService(
             .ToList();
 
         var result = new PublicCatalogDto(
-            BuildGroups(products, "rice"),
-            BuildGroups(products, "combo"),
-            BuildGroups(products, "beverage"),
-            BuildGroups(products, "addition"),
+            BuildGroups(products, "rice", inventoryAvailability),
+            BuildGroups(products, "combo", inventoryAvailability),
+            BuildGroups(products, "beverage", inventoryAvailability),
+            BuildGroups(products, "addition", inventoryAvailability),
             [],
             branches,
             AllowedCities,
@@ -472,6 +490,20 @@ public sealed class StorefrontCommerceService(
                     x.Id, x.Name, x.Address, x.Latitude, x.Longitude, 0, 0, PreparationMinutes, 0, true,
                     x.Id == checkoutBranch.Id, x.Id == checkoutBranch.Id, null))
                 .ToList();
+        }
+
+        if (inventory is not null)
+        {
+            var availability = (await inventory.GetAvailabilityAsync(productIds, checkoutBranch.Id, cancellationToken))
+                .ToDictionary(x => x.ProductId);
+            foreach (var item in request.Items)
+            {
+                if (!availability.TryGetValue(item.ProductId, out var productAvailability)
+                    || !productAvailability.Available
+                    || productAvailability.MaximumQuantity.HasValue && productAvailability.MaximumQuantity.Value < item.Quantity)
+                    return BadRequest(ApiResponse<PublicDeliveryQuoteDto>.ErrorResponse(
+                        $"No hay stock suficiente de {products[item.ProductId].Name}."));
+            }
         }
 
         if (resolvedAddress is not null)
@@ -884,6 +916,8 @@ public sealed class StorefrontCommerceService(
             OrderTotalsHelper.RecalculateFromOrderDetails(order);
             db.Orders.Add(order);
             await db.SaveChangesAsync(cancellationToken);
+            if (inventory is not null)
+                await inventory.SnapshotAndReserveAsync(order, false, $"order:{order.Id}:storefront-cash-taken", cancellationToken);
             db.PaymentNotificationOutboxMessages.Add(new PaymentNotificationOutboxMessage
             {
                 TenantId = StorefrontTenantId,
@@ -901,6 +935,12 @@ public sealed class StorefrontCommerceService(
             return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(order, paymentMethod, null)));
         }
         catch (StorefrontOrderConflictException ex)
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(cancellationToken);
+            return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse(ex.Message));
+        }
+        catch (SenorArroz.Domain.Exceptions.BusinessException ex)
         {
             if (transaction is not null)
                 await transaction.RollbackAsync(cancellationToken);
@@ -1210,7 +1250,7 @@ public sealed class StorefrontCommerceService(
                 return "Uno de los productos ya no está disponible.";
             if (!PublicRoles.Contains(product.Category.StorefrontRole))
                 return "Uno de los productos no está habilitado para pedidos web.";
-            if (product.Stock.HasValue && product.Stock.Value < item.Quantity)
+            if (!product.InventoryEnabled && product.Stock.HasValue && product.Stock.Value < item.Quantity)
                 return $"No hay stock suficiente de {product.Name}.";
             hasMain |= MainRoles.Contains(product.Category.StorefrontRole);
         }
@@ -1219,7 +1259,8 @@ public sealed class StorefrontCommerceService(
 
     private static IReadOnlyCollection<PublicProductGroupDto> BuildGroups(
         IReadOnlyCollection<Product> products,
-        string role) => products
+        string role,
+        IReadOnlyDictionary<int, (bool Available, int? MaximumQuantity)>? inventoryAvailability = null) => products
         .Where(x => x.Category.StorefrontRole == role)
         .GroupBy(x => x.CommercialProfileId.HasValue
             ? $"{role}:profile:{x.CommercialProfileId.Value}"
@@ -1236,7 +1277,7 @@ public sealed class StorefrontCommerceService(
                     x.Name,
                     x.StorefrontVariantLabel ?? x.Name,
                     x.Price,
-                    Availability(x),
+                    Availability(x, inventoryAvailability),
                     x.ServesPeopleMin,
                     x.ServesPeopleMax))
                 .ToList();
@@ -1255,11 +1296,22 @@ public sealed class StorefrontCommerceService(
         .ThenBy(x => x.Name)
         .ToList();
 
-    private static string Availability(Product product) => product.Stock.HasValue && product.Stock.Value <= 0
-        ? "unavailable"
-        : product.Stock.HasValue && product.Stock.Value <= 5
-            ? "lowStock"
-            : "available";
+    private static string Availability(
+        Product product,
+        IReadOnlyDictionary<int, (bool Available, int? MaximumQuantity)>? inventoryAvailability)
+    {
+        if (inventoryAvailability?.TryGetValue(product.Id, out var availability) == true)
+            return !availability.Available
+                ? "unavailable"
+                : availability.MaximumQuantity is <= 5
+                    ? "lowStock"
+                    : "available";
+        return product.Stock.HasValue && product.Stock.Value <= 0
+            ? "unavailable"
+            : product.Stock.HasValue && product.Stock.Value <= 5
+                ? "lowStock"
+                : "available";
+    }
 
     private static PublicPromotionDto ToPromotionDto(DailyPromotion promotion)
     {

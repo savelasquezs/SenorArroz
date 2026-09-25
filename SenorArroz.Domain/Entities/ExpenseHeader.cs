@@ -18,6 +18,7 @@ public class ExpenseHeader : TenantOwnedEntity
 
     /// <summary>Notas generales del comprobante (opcional).</summary>
     public string? Notes { get; set; }
+    public string? InventoryOperationKey { get; set; }
 
     // Navigation Properties
     public virtual Branch Branch { get; set; } = null!;

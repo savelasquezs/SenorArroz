@@ -26,6 +26,7 @@ public class ExpenseHeaderConfiguration : IEntityTypeConfiguration<ExpenseHeader
         builder.Property(eh => eh.Notes)
             .HasColumnName("notes")
             .HasMaxLength(2000);
+        builder.Property(eh => eh.InventoryOperationKey).HasColumnName("inventory_operation_key").HasMaxLength(120);
 
         builder.Property(eh => eh.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
         builder.Property(eh => eh.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
@@ -56,5 +57,7 @@ public class ExpenseHeaderConfiguration : IEntityTypeConfiguration<ExpenseHeader
         builder.HasIndex(eh => eh.SupplierId).HasDatabaseName("idx_expense_header_supplier");
         builder.HasIndex(eh => eh.CreatedById).HasDatabaseName("idx_expense_header_created_by");
         builder.HasIndex(eh => eh.DeliverymanId).HasDatabaseName("idx_expense_header_deliveryman");
+        builder.HasIndex(eh => new { eh.TenantId, eh.BranchId, eh.InventoryOperationKey }).IsUnique()
+            .HasFilter("inventory_operation_key IS NOT NULL").HasDatabaseName("ux_expense_header_inventory_operation");
     }
 }

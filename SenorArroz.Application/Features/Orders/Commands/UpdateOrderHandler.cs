@@ -31,6 +31,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
     private readonly IOrderBusinessRulesService _businessRules;
     private readonly IOrderNotificationService _notificationService;
     private readonly IClock _clock;
+    private readonly IInventoryService? _inventory;
 
     public UpdateOrderHandler(
         IOrderRepository orderRepository,
@@ -42,7 +43,8 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         ICurrentUser currentUser,
         IOrderBusinessRulesService businessRules,
         IOrderNotificationService notificationService,
-        IClock clock)
+        IClock clock,
+        IInventoryService? inventory = null)
     {
         _orderRepository = orderRepository;
         _db = db;
@@ -54,6 +56,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         _businessRules = businessRules;
         _notificationService = notificationService;
         _clock = clock;
+        _inventory = inventory;
     }
 
     public async Task<OrderDto> Handle(UpdateOrderCommand request, CancellationToken cancellationToken)
@@ -219,7 +222,31 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
         OrderTotalsHelper.RecalculateFromOrderDetails(existingOrder);
 
+        await using var inventoryTransaction = _inventory is not null && _db.Database.IsRelational()
+            ? await _db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+        if (_inventory is not null && request.Order.OrderDetails is not null && existingOrder.Status == OrderStatus.Taken)
+        {
+            await _inventory.ReleaseOrderAsync(existingOrder, $"order:{existingOrder.Id}:edit:{_clock.UtcNow.Ticks}:release", cancellationToken);
+            var oldAllocations = await _db.OrderInventoryAllocations.Where(x => x.OrderId == existingOrder.Id).ToListAsync(cancellationToken);
+            _db.OrderInventoryAllocations.RemoveRange(oldAllocations);
+            await _db.SaveChangesAsync(cancellationToken);
+        }
         await _orderRepository.UpdateAsync(existingOrder, cancellationToken);
+        if (_inventory is not null && request.Order.OrderDetails is not null && existingOrder.Status == OrderStatus.Taken)
+        {
+            var deferReservation = existingOrder.Type == OrderType.Reservation && existingOrder.PrepareAt > _clock.UtcNow;
+            await _inventory.SnapshotAndReserveAsync(existingOrder, deferReservation, $"order:{existingOrder.Id}:edit:{_clock.UtcNow.Ticks}:reserve", cancellationToken);
+        }
+        if (inventoryTransaction is not null) await inventoryTransaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            if (inventoryTransaction is not null) await inventoryTransaction.RollbackAsync(cancellationToken);
+            throw;
+        }
         var persisted = await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken)
             ?? throw new InvalidOperationException("No se pudo recargar el pedido tras actualizar.");
         var result = _mapper.Map<OrderDto>(persisted);

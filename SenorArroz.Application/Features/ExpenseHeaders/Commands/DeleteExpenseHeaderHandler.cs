@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
@@ -10,20 +11,26 @@ public class DeleteExpenseHeaderHandler : IRequestHandler<DeleteExpenseHeaderCom
     private readonly IExpenseHeaderRepository _expenseHeaderRepository;
     private readonly ICurrentUser _currentUser;
     private readonly IBranchContext _branchContext;
+    private readonly IApplicationDbContext _db;
+    private readonly IInventoryService _inventory;
 
     public DeleteExpenseHeaderHandler(
         IExpenseHeaderRepository expenseHeaderRepository,
         ICurrentUser currentUser,
-        IBranchContext branchContext)
+        IBranchContext branchContext,
+        IApplicationDbContext db,
+        IInventoryService inventory)
     {
         _expenseHeaderRepository = expenseHeaderRepository;
         _currentUser = currentUser;
         _branchContext = branchContext;
+        _db = db;
+        _inventory = inventory;
     }
 
     public async Task<bool> Handle(DeleteExpenseHeaderCommand request, CancellationToken cancellationToken)
     {
-        var expenseHeader = await _expenseHeaderRepository.GetByIdAsync(request.Id, cancellationToken);
+        var expenseHeader = await _expenseHeaderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken);
 
         if (expenseHeader == null)
         {
@@ -44,7 +51,19 @@ public class DeleteExpenseHeaderHandler : IRequestHandler<DeleteExpenseHeaderCom
             }
         }
 
-        return await _expenseHeaderRepository.DeleteAsync(request.Id, cancellationToken);
+        await using var transaction = _db.Database.IsRelational() ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
+        try
+        {
+            await _inventory.ReversePurchaseAsync(expenseHeader, $"expense-header:{expenseHeader.Id}:delete", cancellationToken);
+            var deleted = await _expenseHeaderRepository.DeleteAsync(request.Id, cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+            return deleted;
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 }
 

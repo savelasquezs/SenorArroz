@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Infrastructure.Data.Configurations;
 
@@ -25,6 +26,10 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.ServesPeopleMax).HasColumnName("serves_people_max");
         builder.Property(p => p.StorefrontVariantLabel).HasColumnName("storefront_variant_label").HasMaxLength(80);
         builder.Property(p => p.StorefrontSortOrder).HasColumnName("storefront_sort_order").HasDefaultValue(0);
+        builder.Property(p => p.InventoryEnabled).HasColumnName("inventory_enabled").HasDefaultValue(false);
+        builder.Property(p => p.InventoryControlMode).HasColumnName("inventory_control_mode").HasMaxLength(20)
+            .HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<InventoryControlMode>(v, true))
+            .HasDefaultValue(InventoryControlMode.Estimated);
 
         builder.Property(p => p.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

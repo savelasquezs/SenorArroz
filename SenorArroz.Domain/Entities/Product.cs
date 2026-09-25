@@ -1,4 +1,5 @@
 using SenorArroz.Domain.Entities.Common;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Domain.Entities;
 
@@ -16,6 +17,8 @@ public class Product : TenantOwnedEntity
     public int? ServesPeopleMax { get; set; }
     public string? StorefrontVariantLabel { get; set; }
     public int StorefrontSortOrder { get; set; }
+    public bool InventoryEnabled { get; set; }
+    public InventoryControlMode InventoryControlMode { get; set; } = InventoryControlMode.Estimated;
 
     // Navigation Properties
     public virtual ProductCategory Category { get; set; } = null!;
@@ -25,4 +28,5 @@ public class Product : TenantOwnedEntity
     public virtual ICollection<DailyPromotionProduct> DailyPromotionProducts { get; set; } = new List<DailyPromotionProduct>();
     public virtual ICollection<LoyaltyCycleStep> LoyaltyGiftSteps { get; set; } = new List<LoyaltyCycleStep>();
     public virtual ICollection<DiscountCode> GiftDiscountCodes { get; set; } = new List<DiscountCode>();
+    public virtual ICollection<ProductExpenseRequirement> InventoryRequirements { get; set; } = new List<ProductExpenseRequirement>();
 }

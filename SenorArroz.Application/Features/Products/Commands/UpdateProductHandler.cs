@@ -46,7 +46,9 @@ public class UpdateProductHandler : IRequestHandler<UpdateProductCommand, Produc
         existingProduct.CategoryId = request.CategoryId;
         existingProduct.Name = request.Name;
         existingProduct.Price = request.Price;
-        if (request.Stock.HasValue)
+        if (existingProduct.InventoryEnabled && request.Stock.HasValue && request.Stock != existingProduct.Stock)
+            throw new BusinessException("El stock legacy no se puede modificar cuando el inventario del producto está activo");
+        if (!existingProduct.InventoryEnabled && request.Stock.HasValue)
             existingProduct.Stock = request.Stock;
         existingProduct.WeightGrams = request.WeightGrams;
         existingProduct.Active = request.Active;

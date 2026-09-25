@@ -62,6 +62,7 @@ public class ReservationNotificationService : BackgroundService
         var clock = services.GetRequiredService<IClock>();
         var db = services.GetRequiredService<IApplicationDbContext>();
         var printQueue = services.GetRequiredService<IPrintQueueService>();
+        var inventory = services.GetRequiredService<IInventoryService>();
 
         var now = clock.UtcNow;
         var twoHoursFromNow = now.AddHours(2);
@@ -74,6 +75,18 @@ public class ReservationNotificationService : BackgroundService
 
         foreach (var reservation in reservations)
         {
+            try
+            {
+                await inventory.SnapshotAndReserveAsync(reservation, false, $"order:{reservation.Id}:prepare-at", CancellationToken.None);
+                reservation.InventoryIssue = null;
+            }
+            catch (SenorArroz.Domain.Exceptions.BusinessException ex)
+            {
+                reservation.InventoryIssue = ex.Message;
+                await orderRepository.UpdateAsync(reservation);
+                _logger.LogWarning("Reservation {OrderId} could not reserve strict inventory: {Reason}", reservation.Id, ex.Message);
+                continue;
+            }
             var orderDto = mapper.Map<OrderDto>(reservation);
             await notificationService.NotifyReservationToKitchen(orderDto);
 

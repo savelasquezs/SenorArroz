@@ -3,6 +3,8 @@ using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Products.Commands;
 using SenorArroz.Application.Features.Products.DTOs;
 using SenorArroz.Application.Features.Products.Queries;
@@ -17,11 +19,15 @@ public class ProductsController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IMapper _mapper;
+    private readonly IApplicationDbContext _db;
+    private readonly IBranchContext _branchContext;
 
-    public ProductsController(IMediator mediator, IMapper mapper)
+    public ProductsController(IMediator mediator, IMapper mapper, IApplicationDbContext db, IBranchContext branchContext)
     {
         _mediator = mediator;
         _mapper = mapper;
+        _db = db;
+        _branchContext = branchContext;
     }
 
     /// <summary>
@@ -119,9 +125,14 @@ public class ProductsController : ControllerBase
     [Authorize(Roles = "Superadmin, Admin")]
     public async Task<ActionResult<ApiResponse<int>>> AdjustStock(int id, [FromBody] AdjustStockDto adjustDto)
     {
-        // This would require a separate command for stock adjustment
-        // For now, we'll return a placeholder response
-        return Ok(ApiResponse<int>.SuccessResponse(adjustDto.Quantity, "Stock ajustado exitosamente"));
+        var product = await _db.Products.Include(x => x.Category).SingleOrDefaultAsync(x => x.Id == id);
+        if (product is null) return NotFound(ApiResponse<int>.ErrorResponse("Producto no encontrado"));
+        _branchContext.EnsureAccess(product.Category.BranchId);
+        if (product.InventoryEnabled)
+            return Conflict(ApiResponse<int>.ErrorResponse("El producto usa el inventario nuevo; ajusta sus insumos desde Inventario"));
+        product.Stock = Math.Max(0, (product.Stock ?? 0) + adjustDto.Quantity);
+        await _db.SaveChangesAsync();
+        return Ok(ApiResponse<int>.SuccessResponse(product.Stock.Value, "Stock ajustado exitosamente"));
     }
 }
 

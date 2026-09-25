@@ -55,6 +55,7 @@ public class OrderDto
     public int? DeliveryFee { get; set; }
     public DateTime? ReservedFor { get; set; }
     public DateTime? PrepareAt { get; set; }
+    public string? InventoryIssue { get; set; }
     public OrderStatus Status { get; set; }
     public string? StatusDisplayName { get; set; }
     public Dictionary<string, DateTime> StatusTimes { get; set; } = new();

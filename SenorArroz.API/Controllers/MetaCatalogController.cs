@@ -15,7 +15,7 @@ namespace SenorArroz.API.Controllers;
 [ApiController]
 [AllowAnonymous]
 [Route("api/meta")]
-public sealed class MetaCatalogController(IApplicationDbContext db) : ControllerBase
+public sealed class MetaCatalogController(IApplicationDbContext db, IInventoryService inventory) : ControllerBase
 {
     private const string Brand = "Señor Arroz";
     private const string StorefrontBaseUrl = "https://senorarroz.com";
@@ -90,15 +90,28 @@ public sealed class MetaCatalogController(IApplicationDbContext db) : Controller
             .ThenBy(x => x.Id)
             .ToListAsync(cancellationToken);
 
-        var csv = BuildCsv(products);
+        var availability = new Dictionary<int, bool>();
+        foreach (var branchProducts in products.GroupBy(x => x.Category.BranchId))
+        {
+            var branchAvailability = await inventory.GetAvailabilityAsync(
+                branchProducts.Select(x => x.Id).ToArray(),
+                branchProducts.Key,
+                cancellationToken);
+            foreach (var item in branchAvailability)
+                availability[item.ProductId] = item.Available;
+        }
+
+        var csv = BuildCsv(products, availability);
         return File(Encoding.UTF8.GetBytes(csv), "text/csv; charset=utf-8");
     }
 
-    internal static string BuildCsv(IReadOnlyCollection<Product> products)
+    internal static string BuildCsv(
+        IReadOnlyCollection<Product> products,
+        IReadOnlyDictionary<int, bool>? availability = null)
     {
         var csv = new StringBuilder();
         AppendRow(csv, Headers);
-        var metaAdRepresentativeIds = MetaAdRepresentativeIds(products);
+        var metaAdRepresentativeIds = MetaAdRepresentativeIds(products, availability);
 
         foreach (var product in products)
         {
@@ -118,7 +131,7 @@ public sealed class MetaCatalogController(IApplicationDbContext db) : Controller
                 product.Id.ToString(CultureInfo.InvariantCulture),
                 Limit(product.Name, 200),
                 Limit(description, 9_999),
-                product.Stock.HasValue && product.Stock.Value <= 0 ? "out of stock" : "in stock",
+                IsAvailable(product, availability) ? "in stock" : "out of stock",
                 "new",
                 $"{product.Price.ToString(CultureInfo.InvariantCulture)} COP",
                 BuildProductUrl(product),
@@ -153,7 +166,9 @@ public sealed class MetaCatalogController(IApplicationDbContext db) : Controller
         return csv.ToString();
     }
 
-    private static HashSet<int> MetaAdRepresentativeIds(IEnumerable<Product> products)
+    private static HashSet<int> MetaAdRepresentativeIds(
+        IEnumerable<Product> products,
+        IReadOnlyDictionary<int, bool>? availability)
     {
         var active = products
             .Where(product => product.Active)
@@ -165,7 +180,7 @@ public sealed class MetaCatalogController(IApplicationDbContext db) : Controller
                 && MetaAdRiceCategories.Contains(product.Category.Name))
             .GroupBy(product => product.Category.Name, StringComparer.OrdinalIgnoreCase)
             .Select(group => group
-                .OrderBy(product => product.Stock.HasValue && product.Stock.Value <= 0 ? 1 : 0)
+                .OrderBy(product => IsAvailable(product, availability) ? 0 : 1)
                 .ThenBy(product => string.Equals(product.StorefrontVariantLabel, "Dúo", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
                 .ThenBy(product => product.StorefrontSortOrder)
                 .ThenBy(product => product.Price)
@@ -179,6 +194,11 @@ public sealed class MetaCatalogController(IApplicationDbContext db) : Controller
 
         return representatives;
     }
+
+    private static bool IsAvailable(Product product, IReadOnlyDictionary<int, bool>? availability) =>
+        availability is null
+            ? !product.Stock.HasValue || product.Stock.Value > 0
+            : availability.TryGetValue(product.Id, out var available) && available;
 
     private static string BuildDescription(Product product)
     {

@@ -10,6 +10,7 @@ using System.Reflection;
 using SenorArroz.Domain.Services;
 using SenorArroz.Application.Features.DeliveryRouting.DTOs;
 using SenorArroz.Application.Features.DeliveryRouting.Services;
+using SenorArroz.Application.Features.Inventory.Services;
 
 namespace SenorArroz.Application
 {
@@ -62,6 +63,7 @@ namespace SenorArroz.Application
             services.AddScoped<IDeliverymanAvailabilityService, DeliverymanAvailabilityService>();
             services.AddScoped<IDeliveryRoutingPlanService, DeliveryRoutingPlanService>();
             services.AddScoped<IWhatsAppSystemPromptBuilder, WhatsAppSystemPromptBuilder>();
+            services.AddScoped<IInventoryService, InventoryService>();
 
             return services;
         }

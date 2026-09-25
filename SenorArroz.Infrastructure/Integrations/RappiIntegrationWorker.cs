@@ -42,10 +42,11 @@ public sealed class RappiIntegrationWorker(
                         var db = services.GetRequiredService<ApplicationDbContext>();
                         var rappi = services.GetRequiredService<IRappiDeliveryProvider>();
                         var clock = services.GetRequiredService<IClock>();
+                        var inventory = services.GetRequiredService<IInventoryService>();
 
                         await processor.ProcessPendingWebhookEventsAsync(stoppingToken);
                         await ProcessReadyOutboxAsync(db, rappi, clock, stoppingToken);
-                        await ReconcileAvailabilityStateAsync(db, clock, stoppingToken);
+                        await ReconcileAvailabilityStateAsync(db, inventory, clock, stoppingToken);
                         await ProcessAvailabilityAsync(db, rappi, clock, stoppingToken);
                         if (syncCapabilities)
                             await SyncCapabilitiesAsync(db, rappi, stoppingToken);
@@ -211,6 +212,7 @@ public sealed class RappiIntegrationWorker(
 
     private static async Task ReconcileAvailabilityStateAsync(
         ApplicationDbContext db,
+        IInventoryService inventory,
         IClock clock,
         CancellationToken ct)
     {
@@ -231,10 +233,17 @@ public sealed class RappiIntegrationWorker(
         var changed = false;
         foreach (var connection in connections)
         {
+            var selectedMappings = connection.ProductMappings.Where(x => x.IsSelected).ToArray();
+            var availability = await inventory.GetAvailabilityAsync(
+                selectedMappings.Select(x => x.ProductId).Distinct().ToArray(),
+                connection.BranchId,
+                ct);
+            var availabilityByProduct = availability.ToDictionary(x => x.ProductId);
             foreach (var store in connection.Stores.Where(x => !string.IsNullOrWhiteSpace(x.StoreIntegrationId)))
-            foreach (var mapping in connection.ProductMappings.Where(x => x.IsSelected))
+            foreach (var mapping in selectedMappings)
             {
-                var desired = IsAvailable(mapping.Product);
+                var desired = availabilityByProduct.TryGetValue(mapping.ProductId, out var productAvailability)
+                    && productAvailability.Available;
                 if (!existing.TryGetValue((store.Id, mapping.Id), out var state))
                 {
                     state = new RappiAvailabilityState
@@ -479,9 +488,4 @@ public sealed class RappiIntegrationWorker(
             ? value.ToString()
             : null;
 
-    private static bool IsAvailable(Product product) =>
-        product.Active
-        && (product.Category.Name.Contains("arroz", StringComparison.OrdinalIgnoreCase)
-            || !product.Stock.HasValue
-            || product.Stock.Value > 0);
 }

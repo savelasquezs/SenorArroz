@@ -131,6 +131,15 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<ExpenseHeader> ExpenseHeaders { get; set; }
 
         DbSet<ExpenseMenuTarget> ExpenseMenuTargets { get; set; }
+        DbSet<ExpenseUnitConversion> ExpenseUnitConversions { get; set; }
+        DbSet<ProductExpenseRequirement> ProductExpenseRequirements { get; set; }
+        DbSet<InventoryBalance> InventoryBalances { get; set; }
+        DbSet<InventoryMovement> InventoryMovements { get; set; }
+        DbSet<OrderInventoryAllocation> OrderInventoryAllocations { get; set; }
+        DbSet<InventoryTransfer> InventoryTransfers { get; set; }
+        DbSet<InventoryTransferLine> InventoryTransferLines { get; set; }
+        DbSet<InventoryCount> InventoryCounts { get; set; }
+        DbSet<InventoryCountLine> InventoryCountLines { get; set; }
 
         DbSet<LoyaltyCycleStep> LoyaltyCycleSteps { get; set; }
 

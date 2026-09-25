@@ -28,7 +28,8 @@ public class WhatsAppAiOrchestrator(
     ILogger<WhatsAppAiOrchestrator> logger,
     IOptions<WhatsAppAiPricingOptions>? pricing = null,
     IWhatsAppAiTelemetryQueue? telemetryQueue = null,
-    ICurrentTenant? currentTenant = null) : IWhatsAppAiOrchestrator
+    ICurrentTenant? currentTenant = null,
+    IInventoryService? inventory = null) : IWhatsAppAiOrchestrator
 {
     private readonly WhatsAppAiOrchestratorOptions _options = options.Value;
     private readonly WhatsAppAiPricingOptions _pricing = pricing?.Value ?? new();
@@ -180,7 +181,9 @@ public class WhatsAppAiOrchestrator(
                         isPrimary=a.IsPrimary
                     }).ToList()
             }).FirstOrDefaultAsync(ct):null;
-            var catalog=await db.Products.AsNoTracking().Include(x=>x.Category).Include(x=>x.CommercialProfile).Where(x=>(!conversation.ChannelSettingId.HasValue||conversation.OperationalBranchId.HasValue)&&x.Category.BranchId==effectiveBranchId&&x.Active).OrderBy(x=>x.Name).Select(x=>new{id=x.Id,name=x.Name,price=x.Price,available=!x.Stock.HasValue||x.Stock>0,x.ServesPeopleMin,x.ServesPeopleMax,commercialProfile=x.CommercialProfile==null?null:x.CommercialProfile.Name}).ToListAsync(ct);
+            var catalogProducts=await db.Products.AsNoTracking().Include(x=>x.Category).Include(x=>x.CommercialProfile).Where(x=>(!conversation.ChannelSettingId.HasValue||conversation.OperationalBranchId.HasValue)&&x.Category.BranchId==effectiveBranchId&&x.Active).OrderBy(x=>x.Name).ToListAsync(ct);
+            var catalogAvailability=inventory is null?new Dictionary<int,SenorArroz.Application.Features.Inventory.DTOs.ProductAvailabilityDto>():(await inventory.GetAvailabilityAsync(catalogProducts.Select(x=>x.Id).ToArray(),effectiveBranchId,ct)).ToDictionary(x=>x.ProductId);
+            var catalog=catalogProducts.Select(x=>new{id=x.Id,name=x.Name,price=x.Price,available=inventory is null||catalogAvailability.TryGetValue(x.Id,out var value)&&value.Available,x.ServesPeopleMin,x.ServesPeopleMax,commercialProfile=x.CommercialProfile?.Name}).ToList();
             var operationalContext=JsonSerializer.Serialize(new
             {
                 architecture="simple_v1",
