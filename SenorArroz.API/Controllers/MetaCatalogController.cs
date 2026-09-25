@@ -24,6 +24,14 @@ public sealed class MetaCatalogController(IApplicationDbContext db, IInventorySe
     private static readonly HashSet<string> PublicRoles =
         ["rice", "combo", "beverage", "addition"];
 
+    private static readonly HashSet<string> MetaAdRiceCategories = new(StringComparer.OrdinalIgnoreCase)
+        { "Carbonara", "Paisa", "Ranchero", "Ropa Vieja", "Vegetariano" };
+
+    private static readonly HashSet<string> MetaAdComboProducts = new(StringComparer.OrdinalIgnoreCase)
+        { "Combochicharrón", "Costicombo" };
+
+    private const string MetaAdRepresentativeTag = "meta_ad_representative";
+
     // Keep the same column names/order as Meta's current Commerce Manager template.
     // Optional fields that do not apply to restaurant products are intentionally left blank.
     private static readonly string[] Headers =
@@ -58,6 +66,7 @@ public sealed class MetaCatalogController(IApplicationDbContext db, IInventorySe
         "gtin",
         "product_tags[0]",
         "product_tags[1]",
+        "product_tags[2]",
         "style[0]"
     ];
 
@@ -84,17 +93,25 @@ public sealed class MetaCatalogController(IApplicationDbContext db, IInventorySe
         var availability = new Dictionary<int, bool>();
         foreach (var branchProducts in products.GroupBy(x => x.Category.BranchId))
         {
-            var branchAvailability = await inventory.GetAvailabilityAsync(branchProducts.Select(x => x.Id).ToArray(), branchProducts.Key, cancellationToken);
-            foreach (var item in branchAvailability) availability[item.ProductId] = item.Available;
+            var branchAvailability = await inventory.GetAvailabilityAsync(
+                branchProducts.Select(x => x.Id).ToArray(),
+                branchProducts.Key,
+                cancellationToken);
+            foreach (var item in branchAvailability)
+                availability[item.ProductId] = item.Available;
         }
+
         var csv = BuildCsv(products, availability);
         return File(Encoding.UTF8.GetBytes(csv), "text/csv; charset=utf-8");
     }
 
-    internal static string BuildCsv(IReadOnlyCollection<Product> products, IReadOnlyDictionary<int, bool>? availability = null)
+    internal static string BuildCsv(
+        IReadOnlyCollection<Product> products,
+        IReadOnlyDictionary<int, bool>? availability = null)
     {
         var csv = new StringBuilder();
         AppendRow(csv, Headers);
+        var metaAdRepresentativeIds = MetaAdRepresentativeIds(products, availability);
 
         foreach (var product in products)
         {
@@ -114,7 +131,7 @@ public sealed class MetaCatalogController(IApplicationDbContext db, IInventorySe
                 product.Id.ToString(CultureInfo.InvariantCulture),
                 Limit(product.Name, 200),
                 Limit(description, 9_999),
-                availability is not null && (!availability.TryGetValue(product.Id, out var available) || !available) ? "out of stock" : "in stock",
+                IsAvailable(product, availability) ? "in stock" : "out of stock",
                 "new",
                 $"{product.Price.ToString(CultureInfo.InvariantCulture)} COP",
                 BuildProductUrl(product),
@@ -141,12 +158,47 @@ public sealed class MetaCatalogController(IApplicationDbContext db, IInventorySe
                 string.Empty, // gtin
                 Limit(role, 110),
                 Limit(product.Category.Name, 110),
+                metaAdRepresentativeIds.Contains(product.Id) ? MetaAdRepresentativeTag : string.Empty,
                 string.Empty // style[0]
             ]);
         }
 
         return csv.ToString();
     }
+
+    private static HashSet<int> MetaAdRepresentativeIds(
+        IEnumerable<Product> products,
+        IReadOnlyDictionary<int, bool>? availability)
+    {
+        var active = products
+            .Where(product => product.Active)
+            .ToList();
+
+        var representatives = active
+            .Where(product =>
+                string.Equals(product.Category.StorefrontRole, "rice", StringComparison.OrdinalIgnoreCase)
+                && MetaAdRiceCategories.Contains(product.Category.Name))
+            .GroupBy(product => product.Category.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group
+                .OrderBy(product => IsAvailable(product, availability) ? 0 : 1)
+                .ThenBy(product => string.Equals(product.StorefrontVariantLabel, "Dúo", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(product => product.StorefrontSortOrder)
+                .ThenBy(product => product.Price)
+                .ThenBy(product => product.Id)
+                .First())
+            .Concat(active.Where(product =>
+                string.Equals(product.Category.StorefrontRole, "combo", StringComparison.OrdinalIgnoreCase)
+                && MetaAdComboProducts.Contains(product.Name)))
+            .Select(product => product.Id)
+            .ToHashSet();
+
+        return representatives;
+    }
+
+    private static bool IsAvailable(Product product, IReadOnlyDictionary<int, bool>? availability) =>
+        availability is null
+            ? !product.Stock.HasValue || product.Stock.Value > 0
+            : availability.TryGetValue(product.Id, out var available) && available;
 
     private static string BuildDescription(Product product)
     {
