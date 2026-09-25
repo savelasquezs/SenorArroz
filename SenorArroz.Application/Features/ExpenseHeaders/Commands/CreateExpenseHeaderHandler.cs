@@ -46,8 +46,9 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
     public async Task<ExpenseHeaderDto> Handle(CreateExpenseHeaderCommand request, CancellationToken cancellationToken)
     {
         var operationKey = NormalizeOperationKey(request.ExpenseHeader.IdempotencyKey) ?? Guid.NewGuid().ToString("N");
+        var branchId = _branchContext.RequireBranch();
         var existingHeaderId = await _context.ExpenseHeaders.AsNoTracking()
-            .Where(x => x.InventoryOperationKey == operationKey)
+            .Where(x => x.BranchId == branchId && x.InventoryOperationKey == operationKey)
             .Select(x => (int?)x.Id)
             .SingleOrDefaultAsync(cancellationToken);
         if (existingHeaderId.HasValue)
@@ -76,7 +77,6 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             throw new NotFoundException($"Gastos con IDs {string.Join(", ", missingIds)} no encontrados");
         }
 
-        var branchId = _branchContext.RequireBranch();
         var subtotal = ExpenseInvoiceTotalsHelper.SubtotalFromCreateDetails(request.ExpenseHeader.ExpenseDetails);
         var taxableSubtotal = ExpenseInvoiceTotalsHelper.TaxableSubtotalFromCreateDetails(
             request.ExpenseHeader.ExpenseDetails,
