@@ -24,6 +24,14 @@ public sealed class MetaCatalogController(IApplicationDbContext db) : Controller
     private static readonly HashSet<string> PublicRoles =
         ["rice", "combo", "beverage", "addition"];
 
+    private static readonly HashSet<string> MetaAdRiceCategories = new(StringComparer.OrdinalIgnoreCase)
+        ["Carbonara", "Paisa", "Ranchero", "Ropa Vieja", "Vegetariano"];
+
+    private static readonly HashSet<string> MetaAdComboProducts = new(StringComparer.OrdinalIgnoreCase)
+        ["Combochicharrón", "Costicombo"];
+
+    private const string MetaAdRepresentativeTag = "meta_ad_representative";
+
     // Keep the same column names/order as Meta's current Commerce Manager template.
     // Optional fields that do not apply to restaurant products are intentionally left blank.
     private static readonly string[] Headers =
@@ -58,6 +66,7 @@ public sealed class MetaCatalogController(IApplicationDbContext db) : Controller
         "gtin",
         "product_tags[0]",
         "product_tags[1]",
+        "product_tags[2]",
         "style[0]"
     ];
 
@@ -89,6 +98,7 @@ public sealed class MetaCatalogController(IApplicationDbContext db) : Controller
     {
         var csv = new StringBuilder();
         AppendRow(csv, Headers);
+        var metaAdRepresentativeIds = MetaAdRepresentativeIds(products);
 
         foreach (var product in products)
         {
@@ -135,11 +145,39 @@ public sealed class MetaCatalogController(IApplicationDbContext db) : Controller
                 string.Empty, // gtin
                 Limit(role, 110),
                 Limit(product.Category.Name, 110),
+                metaAdRepresentativeIds.Contains(product.Id) ? MetaAdRepresentativeTag : string.Empty,
                 string.Empty // style[0]
             ]);
         }
 
         return csv.ToString();
+    }
+
+    private static HashSet<int> MetaAdRepresentativeIds(IEnumerable<Product> products)
+    {
+        var active = products
+            .Where(product => product.Active)
+            .ToList();
+
+        var representatives = active
+            .Where(product =>
+                string.Equals(product.Category.StorefrontRole, "rice", StringComparison.OrdinalIgnoreCase)
+                && MetaAdRiceCategories.Contains(product.Category.Name))
+            .GroupBy(product => product.Category.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group
+                .OrderBy(product => product.Stock.HasValue && product.Stock.Value <= 0 ? 1 : 0)
+                .ThenBy(product => string.Equals(product.StorefrontVariantLabel, "Dúo", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(product => product.StorefrontSortOrder)
+                .ThenBy(product => product.Price)
+                .ThenBy(product => product.Id)
+                .First())
+            .Concat(active.Where(product =>
+                string.Equals(product.Category.StorefrontRole, "combo", StringComparison.OrdinalIgnoreCase)
+                && MetaAdComboProducts.Contains(product.Name)))
+            .Select(product => product.Id)
+            .ToHashSet();
+
+        return representatives;
     }
 
     private static string BuildDescription(Product product)
