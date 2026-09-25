@@ -14,11 +14,11 @@ namespace SenorArroz.Tests;
 
 public class ExpenseHeaderGlobalSupplierTests
 {
-    private sealed class TestCurrentUser : ICurrentUser
+    private sealed class TestCurrentUser(int id = 1, int branchId = 1) : ICurrentUser
     {
-        public int Id => 1;
+        public int Id => id;
         public string Role => Roles.Cashier;
-        public int BranchId => 1;
+        public int BranchId => branchId;
         public bool IsAuthenticated => true;
     }
 
@@ -39,14 +39,14 @@ public class ExpenseHeaderGlobalSupplierTests
             cfg.AddProfile<ExpenseCategoryMappingProfile>();
         }, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance).CreateMapper();
 
-    private static CreateExpenseHeaderHandler BuildCreateHandler(ApplicationDbContext db, DateTime now) =>
+    private static CreateExpenseHeaderHandler BuildCreateHandler(ApplicationDbContext db, DateTime now, int branchId = 1, int userId = 1) =>
         new(
             new ExpenseHeaderRepository(db),
             new BankRepository(db),
             db,
             CreateMapper(),
-            new TestCurrentUser(),
-            new TestBranchContext(1),
+            new TestCurrentUser(userId, branchId),
+            new TestBranchContext(branchId),
             new FakeClock(now));
 
     private static UpdateExpenseHeaderHandler BuildUpdateHandler(ApplicationDbContext db, DateTime now) =>
@@ -295,6 +295,54 @@ public class ExpenseHeaderGlobalSupplierTests
                 ]
             }
         }, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Create_expense_header_idempotency_is_scoped_to_branch()
+    {
+        var now = new DateTime(2026, 8, 6, 12, 0, 0, DateTimeKind.Utc);
+        using var db = CreateCtx(nameof(Create_expense_header_idempotency_is_scoped_to_branch));
+        var seeded = await SeedBaseAsync(db, now);
+        const string operationKey = "shared-expense-idempotency-key";
+
+        db.ExpenseHeaders.Add(new ExpenseHeader
+        {
+            Id = 50,
+            BranchId = 1,
+            SupplierId = seeded.LocalSupplierId,
+            CreatedById = 1,
+            InventoryOperationKey = operationKey,
+            Total = 1000m,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await BuildCreateHandler(db, now, branchId: 2, userId: 2).Handle(new CreateExpenseHeaderCommand
+        {
+            ExpenseHeader = new CreateExpenseHeaderDto
+            {
+                SupplierId = seeded.OtherSupplierId,
+                IdempotencyKey = operationKey,
+                IncludeVat = false,
+                ExpenseBankPayments = [],
+                ExpenseDetails =
+                [
+                    new CreateExpenseDetailDto
+                    {
+                        ExpenseId = seeded.ExpenseId,
+                        Quantity = 1,
+                        Amount = 1000,
+                        Total = 1000m
+                    }
+                ]
+            }
+        }, CancellationToken.None);
+
+        Assert.Equal(2, result.BranchId);
+        Assert.NotEqual(50, result.Id);
+        Assert.Equal(2, await db.ExpenseHeaders.CountAsync(x => x.InventoryOperationKey == operationKey));
     }
 
     [Fact]
