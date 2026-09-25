@@ -201,7 +201,10 @@ public class OrderRepository : IOrderRepository
 
     public async Task<Order> UpdateAsync(Order order, CancellationToken cancellationToken = default)
     {
-        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+        var ownsTransaction = _context.Database.CurrentTransaction is null;
+        await using var tx = ownsTransaction
+            ? await _context.Database.BeginTransactionAsync(cancellationToken)
+            : null;
         try
         {
             OrderUpdateGraphForPersistence.DetachReadOnlyNavigations(order);
@@ -218,12 +221,14 @@ public class OrderRepository : IOrderRepository
 
             _context.Orders.Update(order);
             await _context.SaveChangesAsync(cancellationToken);
-            await tx.CommitAsync(cancellationToken);
+            if (tx is not null)
+                await tx.CommitAsync(cancellationToken);
             return await GetByIdAsync(order.Id, cancellationToken) ?? order;
         }
         catch
         {
-            await tx.RollbackAsync(cancellationToken);
+            if (tx is not null)
+                await tx.RollbackAsync(cancellationToken);
             throw;
         }
     }
