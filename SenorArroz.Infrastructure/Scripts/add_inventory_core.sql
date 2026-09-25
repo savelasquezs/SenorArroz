@@ -46,12 +46,17 @@ CREATE TABLE IF NOT EXISTS inventory_balance (
     branch_id integer NOT NULL REFERENCES branch(id) ON DELETE RESTRICT,
     expense_id integer NOT NULL REFERENCES expense(id) ON DELETE RESTRICT,
     quantity_on_hand numeric(18,4) NOT NULL DEFAULT 0,
-    quantity_reserved numeric(18,4) NOT NULL DEFAULT 0 CHECK (quantity_reserved >= 0),
-    average_unit_cost numeric(18,6) NOT NULL DEFAULT 0 CHECK (average_unit_cost >= 0),
+    quantity_reserved numeric(18,4) NOT NULL DEFAULT 0,
+    average_unit_cost numeric(18,6) NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT ck_inventory_balance_reserved CHECK (quantity_reserved <= GREATEST(quantity_on_hand, 0))
+    updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE inventory_balance DROP CONSTRAINT IF EXISTS ck_inventory_balance_reserved_nonnegative;
+ALTER TABLE inventory_balance ADD CONSTRAINT ck_inventory_balance_reserved_nonnegative CHECK (quantity_reserved >= 0);
+ALTER TABLE inventory_balance DROP CONSTRAINT IF EXISTS ck_inventory_balance_average_cost;
+ALTER TABLE inventory_balance ADD CONSTRAINT ck_inventory_balance_average_cost CHECK (average_unit_cost >= 0);
+ALTER TABLE inventory_balance DROP CONSTRAINT IF EXISTS ck_inventory_balance_reserved;
+ALTER TABLE inventory_balance ADD CONSTRAINT ck_inventory_balance_reserved CHECK (quantity_reserved <= GREATEST(quantity_on_hand, 0));
 CREATE UNIQUE INDEX IF NOT EXISTS ux_inventory_balance_scope ON inventory_balance(tenant_id, branch_id, expense_id);
 
 CREATE TABLE IF NOT EXISTS inventory_transfer (
@@ -145,6 +150,7 @@ CREATE TABLE IF NOT EXISTS inventory_movement (
     reserved_delta numeric(18,4) NOT NULL DEFAULT 0,
     unit_cost numeric(18,6) NOT NULL DEFAULT 0,
     order_id integer REFERENCES "order"(id) ON DELETE RESTRICT,
+    expense_header_id integer REFERENCES expense_header(id) ON DELETE RESTRICT,
     expense_detail_id integer REFERENCES expense_detail(id) ON DELETE RESTRICT,
     transfer_id integer REFERENCES inventory_transfer(id) ON DELETE RESTRICT,
     inventory_count_id integer REFERENCES inventory_count(id) ON DELETE RESTRICT,
@@ -154,18 +160,26 @@ CREATE TABLE IF NOT EXISTS inventory_movement (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE inventory_movement ADD COLUMN IF NOT EXISTS expense_header_id integer REFERENCES expense_header(id) ON DELETE RESTRICT;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_inventory_movement_operation ON inventory_movement(tenant_id, operation_key, expense_id, type);
 CREATE INDEX IF NOT EXISTS ix_inventory_movement_branch_created ON inventory_movement(tenant_id, branch_id, created_at DESC);
 
 DO $inventory_rls$
-DECLARE table_name text;
+DECLARE
+    table_name text;
+    policy_name text;
 BEGIN
     FOREACH table_name IN ARRAY ARRAY['expense_unit_conversion','product_expense_requirement','inventory_balance','inventory_movement','order_inventory_allocation','inventory_transfer','inventory_transfer_line','inventory_count','inventory_count_line'] LOOP
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', table_name);
         EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', table_name);
-        IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = table_name AND policyname = 'tenant_isolation_policy') THEN
-            EXECUTE format('CREATE POLICY tenant_isolation_policy ON %I USING (app.is_system_scope() OR tenant_id = app.current_tenant_id()) WITH CHECK (app.is_system_scope() OR tenant_id = app.current_tenant_id())', table_name);
-        END IF;
+        EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_policy ON %I', table_name);
+        FOREACH policy_name IN ARRAY ARRAY['tenant_select_policy','tenant_insert_policy','tenant_update_policy','tenant_delete_policy'] LOOP
+            EXECUTE format('DROP POLICY IF EXISTS %I ON %I', policy_name, table_name);
+        END LOOP;
+        EXECUTE format('CREATE POLICY tenant_select_policy ON %I FOR SELECT USING (app.is_system_scope() OR tenant_id = app.current_tenant_id())', table_name);
+        EXECUTE format('CREATE POLICY tenant_insert_policy ON %I FOR INSERT WITH CHECK (app.is_system_scope() OR tenant_id = app.current_tenant_id())', table_name);
+        EXECUTE format('CREATE POLICY tenant_update_policy ON %I FOR UPDATE USING (app.is_system_scope() OR tenant_id = app.current_tenant_id()) WITH CHECK (app.is_system_scope() OR tenant_id = app.current_tenant_id())', table_name);
+        EXECUTE format('CREATE POLICY tenant_delete_policy ON %I FOR DELETE USING (app.is_system_scope() OR tenant_id = app.current_tenant_id())', table_name);
     END LOOP;
 END $inventory_rls$;
 

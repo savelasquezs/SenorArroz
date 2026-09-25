@@ -6,7 +6,7 @@ using SenorArroz.Infrastructure.Data;
 
 namespace SenorArroz.Infrastructure.Services;
 
-public sealed class ApplyOrderActionAgentTool(IWhatsAppSimpleOrderStateService states,ApplicationDbContext db):IAgentTool
+public sealed class ApplyOrderActionAgentTool(IWhatsAppSimpleOrderStateService states,ApplicationDbContext db,IInventoryService? inventory=null):IAgentTool
 {
     public string Name=>"apply_order_action";
     public string Description=>"Modifica el carrito simple con IDs reales del catálogo. El backend valida sucursal, disponibilidad, stock y cantidades; nunca acepta precios.";
@@ -38,14 +38,17 @@ public sealed class ApplyOrderActionAgentTool(IWhatsAppSimpleOrderStateService s
         }
 
         var item=productId.HasValue?state.Items.FirstOrDefault(x=>x.ProductId==productId):null;
+        var requestedQuantity=action=="add_product"?(item?.Quantity??0)+effectiveQuantity:effectiveQuantity;
+        var availability=product is null||inventory is null?null:(await inventory.GetAvailabilityAsync([product.Id],c.BranchId,ct)).SingleOrDefault();
+        var inventoryAllows=product is null||inventory is null?product?.Active==true:availability is { Available:true }&&(!availability.MaximumQuantity.HasValue||availability.MaximumQuantity.Value>=requestedQuantity);
         if(action=="add_product")
         {
-            var target=(item?.Quantity??0)+effectiveQuantity;if(target>50)return Invalid("La cantidad acumulada supera 50.");if(product!.Stock.HasValue&&product.Stock<target)return new(false,null,"Stock insuficiente.","insufficient_stock");
-            if(item is null)state.Items.Add(new(){ProductId=product.Id,Quantity=effectiveQuantity,Notes=arguments.TryGetProperty("notes",out var n)?n.GetString()?.Trim():null});else{item.Quantity=target;if(arguments.TryGetProperty("notes",out var n))item.Notes=n.GetString()?.Trim();}
+            var target=(item?.Quantity??0)+effectiveQuantity;if(target>50)return Invalid("La cantidad acumulada supera 50.");if(!inventoryAllows)return new(false,null,"Stock insuficiente.","insufficient_stock");
+            if(item is null)state.Items.Add(new(){ProductId=product!.Id,Quantity=effectiveQuantity,Notes=arguments.TryGetProperty("notes",out var n)?n.GetString()?.Trim():null});else{item.Quantity=target;if(arguments.TryGetProperty("notes",out var n))item.Notes=n.GetString()?.Trim();}
         }
         else if(action=="set_quantity")
         {
-            if(product!.Stock.HasValue&&product.Stock<effectiveQuantity)return new(false,null,"Stock insuficiente.","insufficient_stock");if(item is null)state.Items.Add(new(){ProductId=product.Id,Quantity=effectiveQuantity});else item.Quantity=effectiveQuantity;
+            if(!inventoryAllows)return new(false,null,"Stock insuficiente.","insufficient_stock");if(item is null)state.Items.Add(new(){ProductId=product!.Id,Quantity=effectiveQuantity});else item.Quantity=effectiveQuantity;
         }
         else if(action=="remove_product")state.Items.RemoveAll(x=>x.ProductId==productId);
         else state.Items.Clear();

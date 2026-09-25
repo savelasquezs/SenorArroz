@@ -60,7 +60,7 @@ SenorArroz.Infrastructure/Repositories
 - `ExpenseUnitConversion`: presentaciones compradas y equivalencia en unidad base.
 - `ProductExpenseRequirement`: receta vigente estimada o estricta del producto.
 - `InventoryBalance`: saldo y costo promedio único por tenant, sucursal e insumo.
-- `InventoryMovement`: ledger inmutable e idempotente de compras, reservas, consumos, ajustes, mermas, transferencias y reversos.
+- `InventoryMovement`: ledger inmutable e idempotente de compras, reservas, consumos, ajustes, mermas, transferencias y reversos; expone el pedido, compra, transferencia o conteo que originÃ³ cada movimiento.
 - `OrderInventoryAllocation`: snapshot histórico de receta por pedido.
 - `InventoryCount` / `InventoryCountLine`: conteo físico y diferencia histórica.
 - `InventoryTransfer` / `InventoryTransferLine`: despacho y recepción entre sucursales del mismo tenant.

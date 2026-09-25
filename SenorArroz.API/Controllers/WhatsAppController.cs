@@ -45,6 +45,7 @@ public class WhatsAppController : ControllerBase
     private readonly WhatsAppCommerceFlowService _commerceFlow;
     private readonly ICurrentTenant? _currentTenant;
     private readonly ITenantExecutionContext? _tenantExecutionContext;
+    private readonly IInventoryService? _inventory;
     private int TenantId => _currentTenant?.TenantId ?? _commerceFlow.TenantId;
     private readonly int _aiMaxPersistentAttempts;
 
@@ -67,7 +68,8 @@ public class WhatsAppController : ControllerBase
         WhatsAppAwayMessageService awayMessageService,
         WhatsAppCommerceFlowService commerceFlow,
         ICurrentTenant? currentTenant = null,
-        ITenantExecutionContext? tenantExecutionContext = null)
+        ITenantExecutionContext? tenantExecutionContext = null,
+        IInventoryService? inventory = null)
     {
         _db = db;
         _currentUser = currentUser;
@@ -88,6 +90,7 @@ public class WhatsAppController : ControllerBase
         _commerceFlow = commerceFlow;
         _currentTenant = currentTenant;
         _tenantExecutionContext = tenantExecutionContext;
+        _inventory = inventory;
     }
 
     [HttpGet("status")]
@@ -1222,7 +1225,8 @@ public class WhatsAppController : ControllerBase
         var setting = await ResolveConversationChannelAsync(conversation, cancellationToken)
             ?? throw new InvalidOperationException("WhatsApp no está activo y verificado.");
         var serves = product.ServesPeopleMin == product.ServesPeopleMax && product.ServesPeopleMin.HasValue ? $"{product.ServesPeopleMin} {(product.ServesPeopleMin == 1 ? "persona" : "personas")}" : product.ServesPeopleMin.HasValue ? $"{product.ServesPeopleMin}-{product.ServesPeopleMax} personas" : null;
-        var available = product.Active && (!product.Stock.HasValue || product.Stock > 0);
+        var inventoryAvailability = _inventory is null ? null : (await _inventory.GetAvailabilityAsync([product.Id], conversation.BranchId, cancellationToken)).SingleOrDefault();
+        var available = _inventory is null ? product.Active : inventoryAvailability?.Available == true;
         var text = string.Join("\n", new[] { product.Name, product.CommercialProfile?.Description, string.IsNullOrWhiteSpace(product.CommercialProfile?.Ingredients) ? null : $"Ingredientes: {product.CommercialProfile.Ingredients}", serves is null ? null : $"Rinde para {serves}", $"Precio: ${product.Price:N0}", available ? "Disponible" : "No disponible" }.Where(x => !string.IsNullOrWhiteSpace(x)));
         var result = !string.IsNullOrWhiteSpace(product.CommercialProfile?.PhotoUrl)
             ? await _whatsAppCloudClient.SendImageLinkMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, product.CommercialProfile.PhotoUrl, text, cancellationToken)

@@ -95,7 +95,8 @@ public sealed class InventoryServiceTests
         var balance = await db.InventoryBalances.SingleAsync();
         Assert.Equal(72, balance.QuantityOnHand);
         Assert.Equal(966.666667m, decimal.Round(balance.AverageUnitCost, 6));
-        Assert.Single(await db.InventoryMovements.Where(x => x.Type == InventoryMovementType.Purchase).ToListAsync());
+        var movement = Assert.Single(await db.InventoryMovements.Where(x => x.Type == InventoryMovementType.Purchase).ToListAsync());
+        Assert.Equal(header.Id, movement.ExpenseHeaderId);
     }
 
     [Fact]
@@ -138,5 +139,61 @@ public sealed class InventoryServiceTests
         var balance = await db.InventoryBalances.SingleAsync();
         Assert.Equal(10, balance.QuantityOnHand);
         Assert.Equal(100, balance.AverageUnitCost);
+    }
+
+    [Fact]
+    public async Task StrictReservation_DoesNotPartiallyReserveWhenAnotherIngredientIsMissing()
+    {
+        await using var db = Context(nameof(StrictReservation_DoesNotPartiallyReserveWhenAnotherIngredientIsMissing));
+        var category = new ProductCategory { Id = 1, BranchId = 1, Name = "Bebidas" };
+        var firstExpense = new Expense { Id = 1, Name = "Botella", TracksInventory = true, InventoryActive = true };
+        var secondExpense = new Expense { Id = 2, Name = "Tapa", TracksInventory = true, InventoryActive = true };
+        var product = new Product { Id = 1, CategoryId = 1, Category = category, Name = "Bebida", Active = true, InventoryEnabled = true, InventoryControlMode = InventoryControlMode.Strict };
+        var order = new Order { Id = 1, BranchId = 1, Type = OrderType.Onsite, OrderDetails = [new OrderDetail { Id = 1, ProductId = 1, Product = product, Quantity = 1 }] };
+        db.AddRange(
+            category,
+            firstExpense,
+            secondExpense,
+            product,
+            new ProductExpenseRequirement { ProductId = 1, ExpenseId = 1, BaseQuantity = 1 },
+            new ProductExpenseRequirement { ProductId = 1, ExpenseId = 2, BaseQuantity = 1 },
+            new InventoryBalance { BranchId = 1, ExpenseId = 1, QuantityOnHand = 10 },
+            new InventoryBalance { BranchId = 1, ExpenseId = 2, QuantityOnHand = 0 },
+            order);
+        await db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<BusinessException>(() => Service(db).SnapshotAndReserveAsync(order, false, "strict:atomic", default));
+
+        Assert.All(await db.InventoryBalances.ToListAsync(), balance => Assert.Equal(0, balance.QuantityReserved));
+        Assert.Empty(await db.InventoryMovements.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Availability_DoesNotExposeAProductFromAnotherBranch()
+    {
+        await using var db = Context(nameof(Availability_DoesNotExposeAProductFromAnotherBranch));
+        var category = new ProductCategory { Id = 2, BranchId = 2, Name = "Bebidas" };
+        var product = new Product { Id = 2, CategoryId = 2, Category = category, Name = "Bebida externa", Active = true };
+        db.AddRange(new Branch { Id = 2, Name = "Otra", Address = "-", Phone1 = "2" }, category, product);
+        await db.SaveChangesAsync();
+
+        var result = await Service(db).GetAvailabilityAsync([product.Id], 1, default);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task ReplacingConversions_DeactivatesAUsedPresentationInsteadOfDeletingIt()
+    {
+        await using var db = Context(nameof(ReplacingConversions_DeactivatesAUsedPresentationInsteadOfDeletingIt));
+        var expense = new Expense { Id = 1, Name = "Arroz", TracksInventory = true, InventoryActive = true };
+        var conversion = new ExpenseUnitConversion { Id = 1, ExpenseId = 1, Name = "Bulto", BaseQuantity = 25000, Active = true };
+        db.AddRange(expense, conversion);
+        await db.SaveChangesAsync();
+
+        SenorArroz.Application.Features.Inventory.Helpers.InventoryCatalogHelper.ReplaceConversions(1, [], db);
+        await db.SaveChangesAsync();
+
+        Assert.False((await db.ExpenseUnitConversions.SingleAsync()).Active);
     }
 }

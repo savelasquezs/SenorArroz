@@ -41,6 +41,7 @@ public class InventoryMovement : TenantOwnedEntity
     public decimal ReservedDelta { get; set; }
     public decimal UnitCost { get; set; }
     public int? OrderId { get; set; }
+    public int? ExpenseHeaderId { get; set; }
     public int? ExpenseDetailId { get; set; }
     public int? TransferId { get; set; }
     public int? InventoryCountId { get; set; }
@@ -50,6 +51,7 @@ public class InventoryMovement : TenantOwnedEntity
     public virtual Branch Branch { get; set; } = null!;
     public virtual Expense Expense { get; set; } = null!;
     public virtual Order? Order { get; set; }
+    public virtual ExpenseHeader? ExpenseHeader { get; set; }
     public virtual ExpenseDetail? ExpenseDetail { get; set; }
     public virtual User CreatedBy { get; set; } = null!;
 }

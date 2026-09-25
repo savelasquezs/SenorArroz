@@ -45,6 +45,9 @@ public class CashRegisterExpectedDto
     /// <summary>Suma de préstamos informales activos (referencia para el conteo al cerrar; no se suma de nuevo al esperado).</summary>
     public decimal InformalLoansActiveTotal { get; set; }
 
+    /// <summary>Valor contable informativo del inventario de la sucursal. No forma parte del cuadre de dinero.</summary>
+    public decimal InventoryValue { get; set; }
+
     /// <summary>
     /// Pedidos de la sucursal que aún no están entregados ni cancelados (no se puede cerrar caja si hay alguno).
     /// </summary>

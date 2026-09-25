@@ -22,7 +22,8 @@ public static class InventoryCatalogHelper
     public static void ReplaceConversions(int expenseId, IReadOnlyCollection<InventoryConversionInput> inputs, IApplicationDbContext db)
     {
         var existing = db.ExpenseUnitConversions.Where(x => x.ExpenseId == expenseId).ToArray();
-        db.ExpenseUnitConversions.RemoveRange(existing.Where(x => !inputs.Any(i => i.Name.Trim().Equals(x.Name, StringComparison.OrdinalIgnoreCase))));
+        foreach (var item in existing.Where(x => !inputs.Any(i => i.Name.Trim().Equals(x.Name, StringComparison.OrdinalIgnoreCase))))
+            item.Active = false;
         foreach (var input in inputs)
         {
             var name = input.Name.Trim();

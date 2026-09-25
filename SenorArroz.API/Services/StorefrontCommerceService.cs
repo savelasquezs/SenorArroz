@@ -916,6 +916,8 @@ public sealed class StorefrontCommerceService(
             OrderTotalsHelper.RecalculateFromOrderDetails(order);
             db.Orders.Add(order);
             await db.SaveChangesAsync(cancellationToken);
+            if (inventory is not null)
+                await inventory.SnapshotAndReserveAsync(order, false, $"order:{order.Id}:storefront-cash-taken", cancellationToken);
             db.PaymentNotificationOutboxMessages.Add(new PaymentNotificationOutboxMessage
             {
                 TenantId = StorefrontTenantId,
@@ -933,6 +935,12 @@ public sealed class StorefrontCommerceService(
             return Ok(ApiResponse<PublicStorefrontOrderResult>.SuccessResponse(ToPublicOrderResult(order, paymentMethod, null)));
         }
         catch (StorefrontOrderConflictException ex)
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(cancellationToken);
+            return Conflict(ApiResponse<PublicStorefrontOrderResult>.ErrorResponse(ex.Message));
+        }
+        catch (SenorArroz.Domain.Exceptions.BusinessException ex)
         {
             if (transaction is not null)
                 await transaction.RollbackAsync(cancellationToken);

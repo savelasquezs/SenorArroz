@@ -44,7 +44,13 @@ public sealed class InventoryBalanceConfiguration : IEntityTypeConfiguration<Inv
 {
     public void Configure(EntityTypeBuilder<InventoryBalance> b)
     {
-        b.ToTable("inventory_balance"); b.HasKey(x => x.Id); b.Property(x => x.Id).HasColumnName("id");
+        b.ToTable("inventory_balance", table =>
+        {
+            table.HasCheckConstraint("ck_inventory_balance_reserved_nonnegative", "quantity_reserved >= 0");
+            table.HasCheckConstraint("ck_inventory_balance_average_cost", "average_unit_cost >= 0");
+            table.HasCheckConstraint("ck_inventory_balance_reserved", "quantity_reserved <= GREATEST(quantity_on_hand, 0)");
+        });
+        b.HasKey(x => x.Id); b.Property(x => x.Id).HasColumnName("id");
         b.Property(x => x.BranchId).HasColumnName("branch_id"); b.Property(x => x.ExpenseId).HasColumnName("expense_id");
         b.Property(x => x.QuantityOnHand).HasColumnName("quantity_on_hand").HasPrecision(18, 4);
         b.Property(x => x.QuantityReserved).HasColumnName("quantity_reserved").HasPrecision(18, 4);
@@ -64,7 +70,7 @@ public sealed class InventoryMovementConfiguration : IEntityTypeConfiguration<In
         b.Property(x => x.BranchId).HasColumnName("branch_id"); b.Property(x => x.ExpenseId).HasColumnName("expense_id");
         b.Property(x => x.Type).HasColumnName("type").HasMaxLength(40).HasConversion(v => InventoryEnumConversion.ToSnake(v.ToString()), v => InventoryEnumConversion.FromSnake<InventoryMovementType>(v));
         b.Property(x => x.OnHandDelta).HasColumnName("on_hand_delta").HasPrecision(18, 4); b.Property(x => x.ReservedDelta).HasColumnName("reserved_delta").HasPrecision(18, 4);
-        b.Property(x => x.UnitCost).HasColumnName("unit_cost").HasPrecision(18, 6); b.Property(x => x.OrderId).HasColumnName("order_id");
+        b.Property(x => x.UnitCost).HasColumnName("unit_cost").HasPrecision(18, 6); b.Property(x => x.OrderId).HasColumnName("order_id"); b.Property(x => x.ExpenseHeaderId).HasColumnName("expense_header_id");
         b.Property(x => x.ExpenseDetailId).HasColumnName("expense_detail_id"); b.Property(x => x.TransferId).HasColumnName("transfer_id");
         b.Property(x => x.InventoryCountId).HasColumnName("inventory_count_id"); b.Property(x => x.CreatedById).HasColumnName("created_by_id");
         b.Property(x => x.OperationKey).HasColumnName("operation_key").HasMaxLength(160).IsRequired(); b.Property(x => x.Reason).HasColumnName("reason").HasMaxLength(500);
@@ -72,6 +78,7 @@ public sealed class InventoryMovementConfiguration : IEntityTypeConfiguration<In
         b.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Expense).WithMany().HasForeignKey(x => x.ExpenseId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.Order).WithMany().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.ExpenseHeader).WithMany().HasForeignKey(x => x.ExpenseHeaderId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.ExpenseDetail).WithMany().HasForeignKey(x => x.ExpenseDetailId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.CreatedBy).WithMany().HasForeignKey(x => x.CreatedById).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => new { x.TenantId, x.OperationKey, x.ExpenseId, x.Type }).IsUnique();

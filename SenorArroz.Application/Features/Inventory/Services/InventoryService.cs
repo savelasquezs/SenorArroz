@@ -17,9 +17,10 @@ public sealed class InventoryService(
     public async Task<IReadOnlyList<ProductAvailabilityDto>> GetAvailabilityAsync(IReadOnlyCollection<int> productIds, int branchId, CancellationToken ct)
     {
         var products = await db.Products.AsNoTracking().Include(x => x.Category)
-            .Where(x => productIds.Contains(x.Id)).ToListAsync(ct);
+            .Where(x => productIds.Contains(x.Id) && x.Category.BranchId == branchId).ToListAsync(ct);
+        var scopedProductIds = products.Select(x => x.Id).ToArray();
         var requirements = await db.ProductExpenseRequirements.AsNoTracking().Include(x => x.Expense)
-            .Where(x => productIds.Contains(x.ProductId)).ToListAsync(ct);
+            .Where(x => scopedProductIds.Contains(x.ProductId)).ToListAsync(ct);
         var expenseIds = requirements.Select(x => x.ExpenseId).Distinct().ToArray();
         var balances = await db.InventoryBalances.AsNoTracking()
             .Where(x => x.BranchId == branchId && expenseIds.Contains(x.ExpenseId))
@@ -171,7 +172,7 @@ public sealed class InventoryService(
             var previousValue = positiveCurrentQuantity * balance.AverageUnitCost;
             balance.QuantityOnHand += baseQuantity;
             balance.AverageUnitCost = (previousValue + gross) / (positiveCurrentQuantity + baseQuantity);
-            AddMovement(header.BranchId, purchase.Key, InventoryMovementType.Purchase, baseQuantity, 0, gross / baseQuantity, operationKey, createdById: header.CreatedById);
+            AddMovement(header.BranchId, purchase.Key, InventoryMovementType.Purchase, baseQuantity, 0, gross / baseQuantity, operationKey, expenseHeaderId: header.Id, createdById: header.CreatedById);
         }
         await db.SaveChangesAsync(ct);
     }
@@ -197,7 +198,7 @@ public sealed class InventoryService(
                 balance.AverageUnitCost = Math.Max(currentValue - totalValue, 0) / balance.QuantityOnHand;
             else if (balance.QuantityOnHand == 0)
                 balance.AverageUnitCost = 0;
-            AddMovement(header.BranchId, details.Key, InventoryMovementType.Reversal, -quantity, 0, totalValue > 0 ? totalValue / quantity : balance.AverageUnitCost, operationKey, createdById: header.CreatedById);
+            AddMovement(header.BranchId, details.Key, InventoryMovementType.Reversal, -quantity, 0, totalValue > 0 ? totalValue / quantity : balance.AverageUnitCost, operationKey, expenseHeaderId: header.Id, createdById: header.CreatedById);
         }
         await db.SaveChangesAsync(ct);
     }
@@ -209,13 +210,14 @@ public sealed class InventoryService(
 
     public async Task<IReadOnlyList<InventoryMovementDto>> GetMovementsAsync(int branchId, int take, CancellationToken ct)
         => await db.InventoryMovements.AsNoTracking().Where(x => x.BranchId == branchId).OrderByDescending(x => x.CreatedAt).Take(Math.Clamp(take, 1, 500))
-            .Select(x => new InventoryMovementDto(x.Id, x.ExpenseId, x.Expense.Name, x.Type, x.OnHandDelta, x.ReservedDelta, x.UnitCost, x.OrderId, x.OperationKey, x.Reason, x.CreatedAt))
+            .Select(x => new InventoryMovementDto(x.Id, x.ExpenseId, x.Expense.Name, x.Type, x.OnHandDelta, x.ReservedDelta, x.UnitCost, x.OrderId, x.ExpenseHeaderId, x.TransferId, x.InventoryCountId, x.OperationKey, x.Reason, x.CreatedAt))
             .ToArrayAsync(ct);
 
     public async Task<InventoryRecipeDto> GetRecipeAsync(int productId, CancellationToken ct)
     {
-        var product = await db.Products.AsNoTracking().SingleOrDefaultAsync(x => x.Id == productId, ct)
+        var product = await db.Products.AsNoTracking().Include(x => x.Category).SingleOrDefaultAsync(x => x.Id == productId, ct)
             ?? throw new NotFoundException("Producto no encontrado");
+        branchContext.EnsureAccess(product.Category.BranchId);
         var requirements = await db.ProductExpenseRequirements.AsNoTracking()
             .Where(x => x.ProductId == productId)
             .OrderBy(x => x.Expense.Name)
@@ -233,6 +235,7 @@ public sealed class InventoryService(
         if (requirements.Any(x => x.BaseQuantity <= 0) || requirements.GroupBy(x => x.ExpenseId).Any(x => x.Count() > 1))
             throw new BusinessException("La receta contiene cantidades inválidas o insumos repetidos");
         var product = await db.Products.Include(x => x.Category).SingleOrDefaultAsync(x => x.Id == productId, ct) ?? throw new NotFoundException("Producto no encontrado");
+        branchContext.EnsureAccess(product.Category.BranchId);
         var expenseIds = requirements.Select(x => x.ExpenseId).ToArray();
         var expenses = await db.Expenses.Where(x => expenseIds.Contains(x.Id) && x.TracksInventory && x.InventoryActive).ToDictionaryAsync(x => x.Id, ct);
         if (expenses.Count != expenseIds.Length) throw new BusinessException("Todos los insumos de la receta deben tener inventario activo");
@@ -467,12 +470,21 @@ public sealed class InventoryService(
     private async Task ReserveStrictAsync(Order order, string operationKey, CancellationToken ct)
     {
         var allocations = await db.OrderInventoryAllocations.Where(x => x.OrderId == order.Id && x.ControlMode == InventoryControlMode.Strict && x.ReservedQuantity == 0 && x.ConsumedQuantity == 0).ToArrayAsync(ct);
-        foreach (var group in allocations.GroupBy(x => x.ExpenseId).OrderBy(x => x.Key))
+        var groups = allocations.GroupBy(x => x.ExpenseId).OrderBy(x => x.Key).ToArray();
+        var locked = new List<(IGrouping<int, OrderInventoryAllocation> Group, InventoryBalance Balance, decimal Quantity)>(groups.Length);
+        foreach (var group in groups)
         {
             var quantity = group.Sum(x => x.BaseQuantity);
             var balance = await LockBalanceAsync(order.BranchId, group.Key, ct);
             if (balance.QuantityOnHand - balance.QuantityReserved < quantity)
                 throw new BusinessException("No hay inventario suficiente para confirmar una o más bebidas");
+            locked.Add((group, balance, quantity));
+        }
+        foreach (var item in locked)
+        {
+            var group = item.Group;
+            var balance = item.Balance;
+            var quantity = item.Quantity;
             balance.QuantityReserved += quantity;
             AddMovement(order.BranchId, group.Key, InventoryMovementType.Reservation, 0, quantity, balance.AverageUnitCost, operationKey, order.Id, createdById: order.TakenById);
             foreach (var allocation in group) allocation.ReservedQuantity = allocation.BaseQuantity;
@@ -517,6 +529,6 @@ public sealed class InventoryService(
         return result;
     }
 
-    private void AddMovement(int branchId, int expenseId, InventoryMovementType type, decimal onHand, decimal reserved, decimal unitCost, string key, int? orderId = null, int? expenseDetailId = null, int? transferId = null, int? inventoryCountId = null, string? reason = null, int? createdById = null)
-        => db.InventoryMovements.Add(new InventoryMovement { BranchId = branchId, ExpenseId = expenseId, Type = type, OnHandDelta = onHand, ReservedDelta = reserved, UnitCost = unitCost, OrderId = orderId, ExpenseDetailId = expenseDetailId, TransferId = transferId, InventoryCountId = inventoryCountId, CreatedById = createdById ?? currentUser.Id, OperationKey = key, Reason = reason, CreatedAt = clock.UtcNow, UpdatedAt = clock.UtcNow });
+    private void AddMovement(int branchId, int expenseId, InventoryMovementType type, decimal onHand, decimal reserved, decimal unitCost, string key, int? orderId = null, int? expenseHeaderId = null, int? expenseDetailId = null, int? transferId = null, int? inventoryCountId = null, string? reason = null, int? createdById = null)
+        => db.InventoryMovements.Add(new InventoryMovement { BranchId = branchId, ExpenseId = expenseId, Type = type, OnHandDelta = onHand, ReservedDelta = reserved, UnitCost = unitCost, OrderId = orderId, ExpenseHeaderId = expenseHeaderId, ExpenseDetailId = expenseDetailId, TransferId = transferId, InventoryCountId = inventoryCountId, CreatedById = createdById ?? currentUser.Id, OperationKey = key, Reason = reason, CreatedAt = clock.UtcNow, UpdatedAt = clock.UtcNow });
 }

@@ -5,8 +5,10 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.Inventory.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Integrations;
@@ -176,6 +178,26 @@ public sealed class RappiOrderProcessorTests
         Assert.Equal(4000m, payment.EstimatedCommissionAmount);
         Assert.Equal(12000m, payment.ExpectedNetAmount);
         Assert.False(payment.IsSetted);
+    }
+
+    [Fact]
+    public async Task Order_is_not_accepted_in_Rappi_when_local_inventory_reservation_fails()
+    {
+        await using var db = CreateDb();
+        await SeedAsync(db);
+        var rappi = new Mock<IRappiDeliveryProvider>();
+        var inventory = new Mock<IInventoryService>();
+        inventory.Setup(x => x.GetAvailabilityAsync(It.IsAny<IReadOnlyCollection<int>>(), 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new ProductAvailabilityDto(26, true, 1, InventoryControlMode.Strict, false, [])]);
+        inventory.Setup(x => x.SnapshotAndReserveAsync(It.IsAny<Order>(), false, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new BusinessException("Bebida agotada"));
+        var processor = CreateProcessor(db, rappi.Object, inventory: inventory.Object);
+
+        var result = await processor.IngestNewOrderAsync(1, ValidOrder, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.True(result.Held);
+        rappi.Verify(x => x.AcceptOrderAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -463,7 +485,8 @@ public sealed class RappiOrderProcessorTests
         IOrderRepository? orderRepository = null,
         IMapper? mapper = null,
         IOrderNotificationService? notifications = null,
-        IDeliveryRouteWorkflowService? deliveryRouteWorkflow = null)
+        IDeliveryRouteWorkflowService? deliveryRouteWorkflow = null,
+        IInventoryService? inventory = null)
     {
         if (orderRepository is null)
         {
@@ -483,6 +506,7 @@ public sealed class RappiOrderProcessorTests
             mapper ?? Mock.Of<IMapper>(),
             notifications ?? Mock.Of<IOrderNotificationService>(),
             deliveryRouteWorkflow ?? Mock.Of<IDeliveryRouteWorkflowService>(),
-            NullLogger<RappiOrderProcessor>.Instance);
+            NullLogger<RappiOrderProcessor>.Instance,
+            inventory: inventory);
     }
 }

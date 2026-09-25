@@ -4,7 +4,7 @@ namespace SenorArroz.Application.Features.Inventory.DTOs;
 
 public sealed record ProductAvailabilityDto(int ProductId, bool Available, int? MaximumQuantity, InventoryControlMode? ControlMode, bool UsesFallback, IReadOnlyList<string> MissingItems);
 public sealed record InventoryBalanceDto(int ExpenseId, string ExpenseName, InventoryBaseUnit BaseUnit, decimal QuantityOnHand, decimal QuantityReserved, decimal QuantityAvailable, decimal AverageUnitCost, decimal InventoryValue);
-public sealed record InventoryMovementDto(int Id, int ExpenseId, string ExpenseName, InventoryMovementType Type, decimal OnHandDelta, decimal ReservedDelta, decimal UnitCost, int? OrderId, string OperationKey, string? Reason, DateTime CreatedAt);
+public sealed record InventoryMovementDto(int Id, int ExpenseId, string ExpenseName, InventoryMovementType Type, decimal OnHandDelta, decimal ReservedDelta, decimal UnitCost, int? OrderId, int? ExpenseHeaderId, int? TransferId, int? InventoryCountId, string OperationKey, string? Reason, DateTime CreatedAt);
 public sealed record InventoryRequirementInput(int ExpenseId, decimal BaseQuantity);
 public sealed record InventoryConversionInput(string Name, decimal BaseQuantity, bool Active = true);
 public sealed record InventoryCountLineInput(int ExpenseId, decimal CountedQuantity);

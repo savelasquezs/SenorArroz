@@ -256,6 +256,10 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         var (unsettledAppLines, unsettledAppsTotal) =
             await CashRegisterUnsettledAppsHelper.LoadUnsettledForBranchAsync(_context, branchId, cancellationToken);
 
+        var inventoryValue = await _context.InventoryBalances
+            .Where(balance => balance.BranchId == branchId && balance.QuantityOnHand > 0)
+            .SumAsync(balance => balance.QuantityOnHand * balance.AverageUnitCost, cancellationToken);
+
         return new CashRegisterExpectedDto
         {
             OpeningCash = openingCash,
@@ -267,6 +271,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             ReservationDepositsAddedToGlobalTotal = reservationDepositsInPeriodTotal,
             BankPaymentsAddedToGlobalTotal = bankPaymentsInPeriodTotal,
             InformalLoansActiveTotal = informalLoansActiveTotal,
+            InventoryValue = inventoryValue,
             UndeliveredOrdersCount = undeliveredOrdersCount,
             AsOf = now,
             LastClosureAt = lastClosure?.ClosedAt,

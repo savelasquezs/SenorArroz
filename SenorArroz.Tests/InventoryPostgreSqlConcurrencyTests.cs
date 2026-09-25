@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Inventory.Services;
@@ -41,6 +42,8 @@ public sealed class InventoryPostgreSqlConcurrencyTests : IAsyncLifetime
             new Order { Id = 1, BranchId = 1, TakenById = 1, Type = OrderType.Onsite, OrderDetails = [new OrderDetail { ProductId = 1, Quantity = 1, UnitPrice = 5000 }] },
             new Order { Id = 2, BranchId = 1, TakenById = 1, Type = OrderType.Onsite, OrderDetails = [new OrderDetail { ProductId = 1, Quantity = 1, UnitPrice = 5000 }] });
         await db.SaveChangesAsync();
+        await db.Database.ExecuteSqlRawAsync(ReadScript("enable_multitenant_rls_v3.sql"));
+        await db.Database.ExecuteSqlRawAsync(ReadScript("add_inventory_core.sql"));
     }
 
     public async Task DisposeAsync() => await postgres.DisposeAsync();
@@ -67,6 +70,67 @@ public sealed class InventoryPostgreSqlConcurrencyTests : IAsyncLifetime
         Assert.Single(await verification.InventoryMovements.Where(x => x.Type == InventoryMovementType.Reservation).ToListAsync());
     }
 
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Inventory_schema_script_creates_four_RLS_policies_per_table()
+    {
+        await using var connection = new NpgsqlConnection(postgres.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT count(*)::integer
+            FROM pg_policies
+            WHERE schemaname = 'public'
+              AND tablename = ANY (ARRAY[
+                'expense_unit_conversion','product_expense_requirement','inventory_balance',
+                'inventory_movement','order_inventory_allocation','inventory_transfer',
+                'inventory_transfer_line','inventory_count','inventory_count_line'])
+              AND policyname IN ('tenant_select_policy','tenant_insert_policy','tenant_update_policy','tenant_delete_policy')
+            """, connection);
+
+        Assert.Equal(36, (int)(await command.ExecuteScalarAsync())!);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Inventory_balance_constraints_reject_invalid_reservations()
+    {
+        await using var connection = new NpgsqlConnection(postgres.GetConnectionString());
+        await connection.OpenAsync();
+        await using (var scope = new NpgsqlCommand("SET app.current_tenant_id = '1'", connection))
+            await scope.ExecuteNonQueryAsync();
+        await using var command = new NpgsqlCommand("""
+            UPDATE inventory_balance
+            SET quantity_reserved = quantity_on_hand + 1
+            WHERE tenant_id = 1 AND branch_id = 1 AND expense_id = 1
+            """, connection);
+
+        var error = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
+        Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Inventory_RLS_hides_rows_from_another_tenant_for_a_non_privileged_role()
+    {
+        await using var connection = new NpgsqlConnection(postgres.GetConnectionString());
+        await connection.OpenAsync();
+        await using (var setup = new NpgsqlCommand("""
+            CREATE ROLE inventory_runtime_test NOLOGIN NOSUPERUSER NOBYPASSRLS;
+            GRANT USAGE ON SCHEMA public, app TO inventory_runtime_test;
+            GRANT SELECT ON inventory_balance TO inventory_runtime_test;
+            """, connection))
+            await setup.ExecuteNonQueryAsync();
+
+        await using var command = new NpgsqlCommand("""
+            SET ROLE inventory_runtime_test;
+            WITH scope AS MATERIALIZED (
+                SELECT set_config('app.current_tenant_id', '2', false)
+            )
+            SELECT count(*)::integer FROM inventory_balance CROSS JOIN scope;
+            """, connection);
+        Assert.Equal(0, (int)(await command.ExecuteScalarAsync())!);
+    }
+
     private ApplicationDbContext CreateDb() => new(options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
 
     private static InventoryService Service(ApplicationDbContext db) => new(db, new CurrentUser(), TestTenantContext.Default, new SystemUtcClock(), new TestBranchContext());
@@ -75,5 +139,16 @@ public sealed class InventoryPostgreSqlConcurrencyTests : IAsyncLifetime
     {
         try { await action(); return null; }
         catch (Exception exception) { return exception; }
+    }
+
+    private static string ReadScript(string name)
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            var path = Path.Combine(directory.FullName, "SenorArroz.Infrastructure", "Scripts", name);
+            if (File.Exists(path))
+                return File.ReadAllText(path);
+        }
+        throw new FileNotFoundException($"No se encontrÃ³ el script {name}.");
     }
 }
