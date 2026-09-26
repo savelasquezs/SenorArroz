@@ -12,7 +12,7 @@ public sealed class MetaWebsiteConversionsClientTests
     [Fact]
     public async Task AddToCart_preserves_browser_event_id_for_deduplication()
     {
-        var handler = new RecordingHandler(HttpStatusCode.OK, "{"events_received":1}");
+        var handler = new RecordingHandler(HttpStatusCode.OK, """{"events_received":1}""");
         var client = CreateClient(handler);
 
         await client.SendAsync(new MetaWebsiteFunnelEvent(
@@ -41,7 +41,7 @@ public sealed class MetaWebsiteConversionsClientTests
     [Fact]
     public async Task Unsupported_event_is_rejected_before_network_call()
     {
-        var handler = new RecordingHandler(HttpStatusCode.OK, "{"events_received":1}");
+        var handler = new RecordingHandler(HttpStatusCode.OK, """{"events_received":1}""");
         var client = CreateClient(handler);
 
         await Assert.ThrowsAsync<MetaConversionsException>(() => client.SendAsync(new MetaWebsiteFunnelEvent(
