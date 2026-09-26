@@ -104,6 +104,7 @@ public static class DependencyInjection
         services.AddSingleton<IIntegrationSecretProtector, IntegrationSecretProtector>();
         services.AddHttpClient<IWompiPaymentService, WompiPaymentService>(client => client.Timeout = TimeSpan.FromSeconds(15));
         services.AddHttpClient<MetaConversionsClient>(client => client.Timeout = TimeSpan.FromSeconds(15));
+        services.AddHttpClient<MetaWebsiteConversionsClient>(client => client.Timeout = TimeSpan.FromSeconds(8));
         services.AddHttpClient<IRappiDeliveryProvider, RappiDeliveryProvider>(client => client.Timeout = TimeSpan.FromSeconds(20));
         services.AddScoped<IRappiOrderProcessor, RappiOrderProcessor>();
         services.AddScoped<IExternalDeliveryStatusSyncService, ExternalDeliveryStatusSyncService>();

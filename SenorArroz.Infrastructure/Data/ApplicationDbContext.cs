@@ -95,6 +95,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<WompiPaymentIntegration> WompiPaymentIntegrations { get; set; }
         public virtual DbSet<WompiPaymentAttempt> WompiPaymentAttempts { get; set; }
         public virtual DbSet<StorefrontCheckout> StorefrontCheckouts { get; set; }
+        public virtual DbSet<StorefrontAnalyticsDaily> StorefrontAnalyticsDaily { get; set; }
         public virtual DbSet<WompiProviderTransaction> WompiProviderTransactions { get; set; }
         public virtual DbSet<WompiWebhookEvent> WompiWebhookEvents { get; set; }
         public virtual DbSet<PaymentNotificationOutboxMessage> PaymentNotificationOutboxMessages { get; set; }
@@ -226,6 +227,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new WompiPaymentIntegrationConfiguration());
             modelBuilder.ApplyConfiguration(new WompiPaymentAttemptConfiguration());
             modelBuilder.ApplyConfiguration(new StorefrontCheckoutConfiguration());
+            modelBuilder.ApplyConfiguration(new StorefrontAnalyticsDailyConfiguration());
             modelBuilder.ApplyConfiguration(new WompiProviderTransactionConfiguration());
             modelBuilder.ApplyConfiguration(new WompiWebhookEventConfiguration());
             modelBuilder.ApplyConfiguration(new PaymentNotificationOutboxMessageConfiguration());
