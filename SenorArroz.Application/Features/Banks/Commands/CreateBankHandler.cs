@@ -5,6 +5,7 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Banks.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Application.Features.Banks.Commands;
@@ -45,8 +46,30 @@ public class CreateBankHandler : IRequestHandler<CreateBankCommand, BankDto>
             throw new BusinessException("La sucursal especificada no existe");
         }
 
+        if (request.Type is not BankType.Normal and not BankType.CashVault)
+        {
+            throw new BusinessException("Desde esta ruta solo se pueden crear bancos normales o Caja Mayor Efectivo");
+        }
+
+        var bankName = request.Name.Trim();
+        var imageUrl = request.ImageUrl;
+        var active = request.Active;
+
+        if (request.Type == BankType.CashVault)
+        {
+            if (await _bankRepository.TypeExistsInBranchAsync(BankType.CashVault, branchId, cancellationToken: cancellationToken))
+            {
+                throw new BusinessException("Esta sucursal ya tiene una Caja Mayor Efectivo");
+            }
+
+            // La Caja Mayor tiene identidad fija: no es un banco operativo normal.
+            bankName = "Caja Mayor Efectivo";
+            imageUrl = null;
+            active = true;
+        }
+
         // Check if bank name already exists in this branch
-        if (await _bankRepository.NameExistsInBranchAsync(request.Name, branchId))
+        if (await _bankRepository.NameExistsInBranchAsync(bankName, branchId, cancellationToken: cancellationToken))
         {
             throw new BusinessException("Ya existe un banco con este nombre en la sucursal especificada");
         }
@@ -54,9 +77,9 @@ public class CreateBankHandler : IRequestHandler<CreateBankCommand, BankDto>
         var bank = new Bank
         {
             BranchId = branchId,
-            Name = request.Name,
-            ImageUrl = request.ImageUrl,
-            Active = request.Active,
+            Name = bankName,
+            ImageUrl = imageUrl,
+            Active = active,
             Type = request.Type
         };
 
