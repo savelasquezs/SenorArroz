@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using SenorArroz.API.Security;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
+using SenorArroz.Infrastructure.Integrations;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
@@ -16,7 +17,9 @@ namespace SenorArroz.API.Controllers;
 public sealed class PublicStorefrontAnalyticsController(
     IApplicationDbContext db,
     ITenantExecutionContext tenantExecutionContext,
-    IOptions<StorefrontCustomerAuthOptions> storefrontOptions) : ControllerBase
+    IOptions<StorefrontCustomerAuthOptions> storefrontOptions,
+    MetaWebsiteConversionsClient metaClient,
+    ILogger<PublicStorefrontAnalyticsController> logger) : ControllerBase
 {
     private readonly int _tenantId = storefrontOptions.Value.TenantId > 0
         ? storefrontOptions.Value.TenantId
@@ -50,6 +53,15 @@ public sealed class PublicStorefrontAnalyticsController(
         var outsideCoverage = ReadBool(request.Dimensions, "outside_coverage");
         var coverageState = withinCoverage == true ? (short)1 : outsideCoverage == true ? (short)-1 : (short)0;
         var value = Math.Clamp(ReadDecimal(request.Dimensions, "value"), 0m, 100_000_000m);
+        var metaEventId = Clean(ReadString(request.Dimensions, "meta_event_id"), 160);
+        var metaConsent = string.Equals(
+            Request.Headers["X-Meta-Consent"].FirstOrDefault(),
+            "granted",
+            StringComparison.OrdinalIgnoreCase);
+        var clientUserAgent = metaConsent ? Clean(Request.Headers["X-Storefront-Client-User-Agent"].FirstOrDefault(), 512) : string.Empty;
+        var clientIp = metaConsent ? Clean(Request.Headers["X-Storefront-Client-Ip"].FirstOrDefault(), 64) : string.Empty;
+        var fbp = metaConsent ? Clean(Request.Headers["X-Meta-Fbp"].FirstOrDefault(), 255) : string.Empty;
+        var fbc = metaConsent ? Clean(Request.Headers["X-Meta-Fbc"].FirstOrDefault(), 255) : string.Empty;
 
         using var tenantScope = tenantExecutionContext.BeginTenantScope(_tenantId);
         await db.Database.ExecuteSqlInterpolatedAsync($"""
@@ -75,6 +87,33 @@ public sealed class PublicStorefrontAnalyticsController(
                 value_sum = storefront_analytics_daily.value_sum + EXCLUDED.value_sum,
                 updated_at = NOW();
             """, cancellationToken);
+
+        if (metaConsent
+            && metaClient.IsConfigured
+            && metaClient.Supports(eventName)
+            && !string.IsNullOrWhiteSpace(metaEventId)
+            && !string.IsNullOrWhiteSpace(clientUserAgent))
+        {
+            try
+            {
+                await metaClient.SendAsync(new MetaWebsiteFunnelEvent(
+                    eventName,
+                    metaEventId,
+                    path,
+                    value,
+                    branchId,
+                    fulfillment,
+                    payment,
+                    clientUserAgent,
+                    string.IsNullOrWhiteSpace(clientIp) ? null : clientIp,
+                    string.IsNullOrWhiteSpace(fbp) ? null : fbp,
+                    string.IsNullOrWhiteSpace(fbc) ? null : fbc), cancellationToken);
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "No se pudo enviar {EventName} a Meta CAPI.", eventName);
+            }
+        }
 
         return NoContent();
     }
