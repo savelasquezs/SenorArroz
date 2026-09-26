@@ -150,6 +150,14 @@ public class BankRepository : IBankRepository
             (!excludeId.HasValue || b.Id != excludeId.Value), cancellationToken);
     }
 
+    public async Task<bool> TypeExistsInBranchAsync(BankType type, int branchId, int? excludeId = null, CancellationToken cancellationToken = default)
+    {
+        return await _context.Banks.AnyAsync(b =>
+            b.Type == type &&
+            b.BranchId == branchId &&
+            (!excludeId.HasValue || b.Id != excludeId.Value), cancellationToken);
+    }
+
     public async Task<int> GetTotalAppsAsync(int bankId, CancellationToken cancellationToken = default)
     {
         return await _context.Apps.CountAsync(a => a.BankId == bankId, cancellationToken);
