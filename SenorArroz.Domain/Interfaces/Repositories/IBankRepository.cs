@@ -25,6 +25,7 @@ public interface IBankRepository
     Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
     Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
     Task<bool> NameExistsInBranchAsync(string name, int branchId, int? excludeId = null, CancellationToken cancellationToken = default);
+    Task<bool> TypeExistsInBranchAsync(SenorArroz.Domain.Enums.BankType type, int branchId, int? excludeId = null, CancellationToken cancellationToken = default);
 
     // Statistics
     Task<int> GetTotalAppsAsync(int bankId, CancellationToken cancellationToken = default);

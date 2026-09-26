@@ -30,5 +30,11 @@ public class BankConfiguration : IEntityTypeConfiguration<Bank>
             .WithMany(br => br.Banks)
             .HasForeignKey(b => b.BranchId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // Una sucursal solo puede tener una Caja Mayor Efectivo.
+        builder.HasIndex(b => b.BranchId)
+            .IsUnique()
+            .HasDatabaseName("ux_bank_branch_cash_vault")
+            .HasFilter("type = 1");
     }
 }
