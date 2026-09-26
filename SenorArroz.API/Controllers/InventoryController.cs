@@ -56,6 +56,11 @@ public sealed class InventoryController(IInventoryService inventory, IInventoryN
     public async Task<ActionResult<IReadOnlyList<InventoryCountDto>>> GetCounts([FromQuery] int? branchId, CancellationToken ct)
         => Ok(await inventory.GetCountsAsync(branchContext.RequireBranch(branchId), ct));
 
+    [HttpPut("counts/{countId:int}/draft-lines")]
+    [Authorize(Roles = "Admin,Superadmin")]
+    public async Task<ActionResult<InventoryCountDto>> SaveCountDraft(int countId, [FromBody] IReadOnlyList<InventoryCountDraftLineInput> lines, CancellationToken ct)
+        => Ok(await inventory.SaveCountDraftAsync(countId, lines, ct));
+
     [HttpPost("counts/{countId:int}/confirm")]
     [Authorize(Roles = "Admin,Superadmin")]
     public async Task<ActionResult<InventoryCountDto>> ConfirmCount(int countId, [FromBody] IReadOnlyList<InventoryCountLineInput> lines, CancellationToken ct)
@@ -65,6 +70,11 @@ public sealed class InventoryController(IInventoryService inventory, IInventoryN
         await notifications.NotifyChangedAsync(result.BranchId, "count", ct);
         return Ok(result);
     }
+
+    [HttpPost("catalog/copy-configuration")]
+    [Authorize(Roles = "Admin,Superadmin")]
+    public async Task<ActionResult<CopyInventoryConfigurationResult>> CopyCatalogConfiguration([FromBody] CopyInventoryConfigurationRequest request, CancellationToken ct)
+        => Ok(await inventory.CopyCatalogConfigurationAsync(request.SourceExpenseId, request.TargetExpenseIds, ct));
 
     [HttpGet("transfers")]
     [Authorize(Roles = "Admin,Superadmin")]

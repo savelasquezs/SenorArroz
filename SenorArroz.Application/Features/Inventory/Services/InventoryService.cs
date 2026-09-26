@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Inventory.DTOs;
+using SenorArroz.Application.Features.Inventory.Helpers;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
@@ -309,6 +310,37 @@ public sealed class InventoryService(
         return result;
     }
 
+    public Task<InventoryCountDto> SaveCountDraftAsync(int countId, IReadOnlyCollection<InventoryCountDraftLineInput> lines, CancellationToken ct)
+        => ExecuteMutationAsync(() => SaveCountDraftCoreAsync(countId, lines, ct), ct);
+
+    private async Task<InventoryCountDto> SaveCountDraftCoreAsync(int countId, IReadOnlyCollection<InventoryCountDraftLineInput> lines, CancellationToken ct)
+    {
+        if (lines.Count == 0 || lines.Select(x => x.ExpenseId).Distinct().Count() != lines.Count)
+            throw new BusinessException("El borrador contiene líneas inválidas");
+        if (lines.Any(x => x.CountedQuantity < 0))
+            throw new BusinessException("La cantidad física no puede ser negativa");
+
+        var count = await db.InventoryCounts.Include(x => x.Lines)
+            .SingleOrDefaultAsync(x => x.Id == countId, ct)
+            ?? throw new NotFoundException("Conteo no encontrado");
+        branchContext.EnsureAccess(count.BranchId);
+        if (count.Status != InventoryCountStatus.Draft)
+            throw new BusinessException("Solo se puede modificar un conteo en borrador");
+
+        var draftByExpense = lines.ToDictionary(x => x.ExpenseId);
+        if (draftByExpense.Keys.Except(count.Lines.Select(x => x.ExpenseId)).Any())
+            throw new BusinessException("El borrador contiene insumos que no pertenecen al conteo");
+
+        foreach (var line in count.Lines.Where(x => draftByExpense.ContainsKey(x.ExpenseId)))
+        {
+            line.CountedQuantity = draftByExpense[line.ExpenseId].CountedQuantity;
+            line.Difference = null;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return await MapCountAsync(countId, ct);
+    }
+
     public Task<InventoryCountDto> ConfirmCountAsync(int countId, IReadOnlyCollection<InventoryCountLineInput> lines, string operationKey, CancellationToken ct)
         => ExecuteMutationAsync(() => ConfirmCountCoreAsync(countId, lines, operationKey, ct), ct);
 
@@ -340,6 +372,42 @@ public sealed class InventoryService(
         }
         count.Status = InventoryCountStatus.Confirmed; count.ConfirmedById = currentUser.Id; count.ConfirmedAt = clock.UtcNow;
         await db.SaveChangesAsync(ct); return await MapCountAsync(countId, ct);
+    }
+
+    public Task<CopyInventoryConfigurationResult> CopyCatalogConfigurationAsync(int sourceExpenseId, IReadOnlyCollection<int> targetExpenseIds, CancellationToken ct)
+        => ExecuteMutationAsync(() => CopyCatalogConfigurationCoreAsync(sourceExpenseId, targetExpenseIds, ct), ct);
+
+    private async Task<CopyInventoryConfigurationResult> CopyCatalogConfigurationCoreAsync(int sourceExpenseId, IReadOnlyCollection<int> targetExpenseIds, CancellationToken ct)
+    {
+        if (!Roles.IsAdminOrSuperadmin(currentUser.Role))
+            throw new BusinessException("No tienes permisos para modificar la configuración de inventario");
+
+        var targetIds = targetExpenseIds.Where(x => x != sourceExpenseId).Distinct().ToArray();
+        if (sourceExpenseId <= 0 || targetIds.Length == 0 || targetIds.Length != targetExpenseIds.Count)
+            throw new BusinessException("Debes seleccionar un origen y destinos distintos sin duplicados");
+
+        var source = await db.Expenses.Include(x => x.InventoryConversions)
+            .SingleOrDefaultAsync(x => x.Id == sourceExpenseId, ct)
+            ?? throw new NotFoundException("Insumo de origen no encontrado");
+        var targets = await db.Expenses.Where(x => targetIds.Contains(x.Id)).OrderBy(x => x.Id).ToArrayAsync(ct);
+        if (targets.Length != targetIds.Length)
+            throw new BusinessException("Uno o más insumos de destino no pertenecen al restaurante actual");
+
+        var conversions = source.InventoryConversions
+            .Select(x => new InventoryConversionInput(x.Name, x.BaseQuantity, x.Active))
+            .ToArray();
+        InventoryCatalogHelper.ValidateConversions(source.TracksInventory, source.InventoryActive, conversions);
+
+        foreach (var target in targets)
+        {
+            target.TracksInventory = source.TracksInventory;
+            target.InventoryActive = source.InventoryActive;
+            target.InventoryBaseUnit = source.InventoryBaseUnit;
+            InventoryCatalogHelper.ReplaceConversions(target.Id, conversions, db);
+        }
+
+        await db.SaveChangesAsync(ct);
+        return new CopyInventoryConfigurationResult(sourceExpenseId, targets.Select(x => x.Id).ToArray());
     }
 
     public Task<InventoryTransferDto> CreateTransferAsync(InventoryTransferInput input, string operationKey, CancellationToken ct)

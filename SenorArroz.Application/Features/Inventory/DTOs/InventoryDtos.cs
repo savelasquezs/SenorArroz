@@ -8,6 +8,9 @@ public sealed record InventoryMovementDto(int Id, int ExpenseId, string ExpenseN
 public sealed record InventoryRequirementInput(int ExpenseId, decimal BaseQuantity);
 public sealed record InventoryConversionInput(string Name, decimal BaseQuantity, bool Active = true);
 public sealed record InventoryCountLineInput(int ExpenseId, decimal CountedQuantity);
+public sealed record InventoryCountDraftLineInput(int ExpenseId, decimal? CountedQuantity);
+public sealed record CopyInventoryConfigurationRequest(int SourceExpenseId, IReadOnlyList<int> TargetExpenseIds);
+public sealed record CopyInventoryConfigurationResult(int SourceExpenseId, IReadOnlyList<int> UpdatedExpenseIds);
 public sealed record InventoryTransferLineInput(int ExpenseId, decimal Quantity);
 public sealed record ReceiveInventoryTransferLineInput(int ExpenseId, decimal ReceivedQuantity);
 public sealed record InventoryTransferInput(int SourceBranchId, int DestinationBranchId, IReadOnlyList<InventoryTransferLineInput> Lines);

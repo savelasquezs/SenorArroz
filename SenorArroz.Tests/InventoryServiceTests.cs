@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
+using SenorArroz.Application.Features.Inventory.DTOs;
 using SenorArroz.Application.Features.Inventory.Services;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -11,10 +12,10 @@ namespace SenorArroz.Tests;
 
 public sealed class InventoryServiceTests
 {
-    private sealed class CurrentUser : ICurrentUser
+    private sealed class CurrentUser(string role = "Admin") : ICurrentUser
     {
         public int Id => 99;
-        public string Role => "Admin";
+        public string Role => role;
         public int BranchId => 1;
         public bool IsAuthenticated => true;
     }
@@ -24,9 +25,9 @@ public sealed class InventoryServiceTests
         currentTenant: TestTenantContext.Default,
         tenantExecutionContext: TestTenantContext.Default);
 
-    private static InventoryService Service(ApplicationDbContext db) => new(
+    private static InventoryService Service(ApplicationDbContext db, string role = "Admin") => new(
         db,
-        new CurrentUser(),
+        new CurrentUser(role),
         TestTenantContext.Default,
         new SystemUtcClock(),
         new TestBranchContext());
@@ -195,5 +196,176 @@ public sealed class InventoryServiceTests
         await db.SaveChangesAsync();
 
         Assert.False((await db.ExpenseUnitConversions.SingleAsync()).Active);
+    }
+
+    [Fact]
+    public async Task CopyingCatalogConfiguration_UpdatesOnlyInventoryFieldsAndDeactivatesOldConversions()
+    {
+        await using var db = Context(nameof(CopyingCatalogConfiguration_UpdatesOnlyInventoryFieldsAndDeactivatesOldConversions));
+        var source = new Expense
+        {
+            Id = 1,
+            Name = "Coca Cola 1.5 L",
+            CategoryId = 10,
+            Unit = ExpenseUnit.Package,
+            TracksInventory = true,
+            InventoryActive = true,
+            InventoryBaseUnit = InventoryBaseUnit.Unit
+        };
+        var target = new Expense
+        {
+            Id = 2,
+            Name = "Coca Cola personal",
+            CategoryId = 20,
+            Unit = ExpenseUnit.Unit,
+            TracksInventory = false,
+            InventoryActive = false,
+            InventoryBaseUnit = InventoryBaseUnit.Milliliter
+        };
+        db.AddRange(
+            source,
+            target,
+            new ExpenseUnitConversion { ExpenseId = 1, Name = "Caja x12", BaseQuantity = 12, Active = true },
+            new ExpenseUnitConversion { ExpenseId = 2, Name = "Canasta", BaseQuantity = 24, Active = true });
+        await db.SaveChangesAsync();
+
+        var result = await Service(db).CopyCatalogConfigurationAsync(1, [2], default);
+
+        db.ChangeTracker.Clear();
+        var updated = await db.Expenses.SingleAsync(x => x.Id == 2);
+        var conversions = await db.ExpenseUnitConversions.Where(x => x.ExpenseId == 2).OrderBy(x => x.Name).ToListAsync();
+        Assert.Equal([2], result.UpdatedExpenseIds);
+        Assert.Equal("Coca Cola personal", updated.Name);
+        Assert.Equal(20, updated.CategoryId);
+        Assert.Equal(ExpenseUnit.Unit, updated.Unit);
+        Assert.True(updated.TracksInventory);
+        Assert.True(updated.InventoryActive);
+        Assert.Equal(InventoryBaseUnit.Unit, updated.InventoryBaseUnit);
+        Assert.Contains(conversions, x => x.Name == "Caja x12" && x.BaseQuantity == 12 && x.Active);
+        Assert.Contains(conversions, x => x.Name == "Canasta" && !x.Active);
+    }
+
+    [Fact]
+    public async Task CopyingCatalogConfiguration_WithInvalidDestination_DoesNotModifyValidDestinations()
+    {
+        await using var db = Context(nameof(CopyingCatalogConfiguration_WithInvalidDestination_DoesNotModifyValidDestinations));
+        db.AddRange(
+            new Expense { Id = 1, Name = "Origen", TracksInventory = true, InventoryActive = true, InventoryBaseUnit = InventoryBaseUnit.Unit },
+            new Expense { Id = 2, Name = "Destino", TracksInventory = false, InventoryActive = false, InventoryBaseUnit = InventoryBaseUnit.Gram },
+            new ExpenseUnitConversion { ExpenseId = 1, Name = "Caja x12", BaseQuantity = 12, Active = true });
+        await db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<BusinessException>(() => Service(db).CopyCatalogConfigurationAsync(1, [2, 999], default));
+
+        db.ChangeTracker.Clear();
+        var target = await db.Expenses.SingleAsync(x => x.Id == 2);
+        Assert.False(target.TracksInventory);
+        Assert.False(target.InventoryActive);
+        Assert.Equal(InventoryBaseUnit.Gram, target.InventoryBaseUnit);
+        Assert.Empty(await db.ExpenseUnitConversions.Where(x => x.ExpenseId == 2).ToListAsync());
+    }
+
+    [Fact]
+    public async Task CopyingCatalogConfiguration_RejectsNonAdministrativeUsers()
+    {
+        await using var db = Context(nameof(CopyingCatalogConfiguration_RejectsNonAdministrativeUsers));
+        db.AddRange(
+            new Expense { Id = 1, Name = "Origen", TracksInventory = true, InventoryActive = true },
+            new Expense { Id = 2, Name = "Destino" },
+            new ExpenseUnitConversion { ExpenseId = 1, Name = "Unidad", BaseQuantity = 1, Active = true });
+        await db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<BusinessException>(() => Service(db, "Cashier").CopyCatalogConfigurationAsync(1, [2], default));
+    }
+
+    [Fact]
+    public async Task CopyingCatalogConfiguration_CannotTargetAnotherTenant()
+    {
+        await using var db = Context(nameof(CopyingCatalogConfiguration_CannotTargetAnotherTenant));
+        db.AddRange(
+            new Expense { Id = 1, Name = "Origen", TracksInventory = true, InventoryActive = true },
+            new ExpenseUnitConversion { ExpenseId = 1, Name = "Unidad", BaseQuantity = 1, Active = true });
+        await db.SaveChangesAsync();
+        using (TestTenantContext.Default.BeginSystemScope())
+        {
+            db.Expenses.Add(new Expense { Id = 2, TenantId = 2, Name = "Destino ajeno", InventoryBaseUnit = InventoryBaseUnit.Gram });
+            await db.SaveChangesAsync();
+        }
+        db.ChangeTracker.Clear();
+
+        await Assert.ThrowsAsync<BusinessException>(() => Service(db).CopyCatalogConfigurationAsync(1, [2], default));
+
+        using (TestTenantContext.Default.BeginSystemScope())
+        {
+            var foreignTarget = await db.Expenses.SingleAsync(x => x.Id == 2);
+            Assert.False(foreignTarget.TracksInventory);
+            Assert.False(foreignTarget.InventoryActive);
+            Assert.Equal(InventoryBaseUnit.Gram, foreignTarget.InventoryBaseUnit);
+        }
+    }
+
+    [Fact]
+    public async Task SavingCountDraft_UpdatesOnlySubmittedLinesAndKeepsCountOpen()
+    {
+        await using var db = Context(nameof(SavingCountDraft_UpdatesOnlySubmittedLinesAndKeepsCountOpen));
+        db.AddRange(
+            new Expense { Id = 1, Name = "Arroz", TracksInventory = true, InventoryActive = true },
+            new Expense { Id = 2, Name = "Aceite", TracksInventory = true, InventoryActive = true });
+        var count = new InventoryCount
+        {
+            Id = 1,
+            BranchId = 1,
+            CreatedById = 99,
+            Lines =
+            [
+                new InventoryCountLine { ExpenseId = 1, ExpectedQuantity = 10 },
+                new InventoryCountLine { ExpenseId = 2, ExpectedQuantity = 5 }
+            ]
+        };
+        db.InventoryCounts.Add(count);
+        await db.SaveChangesAsync();
+
+        var result = await Service(db).SaveCountDraftAsync(1, [new InventoryCountDraftLineInput(1, 8)], default);
+
+        Assert.Equal(InventoryCountStatus.Draft, result.Status);
+        Assert.Equal(8, result.Lines.Single(x => x.ExpenseId == 1).CountedQuantity);
+        Assert.Null(result.Lines.Single(x => x.ExpenseId == 2).CountedQuantity);
+        Assert.All(result.Lines, x => Assert.Null(x.Difference));
+    }
+
+    [Fact]
+    public async Task SavingCountDraft_RejectsLinesOutsideTheCount()
+    {
+        await using var db = Context(nameof(SavingCountDraft_RejectsLinesOutsideTheCount));
+        db.AddRange(
+            new Expense { Id = 1, Name = "Arroz", TracksInventory = true, InventoryActive = true },
+            new InventoryCount
+            {
+                Id = 1,
+                BranchId = 1,
+                CreatedById = 99,
+                Lines = [new InventoryCountLine { ExpenseId = 1, ExpectedQuantity = 10 }]
+            });
+        await db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<BusinessException>(() => Service(db).SaveCountDraftAsync(1, [new InventoryCountDraftLineInput(999, 2)], default));
+    }
+
+    [Fact]
+    public async Task SavingCountDraft_RejectsAnotherBranch()
+    {
+        await using var db = Context(nameof(SavingCountDraft_RejectsAnotherBranch));
+        db.AddRange(
+            new Expense { Id = 1, Name = "Arroz", TracksInventory = true, InventoryActive = true },
+            new InventoryCount
+            {
+                Id = 1,
+                BranchId = 2,
+                CreatedById = 99,
+                Lines = [new InventoryCountLine { ExpenseId = 1, ExpectedQuantity = 10 }]
+            });
+        await db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<BranchScopeMismatchException>(() => Service(db).SaveCountDraftAsync(1, [new InventoryCountDraftLineInput(1, 8)], default));
     }
 }

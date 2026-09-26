@@ -23,6 +23,8 @@ Este documento resume reglas funcionales que Codex debe respetar antes de modifi
 - Cada pedido conserva su snapshot de receta. Cambiar una receta no modifica pedidos históricos.
 - Un producto sólo activa inventario después de guardar una receta válida y confirmar conteo de apertura de todos sus insumos.
 - Los conteos físicos ajustan mediante ledger; no sobrescriben saldos sin movimiento. En insumos estrictos nunca pueden dejar menos existencia que la reservada.
+- Un conteo abierto puede guardar cantidades físicas parciales en servidor; el borrador no genera movimientos ni diferencias definitivas y solo puede modificarse dentro de su sucursal y tenant.
+- La configuración de inventario puede copiarse entre insumos del mismo tenant en una sola transacción. Solo replica control de inventario, estado activo, unidad base y presentaciones; conserva nombre, categoría, unidad contable e imputaciones de cada destino.
 - Los movimientos son inmutables e idempotentes. Compras corregidas o eliminadas generan reversión, no edición del ledger.
 - Las transferencias siguen únicamente `Draft -> Dispatched -> Received/ReceivedWithDifference`; cualquier diferencia exige motivo y nunca cruza tenants.
 - Productos sin inventario activo continúan con `Product.Stock`; los arroces legacy sin stock permanecen ilimitados.

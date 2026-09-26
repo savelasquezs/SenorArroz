@@ -19,7 +19,9 @@ public interface IInventoryService
     Task AdjustAsync(int branchId, InventoryAdjustmentInput input, string operationKey, CancellationToken cancellationToken);
     Task<InventoryCountDto> StartCountAsync(int branchId, CancellationToken cancellationToken);
     Task<IReadOnlyList<InventoryCountDto>> GetCountsAsync(int branchId, CancellationToken cancellationToken);
+    Task<InventoryCountDto> SaveCountDraftAsync(int countId, IReadOnlyCollection<InventoryCountDraftLineInput> lines, CancellationToken cancellationToken);
     Task<InventoryCountDto> ConfirmCountAsync(int countId, IReadOnlyCollection<InventoryCountLineInput> lines, string operationKey, CancellationToken cancellationToken);
+    Task<CopyInventoryConfigurationResult> CopyCatalogConfigurationAsync(int sourceExpenseId, IReadOnlyCollection<int> targetExpenseIds, CancellationToken cancellationToken);
     Task<InventoryTransferDto> CreateTransferAsync(InventoryTransferInput input, string operationKey, CancellationToken cancellationToken);
     Task<InventoryTransferDto> DispatchTransferAsync(int transferId, string operationKey, CancellationToken cancellationToken);
     Task<InventoryTransferDto> ReceiveTransferAsync(int transferId, ReceiveInventoryTransferInput input, string operationKey, CancellationToken cancellationToken);
