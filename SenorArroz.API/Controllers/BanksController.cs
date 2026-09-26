@@ -173,7 +173,8 @@ public class BanksController : ControllerBase
             BranchId = createBankDto.BranchId,
             Name = createBankDto.Name,
             ImageUrl = createBankDto.ImageUrl,
-            Active = createBankDto.Active
+            Active = createBankDto.Active,
+            Type = createBankDto.Type
         };
 
         var result = await _mediator.Send(command);
