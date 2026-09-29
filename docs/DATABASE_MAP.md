@@ -4,7 +4,7 @@ Este mapa existe para que Codex ubique rápido las entidades y entienda cómo pr
 
 ## Estado de aislamiento v2
 
-- Inventario EF: 103 entidades; `Tenant` global y 102 tenant-owned.
+- Inventario EF: 105 entidades; `Tenant` global y 104 tenant-owned.
 - Contrato común: `ITenantOwned` y `TenantOwnedEntity`.
 - EF aplica centralmente `tenant_id` obligatorio, índice, concurrency token y query filter.
 - `SaveChanges` asigna el tenant actual en altas sin tenant y rechaza altas, cambios o borrados cross-tenant.
@@ -122,6 +122,7 @@ CancelledAt
 | BranchBusinessHour | Sí | Desde `Branch.TenantId` |
 | BranchPrintSettings | Sí | Desde `Branch.TenantId` |
 | BranchInformalLoan | Sí | Desde `Branch.TenantId` |
+| BranchInformalLoanPayment | Sí | Desde `BranchInformalLoan.TenantId` |
 | BranchInformalLoanExemptOrder | Sí | Desde Branch/Order según relación |
 | User | Sí | Desde `Branch.TenantId` si tiene sucursal; si no, tenant inicial |
 | RefreshToken | Sí | Desde `User.TenantId` |
@@ -144,6 +145,7 @@ Estado del Bloque 1:
 Notas:
 
 - `Branch` debe ser la primera tabla del negocio en recibir `TenantId`.
+- `BranchInformalLoanPayment` conserva cada abono con saldo anterior/posterior, actor y vínculo opcional a `ExpenseHeader`; el historial no se sobrescribe al reducir el saldo del préstamo.
 - `Branch` contiene la configuración operativa del seguimiento de domiciliarios: hora local de cierre, frecuencias, permanencias, tolerancia geográfica y retenciones.
 - `User` debe quedar asociado a tenant aunque sea superadmin. Si hay superadmin global, documentar excepción.
 - `User.ActiveSessionId` contiene la sesión exclusiva vigente de un domiciliario.

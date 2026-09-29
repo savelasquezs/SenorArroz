@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ExpenseHeaders.DTOs;
@@ -77,6 +78,9 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             throw new NotFoundException($"Gastos con IDs {string.Join(", ", missingIds)} no encontrados");
         }
 
+        if (request.ExpenseHeader.InformalLoanId.HasValue && expenses.Any(x => x.TracksInventory))
+            throw new BusinessException("Un abono de préstamo no puede crear una compra de inventario");
+
         var subtotal = ExpenseInvoiceTotalsHelper.SubtotalFromCreateDetails(request.ExpenseHeader.ExpenseDetails);
         var taxableSubtotal = ExpenseInvoiceTotalsHelper.TaxableSubtotalFromCreateDetails(
             request.ExpenseHeader.ExpenseDetails,
@@ -86,6 +90,9 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
 
         if (request.ExpenseHeader.ExpenseBankPayments != null && request.ExpenseHeader.ExpenseBankPayments.Any())
         {
+            if (request.ExpenseHeader.InformalLoanId.HasValue)
+                throw new BusinessException("El gasto usado como abono de préstamo debe registrarse sin pagos bancarios");
+
             var bankIds = request.ExpenseHeader.ExpenseBankPayments.Select(ebp => ebp.BankId).Distinct().ToList();
             var banks = await _context.Banks
                 .Where(b => bankIds.Contains(b.Id) && b.BranchId == branchId)
@@ -140,12 +147,42 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
             }).ToList() ?? new List<ExpenseBankPayment>()
         };
 
-        await using var transaction = _context.Database.IsRelational() ? await _context.Database.BeginTransactionAsync(cancellationToken) : null;
+        await using var transaction = _context.Database.IsRelational()
+            ? request.ExpenseHeader.InformalLoanId.HasValue
+                ? await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+                : await _context.Database.BeginTransactionAsync(cancellationToken)
+            : null;
         try
         {
+        BranchInformalLoan? informalLoan = null;
+        if (request.ExpenseHeader.InformalLoanId.HasValue)
+        {
+            informalLoan = await _context.BranchInformalLoans.SingleOrDefaultAsync(
+                x => x.Id == request.ExpenseHeader.InformalLoanId.Value && x.BranchId == branchId,
+                cancellationToken);
+            if (informalLoan is null)
+                throw new BusinessException("Préstamo no encontrado");
+        }
+
         var created = await _expenseHeaderRepository.CreateAsync(expenseHeader, cancellationToken);
         if (_inventory is not null)
             await _inventory.RecordPurchaseAsync(expenseHeader, $"expense-header:{operationKey}:create", cancellationToken);
+
+        if (informalLoan is not null)
+        {
+            var paymentNote = string.IsNullOrWhiteSpace(expenseHeader.Notes)
+                ? $"Gasto #{expenseHeader.Id}"
+                : $"Gasto #{expenseHeader.Id}: {expenseHeader.Notes}";
+            BranchInformalLoanPaymentHelper.Apply(
+                _context,
+                _currentUser,
+                _clock,
+                informalLoan,
+                grossTotal,
+                BranchInformalLoanPaymentKind.Expense,
+                paymentNote.Length > 500 ? paymentNote[..500] : paymentNote,
+                expenseHeader.Id);
+        }
 
         var supplierExpenseDetails = expenseHeader.ExpenseDetails
             .Select(ed => (ed.ExpenseId, UnitAmount: (decimal)ed.Amount, Quantity: (int)Math.Ceiling(ed.Quantity)))

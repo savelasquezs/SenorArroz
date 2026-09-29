@@ -56,6 +56,12 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
             throw new NotFoundException($"Gasto con ID {request.Id} no encontrado");
         }
         _branchContext.EnsureAccess(expenseHeader.BranchId);
+        if (await _context.BranchInformalLoanPayments
+                .AsNoTracking()
+                .AnyAsync(x => x.ExpenseHeaderId == expenseHeader.Id, cancellationToken))
+        {
+            throw new BusinessException("Los gastos vinculados a abonos de préstamos informales no se pueden editar");
+        }
         var applyOperationKey = $"expense-header:{expenseHeader.Id}:update:{operationKey}:apply";
         if (await _context.InventoryMovements.AsNoTracking().AnyAsync(x => x.OperationKey == applyOperationKey, cancellationToken))
         {

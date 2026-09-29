@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using SenorArroz.Domain.Entities;
 
 namespace SenorArroz.Application.Features.CashRegister.DTOs;
 
@@ -16,6 +17,37 @@ public class BranchInformalLoanDto
     public int? DeactivatedById { get; set; }
     public string? DeactivatedByName { get; set; }
     public string? DeactivationNotes { get; set; }
+    public decimal TotalPaid { get; set; }
+    public int PaymentsCount { get; set; }
+}
+
+public class BranchInformalLoanPaymentDto
+{
+    public int Id { get; set; }
+    public BranchInformalLoanPaymentKind Kind { get; set; }
+    public decimal Amount { get; set; }
+    public decimal BalanceBefore { get; set; }
+    public decimal BalanceAfter { get; set; }
+    public string? Notes { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public int CreatedById { get; set; }
+    public string CreatedByName { get; set; } = string.Empty;
+    public int? ExpenseHeaderId { get; set; }
+}
+
+public class BranchInformalLoanHistoryDto : BranchInformalLoanDto
+{
+    public decimal InitialAmount { get; set; }
+    public List<BranchInformalLoanPaymentDto> Payments { get; set; } = new();
+}
+
+public class CreateBranchInformalLoanPaymentDto
+{
+    [Range(typeof(decimal), "0.01", "9999999999")]
+    public decimal Amount { get; set; }
+
+    [MaxLength(500)]
+    public string? Notes { get; set; }
 }
 
 public class CreateBranchInformalLoanDto

@@ -6,7 +6,7 @@ DECLARE
     tenant_tables text[] := ARRAY[
         'address','address_branch','app','app_payment','bank','bank_payment','bank_transfer',
         'branch','branch_ai_setting','branch_business_hour','branch_informal_loan',
-        'branch_informal_loan_exempt_order','branch_print_settings','business_document',
+        'branch_informal_loan_exempt_order','branch_informal_loan_payment','branch_print_settings','business_document',
         'cash_closure_bank_reconciliation','cash_closure_informal_loan','cash_register_closure',
         'cash_vault_movement','commercial_profile','customer','customer_merge_history','customer_phone',
         'daily_audit_dispatch','daily_promotion','daily_promotion_product','delivery_app_connection',

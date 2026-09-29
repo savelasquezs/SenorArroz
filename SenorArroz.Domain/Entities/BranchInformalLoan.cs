@@ -23,4 +23,27 @@ public class BranchInformalLoan : TenantOwnedEntity
     public virtual User? DeactivatedBy { get; set; }
 
     public virtual ICollection<BranchInformalLoanExemptOrder> ExemptOrders { get; set; } = new List<BranchInformalLoanExemptOrder>();
+    public virtual ICollection<BranchInformalLoanPayment> Payments { get; set; } = new List<BranchInformalLoanPayment>();
+}
+
+public enum BranchInformalLoanPaymentKind
+{
+    Cash = 0,
+    Expense = 1
+}
+
+public class BranchInformalLoanPayment : TenantOwnedEntity
+{
+    public int LoanId { get; set; }
+    public BranchInformalLoanPaymentKind Kind { get; set; }
+    public decimal Amount { get; set; }
+    public decimal BalanceBefore { get; set; }
+    public decimal BalanceAfter { get; set; }
+    public string? Notes { get; set; }
+    public int CreatedById { get; set; }
+    public int? ExpenseHeaderId { get; set; }
+
+    public virtual BranchInformalLoan Loan { get; set; } = null!;
+    public virtual User CreatedBy { get; set; } = null!;
+    public virtual ExpenseHeader? ExpenseHeader { get; set; }
 }

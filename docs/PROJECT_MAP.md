@@ -148,6 +148,7 @@ Buscar primero:
 - `Branch`
 - `BranchPrintSettings`
 - `BranchInformalLoan`
+- `BranchInformalLoanPayment`
 - `BranchInformalLoanExemptOrder`
 
 La sucursal hoy es el aislamiento operativo principal. En la migración SaaS, la sucursal debe quedar debajo de un tenant.

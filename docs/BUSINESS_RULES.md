@@ -2,7 +2,7 @@
 
 ## Fundación multitenant terminada
 
-- Las 102 entidades operativas tienen filtro EF, write guard, `tenant_id NOT NULL`, FK y RLS forzado.
+- Las 104 entidades operativas tienen filtro EF, write guard, `tenant_id NOT NULL`, FK y RLS forzado.
 - PostgreSQL recibe `app.current_tenant_id` y `app.system_scope` en cada conexión/comando; el pool limpia el contexto y prohíbe `No Reset On Close`.
 - El rol runtime de producción debe ser `NOSUPERUSER NOBYPASSRLS`; el backend aborta el arranque cuando el rol o la cobertura RLS son inseguros.
 - SignalR, almacenamiento y agente de impresión usan namespaces de tenant. El token del agente resuelve su tenant persistido antes de procesar.
@@ -242,6 +242,9 @@ Reglas:
 - Los cierres de caja pertenecen a una sucursal y tenant.
 - Conciliaciones bancarias deben respetar tenant.
 - Préstamos informales por sucursal deben respetar tenant.
+- Cada abono a un préstamo informal conserva un historial inmutable con saldo anterior y posterior. Un abono en efectivo solo reduce el saldo del préstamo; no crea movimientos ni cambia las fórmulas del cuadre.
+- Un abono convertido en gasto crea el `ExpenseHeader` y el abono dentro de la misma transacción, sin pago bancario ni compra de inventario. El total del gasto no puede superar el saldo y el préstamo se da de baja automáticamente al llegar a cero.
+- Solo Admin y Superadmin consultan el historial completo; el acceso mantiene el filtro de sucursal para Admin y la sucursal efectiva para Superadmin.
 - Movimientos de caja/bóveda deben respetar tenant.
 - El cierre, el despacho de auditoría diaria y el mensaje de correo en la cola se confirman atómicamente. Un fallo previo al encolado revierte el cierre para que un reintento no cree registros duplicados ni recorte el período auditado.
 

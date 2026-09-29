@@ -5,6 +5,7 @@ namespace SenorArroz.Application.Features.ExpenseHeaders.DTOs;
 public class CreateExpenseHeaderDto
 {
     public string? IdempotencyKey { get; set; }
+    public int? InformalLoanId { get; set; }
     public int SupplierId { get; set; }
 
     /// <summary>Domiciliario al que se imputa el gasto (liquidación).</summary>

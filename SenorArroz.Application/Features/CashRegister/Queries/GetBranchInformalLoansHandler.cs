@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
+using SenorArroz.Domain.Exceptions;
 
 namespace SenorArroz.Application.Features.CashRegister.Queries;
 
@@ -20,6 +21,9 @@ public class GetBranchInformalLoansHandler : IRequestHandler<GetBranchInformalLo
     {
         int branchId = request.BranchId ?? _currentUser.BranchId;
         var scope = (request.Scope ?? "active").Trim().ToLowerInvariant();
+
+        if (scope != "active" && !Roles.IsAdminOrSuperadmin(_currentUser.Role))
+            throw new BusinessException("Solo administradores pueden consultar préstamos inactivos");
 
         var query = _context.BranchInformalLoans
             .AsNoTracking()
@@ -47,7 +51,9 @@ public class GetBranchInformalLoansHandler : IRequestHandler<GetBranchInformalLo
                 DeactivatedAt = l.DeactivatedAt,
                 DeactivatedById = l.DeactivatedById,
                 DeactivatedByName = l.DeactivatedBy != null ? l.DeactivatedBy.Name : null,
-                DeactivationNotes = l.DeactivationNotes
+                DeactivationNotes = l.DeactivationNotes,
+                TotalPaid = l.Payments.Sum(p => p.Amount),
+                PaymentsCount = l.Payments.Count
             })
             .ToListAsync(cancellationToken);
     }

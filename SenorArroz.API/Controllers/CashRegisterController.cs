@@ -108,6 +108,22 @@ public class CashRegisterController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("informal-loans/history")]
+    [Authorize(Roles = "Admin,Superadmin")]
+    public async Task<ActionResult<PagedResult<BranchInformalLoanHistoryDto>>> GetInformalLoanHistory(
+        [FromQuery] int? branchId = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
+    {
+        var result = await _mediator.Send(new GetBranchInformalLoanHistoryQuery
+        {
+            BranchId = _branchContext.RequireBranch(branchId),
+            Page = page,
+            PageSize = pageSize
+        });
+        return Ok(result);
+    }
+
     /// <summary>
     /// Registra un préstamo informal (sin cerrar caja).
     /// </summary>
@@ -125,6 +141,21 @@ public class CashRegisterController : ControllerBase
         {
             return BadRequest(new { message = ex.Message });
         }
+    }
+
+    [HttpPost("informal-loans/{id:int}/payments")]
+    public async Task<ActionResult<BranchInformalLoanPaymentDto>> CreateInformalLoanPayment(
+        int id,
+        [FromBody] CreateBranchInformalLoanPaymentDto dto,
+        [FromQuery] int? branchId = null)
+    {
+        var result = await _mediator.Send(new CreateBranchInformalLoanPaymentCommand
+        {
+            LoanId = id,
+            BranchId = _branchContext.RequireBranch(branchId),
+            Dto = dto
+        });
+        return StatusCode(StatusCodes.Status201Created, result);
     }
 
     /// <summary>

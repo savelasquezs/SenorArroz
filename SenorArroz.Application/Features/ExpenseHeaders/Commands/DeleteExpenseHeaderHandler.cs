@@ -37,6 +37,12 @@ public class DeleteExpenseHeaderHandler : IRequestHandler<DeleteExpenseHeaderCom
             throw new NotFoundException($"Gasto con ID {request.Id} no encontrado");
         }
         _branchContext.EnsureAccess(expenseHeader.BranchId);
+        if (await _db.BranchInformalLoanPayments
+                .AsNoTracking()
+                .AnyAsync(x => x.ExpenseHeaderId == expenseHeader.Id, cancellationToken))
+        {
+            throw new BusinessException("Los gastos vinculados a abonos de préstamos informales no se pueden eliminar");
+        }
 
         if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
         {
