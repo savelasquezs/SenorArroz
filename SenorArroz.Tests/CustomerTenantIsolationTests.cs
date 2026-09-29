@@ -1,5 +1,9 @@
+using AutoMapper;
 using Microsoft.EntityFrameworkCore;
+using Moq;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.Customers.Commands;
+using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Repositories;
@@ -110,6 +114,110 @@ public sealed class CustomerTenantIsolationTests
         Assert.Equal(serviceBranch.Id, service.BranchId);
         Assert.Equal(neighborhood.Id, service.NeighborhoodId);
         Assert.Equal(neighborhood.DeliveryFee, service.DeliveryFee);
+    }
+
+    [Fact]
+    public async Task Reusing_customer_by_phone_adds_submitted_cross_branch_address()
+    {
+        await using var db = CreateDb();
+        var originBranch = new Branch { Id = 1, TenantId = 1, Name = "Origin", Address = "A", Phone1 = "1" };
+        var serviceBranch = new Branch { Id = 2, TenantId = 1, Name = "Service", Address = "B", Phone1 = "2" };
+        var customer = Customer(10, 1, originBranch, "Customer", "3001111111");
+        var neighborhood = new Neighborhood
+        {
+            Id = 20,
+            TenantId = 1,
+            BranchId = serviceBranch.Id,
+            Branch = serviceBranch,
+            Name = "Target",
+            DeliveryFee = 6500,
+            Active = true
+        };
+        db.AddRange(originBranch, serviceBranch, customer, neighborhood);
+        await db.SaveChangesAsync();
+
+        var mapper = new Mock<IMapper>();
+        mapper.Setup(value => value.Map<CustomerDto>(It.IsAny<object>())).Returns(new CustomerDto());
+        var handler = new CreateCustomerHandler(
+            new CustomerRepository(db, new FixedTenant(1)),
+            new AddressRepository(db, new FixedTenant(1)),
+            new NeighborhoodRepository(db),
+            mapper.Object,
+            Mock.Of<ILoyaltyCycleService>(),
+            new FixedTenant(1));
+
+        var result = await handler.Handle(new CreateCustomerCommand
+        {
+            Name = "Customer",
+            Phone1 = "3001111111",
+            BranchId = originBranch.Id,
+            InitialAddress = new CreateCustomerAddressDto
+            {
+                NeighborhoodId = neighborhood.Id,
+                Address = "Calle 10 # 20-30",
+                DeliveryFee = 6500,
+                IsPrimary = true
+            }
+        }, CancellationToken.None);
+
+        Assert.False(result.WasCreated);
+        var address = Assert.Single(await db.Addresses.Include(value => value.BranchServices).ToListAsync());
+        Assert.True(address.IsPrimary);
+        Assert.Equal(serviceBranch.Id, Assert.Single(address.BranchServices).BranchId);
+        Assert.Equal(originBranch.Id, (await db.Customers.FindAsync(customer.Id))!.BranchId);
+    }
+
+    [Fact]
+    public async Task New_customer_keeps_origin_branch_and_creates_address_for_another_service_branch()
+    {
+        await using var db = CreateDb();
+        var originBranch = new Branch { Id = 1, TenantId = 1, Name = "Origin", Address = "A", Phone1 = "1" };
+        var serviceBranch = new Branch { Id = 2, TenantId = 1, Name = "Service", Address = "B", Phone1 = "2" };
+        var neighborhood = new Neighborhood
+        {
+            Id = 20,
+            TenantId = 1,
+            BranchId = serviceBranch.Id,
+            Branch = serviceBranch,
+            Name = "Target",
+            DeliveryFee = 6500,
+            Active = true
+        };
+        db.AddRange(originBranch, serviceBranch, neighborhood);
+        await db.SaveChangesAsync();
+
+        var mapper = new Mock<IMapper>();
+        mapper.Setup(value => value.Map<CustomerDto>(It.IsAny<object>())).Returns(new CustomerDto());
+        var loyalty = new Mock<ILoyaltyCycleService>();
+        loyalty.Setup(value => value.ApplyLoyaltyPreviewToCustomerDtoAsync(It.IsAny<CustomerDto>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var handler = new CreateCustomerHandler(
+            new CustomerRepository(db, new FixedTenant(1)),
+            new AddressRepository(db, new FixedTenant(1)),
+            new NeighborhoodRepository(db),
+            mapper.Object,
+            loyalty.Object,
+            new FixedTenant(1));
+
+        await handler.Handle(new CreateCustomerCommand
+        {
+            Name = "New customer",
+            Phone1 = "3002222222",
+            BranchId = originBranch.Id,
+            InitialAddress = new CreateCustomerAddressDto
+            {
+                NeighborhoodId = neighborhood.Id,
+                Address = "Carrera 30 # 40-50",
+                DeliveryFee = 6500,
+                IsPrimary = true
+            }
+        }, CancellationToken.None);
+
+        var createdCustomer = Assert.Single(await db.Customers.Include(value => value.Addresses).ToListAsync());
+        Assert.Equal(originBranch.Id, createdCustomer.BranchId);
+        var address = Assert.Single(await db.Addresses.Include(value => value.BranchServices).ToListAsync());
+        Assert.Equal(createdCustomer.Id, address.CustomerId);
+        Assert.Equal(serviceBranch.Id, Assert.Single(address.BranchServices).BranchId);
     }
 
     private static Customer Customer(int id, int tenantId, Branch branch, string name, string phone)

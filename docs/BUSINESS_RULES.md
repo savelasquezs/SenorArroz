@@ -36,6 +36,7 @@ Este documento resume reglas funcionales que Codex debe respetar antes de modifi
 - La dirección física se comparte entre sucursales. Barrio, tarifa y cobertura se leen/escriben mediante `AddressBranch` para la sucursal operativa.
 - Al crear una dirección desde el POS, la sucursal operativa actual es el valor por defecto. Admin, Cajero y Superadmin pueden usar otra sucursal activa del mismo tenant sin cambiar sesión, JWT ni contexto global.
 - La sucursal que atenderá una dirección se deriva del `NeighborhoodId`; `AddressRepository.CreateAsync()` crea el `AddressBranch` correspondiente. No se persiste un segundo selector de sucursal en `Address` y `Customer.BranchId` conserva el origen legacy.
+- Si al crear un cliente el teléfono ya existe dentro del tenant, se reutiliza el cliente sin cambiar su sucursal de origen, pero la dirección inicial enviada debe crearse si no existe para permitir continuar el pedido en la sucursal operativa elegida.
 - Una sucursal nueva crea `AddressBranch` bajo demanda; nunca copia clientes o direcciones.
 - `Order.DeliveryFee` es histórico y no cambia cuando se actualiza la tarifa vigente.
 - Fidelización cuenta pedidos entregados globalmente por `CustomerId`; el premio aplicable sigue usando la configuración de la sucursal del pedido actual.

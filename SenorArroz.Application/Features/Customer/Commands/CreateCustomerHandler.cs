@@ -42,6 +42,9 @@ namespace SenorArroz.Application.Features.Customers.Commands
             var phone2 = string.IsNullOrWhiteSpace(request.Phone2) ? null : ColombianPhoneNormalizer.NormalizeCustomerContact(request.Phone2);
             if (phone1 is not null && phone2 == phone1)
                 phone2 = null;
+            if (request.InitialAddress is not null)
+                await ValidateInitialAddressAsync(request.InitialAddress, cancellationToken);
+
             // Only mobile numbers identify a person. A shared 604 landline stays
             // searchable in the POS legacy fields but never reuses or merges customers.
             var existing = phone1 is not null && ColombianPhoneNormalizer.TryNormalize(phone1, out _)
@@ -51,20 +54,25 @@ namespace SenorArroz.Application.Features.Customers.Commands
                     : null;
             if (existing is not null)
             {
-                var reused = _mapper.Map<CustomerDto>(await _customerRepository.GetByIdWithAddressesAsync(existing.Id, cancellationToken));
+                var existingWithAddresses = await _customerRepository.GetByIdWithAddressesAsync(existing.Id, cancellationToken);
+                if (request.InitialAddress is not null && existingWithAddresses is not null)
+                {
+                    var initialAddress = request.InitialAddress;
+                    var alreadyExists = existingWithAddresses.Addresses.Any(address =>
+                        address.NeighborhoodId == initialAddress.NeighborhoodId
+                        && string.Equals(address.AddressText.Trim(), initialAddress.Address.Trim(), StringComparison.OrdinalIgnoreCase));
+                    if (!alreadyExists)
+                    {
+                        if (initialAddress.IsPrimary)
+                            await _addressRepository.UnsetPrimaryAddressesAsync(existing.Id, cancellationToken);
+                        await _addressRepository.CreateAsync(ToAddress(existing, initialAddress), cancellationToken);
+                        existingWithAddresses = await _customerRepository.GetByIdWithAddressesAsync(existing.Id, cancellationToken);
+                    }
+                }
+
+                var reused = _mapper.Map<CustomerDto>(existingWithAddresses);
                 reused.WasCreated = false;
                 return reused;
-            }
-
-            if (request.InitialAddress is not null)
-            {
-                var neighborhood = await _neighborhoodRepository.GetByIdAsync(request.InitialAddress.NeighborhoodId, cancellationToken);
-                if (neighborhood is null)
-                    throw new NotFoundException($"Barrio con ID {request.InitialAddress.NeighborhoodId} no encontrado");
-                if (neighborhood.TenantId != _currentTenant.TenantId)
-                    throw new BusinessException("El barrio y el cliente pertenecen a restaurantes diferentes");
-                if (!neighborhood.Active || neighborhood.Branch is null || !neighborhood.Branch.IsActive)
-                    throw new BusinessException("El barrio seleccionado no está disponible");
             }
 
             // Create customer
@@ -90,20 +98,7 @@ namespace SenorArroz.Application.Features.Customers.Commands
             // Create initial address if provided
             if (request.InitialAddress != null)
             {
-                // Tarifa enviada por el cliente (puede ser 0 = envío bonificado). El formulario precarga la del barrio.
-                var address = new Address
-                {
-                    CustomerId = customer.Id,
-                    TenantId = customer.TenantId,
-                    NeighborhoodId = request.InitialAddress.NeighborhoodId,
-                    AddressText = request.InitialAddress.Address.Trim(),
-                    AdditionalInfo = request.InitialAddress.AdditionalInfo?.Trim(),
-                    Latitude = request.InitialAddress.Latitude,
-                    Longitude = request.InitialAddress.Longitude,
-                    DeliveryFee = request.InitialAddress.DeliveryFee
-                };
-
-                await _addressRepository.CreateAsync(address, cancellationToken);
+                await _addressRepository.CreateAsync(ToAddress(customer, request.InitialAddress), cancellationToken);
             }
 
             // Return complete customer with addresses
@@ -120,5 +115,29 @@ namespace SenorArroz.Application.Features.Customers.Commands
 
             return customerDto;
         }
+
+        private async Task ValidateInitialAddressAsync(CreateCustomerAddressDto initialAddress, CancellationToken cancellationToken)
+        {
+            var neighborhood = await _neighborhoodRepository.GetByIdAsync(initialAddress.NeighborhoodId, cancellationToken);
+            if (neighborhood is null)
+                throw new NotFoundException($"Barrio con ID {initialAddress.NeighborhoodId} no encontrado");
+            if (neighborhood.TenantId != _currentTenant.TenantId)
+                throw new BusinessException("El barrio y el cliente pertenecen a restaurantes diferentes");
+            if (!neighborhood.Active || neighborhood.Branch is null || !neighborhood.Branch.IsActive)
+                throw new BusinessException("El barrio seleccionado no está disponible");
+        }
+
+        private static Address ToAddress(Customer customer, CreateCustomerAddressDto initialAddress) => new()
+        {
+            CustomerId = customer.Id,
+            TenantId = customer.TenantId,
+            NeighborhoodId = initialAddress.NeighborhoodId,
+            AddressText = initialAddress.Address.Trim(),
+            AdditionalInfo = initialAddress.AdditionalInfo?.Trim(),
+            Latitude = initialAddress.Latitude,
+            Longitude = initialAddress.Longitude,
+            DeliveryFee = initialAddress.DeliveryFee,
+            IsPrimary = initialAddress.IsPrimary
+        };
     }
 }
