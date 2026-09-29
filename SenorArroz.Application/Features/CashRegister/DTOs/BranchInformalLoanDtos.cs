@@ -7,6 +7,8 @@ public class BranchInformalLoanDto
 {
     public int Id { get; set; }
     public int BranchId { get; set; }
+    public int? BankId { get; set; }
+    public string? BankName { get; set; }
     public string Concept { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -56,6 +58,8 @@ public class CreateBranchInformalLoanDto
     public string? Concept { get; set; }
 
     public decimal? Amount { get; set; }
+
+    public int? BankId { get; set; }
 
     /// <summary>
     /// Si viene informado, ignora Concept/Amount del root y crea préstamo con pedidos exentos del cuadre.

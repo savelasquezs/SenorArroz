@@ -150,6 +150,7 @@ Buscar primero:
 - `BranchInformalLoan`
 - `BranchInformalLoanPayment`
 - `BranchInformalLoanExemptOrder`
+- `BranchInformalLoan.BankId` identifica opcionalmente el banco de origen; el filtro reutilizable está en `Features/CashRegister/Helpers/BranchInformalLoanFilter.cs`.
 
 La sucursal hoy es el aislamiento operativo principal. En la migración SaaS, la sucursal debe quedar debajo de un tenant.
 

@@ -15,6 +15,7 @@ public class BranchInformalLoanConfiguration : IEntityTypeConfiguration<BranchIn
         builder.Property(e => e.Id).HasColumnName("id");
 
         builder.Property(e => e.BranchId).HasColumnName("branch_id").IsRequired();
+        builder.Property(e => e.BankId).HasColumnName("bank_id");
         builder.Property(e => e.Concept).HasColumnName("concept").HasMaxLength(500).IsRequired();
         builder.Property(e => e.Amount).HasColumnName("amount").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(e => e.CreatedById).HasColumnName("created_by_id").IsRequired();
@@ -38,12 +39,18 @@ public class BranchInformalLoanConfiguration : IEntityTypeConfiguration<BranchIn
             .HasForeignKey(e => e.CreatedById)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(e => e.Bank)
+            .WithMany()
+            .HasForeignKey(e => e.BankId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasOne(e => e.DeactivatedBy)
             .WithMany()
             .HasForeignKey(e => e.DeactivatedById)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(e => e.BranchId);
+        builder.HasIndex(e => new { e.BranchId, e.BankId, e.DeactivatedAt });
         builder.HasIndex(e => new { e.BranchId, e.DeactivatedAt });
     }
 }

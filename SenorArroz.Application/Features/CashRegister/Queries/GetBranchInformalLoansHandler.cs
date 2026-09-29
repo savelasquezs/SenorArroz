@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
+using SenorArroz.Application.Features.CashRegister.Helpers;
 using SenorArroz.Domain.Exceptions;
 
 namespace SenorArroz.Application.Features.CashRegister.Queries;
@@ -35,6 +36,7 @@ public class GetBranchInformalLoansHandler : IRequestHandler<GetBranchInformalLo
             "all" => query,
             _ => query.Where(l => l.DeactivatedAt == null)
         };
+        query = BranchInformalLoanFilter.Apply(query, request.Source, request.BankId);
 
         return await query
             .OrderByDescending(l => l.CreatedAt)
@@ -42,6 +44,8 @@ public class GetBranchInformalLoansHandler : IRequestHandler<GetBranchInformalLo
             {
                 Id = l.Id,
                 BranchId = l.BranchId,
+                BankId = l.BankId,
+                BankName = l.Bank != null ? l.Bank.Name : null,
                 Concept = l.Concept,
                 Amount = l.Amount,
                 CreatedAt = l.CreatedAt,

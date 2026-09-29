@@ -106,6 +106,10 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
 
         var lastClosure = await _closureRepository.GetLastByBranchAsync(branchId, cancellationToken);
         decimal openingCash = lastClosure?.ClosingCash ?? 0;
+        var expectedBanksById = expectedSnapshot.Banks
+            .Concat(expectedSnapshot.HiddenBanksForClosureCarry)
+            .GroupBy(bank => bank.BankId)
+            .ToDictionary(group => group.Key, group => group.First());
         var submittedBankIds = dto.BankReconciliations.Select(r => r.BankId).ToHashSet();
         var carriedHiddenBankReconciliations = expectedSnapshot.HiddenBanksForClosureCarry
             .Where(b => !submittedBankIds.Contains(b.BankId))
@@ -114,6 +118,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 BankId = b.BankId,
                 ExpectedBalance = b.ExpectedBalance,
                 ActualBalance = b.ExpectedBalance,
+                InformalLoanDeduction = b.InformalLoanDeduction,
                 Adjustments = "[]",
                 Difference = 0
             });
@@ -132,6 +137,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 BankId = r.BankId,
                 ExpectedBalance = r.ExpectedBalance,
                 ActualBalance = r.ActualBalance,
+                InformalLoanDeduction = expectedBanksById[r.BankId].InformalLoanDeduction,
                 Adjustments = r.Adjustments,
                 Difference = CashRegisterMoney.DifferenceInWholePesos(r.ActualBalance, r.ExpectedBalance)
             }).Concat(carriedHiddenBankReconciliations).ToList(),
@@ -353,6 +359,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 BankName = br.Bank?.Name ?? "",
                 ExpectedBalance = br.ExpectedBalance,
                 ActualBalance = br.ActualBalance,
+                InformalLoanDeduction = br.InformalLoanDeduction,
                 Adjustments = br.Adjustments,
                 Difference = br.Difference
             }).ToList(),

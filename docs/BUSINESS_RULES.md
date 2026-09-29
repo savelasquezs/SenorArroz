@@ -242,8 +242,10 @@ Reglas:
 - Los cierres de caja pertenecen a una sucursal y tenant.
 - Conciliaciones bancarias deben respetar tenant.
 - Préstamos informales por sucursal deben respetar tenant.
-- Cada abono a un préstamo informal conserva un historial inmutable con saldo anterior y posterior. Un abono en efectivo solo reduce el saldo del préstamo; no crea movimientos ni cambia las fórmulas del cuadre.
+- `BranchInformalLoan.BankId = null` representa efectivo. Un banco de origen debe ser normal, activo y de la misma sucursal; el origen no se edita y los anticipos de domiciliarios siempre son de efectivo.
+- Cada abono conserva un historial inmutable con saldo anterior y posterior. Un abono directo solo reduce el préstamo y, si su origen es banco, recupera ese valor en el esperado bancario; nunca crea movimientos bancarios ni de caja.
 - Un abono convertido en gasto crea el `ExpenseHeader` y el abono dentro de la misma transacción, sin pago bancario ni compra de inventario. El total del gasto no puede superar el saldo y el préstamo se da de baja automáticamente al llegar a cero.
+- El esperado del banco descuenta el saldo activo más los abonos convertidos en gasto, comparado contra la instantánea del último cierre. La baja manual recupera el saldo restante. Este ajuste no modifica el saldo ni el historial general de Bancos.
 - Solo Admin y Superadmin consultan el historial completo; el acceso mantiene el filtro de sucursal para Admin y la sucursal efectiva para Superadmin.
 - Movimientos de caja/bóveda deben respetar tenant.
 - El cierre, el despacho de auditoría diaria y el mensaje de correo en la cola se confirman atómicamente. Un fallo previo al encolado revierte el cierre para que un reintento no cree registros duplicados ni recorte el período auditado.

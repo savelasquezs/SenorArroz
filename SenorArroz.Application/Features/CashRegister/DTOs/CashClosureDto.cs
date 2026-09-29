@@ -29,6 +29,7 @@ public class CashClosureBankReconciliationDto
     public string BankName { get; set; } = string.Empty;
     public decimal ExpectedBalance { get; set; }
     public decimal ActualBalance { get; set; }
+    public decimal InformalLoanDeduction { get; set; }
     public string Adjustments { get; set; } = "[]";
     public decimal Difference { get; set; }
 }

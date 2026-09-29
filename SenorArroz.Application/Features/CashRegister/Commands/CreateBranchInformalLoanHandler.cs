@@ -25,16 +25,33 @@ public class CreateBranchInformalLoanHandler : IRequestHandler<CreateBranchInfor
         int branchId = request.BranchId ?? _currentUser.BranchId;
 
         if (dto.DeliveryAdvance is { Lines.Count: > 0 } adv)
+        {
+            if (dto.BankId.HasValue)
+                throw new InvalidOperationException("Los préstamos de domiciliarios deben registrarse en efectivo.");
             return await CreateDeliveryAdvanceAsync(branchId, adv, cancellationToken);
+        }
 
         if (string.IsNullOrWhiteSpace(dto.Concept))
             throw new InvalidOperationException("El concepto es obligatorio.");
         if (dto.Amount is null)
             throw new InvalidOperationException("El monto es obligatorio.");
 
+        if (dto.BankId.HasValue)
+        {
+            var bankIsValid = await _context.Banks.AsNoTracking().AnyAsync(
+                bank => bank.Id == dto.BankId.Value
+                    && bank.BranchId == branchId
+                    && bank.Active
+                    && bank.Type == BankType.Normal,
+                cancellationToken);
+            if (!bankIsValid)
+                throw new InvalidOperationException("El banco debe estar activo, ser una cuenta bancaria normal y pertenecer a la sucursal.");
+        }
+
         var entityManual = new BranchInformalLoan
         {
             BranchId = branchId,
+            BankId = dto.BankId,
             Concept = dto.Concept.Trim(),
             Amount = dto.Amount.Value,
             CreatedById = _currentUser.Id
@@ -142,6 +159,8 @@ public class CreateBranchInformalLoanHandler : IRequestHandler<CreateBranchInfor
             {
                 Id = l.Id,
                 BranchId = l.BranchId,
+                BankId = l.BankId,
+                BankName = l.Bank != null ? l.Bank.Name : null,
                 Concept = l.Concept,
                 Amount = l.Amount,
                 CreatedAt = l.CreatedAt,

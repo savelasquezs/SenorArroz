@@ -9,4 +9,6 @@ public class GetBranchInformalLoansQuery : IRequest<List<BranchInformalLoanDto>>
 
     /// <summary>active (default), inactive, o all</summary>
     public string Scope { get; set; } = "active";
+    public string Source { get; set; } = "all";
+    public int? BankId { get; set; }
 }

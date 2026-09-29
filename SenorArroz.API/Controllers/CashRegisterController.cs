@@ -102,9 +102,17 @@ public class CashRegisterController : ControllerBase
     [HttpGet("informal-loans")]
     public async Task<ActionResult<List<BranchInformalLoanDto>>> GetInformalLoans(
         [FromQuery] int? branchId = null,
-        [FromQuery] string scope = "active")
+        [FromQuery] string scope = "active",
+        [FromQuery] string source = "all",
+        [FromQuery] int? bankId = null)
     {
-        var result = await _mediator.Send(new GetBranchInformalLoansQuery { BranchId = _branchContext.RequireBranch(branchId), Scope = scope });
+        var result = await _mediator.Send(new GetBranchInformalLoansQuery
+        {
+            BranchId = _branchContext.RequireBranch(branchId),
+            Scope = scope,
+            Source = source,
+            BankId = bankId
+        });
         return Ok(result);
     }
 
@@ -113,13 +121,17 @@ public class CashRegisterController : ControllerBase
     public async Task<ActionResult<PagedResult<BranchInformalLoanHistoryDto>>> GetInformalLoanHistory(
         [FromQuery] int? branchId = null,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10)
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string source = "all",
+        [FromQuery] int? bankId = null)
     {
         var result = await _mediator.Send(new GetBranchInformalLoanHistoryQuery
         {
             BranchId = _branchContext.RequireBranch(branchId),
             Page = page,
-            PageSize = pageSize
+            PageSize = pageSize,
+            Source = source,
+            BankId = bankId
         });
         return Ok(result);
     }

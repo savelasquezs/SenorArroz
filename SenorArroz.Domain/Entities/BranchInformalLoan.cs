@@ -9,6 +9,7 @@ namespace SenorArroz.Domain.Entities;
 public class BranchInformalLoan : TenantOwnedEntity
 {
     public int BranchId { get; set; }
+    public int? BankId { get; set; }
     public string Concept { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public int CreatedById { get; set; }
@@ -19,6 +20,7 @@ public class BranchInformalLoan : TenantOwnedEntity
     public string? DeactivationNotes { get; set; }
 
     public virtual Branch Branch { get; set; } = null!;
+    public virtual Bank? Bank { get; set; }
     public virtual User CreatedBy { get; set; } = null!;
     public virtual User? DeactivatedBy { get; set; }
 

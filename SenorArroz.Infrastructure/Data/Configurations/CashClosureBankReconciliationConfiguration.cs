@@ -18,6 +18,7 @@ public class CashClosureBankReconciliationConfiguration : IEntityTypeConfigurati
         builder.Property(ccbr => ccbr.BankId).HasColumnName("bank_id").IsRequired();
         builder.Property(ccbr => ccbr.ExpectedBalance).HasColumnName("expected_balance").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(ccbr => ccbr.ActualBalance).HasColumnName("actual_balance").HasColumnType("numeric(12,2)").IsRequired();
+        builder.Property(ccbr => ccbr.InformalLoanDeduction).HasColumnName("informal_loan_deduction").HasColumnType("numeric(12,2)").HasDefaultValue(0m).IsRequired();
         builder.Property(ccbr => ccbr.Adjustments).HasColumnName("adjustments").HasMaxLength(2000);
         builder.Property(ccbr => ccbr.Difference).HasColumnName("difference").HasColumnType("numeric(12,2)").IsRequired();
 

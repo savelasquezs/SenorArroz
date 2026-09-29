@@ -81,4 +81,7 @@ public class BankExpectedBalanceDto
     public BankType BankType { get; set; }
     public decimal OpeningBalance { get; set; }
     public decimal ExpectedBalance { get; set; }
+    public decimal OpeningInformalLoanDeduction { get; set; }
+    public decimal InformalLoanDeduction { get; set; }
+    public decimal InformalLoanAdjustment { get; set; }
 }

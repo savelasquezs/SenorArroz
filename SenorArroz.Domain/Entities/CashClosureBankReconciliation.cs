@@ -12,6 +12,7 @@ public class CashClosureBankReconciliation : TenantOwnedEntity
     public int BankId { get; set; }
     public decimal ExpectedBalance { get; set; }
     public decimal ActualBalance { get; set; }
+    public decimal InformalLoanDeduction { get; set; }
     /// <summary>
     /// JSON: [{"concept":"Reservas pagas","amount":135000},...]
     /// </summary>

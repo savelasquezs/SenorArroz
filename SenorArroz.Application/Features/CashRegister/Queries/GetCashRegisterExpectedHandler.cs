@@ -4,6 +4,7 @@ using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
 using SenorArroz.Application.Features.CashRegister.Helpers;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 
@@ -83,6 +84,19 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
         var informalLoansActiveTotal = await _context.BranchInformalLoans
             .Where(l => l.BranchId == branchId && l.DeactivatedAt == null)
             .SumAsync(l => l.Amount, cancellationToken);
+
+        var activeBankLoanBalances = await _context.BranchInformalLoans
+            .Where(l => l.BranchId == branchId && l.BankId != null && l.DeactivatedAt == null)
+            .GroupBy(l => l.BankId!.Value)
+            .Select(group => new { BankId = group.Key, Amount = group.Sum(loan => loan.Amount) })
+            .ToDictionaryAsync(row => row.BankId, row => row.Amount, cancellationToken);
+        var bankLoanExpenseConversions = await _context.BranchInformalLoanPayments
+            .Where(payment => payment.Loan.BranchId == branchId
+                && payment.Loan.BankId != null
+                && payment.Kind == BranchInformalLoanPaymentKind.Expense)
+            .GroupBy(payment => payment.Loan.BankId!.Value)
+            .Select(group => new { BankId = group.Key, Amount = group.Sum(payment => payment.Amount) })
+            .ToDictionaryAsync(row => row.BankId, row => row.Amount, cancellationToken);
 
         var expensesInPeriodTotal = await _context.ExpenseHeaders
             .Where(eh => eh.BranchId == branchId && eh.CreatedAt > since && eh.CreatedAt <= now)
@@ -211,7 +225,15 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                     && a.CreatedAt > since && a.CreatedAt <= now)
                 .SumAsync(a => a.Amount, cancellationToken);
 
-            var expectedBalance = openingBalance + bankPaymentsIn + bankDepositPaymentsIn - expensePaymentsOut + incomingTransfers - outgoingTransfers + deliverymanBankIn;
+            var openingInformalLoanDeduction = lastClosure?.BankReconciliations
+                .FirstOrDefault(reconciliation => reconciliation.BankId == bank.Id)
+                ?.InformalLoanDeduction ?? 0m;
+            var informalLoanDeduction = activeBankLoanBalances.GetValueOrDefault(bank.Id)
+                + bankLoanExpenseConversions.GetValueOrDefault(bank.Id);
+            var informalLoanAdjustment = informalLoanDeduction - openingInformalLoanDeduction;
+
+            var expectedBalance = openingBalance + bankPaymentsIn + bankDepositPaymentsIn - expensePaymentsOut
+                + incomingTransfers - outgoingTransfers + deliverymanBankIn - informalLoanAdjustment;
 
             if (bank.Type == BankType.CashVault)
             {
@@ -234,7 +256,10 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
                 BankName = bank.Name,
                 BankType = bank.Type,
                 OpeningBalance = openingBalance,
-                ExpectedBalance = expectedBalance
+                ExpectedBalance = expectedBalance,
+                OpeningInformalLoanDeduction = openingInformalLoanDeduction,
+                InformalLoanDeduction = informalLoanDeduction,
+                InformalLoanAdjustment = informalLoanAdjustment
             });
         }
 

@@ -146,6 +146,7 @@ Notas:
 
 - `Branch` debe ser la primera tabla del negocio en recibir `TenantId`.
 - `BranchInformalLoanPayment` conserva cada abono con saldo anterior/posterior, actor y vínculo opcional a `ExpenseHeader`; el historial no se sobrescribe al reducir el saldo del préstamo.
+- `BranchInformalLoan.bank_id` es opcional y referencia un banco del mismo tenant; `null` significa efectivo. `CashClosureBankReconciliation.informal_loan_deduction` conserva la deducción acumulada absorbida por cada cierre.
 - `Branch` contiene la configuración operativa del seguimiento de domiciliarios: hora local de cierre, frecuencias, permanencias, tolerancia geográfica y retenciones.
 - `User` debe quedar asociado a tenant aunque sea superadmin. Si hay superadmin global, documentar excepción.
 - `User.ActiveSessionId` contiene la sesión exclusiva vigente de un domiciliario.

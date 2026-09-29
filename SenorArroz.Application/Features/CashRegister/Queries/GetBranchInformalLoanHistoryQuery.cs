@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.CashRegister.DTOs;
+using SenorArroz.Application.Features.CashRegister.Helpers;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Shared.Models;
 
@@ -12,6 +13,8 @@ public class GetBranchInformalLoanHistoryQuery : IRequest<PagedResult<BranchInfo
     public int? BranchId { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 10;
+    public string Source { get; set; } = "all";
+    public int? BankId { get; set; }
 }
 
 public class GetBranchInformalLoanHistoryHandler : IRequestHandler<GetBranchInformalLoanHistoryQuery, PagedResult<BranchInformalLoanHistoryDto>>
@@ -37,6 +40,7 @@ public class GetBranchInformalLoanHistoryHandler : IRequestHandler<GetBranchInfo
         var page = Math.Max(1, request.Page);
         var pageSize = Math.Clamp(request.PageSize, 1, 50);
         var query = _context.BranchInformalLoans.AsNoTracking().Where(x => x.BranchId == branchId);
+        query = BranchInformalLoanFilter.Apply(query, request.Source, request.BankId);
         var totalCount = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreatedAt)
@@ -47,6 +51,8 @@ public class GetBranchInformalLoanHistoryHandler : IRequestHandler<GetBranchInfo
             {
                 Id = x.Id,
                 BranchId = x.BranchId,
+                BankId = x.BankId,
+                BankName = x.Bank != null ? x.Bank.Name : null,
                 Concept = x.Concept,
                 Amount = x.Amount,
                 InitialAmount = x.Amount + x.Payments.Sum(p => p.Amount),

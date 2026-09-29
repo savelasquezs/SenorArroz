@@ -42,6 +42,7 @@ public class GetLastClosureHandler : IRequestHandler<GetLastClosureQuery, CashCl
                 BankName = br.Bank?.Name ?? "",
                 ExpectedBalance = br.ExpectedBalance,
                 ActualBalance = br.ActualBalance,
+                InformalLoanDeduction = br.InformalLoanDeduction,
                 Adjustments = br.Adjustments,
                 Difference = br.Difference
             }).ToList(),

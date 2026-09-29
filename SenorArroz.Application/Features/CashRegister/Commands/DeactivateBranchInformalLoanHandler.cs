@@ -46,6 +46,8 @@ public class DeactivateBranchInformalLoanHandler : IRequestHandler<DeactivateBra
             {
                 Id = l.Id,
                 BranchId = l.BranchId,
+                BankId = l.BankId,
+                BankName = l.Bank != null ? l.Bank.Name : null,
                 Concept = l.Concept,
                 Amount = l.Amount,
                 CreatedAt = l.CreatedAt,
