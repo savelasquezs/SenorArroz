@@ -107,6 +107,14 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
                 DeliveryWorkSessionEndReason.AutomaticClosure));
         }
 
+        // Recovered history is valid evidence, but it must not rewind live
+        // route clocks or complete a route after a newer position was received.
+        var isLatestPosition = !await _db.DeliverymanLocations.AsNoTracking()
+            .AnyAsync(x => x.DeliverymanId == deliverymanId
+                           && x.RecordedAt > recordedAtUtc, cancellationToken);
+        var canAffectLiveRoute = isLatestPosition
+                                && recordedAtUtc >= nowUtc.AddMinutes(-2);
+
         int? routeId = request.DeliveryRouteId;
         if (routeId.HasValue)
         {
@@ -118,12 +126,13 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
             if (!routeBelongsToDeliveryman)
                 throw new BusinessException("La ruta indicada no pertenece al domiciliario.");
         }
-        else
+        else if (canAffectLiveRoute)
         {
+            // An old light-tracking point must not be attached to today's route.
             routeId = await FindCurrentRouteIdAsync(deliverymanId, cancellationToken);
         }
 
-        if (routeId.HasValue)
+        if (routeId.HasValue && canAffectLiveRoute)
             await RepairStaleRouteClockAsync(routeId.Value, recordedAtUtc, cancellationToken);
 
         var location = new DeliverymanLocation
@@ -150,7 +159,9 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
         workSession.LastCommunicationAt = nowUtc;
         await _db.SaveChangesAsync(cancellationToken);
 
-        if (_autoCompletion is not null)
+        // The auto-completion service also enforces its own two-minute age and
+        // GPS-quality window. Suppress out-of-order evaluations before entering it.
+        if (_autoCompletion is not null && isLatestPosition)
         {
             try
             {
@@ -174,7 +185,7 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
             (double)request.Longitude,
             recordedAtUtc);
 
-        if (routeId.HasValue)
+        if (routeId.HasValue && canAffectLiveRoute)
         {
             await TryCompleteRouteAtBranchAsync(
                 routeId.Value,
