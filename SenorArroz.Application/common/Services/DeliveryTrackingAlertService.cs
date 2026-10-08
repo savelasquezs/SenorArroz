@@ -168,7 +168,21 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                 // Keep ReviewStatus, AdminNotes, reviewer and raw evidence untouched.
             }
         }
-        return rows.Count;
+        var oldStops = await _db.DeliveryTrackingIncidents
+            .Where(x => x.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption
+                && x.InterruptionCause == DeliveryInterruptionCause.AppOrTrackingServiceStopped
+                && x.InterruptionCertainty == DeliveryInterruptionCertainty.ConfirmedByDevice
+                && (x.ClassificationReason == null || x.ClassificationReason != "android_user_requested_stop"))
+            .OrderBy(x => x.Id).Take(BatchSize).ToListAsync(cancellationToken);
+        foreach (var incident in oldStops)
+        {
+            incident.InterruptionCause = DeliveryInterruptionCause.NotDetermined;
+            incident.InterruptionCertainty = DeliveryInterruptionCertainty.NotDetermined;
+            incident.ClassificationReason = "legacy_stop_cause_not_determined";
+            incident.UpdatedAt = nowUtc;
+            // Administrative verdict and original evidence remain unchanged.
+        }
+        return rows.Count + oldStops.Count;
     }
 
     private async Task<int> ProcessDeviceEventsAsync(DateTime nowUtc, CancellationToken cancellationToken)
@@ -683,7 +697,17 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         foreach (var alert in alerts)
         {
             var sessionId = alert.WorkSessionId!.Value;
+            var sessionWindow = await _db.DeliveryWorkSessions.AsNoTracking()
+                .Where(x => x.Id == sessionId).Select(x => new { x.AutoCloseAt, x.EndedAt })
+                .FirstOrDefaultAsync(cancellationToken);
             var evidenceEnd = alert.RecoveredAt ?? nowUtc;
+            if (sessionWindow != null)
+            {
+                var deadline = sessionWindow.EndedAt.HasValue && sessionWindow.EndedAt < sessionWindow.AutoCloseAt
+                    ? sessionWindow.EndedAt.Value : sessionWindow.AutoCloseAt;
+                if (evidenceEnd > deadline) evidenceEnd = deadline;
+            }
+            if (evidenceEnd < alert.OccurredAt) evidenceEnd = alert.OccurredAt;
             var locations = await _db.DeliverymanLocations.AsNoTracking()
                 .Where(x => x.WorkSessionId == sessionId
                     && x.RecordedAt >= alert.OccurredAt.AddMinutes(-5)
@@ -753,8 +777,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             incident.SourceDeviceEventId = alert.SourceDeviceEventId;
             incident.DeliveryRouteId = before?.DeliveryRouteId ?? after?.DeliveryRouteId;
             incident.StartedAt = alert.OccurredAt;
-            incident.EndedAt = alert.RecoveredAt ?? alert.OccurredAt;
-            incident.DurationSeconds = alert.DurationSeconds ?? 0;
+            incident.EndedAt = evidenceEnd;
+            incident.DurationSeconds = Math.Max(0, (int)Math.Min(int.MaxValue,
+                (evidenceEnd - alert.OccurredAt).TotalSeconds));
             incident.CenterLatitude = before?.Latitude ?? after?.Latitude;
             incident.CenterLongitude = before?.Longitude ?? after?.Longitude;
             incident.RadiusMeters = 0;

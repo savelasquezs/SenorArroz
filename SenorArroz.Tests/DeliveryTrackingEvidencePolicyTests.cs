@@ -89,7 +89,7 @@ public class DeliveryTrackingEvidencePolicyTests
     {
         var points = new[] { Samples()[0], Samples()[1], Samples()[20] };
         Assert.Empty(DeliveryStayDetectionService.Detect(points, 10, 20));
-        Assert.Single(DeliveryStayDetectionService.Detect(Samples().Reverse().ToList(), 10, 20));
+        Assert.Single(DeliveryStayDetectionService.Detect(Samples().AsEnumerable().Reverse().ToList(), 10, 20));
     }
 
     [Fact]

@@ -112,11 +112,7 @@ public class DeliveryTrackingIncidentsController : ControllerBase
                     incident.WorkSessionId,
                     incident.StartedAt,
                     incident.EndedAt,
-                    incident.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption
-                        && !incident.EvidenceComplete
-                            ? Math.Max(0, checked((int)Math.Min(int.MaxValue,
-                                (nowUtc - incident.StartedAt).TotalSeconds)))
-                            : incident.DurationSeconds,
+                    incident.DurationSeconds,
                     incident.InterruptionCause,
                     incident.InterruptionCertainty,
                     incident.StayClassification,
@@ -200,7 +196,10 @@ public class DeliveryTrackingIncidentsController : ControllerBase
         {
             DeliveryTrackingIncidentType.Stay =>
                 await IsActiveStayAsync(incident.WorkSessionId, incident.DeliveryStayId, cancellationToken),
-            DeliveryTrackingIncidentType.TrackingInterruption => !incident.EvidenceComplete,
+            DeliveryTrackingIncidentType.TrackingInterruption => !incident.EvidenceComplete
+                && await _db.DeliveryWorkSessions.AsNoTracking().AnyAsync(session =>
+                    session.Id == incident.WorkSessionId && session.Status == DeliveryWorkSessionStatus.Active
+                    && session.AutoCloseAt > _clock.UtcNow, cancellationToken),
             _ => false,
         };
         var pointCount = locations.Count(x => x.IsCorePoint);
@@ -225,10 +224,7 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             isActive && incident.IncidentType != DeliveryTrackingIncidentType.Stay ? null : incident.EndedAt,
             isActive,
             pointCount,
-            isActive && incident.IncidentType != DeliveryTrackingIncidentType.Stay
-                ? Math.Max(0, checked((int)Math.Min(int.MaxValue,
-                    (ColombiaTimeHelper.EnsureUtc(_clock.UtcNow) - incident.StartedAt).TotalSeconds)))
-                : incident.DurationSeconds,
+            incident.DurationSeconds,
             incident.CenterLatitude,
             incident.CenterLongitude,
             incident.RadiusMeters,
