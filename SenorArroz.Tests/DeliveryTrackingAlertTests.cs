@@ -89,7 +89,7 @@ public class DeliveryTrackingAlertTests
             UpdatedAt = BaseTime.AddMinutes(16),
         });
         await db.SaveChangesAsync();
-        var clock = new FakeClock(BaseTime.AddMinutes(10));
+        var clock = new FakeClock(BaseTime.AddMinutes(16));
         var fcm = new FakeFcmPushService();
         var service = CreateService(db, clock, fcm);
 
@@ -154,9 +154,9 @@ public class DeliveryTrackingAlertTests
         var incident = db.DeliveryTrackingIncidents.Single(
             x => x.IncidentType == DeliveryTrackingIncidentType.Stay);
         incident.ReviewStatus = DeliveryIncidentReviewStatus.Justified;
-        db.DeliveryWorkSessions.Single().LastCommunicationAt = BaseTime.AddMinutes(11);
+        db.DeliveryWorkSessions.Single().LastCommunicationAt = BaseTime.AddMinutes(17);
         await db.SaveChangesAsync();
-        clock.UtcNow = BaseTime.AddMinutes(11);
+        clock.UtcNow = BaseTime.AddMinutes(17);
 
         Assert.True(await service.ProcessAsync() >= 2);
         Assert.Equal(DeliveryTrackingAlertStatus.Resolved,
@@ -164,7 +164,9 @@ public class DeliveryTrackingAlertTests
         var recoveredInterruption = db.DeliveryTrackingAlerts.Single(
             x => x.AlertType == DeliveryTrackingAlertType.NoCommunication);
         Assert.Equal(DeliveryTrackingAlertStatus.Resolved, recoveredInterruption.Status);
-        Assert.Equal(BaseTime.AddMinutes(11), recoveredInterruption.RecoveredAt);
+        // The first server receipt closes silence, not the next worker scan.
+        Assert.Equal(BaseTime.AddMinutes(10).AddSeconds(2), recoveredInterruption.RecoveredAt);
+        Assert.Equal(2, recoveredInterruption.DurationSeconds);
         Assert.NotNull(recoveredInterruption.IncidentId);
     }
 

@@ -19,7 +19,7 @@ public class BranchDeliveryTrackingSettingsTests
         Assert.Equal(300, branch.DeliveryTrackingLightIntervalSeconds);
         Assert.Equal(30, branch.DeliveryTrackingActiveIntervalSeconds);
         Assert.Equal(10, branch.DeliveryTrackingStayThresholdMinutes);
-        Assert.Equal(50, branch.DeliveryTrackingStayRadiusMeters);
+        Assert.Equal(20, branch.DeliveryTrackingStayRadiusMeters);
         Assert.Equal(50, branch.DeliveryTrackingAllowedDistanceMeters);
         Assert.Equal(3, branch.DeliveryTrackingLocationRetentionDays);
         Assert.Equal(15, branch.DeliveryTrackingIncidentRetentionDays);
@@ -38,7 +38,7 @@ public class BranchDeliveryTrackingSettingsTests
         Assert.Equal(300, dto.DeliveryTrackingLightIntervalSeconds);
         Assert.Equal(30, dto.DeliveryTrackingActiveIntervalSeconds);
         Assert.Equal(10, dto.DeliveryTrackingStayThresholdMinutes);
-        Assert.Equal(50, dto.DeliveryTrackingStayRadiusMeters);
+        Assert.Equal(20, dto.DeliveryTrackingStayRadiusMeters);
         Assert.Equal(50, dto.DeliveryTrackingAllowedDistanceMeters);
         Assert.Equal(3, dto.DeliveryTrackingLocationRetentionDays);
         Assert.Equal(15, dto.DeliveryTrackingIncidentRetentionDays);
