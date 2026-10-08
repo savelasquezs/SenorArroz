@@ -27,3 +27,7 @@ El evento se guarda antes de notificar. El canal administrativo usa SignalR aisl
 ## Compatibilidad y pruebas
 
 Sin cambios de esquema PostgreSQL, retenciones ni infraestructura. Se conserva el aislamiento EF/RLS y la autorización de sucursal. Probar GPS 59/60 s, error de lectura, permiso independiente, salida técnica/manual, recuperación genérica, aviso con cadencia liviana, 90% de acuerdo, saltos GPS, huecos de captura, sede exenta, destino >20 min y reconstrucción que invalida una permanencia. Pruebas de integración y compilación no sustituyen validación en dispositivos físicos.
+
+## Orden de publicación
+
+Validar el head final sin archivos de transferencia ni workflows con permisos de escritura. Publicar primero la API compatible, después administración y finalmente la app por Google Play interno. No desinstalar la aplicación ni borrar su historial local para probar la actualización. Confirmar GPS apagado/encendido, permiso preciso, pantalla bloqueada, recuperación de comunicación y cierre de jornada en teléfonos reales antes de atribuir un caso a una persona.
