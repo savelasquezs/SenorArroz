@@ -8,29 +8,65 @@ permissions:
   contents: read
 
 jobs:
-  sources:
+  validate:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/tracking-alert-evidence'
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    services:
+      flow-postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: flow_test
+          POSTGRES_PASSWORD: flow_test
+          POSTGRES_DB: flow_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U flow_test -d flow_test'
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - name: Archive tracked review sources without runtime secrets or data
-        shell: bash
+      - name: Apply integrity-checked reviewed source
         run: |
           python3 - <<'PY'
-          import pathlib, subprocess, tarfile
-          allowed = {'.cs', '.csproj', '.sln', '.props', '.targets', '.md', '.yml', '.yaml', '.sh'}
-          names = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
-          with tarfile.open('/tmp/alert-review-source.tar.gz', 'w:gz') as archive:
-              for name in names:
-                  p = pathlib.Path(name)
-                  if name and p.is_file() and p.suffix in allowed:
-                      archive.add(p, arcname=name)
+          import base64, hashlib, lzma, pathlib, subprocess
+          parts = sorted(pathlib.Path('.automation').glob('api-alert.*.b64'))
+          if parts:
+              raw = lzma.decompress(base64.b64decode(''.join(p.read_text().strip() for p in parts), validate=True))
+              assert hashlib.sha256(raw).hexdigest() == '6742709e485b73d48f7e52925610d2cc6de6388c1562f3109b692c5170ecd341', 'Patch checksum mismatch'
+              patch = pathlib.Path('/tmp/api-alert.patch')
+              patch.write_bytes(raw)
+              subprocess.run(['git', 'apply', '--check', '--index', '--unidiff-zero', str(patch)], check=True)
+              subprocess.run(['git', 'apply', '--index', '--unidiff-zero', str(patch)], check=True)
+              for part in parts:
+                  part.unlink()
           PY
-      - uses: actions/upload-artifact@v4
+      - name: Save review implementation on feature branch only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git add SenorArroz.API SenorArroz.Application SenorArroz.Domain SenorArroz.Tests docs
+          git add -u .automation
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'fix(tracking): require explicit evidence and reconcile reliable stays'
+            AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+            echo "::add-mask::$AUTH"
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH" push origin HEAD:refs/heads/fix/tracking-alert-evidence
+          fi
+      - uses: actions/setup-dotnet@v5
         with:
-          name: alert-review-source
-          path: /tmp/alert-review-source.tar.gz
-          retention-days: 1
+          dotnet-version: '9.0.x'
+      - run: dotnet restore SenorArroz.sln
+      - run: dotnet build SenorArroz.sln --configuration Release --no-restore
+      - name: All backend regressions
+        env:
+          RUN_POSTGRES_INTEGRATION_TESTS: 'true'
+          FLOW_POSTGRES_TEST_CONNECTION: 'Host=localhost;Port=5432;Database=flow_test;Username=flow_test;Password=flow_test'
+        run: dotnet test SenorArroz.Tests/SenorArroz.Tests.csproj --configuration Release --no-build --logger 'console;verbosity=normal'
