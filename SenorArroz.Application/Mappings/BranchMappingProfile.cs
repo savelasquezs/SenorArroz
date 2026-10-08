@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 using AutoMapper;
 using SenorArroz.Application.Features.Branches.Commands;
 using SenorArroz.Application.Features.Branches.DTOs;
@@ -13,6 +14,8 @@ public class BranchMappingProfile : Profile
     {
         // Branch -> BranchDtodotn
         CreateMap<Branch, BranchDto>()
+            .ForMember(d => d.DeliveryTrackingStayThresholdMinutes, o => o.MapFrom(_ => DeliveryTrackingEvidencePolicy.StayMinutes))
+            .ForMember(d => d.DeliveryTrackingStayRadiusMeters, o => o.MapFrom(_ => DeliveryTrackingEvidencePolicy.StayRadiusMeters))
             .ForMember(dest => dest.TotalUsers, opt => opt.MapFrom(src => src.Users.Count))
             .ForMember(dest => dest.ActiveUsers, opt => opt.MapFrom(src => src.Users.Count(u => u.Active)))
             .ForMember(dest => dest.TotalCustomers, opt => opt.MapFrom(src => src.Customers.Count))
