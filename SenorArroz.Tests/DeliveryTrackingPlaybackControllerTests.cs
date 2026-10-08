@@ -65,8 +65,12 @@ public class DeliveryTrackingPlaybackControllerTests
         Assert.Equal([From, From.AddHours(1)], response.Data!.Deliverymen[0].Points.Select(x => x.RecordedAt));
     }
 
-    [Fact]
-    public async Task Get_ReturnsActivePersistedStayWithAllCurrentRouteOrders()
+    [Theory]
+    [InlineData(20, true)]
+    [InlineData(450, true)]
+    [InlineData(451, false)]
+    [InlineData(2100, false)]
+    public async Task Get_PreservesSupportedStayDurationAndOrdersWhenEvidenceAges(int secondsSinceLastPoint, bool expectedActive)
     {
         await using var db = CreateDb();
         Seed(db);
@@ -104,6 +108,7 @@ public class DeliveryTrackingPlaybackControllerTests
         {
             x.WorkSessionId = 20;
             x.DeliveryRouteId = 30;
+            x.TrackingMode = DeliveryTrackingMode.Light;
         });
         db.DeliveryStays.Add(new DeliveryStay
         {
@@ -126,14 +131,15 @@ public class DeliveryTrackingPlaybackControllerTests
         });
         await db.SaveChangesAsync();
 
-        var action = await Controller(db, 7).Get([11], From, From.AddHours(1));
+        var now = From.AddMinutes(25).AddSeconds(secondsSinceLastPoint);
+        var action = await Controller(db, 7, now).Get([11], From, From.AddHours(1));
         var response = Assert.IsType<ApiResponse<DeliveryTrackingPlaybackDto>>(
             Assert.IsType<OkObjectResult>(action.Result).Value);
         var stay = Assert.Single(response.Data!.Deliverymen[0].Stays);
 
-        Assert.True(stay.IsActive);
-        Assert.Null(stay.EndedAt);
-        Assert.Equal(2400, stay.DurationSeconds);
+        Assert.Equal(expectedActive, stay.IsActive);
+        Assert.Equal(From.AddMinutes(25), stay.EndedAt);
+        Assert.Equal(300, stay.DurationSeconds);
         Assert.Equal(2, stay.Orders.Count);
         Assert.Contains(stay.Orders, x => x.OrderId == 201 && x.Roles.SequenceEqual(["current_route"]));
         Assert.Contains(stay.Orders, x => x.OrderId == 202 && x.Roles.SequenceEqual(["current_route", "related"]));
@@ -223,8 +229,8 @@ public class DeliveryTrackingPlaybackControllerTests
         Assert.Equal(["previous_route"], order.Roles);
     }
 
-    private static DeliveryTrackingPlaybackController Controller(ApplicationDbContext db, int branchId) =>
-        new(db, new TestBranchContext(branchId), new FakeClock(From.AddHours(1)));
+    private static DeliveryTrackingPlaybackController Controller(ApplicationDbContext db, int branchId, DateTime? now = null) =>
+        new(db, new TestBranchContext(branchId), new FakeClock(now ?? From.AddHours(1)));
 
     private static DeliverymanLocation Location(long id, int deliverymanId, int minute) => new()
     {

@@ -12,23 +12,26 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
 {
     private const int BatchSize = 200;
     private const int ReviewSilenceSeconds = 600;
-    private const int ReviewOfflineDurationSeconds = 420;
+    private const int ReviewOfflineDurationSeconds = 600;
     private readonly IApplicationDbContext _db;
     private readonly IClock _clock;
     private readonly IFcmPushService _fcm;
     private readonly ILogger<DeliveryTrackingAlertService> _logger;
     private readonly List<DeliveryTrackingAlert> _newReviewAlerts = [];
+    private readonly IOrderNotificationService? _notifications;
 
     public DeliveryTrackingAlertService(
         IApplicationDbContext db,
         IClock clock,
         IFcmPushService fcm,
-        ILogger<DeliveryTrackingAlertService> logger)
+        ILogger<DeliveryTrackingAlertService> logger,
+        IOrderNotificationService? notifications = null)
     {
         _db = db;
         _clock = clock;
         _fcm = fcm;
         _logger = logger;
+        _notifications = notifications;
     }
 
     public async Task<int> ProcessAsync(CancellationToken cancellationToken = default)
@@ -36,6 +39,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         _newReviewAlerts.Clear();
         var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
         var changes = 0;
+        changes += await RevalidateLegacyLocationAlertsAsync(nowUtc, cancellationToken);
         changes += await ProcessDeviceEventsAsync(nowUtc, cancellationToken);
         changes += await ProcessReviewableStaysAsync(nowUtc, cancellationToken);
         changes += await ProcessActiveSessionsAsync(nowUtc, cancellationToken);
@@ -59,6 +63,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
     {
         if (alert.Status != DeliveryTrackingAlertStatus.Active
             || !DeliveryTrackingReviewPolicy.Includes(alert.AlertType)
+            || alert.Severity == DeliveryTrackingAlertSeverity.Informational
             || (alert.AlertType == DeliveryTrackingAlertType.NoCommunication
                 && alert.Severity != DeliveryTrackingAlertSeverity.RequiresReview)
             || _newReviewAlerts.Contains(alert))
@@ -83,8 +88,21 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                 group => group.Key,
                 group => (IReadOnlyList<string>)group.Select(token => token.Token).Distinct().ToList());
 
-        foreach (var alert in alerts)
+        foreach (var alert in alerts.Where(x => x.Status == DeliveryTrackingAlertStatus.Active))
         {
+            // Persisted administrative alert is authoritative; push is only a
+            // best-effort notification and is never presented as a read receipt.
+            try
+            {
+                if (_notifications != null)
+                    await _notifications.NotifyDeliveryTrackingAlert(alert.BranchId,
+                        alert.Id, alert.DeliverymanId, alert.Title, alert.Message);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception, "Administrative tracking alert {AlertId} remains available in history; realtime dispatch failed.", alert.Id);
+            }
             if (!tokensByDeliveryman.TryGetValue(alert.DeliverymanId, out var tokens)
                 || tokens.Count == 0)
             {
@@ -123,6 +141,50 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         }
     }
 
+    private async Task<int> RevalidateLegacyLocationAlertsAsync(DateTime nowUtc, CancellationToken cancellationToken)
+    {
+        var rows = await (from alert in _db.DeliveryTrackingAlerts
+            join source in _db.DeliveryDeviceEvents on alert.SourceDeviceEventId equals source.Id
+            where (alert.AlertType == DeliveryTrackingAlertType.GpsDisabled
+                || alert.AlertType == DeliveryTrackingAlertType.LocationPermissionRevoked)
+                && alert.Status == DeliveryTrackingAlertStatus.Active
+                && alert.ResolvedByUserId == null
+                && (source.Details == null || !source.Details.Contains("evidence_version=2"))
+            select alert).Take(BatchSize).ToListAsync(cancellationToken);
+        foreach (var alert in rows)
+        {
+            alert.Severity = DeliveryTrackingAlertSeverity.Informational;
+            alert.Title = "Reporte antiguo de ubicación: evidencia no verificable";
+            alert.Message = "La versión anterior no distinguía GPS, permisos y errores de consulta. Este reporte no demuestra una desactivación.";
+            Resolve(alert, nowUtc, "Reevaluación técnica del reporte anterior; no modifica decisiones administrativas previas.");
+            var incident = await _db.DeliveryTrackingIncidents
+                .FirstOrDefaultAsync(x => x.SourceDeviceEventId == alert.SourceDeviceEventId, cancellationToken);
+            if (incident != null)
+            {
+                incident.InterruptionCertainty = DeliveryInterruptionCertainty.NotDetermined;
+                incident.ClassificationReason = "legacy_location_evidence_unverified";
+                incident.SourceUpdatedAt = nowUtc;
+                incident.UpdatedAt = nowUtc;
+                // Keep ReviewStatus, AdminNotes, reviewer and raw evidence untouched.
+            }
+        }
+        var oldStops = await _db.DeliveryTrackingIncidents
+            .Where(x => x.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption
+                && x.InterruptionCause == DeliveryInterruptionCause.AppOrTrackingServiceStopped
+                && x.InterruptionCertainty == DeliveryInterruptionCertainty.ConfirmedByDevice
+                && (x.ClassificationReason == null || x.ClassificationReason != "android_user_requested_stop"))
+            .OrderBy(x => x.Id).Take(BatchSize).ToListAsync(cancellationToken);
+        foreach (var incident in oldStops)
+        {
+            incident.InterruptionCause = DeliveryInterruptionCause.NotDetermined;
+            incident.InterruptionCertainty = DeliveryInterruptionCertainty.NotDetermined;
+            incident.ClassificationReason = "legacy_stop_cause_not_determined";
+            incident.UpdatedAt = nowUtc;
+            // Administrative verdict and original evidence remain unchanged.
+        }
+        return rows.Count + oldStops.Count;
+    }
+
     private async Task<int> ProcessDeviceEventsAsync(DateTime nowUtc, CancellationToken cancellationToken)
     {
         var negativeTypes = new[]
@@ -140,12 +202,19 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                     || (deviceEvent.EventType == DeliveryDeviceEventType.InternetRecovered
                         && (deviceEvent.OfflineLocationCount > 0
                             || (deviceEvent.Details != null
-                                && deviceEvent.Details.Contains("queued_location_count=")))))
+                                && (deviceEvent.Details.Contains("queued_location_count=")
+                                    || deviceEvent.Details.Contains("source=api_transport"))))))
                 && !_db.DeliveryTrackingAlerts.Any(alert => alert.SourceDeviceEventId == deviceEvent.Id)
                 && !_db.DeliveryTrackingAlerts.Any(alert =>
                     alert.DeduplicationKey.StartsWith("device_event:" + deviceEvent.Id + ":"))
-                && !_db.DeliveryIncidentDeviceEventEvidence.Any(evidence =>
-                    evidence.SourceDeviceEventId == deviceEvent.Id))
+                && (deviceEvent.EventType == DeliveryDeviceEventType.GpsDisabled
+                    || deviceEvent.EventType == DeliveryDeviceEventType.LocationPermissionRevoked
+                    || (deviceEvent.EventType == DeliveryDeviceEventType.AppStopped && deviceEvent.Details != null
+                        && deviceEvent.Details.Contains("source=android_exit_info"))
+                    || !_db.DeliveryIncidentDeviceEventEvidence.Any(evidence =>
+                        evidence.SourceDeviceEventId == deviceEvent.Id
+                        && _db.DeliveryTrackingIncidents.Any(incident => incident.Id == evidence.IncidentId
+                            && incident.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption))))
             .OrderBy(x => x.RecordedAt)
             .Take(BatchSize)
             .ToListAsync(cancellationToken);
@@ -178,7 +247,8 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             if (!branches.TryGetValue(deviceEvent.WorkSessionId, out var branchId))
                 continue;
             if (deviceEvent.EventType == DeliveryDeviceEventType.InternetRecovered
-                && deviceEvent.OfflineLocationCount.HasValue)
+                && deviceEvent.OfflineLocationCount.HasValue
+                && !DeliveryTrackingEvidencePolicy.IsGenericTransport(deviceEvent))
             {
                 await ApplyVerifiedOfflineEvidenceAsync(deviceEvent, cancellationToken);
             }
@@ -187,27 +257,28 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                 var existingInterruption = _db.DeliveryTrackingAlerts.Local
                     .Where(x => x.WorkSessionId == deviceEvent.WorkSessionId
                         && x.AlertType == DeliveryTrackingAlertType.NoCommunication
-                        && x.Status == DeliveryTrackingAlertStatus.Active
                         && MatchesInterruptionEvent(x, deviceEvent))
                     .OrderByDescending(x => x.OccurredAt)
                     .FirstOrDefault();
                 existingInterruption ??= await _db.DeliveryTrackingAlerts
                     .Where(x => x.WorkSessionId == deviceEvent.WorkSessionId
                         && x.AlertType == DeliveryTrackingAlertType.NoCommunication
-                        && x.Status == DeliveryTrackingAlertStatus.Active
                         && x.OccurredAt <= deviceEvent.RecordedAt
-                        && (x.DeduplicationKey.StartsWith("session:")
-                            ? !x.RecoveredAt.HasValue
-                                || deviceEvent.RecordedAt <= x.RecoveredAt.Value.AddMinutes(1)
-                            : x.LastOccurredAt >= deviceEvent.RecordedAt.AddMinutes(-1)
-                                && x.LastOccurredAt <= deviceEvent.RecordedAt.AddMinutes(1)))
+                        && (x.RecoveredAt.HasValue
+                            ? deviceEvent.RecordedAt <= x.RecoveredAt.Value.AddMinutes(1)
+                            : x.DeduplicationKey.StartsWith("session:")
+                                || (x.LastOccurredAt >= deviceEvent.RecordedAt.AddMinutes(-1)
+                                    && x.LastOccurredAt <= deviceEvent.RecordedAt.AddMinutes(1))))
                     .OrderByDescending(x => x.OccurredAt)
                     .FirstOrDefaultAsync(cancellationToken);
                 if (existingInterruption is not null)
                 {
-                    var currentSource = events.FirstOrDefault(x => x.Id == existingInterruption.SourceDeviceEventId);
-                    if (currentSource is null
-                        || DirectInterruptionPriority(deviceEvent.EventType) > DirectInterruptionPriority(currentSource.EventType))
+                    var currentSource = events.FirstOrDefault(x => x.Id == existingInterruption.SourceDeviceEventId)
+                        ?? await _db.DeliveryDeviceEvents.AsNoTracking()
+                            .FirstOrDefaultAsync(x => x.Id == existingInterruption.SourceDeviceEventId, cancellationToken);
+                    if (!existingInterruption.DeduplicationKey.EndsWith(":manual_stop", StringComparison.Ordinal)
+                        && (currentSource is null
+                            || DirectInterruptionPriority(deviceEvent.EventType) > DirectInterruptionPriority(currentSource.EventType)))
                     {
                         existingInterruption.SourceDeviceEventId = deviceEvent.Id;
                         existingInterruption.Message = BuildDirectInterruptionMessage(deviceEvent);
@@ -215,6 +286,18 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                     existingInterruption.LastOccurredAt = existingInterruption.LastOccurredAt > deviceEvent.RecordedAt
                         ? existingInterruption.LastOccurredAt
                         : deviceEvent.RecordedAt;
+                    if (DeliveryTrackingEvidencePolicy.ConfirmsUserStop(deviceEvent))
+                    {
+                        existingInterruption.SourceDeviceEventId = deviceEvent.Id;
+                        existingInterruption.Severity = DeliveryTrackingAlertSeverity.RequiresReview;
+                        existingInterruption.Status = DeliveryTrackingAlertStatus.Active;
+                        if (!existingInterruption.DeduplicationKey.EndsWith(":manual_stop", StringComparison.Ordinal))
+                            existingInterruption.DeduplicationKey += ":manual_stop";
+                        existingInterruption.ResolvedAt = null;
+                        existingInterruption.ResolutionReason = null;
+                        existingInterruption.Title = "Detención solicitada por el usuario, reportada por Android";
+                        QueueReviewNotification(existingInterruption);
+                    }
                     existingInterruption.UpdatedAt = nowUtc;
                     changes++;
                     continue;
@@ -222,20 +305,8 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             }
             DeliveryTrackingAlert? alert = deviceEvent.EventType switch
             {
-                DeliveryDeviceEventType.GpsDisabled => CreateFromEvent(
-                    deviceEvent,
-                    branchId,
-                    DeliveryTrackingAlertType.GpsDisabled,
-                    DeliveryTrackingAlertSeverity.Warning,
-                    "GPS apagado durante la jornada",
-                    "El dispositivo reportó que el servicio de ubicación fue desactivado."),
-                DeliveryDeviceEventType.LocationPermissionRevoked => CreateFromEvent(
-                    deviceEvent,
-                    branchId,
-                    DeliveryTrackingAlertType.LocationPermissionRevoked,
-                    DeliveryTrackingAlertSeverity.Critical,
-                    "Permiso de ubicación retirado",
-                    "La aplicación perdió el permiso necesario para registrar ubicaciones."),
+                DeliveryDeviceEventType.GpsDisabled => CreateLocationStateAlert(deviceEvent, branchId),
+                DeliveryDeviceEventType.LocationPermissionRevoked => CreateLocationStateAlert(deviceEvent, branchId),
                 DeliveryDeviceEventType.InternetRecovered => CreateOfflineQueueAlert(deviceEvent, branchId),
                 DeliveryDeviceEventType.AirplaneModeEnabled
                     or DeliveryDeviceEventType.WifiDisabled
@@ -250,7 +321,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             if (alert.AlertType == DeliveryTrackingAlertType.GpsDisabled
                 || alert.AlertType == DeliveryTrackingAlertType.LocationPermissionRevoked)
             {
-                ApplyDeviceEvidence(alert, recoveryEvents, locationRows);
+                ApplyDeviceEvidence(alert, recoveryEvents, locationRows, deviceEvent.Details);
             }
             alert.CreatedAt = nowUtc;
             alert.UpdatedAt = nowUtc;
@@ -267,9 +338,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             .Where(x => (x.AlertType == DeliveryTrackingAlertType.GpsDisabled
                     || x.AlertType == DeliveryTrackingAlertType.LocationPermissionRevoked)
                 && x.WorkSessionId.HasValue
-                && _db.DeliveryWorkSessions.Any(session =>
-                    session.Id == x.WorkSessionId.Value
-                    && session.Status == DeliveryWorkSessionStatus.Active)
+                && x.Severity != DeliveryTrackingAlertSeverity.Informational
                 && (x.RecoveredAt == null
                     || x.StartLatitude == null
                     || x.EndLatitude == null))
@@ -295,10 +364,14 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                 x.RecordedAt,
                 x.Id))
             .ToListAsync(cancellationToken);
+        var sourceIds = alerts.Where(x => x.SourceDeviceEventId.HasValue).Select(x => x.SourceDeviceEventId!.Value).ToList();
+        var sources = await _db.DeliveryDeviceEvents.AsNoTracking()
+            .Where(x => sourceIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, cancellationToken);
         var changes = 0;
         foreach (var alert in alerts)
         {
-            if (ApplyDeviceEvidence(alert, recoveryEvents, locationRows))
+            if (ApplyDeviceEvidence(alert, recoveryEvents, locationRows,
+                sources.GetValueOrDefault(alert.SourceDeviceEventId ?? 0)?.Details))
             {
                 alert.UpdatedAt = nowUtc;
                 changes++;
@@ -310,7 +383,8 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
     private static bool ApplyDeviceEvidence(
         DeliveryTrackingAlert alert,
         IReadOnlyCollection<DeliveryDeviceEvent> recoveryEvents,
-        IReadOnlyCollection<DeviceAlertLocation> locations)
+        IReadOnlyCollection<DeviceAlertLocation> locations,
+        string? sourceDetails = null)
     {
         if (!alert.WorkSessionId.HasValue)
             return false;
@@ -336,7 +410,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         var recovery = recoveryEvents
             .Where(x => x.WorkSessionId == sessionId
                 && x.EventType == recoveryType
-                && x.RecordedAt >= alert.OccurredAt)
+                && x.RecordedAt >= alert.OccurredAt
+                && (DeliveryTrackingEvidencePolicy.Value(sourceDetails, "episode") == null
+                    || DeliveryTrackingEvidencePolicy.SameEpisode(sourceDetails, x.Details)))
             .OrderBy(x => x.RecordedAt)
             .ThenBy(x => x.Id)
             .FirstOrDefault();
@@ -378,9 +454,11 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
 
     private static string BuildDeviceEvidenceMessage(DeliveryTrackingAlert alert)
     {
+        if (alert.Severity == DeliveryTrackingAlertSeverity.Informational)
+            return "El reporte no contiene evidencia independiente suficiente del estado de Android. No demuestra una desactivación ni una falta.";
         var eventName = alert.AlertType == DeliveryTrackingAlertType.GpsDisabled
-            ? "El GPS fue apagado durante la jornada."
-            : "El permiso de ubicación fue retirado durante la jornada.";
+            ? "Android reportó la ubicación desactivada durante al menos un minuto. No acredita intención."
+            : "Android reportó un permiso de ubicación insuficiente. No acredita intención.";
         var occurrence = FormatLocationEvidence(
             "Última ubicación antes del evento",
             alert.StartLatitude,
@@ -429,6 +507,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         var alerts = await _db.DeliveryTrackingAlerts.AsNoTracking()
             .Where(alert => (alert.AlertType == DeliveryTrackingAlertType.GpsDisabled
                     || alert.AlertType == DeliveryTrackingAlertType.LocationPermissionRevoked)
+                && alert.Severity != DeliveryTrackingAlertSeverity.Informational
                 && alert.SourceDeviceEventId.HasValue
                 && !_db.DeliveryTrackingIncidents.Any(incident =>
                     incident.SourceDeviceEventId == alert.SourceDeviceEventId
@@ -598,8 +677,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
     {
         var alerts = await _db.DeliveryTrackingAlerts
             .Where(alert => alert.AlertType == DeliveryTrackingAlertType.NoCommunication
-                && alert.Severity == DeliveryTrackingAlertSeverity.RequiresReview
-                && alert.Status == DeliveryTrackingAlertStatus.Active
+                && (alert.Severity == DeliveryTrackingAlertSeverity.RequiresReview
+                    || (alert.SourceDeviceEventId.HasValue
+                        && alert.Severity == DeliveryTrackingAlertSeverity.Warning))
                 && alert.WorkSessionId.HasValue
                 && !_db.DeliveryTrackingIncidents.Any(incident =>
                     incident.AlertId == alert.Id && incident.SourceUpdatedAt >= alert.UpdatedAt))
@@ -617,7 +697,17 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         foreach (var alert in alerts)
         {
             var sessionId = alert.WorkSessionId!.Value;
+            var sessionWindow = await _db.DeliveryWorkSessions.AsNoTracking()
+                .Where(x => x.Id == sessionId).Select(x => new { x.AutoCloseAt, x.EndedAt })
+                .FirstOrDefaultAsync(cancellationToken);
             var evidenceEnd = alert.RecoveredAt ?? nowUtc;
+            if (sessionWindow != null)
+            {
+                var deadline = sessionWindow.EndedAt.HasValue && sessionWindow.EndedAt < sessionWindow.AutoCloseAt
+                    ? sessionWindow.EndedAt.Value : sessionWindow.AutoCloseAt;
+                if (evidenceEnd > deadline) evidenceEnd = deadline;
+            }
+            if (evidenceEnd < alert.OccurredAt) evidenceEnd = alert.OccurredAt;
             var locations = await _db.DeliverymanLocations.AsNoTracking()
                 .Where(x => x.WorkSessionId == sessionId
                     && x.RecordedAt >= alert.OccurredAt.AddMinutes(-5)
@@ -630,7 +720,11 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                     && x.RecordedAt <= evidenceEnd.AddMinutes(5))
                 .OrderBy(x => x.RecordedAt).ThenBy(x => x.Id)
                 .ToListAsync(cancellationToken);
-            var before = locations.LastOrDefault(x => x.RecordedAt <= alert.OccurredAt);
+            var before = locations.LastOrDefault(x => x.RecordedAt <= alert.OccurredAt)
+                ?? await _db.DeliverymanLocations.AsNoTracking()
+                    .Where(x => x.WorkSessionId == sessionId && x.RecordedAt <= alert.OccurredAt)
+                    .OrderByDescending(x => x.RecordedAt).ThenByDescending(x => x.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
             var after = alert.RecoveredAt.HasValue
                 ? locations.FirstOrDefault(x => x.RecordedAt >= alert.RecoveredAt.Value)
                 : null;
@@ -640,6 +734,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             var directEvent = sourceEvent is not null && IsDirectInterruptionEvent(sourceEvent.EventType)
                 ? sourceEvent
                 : events
+                .Where(x => x.RecordedAt >= alert.OccurredAt && x.RecordedAt <= evidenceEnd)
                 .Where(x => x.EventType is
                     DeliveryDeviceEventType.AirplaneModeEnabled
                     or DeliveryDeviceEventType.AppStopped
@@ -660,23 +755,8 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                     x.EventType == DeliveryDeviceEventType.InternetLost
                     || x.EventType == DeliveryDeviceEventType.InternetRecovered)
                 || locations.Any(x => x.InternetAvailable == false || x.TrackingMode == DeliveryTrackingMode.Offline);
-            var (cause, certainty, reason) = directEvent?.EventType switch
-            {
-                DeliveryDeviceEventType.AirplaneModeEnabled =>
-                    (DeliveryInterruptionCause.AirplaneModeEnabled, DeliveryInterruptionCertainty.ConfirmedByDevice, "airplane_mode_enabled"),
-                DeliveryDeviceEventType.AppStopped =>
-                    (DeliveryInterruptionCause.AppOrTrackingServiceStopped, DeliveryInterruptionCertainty.ConfirmedByDevice, "app_or_tracking_service_stopped"),
-                DeliveryDeviceEventType.LocationServiceRestarted =>
-                    (DeliveryInterruptionCause.AppOrTrackingServiceStopped, DeliveryInterruptionCertainty.ConfirmedByDevice, "app_or_tracking_service_stopped"),
-                DeliveryDeviceEventType.WifiDisabled =>
-                    (DeliveryInterruptionCause.WifiDisabled, DeliveryInterruptionCertainty.ConfirmedByDevice, "wifi_disabled"),
-                DeliveryDeviceEventType.DeviceRestarted =>
-                    (DeliveryInterruptionCause.DeviceRestarted, DeliveryInterruptionCertainty.ConfirmedByDevice, "device_restarted"),
-                _ when connectivityEvidence =>
-                    (DeliveryInterruptionCause.ConnectivityInterruption, DeliveryInterruptionCertainty.TechnicalEvidence, "connectivity_interruption"),
-                _ =>
-                    (DeliveryInterruptionCause.NotDetermined, DeliveryInterruptionCertainty.NotDetermined, "cause_not_determinable"),
-            };
+            var (cause, certainty, reason) = DeliveryTrackingEvidencePolicy.ClassifyInterruption(
+                directEvent, connectivityEvidence);
 
             if (!existing.TryGetValue(alert.Id, out var incident))
             {
@@ -697,8 +777,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             incident.SourceDeviceEventId = alert.SourceDeviceEventId;
             incident.DeliveryRouteId = before?.DeliveryRouteId ?? after?.DeliveryRouteId;
             incident.StartedAt = alert.OccurredAt;
-            incident.EndedAt = alert.RecoveredAt ?? alert.OccurredAt;
-            incident.DurationSeconds = alert.DurationSeconds ?? 0;
+            incident.EndedAt = evidenceEnd;
+            incident.DurationSeconds = Math.Max(0, (int)Math.Min(int.MaxValue,
+                (evidenceEnd - alert.OccurredAt).TotalSeconds));
             incident.CenterLatitude = before?.Latitude ?? after?.Latitude;
             incident.CenterLongitude = before?.Longitude ?? after?.Longitude;
             incident.RadiusMeters = 0;
@@ -807,6 +888,33 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             changes++;
         }
 
+        var revised = await (from alert in _db.DeliveryTrackingAlerts
+            join incident in _db.DeliveryTrackingIncidents on alert.IncidentId equals incident.Id
+            where alert.AlertType == DeliveryTrackingAlertType.UnexpectedStay
+                && incident.UpdatedAt > alert.UpdatedAt
+            select new { Alert = alert, Incident = incident }).Take(BatchSize).ToListAsync(cancellationToken);
+        foreach (var item in revised)
+        {
+            var alert = item.Alert;
+            var incident = item.Incident;
+            var supported = incident.StayClassification is DeliveryStayClassification.PendingReview or DeliveryStayClassification.UnexpectedPlace;
+            alert.DurationSeconds = incident.DurationSeconds;
+            alert.LastOccurredAt = incident.EndedAt;
+            alert.StartLatitude = incident.CenterLatitude;
+            alert.StartLongitude = incident.CenterLongitude;
+            alert.Message = supported
+                ? $"Permanencia respaldada por muestras: {FormatDuration(incident.DurationSeconds)}. Requiere revisión del contexto."
+                : "Evidencia recalculada: la permanencia ya no cumple la regla de alerta. Las observaciones y revisiones anteriores se conservan.";
+            if (!supported) Resolve(alert, nowUtc, "Evidencia reconciliada con ubicaciones recuperadas o lugar permitido.");
+            else if (incident.ReviewStatus == DeliveryIncidentReviewStatus.Pending && alert.ResolvedByUserId == null)
+            {
+                alert.Status = DeliveryTrackingAlertStatus.Active;
+                alert.ResolvedAt = null;
+                alert.ResolutionReason = null;
+            }
+            alert.UpdatedAt = nowUtc;
+            changes++;
+        }
         var reviewedAlerts = await (
             from alert in _db.DeliveryTrackingAlerts
             join incident in _db.DeliveryTrackingIncidents on alert.IncidentId equals incident.Id
@@ -835,7 +943,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             .ToDictionaryAsync(x => x.Id, cancellationToken);
         var locationRows = await _db.DeliverymanLocations.AsNoTracking()
             .Where(x => x.WorkSessionId.HasValue && sessionIds.Contains(x.WorkSessionId.Value))
-            .Select(x => new { SessionId = x.WorkSessionId!.Value, x.RecordedAt, x.Id, x.TrackingMode })
+            .Select(x => new { SessionId = x.WorkSessionId!.Value, x.RecordedAt, x.Id, x.TrackingMode, x.Latitude, x.Longitude })
             .ToListAsync(cancellationToken);
         var lastModes = locationRows.GroupBy(x => x.SessionId).ToDictionary(
             x => x.Key,
@@ -873,9 +981,10 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             var intervalSeconds = lastModes.GetValueOrDefault(session.Id) == DeliveryTrackingMode.ActiveDelivery
                 ? branch.DeliveryTrackingActiveIntervalSeconds
                 : branch.DeliveryTrackingLightIntervalSeconds;
-            var thresholdSeconds = lastModes.GetValueOrDefault(session.Id) == DeliveryTrackingMode.ActiveDelivery
-                ? 120
-                : Math.Max(1, intervalSeconds) * 2;
+            // Never flag a quiet device before its configured next report is due.
+            var thresholdSeconds = Math.Max(180, Math.Max(1, intervalSeconds) + 60);
+            var lastLocation = locationRows.Where(x => x.SessionId == session.Id)
+                .OrderByDescending(x => x.RecordedAt).ThenByDescending(x => x.Id).FirstOrDefault();
             var silenceSeconds = (nowUtc - session.LastCommunicationAt).TotalSeconds;
             if (silenceSeconds >= thresholdSeconds)
             {
@@ -905,6 +1014,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                         Message = $"No se reciben datos desde hace {Math.Max(1, (int)silenceSeconds / 60)} minutos; se esperaban reportes cada {intervalSeconds} segundos.",
                         OccurredAt = session.LastCommunicationAt,
                         LastOccurredAt = nowUtc,
+                        StartLatitude = lastLocation?.Latitude,
+                        StartLongitude = lastLocation?.Longitude,
+                        StartLocationRecordedAt = lastLocation?.RecordedAt,
                         CreatedAt = nowUtc,
                         UpdatedAt = nowUtc,
                     });
@@ -961,78 +1073,56 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             }
         }
 
-        var activeSessionMap = sessions.ToDictionary(x => x.Id);
         foreach (var alert in relevantAlerts.Where(x => x.Status == DeliveryTrackingAlertStatus.Active))
         {
-            if (!alert.WorkSessionId.HasValue || !activeSessionMap.TryGetValue(alert.WorkSessionId.Value, out var session))
+            if (!alert.WorkSessionId.HasValue
+                || !relevantSessionMap.TryGetValue(alert.WorkSessionId.Value, out var session)) continue;
+            if (alert.AlertType == DeliveryTrackingAlertType.NoCommunication && !alert.RecoveredAt.HasValue
+                && session.LastCommunicationAt > alert.OccurredAt)
             {
-                if (RequiresAdministrativeResolution(alert))
-                {
-                    if (alert.AlertType == DeliveryTrackingAlertType.NoCommunication
-                        && alert.WorkSessionId.HasValue
-                        && relevantSessionMap.TryGetValue(alert.WorkSessionId.Value, out var endedSession)
-                        && endedSession.LastCommunicationAt > alert.OccurredAt
-                        && !alert.RecoveredAt.HasValue)
-                    {
-                        alert.RecoveredAt = endedSession.LastCommunicationAt;
-                        alert.LastOccurredAt = endedSession.LastCommunicationAt;
-                        alert.DurationSeconds = Math.Max(0,
-                            (int)Math.Round((endedSession.LastCommunicationAt - alert.OccurredAt).TotalSeconds));
-                        alert.Message = $"El seguimiento se interrumpió durante {FormatDuration(alert.DurationSeconds)}. " +
-                            "La finalización de la jornada no cierra la revisión administrativa.";
-                        alert.UpdatedAt = nowUtc;
-                        changes++;
-                    }
-                    continue;
-                }
-                Resolve(alert, nowUtc, "La jornada laboral finalizó.");
-                changes++;
-                continue;
-            }
-            if (alert.AlertType == DeliveryTrackingAlertType.NoCommunication
-                && session.LastCommunicationAt > alert.OccurredAt
-                && !alert.RecoveredAt.HasValue)
-            {
-                alert.RecoveredAt = session.LastCommunicationAt;
-                alert.LastOccurredAt = session.LastCommunicationAt;
-                alert.DurationSeconds = Math.Max(0,
-                    (int)Math.Round((session.LastCommunicationAt - alert.OccurredAt).TotalSeconds));
-                var sessionLocations = await _db.DeliverymanLocations.AsNoTracking()
-                    .Where(x => x.WorkSessionId == session.Id)
-                    .OrderBy(x => x.RecordedAt).ThenBy(x => x.Id)
-                    .ToListAsync(cancellationToken);
-                var before = sessionLocations.LastOrDefault(x => x.RecordedAt <= alert.OccurredAt);
-                var after = sessionLocations.FirstOrDefault(x => x.RecordedAt >= session.LastCommunicationAt);
+                // Capture time is not server contact time. Replayed old points
+                // are still proof of communication at SyncedAt, not RecordedAt.
+                var firstLocationReceipt = await _db.DeliverymanLocations.AsNoTracking()
+                    .Where(x => x.WorkSessionId == session.Id && x.SyncedAt > alert.OccurredAt
+                        && x.SyncedAt <= session.LastCommunicationAt)
+                    .Select(x => (DateTime?)x.SyncedAt).MinAsync(cancellationToken);
+                var firstEventReceipt = await _db.DeliveryDeviceEvents.AsNoTracking()
+                    .Where(x => x.WorkSessionId == session.Id && x.SyncedAt > alert.OccurredAt
+                        && x.SyncedAt <= session.LastCommunicationAt)
+                    .Select(x => (DateTime?)x.SyncedAt).MinAsync(cancellationToken);
+                var recovered = new[] { firstLocationReceipt, firstEventReceipt }
+                    .Where(x => x.HasValue).Select(x => x!.Value)
+                    .DefaultIfEmpty(session.LastCommunicationAt).Min();
+                alert.RecoveredAt = recovered;
+                alert.LastOccurredAt = recovered;
+                alert.DurationSeconds = Math.Max(0, (int)(recovered - alert.OccurredAt).TotalSeconds);
+                var before = await _db.DeliverymanLocations.AsNoTracking()
+                    .Where(x => x.WorkSessionId == session.Id && x.RecordedAt <= alert.OccurredAt)
+                    .OrderByDescending(x => x.RecordedAt).FirstOrDefaultAsync(cancellationToken);
+                var after = await _db.DeliverymanLocations.AsNoTracking()
+                    .Where(x => x.WorkSessionId == session.Id && x.RecordedAt >= recovered)
+                    .OrderBy(x => x.RecordedAt).FirstOrDefaultAsync(cancellationToken);
                 alert.StartLatitude ??= before?.Latitude;
                 alert.StartLongitude ??= before?.Longitude;
                 alert.StartLocationRecordedAt ??= before?.RecordedAt;
                 alert.EndLatitude ??= after?.Latitude;
                 alert.EndLongitude ??= after?.Longitude;
                 alert.EndLocationRecordedAt ??= after?.RecordedAt;
-                var relatedEvents = await _db.DeliveryDeviceEvents.AsNoTracking()
-                    .Where(x => x.WorkSessionId == session.Id
-                        && x.RecordedAt >= alert.OccurredAt
-                        && x.RecordedAt <= session.LastCommunicationAt.AddMinutes(1))
-                    .ToListAsync(cancellationToken);
-                var requiresReview = alert.Severity == DeliveryTrackingAlertSeverity.RequiresReview
-                    || alert.DurationSeconds >= ReviewSilenceSeconds
-                    || relatedEvents.Any(IsReviewableOfflineEvidence);
-                if (requiresReview)
-                {
-                    var wasAlreadyReview = alert.Severity == DeliveryTrackingAlertSeverity.RequiresReview;
-                    alert.Severity = DeliveryTrackingAlertSeverity.RequiresReview;
-                    alert.Title = "Interrupción de seguimiento pendiente de revisión";
-                    alert.Message = $"El seguimiento se interrumpió durante {FormatDuration(alert.DurationSeconds)}. " +
-                        "La recuperación no cierra la revisión administrativa.";
-                    alert.UpdatedAt = nowUtc;
-                    if (!wasAlreadyReview)
-                        QueueReviewNotification(alert);
-                }
-                else
-                {
-                    alert.Message = $"El seguimiento se recuperó después de {FormatDuration(alert.DurationSeconds)}.";
-                    Resolve(alert, session.LastCommunicationAt, "Interrupción breve recuperada automáticamente.");
-                }
+                alert.UpdatedAt = nowUtc;
+                changes++;
+            }
+            if (alert.AlertType == DeliveryTrackingAlertType.NoCommunication
+                && alert.RecoveredAt.HasValue && !RequiresAdministrativeResolution(alert))
+            {
+                alert.Message = $"Comunicación recuperada después de {FormatDuration(alert.DurationSeconds)}. "
+                    + "El episodio se conserva en el historial; la causa no se presume.";
+                Resolve(alert, nowUtc, "Comunicación recuperada automáticamente; historial conservado.");
+                changes++;
+            }
+            else if (session.Status != DeliveryWorkSessionStatus.Active && !RequiresAdministrativeResolution(alert))
+            {
+                // Closing a workday without a subsequent receipt is not a recovery.
+                Resolve(alert, nowUtc, "Jornada finalizada; no se presume recuperación ni causa de la interrupción.");
                 changes++;
             }
         }
@@ -1040,10 +1130,25 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
     }
 
     private static bool RequiresAdministrativeResolution(DeliveryTrackingAlert alert) =>
-        alert.AlertType == DeliveryTrackingAlertType.GpsDisabled
-        || alert.AlertType == DeliveryTrackingAlertType.LocationPermissionRevoked
+        ((alert.AlertType is DeliveryTrackingAlertType.GpsDisabled or DeliveryTrackingAlertType.LocationPermissionRevoked)
+            && alert.Severity != DeliveryTrackingAlertSeverity.Informational)
         || (alert.AlertType == DeliveryTrackingAlertType.NoCommunication
-            && alert.Severity == DeliveryTrackingAlertSeverity.RequiresReview);
+            && alert.DeduplicationKey.EndsWith(":manual_stop", StringComparison.Ordinal));
+
+    private static DeliveryTrackingAlert CreateLocationStateAlert(DeliveryDeviceEvent source, int branchId)
+    {
+        var gps = source.EventType == DeliveryDeviceEventType.GpsDisabled;
+        var confirmed = gps ? DeliveryTrackingEvidencePolicy.ConfirmsGpsDisabled(source)
+            : DeliveryTrackingEvidencePolicy.ConfirmsPermissionLoss(source);
+        var alert = CreateFromEvent(source, branchId,
+            gps ? DeliveryTrackingAlertType.GpsDisabled : DeliveryTrackingAlertType.LocationPermissionRevoked,
+            confirmed ? DeliveryTrackingAlertSeverity.Critical : DeliveryTrackingAlertSeverity.Informational,
+            confirmed ? (gps ? "Ubicación desactivada: estado confirmado por Android" : "Permiso de ubicación insuficiente: confirmado por Android")
+                : "Estado de ubicación no verificado",
+            confirmed ? "Estado reportado por Android; no demuestra intención." : "Reporte antiguo o incompleto, sin confirmación independiente del estado.");
+        if (!confirmed) Resolve(alert, source.SyncedAt, "Evidencia insuficiente; no se atribuye desactivación.");
+        return alert;
+    }
 
     private static DeliveryTrackingAlert CreateFromEvent(
         DeliveryDeviceEvent source,
@@ -1070,7 +1175,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
     private static DeliveryTrackingAlert? CreateOfflineQueueAlert(DeliveryDeviceEvent source, int branchId)
     {
         var count = source.OfflineLocationCount ?? ParseQueuedLocationCount(source.Details);
-        if (count <= 0)
+        if (count <= 0 && !DeliveryTrackingEvidencePolicy.IsGenericTransport(source))
             return null;
         var durationSeconds = OfflineDurationSeconds(source);
         if (durationSeconds >= ReviewOfflineDurationSeconds)
@@ -1084,9 +1189,11 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                 DeduplicationKey = $"device_event:{source.Id}:offline_review",
                 AlertType = DeliveryTrackingAlertType.NoCommunication,
                 Severity = DeliveryTrackingAlertSeverity.RequiresReview,
-                Status = DeliveryTrackingAlertStatus.Active,
-                Title = "Interrupción offline pendiente de revisión",
-                Message = $"Se sincronizaron {count} ubicaciones acumuladas sin conexión durante " +
+                Status = DeliveryTrackingAlertStatus.Resolved,
+                ResolvedAt = source.SyncedAt,
+                ResolutionReason = "Comunicación recuperada; episodio conservado en historial.",
+                Title = "Interrupción de comunicación recuperada",
+                Message = $"Se sincronizaron {count} ubicaciones pendientes durante " +
                     $"{FormatDuration(durationSeconds)}.",
                 OccurredAt = source.OfflineStartedAt ?? source.RecordedAt.AddSeconds(-durationSeconds),
                 LastOccurredAt = source.OfflineEndedAt ?? source.RecordedAt,
@@ -1105,7 +1212,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             Severity = DeliveryTrackingAlertSeverity.Informational,
             Status = DeliveryTrackingAlertStatus.Resolved,
             Title = "Ubicaciones offline sincronizadas",
-            Message = $"El dispositivo acumuló {count} ubicaciones sin conexión y las envió al recuperar internet.",
+            Message = $"El dispositivo recuperó {count} ubicaciones pendientes. Una demora de envío no demuestra falta de Internet.",
             OccurredAt = source.RecordedAt,
             LastOccurredAt = source.RecordedAt,
             ResolvedAt = source.SyncedAt,
@@ -1113,14 +1220,20 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         };
     }
 
-    private static DeliveryTrackingAlert CreateDirectInterruptionAlert(DeliveryDeviceEvent source, int branchId) =>
-        CreateFromEvent(
-            source,
-            branchId,
-            DeliveryTrackingAlertType.NoCommunication,
-            DeliveryTrackingAlertSeverity.Warning,
-            "Interrupción de seguimiento detectada",
+    private static DeliveryTrackingAlert CreateDirectInterruptionAlert(DeliveryDeviceEvent source, int branchId)
+    {
+        var manual = DeliveryTrackingEvidencePolicy.ConfirmsUserStop(source);
+        var informational = DeliveryTrackingEvidencePolicy.IsTechnicalStop(source);
+        var alert = CreateFromEvent(source, branchId, DeliveryTrackingAlertType.NoCommunication,
+            manual ? DeliveryTrackingAlertSeverity.RequiresReview
+                : informational ? DeliveryTrackingAlertSeverity.Informational : DeliveryTrackingAlertSeverity.Warning,
+            manual ? "Detención solicitada por el usuario, reportada por Android"
+                : informational ? "Evento técnico del dispositivo" : "Interrupción de causa no determinada",
             BuildDirectInterruptionMessage(source));
+        if (manual) alert.DeduplicationKey = $"device_event:{source.Id}:manual_stop";
+        if (informational) Resolve(alert, source.SyncedAt, "Evento técnico informativo, no constituye falta.");
+        return alert;
+    }
 
     private static bool IsReviewableOfflineEvidence(DeliveryDeviceEvent source) =>
         source.EventType == DeliveryDeviceEventType.InternetRecovered
@@ -1130,7 +1243,6 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
     {
         DeliveryDeviceEventType.AirplaneModeEnabled
             or DeliveryDeviceEventType.WifiDisabled
-            or DeliveryDeviceEventType.DeviceRestarted
             or DeliveryDeviceEventType.AppStopped
             or DeliveryDeviceEventType.LocationServiceRestarted => true,
         DeliveryDeviceEventType.InternetRecovered => IsReviewableOfflineEvidence(source),
@@ -1148,11 +1260,11 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         DeliveryTrackingAlert alert,
         DeliveryDeviceEvent deviceEvent) =>
         alert.OccurredAt <= deviceEvent.RecordedAt
-        && (alert.DeduplicationKey.StartsWith("session:", StringComparison.Ordinal)
-            ? !alert.RecoveredAt.HasValue
-                || deviceEvent.RecordedAt <= alert.RecoveredAt.Value.AddMinutes(1)
-            : alert.LastOccurredAt >= deviceEvent.RecordedAt.AddMinutes(-1)
-                && alert.LastOccurredAt <= deviceEvent.RecordedAt.AddMinutes(1));
+        && (alert.RecoveredAt.HasValue
+            ? deviceEvent.RecordedAt <= alert.RecoveredAt.Value.AddMinutes(1)
+            : alert.DeduplicationKey.StartsWith("session:", StringComparison.Ordinal)
+                || (alert.LastOccurredAt >= deviceEvent.RecordedAt.AddMinutes(-1)
+                    && alert.LastOccurredAt <= deviceEvent.RecordedAt.AddMinutes(1)));
 
     private static int DirectInterruptionPriority(DeliveryDeviceEventType eventType) => eventType switch
     {
@@ -1167,10 +1279,14 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
     private static string BuildDirectInterruptionMessage(DeliveryDeviceEvent source) => source.EventType switch
     {
         DeliveryDeviceEventType.AirplaneModeEnabled => "El dispositivo confirmó la activación del modo avión.",
-        DeliveryDeviceEventType.WifiDisabled => "El dispositivo confirmó que el Wi-Fi fue desactivado durante una interrupción de conectividad.",
+        DeliveryDeviceEventType.WifiDisabled => "El dispositivo reportó Wi-Fi desactivado. Esto no demuestra ausencia de Internet por datos móviles.",
         DeliveryDeviceEventType.DeviceRestarted => "El dispositivo confirmó un reinicio durante la jornada.",
-        DeliveryDeviceEventType.AppStopped => "El dispositivo confirmó que la app o el servicio de seguimiento fue detenido.",
-        DeliveryDeviceEventType.LocationServiceRestarted => "El dispositivo confirmó que el servicio de seguimiento tuvo que reiniciarse.",
+        DeliveryDeviceEventType.AppStopped => DeliveryTrackingEvidencePolicy.ConfirmsUserStop(source)
+            ? "Android registró una terminación solicitada por el usuario. Requiere revisión; no demuestra intención ni identifica a la persona."
+            : DeliveryTrackingEvidencePolicy.IsTechnicalStop(source)
+                ? "Android registró una terminación técnica del proceso. No se atribuye al domiciliario."
+                : "Se detectó una interrupción del proceso; no se conoce la causa ni se presume una acción manual.",
+        DeliveryDeviceEventType.LocationServiceRestarted => "El servicio volvió a iniciarse. La causa de la interrupción no está demostrada.",
         DeliveryDeviceEventType.InternetRecovered =>
             $"Se sincronizaron {source.OfflineLocationCount ?? ParseQueuedLocationCount(source.Details)} ubicaciones offline.",
         _ => "La interrupción requiere revisión.",

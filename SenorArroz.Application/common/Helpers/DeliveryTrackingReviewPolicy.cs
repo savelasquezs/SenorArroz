@@ -30,18 +30,16 @@ public static class DeliveryTrackingReviewPolicy
 
     public static string NotificationBody(DeliveryTrackingAlertType alertType) => alertType switch
     {
+        DeliveryTrackingAlertType.GpsDisabled =>
+            "Android reportó la ubicación desactivada durante al menos un minuto. Debes mantenerla activa durante la jornada. " +
+            "Administración tiene el evento registrado para revisión.",
+        DeliveryTrackingAlertType.LocationPermissionRevoked =>
+            "Android reportó permisos de ubicación insuficientes. Mantén ubicación precisa y permiso todo el tiempo durante la jornada. " +
+            "Administración tiene el evento registrado para revisión.",
         DeliveryTrackingAlertType.UnexpectedStay =>
-            "Se detectó que permaneciste en un lugar no autorizado por más tiempo del permitido. " +
-            "Estás incurriendo en una posible falta disciplinaria. Si contabas con permiso, omite este mensaje; " +
-            "para aclarar la situación, consulta a tu administrador.",
-        DeliveryTrackingAlertType.GpsDisabled or DeliveryTrackingAlertType.LocationPermissionRevoked =>
-            "Se detectó que apagaste la ubicación o retiraste su permiso durante la jornada. " +
-            "Estás incurriendo en una posible falta disciplinaria. Si contabas con permiso, omite este mensaje; " +
-            "para aclarar la situación, consulta a tu administrador.",
+            "Se registró una permanencia que requiere revisión administrativa. Consulta al administrador para aclarar su contexto.",
         DeliveryTrackingAlertType.NoCommunication =>
-            "Se detectó una interrupción prolongada del seguimiento durante tu jornada. " +
-            "La causa será revisada y no se considera una falta automáticamente. Si contabas con permiso, " +
-            "omite este mensaje; para aclarar la situación, consulta a tu administrador.",
+            "Se registró una interrupción del seguimiento para revisión administrativa. No se considera una falta automáticamente.",
         _ => throw new ArgumentOutOfRangeException(nameof(alertType), alertType, null),
     };
 }

@@ -112,11 +112,7 @@ public class DeliveryTrackingIncidentsController : ControllerBase
                     incident.WorkSessionId,
                     incident.StartedAt,
                     incident.EndedAt,
-                    incident.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption
-                        && !incident.EvidenceComplete
-                            ? Math.Max(0, checked((int)Math.Min(int.MaxValue,
-                                (nowUtc - incident.StartedAt).TotalSeconds)))
-                            : incident.DurationSeconds,
+                    incident.DurationSeconds,
                     incident.InterruptionCause,
                     incident.InterruptionCertainty,
                     incident.StayClassification,
@@ -200,7 +196,10 @@ public class DeliveryTrackingIncidentsController : ControllerBase
         {
             DeliveryTrackingIncidentType.Stay =>
                 await IsActiveStayAsync(incident.WorkSessionId, incident.DeliveryStayId, cancellationToken),
-            DeliveryTrackingIncidentType.TrackingInterruption => !incident.EvidenceComplete,
+            DeliveryTrackingIncidentType.TrackingInterruption => !incident.EvidenceComplete
+                && await _db.DeliveryWorkSessions.AsNoTracking().AnyAsync(session =>
+                    session.Id == incident.WorkSessionId && session.Status == DeliveryWorkSessionStatus.Active
+                    && session.AutoCloseAt > _clock.UtcNow, cancellationToken),
             _ => false,
         };
         var pointCount = locations.Count(x => x.IsCorePoint);
@@ -222,13 +221,10 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             incident.FinalClassification,
             incident.ReviewStatus,
             incident.StartedAt,
-            isActive ? null : incident.EndedAt,
+            isActive && incident.IncidentType != DeliveryTrackingIncidentType.Stay ? null : incident.EndedAt,
             isActive,
             pointCount,
-            isActive
-                ? Math.Max(0, checked((int)Math.Min(int.MaxValue,
-                    (ColombiaTimeHelper.EnsureUtc(_clock.UtcNow) - incident.StartedAt).TotalSeconds)))
-                : incident.DurationSeconds,
+            incident.DurationSeconds,
             incident.CenterLatitude,
             incident.CenterLongitude,
             incident.RadiusMeters,
@@ -335,12 +331,13 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             return false;
         var stay = await _db.DeliveryStays.AsNoTracking()
             .Where(x => x.Id == deliveryStayId.Value)
-            .Select(x => new { x.LastLocationId })
+            .Select(x => new { x.LastLocationId, x.EndedAt, x.ClassificationReason })
             .FirstOrDefaultAsync(cancellationToken);
-        if (stay is null)
+        if (stay is null || stay.ClassificationReason == DeliveryTrackingEvidencePolicy.RetractedStay)
             return false;
         var sessionIsActive = await _db.DeliveryWorkSessions.AsNoTracking()
-            .AnyAsync(x => x.Id == workSessionId && x.Status == DeliveryWorkSessionStatus.Active, cancellationToken);
+            .AnyAsync(x => x.Id == workSessionId && x.Status == DeliveryWorkSessionStatus.Active
+                && x.AutoCloseAt > _clock.UtcNow, cancellationToken);
         if (!sessionIsActive)
             return false;
         var latestLocationId = await _db.DeliverymanLocations.AsNoTracking()
@@ -349,7 +346,15 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             .ThenByDescending(x => x.Id)
             .Select(x => (long?)x.Id)
             .FirstOrDefaultAsync(cancellationToken);
-        return latestLocationId == stay.LastLocationId;
+        var cadence = await (from session in _db.DeliveryWorkSessions.AsNoTracking()
+            join branch in _db.Branches.AsNoTracking() on session.BranchId equals branch.Id
+            join location in _db.DeliverymanLocations.AsNoTracking() on stay.LastLocationId equals location.Id
+            where session.Id == workSessionId
+            select location.TrackingMode == DeliveryTrackingMode.ActiveDelivery
+                ? branch.DeliveryTrackingActiveIntervalSeconds : branch.DeliveryTrackingLightIntervalSeconds)
+            .FirstOrDefaultAsync(cancellationToken);
+        return latestLocationId == stay.LastLocationId
+            && (_clock.UtcNow - stay.EndedAt).TotalSeconds <= Math.Max(1, cadence) * 1.5;
     }
 
     private static string? Clean(string? value) =>
@@ -426,7 +431,27 @@ public record DeliveryTrackingIncidentDetailDto(
     DateTime? ReviewedAt,
     bool EvidenceComplete,
     IReadOnlyList<DeliveryIncidentLocationEvidenceDto> Locations,
-    IReadOnlyList<DeliveryIncidentDeviceEventEvidenceDto> DeviceEvents);
+    IReadOnlyList<DeliveryIncidentDeviceEventEvidenceDto> DeviceEvents)
+{
+    public DateTime EvidenceThrough => IncidentType == DeliveryTrackingIncidentType.Stay
+        ? StartedAt.AddSeconds(DurationSeconds) : EndedAt ?? StartedAt;
+    public bool EvidenceRetracted => ClassificationReason == DeliveryTrackingEvidencePolicy.RetractedStay;
+    public double? SampleAgreementPercent
+    {
+        get
+        {
+            if (IncidentType != DeliveryTrackingIncidentType.Stay || CenterLatitude == null || CenterLongitude == null)
+                return null;
+            var valid = Locations.Where(x => x.IsCorePoint && x.GpsEnabled != false
+                && x.AccuracyMeters is >= 0 and <= DeliveryTrackingEvidencePolicy.StayRadiusMeters).ToList();
+            if (valid.Count == 0) return null;
+            return Math.Round(100d * valid.Count(x => GeoHelper.HaversineDistanceMeters(
+                (double)CenterLatitude.Value, (double)CenterLongitude.Value,
+                (double)x.Latitude, (double)x.Longitude) <= DeliveryTrackingEvidencePolicy.StayRadiusMeters)
+                / valid.Count, 1);
+        }
+    }
+}
 
 public record DeliveryIncidentLocationEvidenceDto(
     long SourceLocationId,

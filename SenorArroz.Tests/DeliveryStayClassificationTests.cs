@@ -75,6 +75,41 @@ public class DeliveryStayClassificationTests
         Assert.Equal(0, await detector.ProcessPendingStaysAsync());
     }
 
+    [Theory]
+    [InlineData(1200, DeliveryStayClassification.OrderDestination)]
+    [InlineData(1201, DeliveryStayClassification.PendingReview)]
+    public async Task DestinationStaysNeedReviewOnlyAfterTwentyMinutes(int seconds, DeliveryStayClassification expected)
+    {
+        await using var db = CreateDb();
+        db.Branches.Add(new Branch { Id = 7, Name = "Centro", Address = "A", DeliveryTrackingAllowedDistanceMeters = 50 });
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession { Id = 10, BranchId = 7, DeliverymanId = 1,
+            DeviceInstallationId = "device", DevicePlatform = "android", StartedAt = BaseTime,
+            AutoCloseAt = BaseTime.AddHours(8), Status = DeliveryWorkSessionStatus.Active });
+        var stay = Stay(1, 4.62m, routeId: 20, nearestOrderId: 40, orderDistance: 5);
+        stay.DurationSeconds = seconds;
+        db.DeliveryStays.Add(stay);
+        await db.SaveChangesAsync();
+        await new DeliveryStayClassificationService(db, new FakeClock(BaseTime.AddHours(1))).ProcessPendingStaysAsync();
+        Assert.Equal(expected, stay.Classification);
+    }
+
+    [Fact]
+    public async Task BranchStaysAreNotSuspiciousRegardlessOfDuration()
+    {
+        await using var db = CreateDb();
+        db.Branches.Add(new Branch { Id = 7, Name = "Centro", Address = "A", Latitude = 4.609710m,
+            Longitude = -74.081750m, DeliveryTrackingAllowedDistanceMeters = 50 });
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession { Id = 10, BranchId = 7, DeliverymanId = 1,
+            DeviceInstallationId = "device", DevicePlatform = "android", StartedAt = BaseTime,
+            AutoCloseAt = BaseTime.AddHours(8), Status = DeliveryWorkSessionStatus.Active });
+        var stay = Stay(1, 4.609710m);
+        stay.DurationSeconds = 4 * 3600;
+        db.DeliveryStays.Add(stay);
+        await db.SaveChangesAsync();
+        await new DeliveryStayClassificationService(db, new FakeClock(BaseTime.AddHours(5))).ProcessPendingStaysAsync();
+        Assert.Equal(DeliveryStayClassification.Branch, stay.Classification);
+    }
+
     private static DeliveryStay Stay(
         long id,
         decimal latitude,

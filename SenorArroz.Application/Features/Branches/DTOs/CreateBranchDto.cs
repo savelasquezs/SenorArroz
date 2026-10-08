@@ -53,7 +53,7 @@ public class CreateBranchDto
     public int DeliveryTrackingStayThresholdMinutes { get; set; } = 10;
 
     [Range(1, int.MaxValue, ErrorMessage = "El radio de permanencia debe ser mayor que cero")]
-    public int DeliveryTrackingStayRadiusMeters { get; set; } = 50;
+    public int DeliveryTrackingStayRadiusMeters { get; set; } = 20;
 
     [Range(1, int.MaxValue, ErrorMessage = "La distancia permitida debe ser mayor que cero")]
     public int DeliveryTrackingAllowedDistanceMeters { get; set; } = 50;

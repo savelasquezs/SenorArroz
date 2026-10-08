@@ -146,7 +146,7 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
             AccuracyMeters = request.AccuracyMeters,
             HeadingDegrees = request.HeadingDegrees,
             BatteryLevelPercent = request.BatteryLevelPercent,
-            InternetAvailable = request.InternetAvailable ?? true,
+            InternetAvailable = request.InternetAvailable,
             GpsEnabled = request.GpsEnabled ?? true,
             TrackingMode = request.TrackingMode
                            ?? (routeId.HasValue

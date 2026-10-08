@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Application.Common.Services;
 
@@ -12,7 +13,8 @@ public sealed record DeliveryStayPoint(
     double? AccuracyMeters,
     bool? GpsEnabled,
     int? DeliveryRouteId,
-    DateTime RecordedAt);
+    DateTime RecordedAt,
+    int ExpectedIntervalSeconds = 300);
 
 public sealed record DetectedDeliveryStay(
     long FirstLocationId,
@@ -78,6 +80,8 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
                 x.Longitude,
                 x.DeliveryTrackingStayThresholdMinutes,
                 x.DeliveryTrackingStayRadiusMeters,
+                x.DeliveryTrackingActiveIntervalSeconds,
+                x.DeliveryTrackingLightIntervalSeconds,
             })
             .FirstOrDefaultAsync(cancellationToken);
         if (branch is null)
@@ -94,15 +98,18 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
                 x.AccuracyMeters,
                 x.GpsEnabled,
                 x.DeliveryRouteId,
-                x.RecordedAt))
+                x.RecordedAt,
+                x.TrackingMode == DeliveryTrackingMode.ActiveDelivery
+                    ? branch.DeliveryTrackingActiveIntervalSeconds
+                    : branch.DeliveryTrackingLightIntervalSeconds))
             .ToListAsync(cancellationToken);
         if (points.Count == 0)
             return 0;
 
         var detected = Detect(
             points,
-            branch.DeliveryTrackingStayThresholdMinutes,
-            branch.DeliveryTrackingStayRadiusMeters);
+            DeliveryTrackingEvidencePolicy.StayMinutes,
+            DeliveryTrackingEvidencePolicy.StayRadiusMeters);
         var routeIds = detected
             .Where(x => x.DeliveryRouteId.HasValue)
             .Select(x => x.DeliveryRouteId!.Value)
@@ -137,7 +144,7 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
         foreach (var candidate in detected)
         {
             var stay = existing.FirstOrDefault(x =>
-                           x.FirstLocationId == candidate.FirstLocationId)
+                           !matchedIds.Contains(x.Id) && x.FirstLocationId == candidate.FirstLocationId)
                        ?? existing
                            .Where(x => !matchedIds.Contains(x.Id)
                                        && x.DeliveryRouteId == candidate.DeliveryRouteId
@@ -161,110 +168,115 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
                 matchedIds.Add(stay.Id);
         }
 
+        // Late coordinates can disprove a previously inferred stay. Preserve its
+        // identity and all administrative reviews, but retract the inference.
+        foreach (var obsolete in existing.Where(x => !matchedIds.Contains(x.Id)))
+        {
+            if (obsolete.ClassificationReason == DeliveryTrackingEvidencePolicy.RetractedStay) continue;
+            obsolete.Classification = DeliveryStayClassification.GpsUnreliable;
+            obsolete.ClassificationReason = DeliveryTrackingEvidencePolicy.RetractedStay;
+            obsolete.ClassifiedAt = nowUtc;
+            obsolete.UpdatedAt = nowUtc;
+        }
+
         session.StayAnalysisLastLocationId = points.Max(x => x.Id);
         await _db.SaveChangesAsync(cancellationToken);
         return detected.Count;
     }
 
+    /// Both tracking cadences remain eligible. Cadence bounds missing evidence;
+    /// it is NOT an active-route or active-delivery eligibility gate.
     public static IReadOnlyList<DetectedDeliveryStay> Detect(
-        IReadOnlyCollection<DeliveryStayPoint> source,
-        int thresholdMinutes,
-        int radiusMeters)
+        IReadOnlyCollection<DeliveryStayPoint> source, int thresholdMinutes, int radiusMeters)
     {
-        if (thresholdMinutes <= 0)
-            throw new ArgumentOutOfRangeException(nameof(thresholdMinutes));
-        if (radiusMeters <= 0)
-            throw new ArgumentOutOfRangeException(nameof(radiusMeters));
-
+        if (thresholdMinutes <= 0) throw new ArgumentOutOfRangeException(nameof(thresholdMinutes));
+        if (radiusMeters <= 0) throw new ArgumentOutOfRangeException(nameof(radiusMeters));
+        var points = source.OrderBy(x => x.RecordedAt).ThenBy(x => x.Id)
+            .GroupBy(x => x.RecordedAt).Select(x => x.OrderBy(p => p.AccuracyMeters ?? double.MaxValue).First())
+            .ToList();
         var result = new List<DetectedDeliveryStay>();
-        var candidate = new List<DeliveryStayPoint>();
-        foreach (var point in source.OrderBy(x => x.RecordedAt).ThenBy(x => x.Id))
+        var segmentStart = 0;
+        var windowStart = 0;
+        var threshold = TimeSpan.FromMinutes(thresholdMinutes);
+        for (var end = 0; end < points.Count; end++)
         {
-            if (!IsReliable(point))
+            var point = points[end];
+            if (point.GpsEnabled == false)
             {
-                TryAddCandidate(result, candidate, thresholdMinutes, radiusMeters);
-                candidate.Clear();
+                segmentStart = windowStart = end + 1;
                 continue;
             }
-
-            if (candidate.Count == 0)
+            if (end > segmentStart)
             {
-                candidate.Add(point);
+                var previous = points[end - 1];
+                // The cadence of the preceding capture defines when the next was
+                // expected; a mode change cannot retroactively excuse a data gap.
+                var maxGap = TimeSpan.FromSeconds(Math.Max(1, previous.ExpectedIntervalSeconds) * 1.5);
+                if (point.DeliveryRouteId != previous.DeliveryRouteId
+                    || point.RecordedAt - previous.RecordedAt > maxGap)
+                    segmentStart = windowStart = end;
+            }
+            if (windowStart > end) continue;
+            while (windowStart < end && point.RecordedAt - points[windowStart + 1].RecordedAt >= threshold)
+                windowStart++;
+            if (point.RecordedAt - points[windowStart].RecordedAt < threshold) continue;
+            var sample = points.GetRange(windowStart, end - windowStart + 1);
+            var stay = Evaluate(sample, threshold, radiusMeters);
+            if (stay is null) continue;
+            if (result.Count > 0 && result[^1].DeliveryRouteId == stay.DeliveryRouteId
+                && result[^1].EndedAt >= stay.StartedAt)
+            {
+                var previous = result[^1];
+                var combined = points.Skip(segmentStart).Take(end - segmentStart + 1)
+                    .Where(x => x.RecordedAt >= previous.StartedAt).ToList();
+                var extended = Evaluate(combined, threshold, radiusMeters);
+                if (extended != null)
+                    result[^1] = extended;
+                // Do not create overlapping accusations if a different cluster
+                // begins inside a previous episode. Require a new supported window.
                 continue;
             }
-
-            if (candidate[0].DeliveryRouteId == point.DeliveryRouteId
-                && FitsRadius(candidate, point, radiusMeters))
-            {
-                candidate.Add(point);
-                continue;
-            }
-
-            TryAddCandidate(result, candidate, thresholdMinutes, radiusMeters);
-            candidate.Clear();
-            candidate.Add(point);
+            result.Add(stay);
         }
-
-        TryAddCandidate(result, candidate, thresholdMinutes, radiusMeters);
         return result;
     }
 
-    private static bool IsReliable(DeliveryStayPoint point) =>
-        point.GpsEnabled != false
-        && point.AccuracyMeters.HasValue
-        && point.AccuracyMeters.Value >= 0
-        && point.AccuracyMeters.Value <= MaximumAcceptedAccuracyMeters;
-
-    private static bool FitsRadius(
-        IReadOnlyCollection<DeliveryStayPoint> current,
-        DeliveryStayPoint next,
-        int radiusMeters)
+    private static DetectedDeliveryStay? Evaluate(
+        IReadOnlyList<DeliveryStayPoint> sample, TimeSpan threshold, double radius)
     {
-        var latitude = (current.Sum(x => (double)x.Latitude) + (double)next.Latitude) / (current.Count + 1);
-        var longitude = (current.Sum(x => (double)x.Longitude) + (double)next.Longitude) / (current.Count + 1);
-        return current.Append(next).All(point =>
-            GeoHelper.HaversineDistanceMeters(
-                latitude,
-                longitude,
-                (double)point.Latitude,
-                (double)point.Longitude) <= radiusMeters);
-    }
-
-    private static void TryAddCandidate(
-        ICollection<DetectedDeliveryStay> result,
-        IReadOnlyCollection<DeliveryStayPoint> candidate,
-        int thresholdMinutes,
-        int radiusMeters)
-    {
-        if (candidate.Count < MinimumPointCount)
-            return;
-        var ordered = candidate.OrderBy(x => x.RecordedAt).ThenBy(x => x.Id).ToList();
-        var duration = ordered[^1].RecordedAt - ordered[0].RecordedAt;
-        if (duration < TimeSpan.FromMinutes(thresholdMinutes))
-            return;
-
-        var centerLatitude = ordered.Average(x => (double)x.Latitude);
-        var centerLongitude = ordered.Average(x => (double)x.Longitude);
-        var coveredRadius = ordered.Max(point => GeoHelper.HaversineDistanceMeters(
-            centerLatitude,
-            centerLongitude,
-            (double)point.Latitude,
-            (double)point.Longitude));
-        if (coveredRadius > radiusMeters)
-            return;
-
-        result.Add(new DetectedDeliveryStay(
-            ordered[0].Id,
-            ordered[^1].Id,
-            ordered[0].DeliveryRouteId,
-            ordered[0].RecordedAt,
-            ordered[^1].RecordedAt,
-            checked((int)Math.Round(duration.TotalSeconds)),
-            (decimal)centerLatitude,
-            (decimal)centerLongitude,
-            coveredRadius,
-            ordered.Average(x => x.AccuracyMeters!.Value),
-            ordered.Count));
+        var valid = sample.Where(p => p.GpsEnabled != false
+            && p.Latitude is >= -90 and <= 90 && p.Longitude is >= -180 and <= 180
+            && p.AccuracyMeters.HasValue && double.IsFinite(p.AccuracyMeters.Value)
+            && p.AccuracyMeters.Value >= 0
+            && p.AccuracyMeters.Value <= Math.Min(radius, MaximumAcceptedAccuracyMeters)).ToList();
+        // Neutral readings do not vote against the place, but cannot manufacture
+        // 90% confidence from only a handful of good readings in a noisy interval.
+        if (valid.Count < MinimumPointCount
+            || valid.Count + 1e-9 < sample.Count * DeliveryTrackingEvidencePolicy.MinimumAgreement)
+            return null;
+        static double Median(IEnumerable<double> values)
+        {
+            var a = values.OrderBy(x => x).ToArray();
+            return (a[(a.Length - 1) / 2] + a[a.Length / 2]) / 2;
+        }
+        var lat = Median(valid.Select(x => (double)x.Latitude));
+        var lon = Median(valid.Select(x => (double)x.Longitude));
+        double Distance(DeliveryStayPoint p) => GeoHelper.HaversineDistanceMeters(
+            lat, lon, (double)p.Latitude, (double)p.Longitude);
+        var inliers = valid.Where(p => Distance(p) <= radius).ToList();
+        if (inliers.Count < MinimumPointCount
+            || inliers.Count + 1e-9 < valid.Count * DeliveryTrackingEvidencePolicy.MinimumAgreement)
+            return null;
+        var first = inliers[0];
+        var last = inliers[^1];
+        if (last.RecordedAt - first.RecordedAt < threshold) return null;
+        // Agreement is an observational proportion, not a probability of misconduct.
+        // Preserve original points and timestamps in the evidence snapshot.
+        return new DetectedDeliveryStay(first.Id, last.Id, first.DeliveryRouteId,
+            first.RecordedAt, last.RecordedAt,
+            checked((int)(last.RecordedAt - first.RecordedAt).TotalSeconds),
+            (decimal)lat, (decimal)lon, inliers.Max(Distance),
+            inliers.Average(x => x.AccuracyMeters!.Value), valid.Count);
     }
 
     private static void ApplyCandidate(

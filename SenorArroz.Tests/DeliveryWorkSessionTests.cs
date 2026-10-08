@@ -184,8 +184,11 @@ public class DeliveryWorkSessionTests
         Assert.Equal(DeliveryWorkSessionStatus.Active, sessions[1].Status);
     }
 
-    [Fact]
-    public async Task RecordLocation_WithoutActiveRoute_IsSavedAsLightTracking()
+    [Theory]
+    [InlineData(null)]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RecordLocation_WithoutActiveRoute_PreservesObservedInternetState(bool? internetAvailable)
     {
         await using var db = CreateDb();
         var now = new DateTime(2026, 7, 20, 18, 0, 0, DateTimeKind.Utc);
@@ -215,6 +218,7 @@ public class DeliveryWorkSessionTests
             Latitude = 4.60971m,
             Longitude = -74.08175m,
             RecordedAt = now,
+            InternetAvailable = internetAvailable,
         }, default);
 
         var point = Assert.Single(db.DeliverymanLocations);
@@ -222,7 +226,7 @@ public class DeliveryWorkSessionTests
         Assert.Null(point.DeliveryRouteId);
         Assert.NotNull(point.ClientPointId);
         Assert.Equal(DeliveryTrackingMode.Light, point.TrackingMode);
-        Assert.True(point.InternetAvailable);
+        Assert.Equal(internetAvailable, point.InternetAvailable);
         Assert.True(point.GpsEnabled);
         Assert.Equal(now, point.SyncedAt);
         notifications.Verify(x => x.NotifyDeliverymanLocation(

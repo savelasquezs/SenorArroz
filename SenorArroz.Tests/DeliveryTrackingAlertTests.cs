@@ -89,7 +89,7 @@ public class DeliveryTrackingAlertTests
             UpdatedAt = BaseTime.AddMinutes(16),
         });
         await db.SaveChangesAsync();
-        var clock = new FakeClock(BaseTime.AddMinutes(10));
+        var clock = new FakeClock(BaseTime.AddMinutes(16));
         var fcm = new FakeFcmPushService();
         var service = CreateService(db, clock, fcm);
 
@@ -127,11 +127,11 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(660, stay.DurationSeconds);
         Assert.Equal(4.6m, stay.StartLatitude);
         Assert.Equal(-74.08m, stay.StartLongitude);
-        Assert.Contains("app o el servicio", db.DeliveryTrackingAlerts
+        Assert.Contains("interrupción", db.DeliveryTrackingAlerts
             .Single(x => x.AlertType == DeliveryTrackingAlertType.NoCommunication).Message);
         var interruption = db.DeliveryTrackingIncidents.Single(
             x => x.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption);
-        Assert.Equal("app_or_tracking_service_stopped", interruption.ClassificationReason);
+        Assert.Equal("stop_cause_not_determined", interruption.ClassificationReason);
         Assert.Equal(205, interruption.SourceDeviceEventId);
         Assert.Equal(4, fcm.Sends.Count);
         Assert.All(fcm.Sends, send => Assert.Equal(["deliveryman-token"], send.Tokens));
@@ -146,25 +146,27 @@ public class DeliveryTrackingAlertTests
         Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "location_permission_revoked");
         Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "unexpected_stay");
         Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "no_communication");
-        Assert.Contains(fcm.Sends, send => send.Body.Contains("lugar no autorizado"));
-        Assert.Contains(fcm.Sends, send => send.Body.Contains("apagaste la ubicación"));
+        Assert.Contains(fcm.Sends, send => send.Body.Contains("permanencia"));
+        Assert.Contains(fcm.Sends, send => send.Body.Contains("ubicación desactivada"));
         Assert.Equal(0, await service.ProcessAsync());
         Assert.Equal(4, fcm.Sends.Count);
 
         var incident = db.DeliveryTrackingIncidents.Single(
             x => x.IncidentType == DeliveryTrackingIncidentType.Stay);
         incident.ReviewStatus = DeliveryIncidentReviewStatus.Justified;
-        db.DeliveryWorkSessions.Single().LastCommunicationAt = BaseTime.AddMinutes(11);
+        db.DeliveryWorkSessions.Single().LastCommunicationAt = BaseTime.AddMinutes(17);
         await db.SaveChangesAsync();
-        clock.UtcNow = BaseTime.AddMinutes(11);
+        clock.UtcNow = BaseTime.AddMinutes(17);
 
         Assert.True(await service.ProcessAsync() >= 2);
         Assert.Equal(DeliveryTrackingAlertStatus.Resolved,
             db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.UnexpectedStay).Status);
         var recoveredInterruption = db.DeliveryTrackingAlerts.Single(
             x => x.AlertType == DeliveryTrackingAlertType.NoCommunication);
-        Assert.Equal(DeliveryTrackingAlertStatus.Active, recoveredInterruption.Status);
-        Assert.Equal(BaseTime.AddMinutes(11), recoveredInterruption.RecoveredAt);
+        Assert.Equal(DeliveryTrackingAlertStatus.Resolved, recoveredInterruption.Status);
+        // The first server receipt closes silence, not the next worker scan.
+        Assert.Equal(BaseTime.AddMinutes(10).AddSeconds(2), recoveredInterruption.RecoveredAt);
+        Assert.Equal(2, recoveredInterruption.DurationSeconds);
         Assert.NotNull(recoveredInterruption.IncidentId);
     }
 
@@ -205,7 +207,7 @@ public class DeliveryTrackingAlertTests
         });
         await db.SaveChangesAsync();
         var fcm = new FakeFcmPushService();
-        var service = CreateService(db, new FakeClock(BaseTime.AddSeconds(121)), fcm);
+        var service = CreateService(db, new FakeClock(BaseTime.AddSeconds(181)), fcm);
 
         await service.ProcessAsync();
 
@@ -322,7 +324,7 @@ public class DeliveryTrackingAlertTests
         await service.ProcessAsync();
 
         Assert.Equal(DeliveryTrackingAlertStatus.Resolved, alert.Status);
-        Assert.Equal("Interrupción breve recuperada automáticamente.", alert.ResolutionReason);
+        Assert.Equal("Comunicación recuperada automáticamente; historial conservado.", alert.ResolutionReason);
         Assert.Empty(db.DeliveryTrackingIncidents);
         Assert.Empty(fcm.Sends);
     }
@@ -391,7 +393,7 @@ public class DeliveryTrackingAlertTests
         Assert.Single(db.DeliveryTrackingAlerts);
         Assert.Single(db.DeliveryTrackingIncidents);
         Assert.Single(fcm.Sends);
-        Assert.Equal(DeliveryInterruptionCause.AppOrTrackingServiceStopped,
+        Assert.Equal(DeliveryInterruptionCause.NotDetermined,
             db.DeliveryTrackingIncidents.Single().InterruptionCause);
         Assert.Equal(0, await service.ProcessAsync());
     }
@@ -442,14 +444,15 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(2, alerts.Count);
         Assert.Equal([201L, 203L], alerts.Select(x => x.SourceDeviceEventId!.Value).ToArray());
         Assert.NotNull(alerts[0].IncidentId);
-        Assert.Null(alerts[1].IncidentId);
+        Assert.NotNull(alerts[1].IncidentId);
         var incidents = db.DeliveryTrackingIncidents
             .Where(x => x.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption)
             .OrderBy(x => x.StartedAt)
             .ToList();
-        var incident = Assert.Single(incidents);
-        Assert.Equal(201L, incident.SourceDeviceEventId);
-        Assert.Single(fcm.Sends);
+        Assert.Equal(2, incidents.Count);
+        Assert.Equal(new long?[] { 201L, 203L }, incidents.Select(x => x.SourceDeviceEventId));
+        Assert.All(alerts, x => Assert.Equal(DeliveryTrackingAlertStatus.Resolved, x.Status));
+        Assert.Empty(fcm.Sends);
         Assert.Equal(0, await service.ProcessAsync());
     }
 
@@ -479,12 +482,13 @@ public class DeliveryTrackingAlertTests
         var alert = Assert.Single(db.DeliveryTrackingAlerts);
         Assert.Equal(DeliveryTrackingAlertStatus.Resolved, alert.Status);
         Assert.Equal(DeliveryTrackingAlertSeverity.Warning, alert.Severity);
-        Assert.Empty(db.DeliveryTrackingIncidents);
+        Assert.Single(db.DeliveryTrackingIncidents);
+        Assert.Equal(DeliveryInterruptionCertainty.NotDetermined, db.DeliveryTrackingIncidents.Single().InterruptionCertainty);
     }
 
     [Theory]
     [InlineData(15, 60, false)]
-    [InlineData(10, 420, true)]
+    [InlineData(10, 600, true)]
     [InlineData(14, 419, false)]
     public async Task Process_EscalatesOfflineEvidenceByCountOrDuration(
         int count,
@@ -492,7 +496,7 @@ public class DeliveryTrackingAlertTests
         bool expectedReview)
     {
         await using var db = CreateDb();
-        var recoveredAt = BaseTime.AddMinutes(8);
+        var recoveredAt = BaseTime.AddMinutes(12);
         db.Branches.Add(new Branch { Id = 7, Name = "Centro", Address = "A", Phone1 = "1" });
         db.DeliveryWorkSessions.Add(new DeliveryWorkSession
         {
@@ -546,9 +550,9 @@ public class DeliveryTrackingAlertTests
 
         var alert = db.DeliveryTrackingAlerts.Single();
         Assert.Equal(expectedReview ? DeliveryTrackingAlertType.NoCommunication : DeliveryTrackingAlertType.OfflineLocationsQueued, alert.AlertType);
-        Assert.Equal(expectedReview ? DeliveryTrackingAlertStatus.Active : DeliveryTrackingAlertStatus.Resolved, alert.Status);
+        Assert.Equal(DeliveryTrackingAlertStatus.Resolved, alert.Status);
         Assert.Equal(expectedReview, db.DeliveryTrackingIncidents.Any());
-        Assert.Equal(expectedReview ? 1 : 0, fcm.Sends.Count);
+        Assert.Empty(fcm.Sends);
     }
 
     [Fact]
@@ -624,7 +628,16 @@ public class DeliveryTrackingAlertTests
         DeliverymanId = 1,
         WorkSessionId = 10,
         EventType = type,
-        Details = details,
+        Details = details ?? (type switch
+        {
+            DeliveryDeviceEventType.GpsDisabled => "evidence_version=2;source=android_state;location_enabled=false;observed_seconds=60;episode=gps",
+            DeliveryDeviceEventType.GpsEnabled => "evidence_version=2;source=android_state;location_enabled=true;episode=gps",
+            DeliveryDeviceEventType.LocationPermissionRevoked => "evidence_version=2;source=android_state;permission_usable=false;episode=permission",
+            DeliveryDeviceEventType.LocationPermissionRecovered => "evidence_version=2;source=android_state;permission_usable=true;episode=permission",
+            _ => null,
+        }),
+        GpsEnabled = type == DeliveryDeviceEventType.GpsDisabled ? false : null,
+        LocationPermissionGranted = type == DeliveryDeviceEventType.LocationPermissionRevoked ? false : null,
         RecordedAt = BaseTime.AddMinutes(minute),
         SyncedAt = BaseTime.AddMinutes(minute).AddSeconds(2),
     };

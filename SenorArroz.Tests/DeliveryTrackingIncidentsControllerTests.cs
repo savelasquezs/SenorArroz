@@ -109,8 +109,12 @@ public class DeliveryTrackingIncidentsControllerTests
         Assert.Null(db.DeliveryTrackingIncidents.Single().FinalClassification);
     }
 
-    [Fact]
-    public async Task GetById_ReportsActiveStayAndCountsOnlyGroupedPoints()
+    [Theory]
+    [InlineData(20, true)]
+    [InlineData(450, true)]
+    [InlineData(451, false)]
+    [InlineData(2880, false)]
+    public async Task GetById_CapsDurationToEvidenceAndExpiresStaleStay(int secondsSinceLastPoint, bool expectedActive)
     {
         await using var db = CreateDb();
         SeedNames(db);
@@ -152,6 +156,7 @@ public class DeliveryTrackingIncidentsControllerTests
             Longitude = -74.081750m,
             RecordedAt = BaseTime.AddMinutes(12),
             SyncedAt = BaseTime.AddMinutes(12),
+            TrackingMode = DeliveryTrackingMode.Light,
         });
         db.DeliveryIncidentLocationEvidence.AddRange(
             Evidence(1, 501, true, 0),
@@ -160,14 +165,15 @@ public class DeliveryTrackingIncidentsControllerTests
             Evidence(1, 504, false, 13));
         await db.SaveChangesAsync();
 
-        var action = await Controller(db, role: "admin", branchId: 7).GetById(1, default);
+        var now = BaseTime.AddMinutes(12).AddSeconds(secondsSinceLastPoint);
+        var action = await Controller(db, role: "admin", branchId: 7, now: now).GetById(1, default);
         var response = Assert.IsType<ApiResponse<DeliveryTrackingIncidentDetailDto>>(
             Assert.IsType<OkObjectResult>(action.Result).Value);
 
-        Assert.True(response.Data!.IsActive);
-        Assert.Null(response.Data.EndedAt);
+        Assert.Equal(expectedActive, response.Data!.IsActive);
+        Assert.Equal(BaseTime.AddMinutes(12), response.Data.EndedAt);
         Assert.Equal(3, response.Data.PointCount);
-        Assert.Equal(3600, response.Data.DurationSeconds);
+        Assert.Equal(720, response.Data.DurationSeconds);
     }
 
     private static DeliveryTrackingIncident Incident(long id, int branchId, int deliverymanId) => new()

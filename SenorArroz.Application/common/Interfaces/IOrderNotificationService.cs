@@ -4,6 +4,7 @@ namespace SenorArroz.Application.Common.Interfaces;
 
 public interface IOrderNotificationService
 {
+    Task NotifyDeliveryTrackingAlert(int branchId, long alertId, int deliverymanId, string title, string message) => Task.CompletedTask;
     Task NotifyNewOrderToKitchen(OrderDto order);
     Task NotifyOrderReadyToDelivery(OrderDto order);
     Task NotifyReservationToKitchen(OrderDto order);

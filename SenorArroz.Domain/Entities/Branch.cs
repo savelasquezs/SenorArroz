@@ -43,7 +43,7 @@ public class Branch : TenantOwnedEntity
     public int DeliveryTrackingStayThresholdMinutes { get; set; } = 10;
 
     /// <summary>Radio máximo de los puntos que conforman una permanencia.</summary>
-    public int DeliveryTrackingStayRadiusMeters { get; set; } = 50;
+    public int DeliveryTrackingStayRadiusMeters { get; set; } = 20;
 
     /// <summary>Distancia tolerada respecto a la sucursal o al destino del pedido.</summary>
     public int DeliveryTrackingAllowedDistanceMeters { get; set; } = 50;

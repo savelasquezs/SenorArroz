@@ -115,6 +115,10 @@ public class OrderNotificationService : IOrderNotificationService
             });
     }
 
+    public Task NotifyDeliveryTrackingAlert(int branchId, long alertId, int deliverymanId, string title, string message) =>
+        _hubContext.Clients.Group(Group(branchId, "Admin"))
+            .SendAsync("DeliveryTrackingAlertChanged", new { branchId, alertId, deliverymanId, title, message });
+
     private async Task SendPushToFreeDeliverymenAsync(OrderDto order)
     {
         var correlationId = $"order_ready:{order.Id}";

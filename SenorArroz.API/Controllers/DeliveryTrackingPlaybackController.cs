@@ -95,6 +95,7 @@ public class DeliveryTrackingPlaybackController : ControllerBase
         var stayRows = await _db.DeliveryStays.AsNoTracking()
             .Where(x => ids.Contains(x.DeliverymanId)
                 && x.StartedAt <= toUtc
+                && x.ClassificationReason != DeliveryTrackingEvidencePolicy.RetractedStay
                 && (x.EndedAt >= fromUtc || x.WorkSession.Status == DeliveryWorkSessionStatus.Active))
             .OrderBy(x => x.DeliverymanId).ThenBy(x => x.StartedAt).ThenBy(x => x.Id)
             .Select(x => new PlaybackStayRow(
@@ -122,7 +123,8 @@ public class DeliveryTrackingPlaybackController : ControllerBase
         var activeSessionIds = sessionIds.Count == 0
             ? []
             : await _db.DeliveryWorkSessions.AsNoTracking()
-                .Where(x => sessionIds.Contains(x.Id) && x.Status == DeliveryWorkSessionStatus.Active)
+                .Where(x => sessionIds.Contains(x.Id) && x.Status == DeliveryWorkSessionStatus.Active
+                    && x.AutoCloseAt > _clock.UtcNow)
                 .Select(x => x.Id)
                 .ToListAsync(cancellationToken);
         var latestLocations = sessionIds.Count == 0
@@ -137,6 +139,14 @@ public class DeliveryTrackingPlaybackController : ControllerBase
                 x => x.Key,
                 x => x.OrderByDescending(point => point.RecordedAt).ThenByDescending(point => point.Id).First().Id);
         var activeSessionSet = activeSessionIds.ToHashSet();
+        var cadences = await (from session in _db.DeliveryWorkSessions.AsNoTracking()
+            join branch in _db.Branches.AsNoTracking() on session.BranchId equals branch.Id
+            where sessionIds.Contains(session.Id)
+            select new { session.Id, branch.DeliveryTrackingActiveIntervalSeconds, branch.DeliveryTrackingLightIntervalSeconds })
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+        var lastIds = latestLocationBySession.Values.ToList();
+        var lastModes = await _db.DeliverymanLocations.AsNoTracking().Where(x => lastIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.TrackingMode, cancellationToken);
 
         var routeHeaders = await _db.DeliveryRoutes.AsNoTracking()
             .Where(x => ids.Contains(x.DeliverymanId)
@@ -188,7 +198,11 @@ public class DeliveryTrackingPlaybackController : ControllerBase
             .Select(stay =>
         {
             var isActive = activeSessionSet.Contains(stay.WorkSessionId)
-                && latestLocationBySession.GetValueOrDefault(stay.WorkSessionId) == stay.LastLocationId;
+                && latestLocationBySession.GetValueOrDefault(stay.WorkSessionId) == stay.LastLocationId
+                && cadences.TryGetValue(stay.WorkSessionId, out var cadence)
+                && (nowUtc - stay.EndedAt).TotalSeconds <= Math.Max(1,
+                    lastModes.GetValueOrDefault(stay.LastLocationId) == DeliveryTrackingMode.ActiveDelivery
+                        ? cadence.DeliveryTrackingActiveIntervalSeconds : cadence.DeliveryTrackingLightIntervalSeconds) * 1.5;
             var contextOrders = BuildContextOrders(
                 stay,
                 contextRoutesByStay[stay.Id],
@@ -198,11 +212,9 @@ public class DeliveryTrackingPlaybackController : ControllerBase
                 stay.WorkSessionId,
                 stay.DeliveryRouteId,
                 stay.StartedAt,
-                isActive ? null : stay.EndedAt,
+                stay.EndedAt,
                 isActive,
-                isActive
-                    ? Math.Max(0, checked((int)Math.Min(int.MaxValue, (nowUtc - stay.StartedAt).TotalSeconds)))
-                    : stay.DurationSeconds,
+                stay.DurationSeconds,
                 stay.CenterLatitude,
                 stay.CenterLongitude,
                 stay.RadiusMeters,

@@ -28,7 +28,7 @@ public class BranchDto
     public int DeliveryTrackingLightIntervalSeconds { get; set; } = 300;
     public int DeliveryTrackingActiveIntervalSeconds { get; set; } = 30;
     public int DeliveryTrackingStayThresholdMinutes { get; set; } = 10;
-    public int DeliveryTrackingStayRadiusMeters { get; set; } = 50;
+    public int DeliveryTrackingStayRadiusMeters { get; set; } = 20;
     public int DeliveryTrackingAllowedDistanceMeters { get; set; } = 50;
     public int DeliveryTrackingLocationRetentionDays { get; set; } = 3;
     public int DeliveryTrackingIncidentRetentionDays { get; set; } = 15;

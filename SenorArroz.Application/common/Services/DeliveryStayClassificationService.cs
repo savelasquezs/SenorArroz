@@ -91,8 +91,10 @@ public class DeliveryStayClassificationService : IDeliveryStayClassificationServ
             {
                 SetClassification(
                     stay,
-                    DeliveryStayClassification.OrderDestination,
-                    "within_order_destination_tolerance",
+                    stay.DurationSeconds > DeliveryTrackingEvidencePolicy.CustomerStaySeconds
+                        ? DeliveryStayClassification.PendingReview : DeliveryStayClassification.OrderDestination,
+                    stay.DurationSeconds > DeliveryTrackingEvidencePolicy.CustomerStaySeconds
+                        ? DeliveryTrackingEvidencePolicy.CustomerStay : "within_order_destination_tolerance",
                     nowUtc);
                 continue;
             }

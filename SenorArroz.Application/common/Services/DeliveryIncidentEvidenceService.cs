@@ -30,7 +30,8 @@ public class DeliveryIncidentEvidenceService : IDeliveryIncidentEvidenceService
     {
         var stays = await _db.DeliveryStays.AsNoTracking()
             .Where(stay => stay.ClassifiedAt.HasValue
-                && RelevantClassifications.Contains(stay.Classification)
+                && (RelevantClassifications.Contains(stay.Classification)
+                    || _db.DeliveryTrackingIncidents.Any(incident => incident.DeliveryStayId == stay.Id))
                 && !_db.DeliveryTrackingIncidents.Any(incident =>
                     incident.DeliveryStayId == stay.Id
                     && incident.SourceUpdatedAt >= stay.UpdatedAt
@@ -93,9 +94,19 @@ public class DeliveryIncidentEvidenceService : IDeliveryIncidentEvidenceService
         var processed = 0;
         foreach (var stay in stays)
         {
-            if (!sessions.TryGetValue(stay.WorkSessionId, out var session)
-                || !locationsBySession.TryGetValue(stay.WorkSessionId, out var sessionLocations))
+            if (!sessions.TryGetValue(stay.WorkSessionId, out var session)) continue;
+            if (stay.ClassificationReason == DeliveryTrackingEvidencePolicy.RetractedStay
+                && incidents.TryGetValue(stay.Id, out var retracted))
+            {
+                retracted.StayClassification = stay.Classification;
+                retracted.ClassificationReason = stay.ClassificationReason;
+                retracted.SourceUpdatedAt = stay.UpdatedAt;
+                retracted.EvidenceComplete = true;
+                retracted.UpdatedAt = nowUtc;
+                processed++;
                 continue;
+            }
+            if (!locationsBySession.TryGetValue(stay.WorkSessionId, out var sessionLocations)) continue;
 
             var firstIndex = sessionLocations.FindIndex(x => x.Id == stay.FirstLocationId);
             var lastIndex = sessionLocations.FindIndex(x => x.Id == stay.LastLocationId);
@@ -122,23 +133,22 @@ public class DeliveryIncidentEvidenceService : IDeliveryIncidentEvidenceService
             }
             else
             {
-                _db.DeliveryIncidentLocationEvidence.RemoveRange(
-                    oldLocationEvidence.Where(x => x.IncidentId == incident.Id));
-                _db.DeliveryIncidentDeviceEventEvidence.RemoveRange(
-                    oldEventEvidence.Where(x => x.IncidentId == incident.Id));
+                foreach (var prior in oldLocationEvidence.Where(x => x.IncidentId == incident.Id))
+                    prior.IsCorePoint = prior.RecordedAt >= stay.StartedAt && prior.RecordedAt <= stay.EndedAt;
+                // Keep raw facts and review notes when the reconstructed episode changes.
             }
 
             orderSnapshots.TryGetValue(stay.NearestOrderId ?? 0, out var order);
             CopyStaySnapshot(incident, stay, session.BranchId, order, nowUtc);
             incident.EvidenceComplete = followingPointCount >= MarginPointCount
-                || session.Status == DeliveryWorkSessionStatus.Closed;
+                || session.Status == DeliveryWorkSessionStatus.Closed
+                || stay.ClassificationReason == DeliveryTrackingEvidencePolicy.RetractedStay;
 
             for (var index = evidenceStartIndex; index <= evidenceEndIndex; index++)
             {
                 var location = sessionLocations[index];
-                incident.LocationEvidence.Add(CopyLocation(
-                    location,
-                    index >= firstIndex && index <= lastIndex));
+                if (!oldLocationEvidence.Any(x => x.IncidentId == incident.Id && x.SourceLocationId == location.Id))
+                    incident.LocationEvidence.Add(CopyLocation(location, index >= firstIndex && index <= lastIndex));
             }
 
             var periodStart = evidenceLocations[0].RecordedAt;
@@ -146,7 +156,8 @@ public class DeliveryIncidentEvidenceService : IDeliveryIncidentEvidenceService
             foreach (var deviceEvent in eventsBySession.GetValueOrDefault(stay.WorkSessionId, [])
                          .Where(x => x.RecordedAt >= periodStart && x.RecordedAt <= periodEnd))
             {
-                incident.DeviceEventEvidence.Add(CopyDeviceEvent(deviceEvent));
+                if (!oldEventEvidence.Any(x => x.IncidentId == incident.Id && x.SourceDeviceEventId == deviceEvent.Id))
+                    incident.DeviceEventEvidence.Add(CopyDeviceEvent(deviceEvent));
             }
 
             processed++;
