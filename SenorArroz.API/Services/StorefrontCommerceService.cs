@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SenorArroz.API.Security;
 using SenorArroz.API.Services;
@@ -38,7 +39,9 @@ public sealed class StorefrontCommerceService(
     IWompiPaymentService wompi,
     IOptions<StorefrontCustomerAuthOptions> storefrontOptions,
     IBackgroundWorkSignal<PaymentNotificationOutboxWork>? paymentNotificationSignal = null,
-    IInventoryService? inventory = null)
+    IInventoryService? inventory = null,
+    ILogger<StorefrontCommerceService>? logger = null,
+    ICurrentTenant? currentTenant = null)
 {
     private const int PreparationMinutes = 20;
     private const int DeliveryPromiseMinMinutes = 35;
@@ -74,6 +77,15 @@ public sealed class StorefrontCommerceService(
             .ThenBy(x => x.StorefrontSortOrder)
             .ThenBy(x => x.Name)
             .ToListAsync(cancellationToken);
+
+        logger?.LogInformation(
+            "Storefront catalog tenant {TenantId}: {Total} active public products (rice={Rice}, combo={Combo}, beverage={Beverage}, addition={Addition}).",
+            currentTenant?.TenantId is > 0 ? currentTenant.TenantId : StorefrontTenantId,
+            products.Count,
+            products.Count(x => x.Category.StorefrontRole == "rice"),
+            products.Count(x => x.Category.StorefrontRole == "combo"),
+            products.Count(x => x.Category.StorefrontRole == "beverage"),
+            products.Count(x => x.Category.StorefrontRole == "addition"));
 
         var branchRows = await GetEligibleBranches(cancellationToken);
         var branchIds = branchRows.Select(x => x.Id).ToList();
