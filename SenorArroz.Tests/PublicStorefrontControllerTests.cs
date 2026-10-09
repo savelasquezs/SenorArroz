@@ -77,6 +77,62 @@ public class PublicStorefrontControllerTests
     }
 
     [Fact]
+    public async Task Catalog_ResolvesInventorySequentiallyAcrossBranches()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        db.Add(new Branch
+        {
+            Id = 15,
+            Name = "La 80",
+            Address = "Calle 80",
+            Phone1 = "3017654321",
+            Latitude = 6.27m,
+            Longitude = -75.59m,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var activeCalls = 0;
+        var maxConcurrentCalls = 0;
+        var inventory = new Mock<IInventoryService>();
+        inventory.Setup(x => x.GetAvailabilityAsync(
+                It.IsAny<IReadOnlyCollection<int>>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(async (IReadOnlyCollection<int> productIds, int _, CancellationToken ct) =>
+            {
+                var concurrent = Interlocked.Increment(ref activeCalls);
+                maxConcurrentCalls = Math.Max(maxConcurrentCalls, concurrent);
+                try
+                {
+                    if (concurrent > 1)
+                        throw new InvalidOperationException("Inventory calls overlapped on the shared DbContext.");
+                    await Task.Delay(15, ct);
+                    return productIds
+                        .Select(id => new ProductAvailabilityDto(id, true, null, null, true, []))
+                        .ToArray();
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref activeCalls);
+                }
+            });
+
+        var action = await Controller(db, 1800, inventory: inventory.Object).GetCatalog(default);
+
+        var response = Assert.IsType<ApiResponse<PublicCatalogDto>>(
+            Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.Single(response.Data!.RiceGroups);
+        Assert.Equal(2, response.Data.Branches.Count);
+        Assert.Equal(1, maxConcurrentCalls);
+        inventory.Verify(x => x.GetAvailabilityAsync(
+            It.IsAny<IReadOnlyCollection<int>>(),
+            It.IsAny<int>(),
+            It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
     public async Task Catalog_IncludesActiveBranchWithoutAiWhatsAppSetting_AndUsesMainPhone()
     {
         await using var db = CreateDb();

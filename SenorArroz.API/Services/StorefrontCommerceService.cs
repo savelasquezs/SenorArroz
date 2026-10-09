@@ -15,6 +15,7 @@ using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
+using SenorArroz.Application.Features.Inventory.DTOs;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
@@ -79,8 +80,14 @@ public sealed class StorefrontCommerceService(
         Dictionary<int, (bool Available, int? MaximumQuantity)>? inventoryAvailability = null;
         if (inventory is not null && products.Count > 0 && branchIds.Count > 0)
         {
-            var availabilityByBranch = await Task.WhenAll(branchIds.Select(branchId =>
-                inventory.GetAvailabilityAsync(products.Select(x => x.Id).ToList(), branchId, cancellationToken)));
+            // IInventoryService is scoped with the same DbContext as this service.
+            // EF Core does not allow concurrent operations on one DbContext, so branch
+            // availability must be resolved sequentially.
+            var productIds = products.Select(x => x.Id).ToList();
+            var availabilityByBranch = new List<IReadOnlyList<ProductAvailabilityDto>>(branchIds.Count);
+            foreach (var branchId in branchIds)
+                availabilityByBranch.Add(await inventory.GetAvailabilityAsync(productIds, branchId, cancellationToken));
+
             inventoryAvailability = availabilityByBranch
                 .SelectMany(x => x)
                 .GroupBy(x => x.ProductId)
