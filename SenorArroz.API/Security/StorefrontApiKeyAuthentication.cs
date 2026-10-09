@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
+using SenorArroz.Application.Options;
 
 namespace SenorArroz.API.Security;
 
@@ -49,7 +51,8 @@ public sealed class StorefrontApiKeyAuthenticationHandler(
     IOptionsMonitor<StorefrontApiKeyOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,
-    StorefrontApiKeyValidator validator)
+    StorefrontApiKeyValidator validator,
+    IOptions<StorefrontCustomerAuthOptions> storefrontOptions)
     : AuthenticationHandler<StorefrontApiKeyOptions>(options, logger, encoder)
 {
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -59,8 +62,17 @@ public sealed class StorefrontApiKeyAuthenticationHandler(
         if (!validator.IsValid(keyId, key))
             return Task.FromResult(AuthenticateResult.Fail("Credenciales de storefront inválidas."));
 
+        // The API key authenticates server-to-server requests. Explicitly bind those requests
+        // to their configured tenant so EF query filters and PostgreSQL RLS can see its data.
+        var tenantId = storefrontOptions.Value.TenantId;
+        if (tenantId <= 0)
+            return Task.FromResult(AuthenticateResult.Fail("Tenant del storefront no configurado."));
+
         var identity = new ClaimsIdentity(
-            [new Claim(ClaimTypes.NameIdentifier, keyId!)],
+            [
+                new Claim(ClaimTypes.NameIdentifier, keyId!),
+                new Claim("tenant_id", tenantId.ToString(CultureInfo.InvariantCulture))
+            ],
             StorefrontApiKeyOptions.Scheme);
         return Task.FromResult(AuthenticateResult.Success(
             new AuthenticationTicket(new ClaimsPrincipal(identity), StorefrontApiKeyOptions.Scheme)));
