@@ -40,7 +40,8 @@ public sealed class StorefrontCommerceService(
     IOptions<StorefrontCustomerAuthOptions> storefrontOptions,
     IBackgroundWorkSignal<PaymentNotificationOutboxWork>? paymentNotificationSignal = null,
     IInventoryService? inventory = null,
-    ILogger<StorefrontCommerceService>? logger = null)
+    ILogger<StorefrontCommerceService>? logger = null,
+    ICurrentTenant? currentTenant = null)
 {
     private const int PreparationMinutes = 20;
     private const int DeliveryPromiseMinMinutes = 35;
@@ -79,7 +80,7 @@ public sealed class StorefrontCommerceService(
 
         logger?.LogInformation(
             "Storefront catalog tenant {TenantId}: {Total} active public products (rice={Rice}, combo={Combo}, beverage={Beverage}, addition={Addition}).",
-            StorefrontTenantId,
+            currentTenant?.TenantId is > 0 ? currentTenant.TenantId : StorefrontTenantId,
             products.Count,
             products.Count(x => x.Category.StorefrontRole == "rice"),
             products.Count(x => x.Category.StorefrontRole == "combo"),
