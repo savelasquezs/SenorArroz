@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -47,18 +48,18 @@ public class UpdateBankPaymentHandler : IRequestHandler<UpdateBankPaymentCommand
         var order = await _orderRepository.GetByIdAsync(bankPayment.OrderId, cancellationToken);
         if (order == null)
             throw new BusinessException("Pedido asociado no encontrado");
-        _branchContext.EnsureAccess(order.BranchId);
-        _branchContext.EnsureAccess(bankPayment.Bank.BranchId);
+        OrderAccessRules.EnsureAccess(order, _currentUser, _branchContext);
+        OrderAccessRules.EnsurePaymentBranch(order, bankPayment.Bank.BranchId);
+
 
         // Validar permisos para modificar pagos
         if (!_businessRules.CanModifyPayments(order, _currentUser.Role))
             throw new BusinessException("No tienes permisos para modificar pagos de este pedido");
 
         // Validar acceso a sucursal
-        if (!Roles.IsSuperadmin(_currentUser.Role) && bankPayment.Bank.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para modificar pagos de esta sucursal");
 
-        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+        await using var tx = _context.Database.IsRelational() && _context.Database.CurrentTransaction is null
+            ? await _context.Database.BeginTransactionAsync(cancellationToken) : null;
 
         try
         {
@@ -78,12 +79,12 @@ public class UpdateBankPaymentHandler : IRequestHandler<UpdateBankPaymentCommand
                 await _context.SaveChangesAsync(cancellationToken);
             }
 
-            await tx.CommitAsync(cancellationToken);
+            if (tx is not null) await tx.CommitAsync(cancellationToken);
             return _mapper.Map<BankPaymentDto>(updatedPayment);
         }
         catch
         {
-            await tx.RollbackAsync(cancellationToken);
+            if (tx is not null) await tx.RollbackAsync(cancellationToken);
             throw;
         }
     }

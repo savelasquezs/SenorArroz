@@ -141,7 +141,9 @@ public class BankPaymentRepository : IBankPaymentRepository
 
     public async Task<BankPayment> UpdateAsync(BankPayment bankPayment, CancellationToken cancellationToken = default)
     {
-        _context.BankPayments.Update(bankPayment);
+        var tracked = await _context.BankPayments.FindAsync([bankPayment.Id], cancellationToken)
+            ?? throw new SenorArroz.Domain.Exceptions.NotFoundException("Pago no encontrado");
+        tracked.Amount = bankPayment.Amount;
         await _context.SaveChangesAsync(cancellationToken);
 
         return await GetByIdAsync(bankPayment.Id, cancellationToken) ?? bankPayment;

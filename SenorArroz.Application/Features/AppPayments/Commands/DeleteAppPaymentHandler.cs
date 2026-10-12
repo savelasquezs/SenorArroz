@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 // SenorArroz.Application/Features/AppPayments/Commands/DeleteAppPaymentHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -37,17 +38,12 @@ public class DeleteAppPaymentHandler : IRequestHandler<DeleteAppPaymentCommand, 
         var order = await _orderRepository.GetByIdAsync(appPayment.OrderId, cancellationToken);
         if (order == null)
             throw new BusinessException("Pedido asociado no encontrado");
-        _branchContext.EnsureAccess(order.BranchId);
-        _branchContext.EnsureAccess(appPayment.App.Bank.BranchId);
+        OrderAccessRules.EnsureAccess(order, _currentUser, _branchContext);
+        OrderAccessRules.EnsurePaymentBranch(order, appPayment.App.Bank.BranchId);
+
 
         if (!_businessRules.CanModifyPayments(order, _currentUser.Role))
             throw new BusinessException("No tienes permisos para eliminar pagos de este pedido");
-
-        if (!Roles.IsSuperadmin(_currentUser.Role) && order.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para eliminar este pago");
-
-        if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para eliminar este pago");
 
         if (appPayment.App.Bank.BranchId != order.BranchId)
             throw new BusinessException("Inconsistencia entre pedido y app");

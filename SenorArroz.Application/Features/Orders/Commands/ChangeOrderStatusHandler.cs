@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -92,8 +93,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
-        if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
+        OrderAccessRules.EnsureAccess(existingOrder, _currentUser);
 
         EnsureRappiCancellationOrigin(existingOrder, request.StatusChange.Status);
 
@@ -262,8 +262,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
-        if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
+        OrderAccessRules.EnsureAccess(existingOrder, _currentUser);
 
         EnsureRappiCancellationOrigin(existingOrder, request.StatusChange.Status);
 

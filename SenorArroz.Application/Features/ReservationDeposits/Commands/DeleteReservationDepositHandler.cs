@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
@@ -9,15 +10,20 @@ namespace SenorArroz.Application.Features.ReservationDeposits.Commands;
 public class DeleteReservationDepositHandler : IRequestHandler<DeleteReservationDepositCommand, Unit>
 {
     private readonly IApplicationDbContext _context;
+    private readonly ICurrentUser? _currentUser;
+    private readonly IBranchContext? _branchContext;
 
-    public DeleteReservationDepositHandler(IApplicationDbContext context)
+    public DeleteReservationDepositHandler(IApplicationDbContext context, ICurrentUser? currentUser = null, IBranchContext? branchContext = null)
     {
         _context = context;
+        _currentUser = currentUser;
+        _branchContext = branchContext;
     }
 
     public async Task<Unit> Handle(DeleteReservationDepositCommand request, CancellationToken cancellationToken)
     {
-        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+        await using var tx = _context.Database.IsRelational() && _context.Database.CurrentTransaction is null
+            ? await _context.Database.BeginTransactionAsync(cancellationToken) : null;
 
         try
         {
@@ -32,6 +38,11 @@ public class DeleteReservationDepositHandler : IRequestHandler<DeleteReservation
             if (order == null)
                 throw new BusinessException("El pedido asociado no existe");
 
+            if (_currentUser is not null)
+                OrderAccessRules.EnsureAccess(order, _currentUser, _branchContext);
+            else
+                _branchContext?.EnsureAccess(order.BranchId);
+
             if (order.Type != OrderType.Reservation)
                 throw new BusinessException("Solo aplican abonos de reserva");
 
@@ -45,12 +56,12 @@ public class DeleteReservationDepositHandler : IRequestHandler<DeleteReservation
 
             _context.ReservationDeposits.Remove(deposit);
             await _context.SaveChangesAsync(cancellationToken);
-            await tx.CommitAsync(cancellationToken);
+            if (tx is not null) await tx.CommitAsync(cancellationToken);
             return Unit.Value;
         }
         catch
         {
-            await tx.RollbackAsync(cancellationToken);
+            if (tx is not null) await tx.RollbackAsync(cancellationToken);
             throw;
         }
     }

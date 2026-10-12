@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 // SenorArroz.Application/Features/BankPayments/Commands/UnverifyBankPaymentHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -28,11 +29,10 @@ public class UnverifyBankPaymentHandler : IRequestHandler<UnverifyBankPaymentCom
         var bankPayment = await _bankPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (bankPayment == null)
             return false;
-        _branchContext.EnsureAccess(bankPayment.Bank.BranchId);
+        OrderAccessRules.EnsureAccess(bankPayment.Order, _currentUser, _branchContext);
+        OrderAccessRules.EnsurePaymentBranch(bankPayment.Order, bankPayment.Bank.BranchId);
 
         // Check if user has access to this bank payment's branch
-        if (!Roles.IsSuperadmin(_currentUser.Role) && bankPayment.Bank.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para desverificar este pago");
 
         return await _bankPaymentRepository.UnverifyPaymentAsync(request.Id, cancellationToken);
     }

@@ -6,6 +6,7 @@ public class OrderSearchDto
 {
     public string? SearchTerm { get; set; }
     public int? BranchId { get; set; }
+    public bool RemoteOnly { get; set; }
     public int? CustomerId { get; set; }
     public int? DeliveryManId { get; set; }
     /// <summary>Solo pedidos que tengan al menos un pago bancario asociado a este banco.</summary>

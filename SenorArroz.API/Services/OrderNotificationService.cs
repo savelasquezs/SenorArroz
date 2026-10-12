@@ -28,6 +28,17 @@ public class OrderNotificationService : IOrderNotificationService
         _logger = logger;
     }
 
+    public async Task NotifyOrderManagementChanged(int orderId, int branchId, int? originBranchId, long version)
+    {
+        var groups = new List<string> { Group(branchId, "Admin") };
+        if (originBranchId is > 0 && originBranchId != branchId)
+            groups.Add(Group(originBranchId.Value, "Admin"));
+        await _hubContext.Clients.Groups(groups).SendAsync("OrderManagementChanged", new
+        {
+            orderId, branchId, originBranchId, managementVersion = version
+        });
+    }
+
     public async Task NotifyNewOrderToKitchen(OrderDto order)
     {
         await _hubContext.Clients

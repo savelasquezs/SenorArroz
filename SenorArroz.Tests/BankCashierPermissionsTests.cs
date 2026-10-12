@@ -86,7 +86,7 @@ public sealed class BankCashierPermissionsTests
         var repository = new Mock<IBankPaymentRepository>();
         repository
             .Setup(x => x.GetByIdAsync(10, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new BankPayment { Id = 10, Bank = new Bank { BranchId = 7 } });
+            .ReturnsAsync(new BankPayment { Id = 10, OrderId = 20, Order = new Order { Id = 20, BranchId = 7 }, Bank = new Bank { BranchId = 7 } });
         repository
             .Setup(x => x.VerifyPaymentAsync(10, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -103,7 +103,7 @@ public sealed class BankCashierPermissionsTests
         var repository = new Mock<IBankPaymentRepository>();
         repository
             .Setup(x => x.GetByIdAsync(10, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new BankPayment { Id = 10, Bank = new Bank { BranchId = 8 } });
+            .ReturnsAsync(new BankPayment { Id = 10, OrderId = 20, Order = new Order { Id = 20, BranchId = 8 }, Bank = new Bank { BranchId = 8 } });
 
         var handler = new VerifyBankPaymentHandler(repository.Object, new CurrentUser(), new TestBranchContext(7));
 

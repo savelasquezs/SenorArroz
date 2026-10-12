@@ -1,3 +1,4 @@
+using SenorArroz.API.Filters;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -89,7 +90,7 @@ public class OrdersController : ControllerBase
         
         if (result == null)
             return NotFound();
-        _branchContext.EnsureAccess(result.BranchId);
+        OrderAccessRules.EnsureReturnedScope(result.BranchId, result.OriginBranchId, _currentUser, _branchContext);
         return Ok(result);
     }
 
@@ -104,7 +105,7 @@ public class OrdersController : ControllerBase
         
         if (result == null)
             return NotFound();
-        _branchContext.EnsureAccess(result.BranchId);
+        OrderAccessRules.EnsureReturnedScope(result.BranchId, result.OriginBranchId, _currentUser, _branchContext);
         return Ok(result);
     }
 
@@ -138,13 +139,15 @@ public class OrdersController : ControllerBase
     /// Busca pedidos con filtros avanzados
     /// </summary>
     [HttpPost("search")]
+    [AllowCrossBranchOrderContext]
     [Authorize(Roles = "Admin,Superadmin,Cashier,Kitchen")]
     public async Task<ActionResult<PagedResult<OrderDto>>> SearchOrders([FromBody] OrderSearchDto searchDto)
     {
         var query = new SearchOrdersQuery
         {
             SearchTerm = searchDto.SearchTerm,
-            BranchId = _branchContext.ResolveOptional(searchDto.BranchId),
+            BranchId = searchDto.RemoteOnly ? searchDto.BranchId : _branchContext.ResolveOptional(searchDto.BranchId),
+            RemoteOnly = searchDto.RemoteOnly,
             CustomerId = searchDto.CustomerId,
             DeliveryManId = searchDto.DeliveryManId,
             BankId = searchDto.BankId,
@@ -208,7 +211,7 @@ public class OrdersController : ControllerBase
         };
         
         var result = await _mediator.Send(command);
-        _branchContext.EnsureAccess(result.BranchId);
+        OrderAccessRules.EnsureReturnedScope(result.BranchId, result.OriginBranchId, _currentUser, _branchContext);
         return Ok(result);
     }
 
@@ -226,7 +229,7 @@ public class OrdersController : ControllerBase
         };
         
         var result = await _mediator.Send(command);
-        _branchContext.EnsureAccess(result.BranchId);
+        OrderAccessRules.EnsureReturnedScope(result.BranchId, result.OriginBranchId, _currentUser, _branchContext);
         return Ok(result);
     }
 
@@ -244,7 +247,7 @@ public class OrdersController : ControllerBase
         };
         
         var result = await _mediator.Send(command);
-        _branchContext.EnsureAccess(result.BranchId);
+        OrderAccessRules.EnsureReturnedScope(result.BranchId, result.OriginBranchId, _currentUser, _branchContext);
         return Ok(result);
     }
 
@@ -257,7 +260,7 @@ public class OrdersController : ControllerBase
     {
         var command = new UnassignDeliveryManCommand { Id = id };
         var result = await _mediator.Send(command);
-        _branchContext.EnsureAccess(result.BranchId);
+        OrderAccessRules.EnsureReturnedScope(result.BranchId, result.OriginBranchId, _currentUser, _branchContext);
         return Ok(result);
     }
 
@@ -275,7 +278,7 @@ public class OrdersController : ControllerBase
             PaidInStoreCashAmount = body.PaidInStoreCashAmount
         };
         var result = await _mediator.Send(command);
-        _branchContext.EnsureAccess(result.BranchId);
+        OrderAccessRules.EnsureReturnedScope(result.BranchId, result.OriginBranchId, _currentUser, _branchContext);
         return Ok(result);
     }
 
@@ -293,7 +296,7 @@ public class OrdersController : ControllerBase
         };
         
         var result = await _mediator.Send(command);
-        _branchContext.EnsureAccess(result.BranchId);
+        OrderAccessRules.EnsureReturnedScope(result.BranchId, result.OriginBranchId, _currentUser, _branchContext);
         return Ok(result);
     }
 
@@ -307,7 +310,7 @@ public class OrdersController : ControllerBase
         var existing = await _mediator.Send(new GetOrderByIdQuery { Id = id });
         if (existing == null)
             return NotFound();
-        _branchContext.EnsureAccess(existing.BranchId);
+        OrderAccessRules.EnsureReturnedScope(existing.BranchId, existing.OriginBranchId, _currentUser, _branchContext);
         var command = new DeleteOrderCommand { Id = id };
         await _mediator.Send(command);
         return NoContent();

@@ -9,6 +9,8 @@ public class OrderDto
 {
     public int Id { get; set; }
     public int BranchId { get; set; }
+    public int? OriginBranchId { get; set; }
+    public long ManagementVersion { get; set; }
     public string BranchName { get; set; } = string.Empty;
     public int TakenById { get; set; }
     public string TakenByName { get; set; } = string.Empty;

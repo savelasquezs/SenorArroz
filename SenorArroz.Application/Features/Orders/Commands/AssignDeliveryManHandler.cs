@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -38,8 +39,7 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
             throw new BusinessException("Pedido no encontrado");
 
         // Validate branch access
-        if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
+        OrderAccessRules.EnsureAccess(existingOrder, _currentUser);
 
         // Validate role permissions
         if (!Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))

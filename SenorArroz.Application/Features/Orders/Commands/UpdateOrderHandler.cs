@@ -66,8 +66,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             throw new BusinessException("Pedido no encontrado");
 
         // Validate branch access
-        if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
+        OrderAccessRules.EnsureAccess(existingOrder, _currentUser);
 
         // Validar si puede actualizar el pedido
         if (!_businessRules.CanUpdateOrder(existingOrder, _currentUser.Role))
@@ -199,14 +198,18 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             await PromoteReservationDepositsToBankPaymentsAsync(existingOrder.Id, cancellationToken);
         }
 
-        // Handle address changes - update delivery fee from address if not provided
-        if (request.Order.AddressId.HasValue && !request.Order.DeliveryFee.HasValue)
+        // The destination remains immutable. Validate customer/address within the tenant and use its service tariff.
+        if (request.Order.CustomerId.HasValue && !await _db.Customers.AsNoTracking().AnyAsync(
+            c => c.Id == existingOrder.CustomerId && c.TenantId == existingOrder.TenantId, cancellationToken))
+            throw new BusinessException("El cliente no pertenece al restaurante actual");
+        if (request.Order.AddressId.HasValue && existingOrder.Type != OrderType.Onsite)
         {
-            var address = await _addressRepository.GetByIdAsync(request.Order.AddressId.Value, cancellationToken);
-            if (address != null)
-            {
-                existingOrder.DeliveryFee = address.DeliveryFee;
-            }
+            var service = await _db.AddressBranches.AsNoTracking().SingleOrDefaultAsync(a =>
+                a.AddressId == existingOrder.AddressId && a.BranchId == existingOrder.BranchId
+                && a.TenantId == existingOrder.TenantId && a.Address.CustomerId == existingOrder.CustomerId, cancellationToken);
+            if (service is null || !service.IsCovered)
+                throw new BusinessException("La dirección no está cubierta por la sucursal que despacha el pedido");
+            if (!request.Order.DeliveryFee.HasValue) existingOrder.DeliveryFee = service.DeliveryFee;
         }
 
         var scheduleChanged = !NullableUtcInstantEquals(beforeReservedFor, existingOrder.ReservedFor)
@@ -222,7 +225,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
         OrderTotalsHelper.RecalculateFromOrderDetails(existingOrder);
 
-        await using var inventoryTransaction = _inventory is not null && _db.Database.IsRelational()
+        await using var inventoryTransaction = _inventory is not null && _db.Database.IsRelational() && _db.Database.CurrentTransaction is null
             ? await _db.Database.BeginTransactionAsync(cancellationToken)
             : null;
         try

@@ -18,17 +18,19 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
     private readonly IApplicationDbContext _context;
+    private readonly IBranchContext? _branchContext;
 
     public SearchOrdersHandler(
         IOrderRepository orderRepository,
         IMapper mapper,
         ICurrentUser currentUser,
-        IApplicationDbContext context)
+        IApplicationDbContext context, IBranchContext? branchContext = null)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
         _context = context;
+        _branchContext = branchContext;
     }
 
     public async Task<PagedResult<OrderDto>> Handle(SearchOrdersQuery request, CancellationToken cancellationToken)
@@ -39,7 +41,19 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             Roles.IsDeliveryman(_currentUser.Role)
             && request.DeliveryManId == _currentUser.Id;
 
-        if (Roles.IsSuperadmin(_currentUser.Role))
+        int? originFilter = null;
+        if (request.RemoteOnly)
+        {
+            originFilter = _branchContext?.RequireBranch() ?? _currentUser.BranchId;
+            if (!OrderAccessRules.IsManagementRole(_currentUser.Role) || _currentUser.TenantId <= 0
+                || originFilter <= 0 || request.BranchId is not > 0 || request.BranchId == originFilter)
+                throw new SenorArroz.Domain.Exceptions.BranchAccessDeniedException();
+            if (!await _context.Branches.AsNoTracking().AnyAsync(b => b.Id == request.BranchId
+                    && b.TenantId == _currentUser.TenantId, cancellationToken))
+                throw new SenorArroz.Domain.Exceptions.BranchAccessDeniedException();
+            branchFilter = request.BranchId;
+        }
+        else if (Roles.IsSuperadmin(_currentUser.Role))
         {
             branchFilter = request.BranchId is > 0 ? request.BranchId : null;
         }
@@ -87,7 +101,7 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             request.TotalDigitsPrefix,
             request.AppId,
             request.AppPaymentsUnsettledOnly,
-            request.TransferVerificationMode);
+            request.TransferVerificationMode, cancellationToken, originBranchId: originFilter);
 
         var dtos = _mapper.Map<List<OrderDto>>(result.Items);
 

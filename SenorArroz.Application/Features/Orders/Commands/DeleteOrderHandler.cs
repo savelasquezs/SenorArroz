@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Exceptions;
@@ -24,8 +25,7 @@ public class DeleteOrderHandler : IRequestHandler<DeleteOrderCommand, Unit>
             throw new BusinessException("Pedido no encontrado");
 
         // Validate branch access
-        if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para eliminar pedidos de esta sucursal");
+        OrderAccessRules.EnsureAccess(existingOrder, _currentUser);
 
         // Validate role permissions - only admin and superadmin can delete
         if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))

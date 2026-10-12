@@ -310,6 +310,7 @@ namespace SenorArroz.Infrastructure.Data
         public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             ApplyAndValidateTenantOwnership();
+            StampOrderManagementVersions();
             ConvertDateTimesToUtc();
             await ApplyAuditSessionContextAsync(cancellationToken);
             return await base.SaveChangesAsync(cancellationToken);
@@ -318,6 +319,7 @@ namespace SenorArroz.Infrastructure.Data
         public override int SaveChanges()
         {
             ApplyAndValidateTenantOwnership();
+            StampOrderManagementVersions();
             ConvertDateTimesToUtc();
             ApplyAuditSessionContext();
             return base.SaveChanges();
@@ -347,6 +349,33 @@ namespace SenorArroz.Infrastructure.Data
             Database.ExecuteSqlRaw("select set_config('app.current_user_id', {0}, true);", userId);
             Database.ExecuteSqlRaw("select set_config('app.current_user_name', {0}, true);", string.Empty);
             Database.ExecuteSqlRaw("select set_config('app.current_branch_id', {0}, true);", branchId);
+        }
+
+        public async Task<Order?> ReloadOrderForManagementAsync(int orderId, CancellationToken ct = default)
+        {
+            var tracked = Orders.Local.FirstOrDefault(o => o.Id == orderId);
+            if (tracked is not null) await Entry(tracked).ReloadAsync(ct);
+            return await Orders.SingleOrDefaultAsync(o => o.Id == orderId, ct);
+        }
+
+        private void StampOrderManagementVersions()
+        {
+            foreach (var entry in ChangeTracker.Entries<Order>())
+            {
+                if (entry.State == EntityState.Added)
+                {
+                    entry.Entity.OriginBranchId ??= entry.Entity.BranchId;
+                    entry.Entity.ManagementVersion = Math.Max(1, entry.Entity.ManagementVersion);
+                }
+                else if (entry.State == EntityState.Modified)
+                {
+                    var origin = entry.Property(o => o.OriginBranchId);
+                    if (!Equals(origin.OriginalValue, origin.CurrentValue))
+                        throw new InvalidOperationException("No se puede cambiar la sucursal de origen del pedido.");
+                    var version = entry.Property(o => o.ManagementVersion);
+                    version.CurrentValue = checked(version.OriginalValue + 1);
+                }
+            }
         }
 
         private void ConvertDateTimesToUtc()

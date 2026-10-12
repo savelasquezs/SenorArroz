@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
@@ -49,8 +49,7 @@ public class SetOrderPaidInStoreCashHandler : IRequestHandler<SetOrderPaidInStor
         if (order.Status == OrderStatus.Cancelled)
             throw new BusinessException("No se puede modificar un pedido cancelado");
 
-        if (!Roles.IsSuperadmin(role) && order.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
+        OrderAccessRules.EnsureAccess(order, _currentUser);
 
         OrderPaidInStoreCashHelper.Apply(
             order,
