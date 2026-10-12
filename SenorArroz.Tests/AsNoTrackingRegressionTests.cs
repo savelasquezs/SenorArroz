@@ -80,8 +80,17 @@ public class AsNoTrackingRegressionTests
         ctx.Branches.Add(branch);
         await ctx.SaveChangesAsync();
 
-        var customer = new Customer { Name = "Original", Phone1 = "555", BranchId = branch.Id, Active = true, CreatedAt = DateTime.UtcNow };
+        var customer = new Customer { Name = "Original", Phone1 = "3001234567", BranchId = branch.Id, Active = true, CreatedAt = DateTime.UtcNow };
         ctx.Customers.Add(customer);
+        await ctx.SaveChangesAsync();
+        ctx.CustomerPhones.Add(new CustomerPhone
+        {
+            TenantId = customer.TenantId,
+            CustomerId = customer.Id,
+            PhoneNormalized = customer.Phone1,
+            IsPrimary = true,
+            Active = true,
+        });
         await ctx.SaveChangesAsync();
 
         // Simula nueva request: limpiar el tracker (equivale a nuevo DbContext en producción)
@@ -91,6 +100,7 @@ public class AsNoTrackingRegressionTests
         var fetched = await repo.GetByIdAsync(customer.Id);
         Assert.NotNull(fetched);
         Assert.Equal("Original", fetched.Name);
+        Assert.Single(fetched.Phones);
 
         // Modificar y guardar — el Update() explícito debe funcionar con entidad no rastreada
         fetched.Name = "Actualizado";

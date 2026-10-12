@@ -208,7 +208,12 @@ public class CustomerRepository : ICustomerRepository
             });
         foreach (var stored in storedPhones)
             stored.IsPrimary = stored.Active && stored.PhoneNormalized == primaryPhone;
-        _context.Customers.Update(customer);
+        // GetByIdAsync returns a detached graph that includes Phones. The phone rows
+        // above are already tracked, so DbSet.Update(customer) would traverse that
+        // graph and try to attach a second CustomerPhone instance with the same key.
+        // Mark only the customer root as modified; phone changes are persisted through
+        // the tracked storedPhones collection and newly added CustomerPhone entities.
+        _context.Entry(customer).State = EntityState.Modified;
         await _context.SaveChangesAsync(cancellationToken);
 
         return await GetByIdWithAddressesAsync(customer.Id, cancellationToken) ?? customer;
