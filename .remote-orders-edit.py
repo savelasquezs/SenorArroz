@@ -11,4 +11,6 @@ elif subprocess.run(['git', 'apply', '--unidiff-zero', '--reverse', '--check', '
 stat = subprocess.check_output(['git', 'apply', '--numstat', '-'], input=patch).decode()
 paths = [line.split('\t')[-1] for line in stat.splitlines()]
 assert paths and all(not p.startswith(('.github/', '/', '.remote-orders')) and '..' not in p.split('/') for p in paths)
+fixture = Path('SenorArroz.Tests/RemoteOrderManagementTests.cs')
+fixture.write_text(fixture.read_text().replace('StatusTimes = new Dictionary<string, DateTime>()', 'StatusTimes = "{}"'))
 Path('.remote-orders-files.json').write_text(json.dumps(paths))
