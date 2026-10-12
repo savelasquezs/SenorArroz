@@ -9,7 +9,7 @@ public sealed record OrderDeliverymanOptionDto(int Id, string Name);
 public sealed record OrderOperationOptionsDto(int BranchId, string BranchName,
     IReadOnlyList<OrderBankOptionDto> Banks,
     IReadOnlyList<OrderAppOptionDto> Apps,
-    IReadOnlyList<OrderDeliverymanOptionDto> Deliverymen);
+    IReadOnlyList<OrderDeliverymanOptionDto> Deliverymen, decimal MaxFreeDeliveryDiscount);
 public sealed record OrderDriverLocationDto(decimal Latitude, decimal Longitude, DateTime RecordedAt, bool IsFresh);
 public sealed record OrderTrackingDto(int OrderId, OrderStatus Status, int? DeliveryManId,
     int? DeliveryRouteId, string? DeliveryManName, long ManagementVersion, OrderDriverLocationDto? Location);

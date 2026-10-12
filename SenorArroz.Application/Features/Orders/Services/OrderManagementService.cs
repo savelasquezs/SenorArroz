@@ -35,8 +35,8 @@ public sealed class OrderManagementService(IApplicationDbContext db, ICurrentUse
     public async Task<OrderOperationOptionsDto> GetOptions(int orderId, CancellationToken ct)
     {
         var order = await RequireOrder(orderId, ct);
-        var branchName = await db.Branches.AsNoTracking().Where(b => b.Id == order.BranchId)
-            .Select(b => b.Name).SingleAsync(ct);
+        var destination = await db.Branches.AsNoTracking().Where(b => b.Id == order.BranchId)
+            .Select(b => new { b.Name, b.MaxFreeDeliveryDiscount }).SingleAsync(ct);
         // No balances, user profiles, expenses or settlement totals are returned.
         var banks = await db.Banks.AsNoTracking().Where(b => b.BranchId == order.BranchId && b.Active
                 && b.Type == BankType.Normal)
@@ -47,7 +47,7 @@ public sealed class OrderManagementService(IApplicationDbContext db, ICurrentUse
             .ToListAsync(ct);
         var drivers = await db.Users.AsNoTracking().Where(u => u.BranchId == order.BranchId && u.Active && u.Role == UserRole.Deliveryman)
             .OrderBy(u => u.Name).Select(u => new OrderDeliverymanOptionDto(u.Id, u.Name)).ToListAsync(ct);
-        return new(order.BranchId, branchName, banks, apps, drivers);
+        return new(order.BranchId, destination.Name, banks, apps, drivers, destination.MaxFreeDeliveryDiscount);
     }
 
     public async Task<OrderTrackingDto> GetTracking(int orderId, CancellationToken ct)

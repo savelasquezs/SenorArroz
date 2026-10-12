@@ -162,12 +162,14 @@ public sealed class RemoteOrderManagementTests
         db.Banks.AddRange(new Bank { Id = 1, BranchId = 1, Name = "Origen" }, new Bank { Id = 2, BranchId = 2, Name = "Destino" });
         db.Users.AddRange(new User { Id = 1, BranchId = 1, Name = "Local", Email = "a@test", PasswordHash = "x", Role = UserRole.Deliveryman },
             new User { Id = 2, BranchId = 2, Name = "Remoto", Email = "b@test", PasswordHash = "x", Role = UserRole.Deliveryman });
+        (await db.Branches.SingleAsync(b => b.Id == 2)).MaxFreeDeliveryDiscount = 4500;
         await db.SaveChangesAsync();
         var service = new OrderManagementService(db, new Actor(), new TestBranchContext(1), new Clock());
         Assert.Null((await service.GetTracking(10, default)).Location);
         var options = await service.GetOptions(10, default);
         Assert.Equal(2, Assert.Single(options.Banks).BranchId);
         Assert.Equal("Remoto", Assert.Single(options.Deliverymen).Name);
+        Assert.Equal(4500, options.MaxFreeDeliveryDiscount);
     }
 
     [Theory]
@@ -205,4 +207,27 @@ public sealed class RemoteOrderManagementTests
         Assert.Equal(visible, result.Location is not null);
         if (result.Location is not null) Assert.Equal(fresh, result.Location.IsFresh);
     }
+
+    [Fact]
+    public async Task One_remote_snapshot_cannot_modify_a_consolidated_settlement_spanning_other_orders()
+    {
+        await using var db = Db(); await SeedBranches(db);
+        db.Orders.AddRange(Remote(10), Remote(11));
+        db.Banks.Add(new Bank { Id = 2, BranchId = 2, Name = "Destino" });
+        db.Apps.Add(new App { Id = 2, BankId = 2, Name = "App" });
+        db.AppPayments.AddRange(new AppPayment { Id = 91, OrderId = 10, AppId = 2, Amount = 100 },
+            new AppPayment { Id = 92, OrderId = 11, AppId = 2, Amount = 100 });
+        db.BankPayments.Add(new BankPayment { Id = 90, OrderId = 10, BankId = 2, Amount = 200,
+            IsAppSettlement = true, AppSettlementSourcePaymentIds = "[91,92]" });
+        await db.SaveChangesAsync();
+        var behavior = new OrderMutationBehavior<SenorArroz.Application.Features.BankPayments.Commands.VerifyBankPaymentCommand, bool>(
+            db, new Actor(), new TestBranchContext(1), Mock.Of<IOrderNotificationService>(),
+            NullLogger<OrderMutationBehavior<SenorArroz.Application.Features.BankPayments.Commands.VerifyBankPaymentCommand, bool>>.Instance,
+            new Precondition(10, 1));
+        var invoked = false;
+        await Assert.ThrowsAsync<OrderConcurrencyException>(() => behavior.Handle(new() { Id = 90 }, _ =>
+        { invoked = true; return Task.FromResult(true); }, default));
+        Assert.False(invoked);
+    }
+
 }

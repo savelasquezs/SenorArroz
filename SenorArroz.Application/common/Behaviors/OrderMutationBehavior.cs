@@ -107,7 +107,7 @@ public sealed class OrderMutationBehavior<TRequest, TResponse>(
         if (expected is { } e && (!primaryIds.Contains(e.OrderId) || !orders.Any(o => o.Id == e.OrderId && o.ManagementVersion == e.Version)))
             throw new OrderConcurrencyException();
         // Remote management must not silently overwrite a stale form, even from a hand-written request.
-        if (orders.Any(o => OrderAccessRules.IsOriginAccess(o, user, branch)) && (expected is null || primaryIds.Count != 1))
+        if (orders.Any(o => OrderAccessRules.IsOriginAccess(o, user, branch)) && (expected is null || primaryIds.Count != 1 || orders.Count != 1))
             throw new OrderConcurrencyException();
     }
 
