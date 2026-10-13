@@ -114,7 +114,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
         // Exigir nombre al convertir a recogida; tolerar edición de pedidos históricos
         // sin nombre solo cuando no se modifica el tipo ni el nombre del destinatario.
-        var becomesOnsite = request.Order.Type == OrderType.Onsite;
+        var becomesOnsite = existingOrder.Type != OrderType.Onsite && request.Order.Type == OrderType.Onsite;
         var editsOnsiteName = existingOrder.Type == OrderType.Onsite && request.Order.GuestName is not null;
         if ((becomesOnsite || editsOnsiteName)
             && string.IsNullOrWhiteSpace(request.Order.GuestName ?? existingOrder.GuestName))
