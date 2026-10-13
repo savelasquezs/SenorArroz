@@ -98,10 +98,6 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         }
 
         // Validate order type specific requirements
-        // El nombre de quien recoge es obligatorio en cualquier sucursal, también en pedidos sin cliente registrado.
-        if (request.Order.Type == OrderType.Onsite && string.IsNullOrWhiteSpace(request.Order.GuestName))
-            throw new BusinessException("Los pedidos para recoger requieren el nombre de quien recoge");
-
         if (request.Order.Type == Domain.Enums.OrderType.Delivery)
         {
             if (!request.Order.CustomerId.HasValue)
@@ -151,6 +147,11 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             throw new BranchAccessDeniedException();
         order.OriginBranchId = originBranchId;
         order.ManagementVersion = 1;
+        // Solo las recogidas entre sucursales requieren identificador obligatorio.
+        // Mantener opcional el nombre en las recogidas locales existentes.
+        if (request.Order.Type == OrderType.Onsite && originBranchId != branchId
+            && string.IsNullOrWhiteSpace(request.Order.GuestName))
+            throw new BusinessException("Los pedidos para recoger en otra sucursal requieren el nombre de quien recoge");
         if (order.CustomerId.HasValue && !await _db.Customers.AsNoTracking().AnyAsync(
                 x => x.Id == order.CustomerId && x.TenantId == branchTenantId && x.Active, cancellationToken))
             throw new BusinessException("El cliente no pertenece al restaurante actual");
