@@ -5,24 +5,35 @@ Fecha inicial: 2026-10-12. Fuente de verdad: esta carpeta del repositorio backen
 ## Objetivo
 Disminuir latencia, llamadas redundantes al backend, consultas y transferencia PostgreSQL, consumo de CPU/RAM, tráfico saliente y costos, **sin deteriorar funcionalidades, permisos, aislamiento entre sucursales/tenants ni exactitud financiera**.
 
-## Cómo trabajar cada día
-1. Leer este archivo, [CHECKLIST.md](CHECKLIST.md) y los informes en [reviews/](reviews/).
-2. Elegir una funcionalidad **pendiente** priorizando frecuencia, costo y riesgo. No confundir módulo completo con feature.
-3. Auditar **solo lectura** en todos los repositorios implicados; registrar rama/commit, rutas y endpoints. Ante falta de datos productivos, declararlo; no inventar métricas.
-4. Medir o instrumentar de forma no invasiva: solicitudes por flujo, latencias p50/p95, tamaño de respuestas, query count, SQL/EXPLAIN, RAM/CPU/egress, retries y estabilidad. Separar hipótesis de hallazgos.
-5. Registrar diagnóstico en `reviews/YYYY-MM-DD-Mxx-Fyy.md` con plantilla [REVIEW_TEMPLATE.md](REVIEW_TEMPLATE.md); actualizar fila del checklist a **Analizado**, enlazando informe.
-6. **No modificar código, BD o despliegues sin aprobación explícita del usuario**. Tras aprobar, abrir issue/PR por mejora, validar pruebas y resultados antes/después; marcar Implementado y posteriormente Validado. Cuando no hay mejora necesaria, documentar evidencia y cerrar como Validado sin cambios.
-7. Un feature por sesión. Si es demasiado grande, subdividir manteniendo referencias. Evitar alterar rutas ajenas.
-8. Usar PR a `main` para cambios documentales o de código. No hacer merge sin aprobación.
+## Autorización y flujo de trabajo diario: auditar, corregir y dejar PR listo
+
+El propietario autoriza **anticipadamente** que cada revisión diaria de rendimiento incluya **diagnóstico e implementación de una corrección pequeña en una rama independiente**, con pruebas y pull request dirigido a `main`. Ya **no es necesario esperar aprobación para escribir la corrección en la rama**. La aprobación del propietario se reserva para fusionar el PR y ejecutar migraciones/despliegues productivos.
+
+1. **Seleccionar exactamente un feature:** leer [CHECKLIST.md](CHECKLIST.md), informes previos y PR abiertos de todos los repositorios implicados; evitar duplicar trabajo o mezclar funcionalidades. Priorizar frecuencia, costo y riesgo, especialmente peticiones HTTP/SignalR repetidas, N+1 en SQL, payloads excesivos, CPU/RAM/egress y latencia.
+2. **Investigar antes de modificar:** seguir pantalla → store/composable/proveedor → API → handler/servicio → EF/repositorio/SQL → PostgreSQL, y también SignalR, Flutter, workers, Next.js o agente de impresión cuando proceda. Registrar rama y SHA de `main` de cada repo, roles afectados, datos reproducibles y métricas actuales; distinguir hipótesis de hechos. Si no hay acceso a métricas productivas, indicar "sin medir", nunca inventarlas.
+3. **Corregir en ramas nuevas:** crear una rama específica por feature **a partir del `main` actualizado** de cada repositorio afectado, por ejemplo `perf/M10-F01-deduplicar-listado`. Aplicar la **solución mínima y comprobable** que preserve roles, reglas de negocio, permisos por sucursal, aislamiento tenant/RLS, integridad financiera, tracking y experiencia de usuario. No introducir refactorizaciones ajenas ni optimizaciones especulativas. Si no se encuentra una mejora segura, documentar por qué y no forzar un cambio.
+4. **Probar y comparar:** agregar pruebas de regresión que reproduzcan el problema; ejecutar lint/build/unitarias y las pruebas de integración/e2e pertinentes, según cada repositorio. Medir antes/después cuando el entorno lo permita. Corregir fallos provocados por la rama. Si no es posible validar, declarar bloqueo y mantener PR en borrador, sin presentarlo como listo.
+5. **Preparar cambios de BD cuando sean necesarios:** incluir en el PR del backend scripts SQL **versionados e idempotentes** en `SenorArroz.Infrastructure/Scripts/` (el backend no aplica automáticamente migraciones EF). Actualizar entidades/configuración EF, índices, contratos y `docs/DATABASE_MAP.md` si corresponde. Probar con PostgreSQL aislado o de desarrollo, verificar seguridad ante reejecución, concurrencia, multitenant/RLS y compatibilidad hacia atrás; dejar plan para datos existentes, validación, copias de seguridad, orden exacto de aplicación y reversión/contingencia. **No ejecutar DDL, DML ni migraciones en PostgreSQL de producción**.
+6. **Abrir PR a `main`:** uno por repositorio afectado, vinculados entre sí y al identificador `Mxx-Fyy`. Incluir causa raíz, cambios, pruebas con resultados, comparación de rendimiento, riesgos, commits y un apartado explícito **"Migración BD: no aplica / pendiente de ejecutar"**. Para varios repos, describir dependencias y orden seguro. Evitar PRs a ramas de features antiguas; no fusionar ni desplegar.
+7. **Registrar en el seguimiento mediante PR:** documentar el diagnóstico en `reviews/YYYY-MM-DD-Mxx-Fyy.md` usando [REVIEW_TEMPLATE.md](REVIEW_TEMPLATE.md) y proponer actualización de [CHECKLIST.md](CHECKLIST.md) con enlaces a todos los PRs y scripts. Si este repositorio no es el que cambia código, abrir **PR exclusivamente documental a `main`** para registrar el informe, sin escribir directamente en `main`. Marcar `PR listo para revisión` únicamente si el código está realmente preparado y pruebas pertinentes pasan; si falta verificación, usar `Analizado` o `Bloqueado`. Un PR abierto **no significa** que ya esté en producción.
+8. **Entregar decisión al propietario:** resumir el problema confirmado, el cambio y su mejora esperada/medida, los enlaces de PR, estado de las pruebas, riesgos y **las acciones exactas que quedan en sus manos**: revisar, hacer merge y aplicar las migraciones cuando proceda. En backend que dependa de nuevas tablas/columnas, el orden habitual es **backup/verificación → SQL → backend → frontend/app**, pero documentar el orden real y evitar ventanas incompatibles.
+9. **Cerrar después de su integración:** cuando el propietario confirme merge y publicación, comprobar migraciones, salud de servicios y métricas comparables; entonces actualizar a `Implementado` y finalmente `Validado`. No marcar estos estados anticipadamente. Las revisiones futuras deben leer el estado vigente y avanzar sin rehacer lo ya cerrado.
+
+### Límites de esta autorización
+- **Sí:** lectura y auditoría; cambios de código y pruebas en **ramas nuevas**; scripts SQL preparados y verificados fuera de producción; commits; PRs hacia `main`; documentación y checklist propuestos por PR.
+- **No, salvo nueva instrucción explícita:** hacer merge, push directo a `main`, aplicar migraciones o cambiar datos en producción, cambiar infraestructura productiva, desplegar API/frontend/Flutter, activar automatismos que afecten usuarios, ni usar operaciones destructivas contra producción.
+- No incluir secretos, datos personales productivos ni credenciales en informes. Evitar consultas costosas o bloqueos de tablas en producción; preferir análisis de solo lectura y entornos aislados.
+- La tarea programada puede ejecutar este procedimiento con las herramientas disponibles, pero **debe declarar qué acciones logró completar realmente**. Si no puede editar algún repositorio, correr pruebas o crear un PR, documenta el bloqueo y no afirma que esté listo.
 
 ## Estados del checklist
-- `Pendiente`: existe en inventario, sin diagnóstico técnico.
-- `Analizado`: revisión hecha, informe enlazado.
-- `Mejora aprobada`: el usuario aprobó una propuesta concreta.
-- `Implementado`: PR fusionado/desplegado según corresponda; aún no validado con resultado medido.
-- `Validado`: mejora verificada o ausencia de mejora justificada con evidencia.
-- `Bloqueado`: falta información o acceso, documentar razón.
-- `En desarrollo`: funcionalidad aún no publicada completamente; no equivale a rendimiento auditado.
+- `Pendiente`: inventariado, aún sin diagnóstico.
+- `Analizado`: diagnóstico registrado, todavía sin PR de corrección listo, o sin cambio justificado.
+- `PR listo para revisión`: rama y PR(s) abiertos a `main`, cambio delimitado, pruebas pertinentes correctas e instrucciones SQL incluidas si aplican; pendiente de decisión del propietario.
+- `Mejora aprobada`: el propietario aprobó una solución, aún no integrada/productiva (opcional si aprueba el PR antes de fusionar).
+- `Implementado`: el cambio está fusionado, con migración y despliegue aplicados según corresponda; falta verificación de impacto real.
+- `Validado`: producción verificada con evidencia antes/después o ausencia de mejora necesaria justificada.
+- `Bloqueado`: sin datos, permisos, pruebas o forma segura de corregir; explicar el impedimento.
+- `En desarrollo`: funcionalidad aún no publicada completamente; no es sinónimo de auditoría completada.
 
 Roles aproximados (no sustituyen revisar atributos `Authorize`, servicio y permisos reales): C=Cajero, A=Administrador, S=Superadministrador, K=Cocina, D=Domiciliario.
 
