@@ -34,7 +34,8 @@ Este documento resume reglas funcionales que Codex debe respetar antes de modifi
 - Un celular normalizado identifica un solo cliente dentro de un tenant, pero puede repetirse en tenants diferentes.
 - `Customer.BranchId` es únicamente la sucursal de origen; no limita identidad, compras ni direcciones.
 - La dirección física se comparte entre sucursales. Barrio, tarifa y cobertura se leen/escriben mediante `AddressBranch` para la sucursal operativa.
-- Al crear una dirección desde el POS, la sucursal operativa actual es el valor por defecto. Admin, Cajero y Superadmin pueden usar otra sucursal activa del mismo tenant sin cambiar sesión, JWT ni contexto global.
+- Desde el POS, la sucursal que atiende el pedido se selecciona una sola vez en `OrderSidebar`. El formulario de dirección utiliza ese destino y no ofrece un segundo selector. La sesión, el JWT y el contexto global del cajero permanecen en su sucursal de origen.
+- Los pedidos `Onsite` enviados desde una sede para recogida en otra permiten `CustomerId` y `AddressId` nulos, pero requieren `GuestName` no vacío para identificar a quien recoge. Para pedidos `Onsite` locales ese nombre sigue siendo opcional; `Delivery` y `Reservation` conservan sus requisitos actuales.
 - La sucursal que atenderá una dirección se deriva del `NeighborhoodId`; `AddressRepository.CreateAsync()` crea el `AddressBranch` correspondiente. No se persiste un segundo selector de sucursal en `Address` y `Customer.BranchId` conserva el origen legacy.
 - Si al crear un cliente el teléfono ya existe dentro del tenant, se reutiliza el cliente sin cambiar su sucursal de origen, pero la dirección inicial enviada debe crearse si no existe para permitir continuar el pedido en la sucursal operativa elegida.
 - Una sucursal nueva crea `AddressBranch` bajo demanda; nunca copia clientes o direcciones.
