@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 // SenorArroz.Application/Features/BankPayments/Commands/CreateBankPaymentHandler.cs
 using AutoMapper;
 using MediatR;
@@ -42,18 +43,12 @@ public class CreateBankPaymentHandler : IRequestHandler<CreateBankPaymentCommand
         var bank = await _bankRepository.GetByIdAsync(request.BankId, cancellationToken);
         if (bank == null)
             throw new BusinessException("El banco especificado no existe");
-        _branchContext.EnsureAccess(bank.BranchId);
-
-        if (!Roles.IsSuperadmin(_currentUser.Role) && bank.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para crear pagos en este banco");
 
         var order = await _orderRepository.GetByIdAsync(request.OrderId, cancellationToken);
         if (order == null)
             throw new BusinessException("El pedido especificado no existe");
-        _branchContext.EnsureAccess(order.BranchId);
-
-        if (!Roles.IsSuperadmin(_currentUser.Role) && order.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para modificar pagos de este pedido");
+        OrderAccessRules.EnsureAccess(order, _currentUser, _branchContext);
+        OrderAccessRules.EnsurePaymentBranch(order, bank.BranchId);
 
         if (bank.BranchId != order.BranchId)
             throw new BusinessException("El banco no pertenece a la sucursal del pedido");

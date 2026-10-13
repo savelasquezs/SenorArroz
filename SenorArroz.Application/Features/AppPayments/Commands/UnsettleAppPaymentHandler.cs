@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 // SenorArroz.Application/Features/AppPayments/Commands/UnsettleAppPaymentHandler.cs
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -32,11 +33,10 @@ public class UnsettleAppPaymentHandler : IRequestHandler<UnsettleAppPaymentComma
         var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (appPayment == null)
             return false;
-        _branchContext.EnsureAccess(appPayment.App.Bank.BranchId);
+        OrderAccessRules.EnsureAccess(appPayment.Order, _currentUser, _branchContext);
+        OrderAccessRules.EnsurePaymentBranch(appPayment.Order, appPayment.App.Bank.BranchId);
 
         // Check if user has access to this app payment's branch
-        if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para desliquidar este pago");
         if (appPayment.IsReversed)
             throw new BusinessException("No se puede desliquidar un pago revertido.");
 

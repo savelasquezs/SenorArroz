@@ -10,6 +10,10 @@ public class Order : TenantOwnedEntity
     public const string DeliveryManAssignedStatusTimeKey = "delivery_man_assigned";
 
     public int BranchId { get; set; }
+    /// <summary>Immutable server-side snapshot of the workspace that took the order. Null for unknown legacy provenance.</summary>
+    public int? OriginBranchId { get; set; }
+    /// <summary>Version of the complete order aggregate, including payment changes.</summary>
+    public long ManagementVersion { get; set; } = 1;
     public int TakenById { get; set; }
     public int? CustomerId { get; set; }
     public int? AddressId { get; set; }

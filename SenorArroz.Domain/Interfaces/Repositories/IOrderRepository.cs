@@ -82,7 +82,7 @@ public interface IOrderRepository
         int? appId = null,
         bool appPaymentsUnsettledOnly = false,
         bool transferVerificationMode = false,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default, int? originBranchId = null
     );
 
     /// <summary>

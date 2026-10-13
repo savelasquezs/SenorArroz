@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 // SenorArroz.Application/Features/AppPayments/Commands/CreateAppPaymentHandler.cs
 using AutoMapper;
 using MediatR;
@@ -42,18 +43,12 @@ public class CreateAppPaymentHandler : IRequestHandler<CreateAppPaymentCommand, 
         var app = await _appRepository.GetByIdAsync(request.AppId, cancellationToken);
         if (app == null)
             throw new BusinessException("La app especificada no existe");
-        _branchContext.EnsureAccess(app.Bank.BranchId);
-
-        if (!Roles.IsSuperadmin(_currentUser.Role) && app.Bank.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para crear pagos en esta app");
 
         var order = await _orderRepository.GetByIdAsync(request.OrderId, cancellationToken);
         if (order == null)
             throw new BusinessException("El pedido especificado no existe");
-        _branchContext.EnsureAccess(order.BranchId);
-
-        if (!Roles.IsSuperadmin(_currentUser.Role) && order.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para modificar pagos de este pedido");
+        OrderAccessRules.EnsureAccess(order, _currentUser, _branchContext);
+        OrderAccessRules.EnsurePaymentBranch(order, app.Bank.BranchId);
 
         if (app.Bank.BranchId != order.BranchId)
             throw new BusinessException("La app no pertenece a la sucursal del pedido");

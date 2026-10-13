@@ -9,6 +9,7 @@ public class SearchOrdersQuery : IRequest<PagedResult<OrderDto>>
 {
     public string? SearchTerm { get; set; }
     public int? BranchId { get; set; }
+    public bool RemoteOnly { get; set; }
     public int? CustomerId { get; set; }
     public int? DeliveryManId { get; set; }
     public int? BankId { get; set; }

@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
@@ -11,17 +12,19 @@ namespace SenorArroz.Application.Features.ReservationDeposits.Commands;
 public class UpdateReservationDepositHandler : IRequestHandler<UpdateReservationDepositCommand, ReservationDepositDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly ICurrentUser? _currentUser;
     private readonly IReservationDepositRepository _depositRepository;
     private readonly IBranchContext _branchContext;
 
     public UpdateReservationDepositHandler(
         IApplicationDbContext context,
         IReservationDepositRepository depositRepository,
-        IBranchContext branchContext)
+        IBranchContext branchContext, ICurrentUser? currentUser = null)
     {
         _context = context;
         _depositRepository = depositRepository;
         _branchContext = branchContext;
+        _currentUser = currentUser;
     }
 
     public async Task<ReservationDepositDto> Handle(UpdateReservationDepositCommand request, CancellationToken cancellationToken)
@@ -29,7 +32,8 @@ public class UpdateReservationDepositHandler : IRequestHandler<UpdateReservation
         if (request.Amount <= 0)
             throw new BusinessException("El monto debe ser mayor a 0");
 
-        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+        await using var tx = _context.Database.IsRelational() && _context.Database.CurrentTransaction is null
+            ? await _context.Database.BeginTransactionAsync(cancellationToken) : null;
 
         try
         {
@@ -39,11 +43,16 @@ public class UpdateReservationDepositHandler : IRequestHandler<UpdateReservation
 
             if (deposit == null)
                 throw new BusinessException("El abono no existe");
-            _branchContext.EnsureAccess(deposit.BranchId);
+
 
             var order = deposit.Order;
             if (order == null)
                 throw new BusinessException("El pedido asociado no existe");
+
+            if (_currentUser is not null)
+                OrderAccessRules.EnsureAccess(order, _currentUser, _branchContext);
+            else
+                _branchContext?.EnsureAccess(order.BranchId);
 
             if (order.Type != OrderType.Reservation)
                 throw new BusinessException("Solo aplican abonos de reserva");
@@ -69,7 +78,7 @@ public class UpdateReservationDepositHandler : IRequestHandler<UpdateReservation
             }
 
             await _context.SaveChangesAsync(cancellationToken);
-            await tx.CommitAsync(cancellationToken);
+            if (tx is not null) await tx.CommitAsync(cancellationToken);
 
             var refreshed = await _depositRepository.GetByIdAsync(deposit.Id, cancellationToken);
             if (refreshed == null)
@@ -95,7 +104,7 @@ public class UpdateReservationDepositHandler : IRequestHandler<UpdateReservation
         }
         catch
         {
-            await tx.RollbackAsync(cancellationToken);
+            if (tx is not null) await tx.RollbackAsync(cancellationToken);
             throw;
         }
     }

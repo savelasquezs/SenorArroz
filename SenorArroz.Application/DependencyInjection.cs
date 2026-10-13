@@ -39,10 +39,12 @@ namespace SenorArroz.Application
             {
                 cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
                 cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
+                cfg.AddOpenBehavior(typeof(OrderMutationBehavior<,>));
             });
 
             // Business Rules Service
             services.AddScoped<IOrderBusinessRulesService, OrderBusinessRulesService>();
+            services.AddScoped<SenorArroz.Application.Features.Orders.Services.OrderManagementService>();
             services.AddScoped<ILoyaltyCycleService, LoyaltyCycleService>();
             services.AddScoped<IFreeDeliverymanFcmTokenResolver, FreeDeliverymanFcmTokenResolver>();
             services.AddScoped<WhatsAppAttentionService>();

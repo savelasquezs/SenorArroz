@@ -24,6 +24,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     private readonly IPrintQueueService? _printQueue;
     private readonly ILogger<CreateOrderHandler>? _logger;
     private readonly IInventoryService? _inventory;
+    private readonly IBranchContext? _branchContext;
 
     public CreateOrderHandler(
         IOrderRepository orderRepository,
@@ -34,7 +35,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         IClock clock,
         IPrintQueueService? printQueue = null,
         ILogger<CreateOrderHandler>? logger = null,
-        IInventoryService? inventory = null)
+        IInventoryService? inventory = null,
+        IBranchContext? branchContext = null)
     {
         _orderRepository = orderRepository;
         _db = db;
@@ -45,6 +47,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         _printQueue = printQueue;
         _logger = logger;
         _inventory = inventory;
+        _branchContext = branchContext;
     }
 
     public async Task<OrderDto> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
@@ -137,6 +140,13 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         var order = _mapper.Map<Order>(request.Order);
         var branchTenantId = destinationBranch.TenantId;
         order.TenantId = branchTenantId;
+        var originBranchId = _branchContext?.EffectiveBranchId ?? _currentUser.BranchId;
+        if (originBranchId <= 0) originBranchId = branchId;
+        if (originBranchId != branchId && !await _db.Branches.AsNoTracking().AnyAsync(
+                b => b.Id == originBranchId && b.TenantId == branchTenantId, cancellationToken))
+            throw new BranchAccessDeniedException();
+        order.OriginBranchId = originBranchId;
+        order.ManagementVersion = 1;
         if (order.CustomerId.HasValue && !await _db.Customers.AsNoTracking().AnyAsync(
                 x => x.Id == order.CustomerId && x.TenantId == branchTenantId && x.Active, cancellationToken))
             throw new BusinessException("El cliente no pertenece al restaurante actual");
@@ -275,6 +285,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             await TryEnqueueKitchenPrintWhenOrderCreatedAsync(fullOrder, cancellationToken);
         }
 
+        try { await _notificationService.NotifyOrderManagementChanged(result.Id, result.BranchId, result.OriginBranchId, result.ManagementVersion); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Order created; management invalidation failed for {OrderId}", result.Id); }
         return result;
     }
 

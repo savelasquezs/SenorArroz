@@ -166,6 +166,10 @@ namespace SenorArroz.Application.Common.Interfaces
 
         DbSet<UserDeviceToken> UserDeviceTokens { get; set; }
 
+        /// <summary>Refreshes the parent after handlers that mix tracked writes and ExecuteUpdate.</summary>
+        Task<Order?> ReloadOrderForManagementAsync(int orderId, CancellationToken ct = default) =>
+            Orders.SingleOrDefaultAsync(o => o.Id == orderId, ct);
+
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     }
 }

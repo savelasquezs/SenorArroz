@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 // SenorArroz.Application/Features/AppPayments/Commands/SettleAppPaymentHandler.cs
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -35,13 +36,12 @@ public class SettleAppPaymentHandler : IRequestHandler<SettleAppPaymentCommand, 
         var appPayment = await _appPaymentRepository.GetByIdAsync(request.Id, cancellationToken);
         if (appPayment == null)
             return false;
+        OrderAccessRules.EnsureAccess(appPayment.Order, _currentUser, _branchContext);
+        OrderAccessRules.EnsurePaymentBranch(appPayment.Order, appPayment.App.Bank.BranchId);
         if (appPayment.Order.BranchId != appPayment.App.Bank.BranchId)
             throw new BusinessException("El pago, la app y el banco deben pertenecer a la misma sucursal.");
-        _branchContext.EnsureAccess(appPayment.Order.BranchId);
 
         // Check if user has access to this app payment's branch
-        if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.Order.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para liquidar este pago");
 
         // Check if already settled
         if (appPayment.IsSetted)

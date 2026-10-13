@@ -741,6 +741,10 @@ public class OrderRepository : IOrderRepository
             order.Status != OrderStatus.Delivered)
             throw new BusinessException($"El pedido debe estar en estado 'Ready', 'OnTheWay' o 'Delivered' para asignar/cambiar domiciliario. Estado actual: {order.Status}");
 
+        if (!await _context.Users.AsNoTracking().AnyAsync(u => u.Id == deliveryManId
+                && u.Active && u.Role == UserRole.Deliveryman
+                && u.BranchId == order.BranchId && u.TenantId == order.TenantId, cancellationToken))
+            throw new BusinessException("El domiciliario debe estar activo y pertenecer a la sucursal que despacha el pedido.");
         order.DeliveryManId = deliveryManId;
         order.TouchDeliveryManAssignedAtUtc(_clock.UtcNow);
         await _context.SaveChangesAsync(cancellationToken);
@@ -788,7 +792,7 @@ public class OrderRepository : IOrderRepository
         int? appId = null,
         bool appPaymentsUnsettledOnly = false,
         bool transferVerificationMode = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, int? originBranchId = null)
     {
         // PostgreSQL timestamp with time zone requiere UTC
         if (fromDate.HasValue && fromDate.Value.Kind != DateTimeKind.Utc)
@@ -798,6 +802,9 @@ public class OrderRepository : IOrderRepository
 
         // Fase 1: consulta ligera (sin includes) — filtros + orden + ids paginados
         var query = _context.Orders.AsNoTracking().AsQueryable();
+        if (originBranchId.HasValue)
+            query = query.Where(o => o.OriginBranchId == originBranchId.Value && o.BranchId != originBranchId.Value);
+
 
         query = query.ApplyOrderSearchTermFilter(_context, searchTerm);
         query = query.ApplyOrderTotalDigitsPrefix(totalDigitsPrefix);

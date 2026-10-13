@@ -531,3 +531,19 @@ Tablas:
 - `app_payment`: movimiento bruto creado únicamente al aprobar o validar manualmente un pago.
 
 El esquema base se aplica con `SenorArroz.Infrastructure/Scripts/add_wompi_payments.sql`. La actualización puntual para checkout previo al pedido es `SenorArroz.Infrastructure/Scripts/add_storefront_checkout.sql`; ambas forman parte de `local-init-completo.sql`.
+
+## Gestión de pedidos originados para otra sucursal
+
+`OriginBranchId` registra en el servidor la sucursal de trabajo al crear el pedido; no cambia al trasladar al empleado. `BranchId` conserva preparación, inventario, rutas, impresión, venta y cobro. No se duplica el pedido ni se cambia el usuario/tenant/sucursal global. Pedidos antiguos con origen desconocido permanecen NULL y no aparecen como remotos; no reconstruir el origen usando la sucursal actual de TakenBy.
+
+Admin, Cashier y Superadmin del origen pueden gestionar únicamente esos pedidos, manteniendo las restricciones normales de rol/fecha/estado/proveedor. Kitchen y Deliveryman no reciben acceso remoto. La autorización es por recurso y tenant, antes de escribir; no se amplía BranchContext ni el acceso general a usuarios, bancos, caja, liquidaciones o GPS.
+
+- `GET /api/orders/remote-branches`: destinos con pedidos originados aquí, con sampleOrderId autorizado.
+- `POST /api/orders/search` con `remoteOnly: true, branchId: destino`: origen derivado del servidor, filtro anterior a conteo/paginación.
+- `GET /api/orders/{id}/operation-options`: bancos normales/apps y domiciliarios activos del destino, sin saldos/perfiles.
+- `GET /api/orders/{id}/tracking`: solo ruta y jornada actuales del pedido en camino. No devuelve historial ni usa un punto anterior de otra ruta; identifica GPS sin señal reciente.
+- `POST /api/orders/{id}/print`: encola exclusivamente en destino; estado consultable por pedido/jobId.
+
+Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Version` del formulario. Son obligatorios al gestionar desde origen. `409 ORDER_VERSION_CONFLICT` exige cerrar y recargar; nunca reintentar con una versión nueva silenciosamente. Transacción y bloqueo ordenado del pedido en PostgreSQL protegen cambios y pagos; ManagementVersion aumenta también en cambios a hijos. La respuesta expone cabeceras de versión. Se registra actor/comando/sucursal de trabajo/destino/versión en entity_audit_log, además de la auditoría monetaria existente. SignalR invalida únicamente grupos administrativos de origen y destino, aislados por tenant. El frontend refresca la lista visible y conserva el filtro/pestaña; no carga GPS hasta abrir seguimiento.
+
+**Despliegue manual posterior a revisión:** aplicar primero `SenorArroz.Infrastructure/Scripts/add_remote_order_management.sql` con cuenta de mantenimiento; después backend y frontend. SQL aditivo/idempotente, sin backfill, sin migraciones EF. No se ejecuta desde CI ni se modifica producción en esta rama. Cobrar desde origen no traslada dinero entre cajas: el registro pertenece al destino; transferencias físicas entre sedes continúan por los procesos existentes.

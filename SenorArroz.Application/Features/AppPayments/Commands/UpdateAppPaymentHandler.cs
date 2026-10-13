@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Interfaces;
@@ -43,16 +44,15 @@ public class UpdateAppPaymentHandler : IRequestHandler<UpdateAppPaymentCommand, 
         var order = await _orderRepository.GetByIdAsync(appPayment.OrderId, cancellationToken);
         if (order == null)
             throw new BusinessException("Pedido asociado no encontrado");
-        _branchContext.EnsureAccess(order.BranchId);
-        _branchContext.EnsureAccess(appPayment.App.Bank.BranchId);
+        OrderAccessRules.EnsureAccess(order, _currentUser, _branchContext);
+        OrderAccessRules.EnsurePaymentBranch(order, appPayment.App.Bank.BranchId);
+
 
         // Validar permisos para modificar pagos
         if (!_businessRules.CanModifyPayments(order, _currentUser.Role))
             throw new BusinessException("No tienes permisos para modificar pagos de este pedido");
 
         // Validar acceso a sucursal
-        if (!Roles.IsSuperadmin(_currentUser.Role) && appPayment.App.Bank.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para modificar pagos de esta sucursal");
 
         // Actualizar el monto
         appPayment.Amount = request.Amount;

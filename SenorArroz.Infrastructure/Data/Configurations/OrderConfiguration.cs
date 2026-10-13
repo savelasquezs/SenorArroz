@@ -17,6 +17,10 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
 
         builder.Property(o => o.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
         builder.Property(o => o.BranchId).HasColumnName("branch_id").IsRequired();
+        builder.Property(o => o.OriginBranchId).HasColumnName("origin_branch_id");
+        builder.Property(o => o.ManagementVersion).HasColumnName("management_version").IsConcurrencyToken();
+        builder.HasIndex(o => new { o.TenantId, o.OriginBranchId, o.BranchId, o.CreatedAt });
+
         builder.Property(o => o.TakenById).HasColumnName("taken_by_id").IsRequired();
         builder.Property(o => o.CustomerId).HasColumnName("customer_id");
         builder.Property(o => o.AddressId).HasColumnName("address_id");

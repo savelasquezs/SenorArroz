@@ -1,3 +1,4 @@
+using SenorArroz.Application.Common.Helpers;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
@@ -43,9 +44,11 @@ public sealed class SettleMultipleAppPaymentsHandler(
         if (branchIds.Count != 1 || appIds.Count != 1 || bankIds.Count != 1)
             throw new BusinessException(
                 "La liquidación debe contener pagos de una sola sucursal, app y banco.");
-        branchContext.EnsureAccess(branchIds[0]);
-        if (!Roles.IsSuperadmin(currentUser.Role) && currentUser.BranchId != branchIds[0])
-            throw new BusinessException("No tienes permisos para liquidar estos pagos.");
+        foreach (var payment in payments)
+        {
+            OrderAccessRules.EnsureAccess(payment.Order, currentUser, branchContext);
+            OrderAccessRules.EnsurePaymentBranch(payment.Order, payment.App.Bank.BranchId);
+        }
 
         var containsEstimatedNet = payments.Any(x => x.ExpectedNetAmount.HasValue);
         if (containsEstimatedNet && !request.ActualAmount.HasValue)
@@ -56,7 +59,8 @@ public sealed class SettleMultipleAppPaymentsHandler(
         if (actualTotal <= 0 || expectedTotal <= 0)
             throw new BusinessException("Los valores de la liquidación deben ser mayores que cero.");
 
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await using var transaction = db.Database.IsRelational() && db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(ct) : null;
         var allocated = 0m;
         for (var index = 0; index < payments.Count; index++)
         {
@@ -84,7 +88,7 @@ public sealed class SettleMultipleAppPaymentsHandler(
                 AppSettlementBankPaymentSourceIds.Serialize(payments.Select(x => x.Id))
         });
         await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
         return true;
     }
 }

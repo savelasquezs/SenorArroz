@@ -69,6 +69,13 @@ public class GlobalExceptionMiddleware
 
         switch (exception)
         {
+            case OrderConcurrencyException:
+            case Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException:
+                response.StatusCode = StatusCodes.Status409Conflict;
+                errorResponse.Code = OrderConcurrencyException.ErrorCode;
+                errorResponse.Message = new OrderConcurrencyException().Message;
+                break;
+
             case DeliveryAppUpdateRequiredException updateRequired:
                 response.StatusCode = StatusCodes.Status426UpgradeRequired;
                 errorResponse.Code = DeliveryAppUpdateRequiredException.ErrorCode;

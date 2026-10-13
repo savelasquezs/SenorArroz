@@ -48,7 +48,8 @@ public sealed class BranchScopeActionFilter : IAsyncActionFilter
                     | System.Reflection.BindingFlags.Instance
                     | System.Reflection.BindingFlags.IgnoreCase);
 
-                if (value is UpdateUserDto || value is CreateOrderDto)
+                if (value is UpdateUserDto || value is CreateOrderDto
+                    || (allowCrossBranchOrderContext && value is OrderSearchDto { RemoteOnly: true }))
                     continue;
 
                 if (property is not null

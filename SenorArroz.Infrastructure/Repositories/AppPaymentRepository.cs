@@ -152,7 +152,9 @@ public class AppPaymentRepository : IAppPaymentRepository
 
     public async Task<AppPayment> UpdateAsync(AppPayment appPayment, CancellationToken cancellationToken = default)
     {
-        _context.AppPayments.Update(appPayment);
+        var tracked = await _context.AppPayments.FindAsync([appPayment.Id], cancellationToken)
+            ?? throw new SenorArroz.Domain.Exceptions.NotFoundException("Pago no encontrado");
+        tracked.Amount = appPayment.Amount;
         await _context.SaveChangesAsync(cancellationToken);
 
         return await GetByIdAsync(appPayment.Id, cancellationToken) ?? appPayment;

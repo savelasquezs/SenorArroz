@@ -1,4 +1,5 @@
-﻿using MediatR;
+using SenorArroz.Application.Common.Helpers;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ReservationDeposits.DTOs;
@@ -44,7 +45,7 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
 
         if (order == null)
             throw new BusinessException("El pedido no existe");
-        _branchContext.EnsureAccess(order.BranchId);
+        OrderAccessRules.EnsureAccess(order, _currentUser, _branchContext);
 
         if (request.BankId.HasValue)
         {

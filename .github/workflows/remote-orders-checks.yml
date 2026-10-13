@@ -1,0 +1,49 @@
+name: Remote order checks
+on:
+  push:
+    branches: [feature/remote-order-management]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: remote-order-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Build
+        run: |
+          set -o pipefail
+          dotnet build SenorArroz.sln --configuration Release 2>&1 | tee /tmp/build.log
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          dotnet test SenorArroz.Tests/SenorArroz.Tests.csproj --configuration Release --no-build --logger 'console;verbosity=normal' 2>&1 | tee /tmp/unit-tests.log
+      - name: Isolated PostgreSQL regression tests
+        env:
+          RUN_POSTGRES_INTEGRATION_TESTS: 'true'
+        run: |
+          set -o pipefail
+          dotnet test SenorArroz.Tests/SenorArroz.Tests.csproj --configuration Release --no-build --filter FullyQualifiedName~RemoteOrderManagementPostgreSqlTests --logger 'console;verbosity=normal' 2>&1 | tee /tmp/postgres-tests.log
+      - name: Source snapshot
+        if: always()
+        run: git ls-files -z | tar --null -T - -czf /tmp/remote-orders-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: remote-orders-validation
+          path: |
+            /tmp/remote-orders-source.tar.gz
+            /tmp/build.log
+            /tmp/unit-tests.log
+            /tmp/postgres-tests.log
+          retention-days: 3

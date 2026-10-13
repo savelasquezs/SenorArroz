@@ -81,6 +81,8 @@ public class OrderMappingProfile : Profile
 
         // CreateOrderDto -> Order
         CreateMap<CreateOrderDto, Order>()
+            .ForMember(dest => dest.OriginBranchId, opt => opt.Ignore())
+            .ForMember(dest => dest.ManagementVersion, opt => opt.Ignore())
             .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.StorefrontIdempotencyKey, opt => opt.Ignore())
             .ForMember(dest => dest.WhatsAppConversationId, opt => opt.Ignore())
@@ -143,6 +145,8 @@ public class OrderMappingProfile : Profile
 
         // UpdateOrderDto -> Order (para actualizaciones)
         CreateMap<UpdateOrderDto, Order>()
+            .ForMember(dest => dest.OriginBranchId, opt => opt.Ignore())
+            .ForMember(dest => dest.ManagementVersion, opt => opt.Ignore())
             .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.StorefrontIdempotencyKey, opt => opt.Ignore())
             .ForMember(dest => dest.WhatsAppConversationId, opt => opt.Ignore())

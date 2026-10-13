@@ -1,4 +1,4 @@
-﻿using AutoMapper;
+using AutoMapper;
 using MediatR;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
@@ -64,8 +64,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
-        if (!Roles.IsSuperadmin(_currentUser.Role) && existingOrder.BranchId != _currentUser.BranchId)
-            throw new BusinessException("No tienes permisos para modificar pedidos de esta sucursal");
+        OrderAccessRules.EnsureAccess(existingOrder, _currentUser);
 
         if (!Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role))
             throw new BusinessException("Solo administradores o cajeros pueden cancelar pedidos");
@@ -84,7 +83,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
                 "Rappi no permite rechazar una orden delivery después de aceptarla. " +
                 "La cancelación debe realizarse en Rappi y se sincronizará automáticamente por webhook");
 
-        await using var inventoryTransaction = _inventory is not null && _db?.Database.IsRelational() == true
+        await using var inventoryTransaction = _inventory is not null && _db?.Database.IsRelational() == true && _db.Database.CurrentTransaction is null
             ? await _db.Database.BeginTransactionAsync(cancellationToken)
             : null;
         try
