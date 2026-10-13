@@ -104,6 +104,37 @@ public class UpdateOrderHandlerSchedulePreserveTests
             clock);
     }
 
+    [Theory]
+    [InlineData(OrderType.Onsite)]
+    [InlineData(OrderType.Reservation)]
+    public async Task An_onsite_pickup_cannot_have_its_name_cleared_or_be_converted_without_a_name(OrderType previousType)
+    {
+        var utc = new DateTime(2026, 4, 19, 15, 0, 0, DateTimeKind.Utc);
+        var order = new Order
+        {
+            Id = 147,
+            BranchId = 1,
+            TakenById = 1,
+            Type = previousType,
+            Status = OrderStatus.Taken,
+            GuestName = previousType == OrderType.Onsite ? "Carlos" : null,
+            CreatedAt = utc,
+        };
+        var repo = new Mock<IOrderRepository>();
+        repo.Setup(r => r.GetByIdWithDetailsAsync(147, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(order);
+        var handler = BuildHandler(repo.Object, Mock.Of<IAddressRepository>(), utc);
+        var update = new UpdateOrderDto { GuestName = "   " };
+        if (previousType != OrderType.Onsite)
+            update.Type = OrderType.Onsite;
+
+        var exception = await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() =>
+            handler.Handle(new UpdateOrderCommand { Id = 147, Order = update }, CancellationToken.None));
+
+        Assert.Contains("nombre de quien recoge", exception.Message, StringComparison.OrdinalIgnoreCase);
+        repo.Verify(r => r.UpdateAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task Type_change_reservation_to_delivery_without_schedule_in_dto_preserves_times()
     {
