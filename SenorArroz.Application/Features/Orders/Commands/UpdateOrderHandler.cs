@@ -112,6 +112,14 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             existingOrder.Type = OrderType.Reservation;
         }
 
+        // Exigir nombre al convertir a recogida; tolerar edición de pedidos históricos
+        // sin nombre solo cuando no se modifica el tipo ni el nombre del destinatario.
+        var becomesOnsite = existingOrder.Type != OrderType.Onsite && request.Order.Type == OrderType.Onsite;
+        var editsOnsiteName = existingOrder.Type == OrderType.Onsite && request.Order.GuestName is not null;
+        if ((becomesOnsite || editsOnsiteName)
+            && string.IsNullOrWhiteSpace(request.Order.GuestName ?? existingOrder.GuestName))
+            throw new BusinessException("Los pedidos para recoger requieren el nombre de quien recoge");
+
         // Apply scalar field mapping first (details are handled explicitly below)
         await ValidateManualBenefitAsync(request.Order, existingOrder, cancellationToken);
         _mapper.Map(request.Order, existingOrder);

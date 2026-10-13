@@ -98,6 +98,10 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         }
 
         // Validate order type specific requirements
+        // El nombre de quien recoge es obligatorio en cualquier sucursal, también en pedidos sin cliente registrado.
+        if (request.Order.Type == OrderType.Onsite && string.IsNullOrWhiteSpace(request.Order.GuestName))
+            throw new BusinessException("Los pedidos para recoger requieren el nombre de quien recoge");
+
         if (request.Order.Type == Domain.Enums.OrderType.Delivery)
         {
             if (!request.Order.CustomerId.HasValue)

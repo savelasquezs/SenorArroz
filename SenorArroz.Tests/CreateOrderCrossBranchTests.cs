@@ -32,6 +32,42 @@ public sealed class CreateOrderCrossBranchTests
         Assert.Equal(1, order.TenantId);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Onsite_pickup_requires_a_name_at_local_and_remote_branches(int destinationBranchId)
+    {
+        await using var db = CreateDb();
+        await SeedTenantOneAsync(db);
+        var (handler, getCreatedOrder) = BuildHandler(db, Roles.Cashier, assignedBranchId: 1);
+        var request = OnsiteOrder(destinationBranchId);
+        request.GuestName = "   ";
+
+        var exception = await Assert.ThrowsAsync<BusinessException>(() =>
+            handler.Handle(new CreateOrderCommand { Order = request }, default));
+
+        Assert.Contains("nombre de quien recoge", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(getCreatedOrder());
+    }
+
+    [Fact]
+    public async Task Onsite_without_registered_customer_accepts_pickup_name_for_any_branch()
+    {
+        await using var db = CreateDb();
+        await SeedTenantOneAsync(db);
+        var (handler, getCreatedOrder) = BuildHandler(db, Roles.Cashier, assignedBranchId: 1);
+        var dto = OnsiteOrder(2);
+        dto.CustomerId = null;
+        dto.AddressId = null;
+        dto.GuestName = "  Carlos  ";
+
+        await handler.Handle(new CreateOrderCommand { Order = dto }, default);
+
+        Assert.Equal(2, getCreatedOrder()!.BranchId);
+        Assert.Null(getCreatedOrder()!.CustomerId);
+        Assert.Equal("  Carlos  ", getCreatedOrder()!.GuestName);
+    }
+
     [Fact]
     public async Task Nonexistent_destination_branch_is_rejected()
     {
@@ -254,6 +290,7 @@ public sealed class CreateOrderCrossBranchTests
         BranchId = branchId,
         TakenById = 12345,
         Type = OrderType.Onsite,
+        GuestName = "Persona que recoge",
         OrderDetails = [new CreateOrderDetailDto { ProductId = 1, Quantity = 1, UnitPrice = 10000 }]
     };
 

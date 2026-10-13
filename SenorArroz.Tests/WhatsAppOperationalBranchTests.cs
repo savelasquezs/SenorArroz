@@ -155,6 +155,7 @@ public sealed class WhatsAppOperationalBranchTests
                 BranchId = 2,
                 WhatsAppConversationId = 11,
                 Type = OrderType.Onsite,
+                GuestName = "Persona que recoge",
                 OrderDetails = [new CreateOrderDetailDto { ProductId = 1, Quantity = 1, UnitPrice = 10000 }]
             }
         }, default);
