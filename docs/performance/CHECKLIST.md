@@ -2,7 +2,9 @@
 
 Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de informe](REVIEW_TEMPLATE.md).
 
-**Importante:** estas filas son unidades de análisis iniciales, no diagnósticos ni pruebas de existencia de cada comportamiento en producción. Durante la revisión verificar pantallas, permisos, endpoint y ruta reales. Dividir en nuevos `Fxx` cuando sea necesario. El cambio de estado se realiza en un PR documental después de la sesión.
+**Importante:** las filas son unidades de análisis iniciales; antes de concluir se verifican pantallas, permisos, API, SQL y comportamiento real. Se puede corregir cada feature de forma autónoma **en rama independiente**, preparar scripts SQL idempotentes y abrir PR(s) a `main` sin aprobación previa. **El propietario conserva la decisión de fusionar, ejecutar migraciones productivas y desplegar.** Cada entrada se actualiza mediante PR documental y con evidencia. Ver [procedimiento completo](README.md) y [plantilla](REVIEW_TEMPLATE.md).
+
+**Estados permitidos:** `Pendiente` · `Analizado` · `PR listo para revisión` · `Mejora aprobada` · `Implementado` · `Validado` · `Bloqueado` · `En desarrollo`. `PR listo para revisión` significa rama, PR y pruebas listos para evaluar; **no significa merge, migración ni deploy**. Si faltan pruebas esenciales, registrar `Bloqueado` y abrir PR borrador si ayuda a revisar.
 
 | ID | Funcionalidad a revisar | Estado de auditoría | Última revisión | Informe | Issue/PR mejora | Verificación |
 |---|---|---|---|---|---|---|
@@ -199,11 +201,16 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M42-F04 | CI pipelines y pruebas | Pendiente | — | — | — | — |
 | M42-F05 | Costos, alertas y límites | Pendiente | — | — | — | — |
 
-## Cómo registrar cambios
-- Cambiar a `Analizado` solo con informe que incluya evidencia y riesgos.
-- Cambiar a `Mejora aprobada` únicamente después de aprobación explícita del usuario; enlazar issue o decisión.
-- Cambiar a `Implementado` con PR de código y estado de entrega documentado.
-- Cambiar a `Validado` tras pruebas y comparación de mediciones antes/después, o una conclusión justificada de que no hace falta cambiar código.
-- Para `Bloqueado`, escribir el impedimento en un informe y mantenerlo visible.
-- La funcionalidad M11-F04 y M11-F05 puede depender del PR #19 aún no desplegado; la auditoría se hará sobre código disponible e indicará claramente el estado.
-- Mantener siempre una siguiente unidad `Pendiente`; no marcar completado por haber abierto un PR.
+## Cómo registrar cambios y resultados diarios
+- Al iniciar: seleccionar una única funcionalidad `Pendiente`, priorizando impacto y consultando informes y PR anteriores.
+- **Siempre intentar corregir en rama nueva** tras demostrar causa raíz. Preparar pruebas y PR a `main` en cada repositorio afectado; evitar cambios especulativos.
+- `Analizado`: evidencia registrada, falta una corrección demostrable o justificación para no modificar.
+- `PR listo para revisión`: código modificado en ramas independientes y PR(s) a `main`, tests pertinentes correctos y evidencia de mejora o límites claramente descritos; enlazar cada PR y script de BD preparado.
+- `Bloqueado`: ausencia de herramienta/pruebas/datos o cambio riesgoso sin verificación; documentar bloqueo, mantener PR en borrador, nunca afirmar listo.
+- `Mejora aprobada`: el propietario autorizó la propuesta; no implica despliegue.
+- `Implementado`: ya hubo merge y despliegue/migración correspondiente, verificado.
+- `Validado`: comprobar funcionamiento y mejora mediante comparaciones reales o justificar ausencia de cambios.
+- Cada cambio de estado se presenta en PR documental, incluso si el código se modifica en Flutter, Vue, Next.js o Print Agent.
+- **No fusionar PR ni alterar PostgreSQL productivo automáticamente**. El propietario hará el merge y las migraciones; documentar backup, reejecución, rollback y el orden SQL/backend/frontend cuando aplique.
+- M11-F04 y M11-F05 pueden depender del PR #19; no confundir un feature abierto en PR con algo publicado.
+- Si el feature fue modificado antes en otra rama, comparar el estado de `main` y PR existentes para no duplicar trabajo.
