@@ -1,55 +1,81 @@
-# Plantilla de auditoría diaria (copiar a reviews/YYYY-MM-DD-Mxx-Fyy.md)
+# Plantilla diaria — diagnóstico, corrección y PR (copiar a reviews/YYYY-MM-DD-Mxx-Fyy.md)
 
-> Auditoría de **solo lectura**. No alterar datos, código ni despliegues sin aprobación explícita.
+> Autorización permanente: analizar, preparar cambios en rama independiente, probar y abrir PR(s) a `main`. **No realizar merge, migración o despliegue productivo:** esos pasos quedan a cargo del propietario. Ver [README.md](README.md).
 
-- **Fecha:** YYYY-MM-DD
-- **Feature:** Mxx-Fyy — título
-- **Estado previo / nuevo:** Pendiente → Analizado
-- **Prioridad:** Alta / Media / Baja (motivo)
-- **Repositorios / ramas / commits:** API (...), Vue (...), Flutter (...), Next.js (...), Print Agent (...)
-- **Roles y sucursales afectados:** ...
+- **Fecha:** YYYY-MM-DD (America/Bogota)
+- **ID / funcionalidad:** Mxx-Fyy — título
+- **Estado propuesto:** Pendiente → Analizado / PR listo para revisión / Bloqueado
+- **Prioridad:** Alta / Media / Baja (motivo operacional)
+- **Repositorios implicados, ramas `main` base y SHA:** ...
+- **Ramas creadas / commits / PRs hacia `main`:** ...
+- **Roles, sucursales, tenants y flujos afectados:** ...
+- **Ambiente de pruebas:** ...
+- **Cambios en BD:** No aplica / Script preparado, aún sin ejecutar en producción
 
-## 1. Flujo real
-- Acción de usuario, vista/componente y navegación:
-- Llamadas API (método, ruta, evento que las dispara, cantidad y payload aproximado):
-- Controller → Handler/Service → Repository/DbContext → tablas/índices:
-- Realtime, workers, tareas periódicas o proveedores externos vinculados:
-- Restricciones de autorización/tenant/estado:
+## 1. Flujo y causa raíz
+- Acción de usuario y pantalla/componente/store/composable:
+- Solicitudes HTTP: método, ruta, activador, cantidad medida, payload, refetch, deduplicación y caché:
+- Controller → Handler/Service → Repository/DbContext → SQL/tablas/índices:
+- Dependencias con SignalR, workers, Flutter/background, Next.js, Print Agent y servicios externos:
+- Permisos de rol, sucursal, tenant y reglas de negocio:
+- Reproducción del defecto y evidencia concreta (archivo/línea, trazas anonimizadas):
+- **Hallazgos comprobados vs hipótesis no demostradas:**
 
-## 2. Línea base comprobable
-| Métrica | Valor actual | Procedimiento/fuente | Entorno | Observaciones |
+## 2. Línea base antes de la corrección
+
+| Métrica | Antes | Cómo se obtuvo | Entorno | Observaciones |
 |---|---|---|---|---|
-| HTTP requests por interacción | Sin medir | | | |
+| Solicitudes HTTP por interacción | Sin medir | | | |
 | Latencia HTTP p50/p95 | Sin medir | | | |
 | Consultas SQL por interacción | Sin medir | | | |
-| Tiempo SQL y plan EXPLAIN (sin ANALYZE sobre producción sin evaluar impacto) | Sin medir | | | |
-| Respuesta / egress por interacción | Sin medir | | | |
+| SQL / EXPLAIN / índices | Sin medir | | | |
+| Bytes/respuesta y network egress | Sin medir | | | |
 | RAM/CPU | Sin medir | | | |
-| Errores/retries | Sin medir | | | |
+| Reintentos, duplicados y errores | Sin medir | | | |
 
-No usar números inventados. Etiquetar cualquier estimación como tal. No publicar secretos ni datos personales.
+No inventar datos. Si no es posible medir, declarar limitaciones. No publicar secretos ni datos personales reales.
 
-## 3. Hallazgos y diagnóstico
-| Evidencia (archivo/línea, log, consulta) | Problema demostrado o hipótesis | Impacto | Confianza |
-|---|---|---|---|
-| | | | |
+## 3. Corrección implementada en rama
+- **Cambio mínimo, razón técnica y mecanismo de mejora:** ...
+- **Archivos y lógica cambiados:** ...
+- **Garantías de comportamiento:** funcionalidad, concurrencia, tenant/RLS, permisos, dinero/inventario, offline/tracking si aplica.
+- **Alternativas consideradas y riesgos:** ...
+- **Prueba de regresión que falla antes y pasa después (cuando sea posible):** ...
+- **PR(s) enlazados por repo hacia `main`:** ...
+- **CI, lint, build, pruebas unitarias/integración/E2E:** nombre, resultado y enlaces.
+- **Limitaciones de verificación:** ... (si falta una prueba crítica, mantener PR en borrador / estado Bloqueado)
 
-## 4. Opciones de mejora
-| Propuesta | Impacto esperado | Riesgo funcional / seguridad | Complejidad | Tests necesarios |
+## 4. Comparación después del cambio
+
+| Métrica | Antes | Después | Evidencia / entorno | Conclusión |
 |---|---|---|---|---|
-| | | | |
+| Solicitudes HTTP | | | | |
+| Latencia p50/p95 | | | | |
+| Consultas / tiempo SQL | | | | |
+| Red / egress | | | | |
+| RAM / CPU | | | | |
+| Errores y reintentos | | | | |
 
-**Recomendación para decisión del usuario:** ...
-**Decisión del usuario, fecha y alcance aprobado:** Pendiente.
+Distinguir medición en pruebas de validación en producción, todavía pendiente.
 
-## 5. Implementación (solo después de aprobar)
-- Issue y PR:
-- Pruebas ejecutadas:
-- Deploy y entorno:
-- Rollback:
-- Métricas después / comparación y conclusión:
-- Estado final del checklist:
+## 5. Base de datos: ejecutar solo después de aprobación
+- **¿Hay migración?:** No / Sí.
+- **Nombre de script SQL idempotente versionado:** `SenorArroz.Infrastructure/Scripts/...`
+- **Tablas/columnas/índices afectados, tenant y RLS:** ...
+- **Validación en PostgreSQL de prueba, reejecución y compatibilidad:** ...
+- **Backfill / impacto en datos existentes:** ...
+- **Precondiciones / backup y plan de reversión:** ...
+- **Orden seguro de aplicación y desplegado:** ... (si la app depende de nuevo esquema, preparar SQL antes del despliegue compatible).
+- **Comandos exactos para que el propietario aplique en Railway:** ... (revisados y seguros).
+- **Estado en producción:** Pendiente. Nunca afirmar aplicado sin verificación posterior.
 
-## 6. Siguiente revisión sugerida
-- Feature:
-- Motivo:
+## 6. Entrega para revisión
+- **Diagnóstico resumido:** ...
+- **PR(s) a revisar:** ...
+- **Veredicto:** PR listo para revisión / PR borrador por bloqueos / Sin cambio necesario y justificado.
+- **Checklist:** estado propuesto, informe vinculado y PRs; no marcar Implementado ni Validado antes del merge/deploy y medición pertinente.
+- **Acciones reservadas al propietario:** revisar y fusionar PRs; aplicar migración si corresponde; ejecutar o autorizar despliegue; confirmar.
+- **Cómo verificar tras fusionar y criterios de rollback:** ...
+- **Siguiente feature recomendado:** ...
+
+El informe y el estado del checklist deben versionarse también mediante un PR documental si afectan a un repositorio distinto. Se permite preparar estos PRs sin aprobación adicional; no se permite fusionarlos automáticamente.
