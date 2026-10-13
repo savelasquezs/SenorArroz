@@ -177,6 +177,7 @@ public class BatchPaymentsRegressionTests
     {
         Type = OrderType.Onsite,
         BranchId = 1,
+        GuestName = "Cliente que recoge",
         OrderDetails = [new CreateOrderDetailDto { ProductId = 1, Quantity = 1, UnitPrice = 5000 }],
         BankPayments = bank ?? [],
         AppPayments = app ?? []

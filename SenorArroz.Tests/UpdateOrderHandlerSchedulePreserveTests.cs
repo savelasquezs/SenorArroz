@@ -308,6 +308,7 @@ public class UpdateOrderHandlerSchedulePreserveTests
                 Order = new UpdateOrderDto
                 {
                     Type = OrderType.Onsite,
+                    GuestName = "Cliente que recoge",
                     PrepareAt = utc,
                     ReservedFor = null,
                 },
@@ -393,6 +394,7 @@ public class UpdateOrderHandlerSchedulePreserveTests
                 Order = new UpdateOrderDto
                 {
                     Type = OrderType.Onsite,
+                    GuestName = "Cliente que recoge",
                     PrepareAt = utc,
                     ReservedFor = null,
                 },
