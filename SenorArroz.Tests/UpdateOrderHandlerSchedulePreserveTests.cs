@@ -114,6 +114,7 @@ public class UpdateOrderHandlerSchedulePreserveTests
         {
             Id = 147,
             BranchId = 1,
+            OriginBranchId = 2, // Pedido tomado desde otra sucursal.
             TakenById = 1,
             Type = previousType,
             Status = OrderStatus.Taken,
