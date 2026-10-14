@@ -27,6 +27,7 @@ public class SearchOrdersQuery : IRequest<PagedResult<OrderDto>>
 
     /// <summary>Filtro por barrio de la dirección del pedido (Address.NeighborhoodId).</summary>
     public int? NeighborhoodId { get; set; }
+    public bool ActiveReservationsOnly { get; set; }
     public OrderStatus? Status { get; set; }
     public OrderType? Type { get; set; }
     public DateTime? FromDate { get; set; }
