@@ -1,4 +1,8 @@
+using System.Data.Common;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Testcontainers.PostgreSql;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
@@ -36,6 +40,9 @@ public class OrderSearchFirstPageCountTests
             Name = "Sucursal vacía", Address = "Prueba", Phone1 = "1",
             CreatedAt = now
         };
+        // Relational tests need a parent tenant for the branch and order FKs.
+        context.Tenants.Add(new Tenant { Id = 1, Name = "Perf tests", Slug = "perf-tests" });
+        await context.SaveChangesAsync();
         context.Branches.AddRange(populated, empty);
         await context.SaveChangesAsync();
 
@@ -101,5 +108,78 @@ public class OrderSearchFirstPageCountTests
         Assert.Empty(emptyResult.Items);
         Assert.Equal(0, emptyResult.TotalCount);
         Assert.Equal(0, emptyResult.TotalPages);
+    }
+
+    private sealed class OrderCountCommandInterceptor : DbCommandInterceptor
+    {
+        private int _countCommands;
+        public int CountCommands => Volatile.Read(ref _countCommands);
+        public void Reset() => Interlocked.Exchange(ref _countCommands, 0);
+
+        private static bool IsCountQuery(DbCommand command) =>
+            Regex.IsMatch(command.CommandText, @"^\s*SELECT\s+count\s*\(",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        // EF Core executes CountAsync as a relational reader query.
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (IsCountQuery(command))
+                Interlocked.Increment(ref _countCommands);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Unlike the InMemory tests, this validates the SQL optimization itself
+    /// against real PostgreSQL: the test must fail if CountAsync is restored
+    /// unconditionally, even when pagination totals remain correct.
+    /// </summary>
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task SearchOrders_count_query_executes_only_when_total_is_not_known()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:16-alpine").Build();
+        await postgres.StartAsync();
+
+        var interceptor = new OrderCountCommandInterceptor();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(postgres.GetConnectionString())
+            .AddInterceptors(interceptor)
+            .Options;
+        await using var context = new ApplicationDbContext(options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
+        await context.Database.EnsureCreatedAsync();
+        var (populated, empty) = await SeedAsync(context);
+        var repository = new OrderRepository(context,
+            new FakeClock(new DateTime(2026, 10, 13, 16, 0, 0, DateTimeKind.Utc)));
+
+        async Task AssertSearchAsync(int branchId, int page, int size,
+            int expectedTotal, int expectedRows, int expectedCounts)
+        {
+            interceptor.Reset();
+            var result = await repository.SearchOrdersAsync(
+                branchId: branchId, page: page, pageSize: size);
+            Assert.Equal(expectedTotal, result.TotalCount);
+            Assert.Equal(expectedRows, result.Items.Count());
+            Assert.Equal(expectedCounts, interceptor.CountCommands);
+        }
+
+        await AssertSearchAsync(populated, page: 1, size: 10,
+            expectedTotal: 3, expectedRows: 3, expectedCounts: 0);
+        await AssertSearchAsync(empty, page: 1, size: 10,
+            expectedTotal: 0, expectedRows: 0, expectedCounts: 0);
+        await AssertSearchAsync(populated, page: 1, size: 3,
+            expectedTotal: 3, expectedRows: 3, expectedCounts: 1);
+        await AssertSearchAsync(populated, page: 1, size: 2,
+            expectedTotal: 3, expectedRows: 2, expectedCounts: 1);
+        await AssertSearchAsync(populated, page: 2, size: 2,
+            expectedTotal: 3, expectedRows: 1, expectedCounts: 1);
+        await AssertSearchAsync(populated, page: 9, size: 2,
+            expectedTotal: 3, expectedRows: 0, expectedCounts: 1);
     }
 }
