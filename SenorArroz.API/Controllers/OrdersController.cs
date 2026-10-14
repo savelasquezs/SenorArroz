@@ -156,6 +156,7 @@ public class OrdersController : ControllerBase
             TransferVerificationMode = searchDto.TransferVerificationMode,
             TotalDigitsPrefix = searchDto.TotalDigitsPrefix,
             Status = searchDto.Status,
+            ActiveReservationsOnly = searchDto.ActiveReservationsOnly,
             Type = searchDto.Type,
             FromDate = searchDto.FromDate,
             ToDate = searchDto.ToDate,
