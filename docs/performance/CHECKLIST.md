@@ -50,7 +50,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M09-F05 | Cálculo de descuentos/promociones | Pendiente | — | — | — | — |
 | M09-F06 | Selección de pagos y total | Pendiente | — | — | — | — |
 | M09-F07 | Guardar pedido y notificaciones | Pendiente | — | — | — | — |
-| M10-F01 | Cargar listado del día | Pendiente | — | — | — | — |
+| M10-F01 | Cargar listado del día | PR listo para revisión | 2026-10-13 | [Informe 2026-10-13](reviews/2026-10-13-M10-F01.md) | [API #23](https://github.com/savelasquezs/SenorArroz/pull/23), [Vue #17](https://github.com/savelasquezs/senorArrozFront/pull/17) | CI verde: backend 868/868, PostgreSQL 3/3, Vue 487/487; sin migración BD; merge/deploy pendientes |
 | M10-F02 | Búsquedas, filtros y paginación | Pendiente | — | — | — | — |
 | M10-F03 | Detalle e historial de pedido | Pendiente | — | — | — | — |
 | M10-F04 | Editar datos, productos y precios | Pendiente | — | — | — | — |

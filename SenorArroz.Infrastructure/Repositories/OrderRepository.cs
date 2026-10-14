@@ -917,12 +917,18 @@ public class OrderRepository : IOrderRepository
 
         var safePage = Math.Max(1, page);
         var safePageSize = Math.Max(1, pageSize);
-        var total = await query.CountAsync(cancellationToken);
         var ids = await query
             .Skip((safePage - 1) * safePageSize)
             .Take(safePageSize)
             .Select(o => o.Id)
             .ToListAsync(cancellationToken);
+
+        // The first page is complete when it contains fewer than PageSize rows.
+        // Reuse its length as TotalCount instead of sending a redundant COUNT(*).
+        // Full or later pages still need the exact count for pagination.
+        var total = safePage == 1 && ids.Count < safePageSize
+            ? ids.Count
+            : await query.CountAsync(cancellationToken);
 
         if (ids.Count == 0)
         {
