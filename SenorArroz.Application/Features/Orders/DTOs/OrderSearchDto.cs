@@ -32,6 +32,8 @@ public class OrderSearchDto
 
     /// <summary>Historial domiciliario: junto con estado entregado incluye onsite en camino.</summary>
     public bool IncludeOnsiteActiveInAssignedHistory { get; set; }
+    /// <summary>Excluir reservas entregadas/canceladas antes de paginar y contar.</summary>
+    public bool ActiveReservationsOnly { get; set; }
     public OrderStatus? Status { get; set; }
     public OrderType? Type { get; set; }
     public DateTime? FromDate { get; set; }
