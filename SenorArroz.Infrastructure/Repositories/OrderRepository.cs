@@ -1107,7 +1107,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
 
         var isDescending = sortOrder?.ToLower() == "desc";
 
-        return sortBy.ToLower() switch
+        IOrderedQueryable<Order> sorted = sortBy.ToLower() switch
         {
             "id" => isDescending ? query.OrderByDescending(o => o.Id) : query.OrderBy(o => o.Id),
             "createdat" => isDescending ? query.OrderByDescending(o => o.CreatedAt) : query.OrderBy(o => o.CreatedAt),
@@ -1122,6 +1122,12 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             "reservedfor" => isDescending ? query.OrderByDescending(o => o.ReservedFor) : query.OrderBy(o => o.ReservedFor),
             _ => isDescending ? query.OrderByDescending(o => o.CreatedAt) : query.OrderBy(o => o.CreatedAt)
         };
+
+        // OFFSET/LIMIT requires a unique ordering for consistent pagination.
+        // Dates, amounts and statuses frequently tie across different orders.
+        if (string.Equals(sortBy, "id", StringComparison.OrdinalIgnoreCase))
+            return sorted;
+        return isDescending ? sorted.ThenByDescending(o => o.Id) : sorted.ThenBy(o => o.Id);
     }
 
     public async Task<IEnumerable<Order>> GetReservationsDueForPreparation(
