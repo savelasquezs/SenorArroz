@@ -792,7 +792,8 @@ public class OrderRepository : IOrderRepository
         int? appId = null,
         bool appPaymentsUnsettledOnly = false,
         bool transferVerificationMode = false,
-        CancellationToken cancellationToken = default, int? originBranchId = null)
+        CancellationToken cancellationToken = default, int? originBranchId = null,
+        bool activeReservationsOnly = false)
     {
         // PostgreSQL timestamp with time zone requiere UTC
         if (fromDate.HasValue && fromDate.Value.Kind != DateTimeKind.Utc)
@@ -832,6 +833,11 @@ public class OrderRepository : IOrderRepository
 
         if (type.HasValue)
             query = query.Where(o => o.Type == type.Value);
+
+        // The reservations tab needs an exact total of active reservations.
+        // Filter before Skip/Take and Count, not after materializing a page.
+        if (activeReservationsOnly && type == OrderType.Reservation)
+            query = query.Where(o => o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled);
 
         if (!transferVerificationMode && fromDate.HasValue && toDate.HasValue)
         {
