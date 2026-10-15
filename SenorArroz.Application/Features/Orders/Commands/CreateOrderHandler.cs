@@ -1,4 +1,7 @@
 using AutoMapper;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -135,6 +138,19 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         if (!destinationBranch.IsActive)
             throw new BusinessException("La sucursal destino no está activa");
 
+        // Idempotency is optional for older clients. New POS clients supply the
+        // same UUID on every retry of one draft; never trust the tenant or actor
+        // supplied by the payload.
+        var posCreationKey = NormalizePosCreationKey(request.Order.PosCreationKey);
+        request.Order.PosCreationKey = posCreationKey;
+        var posFingerprint = posCreationKey is null ? null : Fingerprint(request.Order);
+        if (posCreationKey is not null)
+        {
+            var previous = await FindExistingPosOrderAsync(
+                posCreationKey, posFingerprint!, destinationBranch.TenantId, branchId, cancellationToken);
+            if (previous is not null) return previous;
+        }
+
         await ValidateAndStampManualBenefitAsync(request.Order, branchId, cancellationToken);
 
         var order = _mapper.Map<Order>(request.Order);
@@ -147,6 +163,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             throw new BranchAccessDeniedException();
         order.OriginBranchId = originBranchId;
         order.ManagementVersion = 1;
+        order.PosCreationKey = posCreationKey;
+        order.PosCreationFingerprint = posFingerprint;
         // Solo las recogidas entre sucursales requieren identificador obligatorio.
         // Mantener opcional el nombre en las recogidas locales existentes.
         if (request.Order.Type == OrderType.Onsite && originBranchId != branchId
@@ -207,78 +225,95 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             OrderTotalsHelper.RecalculateFromOrderDetails(order);
         }
 
-        await using var inventoryTransaction = _inventory is not null && _db.Database.IsRelational()
-            ? await _db.Database.BeginTransactionAsync(cancellationToken)
-            : null;
-        Order createdOrder;
+        // Every database side effect of order creation is one atomic unit:
+        // order, lines, inventory reservations, bank/app payments and cash in
+        // store. A 409/validation error must never leave a new order persisted.
+        await using var createTransaction = _db.Database.IsRelational()
+            && _db.Database.CurrentTransaction is null
+                ? await _db.Database.BeginTransactionAsync(cancellationToken)
+                : null;
+        OrderDto result;
+        Order fullOrder;
         try
         {
-            createdOrder = await _orderRepository.CreateAsync(order, cancellationToken);
+            var createdOrder = await _orderRepository.CreateAsync(order, cancellationToken);
             if (_inventory is not null)
             {
                 var deferReservation = createdOrder.Type == OrderType.Reservation
                     && createdOrder.PrepareAt.HasValue
                     && createdOrder.PrepareAt.Value > _clock.UtcNow;
-                await _inventory.SnapshotAndReserveAsync(createdOrder, deferReservation, $"order:{createdOrder.Id}:taken", cancellationToken);
+                await _inventory.SnapshotAndReserveAsync(
+                    createdOrder, deferReservation, $"order:{createdOrder.Id}:taken", cancellationToken);
             }
-            if (inventoryTransaction is not null) await inventoryTransaction.CommitAsync(cancellationToken);
+
+            // Batch insert de pagos: un único SaveChangesAsync en lugar de N roundtrips.
+            var bankPayments = request.Order.BankPayments?
+                .Select(bp => new Domain.Entities.BankPayment
+                {
+                    OrderId = createdOrder.Id,
+                    BankId = bp.BankId,
+                    Amount = bp.Amount,
+                    IsVerified = false
+                }).ToList() ?? [];
+
+            var appPayments = request.Order.AppPayments?
+                .Select(ap => new Domain.Entities.AppPayment
+                {
+                    OrderId = createdOrder.Id,
+                    AppId = ap.AppId,
+                    Amount = ap.Amount,
+                    IsSetted = false
+                }).ToList() ?? [];
+
+            if (bankPayments.Count > 0) _db.BankPayments.AddRange(bankPayments);
+            if (appPayments.Count > 0) _db.AppPayments.AddRange(appPayments);
+            if (bankPayments.Count > 0 || appPayments.Count > 0)
+                await _db.SaveChangesAsync(cancellationToken);
+
+            if (request.Order.PaidInStoreCash)
+            {
+                // order_detail triggers update totals AND bump management_version.
+                // EF's tracked creation snapshot is now stale. Refresh original
+                // concurrency values after the triggers, before updating cash.
+                var refreshed = await _db.ReloadOrderForManagementAsync(createdOrder.Id, cancellationToken);
+                if (refreshed is null)
+                    throw new BusinessException("Pedido no encontrado tras crear");
+
+                var tracked = await _db.Orders
+                    .Include(o => o.BankPayments)
+                    .Include(o => o.AppPayments)
+                    .FirstOrDefaultAsync(o => o.Id == createdOrder.Id, cancellationToken)
+                    ?? throw new BusinessException("Pedido no encontrado tras crear");
+
+                OrderPaidInStoreCashHelper.Apply(
+                    tracked, true, _clock.UtcNow, request.Order.PaidInStoreCashAmount);
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+
+            fullOrder = await _orderRepository.GetByIdWithFullDetailsAsync(createdOrder.Id, cancellationToken)
+                ?? throw new BusinessException("Pedido no encontrado");
+            result = _mapper.Map<OrderDto>(fullOrder);
+
+            if (createTransaction is not null)
+                await createTransaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (posCreationKey is not null)
+        {
+            if (createTransaction is not null)
+                await createTransaction.RollbackAsync(cancellationToken);
+            // Covers two simultaneous requests racing on ux_order_pos_creation_tenant:
+            // the winner commits, the loser returns that order, never a duplicate.
+            var previous = await FindExistingPosOrderAsync(
+                posCreationKey, posFingerprint!, destinationBranch.TenantId, branchId, cancellationToken);
+            if (previous is not null) return previous;
+            throw;
         }
         catch
         {
-            if (inventoryTransaction is not null) await inventoryTransaction.RollbackAsync(cancellationToken);
+            if (createTransaction is not null)
+                await createTransaction.RollbackAsync(cancellationToken);
             throw;
         }
-
-        // Batch insert de pagos: un único SaveChangesAsync en lugar de N roundtrips individuales
-        var bankPayments = request.Order.BankPayments?
-            .Select(bp => new Domain.Entities.BankPayment
-            {
-                OrderId = createdOrder.Id,
-                BankId = bp.BankId,
-                Amount = bp.Amount,
-                IsVerified = false
-            }).ToList() ?? [];
-
-        var appPayments = request.Order.AppPayments?
-            .Select(ap => new Domain.Entities.AppPayment
-            {
-                OrderId = createdOrder.Id,
-                AppId = ap.AppId,
-                Amount = ap.Amount,
-                IsSetted = false
-            }).ToList() ?? [];
-
-        if (bankPayments.Count > 0)
-            _db.BankPayments.AddRange(bankPayments);
-
-        if (appPayments.Count > 0)
-            _db.AppPayments.AddRange(appPayments);
-
-        if (bankPayments.Count > 0 || appPayments.Count > 0)
-            await _db.SaveChangesAsync(cancellationToken);
-
-        if (request.Order.PaidInStoreCash)
-        {
-            var role = _currentUser.Role.ToLowerInvariant();
-            if (!Roles.IsSuperadminOrAdminOrCashier(role))
-                throw new BusinessException("No tienes permisos para marcar cobro en tienda en la creación del pedido");
-
-            var tracked = await _db.Orders
-                .Include(o => o.BankPayments)
-                .Include(o => o.AppPayments)
-                .FirstOrDefaultAsync(o => o.Id == createdOrder.Id, cancellationToken);
-            if (tracked == null)
-                throw new BusinessException("Pedido no encontrado tras crear");
-
-            OrderPaidInStoreCashHelper.Apply(tracked, true, _clock.UtcNow, request.Order.PaidInStoreCashAmount);
-            await _db.SaveChangesAsync(cancellationToken);
-        }
-
-        var fullOrder = await _orderRepository.GetByIdWithFullDetailsAsync(createdOrder.Id, cancellationToken);
-        if (fullOrder == null)
-            throw new BusinessException("Pedido no encontrado");
-
-        var result = _mapper.Map<OrderDto>(fullOrder);
 
         // Notificar a cocina: pedido inmediato (sin reserved_for) o prepare_at ya pasó
         var now = _clock.UtcNow;
@@ -286,13 +321,59 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             || (fullOrder.PrepareAt.HasValue && fullOrder.PrepareAt.Value <= now);
         if (shouldNotifyNow)
         {
-            await _notificationService.NotifyNewOrderToKitchen(result);
-            await TryEnqueueKitchenPrintWhenOrderCreatedAsync(fullOrder, cancellationToken);
+            // Side effects must occur after COMMIT and cannot turn a successfully
+            // created order into an error that prompts another manual submission.
+            try { await _notificationService.NotifyNewOrderToKitchen(result); }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Order {OrderId} committed but kitchen notification failed", result.Id);
+            }
+
+            try { await TryEnqueueKitchenPrintWhenOrderCreatedAsync(fullOrder, cancellationToken); }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Order {OrderId} committed but print settings/read failed", result.Id);
+            }
         }
 
         try { await _notificationService.NotifyOrderManagementChanged(result.Id, result.BranchId, result.OriginBranchId, result.ManagementVersion); }
         catch (Exception ex) { _logger?.LogWarning(ex, "Order created; management invalidation failed for {OrderId}", result.Id); }
         return result;
+    }
+
+    private static string? NormalizePosCreationKey(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        if (!Guid.TryParseExact(raw.Trim(), "D", out var guid) || guid == Guid.Empty)
+            throw new BusinessException("La clave de reintento del pedido es inválida.");
+        return guid.ToString("D");
+    }
+
+    private static string Fingerprint(CreateOrderDto dto) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(dto))));
+
+    private async Task<OrderDto?> FindExistingPosOrderAsync(
+        string key, string fingerprint, int tenantId, int branchId, CancellationToken ct)
+    {
+        var candidate = await _db.Orders.AsNoTracking()
+            .Where(o => o.TenantId == tenantId && o.PosCreationKey == key)
+            .Select(o => new
+            {
+                o.Id, o.BranchId, o.TakenById, o.PosCreationFingerprint
+            })
+            .SingleOrDefaultAsync(ct);
+        if (candidate is null) return null;
+
+        if (candidate.BranchId != branchId
+            || candidate.TakenById != _currentUser.Id
+            || candidate.PosCreationFingerprint != fingerprint)
+            throw new BusinessException(
+                "Este intento de pedido ya existe, pero sus datos cambiaron. Revisa el listado antes de crear otro.");
+
+        var existing = await _orderRepository.GetByIdWithFullDetailsAsync(candidate.Id, ct)
+            ?? throw new BusinessException("El pedido ya existe, pero no está disponible para esta sesión.");
+        OrderAccessRules.EnsureAccess(existing, _currentUser);
+        return _mapper.Map<OrderDto>(existing);
     }
 
     private async Task ValidatePaymentsForBranchAsync(
