@@ -67,7 +67,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M12-F02 | Crear/editar reserva | Pendiente | — | — | — | — |
 | M12-F03 | Abonos y saldos | Pendiente | — | — | — | — |
 | M12-F04 | Vencimiento y estados reservas | Pendiente | — | — | — | — |
-| M13-F01 | Carga cola cocina | Pendiente | — | — | — | — |
+| M13-F01 | Carga cola cocina | Bloqueado | 2026-10-15 | [Informe 2026-10-15](reviews/2026-10-15-M13-F01.md) | [API #25](https://github.com/savelasquezs/SenorArroz/pull/25), [Vue #18](https://github.com/savelasquezs/senorArrozFront/pull/18) (borradores) | Código y pruebas preparados; CI/regresión productiva pendientes. Sin migración ni despliegue. |
 | M13-F02 | Tomado a preparación | Pendiente | — | — | — | — |
 | M13-F03 | Preparación a listo | Pendiente | — | — | — | — |
 | M13-F04 | Notificaciones cocina y reimpresión | Pendiente | — | — | — | — |
