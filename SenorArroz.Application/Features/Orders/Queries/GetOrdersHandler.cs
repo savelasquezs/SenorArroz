@@ -1,4 +1,5 @@
 using AutoMapper;
+using Microsoft.EntityFrameworkCore;
 using MediatR;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
@@ -13,12 +14,14 @@ public class GetOrdersHandler : IRequestHandler<GetOrdersQuery, PagedResult<Orde
     private readonly IOrderRepository _orderRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
+    private readonly IApplicationDbContext _db;
 
-    public GetOrdersHandler(IOrderRepository orderRepository, IMapper mapper, ICurrentUser currentUser)
+    public GetOrdersHandler(IOrderRepository orderRepository, IMapper mapper, ICurrentUser currentUser, IApplicationDbContext db)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
+        _db = db;
     }
 
     public async Task<PagedResult<OrderDto>> Handle(GetOrdersQuery request, CancellationToken cancellationToken)
@@ -77,11 +80,29 @@ public class GetOrdersHandler : IRequestHandler<GetOrdersQuery, PagedResult<Orde
             fromDateUtc,       // Filtro de fecha inicio en UTC
             toDateUtc,         // Filtro de fecha fin en UTC
             branchFilter,      // Filtro de sucursal
-            request.ForKitchen);
+            request.ForKitchen,
+            cancellationToken);
+
+        var dtos = _mapper.Map<List<OrderDto>>(result.Items);
+        if (request.ForKitchen && dtos.Count > 0)
+        {
+            // Fetch lines only for the already authorized page. Global EF tenant filters
+            // and PostgreSQL RLS also apply to OrderDetails and their relationships.
+            var ids = dtos.Select(o => o.Id).ToArray();
+            var details = await _db.OrderDetails.AsNoTracking()
+                .Where(d => ids.Contains(d.OrderId))
+                .Include(d => d.Product).ThenInclude(p => p.Category)
+                .OrderBy(d => d.OrderId).ThenBy(d => d.Id)
+                .ToListAsync(cancellationToken);
+            var grouped = details.GroupBy(d => d.OrderId)
+                .ToDictionary(g => g.Key, g => _mapper.Map<List<OrderDetailDto>>(g.ToList()));
+            foreach (var dto in dtos)
+                dto.KitchenDetails = grouped.GetValueOrDefault(dto.Id) ?? [];
+        }
 
         return new PagedResult<OrderDto>
         {
-            Items = _mapper.Map<List<OrderDto>>(result.Items),
+            Items = dtos,
             TotalCount = result.TotalCount,
             Page = result.Page,
             PageSize = result.PageSize,
