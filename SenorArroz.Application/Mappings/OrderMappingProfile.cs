@@ -49,6 +49,8 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.AppPayments, opt => opt.MapFrom(src => src.AppPayments))
             .ForMember(dest => dest.TotalDeposited, opt => opt.Ignore())
             .ForMember(dest => dest.ReservationDeposits, opt => opt.Ignore())
+            // Populated exclusively by the kitchen list handler after a scoped paged read.
+            .ForMember(dest => dest.KitchenDetails, opt => opt.Ignore())
             .ForMember(dest => dest.SummaryLines, opt => opt.MapFrom(src =>
                 src.OrderDetails
                     .OrderBy(d => d.Id)
