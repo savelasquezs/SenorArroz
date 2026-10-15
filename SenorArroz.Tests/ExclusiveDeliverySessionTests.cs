@@ -123,7 +123,7 @@ public class ExclusiveDeliverySessionTests
                 It.IsAny<int>(),
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Never);
     }
 
     [Fact]
@@ -488,7 +488,7 @@ public class ExclusiveDeliverySessionTests
         Assert.NotNull(created?.SessionId);
         Assert.Equal((await db.Users.SingleAsync()).ActiveSessionId, created!.SessionId);
         refresh.Verify(x => x.RevokeAllByUserIdAsync(
-            31, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+            31, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         policy.Verify(x => x.EnsureCompatible(It.IsAny<DeliveryAppClientVersion?>()), Times.Once);
     }
 

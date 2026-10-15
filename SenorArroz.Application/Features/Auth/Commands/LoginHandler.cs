@@ -79,12 +79,8 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 // session_id reemplaza cualquier JWT anterior (incluidos los web).
                 await _db.SaveChangesAsync(cancellationToken);
 
-            // Revocar refresh de la otra aplicación: el session_id invalida
-            // inmediatamente también sus JWT aún no expirados.
-            await _refreshTokenRepository.RevokeAllByUserIdAsync(
-                user.Id,
-                request.IpAddress,
-                cancellationToken);
+            // session_id invalida JWT y refresh anteriores sin revocaciones
+            // masivas que puedan interferir con un login simultáneo.
 
             var accessToken = isDeliveryAppLogin && !isDeliveryman
                 ? _jwtService.GenerateAccessToken(user, sessionId, deviceInstallationId, "Deliveryman")
