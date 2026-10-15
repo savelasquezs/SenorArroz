@@ -58,8 +58,9 @@ namespace SenorArroz.Application.Features.Users.Queries
             // Filtrar por rol si se especifica
             if (!string.IsNullOrEmpty(request.Role))
             {
-                filteredUsers = filteredUsers.Where(u => 
-                    u.Role.HasValue && u.Role.Value.ToString().Equals(request.Role, StringComparison.OrdinalIgnoreCase));
+                filteredUsers = filteredUsers.Where(u =>
+                    (request.Role.Equals("Deliveryman", StringComparison.OrdinalIgnoreCase) && u.CanDeliver)
+                    || (u.Role.HasValue && u.Role.Value.ToString().Equals(request.Role, StringComparison.OrdinalIgnoreCase)));
             }
 
             // Filtrar por estado activo si se especifica

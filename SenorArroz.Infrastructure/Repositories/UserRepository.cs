@@ -83,6 +83,7 @@ public class UserRepository : IUserRepository
         existing.PasswordHash = user.PasswordHash;
         existing.Active = user.Active;
         existing.WebAccessEnabled = user.WebAccessEnabled;
+        existing.DeliveryAppEnabled = user.DeliveryAppEnabled;
         existing.ProfileImageUrl = user.ProfileImageUrl;
         existing.ActiveSessionId = user.ActiveSessionId;
         existing.PayrollExpenseId = user.PayrollExpenseId;

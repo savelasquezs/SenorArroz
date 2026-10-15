@@ -53,7 +53,17 @@ namespace SenorArroz.Application.Features.Users.Commands
 
             // 3. Mapear los cambios al usuario existente (BranchId se ignora en el perfil de AutoMapper)
             var previousRole = existingUser.Role;
+            var previousDeliveryAppEnabled = existingUser.DeliveryAppEnabled;
+            var previousBranchId = existingUser.BranchId;
             _mapper.Map(request.UserData, existingUser);
+            if (request.UserData.DeliveryAppEnabled.HasValue)
+                existingUser.DeliveryAppEnabled = request.UserData.DeliveryAppEnabled.Value;
+            if (existingUser.Role is not (UserRole.Admin or UserRole.Cashier))
+            {
+                if (request.UserData.DeliveryAppEnabled == true)
+                    throw new BusinessException("Solo administradores y cajeros pueden usar la app de domicilios como rol adicional.");
+                existingUser.DeliveryAppEnabled = false;
+            }
             if (existingUser.Role != UserRole.Deliveryman)
                 existingUser.WebAccessEnabled = true;
             else if (previousRole != UserRole.Deliveryman)
@@ -80,6 +90,12 @@ namespace SenorArroz.Application.Features.Users.Commands
 
                 existingUser.BranchId = newBranchId;
             }
+
+            // Cambio de identidad/permiso: invalidar inmediatamente el JWT anterior.
+            if (previousRole != existingUser.Role
+                || previousDeliveryAppEnabled != existingUser.DeliveryAppEnabled
+                || previousBranchId != existingUser.BranchId)
+                existingUser.ActiveSessionId = null;
 
             // 5. Actualizar en la base de datos
             await _userRepository.UpdateAsync(existingUser, cancellationToken);
