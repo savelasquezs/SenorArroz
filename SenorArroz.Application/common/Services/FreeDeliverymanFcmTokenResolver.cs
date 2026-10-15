@@ -51,7 +51,7 @@ public class FreeDeliverymanFcmTokenResolver : IFreeDeliverymanFcmTokenResolver
         var candidateTokens = await _db.UserDeviceTokens
             .AsNoTracking()
             .Where(t => t.User.BranchId == branchId
-                        && t.User.Role == UserRole.Deliveryman
+                        && (t.User.Role == UserRole.Deliveryman || (t.User.DeliveryAppEnabled && (t.User.Role == UserRole.Admin || t.User.Role == UserRole.Cashier)))
                         && t.User.Active
                         && !busyDeliverymanIds.Contains(t.UserId))
             .Select(t => new { t.UserId, t.Token })

@@ -34,7 +34,7 @@ public class GetMyDeliverymanDayStateHandler : IRequestHandler<GetMyDeliverymanD
             throw new BusinessException("Solo los domiciliarios pueden consultar este recurso");
 
         var user = await _userRepository.GetByIdAsync(_currentUser.Id, cancellationToken);
-        if (user == null || user.Role != UserRole.Deliveryman || !user.Active)
+        if (user == null || !user.CanDeliver || !user.Active)
             throw new BusinessException("Usuario no válido");
 
         var branchId = _currentUser.BranchId;

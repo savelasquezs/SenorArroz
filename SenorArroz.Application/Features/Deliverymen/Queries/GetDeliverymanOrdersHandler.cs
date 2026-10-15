@@ -43,7 +43,8 @@ public class GetDeliverymanOrdersHandler : IRequestHandler<GetDeliverymanOrdersQ
         if (deliveryman == null)
             throw new BusinessException("El domiciliario no existe");
         _branchContext.EnsureAccess(deliveryman.BranchId);
-        if (deliveryman.Role != UserRole.Deliveryman)
+        if (!deliveryman.CanDeliver && !await _db.Orders.AsNoTracking()
+                .AnyAsync(order => order.DeliveryManId == deliveryman.Id, cancellationToken))
             throw new BusinessException("El usuario no es un domiciliario");
         if (!deliveryman.Active)
             throw new BusinessException("El domiciliario no está activo");
