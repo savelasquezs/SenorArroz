@@ -73,6 +73,16 @@ public sealed class PosAtomicCreationPostgreSqlTests : IAsyncLifetime
         // Production order_detail triggers update the order totals; this triggers
         // management_version again. Replicate this interaction in isolated tests.
         await db.Database.ExecuteSqlRawAsync("""
+            CREATE OR REPLACE FUNCTION public.test_pos_calculate_order_detail_subtotal()
+            RETURNS trigger LANGUAGE plpgsql AS $
+            BEGIN
+                NEW.subtotal := NEW.quantity * NEW.unit_price - NEW.discount;
+                RETURN NEW;
+            END $;
+            CREATE TRIGGER test_pos_line_subtotal_before_insert
+              BEFORE INSERT ON public.order_detail
+              FOR EACH ROW EXECUTE FUNCTION public.test_pos_calculate_order_detail_subtotal();
+
             CREATE OR REPLACE FUNCTION public.test_pos_update_order_totals()
             RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
