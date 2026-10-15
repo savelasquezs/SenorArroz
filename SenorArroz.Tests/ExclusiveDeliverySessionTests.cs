@@ -123,7 +123,7 @@ public class ExclusiveDeliverySessionTests
                 It.IsAny<int>(),
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
-            Times.Never);
+            Times.Once);
     }
 
     [Fact]
@@ -255,6 +255,13 @@ public class ExclusiveDeliverySessionTests
             Active = true,
         };
         AttachTenant(user);
+        db.Branches.Add(new Branch { Id = 7, Name = "Centro", Address = "Sucursal" });
+        db.Users.Add(new User
+        {
+            Id = user.Id, BranchId = 7, Role = role, Name = user.Name,
+            Email = user.Email, Phone = user.Phone, PasswordHash = "hash", Active = true,
+        });
+        await db.SaveChangesAsync();
         var auth = new Mock<IAuthRepository>();
         auth.Setup(x => x.GetUserByEmailAsync(user.Email, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
@@ -271,7 +278,7 @@ public class ExclusiveDeliverySessionTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         var jwt = new Mock<IJwtService>();
-        jwt.Setup(x => x.GenerateAccessToken(user, null, null)).Returns("access");
+        jwt.Setup(x => x.GenerateAccessToken(user, It.Is<Guid?>(id => id.HasValue), null)).Returns("access");
         jwt.Setup(x => x.GenerateRefreshToken()).Returns("refresh");
         var mapper = new Mock<IMapper>();
         mapper.Setup(x => x.Map<UserInfoDto>(user)).Returns(new UserInfoDto());
@@ -290,6 +297,7 @@ public class ExclusiveDeliverySessionTests
             Email = user.Email,
             Password = "secret",
             IpAddress = "127.0.0.1",
+            IsWebClient = true,
         }, default);
 
         Assert.Equal("access", result.Token);

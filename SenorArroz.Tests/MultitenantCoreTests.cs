@@ -149,10 +149,13 @@ public sealed class MultitenantCoreTests
     {
         var now = new DateTime(2026, 9, 22, 12, 0, 0, DateTimeKind.Utc);
         var user = CreateAuthenticatedUser(1, 10);
+        var sessionId = Guid.NewGuid();
+        user.ActiveSessionId = sessionId;
         var current = new RefreshToken
         {
             TenantId = 1,
             UserId = user.Id,
+            SessionId = sessionId,
             Token = "refresh",
             ExpiresAt = now.AddDays(1),
         };
@@ -168,7 +171,9 @@ public sealed class MultitenantCoreTests
         var jwt = new Mock<IJwtService>();
         jwt.Setup(x => x.GetUserIdFromExpiredToken("access")).Returns(user.Id);
         jwt.Setup(x => x.GetTenantIdFromExpiredToken("access")).Returns(1);
-        jwt.Setup(x => x.GenerateAccessToken(user, null, null)).Returns("new-access");
+        jwt.Setup(x => x.GetSessionIdFromExpiredToken("access")).Returns(sessionId);
+        jwt.Setup(x => x.GetRoleFromExpiredToken("access")).Returns("Admin");
+        jwt.Setup(x => x.GenerateAccessToken(user, sessionId, null)).Returns("new-access");
         jwt.Setup(x => x.GenerateRefreshToken()).Returns("new-refresh");
         var mapper = new Mock<IMapper>();
         mapper.Setup(x => x.Map<UserInfoDto>(user)).Returns(new UserInfoDto());
@@ -185,6 +190,7 @@ public sealed class MultitenantCoreTests
             Token = "access",
             RefreshToken = "refresh",
             IpAddress = "127.0.0.1",
+            IsWebClient = true,
         }, default);
 
         Assert.NotNull(replacement);
