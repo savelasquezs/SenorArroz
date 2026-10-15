@@ -547,3 +547,31 @@ Admin, Cashier y Superadmin del origen pueden gestionar únicamente esos pedidos
 Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Version` del formulario. Son obligatorios al gestionar desde origen. `409 ORDER_VERSION_CONFLICT` exige cerrar y recargar; nunca reintentar con una versión nueva silenciosamente. Transacción y bloqueo ordenado del pedido en PostgreSQL protegen cambios y pagos; ManagementVersion aumenta también en cambios a hijos. La respuesta expone cabeceras de versión. Se registra actor/comando/sucursal de trabajo/destino/versión en entity_audit_log, además de la auditoría monetaria existente. SignalR invalida únicamente grupos administrativos de origen y destino, aislados por tenant. El frontend refresca la lista visible y conserva el filtro/pestaña; no carga GPS hasta abrir seguimiento.
 
 **Despliegue manual posterior a revisión:** aplicar primero `SenorArroz.Infrastructure/Scripts/add_remote_order_management.sql` con cuenta de mantenimiento; después backend y frontend. SQL aditivo/idempotente, sin backfill, sin migraciones EF. No se ejecuta desde CI ni se modifica producción en esta rama. Cobrar desde origen no traslada dinero entre cajas: el registro pertenece al destino; transferencias físicas entre sedes continúan por los procesos existentes.
+
+## POS: creación atómica e idempotente (incidente 15-oct-2026)
+
+La tabla `public."order"` incorpora columnas opcionales `pos_creation_key` (UUID del
+borrador creado por el POS) y `pos_creation_fingerprint` (hash SHA-256 calculado
+en backend). Se conserva `storefront_idempotency_key` **separado**, sin alterar
+las integraciones Next.js, Wompi, WhatsApp o Rappi.
+
+Índice parcial único: `ux_order_pos_creation_tenant` sobre
+`(tenant_id, pos_creation_key)` cuando la clave no es nula. Los pedidos
+históricos sin clave permanecen válidos. El backend controla que una repetición
+del UUID pertenezca al mismo usuario y sucursal y tenga el mismo fingerprint.
+Un intento concurrente con el mismo UUID no inserta un segundo pedido.
+
+**Migración previa al despliegue:** `SenorArroz.Infrastructure/Scripts/add_pos_creation_idempotency.sql`.
+Es idempotente, aditiva y no realiza backfill. **No se ejecuta automáticamente
+mediante PR.** Para rollback, primero revertir las aplicaciones; las columnas
+pueden conservarse sin afectar las versiones anteriores. Su eliminación opcional
+se detalla en los comentarios del script.
+
+La creación por POS confirma una sola transacción PostgreSQL para pedido, líneas,
+reservas de inventario, pagos bancarios/apps y efectivo en tienda. Los triggers
+de totales actualizan `management_version`, por lo que el backend recarga la
+versión desde PostgreSQL antes de actualizar el efectivo. Las notificaciones y
+comandas se emiten **después del COMMIT**: no pueden convertirse en rollback de
+mensajes ya enviados; si fallan se registran para diagnóstico y no presentan el
+pedido como no creado. Los clientes POS antiguos sin `posCreationKey` siguen
+siendo aceptados, pero no disponen de la protección entre reintentos.

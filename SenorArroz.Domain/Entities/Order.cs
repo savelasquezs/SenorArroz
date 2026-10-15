@@ -30,6 +30,10 @@ public class Order : TenantOwnedEntity
     public string? OrderSource { get; set; }
     public int? WhatsAppConversationId { get; set; }
     public string? StorefrontIdempotencyKey { get; set; }
+    /// <summary>Clave única de creación POS, fijada al confirmar el primer intento.</summary>
+    public string? PosCreationKey { get; set; }
+    /// <summary>SHA-256 del request POS para rechazar reutilización de clave con otro pedido.</summary>
+    public string? PosCreationFingerprint { get; set; }
     public string? ExternalFulfillmentProvider { get; set; }
     public string? ExternalStoreName { get; set; }
     public string? ExternalCustomerPhone { get; set; }

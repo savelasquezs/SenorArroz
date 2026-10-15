@@ -6,6 +6,8 @@ namespace SenorArroz.Application.Features.Orders.DTOs;
 public class CreateOrderDto
 {
     public int BranchId { get; set; }
+    /// <summary>UUID estable del borrador POS para que los reintentos no creen pedidos nuevos.</summary>
+    public string? PosCreationKey { get; set; }
     [JsonPropertyName("whatsappConversationId")]
     public int? WhatsAppConversationId { get; set; }
     public int TakenById { get; set; }
