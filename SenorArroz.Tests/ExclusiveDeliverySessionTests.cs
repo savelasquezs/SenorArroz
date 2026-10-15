@@ -297,7 +297,6 @@ public class ExclusiveDeliverySessionTests
             Email = user.Email,
             Password = "secret",
             IpAddress = "127.0.0.1",
-            IsWebClient = true,
         }, default);
 
         Assert.Equal("access", result.Token);
@@ -512,7 +511,12 @@ public class ExclusiveDeliverySessionTests
             Mock.Of<IDeliveryAppVersionPolicy>());
 
         await Assert.ThrowsAsync<BusinessException>(() => handler.Handle(
-            new LoginCommand { Email = user.Email, Password = "secret" }, default));
+            new LoginCommand
+            {
+                Email = user.Email, Password = "secret", DeviceInstallationId = "device-a",
+                DeliveryAppVersion = new DeliveryAppClientVersion(
+                    "1.2.5", 11, "com.senorarroz.delivery_app"),
+            }, default));
         refresh.Verify(x => x.RevokeAllByUserIdAsync(
             It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         refresh.Verify(x => x.AddAsync(

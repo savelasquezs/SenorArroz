@@ -42,7 +42,13 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 throw new BusinessException("Credenciales inválidas");
 
             var isDeliveryman = user.Role == UserRole.Deliveryman;
-            var isDeliveryAppLogin = !request.IsWebClient;
+            // Otros clientes de la API que no envían cabecera web siguen usando
+            // su rol habitual. Flutter se identifica por versión/instalación.
+            var hasDeliveryAppMetadata = !string.IsNullOrWhiteSpace(request.DeviceInstallationId)
+                || request.DeliveryAppVersion?.VersionName is not null
+                || request.DeliveryAppVersion?.BuildNumber is not null
+                || request.DeliveryAppVersion?.PackageName is not null;
+            var isDeliveryAppLogin = !request.IsWebClient && (isDeliveryman || hasDeliveryAppMetadata);
             if (request.IsWebClient && isDeliveryman && !user.WebAccessEnabled)
                 throw new DeliverymanWebAccessDeniedException();
             if (isDeliveryAppLogin)

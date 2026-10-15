@@ -56,7 +56,12 @@ namespace SenorArroz.Application.Features.Auth.Commands
             {
                 throw new BusinessException("Refresh token inválido");
             }
-            var isDeliveryAppClient = !request.IsWebClient;
+            // El rol firmado en el JWT anterior define qué app puede renovarlo.
+            // Un cliente HTTP de administración sin cabecera web no es Flutter.
+            var originalRole = _jwtService.GetRoleFromExpiredToken(request.Token);
+            var isDeliveryAppClient = !request.IsWebClient
+                && (user.Role == Domain.Enums.UserRole.Deliveryman
+                    || string.Equals(originalRole, "Deliveryman", StringComparison.OrdinalIgnoreCase));
             if (request.IsWebClient && user.Role == Domain.Enums.UserRole.Deliveryman && !user.WebAccessEnabled)
                 throw new DeliverymanWebAccessDeniedException();
             if (isDeliveryAppClient)
