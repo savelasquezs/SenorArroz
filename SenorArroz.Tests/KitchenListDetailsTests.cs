@@ -41,7 +41,13 @@ public sealed class KitchenListDetailsTests
             PasswordHash = "test-only", Role = UserRole.Kitchen, BranchId = first.Id,
             Active = true, CreatedAt = Now
         };
-        context.Users.Add(user);
+        var otherUser = new User
+        {
+            Name = "Other branch", Email = $"kitchen_other_{Guid.NewGuid():N}@example.com",
+            PasswordHash = "test-only", Role = UserRole.Cashier, BranchId = second.Id,
+            Active = true, CreatedAt = Now
+        };
+        context.Users.AddRange(user, otherUser);
         var category = new ProductCategory { BranchId = first.Id, Name = "Arroces" };
         context.ProductCategories.Add(category);
         await context.SaveChangesAsync();
@@ -53,7 +59,7 @@ public sealed class KitchenListDetailsTests
         {
             context.Orders.Add(new Order
             {
-                BranchId = branch, TakenById = user.Id,
+                BranchId = branch, TakenById = branch == first.Id ? user.Id : otherUser.Id,
                 Type = OrderType.Delivery, Status = OrderStatus.Taken,
                 StatusTimes = "{}", Subtotal = 18000, Total = 18000,
                 CreatedAt = Now, UpdatedAt = Now
@@ -66,9 +72,7 @@ public sealed class KitchenListDetailsTests
             new OrderDetail { OrderId = ids[0], ProductId = product.Id, Quantity = 2,
                 UnitPrice = 18000, Notes = "Sin cebolla" },
             new OrderDetail { OrderId = ids[0], ProductId = product.Id, Quantity = 1,
-                UnitPrice = 18000, Notes = "Poco picante" },
-            new OrderDetail { OrderId = ids[2], ProductId = product.Id, Quantity = 3,
-                UnitPrice = 18000, Notes = "Other branch" });
+                UnitPrice = 18000, Notes = "Poco picante" });
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
         return (first.Id, ids);
