@@ -89,7 +89,7 @@ public class CreateBranchInformalLoanHandler : IRequestHandler<CreateBranchInfor
 
         var dmName = await _context.Users
             .AsNoTracking()
-            .Where(u => u.Id == adv.DeliverymanId && u.BranchId == branchId && u.Role == UserRole.Deliveryman)
+            .Where(u => u.Id == adv.DeliverymanId && u.BranchId == branchId && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier))))
             .Select(u => u.Name)
             .FirstOrDefaultAsync(cancellationToken);
         if (dmName is null)

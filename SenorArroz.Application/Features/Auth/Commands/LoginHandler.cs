@@ -58,8 +58,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 ? NormalizeDeviceId(request.DeviceInstallationId)
                 : null;
 
-            {
-                var trackedUser = await _db.Users.FirstAsync(
+            var trackedUser = await _db.Users.FirstAsync(
                     candidate => candidate.Id == user.Id && candidate.Active,
                     cancellationToken);
                 trackedUser.ActiveSessionId = sessionId;
@@ -77,11 +76,8 @@ namespace SenorArroz.Application.Features.Auth.Commands
                     .ToListAsync(cancellationToken);
                 _db.UserDeviceTokens.RemoveRange(previousDeviceTokens);
 
-                // session_id es la fuente de verdad. No se revocan tokens en
-                // bloque porque dos logins simultáneos podrían revocar el token
-                // perteneciente a la sesión que finalmente quedó vigente.
+                // session_id reemplaza cualquier JWT anterior (incluidos los web).
                 await _db.SaveChangesAsync(cancellationToken);
-            }
 
             // Revocar refresh de la otra aplicación: el session_id invalida
             // inmediatamente también sus JWT aún no expirados.

@@ -419,7 +419,7 @@ public class DeliverymanController : ControllerBase
         var deliveryman = await _userRepository.GetByIdAsync(id, HttpContext.RequestAborted);
         if (deliveryman == null)
             return NotFound();
-        if (deliveryman.Role != UserRole.Deliveryman)
+        if (!deliveryman.CanDeliver)
             return Forbid();
         _branchContext.EnsureAccess(deliveryman.BranchId);
 

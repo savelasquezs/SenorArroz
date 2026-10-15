@@ -74,7 +74,8 @@ public class GetUserPayrollInsightsHandler : IRequestHandler<GetUserPayrollInsig
         var (fromUtc, toUtc) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(fromCol, toCol);
 
         var payRate = ClampPayRate(_payrollOptions.DeliveryFeePayRate);
-        var isDm = user.Role == UserRole.Deliveryman;
+        var isDm = user.CanDeliver || await _db.Orders.AsNoTracking()
+            .AnyAsync(o => o.DeliveryManId == user.Id, cancellationToken);
 
         var details = await LoadExpenseDetailsAsync(user, fromUtc, toUtc, cancellationToken);
         var orders = isDm
