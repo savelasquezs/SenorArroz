@@ -113,7 +113,7 @@ public class CreateExpenseHeaderHandler : IRequestHandler<CreateExpenseHeaderCom
         if (request.ExpenseHeader.DeliverymanId.HasValue)
         {
             var dm = await _context.Users.FindAsync(new object[] { request.ExpenseHeader.DeliverymanId.Value }, cancellationToken);
-            if (dm == null || dm.Role != UserRole.Deliveryman || !dm.Active)
+            if (dm == null || !dm.CanDeliver || !dm.Active)
                 throw new BusinessException("Domiciliario inválido");
             if (dm.BranchId != branchId)
                 throw new BusinessException("El domiciliario no pertenece a tu sucursal");

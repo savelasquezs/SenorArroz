@@ -285,10 +285,9 @@ builder.Services.AddAuthentication(options =>
                 return;
             }
 
-            var role = principal?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
-            if (!string.Equals(role, "Deliveryman", StringComparison.OrdinalIgnoreCase))
-                return;
-
+            // Una única sesión vigente, sea web o Flutter. El rol efectivo
+            // debe seguir autorizado por el rol real y sus permisos actuales.
+            var role = principal?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? string.Empty;
             var sessionValue = principal?.FindFirst("session_id")?.Value;
             Guid? sessionId = Guid.TryParse(sessionValue, out var parsedSessionId)
                 ? parsedSessionId
@@ -296,6 +295,7 @@ builder.Services.AddAuthentication(options =>
             if (!await authRepository.IsSessionCurrentAsync(
                     userId,
                     sessionId,
+                    role,
                     context.HttpContext.RequestAborted))
             {
                 context.HttpContext.Items[sessionReplacedItemKey] = true;

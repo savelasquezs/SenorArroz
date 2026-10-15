@@ -118,7 +118,7 @@ public class GetDailyOverviewHandler : IRequestHandler<GetDailyOverviewQuery, Da
             .ToHashSet();
         var allUsers = await _userRepository.GetAllAsync(null, cancellationToken);
         var deliverymen = allUsers
-            .Where(u => u.Role == UserRole.Deliveryman && referencedDeliverymanIds.Contains(u.Id))
+            .Where(u => referencedDeliverymanIds.Contains(u.Id))
             .OrderBy(u => u.Name)
             .ToList();
 

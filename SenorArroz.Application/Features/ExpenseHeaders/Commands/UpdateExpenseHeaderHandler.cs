@@ -107,7 +107,7 @@ public class UpdateExpenseHeaderHandler : IRequestHandler<UpdateExpenseHeaderCom
         {
             var deliverymanId = request.ExpenseHeader.DeliverymanId.Value;
             var deliveryman = await _context.Users.FindAsync(new object[] { deliverymanId }, cancellationToken);
-            if (deliveryman == null || deliveryman.Role != UserRole.Deliveryman || !deliveryman.Active)
+            if (deliveryman == null || !deliveryman.CanDeliver || !deliveryman.Active)
             {
                 throw new BusinessException("Domiciliario inválido");
             }

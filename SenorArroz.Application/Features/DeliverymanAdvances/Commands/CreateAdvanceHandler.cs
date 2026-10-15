@@ -44,7 +44,7 @@ public class CreateAdvanceHandler : IRequestHandler<CreateAdvanceCommand, Delive
             throw new BusinessException("El domiciliario no existe");
         _branchContext.EnsureAccess(deliveryman.BranchId);
 
-        if (deliveryman.Role != UserRole.Deliveryman)
+        if (!deliveryman.CanDeliver)
             throw new BusinessException("El usuario especificado no es un domiciliario");
 
         if (!deliveryman.Active)

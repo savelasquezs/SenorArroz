@@ -13,6 +13,10 @@ public class User : TenantOwnedEntity
     public string PasswordHash { get; set; } = string.Empty;
     public bool Active { get; set; } = true;
     public bool WebAccessEnabled { get; set; } = true;
+    // Permiso para operar como domiciliario sin modificar el rol principal.
+    public bool DeliveryAppEnabled { get; set; }
+    public bool CanDeliver => Role == UserRole.Deliveryman
+        || (DeliveryAppEnabled && (Role == UserRole.Admin || Role == UserRole.Cashier));
     public string? ProfileImageUrl { get; set; }
 
     /// <summary>

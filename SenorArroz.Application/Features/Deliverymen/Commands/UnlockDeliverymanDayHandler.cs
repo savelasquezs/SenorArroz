@@ -38,7 +38,8 @@ public class UnlockDeliverymanDayHandler : IRequestHandler<UnlockDeliverymanDayC
         if (deliveryman == null)
             throw new BusinessException("El domiciliario no existe");
         _branchContext.EnsureAccess(deliveryman.BranchId);
-        if (deliveryman.Role != UserRole.Deliveryman)
+        if (!deliveryman.CanDeliver && !await _context.Orders.AsNoTracking()
+                .AnyAsync(order => order.DeliveryManId == deliveryman.Id, cancellationToken))
             throw new BusinessException("El usuario no es un domiciliario");
 
         var branchId = Roles.IsSuperadmin(_currentUser.Role)

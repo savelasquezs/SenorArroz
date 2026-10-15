@@ -45,7 +45,7 @@ public sealed class OrderManagementService(IApplicationDbContext db, ICurrentUse
         var apps = await db.Apps.AsNoTracking().Where(a => a.Bank.BranchId == order.BranchId && a.Active && a.Bank.Active)
             .OrderBy(a => a.Name).Select(a => new OrderAppOptionDto(a.Id, a.Name, a.BankId, a.Bank.Name, a.Bank.BranchId, a.Active, a.ImageUrl))
             .ToListAsync(ct);
-        var drivers = await db.Users.AsNoTracking().Where(u => u.BranchId == order.BranchId && u.Active && u.Role == UserRole.Deliveryman)
+        var drivers = await db.Users.AsNoTracking().Where(u => u.BranchId == order.BranchId && u.Active && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier))))
             .OrderBy(u => u.Name).Select(u => new OrderDeliverymanOptionDto(u.Id, u.Name)).ToListAsync(ct);
         return new(order.BranchId, destination.Name, banks, apps, drivers, destination.MaxFreeDeliveryDiscount);
     }

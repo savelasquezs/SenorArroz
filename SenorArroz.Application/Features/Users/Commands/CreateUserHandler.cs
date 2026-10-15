@@ -131,9 +131,13 @@ namespace SenorArroz.Application.Features.Users.Commands
                 _db,
                 cancellationToken);
 
+            if (request.UserData.DeliveryAppEnabled && request.UserData.Role is not (UserRole.Admin or UserRole.Cashier))
+                throw new BusinessException("El acceso a la app de domicilios solo aplica a administradores y cajeros.");
+
             // 2. Mapear DTO a entidad
             var user = _mapper.Map<User>(request.UserData);
             user.TenantId = branch.TenantId;
+            user.DeliveryAppEnabled = request.UserData.DeliveryAppEnabled;
             user.WebAccessEnabled = user.Role != UserRole.Deliveryman;
 
             // 3. Hashear la contraseña

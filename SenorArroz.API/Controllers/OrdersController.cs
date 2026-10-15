@@ -652,8 +652,7 @@ public class OrdersController : ControllerBase
         var dm = await _userRepository.GetByIdAsync(deliveryManUserId, cancellationToken);
         if (dm == null)
             return NotFound();
-        if (dm.Role != UserRole.Deliveryman)
-            return Forbid();
+        // El historial sigue disponible si se retira el permiso de entrega.
         if (dm.BranchId != _currentUser.BranchId)
             return Forbid();
         if (branchQueryFilter is > 0 && branchQueryFilter.Value != _currentUser.BranchId)

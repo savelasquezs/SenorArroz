@@ -54,8 +54,8 @@ public class DeliveryTrackingPlaybackController : ControllerBase
         var resolvedBranchId = _branchContext.RequireBranch(branchId);
         var deliverymen = await _db.Users.AsNoTracking()
             .Where(x => ids.Contains(x.Id)
-                && x.Role == UserRole.Deliveryman
-                && x.BranchId == resolvedBranchId)
+                && x.BranchId == resolvedBranchId
+                && ((x.Role == UserRole.Deliveryman || (x.DeliveryAppEnabled && (x.Role == UserRole.Admin || x.Role == UserRole.Cashier))) || _db.DeliverymanLocations.Any(loc => loc.DeliverymanId == x.Id)))
             .Select(x => new DeliverymanHeader(x.Id, x.Name, x.BranchId))
             .ToListAsync(cancellationToken);
         if (deliverymen.Count != ids.Length)

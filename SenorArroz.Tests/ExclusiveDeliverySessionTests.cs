@@ -255,6 +255,13 @@ public class ExclusiveDeliverySessionTests
             Active = true,
         };
         AttachTenant(user);
+        db.Branches.Add(new Branch { Id = 7, Name = "Centro", Address = "Sucursal" });
+        db.Users.Add(new User
+        {
+            Id = user.Id, BranchId = 7, Role = role, Name = user.Name,
+            Email = user.Email, Phone = user.Phone, PasswordHash = "hash", Active = true,
+        });
+        await db.SaveChangesAsync();
         var auth = new Mock<IAuthRepository>();
         auth.Setup(x => x.GetUserByEmailAsync(user.Email, It.IsAny<CancellationToken>()))
             .ReturnsAsync(user);
@@ -271,7 +278,7 @@ public class ExclusiveDeliverySessionTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         var jwt = new Mock<IJwtService>();
-        jwt.Setup(x => x.GenerateAccessToken(user, null, null)).Returns("access");
+        jwt.Setup(x => x.GenerateAccessToken(user, It.Is<Guid?>(id => id.HasValue), null)).Returns("access");
         jwt.Setup(x => x.GenerateRefreshToken()).Returns("refresh");
         var mapper = new Mock<IMapper>();
         mapper.Setup(x => x.Map<UserInfoDto>(user)).Returns(new UserInfoDto());
@@ -417,6 +424,180 @@ public class ExclusiveDeliverySessionTests
         Assert.Equal(
             DeliveryWorkSessionStatus.Active,
             (await db.DeliveryWorkSessions.SingleAsync()).Status);
+    }
+
+
+    [Theory]
+    [InlineData(UserRole.Admin)]
+    [InlineData(UserRole.Cashier)]
+    public async Task Login_DeliveryEnabledStaff_UsesDeliveryRoleWithoutMutatingPrimaryRole(UserRole role)
+    {
+        await using var db = CreateDb();
+        db.Branches.Add(new Branch { Id = 7, Name = "Centro", Address = "Sucursal" });
+        db.Users.Add(new User
+        {
+            Id = 31, BranchId = 7, Role = role, DeliveryAppEnabled = true,
+            Name = "Relevo", Email = "relevo@example.com", Phone = "3000000000",
+            PasswordHash = "hash", Active = true,
+        });
+        await db.SaveChangesAsync();
+
+        var loginUser = AttachTenant(new User
+        {
+            Id = 31, BranchId = 7, Role = role, DeliveryAppEnabled = true,
+            Name = "Relevo", Email = "relevo@example.com", Phone = "3000000000",
+            PasswordHash = "hash", Active = true,
+        });
+        var auth = new Mock<IAuthRepository>();
+        auth.Setup(x => x.GetUserByEmailAsync(loginUser.Email, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(loginUser);
+        auth.Setup(x => x.ValidatePasswordAsync(loginUser, "secret", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        RefreshToken? created = null;
+        var refresh = new Mock<IRefreshTokenRepository>();
+        refresh.Setup(x => x.RevokeAllByUserIdAsync(
+            31, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        refresh.Setup(x => x.AddAsync(It.IsAny<RefreshToken>(), It.IsAny<CancellationToken>()))
+            .Callback<RefreshToken, CancellationToken>((token, _) => created = token)
+            .Returns(Task.CompletedTask);
+        var jwt = new Mock<IJwtService>();
+        jwt.Setup(x => x.GenerateAccessToken(
+                loginUser, It.Is<Guid?>(id => id.HasValue), "device-a", "Deliveryman"))
+            .Returns("mobile-token");
+        jwt.Setup(x => x.GenerateRefreshToken()).Returns("refresh");
+        var mapper = new Mock<IMapper>();
+        mapper.Setup(x => x.Map<UserInfoDto>(loginUser))
+            .Returns(new UserInfoDto { Id = 31, Role = role.ToString() });
+        var policy = new Mock<IDeliveryAppVersionPolicy>();
+        var handler = new LoginHandler(auth.Object, refresh.Object, jwt.Object,
+            mapper.Object, new FakeClock(DateTime.UtcNow), db, policy.Object);
+
+        var result = await handler.Handle(new LoginCommand
+        {
+            Email = loginUser.Email, Password = "secret", DeviceInstallationId = "device-a",
+            DeliveryAppVersion = new DeliveryAppClientVersion(
+                "1.2.5", 11, "com.senorarroz.delivery_app"),
+        }, default);
+
+        Assert.Equal("mobile-token", result.Token);
+        Assert.Equal("Deliveryman", result.User.Role);
+        Assert.Equal(role, (await db.Users.SingleAsync()).Role);
+        Assert.True((await db.Users.SingleAsync()).DeliveryAppEnabled);
+        Assert.NotNull(created?.SessionId);
+        Assert.Equal((await db.Users.SingleAsync()).ActiveSessionId, created!.SessionId);
+        refresh.Verify(x => x.RevokeAllByUserIdAsync(
+            31, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        policy.Verify(x => x.EnsureCompatible(It.IsAny<DeliveryAppClientVersion?>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Login_StaffWithoutDeliveryPermission_DoesNotStartMobileSession()
+    {
+        await using var db = CreateDb();
+        var user = AttachTenant(new User
+        {
+            Id = 55, BranchId = 7, Role = UserRole.Cashier,
+            Name = "Cajero", Email = "cajero@example.com", Active = true,
+        });
+        var auth = new Mock<IAuthRepository>();
+        auth.Setup(x => x.GetUserByEmailAsync(user.Email, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        auth.Setup(x => x.ValidatePasswordAsync(user, "secret", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var refresh = new Mock<IRefreshTokenRepository>();
+        var handler = new LoginHandler(auth.Object, refresh.Object, Mock.Of<IJwtService>(),
+            Mock.Of<IMapper>(), new FakeClock(DateTime.UtcNow), db,
+            Mock.Of<IDeliveryAppVersionPolicy>());
+
+        await Assert.ThrowsAsync<BusinessException>(() => handler.Handle(
+            new LoginCommand
+            {
+                Email = user.Email, Password = "secret", DeviceInstallationId = "device-a",
+                DeliveryAppVersion = new DeliveryAppClientVersion(
+                    "1.2.5", 11, "com.senorarroz.delivery_app"),
+            }, default));
+        refresh.Verify(x => x.RevokeAllByUserIdAsync(
+            It.IsAny<int>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        refresh.Verify(x => x.AddAsync(
+            It.IsAny<RefreshToken>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Login_WebAfterDeliveryApp_ReplacesSessionAndKeepsCashierRole()
+    {
+        await using var db = CreateDb();
+        var previousSession = Guid.NewGuid();
+        db.Branches.Add(new Branch { Id = 7, Name = "Centro", Address = "Sucursal" });
+        db.Users.Add(new User
+        {
+            Id = 30, BranchId = 7, Role = UserRole.Cashier, DeliveryAppEnabled = true,
+            Name = "Cajero", Email = "cajero@example.com", Phone = "3000000000",
+            PasswordHash = "hash", Active = true, ActiveSessionId = previousSession,
+        });
+        await db.SaveChangesAsync();
+        var user = AttachTenant(new User
+        {
+            Id = 30, BranchId = 7, Role = UserRole.Cashier, DeliveryAppEnabled = true,
+            Name = "Cajero", Email = "cajero@example.com", Active = true,
+        });
+        var auth = new Mock<IAuthRepository>();
+        auth.Setup(x => x.GetUserByEmailAsync(user.Email, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        auth.Setup(x => x.ValidatePasswordAsync(user, "secret", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var refresh = new Mock<IRefreshTokenRepository>();
+        refresh.Setup(x => x.RevokeAllByUserIdAsync(
+            30, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        refresh.Setup(x => x.AddAsync(It.IsAny<RefreshToken>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var jwt = new Mock<IJwtService>();
+        jwt.Setup(x => x.GenerateAccessToken(user, It.Is<Guid?>(id => id.HasValue), null))
+            .Returns("web-token");
+        jwt.Setup(x => x.GenerateRefreshToken()).Returns("refresh");
+        var mapper = new Mock<IMapper>();
+        mapper.Setup(x => x.Map<UserInfoDto>(user))
+            .Returns(new UserInfoDto { Role = "Cashier" });
+        var handler = new LoginHandler(auth.Object, refresh.Object, jwt.Object,
+            mapper.Object, new FakeClock(DateTime.UtcNow), db,
+            Mock.Of<IDeliveryAppVersionPolicy>());
+
+        var result = await handler.Handle(new LoginCommand
+        {
+            Email = user.Email, Password = "secret", IsWebClient = true
+        }, default);
+
+        Assert.Equal("web-token", result.Token);
+        Assert.Equal("Cashier", result.User.Role);
+        Assert.NotEqual(previousSession, (await db.Users.SingleAsync()).ActiveSessionId);
+    }
+
+    [Fact]
+    public async Task DeliveryScopedSession_RequiresFlagAndDoesNotGrantOtherWebRoles()
+    {
+        await using var db = CreateDb();
+        var session = Guid.NewGuid();
+        db.Branches.Add(new Branch { Id = 7, Name = "Centro", Address = "Sucursal" });
+        db.Users.Add(new User
+        {
+            Id = 42, BranchId = 7, Role = UserRole.Cashier, Active = true,
+            DeliveryAppEnabled = true, ActiveSessionId = session,
+            Email = "cashier@example.com", Name = "Cashier", Phone = "3000000000"
+        });
+        await db.SaveChangesAsync();
+        var repo = new AuthRepository(db, Mock.Of<IPasswordService>());
+
+        Assert.True(await repo.IsSessionCurrentAsync(42, session, "Deliveryman"));
+        Assert.True(await repo.IsSessionCurrentAsync(42, session, "Cashier"));
+        Assert.False(await repo.IsSessionCurrentAsync(42, session, "Admin"));
+        Assert.False(await repo.IsSessionCurrentAsync(42, Guid.NewGuid(), "Deliveryman"));
+
+        (await db.Users.SingleAsync()).DeliveryAppEnabled = false;
+        await db.SaveChangesAsync();
+
+        Assert.False(await repo.IsSessionCurrentAsync(42, session, "Deliveryman"));
+        Assert.True(await repo.IsSessionCurrentAsync(42, session, "Cashier"));
     }
 
     private static ApplicationDbContext CreateDb()

@@ -33,7 +33,14 @@ public class JwtService : IJwtService
     public string GenerateAccessToken(
         User user,
         Guid? sessionId = null,
-        string? deviceInstallationId = null)
+        string? deviceInstallationId = null) =>
+        GenerateAccessToken(user, sessionId, deviceInstallationId, user.Role?.ToString() ?? string.Empty);
+
+    public string GenerateAccessToken(
+        User user,
+        Guid? sessionId,
+        string? deviceInstallationId,
+        string effectiveRole)
     {
         var tokenHandler = new JwtSecurityTokenHandler();
         var key = Encoding.ASCII.GetBytes(_secretKey);
@@ -43,7 +50,7 @@ public class JwtService : IJwtService
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Email, user.Email),
             new(ClaimTypes.Name, user.Name),
-            new(ClaimTypes.Role, user.Role?.ToString() ?? string.Empty),
+            new(ClaimTypes.Role, effectiveRole),
             new("branch_id", user.BranchId.ToString()),
             new("tenant_id", user.TenantId.ToString()),
             new("tenant_public_id", user.Tenant.PublicId.ToString("D")),
@@ -83,6 +90,9 @@ public class JwtService : IJwtService
         var userIdClaim = principal?.FindFirst(ClaimTypes.NameIdentifier);
         return userIdClaim != null && int.TryParse(userIdClaim.Value, out var userId) ? userId : null;
     }
+
+    public string? GetRoleFromExpiredToken(string token) =>
+        GetPrincipalFromExpiredToken(token)?.FindFirst(ClaimTypes.Role)?.Value;
 
     public Guid? GetSessionIdFromExpiredToken(string token)
     {

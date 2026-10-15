@@ -10,6 +10,7 @@ public class BranchUserDto
     public string Role { get; set; } = string.Empty;
     public bool Active { get; set; }
     public bool WebAccessEnabled { get; set; }
+    public bool DeliveryAppEnabled { get; set; }
     public int? PayrollExpenseId { get; set; }
     public string? PayrollExpenseName { get; set; }
     public DateTime CreatedAt { get; set; }

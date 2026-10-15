@@ -183,7 +183,9 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
         }
 
         var user = await _userRepository.GetByIdAsync(deliveryManId, cancellationToken);
-        if (user is not { Active: true } || user.Role != UserRole.Deliveryman)
+        if (user is not { Active: true }
+            || (!user.CanDeliver && !await _db.Orders.AsNoTracking()
+                .AnyAsync(order => order.DeliveryManId == user.Id, cancellationToken)))
             throw new UnauthorizedAccessException("Domiciliario no encontrado o inactivo.");
 
         if (Roles.IsAdmin(_currentUser.Role))

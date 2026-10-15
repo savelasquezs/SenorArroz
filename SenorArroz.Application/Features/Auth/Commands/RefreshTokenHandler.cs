@@ -56,34 +56,40 @@ namespace SenorArroz.Application.Features.Auth.Commands
             {
                 throw new BusinessException("Refresh token inválido");
             }
-            if (user.Role == Domain.Enums.UserRole.Deliveryman)
+            // El rol firmado en el JWT anterior define qué app puede renovarlo.
+            // Un cliente HTTP de administración sin cabecera web no es Flutter.
+            var originalRole = _jwtService.GetRoleFromExpiredToken(request.Token);
+            var isDeliveryAppClient = !request.IsWebClient
+                && (user.Role == Domain.Enums.UserRole.Deliveryman
+                    || string.Equals(originalRole, "Deliveryman", StringComparison.OrdinalIgnoreCase));
+            if (request.IsWebClient && user.Role == Domain.Enums.UserRole.Deliveryman && !user.WebAccessEnabled)
+                throw new DeliverymanWebAccessDeniedException();
+            if (isDeliveryAppClient)
             {
-                if (request.IsWebClient)
-                {
-                    if (!user.WebAccessEnabled)
-                        throw new DeliverymanWebAccessDeniedException();
-                }
-                else
-                {
-                    _deliveryAppVersionPolicy.EnsureCompatible(request.DeliveryAppVersion);
-                }
+                if (!user.CanDeliver)
+                    throw new BusinessException("No tienes habilitado el acceso a la app de domicilios.");
+                _deliveryAppVersionPolicy.EnsureCompatible(request.DeliveryAppVersion);
             }
 
-            if (user.Role == Domain.Enums.UserRole.Deliveryman
-                && (user.ActiveSessionId != sessionId || refreshToken.SessionId != sessionId))
-            {
+            if (!sessionId.HasValue
+                || user.ActiveSessionId != sessionId
+                || refreshToken.SessionId != sessionId)
                 throw new SessionReplacedException();
-            }
+
+            var effectiveRole = isDeliveryAppClient ? "Deliveryman" : user.Role?.ToString() ?? string.Empty;
+            if (!string.Equals(_jwtService.GetRoleFromExpiredToken(request.Token),
+                    effectiveRole, StringComparison.OrdinalIgnoreCase))
+                throw new BusinessException("El refresh token no pertenece a esta aplicación.");
 
             // Revocar el refresh token usado
             refreshToken.Revoke(request.IpAddress, _clock.UtcNow);
             await _refreshTokenRepository.UpdateAsync(refreshToken, cancellationToken);
 
             // Generar nuevos tokens
-            var newAccessToken = _jwtService.GenerateAccessToken(
-                user,
-                sessionId,
-                deviceInstallationId);
+            var newAccessToken = isDeliveryAppClient && user.Role != Domain.Enums.UserRole.Deliveryman
+                ? _jwtService.GenerateAccessToken(user, sessionId, deviceInstallationId, "Deliveryman")
+                : _jwtService.GenerateAccessToken(user, sessionId,
+                    isDeliveryAppClient ? deviceInstallationId : null);
             var newRefreshToken = _jwtService.GenerateRefreshToken();
 
             // Crear nuevo refresh token entity
@@ -100,6 +106,8 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
             // Mapear respuesta
             var userInfo = _mapper.Map<UserInfoDto>(user);
+            if (isDeliveryAppClient)
+                userInfo.Role = "Deliveryman";
 
             return new AuthResponseDto
             {

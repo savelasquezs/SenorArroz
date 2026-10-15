@@ -8,6 +8,8 @@ namespace SenorArroz.Application.Features.Users.DTOs
         public string Email { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
         public UserRole Role { get; set; }
+        // Null preserva el permiso en clientes anteriores.
+        public bool? DeliveryAppEnabled { get; set; }
         public bool Active { get; set; }
 
         /// <summary>Nueva sucursal (solo aplica si el actor es superadmin).</summary>
