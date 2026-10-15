@@ -4,6 +4,7 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Domain.Interfaces.Services;
 using SenorArroz.Infrastructure.Data;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Infrastructure.Repositories;
 
@@ -46,14 +47,31 @@ public class AuthRepository : IAuthRepository
     public Task<bool> IsSessionCurrentAsync(
         int userId,
         Guid? sessionId,
+        CancellationToken cancellationToken = default) =>
+        sessionId.HasValue
+            ? _context.Users.AsNoTracking().AnyAsync(
+                user => user.Id == userId && user.Active && user.ActiveSessionId == sessionId,
+                cancellationToken)
+            : Task.FromResult(false);
+
+    // Comprueba tanto la generación de sesión como el rol real autorizado hoy.
+    public Task<bool> IsSessionCurrentAsync(
+        int userId,
+        Guid? sessionId,
+        string effectiveRole,
         CancellationToken cancellationToken = default)
     {
-        return _context.Users.AsNoTracking().AnyAsync(
-            user => user.Id == userId
-                    && user.Active
-                    && user.Role == Domain.Enums.UserRole.Deliveryman
-                    && user.ActiveSessionId == sessionId,
-            cancellationToken);
+        if (!sessionId.HasValue || !Enum.TryParse<UserRole>(effectiveRole, true, out var role))
+            return Task.FromResult(false);
+
+        var activeSession = _context.Users.AsNoTracking()
+            .Where(user => user.Id == userId && user.Active && user.ActiveSessionId == sessionId);
+
+        return role == UserRole.Deliveryman
+            ? activeSession.AnyAsync(user => user.Role == UserRole.Deliveryman
+                || (user.DeliveryAppEnabled && (user.Role == UserRole.Admin || user.Role == UserRole.Cashier)),
+                cancellationToken)
+            : activeSession.AnyAsync(user => user.Role == role, cancellationToken);
     }
 
     public async Task<bool> IsTenantAccessCurrentAsync(

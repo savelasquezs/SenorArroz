@@ -42,23 +42,22 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 throw new BusinessException("Credenciales inválidas");
 
             var isDeliveryman = user.Role == UserRole.Deliveryman;
-            if (isDeliveryman)
+            var isDeliveryAppLogin = !request.IsWebClient;
+            if (request.IsWebClient && isDeliveryman && !user.WebAccessEnabled)
+                throw new DeliverymanWebAccessDeniedException();
+            if (isDeliveryAppLogin)
             {
-                if (request.IsWebClient)
-                {
-                    if (!user.WebAccessEnabled)
-                        throw new DeliverymanWebAccessDeniedException();
-                }
-                else
-                {
-                    _deliveryAppVersionPolicy.EnsureCompatible(request.DeliveryAppVersion);
-                }
+                if (!user.CanDeliver)
+                    throw new BusinessException("No tienes habilitado el acceso a la app de domicilios.");
+                _deliveryAppVersionPolicy.EnsureCompatible(request.DeliveryAppVersion);
             }
 
-            var sessionId = isDeliveryman ? Guid.NewGuid() : (Guid?)null;
-            var deviceInstallationId = NormalizeDeviceId(request.DeviceInstallationId);
+            // La sesión es global, no por aplicación.
+            var sessionId = Guid.NewGuid();
+            var deviceInstallationId = isDeliveryAppLogin
+                ? NormalizeDeviceId(request.DeviceInstallationId)
+                : null;
 
-            if (isDeliveryman)
             {
                 var trackedUser = await _db.Users.FirstAsync(
                     candidate => candidate.Id == user.Id && candidate.Active,
@@ -83,19 +82,17 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 // perteneciente a la sesión que finalmente quedó vigente.
                 await _db.SaveChangesAsync(cancellationToken);
             }
-            else
-            {
-                await _refreshTokenRepository.RevokeAllByUserIdAsync(
-                    user.Id,
-                    request.IpAddress,
-                    cancellationToken);
-            }
 
-            // Generar tokens
-            var accessToken = _jwtService.GenerateAccessToken(
-                user,
-                sessionId,
-                isDeliveryman ? deviceInstallationId : null);
+            // Revocar refresh de la otra aplicación: el session_id invalida
+            // inmediatamente también sus JWT aún no expirados.
+            await _refreshTokenRepository.RevokeAllByUserIdAsync(
+                user.Id,
+                request.IpAddress,
+                cancellationToken);
+
+            var accessToken = isDeliveryAppLogin && !isDeliveryman
+                ? _jwtService.GenerateAccessToken(user, sessionId, deviceInstallationId, "Deliveryman")
+                : _jwtService.GenerateAccessToken(user, sessionId, deviceInstallationId);
             var refreshToken = _jwtService.GenerateRefreshToken();
 
             // Crear refresh token entity
@@ -112,6 +109,8 @@ namespace SenorArroz.Application.Features.Auth.Commands
 
             // Mapear respuesta
             var userInfo = _mapper.Map<UserInfoDto>(user);
+            if (isDeliveryAppLogin)
+                userInfo.Role = "Deliveryman";
 
             return new AuthResponseDto
             {
