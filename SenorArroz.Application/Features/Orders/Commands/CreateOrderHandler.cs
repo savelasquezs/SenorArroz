@@ -300,7 +300,12 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         catch (DbUpdateException) when (posCreationKey is not null)
         {
             if (createTransaction is not null)
+            {
                 await createTransaction.RollbackAsync(cancellationToken);
+                // Free the failed PostgreSQL transaction before doing the replay
+                // query on this same DbContext (await using disposes again safely).
+                await createTransaction.DisposeAsync();
+            }
             // Covers two simultaneous requests racing on ux_order_pos_creation_tenant:
             // the winner commits, the loser returns that order, never a duplicate.
             var previous = await FindExistingPosOrderAsync(
@@ -372,7 +377,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
 
         var existing = await _orderRepository.GetByIdWithFullDetailsAsync(candidate.Id, ct)
             ?? throw new BusinessException("El pedido ya existe, pero no está disponible para esta sesión.");
-        OrderAccessRules.EnsureAccess(existing, _currentUser);
+        OrderAccessRules.EnsureAccess(existing, _currentUser, _branchContext);
         return _mapper.Map<OrderDto>(existing);
     }
 
