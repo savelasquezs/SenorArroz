@@ -109,14 +109,21 @@ public class OrderRepository : IOrderRepository
             .Include(o => o.LoyaltyCycleStep)
             .Include(o => o.DeliveryMan)
             .Include(o => o.DeliveryRouteStop)
-            .Include(o => o.BankPayments)
-                .ThenInclude(bp => bp.Bank)
-                    .ThenInclude(b => b.Branch)
-            .Include(o => o.AppPayments)
-                .ThenInclude(ap => ap.App)
-                    .ThenInclude(a => a.Bank)
-                        .ThenInclude(b => b.Branch)
             .AsQueryable();
+
+        // Kitchen cards do not render bank/app payments. Fetching two collections
+        // for each kitchen refresh multiplies SQL rows without adding card data.
+        if (!forKitchen)
+        {
+            query = query
+                .Include(o => o.BankPayments)
+                    .ThenInclude(bp => bp.Bank)
+                        .ThenInclude(b => b.Branch)
+                .Include(o => o.AppPayments)
+                    .ThenInclude(ap => ap.App)
+                        .ThenInclude(a => a.Bank)
+                            .ThenInclude(b => b.Branch);
+        }
 
         // Filtrar por sucursal si se especifica
         if (branchId.HasValue)

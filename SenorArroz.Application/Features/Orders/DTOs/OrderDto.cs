@@ -92,4 +92,11 @@ public class OrderDto
     public List<ReservationDepositDto> ReservationDeposits { get; set; } = new();
     /// <summary>Líneas resumidas (p. ej. búsqueda/listado con detalles cargados).</summary>
     public List<OrderLineSummaryDto> SummaryLines { get; set; } = new();
+    /// <summary>
+    /// Full line details only for GET /api/orders?forKitchen=true.
+    /// The kitchen view must not request /orders/{id}/details for every card.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<OrderDetailDto>? KitchenDetails { get; set; }
 }
