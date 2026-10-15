@@ -136,6 +136,24 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
+    /// Date-scoped kitchen totals with batched product/category lines.
+    /// </summary>
+    [HttpGet("kitchen-summary")]
+    [Authorize(Roles = "Admin,Superadmin,Kitchen")]
+    public async Task<ActionResult<List<KitchenSummaryOrderDto>>> KitchenSummary(
+        [FromQuery] DateTime date, [FromQuery] int? branchId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (date == default) return BadRequest("Se requiere una fecha.");
+        var query = new GetKitchenSummaryQuery
+        {
+            ColombiaDate = date.Date,
+            BranchId = _branchContext.ResolveOptional(branchId)
+        };
+        return Ok(await _mediator.Send(query, cancellationToken));
+    }
+
+    /// <summary>
     /// Busca pedidos con filtros avanzados
     /// </summary>
     [HttpPost("search")]
