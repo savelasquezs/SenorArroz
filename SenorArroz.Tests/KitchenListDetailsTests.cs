@@ -124,6 +124,44 @@ public sealed class KitchenListDetailsTests
         Assert.DoesNotContain("kitchenDetails", json);
     }
 
+    [Fact]
+    public async Task Kitchen_summary_filters_selected_colombia_day_and_forbids_cross_branch()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N")).Options;
+        await using var db = new ApplicationDbContext(options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
+        var (branch, ids) = await SeedAsync(db);
+        var mapper = new MapperConfiguration(config => config.AddProfile<OrderMappingProfile>(),
+            NullLoggerFactory.Instance).CreateMapper();
+        var handler = new GetKitchenSummaryHandler(db, new Actor(Roles.Kitchen, branch), mapper);
+
+        var page = await handler.Handle(new GetKitchenSummaryQuery
+        {
+            ColombiaDate = new DateTime(2026, 10, 15),
+            // A kitchen user cannot broaden the scope to the other branch.
+            BranchId = db.Orders.Where(o => o.Id == ids[2]).Select(o => o.BranchId).Single(),
+        }, CancellationToken.None);
+        Assert.Equal(new[] { ids[0], ids[1] }, page.Select(o => o.Id));
+        Assert.Equal(2, page[0].KitchenDetails.Count);
+        Assert.Empty(page[1].KitchenDetails);
+
+        var ready = await db.Orders.SingleAsync(o => o.Id == ids[1]);
+        ready.Status = OrderStatus.Ready;
+        await db.SaveChangesAsync();
+
+        page = await handler.Handle(new GetKitchenSummaryQuery
+        {
+            ColombiaDate = new DateTime(2026, 10, 15)
+        }, CancellationToken.None);
+        Assert.Equal(ids[0], Assert.Single(page).Id);
+        Assert.Empty(await handler.Handle(new GetKitchenSummaryQuery
+        {
+            ColombiaDate = new DateTime(2026, 10, 14)
+        }, CancellationToken.None));
+    }
+
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
     public async Task Kitchen_lines_are_returned_with_postgresql_relations()
