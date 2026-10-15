@@ -34,7 +34,8 @@
 ## Pruebas y límites
 - Testcontainers PostgreSQL: reproduce los triggers de subtotal/actualización de total/versión; verifica pago mixto+efectivo y reintento; pago inválido e inventario fallido revierten padre/líneas/pagos; requests concurrentes mismo UUID no crean dos; cambios de payload con mismo UUID se rechazan; error SignalR después de commit no altera el resultado.
 - Vue/Vitest: dos borradores producen UUID distintos y el mismo borrador, incluso tras error HTTP, conserva y persiste la clave.
-- **CI y resultados:** consultar los PR; no declarar pruebas aprobadas antes de ver los logs del commit final.
+- **CI verificado:** [Backend CI](https://github.com/savelasquezs/SenorArroz/actions/runs/38804211264) **SUCCESS, 883 pruebas aprobadas** (incluidas las 6 pruebas PostgreSQL de esta corrección). [Remote order checks](https://github.com/savelasquezs/SenorArroz/actions/runs/38804211822) **SUCCESS**. [Admin Frontend CI](https://github.com/savelasquezs/senorArrozFront/actions/runs/38803388410) **SUCCESS**, build/typecheck y **495 pruebas aprobadas en 90 archivos**.
+- **Límite:** todos los SQL y triggers de prueba corrieron en PostgreSQL aislado Testcontainers; no hubo conexión de escritura a MainDatabase ni prueba funcional del POS productivo.
 - **Sin medidas** de p50/p95, bytes, CPU/RAM/egress; esta corrección es de integridad y fiabilidad, no una optimización especulativa.
 - La creación sin UUID de clientes POS antiguos permanece atómica pero no idempotente ante pérdida de respuesta. A futuro considerar política gradual de campo obligatorio después de actualizar clientes.
 - Si un proceso externo modifica la fila mientras se crea el pedido, el guardado transaccional puede seguir respondiendo 409 y hacer rollback; la clave permite reintentar con seguridad.
