@@ -115,11 +115,11 @@ public sealed class KitchenListDetailsTests
 
         var second = await handler.Handle(Query(true, 2, 1), CancellationToken.None);
         Assert.Equal(ids[1], Assert.Single(second.Items).Id);
-        Assert.Empty(second.Items[0].KitchenDetails!);
+        Assert.Empty(second.Items.ElementAt(0).KitchenDetails!);
 
         var regular = await handler.Handle(Query(false, 1, 1), CancellationToken.None);
-        Assert.Null(regular.Items[0].KitchenDetails);
-        var json = JsonSerializer.Serialize(regular.Items[0],
+        Assert.Null(regular.Items.ElementAt(0).KitchenDetails);
+        var json = JsonSerializer.Serialize(regular.Items.ElementAt(0),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.DoesNotContain("kitchenDetails", json);
     }
@@ -177,7 +177,7 @@ public sealed class KitchenListDetailsTests
         var (branch, ids) = await SeedAsync(db);
         var result = await Handler(db, branch).Handle(Query(true, 1, 10), CancellationToken.None);
         Assert.Equal(new[] { ids[0], ids[1] }, result.Items.Select(o => o.Id));
-        Assert.Equal(2, result.Items[0].KitchenDetails!.Count);
-        Assert.Empty(result.Items[1].KitchenDetails!);
+        Assert.Equal(2, result.Items.ElementAt(0).KitchenDetails!.Count);
+        Assert.Empty(result.Items.ElementAt(1).KitchenDetails!);
     }
 }
