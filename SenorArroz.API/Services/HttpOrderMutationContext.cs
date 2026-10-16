@@ -8,6 +8,7 @@ public sealed class HttpOrderMutationContext(IHttpContextAccessor http) : IOrder
     private bool _deferNotifications;
     private readonly List<Func<Task>> _notifications = [];
 
+    public bool IsDeferringNotifications => _deferNotifications;
     public void BeginDeferredNotifications() => _deferNotifications = true;
 
     public bool TryDeferNotification(Func<Task> callback)
