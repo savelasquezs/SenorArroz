@@ -5,11 +5,11 @@ La voz sigue siendo la API `speechSynthesis` del navegador. SignalR `NewOrder` y
 
 ## Despliegue (orden obligatorio)
 
-1. Ejecutar con `railway connect MainDatabase` y `\\i SenorArroz.Infrastructure/Scripts/add_kitchen_voice_events.sql`.
+1. Ejecutar con `railway connect MainDatabase` y `\i SenorArroz.Infrastructure/Scripts/add_kitchen_voice_events.sql`.
 2. Comprobar la tabla, índice, políticas de tenant y permisos del rol de runtime.
 3. Publicar backend antes que frontend. Backend antiguo no implementa `GET /api/orders/kitchen/voice-events`.
 4. Publicar frontend. Una terminal nueva consulta solamente los avisos de sus últimos 2 minutos;
-   una terminal existente recupera desde su último cursor guardado para la sucursal y tenant.
+   una terminal existente recupera desde su último cursor guardado por usuario, sucursal y día de operación. Así no reproduce ayer al iniciar un nuevo turno.
 
 La tabla agrega un registro por pedido cuando el backend llama a `NotifyNewOrderToKitchen` o
 `NotifyReservationToKitchen` (una sola vez aunque se reintente). No replica pedidos,
