@@ -2,6 +2,7 @@ using SenorArroz.API.Filters;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using MediatR;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
@@ -10,6 +11,7 @@ using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Features.Orders.Queries;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Constants;
 using SenorArroz.Shared.Models;
 
@@ -25,19 +27,25 @@ public class OrdersController : ControllerBase
     private readonly IUserRepository _userRepository;
     private readonly ICurrentUser _currentUser;
     private readonly IBranchContext _branchContext;
+    private readonly ICurrentTenant _currentTenant;
+    private readonly ApplicationDbContext _db;
 
     public OrdersController(
         IMediator mediator,
         IClock clock,
         IUserRepository userRepository,
         ICurrentUser currentUser,
-        IBranchContext branchContext)
+        IBranchContext branchContext,
+        ICurrentTenant currentTenant,
+        ApplicationDbContext db)
     {
         _mediator = mediator;
         _clock = clock;
         _userRepository = userRepository;
         _currentUser = currentUser;
         _branchContext = branchContext;
+        _currentTenant = currentTenant;
+        _db = db;
     }
 
     /// <summary>
@@ -138,6 +146,39 @@ public class OrdersController : ControllerBase
     /// <summary>
     /// Date-scoped kitchen totals with batched product/category lines.
     /// </summary>
+    /// <summary>Durable announcements for one kitchen terminal. Null after starts
+    /// a fresh terminal from the last two minutes, without replaying a whole shift.</summary>
+    [HttpGet("kitchen/voice-events")]
+    [Authorize(Roles = "Kitchen,Admin,Superadmin")]
+    public async Task<ActionResult> GetKitchenVoiceEvents(
+        [FromQuery] int? after = null, [FromQuery] int? branchId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var scopedBranchId = _branchContext.RequireBranch(branchId);
+        if (!_currentTenant.HasTenant) return Forbid();
+        if (after is < 0) return BadRequest("Invalid cursor.");
+
+        var query = _db.KitchenVoiceEvents.AsNoTracking().Where(e =>
+            e.TenantId == _currentTenant.TenantId && e.BranchId == scopedBranchId);
+        var latest = after is null
+            ? await query.MaxAsync(e => (int?)e.Id, cancellationToken) ?? 0
+            : 0;
+        var page = after is null
+            ? query.Where(e => e.Id <= latest && e.CreatedAt >= _clock.UtcNow.AddMinutes(-2))
+            : query.Where(e => e.Id > after.Value);
+
+        const int pageSize = 100;
+        var events = await page.OrderBy(e => e.Id)
+            .Select(e => new { e.Id, e.OrderId, e.Kind, e.BranchId })
+            .Take(pageSize + 1).ToListAsync(cancellationToken);
+        var hasMore = events.Count > pageSize;
+        if (hasMore) events.RemoveAt(pageSize);
+        var cursor = events.Count > 0 && (after is not null || hasMore)
+            ? events[^1].Id
+            : after ?? latest;
+        return Ok(new { cursor, hasMore, events });
+    }
+
     [HttpGet("kitchen-summary")]
     [Authorize(Roles = "Admin,Superadmin,Kitchen")]
     public async Task<ActionResult<List<KitchenSummaryOrderDto>>> KitchenSummary(
