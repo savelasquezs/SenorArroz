@@ -71,7 +71,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M13-F02 | Tomado a preparación | Pendiente | — | — | — | — |
 | M13-F03 | Preparación a listo | Pendiente | — | — | — | — |
 | M13-F04 | Notificaciones cocina y reimpresión | Pendiente | — | — | — | — |
-| M14-F01 | Encolar comandas | Analizado | 2026-10-16 | [Informe](reviews/2026-10-16-M14-F01.md) | [API #29](https://github.com/savelasquezs/SenorArroz/pull/29), [Agente #1](https://github.com/savelasquezs/senorArrozPrintAgent/pull/1) | PRs en borrador; CI y prueba funcional pendientes de confirmación en las revisiones más recientes. PostgreSQL productivo sin cambios; sin SQL. |
+| M14-F01 | Encolar comandas | PR listo para revisión | 2026-10-16 | [Informe](reviews/2026-10-16-M14-F01.md) | [API #29](https://github.com/savelasquezs/SenorArroz/pull/29), [Agente #1](https://github.com/savelasquezs/senorArrozPrintAgent/pull/1), [Docs #30](https://github.com/savelasquezs/SenorArroz/pull/30) | CI backend 885/885 con prueba PG; Remote 862 aprobadas/23 omitidas + PG 3/3; agente 15/15. Sin SQL; pendiente prueba física, merge y despliegue. |
 | M14-F02 | Poll y claim del agente Windows | Pendiente | — | — | — | — |
 | M14-F03 | Notificaciones SignalR del agente | Pendiente | — | — | — | — |
 | M14-F04 | Confirmar, fallar y reintentar impresión | Pendiente | — | — | — | — |
