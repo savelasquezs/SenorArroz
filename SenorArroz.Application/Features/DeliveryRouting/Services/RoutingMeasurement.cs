@@ -27,11 +27,11 @@ internal sealed class RoutingMeasurement(RoutingMeasurementOptions options, IClo
             if (!options.IsActive(clock.UtcNow) || TenantId <= 0) return;
             logger.LogInformation("RoutingMeasurementV1 {Payload}", JsonSerializer.Serialize(new
             {
-                schema = 1, algorithm = "routing-p1", timestampUtc = clock.UtcNow,
+                schema = 1, sampleId = Guid.NewGuid(), algorithm = "routing-p1", timestampUtc = clock.UtcNow,
                 experimentStartedAtUtc = options.StartedAtUtc, expiresAtUtc = options.ExpiresAtUtc,
                 tenantId = TenantId, branchId, outcome, totalMs = _elapsed.ElapsedMilliseconds,
                 lockWaitMs = LockWaitMs, inputMs = InputMs, candidates = CandidateCount,
-                solverExecuted = outcome == "generated", solverMs = outcome == "generated" ? plan?.SolverDurationMs : null,
+                solverMsOnPlan = outcome == "generated" ? plan?.SolverDurationMs : null,
                 googleCalls = GoogleCalls, googleMs = GoogleMs, googleFailures = GoogleFailures,
                 planId = plan?.Id, version = plan?.Version,
                 proposals = plan?.Proposals.Count, unrouted = plan?.UnroutedOrders.Count
