@@ -623,7 +623,6 @@ public class OrdersController : ControllerBase
         var command = new SelfAssignOrdersCommand
         {
             OrderIds = request.OrderIds,
-            Password = request.Password,
             ProposalId = request.ProposalId,
             ExpectedPlanVersion = request.ExpectedPlanVersion
         };
