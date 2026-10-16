@@ -23,18 +23,13 @@ public class OrderHub : Hub
             await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.Branch(parsedTenantId, parsedBranchId));
             
             // Agregar a grupo específico de rol
-            if (role == "Kitchen")
-            {
+            // Admin/Superadmin can use the kitchen screen and must receive its events.
+            if (role is "Kitchen" or "Admin" or "Superadmin")
                 await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Kitchen"));
-            }
-            else if (role == "Deliveryman")
-            {
+            if (role == "Deliveryman")
                 await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Delivery"));
-            }
-            else if (role == "Admin" || role == "Superadmin" || role == "Cashier")
-            {
+            if (role is "Admin" or "Superadmin" or "Cashier")
                 await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Admin"));
-            }
         }
         
         await base.OnConnectedAsync();
@@ -53,18 +48,12 @@ public class OrderHub : Hub
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantRealtimeGroups.Branch(parsedTenantId, parsedBranchId));
             
-            if (role == "Kitchen")
-            {
+            if (role is "Kitchen" or "Admin" or "Superadmin")
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Kitchen"));
-            }
-            else if (role == "Deliveryman")
-            {
+            if (role == "Deliveryman")
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Delivery"));
-            }
-            else if (role == "Admin" || role == "Superadmin" || role == "Cashier")
-            {
+            if (role is "Admin" or "Superadmin" or "Cashier")
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Admin"));
-            }
         }
         
         await base.OnDisconnectedAsync(exception);

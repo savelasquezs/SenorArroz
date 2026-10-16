@@ -101,6 +101,8 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<WompiWebhookEvent> WompiWebhookEvents { get; set; }
         public virtual DbSet<PaymentNotificationOutboxMessage> PaymentNotificationOutboxMessages { get; set; }
 
+        public virtual DbSet<KitchenVoiceEvent> KitchenVoiceEvents { get; set; }
+
         public virtual DbSet<PrintJob> PrintJobs { get; set; }
 
         public virtual DbSet<Customer> Customers { get; set; }
@@ -232,6 +234,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new WompiProviderTransactionConfiguration());
             modelBuilder.ApplyConfiguration(new WompiWebhookEventConfiguration());
             modelBuilder.ApplyConfiguration(new PaymentNotificationOutboxMessageConfiguration());
+            modelBuilder.ApplyConfiguration(new KitchenVoiceEventConfiguration());
             modelBuilder.ApplyConfiguration(new PrintJobConfiguration());
             modelBuilder.ApplyConfiguration(new UserConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerConfiguration());

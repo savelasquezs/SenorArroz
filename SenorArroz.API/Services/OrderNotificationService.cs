@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SenorArroz.API.Hubs;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Domain.Entities;
+using SenorArroz.Infrastructure.Data;
 
 namespace SenorArroz.API.Services;
 
@@ -13,18 +16,21 @@ public class OrderNotificationService : IOrderNotificationService
     private readonly IFreeDeliverymanFcmTokenResolver _freeDeliverymanTokens;
     private readonly ILogger<OrderNotificationService> _logger;
     private readonly ICurrentTenant _tenant;
+    private readonly ApplicationDbContext _db;
 
     public OrderNotificationService(
         IHubContext<OrderHub> hubContext,
         IFcmPushService fcm,
         IFreeDeliverymanFcmTokenResolver freeDeliverymanTokens,
         ICurrentTenant tenant,
+        ApplicationDbContext db,
         ILogger<OrderNotificationService> logger)
     {
         _hubContext = hubContext;
         _fcm = fcm;
         _freeDeliverymanTokens = freeDeliverymanTokens;
         _tenant = tenant;
+        _db = db;
         _logger = logger;
     }
 
@@ -41,6 +47,7 @@ public class OrderNotificationService : IOrderNotificationService
 
     public async Task NotifyNewOrderToKitchen(OrderDto order)
     {
+        await RecordKitchenVoiceEventAsync(order, "new");
         await _hubContext.Clients
             .Group(Group(order.BranchId, "Kitchen"))
             .SendAsync("NewOrder", order);
@@ -57,6 +64,7 @@ public class OrderNotificationService : IOrderNotificationService
 
     public async Task NotifyReservationToKitchen(OrderDto order)
     {
+        await RecordKitchenVoiceEventAsync(order, "reservation");
         await _hubContext.Clients
             .Group(Group(order.BranchId, "Kitchen"))
             .SendAsync("ReservationReady", order);
@@ -175,6 +183,36 @@ public class OrderNotificationService : IOrderNotificationService
             _logger.LogWarning(ex,
                 "FCM_ORDER_READY [{Corr}] STEP exception branchId={BranchId}",
                 correlationId, order.BranchId);
+        }
+    }
+
+    // Durable inbox: it is stored before the realtime hint is sent. One entry per
+    // order, regardless of retries or a reservation that was already announced.
+    private async Task RecordKitchenVoiceEventAsync(OrderDto order, string kind)
+    {
+        if (!_tenant.HasTenant) throw new InvalidOperationException("Tenant context is required for kitchen alerts.");
+        try
+        {
+            var exists = await _db.KitchenVoiceEvents.AsNoTracking().AnyAsync(e =>
+                e.TenantId == _tenant.TenantId && e.OrderId == order.Id);
+            if (exists) return;
+
+            _db.KitchenVoiceEvents.Add(new KitchenVoiceEvent
+            {
+                TenantId = _tenant.TenantId,
+                BranchId = order.BranchId,
+                OrderId = order.Id,
+                Kind = kind,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            // Preserve live notifications even before the schema rollout or if
+            // persistence fails. The durable inbox failure must be visible in logs.
+            _logger.LogError(ex, "Could not persist kitchen voice event for order {OrderId} branch {BranchId}", order.Id, order.BranchId);
         }
     }
 
