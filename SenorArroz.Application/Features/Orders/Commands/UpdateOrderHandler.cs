@@ -268,7 +268,8 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         var persisted = existingOrder.Status == OrderStatus.OnTheWay
             ? await _orderRepository.GetByIdWithFullDetailsAsync(request.Id, cancellationToken)
             : await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken);
-        persisted ??= throw new InvalidOperationException("No se pudo recargar el pedido tras actualizar.");
+        if (persisted is null)
+            throw new InvalidOperationException("No se pudo recargar el pedido tras actualizar.");
         var result = _mapper.Map<OrderDto>(persisted);
 
         var notesChanged = request.Order.Notes != null
