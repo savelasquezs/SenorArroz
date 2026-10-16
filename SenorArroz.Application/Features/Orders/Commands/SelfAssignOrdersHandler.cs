@@ -134,7 +134,8 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
                 var fullOrder = await _orderRepository.GetByIdAsync(order.Id, cancellationToken);
                 if (fullOrder is not null)
                     await _deliveryRouteWorkflow.OnOrderAssignedToDeliverymanAsync(fullOrder, cancellationToken);
-                var persisted = await _orderRepository.GetByIdAsync(order.Id, cancellationToken) ?? fullOrder ?? order;
+                // The response doubles as the live route snapshot; include payments and product lines.
+                var persisted = await _orderRepository.GetByIdWithFullDetailsAsync(order.Id, cancellationToken) ?? fullOrder ?? order;
                 assignedOrders.Add(_mapper.Map<OrderDto>(persisted));
             }
 

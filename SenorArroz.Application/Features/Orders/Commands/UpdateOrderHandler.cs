@@ -264,8 +264,11 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             if (inventoryTransaction is not null) await inventoryTransaction.RollbackAsync(cancellationToken);
             throw;
         }
-        var persisted = await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken)
-            ?? throw new InvalidOperationException("No se pudo recargar el pedido tras actualizar.");
+        // When an active delivery changes, preserve payment information in its realtime snapshot.
+        var persisted = existingOrder.Status == OrderStatus.OnTheWay
+            ? await _orderRepository.GetByIdWithFullDetailsAsync(request.Id, cancellationToken)
+            : await _orderRepository.GetByIdWithDetailsAsync(request.Id, cancellationToken);
+        persisted ??= throw new InvalidOperationException("No se pudo recargar el pedido tras actualizar.");
         var result = _mapper.Map<OrderDto>(persisted);
 
         var notesChanged = request.Order.Notes != null

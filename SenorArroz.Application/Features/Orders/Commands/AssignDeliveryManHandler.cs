@@ -67,7 +67,8 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
         if (order != null)
             await _deliveryRouteWorkflow.OnOrderAssignedToDeliverymanAsync(order, cancellationToken);
 
-        order = await _orderRepository.GetByIdAsync(request.Id, cancellationToken)
+        // SignalR consumers update the route directly from this complete DTO.
+        order = await _orderRepository.GetByIdWithFullDetailsAsync(request.Id, cancellationToken)
             ?? throw new BusinessException("Pedido no encontrado");
         var orderDto = _mapper.Map<OrderDto>(order);
         await OrderPostCommitNotifications.Publish(_mutationContext,
