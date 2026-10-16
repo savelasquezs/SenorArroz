@@ -188,7 +188,12 @@ builder.Services.AddScoped<IUserProfileImageStorage>(sp =>
 });
 
 // SignalR
-builder.Services.AddSignalR();
+builder.Services.AddSignalR().AddJsonProtocol(options =>
+{
+    // MVC enum converters do not apply to SignalR event payloads.
+    options.PayloadSerializerOptions.Converters.Add(
+        new JsonStringEnumConverter(new SnakeCaseNamingPolicy()));
+});
 
 // Register SignalR-based notification service (after SignalR is configured)
 builder.Services.AddScoped<SenorArroz.Application.Common.Interfaces.IOrderNotificationService, SenorArroz.API.Services.OrderNotificationService>();

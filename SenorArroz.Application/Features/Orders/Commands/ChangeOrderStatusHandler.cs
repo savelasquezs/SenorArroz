@@ -22,6 +22,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     private readonly ICurrentUser _currentUser;
     private readonly IOrderBusinessRulesService _businessRules;
     private readonly IOrderNotificationService _notificationService;
+    private readonly IOrderMutationContext? _mutationContext;
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
     private readonly IPrintQueueService _printQueue;
     private readonly ILoyaltyCycleService _loyaltyCycle;
@@ -41,7 +42,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         ILoyaltyCycleService loyaltyCycle,
         ILogger<ChangeOrderStatusHandler> logger,
         IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null,
-        IInventoryService? inventory = null)
+        IInventoryService? inventory = null,
+        IOrderMutationContext? mutationContext = null)
     {
         _orderRepository = orderRepository;
         _context = context;
@@ -49,6 +51,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         _currentUser = currentUser;
         _businessRules = businessRules;
         _notificationService = notificationService;
+        _mutationContext = mutationContext;
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
         _printQueue = printQueue;
         _loyaltyCycle = loyaltyCycle;
@@ -213,7 +216,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             if (request.StatusChange.Status == OrderStatus.Ready)
             {
                 if (DeliveryReadyNotificationEligibility.ShouldNotifyOwnDeliverymen(order))
-                    await _notificationService.NotifyOrderReadyToDelivery(orderDto);
+                    await OrderPostCommitNotifications.Publish(_mutationContext,
+                    () => _notificationService.NotifyOrderReadyToDelivery(orderDto));
                 if (_externalDeliveryStatusSync is not null)
                     await _externalDeliveryStatusSync.SyncReadyForPickupAsync(order.Id, cancellationToken);
                 await TryEnqueueKitchenPrintWhenReadyAsync(
@@ -223,16 +227,16 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
             }
 
             if (request.StatusChange.Status == OrderStatus.OnTheWay)
-                await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
+                await OrderPostCommitNotifications.Publish(_mutationContext,
+                () => _notificationService.NotifyOrderAssignedToDelivery(orderDto));
 
             if (previousStatus == OrderStatus.OnTheWay
                 && request.StatusChange.Status != OrderStatus.OnTheWay
                 && (Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role)
                     || request.IsAutomaticDelivery))
             {
-                await _notificationService.NotifyOrderModifiedToDelivery(
-                    orderDto,
-                    "status");
+                await OrderPostCommitNotifications.Publish(_mutationContext,
+                    () => _notificationService.NotifyOrderModifiedToDelivery(orderDto, "status"));
             }
 
             if (request.StatusChange.Status == OrderStatus.Cancelled)
@@ -335,7 +339,8 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         if (request.StatusChange.Status == OrderStatus.Ready)
         {
             if (DeliveryReadyNotificationEligibility.ShouldNotifyOwnDeliverymen(order))
-                await _notificationService.NotifyOrderReadyToDelivery(orderDto);
+                await OrderPostCommitNotifications.Publish(_mutationContext,
+                    () => _notificationService.NotifyOrderReadyToDelivery(orderDto));
             if (_externalDeliveryStatusSync is not null)
                 await _externalDeliveryStatusSync.SyncReadyForPickupAsync(order.Id, cancellationToken);
             await TryEnqueueKitchenPrintWhenReadyAsync(
@@ -345,16 +350,16 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         }
 
         if (request.StatusChange.Status == OrderStatus.OnTheWay)
-            await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
+            await OrderPostCommitNotifications.Publish(_mutationContext,
+                () => _notificationService.NotifyOrderAssignedToDelivery(orderDto));
 
         if (previousStatus == OrderStatus.OnTheWay
             && request.StatusChange.Status != OrderStatus.OnTheWay
             && (Roles.IsSuperadminOrAdminOrCashier(_currentUser.Role)
                 || request.IsAutomaticDelivery))
         {
-            await _notificationService.NotifyOrderModifiedToDelivery(
-                orderDto,
-                "status");
+            await OrderPostCommitNotifications.Publish(_mutationContext,
+                () => _notificationService.NotifyOrderModifiedToDelivery(orderDto, "status"));
         }
 
         if (request.StatusChange.Status == OrderStatus.Cancelled)

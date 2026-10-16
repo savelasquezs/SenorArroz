@@ -5,6 +5,32 @@ namespace SenorArroz.API.Services;
 
 public sealed class HttpOrderMutationContext(IHttpContextAccessor http) : IOrderMutationContext
 {
+    private bool _deferNotifications;
+    private readonly List<Func<Task>> _notifications = [];
+
+    public void BeginDeferredNotifications() => _deferNotifications = true;
+
+    public bool TryDeferNotification(Func<Task> callback)
+    {
+        if (!_deferNotifications) return false;
+        _notifications.Add(callback);
+        return true;
+    }
+
+    public IReadOnlyList<Func<Task>> DrainDeferredNotifications()
+    {
+        _deferNotifications = false;
+        var queued = _notifications.ToArray();
+        _notifications.Clear();
+        return queued;
+    }
+
+    public void ClearDeferredNotifications()
+    {
+        _deferNotifications = false;
+        _notifications.Clear();
+    }
+
     public (int OrderId, long Version)? Expected
     {
         get

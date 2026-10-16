@@ -30,6 +30,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
     private readonly ICurrentUser _currentUser;
     private readonly IOrderBusinessRulesService _businessRules;
     private readonly IOrderNotificationService _notificationService;
+    private readonly IOrderMutationContext? _mutationContext;
     private readonly IClock _clock;
     private readonly IInventoryService? _inventory;
 
@@ -44,7 +45,8 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         IOrderBusinessRulesService businessRules,
         IOrderNotificationService notificationService,
         IClock clock,
-        IInventoryService? inventory = null)
+        IInventoryService? inventory = null,
+        IOrderMutationContext? mutationContext = null)
     {
         _orderRepository = orderRepository;
         _db = db;
@@ -55,6 +57,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         _currentUser = currentUser;
         _businessRules = businessRules;
         _notificationService = notificationService;
+        _mutationContext = mutationContext;
         _clock = clock;
         _inventory = inventory;
     }
@@ -314,11 +317,13 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
 
             if (shouldNotifyKitchen)
             {
-                await _notificationService.NotifyOrderModifiedToKitchen(result, modificationKind, kitchenChanges);
+                await OrderPostCommitNotifications.Publish(_mutationContext,
+                    () => _notificationService.NotifyOrderModifiedToKitchen(result, modificationKind, kitchenChanges));
             }
 
             if (persisted.Status == OrderStatus.OnTheWay)
-                await _notificationService.NotifyOrderModifiedToDelivery(result, modificationKind, kitchenChanges);
+                await OrderPostCommitNotifications.Publish(_mutationContext,
+                    () => _notificationService.NotifyOrderModifiedToDelivery(result, modificationKind, kitchenChanges));
         }
 
         return result;
