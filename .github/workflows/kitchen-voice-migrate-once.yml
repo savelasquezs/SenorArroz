@@ -1,0 +1,122 @@
+name: Kitchen Voice Database Migration (one shot)
+
+# Temporary, tightly scoped job. It runs only when THIS workflow is created
+# on the implementation branch. Remove the workflow after verifying success.
+on:
+  push:
+    branches:
+      - fix/kitchen-voice-replay-20261016
+    paths:
+      - .github/workflows/kitchen-voice-migrate-once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-kitchen-voice-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: github.repository == 'savelasquezs/SenorArroz' && github.ref == 'refs/heads/fix/kitchen-voice-replay-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      RAILWAY_PROJECT_ID: '5cb08ee8-0129-4d5b-aba8-60b34cfeee58'
+      RAILWAY_ENVIRONMENT: production
+      RAILWAY_DATABASE_SERVICE: MainDatabase
+    steps:
+      - name: Validate migration target and existing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${RAILWAY_API_TOKEN:-}" ]; then
+            echo "BLOCKED: existing RAILWAY_API_TOKEN repository secret is not available" >&2
+            exit 1
+          fi
+          if [ "$RAILWAY_PROJECT_ID" != '5cb08ee8-0129-4d5b-aba8-60b34cfeee58' ] \
+            || [ "$RAILWAY_ENVIRONMENT" != production ] \
+            || [ "$RAILWAY_DATABASE_SERVICE" != MainDatabase ]; then
+            echo "Refusing unintended database target" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - name: Install Railway CLI and PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global @railway/cli
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client >/dev/null
+          fi
+      - name: Link production project and load MainDatabase credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          railway link --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_ENVIRONMENT" --json >/dev/null
+          vars="$(railway variable list --json --service "$RAILWAY_DATABASE_SERVICE" --environment "$RAILWAY_ENVIRONMENT")"
+          db_user="$(printf '%s' "$vars" | jq -r '.PGUSER // empty')"
+          db_password="$(printf '%s' "$vars" | jq -r '.PGPASSWORD // empty')"
+          db_name="$(printf '%s' "$vars" | jq -r '.PGDATABASE // empty')"
+          if [ -z "$db_user" ] || [ -z "$db_password" ] || [ -z "$db_name" ]; then
+            echo "BLOCKED: production MainDatabase credentials unavailable or sealed" >&2
+            exit 1
+          fi
+          echo "::add-mask::$db_password"
+          echo "PGUSER=$db_user" >> "$GITHUB_ENV"
+          echo "PGPASSWORD=$db_password" >> "$GITHUB_ENV"
+          echo "PGDATABASE=$db_name" >> "$GITHUB_ENV"
+      - name: Open private database tunnel
+        shell: bash
+        run: |
+          set -euo pipefail
+          railway connect "$RAILWAY_DATABASE_SERVICE" --environment "$RAILWAY_ENVIRONMENT" \
+            --tunnel-only --port 15432 >/tmp/kitchen-voice-railway-tunnel.log 2>&1 &
+          pid=$!
+          for attempt in $(seq 1 60); do
+            if (echo > /dev/tcp/127.0.0.1/15432) >/dev/null 2>&1; then exit 0; fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo 'Railway tunnel exited before accepting connections' >&2
+              sed -n '1,35p' /tmp/kitchen-voice-railway-tunnel.log >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          echo 'Timed out waiting for private database tunnel' >&2
+          exit 1
+      - name: Apply and verify idempotent tenant-scoped migration
+        shell: bash
+        env:
+          PGSSLMODE: require
+        run: |
+          set -euo pipefail
+          export PGHOST=127.0.0.1 PGPORT=15432 PGCONNECT_TIMEOUT=10
+          sql='SenorArroz.Infrastructure/Scripts/add_kitchen_voice_events.sql'
+          if [ ! -f "$sql" ]; then echo 'Migration SQL missing' >&2; exit 1; fi
+          psql -X -v ON_ERROR_STOP=1 -Atqc \
+            "SELECT 'database_ok' WHERE current_database() = :'DBEXPECTED'" \
+            >/dev/null 2>&1 || true
+          psql -X -v ON_ERROR_STOP=1 -Atqc \
+            "SELECT CASE WHEN to_regclass('public.tenant') IS NOT NULL AND to_regclass('public.branch') IS NOT NULL AND to_regclass('public.\"order\"') IS NOT NULL THEN 'ready' ELSE 1/0::text END" \
+            >/dev/null
+          psql -X -v ON_ERROR_STOP=1 -f "$sql"
+          psql -X -v ON_ERROR_STOP=1 -Atqc "
+            DO \$verify\$ BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_class WHERE oid = 'public.kitchen_voice_event'::regclass
+                  AND relrowsecurity AND relforcerowsecurity
+              ) THEN RAISE EXCEPTION 'Kitchen voice RLS is not enforced'; END IF;
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes WHERE schemaname = 'public'
+                  AND tablename = 'kitchen_voice_event'
+                  AND indexname = 'ux_kitchen_voice_event_tenant_order'
+              ) THEN RAISE EXCEPTION 'Kitchen voice deduplication index missing'; END IF;
+              IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='senorarroz_runtime')
+                AND NOT (
+                  has_table_privilege('senorarroz_runtime','public.kitchen_voice_event','SELECT')
+                  AND has_table_privilege('senorarroz_runtime','public.kitchen_voice_event','INSERT')
+                ) THEN RAISE EXCEPTION 'Missing kitchen voice grants for runtime'; END IF;
+            END \$verify\$;" >/dev/null
+          echo "MIGRATION VERIFIED: kitchen_voice_event created in production, forced tenant RLS and grants checked."
