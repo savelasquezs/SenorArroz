@@ -51,6 +51,9 @@ public sealed class OrderMutationBehavior<TRequest, TResponse>(
         before = await LoadAndAuthorize(ids, ct);
         ValidateExpected(before, primaryIds, expected);
 
+        mutation?.BeginDeferredNotifications();
+        try
+        {
         var response = await next(ct);
         var changed = new List<(int Id, int Branch, int? Origin, long Version)>();
         foreach (var prior in before)
@@ -86,12 +89,24 @@ public sealed class OrderMutationBehavior<TRequest, TResponse>(
             });
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
+        // Defer notifications until data is committed, so receivers never read an old status.
+        foreach (var send in mutation?.DrainDeferredNotifications() ?? [])
+        {
+            try { await send(); }
+            catch (Exception ex) { logger.LogWarning(ex, "Order saved; post-commit notification failed"); }
+        }
         foreach (var change in changed)
         {
             try { await notifications.NotifyOrderManagementChanged(change.Id, change.Branch, change.Origin, change.Version); }
             catch (Exception ex) { logger.LogWarning(ex, "Order {OrderId} saved; realtime invalidation failed", change.Id); }
         }
         return response;
+        }
+        finally
+        {
+            // A failed mutation must not publish queued notifications.
+            mutation?.ClearDeferredNotifications();
+        }
     }
 
     private async Task<List<Order>> LoadAndAuthorize(List<int> ids, CancellationToken ct)

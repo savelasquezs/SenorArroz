@@ -23,6 +23,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
     private readonly IClock _clock;
     private readonly IOrderNotificationService _notificationService;
+    private readonly IOrderMutationContext? _mutationContext;
     private readonly IApplicationDbContext? _db;
     private readonly IInventoryService? _inventory;
 
@@ -38,7 +39,8 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         IClock clock,
         IOrderNotificationService notificationService,
         IApplicationDbContext? db = null,
-        IInventoryService? inventory = null)
+        IInventoryService? inventory = null,
+        IOrderMutationContext? mutationContext = null)
     {
         _orderRepository = orderRepository;
         _bankPaymentRepository = bankPaymentRepository;
@@ -50,6 +52,7 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
         _clock = clock;
         _notificationService = notificationService;
+        _mutationContext = mutationContext;
         _db = db;
         _inventory = inventory;
     }
@@ -111,7 +114,8 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
             var preview = cancellationReason;
             if (preview.Length > 120)
                 preview = preview[..120];
-            await _notificationService.NotifyOrderCancelledToKitchen(existingOrder.BranchId, request.Id, preview);
+            await OrderPostCommitNotifications.Publish(_mutationContext,
+                () => _notificationService.NotifyOrderCancelledToKitchen(existingOrder.BranchId, request.Id, preview));
         }
 
         if (previousStatus == OrderStatus.Delivered)
@@ -126,9 +130,8 @@ public class CancelOrderHandler : IRequestHandler<CancelOrderCommand, OrderDto>
         var orderDto = _mapper.Map<OrderDto>(order);
         if (previousStatus == OrderStatus.OnTheWay)
         {
-            await _notificationService.NotifyOrderModifiedToDelivery(
-                orderDto,
-                "status");
+            await OrderPostCommitNotifications.Publish(_mutationContext,
+                () => _notificationService.NotifyOrderModifiedToDelivery(orderDto, "status"));
         }
 
         return orderDto;

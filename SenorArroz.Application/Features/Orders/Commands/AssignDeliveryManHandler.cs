@@ -16,19 +16,22 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
     private readonly ICurrentUser _currentUser;
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
     private readonly IOrderNotificationService _notificationService;
+    private readonly IOrderMutationContext? _mutationContext;
 
     public AssignDeliveryManHandler(
         IOrderRepository orderRepository,
         IMapper mapper,
         ICurrentUser currentUser,
         IDeliveryRouteWorkflowService deliveryRouteWorkflow,
-        IOrderNotificationService notificationService)
+        IOrderNotificationService notificationService,
+        IOrderMutationContext? mutationContext = null)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
         _currentUser = currentUser;
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
         _notificationService = notificationService;
+        _mutationContext = mutationContext;
     }
 
     public async Task<OrderDto> Handle(AssignDeliveryManCommand request, CancellationToken cancellationToken)
@@ -64,10 +67,12 @@ public class AssignDeliveryManHandler : IRequestHandler<AssignDeliveryManCommand
         if (order != null)
             await _deliveryRouteWorkflow.OnOrderAssignedToDeliverymanAsync(order, cancellationToken);
 
-        order = await _orderRepository.GetByIdAsync(request.Id, cancellationToken)
+        // SignalR consumers update the route directly from this complete DTO.
+        order = await _orderRepository.GetByIdWithFullDetailsAsync(request.Id, cancellationToken)
             ?? throw new BusinessException("Pedido no encontrado");
         var orderDto = _mapper.Map<OrderDto>(order);
-        await _notificationService.NotifyOrderAssignedToDelivery(orderDto);
+        await OrderPostCommitNotifications.Publish(_mutationContext,
+            () => _notificationService.NotifyOrderAssignedToDelivery(orderDto));
 
         return orderDto;
     }
