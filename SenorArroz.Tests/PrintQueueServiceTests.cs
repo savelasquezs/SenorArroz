@@ -10,6 +10,7 @@ using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Services;
 using SenorArroz.Shared.Models.Printing;
+using Testcontainers.PostgreSql;
 using SenorArroz.Tests.Support;
 
 namespace SenorArroz.Tests;
@@ -93,6 +94,63 @@ public class PrintQueueServiceTests
         Assert.Equal(1, orders[1].LoyaltyDeliveredCount);
         Assert.Null(orders[2].LoyaltyDeliveredCount);
         Assert.Equal("Premio", orders[0].LoyaltyNextRewardLabel);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Kitchen_enqueue_queries_batch_loyalty_and_notes_on_PostgreSql()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:16-alpine").Build();
+        await postgres.StartAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(postgres.GetConnectionString()).Options;
+        await using var db = new ApplicationDbContext(options,
+            currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
+        await db.Database.EnsureCreatedAsync();
+
+        db.Tenants.Add(new Tenant { Id = 1, Name = "Printing", Slug = "print-test" });
+        var branch = new Branch { Name = "Sucursal", Address = "-", Phone1 = "0" };
+        db.Branches.Add(branch);
+        await db.SaveChangesAsync();
+        var cashier = new User
+        {
+            BranchId = branch.Id, Name = "Caja", Email = "print@test.local",
+            PasswordHash = "test-only", Role = UserRole.Cashier,
+        };
+        var customer = new Customer { BranchId = branch.Id, Name = "Cliente" };
+        db.Users.Add(cashier);
+        db.Customers.Add(customer);
+        db.BranchPrintSettings.Add(new BranchPrintSettings
+        {
+            BranchId = branch.Id, EnableKitchenJobs = true,
+        });
+        db.LoyaltyCycleSteps.Add(new LoyaltyCycleStep
+        {
+            BranchId = branch.Id, StepIndex = 1, RewardLabel = "Premio",
+        });
+        await db.SaveChangesAsync();
+        var order = new Order
+        {
+            BranchId = branch.Id, TakenById = cashier.Id, CustomerId = customer.Id,
+            Status = OrderStatus.Taken, Type = OrderType.Onsite,
+            Notes = "Sin cebolla", StatusTimes = "{}", CreatedAt = DateTime.UtcNow,
+        };
+        db.Orders.AddRange(order, new Order
+        {
+            BranchId = branch.Id, TakenById = cashier.Id, CustomerId = customer.Id,
+            Status = OrderStatus.Delivered, Type = OrderType.Onsite,
+            StatusTimes = "{}", CreatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var job = await CreateService(db, new RecordingNotifier(db))
+            .EnqueueAsync(branch.Id, PrintJobKind.Kitchen, [order.Id]);
+        var payload = JsonSerializer.Deserialize<PrintTicketPayloadBatchV1>(
+            job.PayloadJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        var printed = Assert.Single(payload.Orders);
+        Assert.Equal("Sin cebolla", printed.OrderNotes);
+        Assert.Equal(1, printed.LoyaltyDeliveredCount);
+        Assert.Equal("Premio", printed.LoyaltyNextRewardLabel);
     }
 
     private static ApplicationDbContext CreateDb()
