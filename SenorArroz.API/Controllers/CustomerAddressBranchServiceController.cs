@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.API.Filters;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Shared.Models;
@@ -47,10 +48,13 @@ public sealed class CustomerAddressBranchServiceController(
 
     [HttpPut]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    [AllowCrossBranchOrderContext]
     public async Task<ActionResult<ApiResponse<CustomerAddressBranchServiceDto>>> Upsert(
         int customerId,
         int addressId,
         [FromBody] UpsertCustomerAddressBranchServiceDto request,
+        [FromQuery] int? branchId,
+        [FromQuery] bool forOrderCreation,
         CancellationToken cancellationToken)
     {
         if (request.DeliveryFee < 0)
@@ -59,13 +63,26 @@ public sealed class CustomerAddressBranchServiceController(
         if (!ValidCoordinates(request.Latitude, request.Longitude))
             return BadRequest(ApiResponse<CustomerAddressBranchServiceDto>.ErrorResponse("Las coordenadas no son válidas"));
 
-        var branchId = branchContext.RequireBranch();
+        if (branchId is <= 0)
+            return BadRequest(ApiResponse<CustomerAddressBranchServiceDto>.ErrorResponse("Sucursal no válida"));
+
+        // A POS order may use any active branch of the same tenant, without changing
+        // the cashier's session branch. Other address edits keep their original scope.
+        var sessionBranchId = branchContext.RequireBranch();
+        var sessionTenantId = await ResolveTenantIdAsync(sessionBranchId, cancellationToken);
+        if (sessionTenantId <= 0)
+            return NotFound(ApiResponse<CustomerAddressBranchServiceDto>.ErrorResponse("Sucursal de sesión no encontrada"));
+
+        var targetBranchId = branchId ?? sessionBranchId;
+        if (targetBranchId != sessionBranchId && !forOrderCreation)
+            return Forbid();
+
         var branch = await db.Branches.AsNoTracking()
-            .Where(x => x.Id == branchId)
+            .Where(x => x.Id == targetBranchId && x.TenantId == sessionTenantId && x.IsActive)
             .Select(x => new { x.Id, x.Name, x.TenantId })
             .SingleOrDefaultAsync(cancellationToken);
         if (branch is null)
-            return NotFound(ApiResponse<CustomerAddressBranchServiceDto>.ErrorResponse("Sucursal no encontrada"));
+            return NotFound(ApiResponse<CustomerAddressBranchServiceDto>.ErrorResponse("Sucursal no disponible para este restaurante"));
 
         var address = await db.Addresses.FirstOrDefaultAsync(x =>
             x.Id == addressId && x.CustomerId == customerId && x.TenantId == branch.TenantId,
