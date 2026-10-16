@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -6,9 +7,9 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
-using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Services;
+using SenorArroz.Shared.Models.Printing;
 using SenorArroz.Tests.Support;
 
 namespace SenorArroz.Tests;
@@ -44,24 +45,54 @@ public class PrintQueueServiceTests
         Assert.Equal(PrintJobStatus.Pending, (await db.PrintJobs.SingleAsync()).Status);
     }
 
-    [Fact]
-    public async Task Delivery_enqueue_does_not_query_loyalty_repositories()
+    [Theory]
+    [InlineData(PrintJobKind.Kitchen)]
+    [InlineData(PrintJobKind.Cashier)]
+    public async Task Enqueue_keeps_notes_and_loyalty_for_multiple_customers(PrintJobKind kind)
     {
         await using var db = CreateDb();
-        SeedDelivery(db);
-        var orderRepository = new Mock<IOrderRepository>(MockBehavior.Strict);
-        var loyaltyRepository =
-            new Mock<ILoyaltyCycleStepRepository>(MockBehavior.Strict);
-        var service = CreateService(
-            db,
-            new RecordingNotifier(db),
-            orderRepository.Object,
-            loyaltyRepository.Object);
+        var branch = new Branch { Id = 1, Name = "Sucursal" };
+        db.Branches.Add(branch);
+        db.BranchPrintSettings.Add(new BranchPrintSettings
+        {
+            BranchId = 1, Branch = branch, EnableKitchenJobs = true, EnableCashierJobs = true,
+        });
+        db.Customers.AddRange(
+            new Customer { Id = 41, BranchId = 1, Name = "A", Branch = branch },
+            new Customer { Id = 42, BranchId = 1, Name = "B", Branch = branch });
+        db.LoyaltyCycleSteps.Add(new LoyaltyCycleStep
+        {
+            Id = 1, BranchId = 1, Branch = branch, StepIndex = 1, RewardLabel = "Premio",
+        });
 
-        await service.EnqueueDeliveryAsync(1, [10]);
+        Order MakeOrder(int id, int? customerId, OrderStatus status, string? notes = null) => new()
+        {
+            Id = id, BranchId = 1, TakenById = 1, CustomerId = customerId,
+            Type = OrderType.Onsite, Status = status, Notes = notes,
+            Total = 20000, CreatedAt = DateTime.UtcNow, Branch = branch,
+        };
+        db.Orders.AddRange(
+            MakeOrder(10, 41, OrderStatus.Taken, "Sin cebolla"),
+            MakeOrder(20, 42, OrderStatus.Taken, "Extra salsa"),
+            MakeOrder(30, null, OrderStatus.Taken, "Mesa"),
+            MakeOrder(11, 41, OrderStatus.Delivered),
+            MakeOrder(12, 41, OrderStatus.Delivered),
+            MakeOrder(21, 42, OrderStatus.Delivered));
+        await db.SaveChangesAsync();
 
-        orderRepository.VerifyNoOtherCalls();
-        loyaltyRepository.VerifyNoOtherCalls();
+        var job = await CreateService(db, new RecordingNotifier(db))
+            .EnqueueAsync(1, kind, [10, 20, 30]);
+        var payload = JsonSerializer.Deserialize<PrintTicketPayloadBatchV1>(
+            job.PayloadJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        var orders = payload.Orders.OrderBy(o => o.OrderId).ToArray();
+
+        Assert.Equal(new[] { "Sin cebolla", "Extra salsa", "Mesa" },
+            orders.Select(o => o.OrderNotes));
+        Assert.All(orders, o => Assert.Equal(o.OrderNotes, o.OrderLevelNotes));
+        Assert.Equal(2, orders[0].LoyaltyDeliveredCount);
+        Assert.Equal(1, orders[1].LoyaltyDeliveredCount);
+        Assert.Null(orders[2].LoyaltyDeliveredCount);
+        Assert.Equal("Premio", orders[0].LoyaltyNextRewardLabel);
     }
 
     private static ApplicationDbContext CreateDb()
@@ -101,9 +132,7 @@ public class PrintQueueServiceTests
 
     private static PrintQueueService CreateService(
         ApplicationDbContext db,
-        IPrintAgentNotifier notifier,
-        IOrderRepository? orderRepository = null,
-        ILoyaltyCycleStepRepository? loyaltyRepository = null)
+        IPrintAgentNotifier notifier)
     {
         var clock = new Mock<IClock>();
         clock.SetupGet(x => x.UtcNow).Returns(DateTime.UtcNow);
@@ -111,8 +140,6 @@ public class PrintQueueServiceTests
             db,
             Options.Create(new ApiPublicOptions()),
             Options.Create(new BrandingOptions()),
-            orderRepository ?? Mock.Of<IOrderRepository>(),
-            loyaltyRepository ?? Mock.Of<ILoyaltyCycleStepRepository>(),
             clock.Object,
             notifier,
             TestTenantContext.Default,
