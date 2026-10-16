@@ -83,11 +83,15 @@ public sealed class CustomerAddressBranchServiceCrossBranchTests
         Assert.Empty(await db.AddressBranches.ToListAsync());
     }
 
-    [Fact]
-    public async Task LocalAddressServiceKeepsTheExistingEndpointBehavior()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task LocalAddressServiceKeepsTheExistingEndpointBehavior(bool branchIsActive)
     {
         await using var db = CreateDb();
         await SeedAsync(db);
+        db.Branches.Single(x => x.Id == 1).IsActive = branchIsActive;
+        await db.SaveChangesAsync();
 
         var result = await CreateController(db).Upsert(10, 20,
             new UpsertCustomerAddressBranchServiceDto(3500),
