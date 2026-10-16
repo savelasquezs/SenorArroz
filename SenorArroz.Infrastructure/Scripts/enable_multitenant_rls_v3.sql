@@ -58,6 +58,7 @@ DECLARE
         'entity_audit_log','expense','expense_bank_payment','expense_category','expense_detail',
         'expense_header','expense_menu_target','expense_unit_conversion','external_delivery_order','integration_webhook_event',
         'inventory_balance','inventory_count','inventory_count_line','inventory_movement','inventory_transfer',
+        'kitchen_voice_event',
         'inventory_transfer_line','order_inventory_allocation','product_expense_requirement',
         'loyalty_cycle_step','neighborhood','order','order_detail','password_reset_token',
         'payment_notification_outbox','print_job','product','product_category','rappi_availability_state',
@@ -72,7 +73,7 @@ DECLARE
 BEGIN
     FOREACH table_name IN ARRAY tenant_tables LOOP
         IF to_regclass('public.' || quote_ident(table_name)) IS NULL THEN
-            IF table_name = ANY(inventory_tables) THEN
+            IF table_name = ANY(inventory_tables) OR table_name = 'kitchen_voice_event' THEN
                 CONTINUE;
             END IF;
             RAISE EXCEPTION 'Falta la tabla tenant-owned requerida para RLS: %', table_name;
