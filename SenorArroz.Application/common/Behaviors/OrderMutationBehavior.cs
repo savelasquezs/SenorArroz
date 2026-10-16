@@ -51,7 +51,8 @@ public sealed class OrderMutationBehavior<TRequest, TResponse>(
         before = await LoadAndAuthorize(ids, ct);
         ValidateExpected(before, primaryIds, expected);
 
-        mutation?.BeginDeferredNotifications();
+        var ownsNotifications = mutation is not null && !mutation.IsDeferringNotifications;
+        if (ownsNotifications) mutation!.BeginDeferredNotifications();
         try
         {
         var response = await next(ct);
@@ -89,23 +90,33 @@ public sealed class OrderMutationBehavior<TRequest, TResponse>(
             });
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
-        // Defer notifications until data is committed, so receivers never read an old status.
-        foreach (var send in mutation?.DrainDeferredNotifications() ?? [])
-        {
-            try { await send(); }
-            catch (Exception ex) { logger.LogWarning(ex, "Order saved; post-commit notification failed"); }
-        }
         foreach (var change in changed)
         {
-            try { await notifications.NotifyOrderManagementChanged(change.Id, change.Branch, change.Origin, change.Version); }
-            catch (Exception ex) { logger.LogWarning(ex, "Order {OrderId} saved; realtime invalidation failed", change.Id); }
+            try
+            {
+                // When an outer route-level transaction is open this is deferred
+                // until the outer lock's transaction actually commits.
+                await OrderPostCommitNotifications.Publish(mutation,
+                    () => notifications.NotifyOrderManagementChanged(change.Id, change.Branch,
+                        change.Origin, change.Version));
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Order {OrderId} saved; realtime invalidation failed", change.Id);
+            }
         }
+        if (ownsNotifications)
+            foreach (var send in mutation!.DrainDeferredNotifications())
+            {
+                try { await send(); }
+                catch (Exception ex) { logger.LogWarning(ex, "Order saved; post-commit notification failed"); }
+            }
         return response;
         }
         finally
         {
             // A failed mutation must not publish queued notifications.
-            mutation?.ClearDeferredNotifications();
+            if (ownsNotifications) mutation!.ClearDeferredNotifications();
         }
     }
 

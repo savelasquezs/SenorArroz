@@ -66,14 +66,14 @@ public sealed class DeliveryTrackingHistoryTests
     }
 
     [Fact]
-    public async Task FreshReturn_StillCompletesRoute()
+    public async Task FreshPointWithoutReconciliationDoesNotAssumeReturn()
     {
         await using var db = await CreateDb();
         var result = await Handler(db).Handle(Point(Now), default);
 
-        Assert.False(result.ContinueActiveTracking);
-        Assert.Equal(DeliveryRouteStatus.Completed, db.DeliveryRoutes.Single().Status);
-        Assert.Equal(Now, db.DeliveryRoutes.Single().CompletedAtUtc);
+        Assert.True(result.ContinueActiveTracking);
+        Assert.Equal(DeliveryRouteStatus.InProgress, db.DeliveryRoutes.Single().Status);
+        Assert.Null(db.DeliveryRoutes.Single().CompletedAtUtc);
     }
 
     private static RecordLocationCommand Point(DateTime at, decimal latitude = 4.60971m) => new()

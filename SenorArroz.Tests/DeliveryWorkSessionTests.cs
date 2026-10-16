@@ -12,7 +12,7 @@ namespace SenorArroz.Tests;
 public class DeliveryWorkSessionTests
 {
     [Fact]
-    public async Task RecordLocation_CompletesTerminalRouteOnlyAfterReturnToBranch()
+    public async Task RecordLocation_WithoutAutoCompletionDoesNotCloseTheRoute()
     {
         await using var db = CreateDb();
         var startedAt = new DateTime(2026, 7, 21, 16, 0, 0, DateTimeKind.Utc);
@@ -96,11 +96,11 @@ public class DeliveryWorkSessionTests
         }, default);
 
         var route = db.DeliveryRoutes.Single();
-        Assert.False(arrived.ContinueActiveTracking);
-        Assert.Equal(DeliveryRouteStatus.Completed, route.Status);
-        Assert.Equal(arrivedAt, route.CompletedAtUtc);
-        Assert.Equal(2220, route.ActualDurationSeconds);
-        Assert.True(route.MetSla);
+        Assert.True(arrived.ContinueActiveTracking);
+        Assert.Equal(DeliveryRouteStatus.InProgress, route.Status);
+        Assert.Null(route.CompletedAtUtc);
+        Assert.Null(route.ActualDurationSeconds);
+        Assert.Null(route.MetSla);
     }
 
     [Fact]

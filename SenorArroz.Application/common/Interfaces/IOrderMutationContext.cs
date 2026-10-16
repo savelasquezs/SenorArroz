@@ -7,6 +7,7 @@ public interface IOrderMutationContext
     void Complete(int orderId, long version);
 
     // Defaults preserve non-HTTP/mock mutation contexts.
+    bool IsDeferringNotifications => false;
     void BeginDeferredNotifications() { }
     bool TryDeferNotification(Func<Task> callback) => false;
     IReadOnlyList<Func<Task>> DrainDeferredNotifications() => [];
