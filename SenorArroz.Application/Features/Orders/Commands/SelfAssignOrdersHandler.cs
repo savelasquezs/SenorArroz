@@ -11,17 +11,14 @@ using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
-using SenorArroz.Domain.Interfaces.Services;
 
 namespace SenorArroz.Application.Features.Orders.Commands;
 
 public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, List<OrderDto>>
 {
     private readonly IOrderRepository _orderRepository;
-    private readonly IUserRepository _userRepository;
     private readonly IMapper _mapper;
     private readonly ICurrentUser _currentUser;
-    private readonly IPasswordService _passwordService;
     private readonly IOrderNotificationService _notificationService;
     private readonly IDeliveryRouteWorkflowService _deliveryRouteWorkflow;
     private readonly IPrintQueueService _printQueue;
@@ -31,10 +28,8 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
 
     public SelfAssignOrdersHandler(
         IOrderRepository orderRepository,
-        IUserRepository userRepository,
         IMapper mapper,
         ICurrentUser currentUser,
-        IPasswordService passwordService,
         IOrderNotificationService notificationService,
         IDeliveryRouteWorkflowService deliveryRouteWorkflow,
         IPrintQueueService printQueue,
@@ -43,10 +38,8 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
         IDeliveryRoutingPlanService? routingPlans = null)
     {
         _orderRepository = orderRepository;
-        _userRepository = userRepository;
         _mapper = mapper;
         _currentUser = currentUser;
-        _passwordService = passwordService;
         _notificationService = notificationService;
         _deliveryRouteWorkflow = deliveryRouteWorkflow;
         _printQueue = printQueue;
@@ -65,11 +58,6 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             throw new BusinessException("Selecciona al menos un pedido");
         if (request.OrderIds.Count != request.OrderIds.Distinct().Count())
             throw new BusinessException("La seleccion contiene pedidos duplicados");
-
-        var user = await _userRepository.GetByIdAsync(_currentUser.Id, cancellationToken)
-                   ?? throw new BusinessException("Usuario no encontrado");
-        if (!_passwordService.VerifyPassword(request.Password, user.PasswordHash))
-            throw new BusinessException("Contraseña incorrecta");
 
         IDbContextTransaction? transaction = null;
         if (_db?.Database.IsRelational() == true)
@@ -176,10 +164,32 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             if (transaction is not null)
                 await transaction.CommitAsync(cancellationToken);
 
+            // The assignment is already committed: notification failures must not
+            // suggest to the mobile app that it failed (and invite a retry).
             foreach (var order in assignedOrders)
-                await _notificationService.NotifyOrderAssignedToDelivery(order);
+            {
+                try
+                {
+                    await _notificationService.NotifyOrderAssignedToDelivery(order);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Pedido {OrderId} asignado, pero fallo su notificacion.", order.Id);
+                }
+            }
             if (proposal is not null)
-                await _notificationService.NotifyRouteProposalClaimed(_currentUser.BranchId, proposal.Id, _currentUser.Id);
+            {
+                try
+                {
+                    await _notificationService.NotifyRouteProposalClaimed(_currentUser.BranchId, proposal.Id, _currentUser.Id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Ruta {ProposalId} tomada, pero fallo su notificacion.", proposal.Id);
+                }
+            }
 
             try
             {
@@ -189,7 +199,7 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
                     request.OrderIds,
                     cancellationToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
                 _logger.LogWarning(ex,
                     "No se encolo ticket de domicilio para pedidos {OrderIds}. La asignacion se completo.",
@@ -202,7 +212,7 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
                 {
                     await _routingPlans.RecalculateAsync(_currentUser.BranchId, cancellationToken);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex)
                 {
                     _logger.LogWarning(ex,
                         "La asignacion se completo, pero no fue posible recalcular el plan de sucursal {BranchId}.",
