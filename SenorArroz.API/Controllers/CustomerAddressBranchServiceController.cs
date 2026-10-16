@@ -78,7 +78,8 @@ public sealed class CustomerAddressBranchServiceController(
             return Forbid();
 
         var branch = await db.Branches.AsNoTracking()
-            .Where(x => x.Id == targetBranchId && x.TenantId == sessionTenantId && x.IsActive)
+            .Where(x => x.Id == targetBranchId && x.TenantId == sessionTenantId
+                && (!forOrderCreation || x.IsActive))
             .Select(x => new { x.Id, x.Name, x.TenantId })
             .SingleOrDefaultAsync(cancellationToken);
         if (branch is null)
