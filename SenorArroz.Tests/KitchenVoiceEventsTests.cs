@@ -50,14 +50,14 @@ public sealed class KitchenVoiceEventsTests
 
         var result = await controller.GetKitchenVoiceEvents(after: 0, branchId: 101);
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(
-            ((OkObjectResult)result.Result!).Value!, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            ((OkObjectResult)result).Value!, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
         var replay = json.RootElement.GetProperty("events").EnumerateArray()
             .Select(e => e.GetProperty("orderId").GetInt32()).ToArray();
         Assert.Equal(new[] { 1, 4 }, replay);
 
         var firstOpen = await controller.GetKitchenVoiceEvents(branchId: 101);
         using var bootstrap = JsonDocument.Parse(JsonSerializer.Serialize(
-            ((OkObjectResult)firstOpen.Result!).Value!, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            ((OkObjectResult)firstOpen).Value!, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
         var latest = bootstrap.RootElement.GetProperty("events").EnumerateArray()
             .Select(e => e.GetProperty("orderId").GetInt32()).ToArray();
         Assert.Equal(new[] { 1 }, latest);
