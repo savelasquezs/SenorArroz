@@ -13,7 +13,6 @@ using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
-using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models.Printing;
 
@@ -24,8 +23,6 @@ public class PrintQueueService : IPrintQueueService
     private readonly ApplicationDbContext _db;
     private readonly string? _publicApiBaseUrl;
     private readonly BrandingOptions _branding;
-    private readonly IOrderRepository _orderRepository;
-    private readonly ILoyaltyCycleStepRepository _loyaltyCycleStepRepository;
     private readonly IClock _clock;
     private readonly IPrintAgentNotifier _printAgentNotifier;
     private readonly ILogger<PrintQueueService> _logger;
@@ -35,8 +32,6 @@ public class PrintQueueService : IPrintQueueService
         ApplicationDbContext db,
         IOptions<ApiPublicOptions> apiPublic,
         IOptions<BrandingOptions> branding,
-        IOrderRepository orderRepository,
-        ILoyaltyCycleStepRepository loyaltyCycleStepRepository,
         IClock clock,
         IPrintAgentNotifier printAgentNotifier,
         ITenantExecutionContext tenantExecutionContext,
@@ -47,8 +42,6 @@ public class PrintQueueService : IPrintQueueService
         var b = apiPublic.Value.BaseUrl?.Trim();
         _publicApiBaseUrl = string.IsNullOrEmpty(b) ? null : b.TrimEnd('/');
         _branding = branding.Value;
-        _orderRepository = orderRepository;
-        _loyaltyCycleStepRepository = loyaltyCycleStepRepository;
         _printAgentNotifier = printAgentNotifier;
         _tenantExecutionContext = tenantExecutionContext;
         _logger = logger;
@@ -112,21 +105,9 @@ public class PrintQueueService : IPrintQueueService
         if (orders.Any(o => o.BranchId != branchId))
             throw new InvalidOperationException("Los pedidos deben pertenecer a la sucursal.");
 
-        {
-            var noteById = await _db.Orders
-                .AsNoTracking()
-                .Where(o => ids.Contains(o.Id))
-                .ToDictionaryAsync(o => o.Id, o => o.Notes, cancellationToken);
-            foreach (var o in orders)
-            {
-                if (noteById.TryGetValue(o.Id, out var n))
-                    o.Notes = n;
-            }
-        }
-
-        var loyaltyByOrder = new Dictionary<int, LoyaltyKitchenSnapshot?>();
-        foreach (var order in orders)
-            loyaltyByOrder[order.Id] = await BuildLoyaltyKitchenSnapshotAsync(order, cancellationToken).ConfigureAwait(false);
+        var loyaltyWatch = Stopwatch.StartNew();
+        var loyaltyByOrder = await BuildLoyaltyKitchenSnapshotsAsync(orders, cancellationToken);
+        loyaltyWatch.Stop();
 
         var payloadWatch = Stopwatch.StartNew();
         var printedAt = _clock.UtcNow;
@@ -187,6 +168,7 @@ public class PrintQueueService : IPrintQueueService
             job,
             validationWatch.Elapsed,
             queryWatch.Elapsed,
+            loyaltyWatch.Elapsed,
             payloadWatch.Elapsed,
             saveWatch.Elapsed,
             notificationWatch.Elapsed,
@@ -342,6 +324,7 @@ public class PrintQueueService : IPrintQueueService
             job,
             validationWatch.Elapsed,
             queryWatch.Elapsed,
+            TimeSpan.Zero,
             payloadWatch.Elapsed,
             saveWatch.Elapsed,
             notificationWatch.Elapsed,
@@ -418,34 +401,51 @@ public class PrintQueueService : IPrintQueueService
         return job;
     }
 
-    private async Task<LoyaltyKitchenSnapshot?> BuildLoyaltyKitchenSnapshotAsync(Order order, CancellationToken cancellationToken)
+    private async Task<Dictionary<int, LoyaltyKitchenSnapshot?>> BuildLoyaltyKitchenSnapshotsAsync(
+        IReadOnlyList<Order> orders, CancellationToken cancellationToken)
     {
-        if (order.CustomerId is not int cid)
-            return null;
+        var customerIds = orders.Where(o => o.CustomerId.HasValue)
+            .Select(o => o.CustomerId!.Value).Distinct().ToArray();
+        var snapshots = new Dictionary<int, LoyaltyKitchenSnapshot?>();
+        if (customerIds.Length == 0)
+            return snapshots;
 
-        var delivered = await _orderRepository.CountDeliveredOrdersForCustomerAsync(cid, cancellationToken).ConfigureAwait(false);
-        var cycleLen = await _loyaltyCycleStepRepository.GetCycleLengthAsync(order.BranchId, cancellationToken).ConfigureAwait(false);
+        var deliveredByCustomer = await _db.Orders.AsNoTracking()
+            .Where(o => o.CustomerId.HasValue && customerIds.Contains(o.CustomerId.Value)
+                && o.Status == OrderStatus.Delivered)
+            .GroupBy(o => o.CustomerId!.Value)
+            .Select(g => new { CustomerId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.CustomerId, x => x.Count, cancellationToken);
 
-        int? until = null;
-        string? nextLabel = null;
-        if (cycleLen > 0)
+        var steps = await _db.LoyaltyCycleSteps.AsNoTracking()
+            .Where(s => s.BranchId == orders[0].BranchId && s.IsActive)
+            .Select(s => new { s.StepIndex, s.RewardLabel })
+            .ToListAsync(cancellationToken);
+        var cycleLen = steps.Count == 0 ? 0 : steps.Max(s => s.StepIndex);
+        var labelByStep = steps.ToDictionary(s => s.StepIndex, s => s.RewardLabel);
+
+        foreach (var order in orders)
         {
-            until = LoyaltyDeliveriesPerReward.GetDeliveriesUntilNextReward(delivered);
-            var nextMilestone = LoyaltyDeliveriesPerReward.GetNextRewardMilestoneDeliveries(delivered);
-            var nextStepIndex = LoyaltyDeliveriesPerReward.GetStepIndexAtMilestone(nextMilestone, cycleLen);
-            var step = await _loyaltyCycleStepRepository
-                .GetByBranchAndStepIndexAsync(order.BranchId, nextStepIndex, cancellationToken)
-                .ConfigureAwait(false);
-            nextLabel = string.IsNullOrWhiteSpace(step?.RewardLabel) ? null : step!.RewardLabel.Trim();
+            if (order.CustomerId is not int customerId)
+                continue;
+
+            var delivered = deliveredByCustomer.GetValueOrDefault(customerId);
+            var until = cycleLen > 0 ? LoyaltyDeliveriesPerReward.GetDeliveriesUntilNextReward(delivered) : (int?)null;
+            var stepIndex = cycleLen > 0
+                ? LoyaltyDeliveriesPerReward.GetStepIndexAtMilestone(
+                    LoyaltyDeliveriesPerReward.GetNextRewardMilestoneDeliveries(delivered), cycleLen)
+                : 0;
+            labelByStep.TryGetValue(stepIndex, out var nextLabel);
+            var gift = !string.IsNullOrWhiteSpace(order.LoyaltyRewardSnapshot)
+                ? order.LoyaltyRewardSnapshot.Trim()
+                : string.IsNullOrWhiteSpace(order.LoyaltyCycleStep?.RewardLabel)
+                    ? null
+                    : order.LoyaltyCycleStep.RewardLabel.Trim();
+
+            snapshots[order.Id] = new LoyaltyKitchenSnapshot(delivered, until,
+                string.IsNullOrWhiteSpace(nextLabel) ? null : nextLabel.Trim(), gift);
         }
-
-        var gift = !string.IsNullOrWhiteSpace(order.LoyaltyRewardSnapshot)
-            ? order.LoyaltyRewardSnapshot.Trim()
-            : (string.IsNullOrWhiteSpace(order.LoyaltyCycleStep?.RewardLabel)
-                ? null
-                : order.LoyaltyCycleStep!.RewardLabel.Trim());
-
-        return new LoyaltyKitchenSnapshot(delivered, until, nextLabel, gift);
+        return snapshots;
     }
 
     public async Task ValidateDeliverymanDeliveryEnqueueAsync(
@@ -715,6 +715,7 @@ public class PrintQueueService : IPrintQueueService
         PrintJob job,
         TimeSpan validation,
         TimeSpan orderQuery,
+        TimeSpan loyalty,
         TimeSpan payload,
         TimeSpan save,
         TimeSpan notification,
@@ -722,12 +723,13 @@ public class PrintQueueService : IPrintQueueService
         bool notificationSucceeded)
     {
         _logger.LogInformation(
-            "Print job enqueued. PrintJobId={PrintJobId} BranchId={BranchId} Kind={PrintJobKind} ValidationElapsedMs={ValidationElapsedMs} OrderQueryElapsedMs={OrderQueryElapsedMs} PayloadElapsedMs={PayloadElapsedMs} SaveElapsedMs={SaveElapsedMs} SignalRElapsedMs={SignalRElapsedMs} TotalElapsedMs={TotalElapsedMs} SignalRSucceeded={SignalRSucceeded}.",
+            "Print job enqueued. PrintJobId={PrintJobId} BranchId={BranchId} Kind={PrintJobKind} ValidationElapsedMs={ValidationElapsedMs} OrderQueryElapsedMs={OrderQueryElapsedMs} LoyaltyElapsedMs={LoyaltyElapsedMs} PayloadElapsedMs={PayloadElapsedMs} SaveElapsedMs={SaveElapsedMs} SignalRElapsedMs={SignalRElapsedMs} TotalElapsedMs={TotalElapsedMs} SignalRSucceeded={SignalRSucceeded}.",
             job.Id,
             job.BranchId,
             KindToDb(job.Kind),
             validation.TotalMilliseconds,
             orderQuery.TotalMilliseconds,
+            loyalty.TotalMilliseconds,
             payload.TotalMilliseconds,
             save.TotalMilliseconds,
             notification.TotalMilliseconds,
