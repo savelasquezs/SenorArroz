@@ -43,6 +43,20 @@ public class DeliverymanController : ControllerBase
     /// <summary>
     /// Estado mínimo del día para el domiciliario autenticado (p. ej. día bloqueado tras liquidación total).
     /// </summary>
+    /// <summary>Confirms only the selected deliveries after a GPS-verified return.</summary>
+    [HttpPost("routes/{routeId:int}/confirm-return-deliveries")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<IActionResult> ConfirmReturnDeliveries(
+        int routeId, [FromBody] ConfirmReturnDeliveriesDto request,
+        [FromServices] IDeliveryAutoCompletionService completion,
+        CancellationToken cancellationToken)
+    {
+        await completion.ConfirmReturnedOrdersAsync(routeId, _currentUser.Id,
+            _currentUser.BranchId, request.ReturnLocationId, request.OrderIds,
+            cancellationToken);
+        return Ok();
+    }
+
     [HttpGet("me/day-state")]
     [Authorize(Roles = "Deliveryman")]
     public async Task<ActionResult<MyDeliverymanDayStateDto>> GetMyDayState([FromQuery] string? date = null)
@@ -435,3 +449,5 @@ public class DeliverymanController : ControllerBase
     }
 
 }
+
+public sealed record ConfirmReturnDeliveriesDto(long ReturnLocationId, IReadOnlyList<int> OrderIds);

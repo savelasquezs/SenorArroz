@@ -9,7 +9,9 @@ using SenorArroz.Domain.Exceptions;
 
 namespace SenorArroz.Application.Features.Deliverymen.Commands;
 
-public sealed record RecordLocationResult(bool ContinueActiveTracking, int? DeliveryRouteId);
+public sealed record RecordLocationResult(
+    bool ContinueActiveTracking, int? DeliveryRouteId,
+    DeliveryReturnReview? ReturnReview = null);
 
 public class RecordLocationCommand : IRequest<RecordLocationResult>
 {
@@ -159,8 +161,7 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
         workSession.LastCommunicationAt = nowUtc;
         await _db.SaveChangesAsync(cancellationToken);
 
-        // The auto-completion service also enforces its own two-minute age and
-        // GPS-quality window. Suppress out-of-order evaluations before entering it.
+        DeliveryReturnReview? review = null;
         if (_autoCompletion is not null && isLatestPosition)
         {
             try
@@ -169,89 +170,39 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(
-                    ex,
+                _logger?.LogWarning(ex,
                     "AutoDelivery evaluation failed location={LocationId} route={RouteId}",
-                    location.Id,
-                    routeId);
+                    location.Id, routeId);
+            }
+
+            try
+            {
+                // Evaluate after persisting GPS; the same route owns this return
+                // and the historical points are replayed in capture-time order.
+                review = await _autoCompletion.ReconcileReturnAsync(location, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex,
+                    "AutoDelivery return reconciliation failed location={LocationId} route={RouteId}",
+                    location.Id, routeId);
             }
         }
 
-        await _notifications.NotifyDeliverymanLocation(
-            branchId,
-            deliverymanId,
-            routeId,
-            (double)request.Latitude,
-            (double)request.Longitude,
-            recordedAtUtc);
-
-        if (routeId.HasValue && canAffectLiveRoute)
+        try
         {
-            await TryCompleteRouteAtBranchAsync(
-                routeId.Value,
-                deliverymanId,
-                branchId,
-                request.Latitude,
-                request.Longitude,
-                recordedAtUtc,
-                cancellationToken);
+            await _notifications.NotifyDeliverymanLocation(
+                branchId, deliverymanId, routeId,
+                (double)request.Latitude, (double)request.Longitude, recordedAtUtc);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex,
+                "Location {LocationId} recorded, but realtime notification failed", location.Id);
         }
 
-        return await CurrentTrackingResultAsync(deliverymanId, cancellationToken);
-    }
-
-    private async Task TryCompleteRouteAtBranchAsync(
-        int routeId,
-        int deliverymanId,
-        int branchId,
-        decimal latitude,
-        decimal longitude,
-        DateTime recordedAtUtc,
-        CancellationToken cancellationToken)
-    {
-        var route = await _db.DeliveryRoutes
-            .Include(r => r.Stops)
-            .FirstOrDefaultAsync(r => r.Id == routeId
-                                      && r.DeliverymanId == deliverymanId
-                                      && r.BranchId == branchId
-                                      && r.Status == DeliveryRouteStatus.InProgress,
-                cancellationToken);
-        if (route is null || route.Stops.Count == 0)
-            return;
-
-        var orderIds = route.Stops.Select(s => s.OrderId).ToList();
-        var allTerminal = await _db.Orders
-            .Where(o => orderIds.Contains(o.Id))
-            .AllAsync(o => o.Status == OrderStatus.Delivered || o.Status == OrderStatus.Cancelled,
-                cancellationToken);
-        if (!allTerminal)
-            return;
-
-        var branch = await _db.Branches.AsNoTracking()
-            .FirstOrDefaultAsync(b => b.Id == branchId, cancellationToken);
-        if (branch?.Latitude is null || branch.Longitude is null)
-            return;
-
-        var distance = GeoHelper.HaversineDistanceMeters(
-            (double)latitude,
-            (double)longitude,
-            (double)branch.Latitude.Value,
-            (double)branch.Longitude.Value);
-        if (distance > Math.Max(1, branch.DeliveryTrackingAllowedDistanceMeters))
-            return;
-
-        route.CompletedAtUtc = recordedAtUtc;
-        if (route.RouteStartedAtUtc.HasValue)
-        {
-            route.ActualDurationSeconds = (int)Math.Max(
-                0,
-                (recordedAtUtc - route.RouteStartedAtUtc.Value).TotalSeconds);
-            route.MetSla = route.MetaDurationSeconds.HasValue
-                ? route.ActualDurationSeconds <= route.MetaDurationSeconds.Value
-                : null;
-        }
-        route.Status = DeliveryRouteStatus.Completed;
-        await _db.SaveChangesAsync(cancellationToken);
+        return (await CurrentTrackingResultAsync(deliverymanId, cancellationToken))
+            with { ReturnReview = review };
     }
 
     private async Task RepairStaleRouteClockAsync(
