@@ -25,7 +25,7 @@ public static class DeliveryRouteScope
             && r.Stops.Any()
             && sessions.Any(s => r.WorkSessionId == s.Id || (r.WorkSessionId == null
                 && r.LastAssignmentAtUtc >= s.StartedAt && r.LastAssignmentAtUtc < s.AutoCloseAt
-                && r.LastAssignmentAtUtc <= now)))
+                && r.LastAssignmentAtUtc <= now && (!r.RouteStartedAtUtc.HasValue || r.RouteStartedAtUtc >= s.StartedAt))))
             .OrderByDescending(r => r.LastAssignmentAtUtc).ThenByDescending(r => r.Id);
     }
 
@@ -36,7 +36,7 @@ public static class DeliveryRouteScope
         && (route.Status == DeliveryRouteStatus.Open || route.Status == DeliveryRouteStatus.InProgress)
         && (route.WorkSessionId == session.Id || (route.WorkSessionId is null
             && route.LastAssignmentAtUtc >= session.StartedAt && route.LastAssignmentAtUtc < session.AutoCloseAt
-            && route.LastAssignmentAtUtc <= now));
+            && route.LastAssignmentAtUtc <= now && (!route.RouteStartedAtUtc.HasValue || route.RouteStartedAtUtc >= session.StartedAt)));
 
     public static bool Reliable(DeliverymanLocation point) => point.GpsEnabled != false
         && point.AccuracyMeters is >= 0 and <= 50 && double.IsFinite(point.AccuracyMeters.Value)

@@ -3,7 +3,6 @@ using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
-using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.Application.Common.Services;
@@ -31,7 +30,9 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
             .Where(s => s.BranchId == branchId && s.Date == today && s.Blocked)
             .Select(s => s.DeliverymanId).ToListAsync(ct);
         var sessions = await DeliveryRouteScope.ActiveSessions(_db, branchId, nowUtc).AsNoTracking()
-            .Where(s => _db.Users.Any(u => u.Id == s.DeliverymanId && u.BranchId == branchId && u.IsActive))
+            .Where(s => _db.Users.Any(u => u.Id == s.DeliverymanId && u.BranchId == branchId && u.Active
+                && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled
+                    && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier)))))
             .ToListAsync(ct);
         if (sessions.Count == 0) return new DeliveryRoutingCapacity([], 0, 0, []);
         var courierIds = sessions.Select(s => s.DeliverymanId).ToArray();
@@ -96,7 +97,6 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
                     else if (inside)
                     {
                         state = fresh ? "available" : "probableAtBranch";
-                        // Older light-mode evidence is visible, but not advertised as confirmed free capacity.
                         if (fresh)
                         {
                             availableAt = nowUtc;
@@ -117,16 +117,11 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
                             {
                                 var metrics = await _googleRoutes.ComputeRouteAsync(
                                     [((double)point.Latitude, (double)point.Longitude), (branchLatitude, branchLongitude)], ct);
-                                if (metrics.DurationSeconds > 0)
-                                {
-                                    duration = metrics.DurationSeconds;
-                                    source = "google";
-                                }
+                                if (metrics.DurationSeconds > 0) { duration = metrics.DurationSeconds; source = "google"; }
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException)
                             { warnings.Add($"Regreso aproximado del domiciliario {id}; Google no respondió."); }
                         }
-                        // The buffer describes uncertainty; it is not labelled observed driving time.
                         var conservative = Math.Max(30, duration + (int)Math.Ceiling(age) + Math.Max(30, duration / 4));
                         availableAt = nowUtc.AddSeconds(conservative);
                         if (conservative <= Math.Max(0, _options.SoonAvailableThresholdSeconds))

@@ -1,5 +1,4 @@
--- P2: apply before deploying code that reads the new columns.
--- Additive only: no historical trip is relabelled or assigned a fabricated departure.
+-- P2: apply before code that reads the new columns. Additive; no invented historical timestamps.
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
@@ -27,10 +26,10 @@ BEGIN
                      AND conrelid = 'public.delivery_route'::regclass) THEN
         ALTER TABLE public.delivery_route ADD CONSTRAINT ck_delivery_route_departure_source
             CHECK ((departed_at_utc IS NULL AND departure_source IS NULL)
-                OR (departed_at_utc IS NOT NULL AND departure_source IN ('gps', 'confirmed')));
+                OR (departed_at_utc IS NOT NULL AND departure_source IS NOT NULL
+                    AND departure_source IN ('gps', 'confirmed')));
     END IF;
 END $$;
 COMMIT;
--- Rollback of application: these nullable columns are compatible with the previous build.
--- Do not drop populated columns or session history when reverting application code.
+-- Application rollback keeps these nullable columns. Never drop populated history.
 -- Data reconciliation is separate, tenant-scoped, previewed and audited.
