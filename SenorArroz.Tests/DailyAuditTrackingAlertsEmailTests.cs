@@ -84,7 +84,7 @@ public class DailyAuditTrackingAlertsEmailTests
         Assert.Contains("7 min 30 s", email.Body);
         Assert.Contains("Permanencia: al menos 12 min", email.Body);
         Assert.Contains("Primera lectura:", email.Body);
-        Assert.Contains("Última lectura:", email.Body);
+        Assert.Contains("Última lectura:", System.Net.WebUtility.HtmlDecode(email.Body));
         Assert.Contains("https://www.google.com/maps?q=4.600001,-74.080001", email.Body);
         Assert.Contains("https://www.google.com/maps?q=4.610001,-74.090001", email.Body);
     }
