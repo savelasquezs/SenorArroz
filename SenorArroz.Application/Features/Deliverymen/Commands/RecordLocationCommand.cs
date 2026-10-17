@@ -9,8 +9,7 @@ using SenorArroz.Domain.Exceptions;
 
 namespace SenorArroz.Application.Features.Deliverymen.Commands;
 
-public sealed record RecordLocationResult(
-    bool ContinueActiveTracking, int? DeliveryRouteId,
+public sealed record RecordLocationResult(bool ContinueActiveTracking, int? DeliveryRouteId,
     DeliveryReturnReview? ReturnReview = null);
 
 public class RecordLocationCommand : IRequest<RecordLocationResult>
@@ -37,14 +36,13 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
     private readonly IClock _clock;
     private readonly IDeliveryAutoCompletionService? _autoCompletion;
     private readonly ILogger<RecordLocationHandler>? _logger;
+    private readonly IDeliveryAutoCompletionRouteLock? _routeLock;
 
-    public RecordLocationHandler(
-        IApplicationDbContext db,
-        ICurrentUser currentUser,
-        IOrderNotificationService notifications,
-        IClock clock,
+    public RecordLocationHandler(IApplicationDbContext db, ICurrentUser currentUser,
+        IOrderNotificationService notifications, IClock clock,
         IDeliveryAutoCompletionService? autoCompletion = null,
-        ILogger<RecordLocationHandler>? logger = null)
+        ILogger<RecordLocationHandler>? logger = null,
+        IDeliveryAutoCompletionRouteLock? routeLock = null)
     {
         _db = db;
         _currentUser = currentUser;
@@ -52,236 +50,114 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
         _clock = clock;
         _autoCompletion = autoCompletion;
         _logger = logger;
+        _routeLock = routeLock;
     }
 
-    public async Task<RecordLocationResult> Handle(RecordLocationCommand request, CancellationToken cancellationToken)
+    public async Task<RecordLocationResult> Handle(RecordLocationCommand request, CancellationToken ct)
     {
-        if (!_currentUser.IsAuthenticated)
-            throw new UnauthorizedAccessException("Usuario no autenticado.");
-
+        if (!_currentUser.IsAuthenticated) throw new UnauthorizedAccessException("Usuario no autenticado.");
         var deliverymanId = _currentUser.Id;
         var branchId = _currentUser.BranchId;
-        var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
-        var recordedAtUtc = ColombiaTimeHelper.EnsureUtc(request.RecordedAt);
-
+        var now = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
+        var recorded = ColombiaTimeHelper.EnsureUtc(request.RecordedAt);
         if (request.ClientPointId.HasValue)
         {
-            var existingOwner = await _db.DeliverymanLocations.AsNoTracking()
+            var owner = await _db.DeliverymanLocations.AsNoTracking()
                 .Where(x => x.ClientPointId == request.ClientPointId)
-                .Select(x => (int?)x.DeliverymanId)
-                .FirstOrDefaultAsync(cancellationToken);
-            if (existingOwner == deliverymanId)
-                return await CurrentTrackingResultAsync(deliverymanId, cancellationToken);
-            if (existingOwner.HasValue)
-                throw new BusinessException("El identificador de la ubicación ya pertenece a otro domiciliario.");
+                .Select(x => (int?)x.DeliverymanId).FirstOrDefaultAsync(ct);
+            if (owner == deliverymanId) return await CurrentTrackingResultAsync(deliverymanId, ct);
+            if (owner.HasValue) throw new BusinessException("El identificador de la ubicación ya pertenece a otro domiciliario.");
         }
-
         Validate(request);
-
-        var workSession = await _db.DeliveryWorkSessions
-            .FirstOrDefaultAsync(x => x.DeliverymanId == deliverymanId
-                                      && x.BranchId == branchId
-                                      && x.Id == request.WorkSessionId,
-                cancellationToken);
-        if (workSession is null)
-            throw new BusinessException("La jornada laboral del dispositivo ya no está activa.");
+        var session = await _db.DeliveryWorkSessions.FirstOrDefaultAsync(x =>
+            x.DeliverymanId == deliverymanId && x.BranchId == branchId && x.Id == request.WorkSessionId, ct);
+        if (session is null) throw new BusinessException("La jornada laboral del dispositivo ya no está activa.");
         if (!string.IsNullOrWhiteSpace(_currentUser.DeviceInstallationId)
-            && !string.Equals(
-                _currentUser.DeviceInstallationId,
-                workSession.DeviceInstallationId,
-                StringComparison.Ordinal))
-        {
+            && !string.Equals(_currentUser.DeviceInstallationId, session.DeviceInstallationId, StringComparison.Ordinal))
             throw new SessionReplacedException();
-        }
-
-        var captureDeadline = workSession.EndedAt.HasValue && workSession.EndedAt.Value < workSession.AutoCloseAt
-            ? workSession.EndedAt.Value
-            : workSession.AutoCloseAt;
-        if (recordedAtUtc < workSession.StartedAt || recordedAtUtc >= captureDeadline)
+        var deadline = session.EndedAt.HasValue && session.EndedAt < session.AutoCloseAt
+            ? session.EndedAt.Value : session.AutoCloseAt;
+        if (recorded < session.StartedAt || recorded >= deadline)
             throw new BusinessException("La ubicación fue capturada fuera de la jornada laboral.");
-
-        if (workSession.Status == DeliveryWorkSessionStatus.Active && nowUtc >= workSession.AutoCloseAt)
+        if (session.Status == DeliveryWorkSessionStatus.Active && now >= session.AutoCloseAt)
         {
-            workSession.Close(nowUtc, DeliveryWorkSessionEndReason.AutomaticClosure);
-            _db.DeliveryDeviceEvents.Add(DeliveryDeviceEvent.ForClosure(
-                workSession,
-                nowUtc,
-                DeliveryWorkSessionEndReason.AutomaticClosure));
+            session.Close(now, DeliveryWorkSessionEndReason.AutomaticClosure);
+            _db.DeliveryDeviceEvents.Add(DeliveryDeviceEvent.ForClosure(session, now, DeliveryWorkSessionEndReason.AutomaticClosure));
         }
-
-        // Recovered history is valid evidence, but it must not rewind live
-        // route clocks or complete a route after a newer position was received.
-        var isLatestPosition = !await _db.DeliverymanLocations.AsNoTracking()
-            .AnyAsync(x => x.DeliverymanId == deliverymanId
-                           && x.RecordedAt > recordedAtUtc, cancellationToken);
-        var canAffectLiveRoute = isLatestPosition
-                                && recordedAtUtc >= nowUtc.AddMinutes(-2);
-
+        var isLatest = !await _db.DeliverymanLocations.AsNoTracking()
+            .AnyAsync(x => x.DeliverymanId == deliverymanId && x.RecordedAt > recorded, ct);
+        var live = isLatest && recorded >= now.AddMinutes(-2) && recorded <= now.AddSeconds(15)
+            && session.Status == DeliveryWorkSessionStatus.Active && session.AutoCloseAt > now;
         int? routeId = request.DeliveryRouteId;
-        if (routeId.HasValue)
+        if (routeId.HasValue && !await _db.DeliveryRoutes.AsNoTracking().AnyAsync(r =>
+            r.Id == routeId && r.DeliverymanId == deliverymanId && r.BranchId == branchId, ct))
+            throw new BusinessException("La ruta indicada no pertenece al domiciliario.");
+        if (live)
         {
-            var routeBelongsToDeliveryman = await _db.DeliveryRoutes.AsNoTracking()
-                .AnyAsync(x => x.Id == routeId.Value
-                               && x.DeliverymanId == deliverymanId
-                               && x.BranchId == branchId,
-                    cancellationToken);
-            if (!routeBelongsToDeliveryman)
-                throw new BusinessException("La ruta indicada no pertenece al domiciliario.");
+            // The client may still carry a previous trip ID. The server owns the live association.
+            routeId = await DeliveryRouteScope.Current(_db, branchId, deliverymanId, now)
+                .AsNoTracking().Select(r => (int?)r.Id).FirstOrDefaultAsync(ct);
         }
-        else if (canAffectLiveRoute)
-        {
-            // An old light-tracking point must not be attached to today's route.
-            routeId = await FindCurrentRouteIdAsync(deliverymanId, cancellationToken);
-        }
-
-        if (routeId.HasValue && canAffectLiveRoute)
-            await RepairStaleRouteClockAsync(routeId.Value, recordedAtUtc, cancellationToken);
-
+        // Historical points keep their original association; never attach them to a new trip.
         var location = new DeliverymanLocation
         {
-            DeliverymanId = deliverymanId,
-            WorkSessionId = workSession.Id,
-            DeliveryRouteId = routeId,
-            ClientPointId = request.ClientPointId ?? Guid.NewGuid(),
-            Latitude = request.Latitude,
-            Longitude = request.Longitude,
-            AccuracyMeters = request.AccuracyMeters,
-            HeadingDegrees = request.HeadingDegrees,
-            BatteryLevelPercent = request.BatteryLevelPercent,
-            InternetAvailable = request.InternetAvailable,
-            GpsEnabled = request.GpsEnabled ?? true,
-            TrackingMode = request.TrackingMode
-                           ?? (routeId.HasValue
-                               ? DeliveryTrackingMode.ActiveDelivery
-                               : DeliveryTrackingMode.Light),
-            RecordedAt = recordedAtUtc,
-            SyncedAt = nowUtc,
+            DeliverymanId = deliverymanId, WorkSessionId = session.Id, DeliveryRouteId = routeId,
+            ClientPointId = request.ClientPointId ?? Guid.NewGuid(), Latitude = request.Latitude,
+            Longitude = request.Longitude, AccuracyMeters = request.AccuracyMeters,
+            HeadingDegrees = request.HeadingDegrees, BatteryLevelPercent = request.BatteryLevelPercent,
+            InternetAvailable = request.InternetAvailable, GpsEnabled = request.GpsEnabled ?? true,
+            TrackingMode = request.TrackingMode ?? (routeId.HasValue ? DeliveryTrackingMode.ActiveDelivery : DeliveryTrackingMode.Light),
+            RecordedAt = recorded, SyncedAt = now
         };
         _db.DeliverymanLocations.Add(location);
-        workSession.LastCommunicationAt = nowUtc;
-        await _db.SaveChangesAsync(cancellationToken);
-
+        session.LastCommunicationAt = now;
+        await _db.SaveChangesAsync(ct);
         DeliveryReturnReview? review = null;
-        if (_autoCompletion is not null && isLatestPosition)
+        if (live && routeId.HasValue)
         {
             try
             {
-                await _autoCompletion.EvaluateLocationAsync(location, cancellationToken);
+                if (_routeLock is null) await DeliveryRouteScope.ObserveDepartureAsync(_db, location, session, now, ct);
+                else await _routeLock.ExecuteAsync(routeId.Value,
+                    token => DeliveryRouteScope.ObserveDepartureAsync(_db, location, session, now, token), ct);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { _logger?.LogWarning(ex, "Departure evidence failed route={RouteId}", routeId); }
+            if (_autoCompletion is not null)
             {
-                _logger?.LogWarning(ex,
-                    "AutoDelivery evaluation failed location={LocationId} route={RouteId}",
-                    location.Id, routeId);
-            }
-
-            try
-            {
-                // Evaluate after persisting GPS; the same route owns this return
-                // and the historical points are replayed in capture-time order.
-                review = await _autoCompletion.ReconcileReturnAsync(location, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex,
-                    "AutoDelivery return reconciliation failed location={LocationId} route={RouteId}",
-                    location.Id, routeId);
+                try { await _autoCompletion.EvaluateLocationAsync(location, ct); }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                { _logger?.LogWarning(ex, "AutoDelivery evaluation failed location={LocationId} route={RouteId}", location.Id, routeId); }
+                try { review = await _autoCompletion.ReconcileReturnAsync(location, ct); }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                { _logger?.LogWarning(ex, "AutoDelivery return reconciliation failed location={LocationId} route={RouteId}", location.Id, routeId); }
             }
         }
-
         try
         {
-            await _notifications.NotifyDeliverymanLocation(
-                branchId, deliverymanId, routeId,
-                (double)request.Latitude, (double)request.Longitude, recordedAtUtc);
+            await _notifications.NotifyDeliverymanLocation(branchId, deliverymanId, routeId,
+                (double)request.Latitude, (double)request.Longitude, recorded);
         }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex,
-                "Location {LocationId} recorded, but realtime notification failed", location.Id);
-        }
-
-        return (await CurrentTrackingResultAsync(deliverymanId, cancellationToken))
-            with { ReturnReview = review };
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        { _logger?.LogWarning(ex, "Location {LocationId} recorded, but realtime notification failed", location.Id); }
+        return (await CurrentTrackingResultAsync(deliverymanId, ct)) with { ReturnReview = review };
     }
 
-    private async Task RepairStaleRouteClockAsync(
-        int routeId,
-        DateTime recordedAtUtc,
-        CancellationToken cancellationToken)
+    private async Task<RecordLocationResult> CurrentTrackingResultAsync(int deliverymanId, CancellationToken ct)
     {
-        var todayStartUtc = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(recordedAtUtc);
-        var route = await _db.DeliveryRoutes
-            .Include(r => r.Stops)
-            .FirstOrDefaultAsync(r => r.Id == routeId
-                                      && r.Status == DeliveryRouteStatus.InProgress
-                                      && r.RouteStartedAtUtc < todayStartUtc,
-                cancellationToken);
-        if (route is null)
-            return;
-
-        var orderIds = route.Stops.Select(s => s.OrderId).ToList();
-        var activeOrders = await _db.Orders
-            .Where(o => orderIds.Contains(o.Id)
-                        && o.Status != OrderStatus.Delivered
-                        && o.Status != OrderStatus.Cancelled)
-            .ToListAsync(cancellationToken);
-        if (activeOrders.Count == 0)
-            return;
-
-        var operationalStart = activeOrders
-            .Select(o =>
-            {
-                var times = o.GetStatusTimes();
-                if (times.TryGetValue("ontheway", out var onTheWay)) return (DateTime?)onTheWay;
-                if (times.TryGetValue(Order.DeliveryManAssignedStatusTimeKey, out var assigned)) return assigned;
-                return null;
-            })
-            .Where(x => x.HasValue && x.Value >= todayStartUtc)
-            .Select(x => x!.Value)
-            .DefaultIfEmpty(recordedAtUtc)
-            .Min();
-
-        route.RouteStartedAtUtc = ColombiaTimeHelper.EnsureUtc(operationalStart);
-        await _db.SaveChangesAsync(cancellationToken);
-    }
-
-    private async Task<RecordLocationResult> CurrentTrackingResultAsync(
-        int deliverymanId,
-        CancellationToken cancellationToken)
-    {
-        var routeId = await _db.DeliveryRoutes.AsNoTracking()
-            .Where(r => r.DeliverymanId == deliverymanId
-                        && (r.Status == DeliveryRouteStatus.Open
-                            || r.Status == DeliveryRouteStatus.InProgress))
-            .OrderByDescending(r => r.Status == DeliveryRouteStatus.InProgress)
-            .ThenByDescending(r => r.LastAssignmentAtUtc)
-            .Select(r => (int?)r.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+        var routeId = await DeliveryRouteScope.Current(_db, _currentUser.BranchId, deliverymanId,
+                ColombiaTimeHelper.EnsureUtc(_clock.UtcNow)).AsNoTracking()
+            .Select(r => (int?)r.Id).FirstOrDefaultAsync(ct);
         return new RecordLocationResult(routeId.HasValue, routeId);
-    }
-
-    private async Task<int?> FindCurrentRouteIdAsync(int deliverymanId, CancellationToken cancellationToken)
-    {
-        var activeRoute = await _db.DeliveryRoutes
-            .Where(r => r.DeliverymanId == deliverymanId
-                        && (r.Status == DeliveryRouteStatus.Open
-                            || r.Status == DeliveryRouteStatus.InProgress))
-            .OrderByDescending(r => r.LastAssignmentAtUtc)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (activeRoute is null)
-            return null;
-
-        return activeRoute.Id;
     }
 
     private static void Validate(RecordLocationCommand request)
     {
         if (request.Latitude is < -90 or > 90 || request.Longitude is < -180 or > 180)
             throw new BusinessException("Las coordenadas de la ubicación no son válidas.");
-        if (request.AccuracyMeters is < 0)
-            throw new BusinessException("La precisión GPS no puede ser negativa.");
-        if (request.HeadingDegrees is < 0 or > 360)
+        if (request.AccuracyMeters is double accuracy && (accuracy < 0 || !double.IsFinite(accuracy)))
+            throw new BusinessException("La precisión GPS no es válida.");
+        if (request.HeadingDegrees is double heading && (!double.IsFinite(heading) || heading < 0 || heading > 360))
             throw new BusinessException("La dirección de movimiento debe estar entre 0 y 360 grados.");
         if (request.BatteryLevelPercent is < 0 or > 100)
             throw new BusinessException("El nivel de batería debe estar entre 0 y 100.");
