@@ -21,4 +21,21 @@ public class DeliveryRoutingOptions
     public int DroppedOrderBasePenaltySeconds { get; set; } = 3600;
     public int MaximumFinalistsToValidate { get; set; } = 12;
     public int ServiceSecondsPerOrder { get; set; } = 240;
+    public int PreparationLookaheadSeconds { get; set; } = 900;
+    public int PlanMaxAgeSeconds { get; set; } = 120;
+    public RoutingMeasurementOptions Measurement { get; set; } = new();
+}
+
+/// <summary>Temporary P0 experiment; remove after the documented 14-day window.</summary>
+public sealed class RoutingMeasurementOptions
+{
+    public bool Enabled { get; set; }
+    public DateTimeOffset? StartedAtUtc { get; set; }
+    public DateTimeOffset? ExpiresAtUtc { get; set; }
+
+    public bool IsActive(DateTime utcNow) => Enabled
+        && StartedAtUtc is { } start && ExpiresAtUtc is { } end
+        && start.Offset == TimeSpan.Zero && end.Offset == TimeSpan.Zero
+        && end > start && end - start <= TimeSpan.FromDays(14)
+        && utcNow >= start.UtcDateTime && utcNow < end.UtcDateTime;
 }

@@ -31,6 +31,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Temporary P0 check: remove together with the measurement exporter in P6.
+      - name: Routing measurement exporter tests
+        run: python3 -m unittest discover -s scripts -p test_routing_measurement_report.py
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
