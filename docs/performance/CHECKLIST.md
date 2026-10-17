@@ -72,7 +72,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M13-F03 | Preparación a listo | Pendiente | — | — | — | — |
 | M13-F04 | Notificaciones cocina y reimpresión | Pendiente | — | — | — | — |
 | M14-F01 | Encolar comandas | Mejora aprobada | 2026-10-16 | [Informe](reviews/2026-10-16-M14-F01.md) | [API #29](https://github.com/savelasquezs/SenorArroz/pull/29) (fusionado), [Agente #1](https://github.com/savelasquezs/senorArrozPrintAgent/pull/1) (fusionado), [Docs #30](https://github.com/savelasquezs/SenorArroz/pull/30) | Backend 885/885 incl. PostgreSQL; Remote 862 aprobadas/23 omitidas + PG 3/3; agente 15/15. Sin SQL; pendiente confirmar publicación y prueba física antes de Implementado/Validado. |
-| M14-F02 | Poll y claim del agente Windows | Pendiente | — | — | — | — |
+| M14-F02 | Poll y claim del agente Windows | Analizado | 2026-10-17 | [Informe 2026-10-17](reviews/2026-10-17-M14-F02.md) | [PR API #38](https://github.com/savelasquezs/SenorArroz/pull/38) (borrador) | Claim específico: apertura EF para RLS, autenticación con proyección mínima, desempate de polling. Prueba PostgreSQL RLS añadida; pendiente CI. Sin SQL. |
 | M14-F03 | Notificaciones SignalR del agente | Pendiente | — | — | — | — |
 | M14-F04 | Confirmar, fallar y reintentar impresión | Pendiente | — | — | — | — |
 | M14-F05 | Configuración y reimpresión | Pendiente | — | — | — | — |

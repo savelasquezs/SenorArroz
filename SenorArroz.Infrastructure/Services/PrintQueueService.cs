@@ -50,10 +50,16 @@ public class PrintQueueService : IPrintQueueService
     public async Task<PrintAgentIdentity?> AuthenticateAgentAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default)
     {
         using var systemScope = _tenantExecutionContext.BeginSystemScope();
-        var settings = await _db.BranchPrintSettings.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.BranchId == branchId, cancellationToken);
-        if (settings == null || !PrintAgentTokenCrypto.IsValid(plainToken, settings)) return null;
-        return new PrintAgentIdentity(settings.TenantId, branchId);
+        // Se valida en cada petición (también tras rotar el token), pero sin cargar
+        // la configuración completa de impresión en cada ciclo de polling.
+        var credentials = await _db.BranchPrintSettings.AsNoTracking()
+            .Where(s => s.BranchId == branchId)
+            .Select(s => new { s.TenantId, s.AgentTokenSalt, s.AgentTokenHash })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (credentials is null || !PrintAgentTokenCrypto.IsValid(
+                plainToken, credentials.AgentTokenSalt, credentials.AgentTokenHash))
+            return null;
+        return new PrintAgentIdentity(credentials.TenantId, branchId);
     }
 
     public async Task<bool> IsAgentTokenValidAsync(int branchId, string? plainToken, CancellationToken cancellationToken = default) =>
@@ -509,7 +515,7 @@ public class PrintQueueService : IPrintQueueService
                 WITH cte AS (
                   SELECT id FROM print_job
                   WHERE branch_id = @branch_id AND status = 'pending' AND kind = ANY(@kinds)
-                  ORDER BY created_at
+                  ORDER BY created_at, id
                   FOR UPDATE SKIP LOCKED
                   LIMIT @take
                 )
@@ -557,13 +563,13 @@ public class PrintQueueService : IPrintQueueService
         CancellationToken cancellationToken = default)
     {
         var watch = Stopwatch.StartNew();
-        var conn = _db.Database.GetDbConnection();
-        var shouldClose = conn.State != ConnectionState.Open;
-        if (shouldClose)
-            await conn.OpenAsync(cancellationToken);
-
+        // La apertura administrada por EF dispara TenantDbConnectionInterceptor.
+        // Abrir GetDbConnection() directamente omite el contexto PostgreSQL y
+        // RLS puede ocultar el trabajo aunque pertenezca al agente autenticado.
+        await _db.Database.OpenConnectionAsync(cancellationToken);
         try
         {
+            var conn = _db.Database.GetDbConnection();
             await using var cmd = conn.CreateCommand();
             cmd.CommandText = """
                 UPDATE print_job
@@ -595,8 +601,7 @@ public class PrintQueueService : IPrintQueueService
                 jobId,
                 branchId,
                 watch.Elapsed.TotalMilliseconds);
-            if (shouldClose)
-                await conn.CloseAsync();
+            await _db.Database.CloseConnectionAsync();
         }
     }
 

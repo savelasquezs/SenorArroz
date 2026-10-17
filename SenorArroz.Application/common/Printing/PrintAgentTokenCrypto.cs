@@ -13,15 +13,18 @@ public static class PrintAgentTokenCrypto
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    public static bool IsValid(string? plainToken, BranchPrintSettings settings)
+    public static bool IsValid(string? plainToken, BranchPrintSettings settings) =>
+        IsValid(plainToken, settings.AgentTokenSalt, settings.AgentTokenHash);
+
+    public static bool IsValid(string? plainToken, string salt, string tokenHash)
     {
-        if (string.IsNullOrWhiteSpace(settings.AgentTokenHash)) return false;
+        if (string.IsNullOrWhiteSpace(tokenHash)) return false;
         if (string.IsNullOrEmpty(plainToken)) return false;
         try
         {
-            var computed = ComputeHash(settings.AgentTokenSalt, plainToken);
+            var computed = ComputeHash(salt, plainToken);
             var a = Convert.FromHexString(computed);
-            var b = Convert.FromHexString(settings.AgentTokenHash);
+            var b = Convert.FromHexString(tokenHash);
             return a.Length == b.Length && CryptographicOperations.FixedTimeEquals(a, b);
         }
         catch (FormatException)
