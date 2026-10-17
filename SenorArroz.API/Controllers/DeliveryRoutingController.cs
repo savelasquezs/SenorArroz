@@ -36,5 +36,5 @@ public sealed class DeliveryRoutingController : ControllerBase
     [Authorize(Roles = "Deliveryman,Admin,Cashier,Superadmin")]
     public async Task<ActionResult<DeliveryRouteProposalDto>> Preview([FromBody] PreviewDeliveryRouteRequest request,
         [FromQuery] int? branchId = null, CancellationToken cancellationToken = default) =>
-        Ok(await _mediator.Send(new PreviewDeliveryRouteQuery(branchId, request.OrderIds), cancellationToken));
+        Ok(await _mediator.Send(new PreviewDeliveryRouteQuery(branchId, request.OrderIds, request.ExpectedPlanVersion), cancellationToken));
 }

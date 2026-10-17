@@ -14,6 +14,7 @@ public class DeliveryRoutingOptions
     public int ActiveGpsFreshnessSeconds { get; set; } = 180;
     public int PreparationHistoryDays { get; set; } = 30;
     public int PreparationMinimumSampleSize { get; set; } = 10;
+    public int PreparationMaximumHistoryOrders { get; set; } = 2000;
     public int PreparationFallbackSeconds { get; set; } = 1800;
     public double ApproximateRoadFactor { get; set; } = 1.3;
     public double ApproximateUrbanSpeedKph { get; set; } = 22;
@@ -21,6 +22,7 @@ public class DeliveryRoutingOptions
     public int DroppedOrderBasePenaltySeconds { get; set; } = 3600;
     public int MaximumFinalistsToValidate { get; set; } = 12;
     public int ServiceSecondsPerOrder { get; set; } = 240;
+    public int RouteDispatchCostSeconds { get; set; } = 120;
     public int PreparationLookaheadSeconds { get; set; } = 900;
     public int PlanMaxAgeSeconds { get; set; } = 120;
     public RoutingMeasurementOptions Measurement { get; set; } = new();

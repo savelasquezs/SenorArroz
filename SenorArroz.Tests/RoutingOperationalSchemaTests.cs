@@ -19,6 +19,8 @@ public sealed class RoutingOperationalSchemaTests
                 deliveryman_id int NOT NULL,branch_id int NOT NULL);
             CREATE TABLE delivery_route(id int PRIMARY KEY,tenant_id int NOT NULL,
                 deliveryman_id int NOT NULL,branch_id int NOT NULL,status text NOT NULL);
+            CREATE TABLE delivery_route_proposal(id int PRIMARY KEY);
+            CREATE TABLE delivery_route_proposal_stop(id int PRIMARY KEY);
             ALTER TABLE delivery_route ENABLE ROW LEVEL SECURITY;
             ALTER TABLE delivery_route FORCE ROW LEVEL SECURITY;
             CREATE POLICY tenant_guard ON delivery_route USING (tenant_id = 1);
@@ -32,6 +34,13 @@ public sealed class RoutingOperationalSchemaTests
             "SenorArroz.Infrastructure", "Scripts", "add_routing_operational_session.sql"));
         await Execute(script);
         await Execute(script);
+        var predictionScript = await File.ReadAllTextAsync(Path.Combine(directory.FullName,
+            "SenorArroz.Infrastructure", "Scripts", "add_routing_prediction_snapshots.sql"));
+        await Execute(predictionScript);
+        await Execute(predictionScript);
+        await Execute("INSERT INTO delivery_route_proposal_stop(id) VALUES(1)");
+        Assert.Equal("unknown", (string)(await new NpgsqlCommand(
+            "SELECT preparation_confidence FROM delivery_route_proposal_stop WHERE id=1", connection).ExecuteScalarAsync())!);
         Assert.Equal("in_progress", (string)(await new NpgsqlCommand("SELECT status FROM delivery_route WHERE id=30", connection).ExecuteScalarAsync())!);
         Assert.Equal(1L, (long)(await new NpgsqlCommand("SELECT count(*) FROM delivery_route WHERE work_session_id IS NULL AND departed_at_utc IS NULL", connection).ExecuteScalarAsync())!);
         Assert.True((bool)(await new NpgsqlCommand("SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid='delivery_route'::regclass", connection).ExecuteScalarAsync())!);

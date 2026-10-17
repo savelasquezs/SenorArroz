@@ -44,6 +44,35 @@ class MeasurementReportTests(unittest.TestCase):
         self.assertEqual(result['groups'], [])
         self.assertNotIn('customerPhone', json.dumps(result))
 
+    def test_operational_events_join_predictions_and_do_not_count_as_planning_requests(self):
+        forecast = self.sample('plan')
+        forecast['routeSnapshots'] = [dict(proposalId=10, ExpectedDepartureAtUtc='2026-10-16T18:03:00Z',
+            orders=[dict(OrderId=3, EstimatedReadyAtUtc='2026-10-16T18:01:00Z')])]
+        def event(sample_id, kind, at, **extra):
+            row = self.sample(sample_id)
+            row.update(outcome='observed', kind=kind, routeId=8, occurredAtUtc=at, **extra)
+            return row
+        events = [forecast,
+            event('ready', 'ready', '2026-10-16T18:02:00Z', orderId=3),
+            event('claim', 'accepted', '2026-10-16T18:02:30Z', proposalId=10, orderIds=[3], modified=True),
+            event('left', 'departed', '2026-10-16T18:04:00Z')]
+        group = report.summarize(map(json.dumps, events))['groups'][0]
+        self.assertEqual(group['samples'], 1)
+        self.assertEqual(group['operations']['modifiedRoutes'], 1)
+        self.assertEqual(group['operations']['readyToDepartureSeconds']['median'], 120)
+        self.assertEqual(group['operations']['preparationAbsoluteErrorSeconds']['median'], 60)
+        self.assertEqual(group['operations']['recommendedWaitSeconds']['median'], 30)
+
+    def test_google_return_calls_are_counted_once_outside_request_finalist_metrics(self):
+        request = self.sample('plan')
+        returned = self.sample('return-call')
+        returned.update(outcome='observed', kind='googleReturn', googleMs=120, googleFailed=True)
+        returned.pop('googleCalls')
+        result = report.summarize(map(json.dumps, [request, returned]))['groups'][0]
+        self.assertEqual(result['googleCalls'], 2)
+        self.assertEqual(result['googleFailures'], 1)
+        self.assertEqual(result['googleReturnMs'], {'n': 1, 'median': 120, 'p90': 120})
+
 
 if __name__ == '__main__':
     unittest.main()

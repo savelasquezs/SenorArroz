@@ -110,6 +110,33 @@ public sealed class RoutingValidityAndMeasurementTests
     }
 
     [Fact]
+    public async Task RecalculationCannotRestartTheReadyFoodWaitingDeadline()
+    {
+        await using var f = new Fixture();
+        await f.AddOrder(20, OrderStatus.Ready);
+        var order = f.Db.Orders.Single();
+        order.AddStatusTime(OrderStatus.Ready, Now.AddSeconds(-60));
+        await f.Db.SaveChangesAsync();
+        var first = await f.Service.GetOrCreateActivePlanAsync(1);
+        f.Clock.UtcNow = Now.AddSeconds(30);
+        var next = await f.Service.RecalculateAsync(1);
+        Assert.Equal(Now.AddSeconds(120), first.Proposals.Single().WaitDeadlineAtUtc);
+        Assert.Equal(first.Proposals.Single().WaitDeadlineAtUtc, next.Proposals.Single().WaitDeadlineAtUtc);
+    }
+
+    [Fact]
+    public async Task SolverFailureProducesAnExplicitManualFallback()
+    {
+        await using var f = new Fixture();
+        await f.AddOrder(20, OrderStatus.Ready);
+        f.DuringSolve = () => throw new InvalidOperationException("Unavailable solver");
+        var plan = await f.Service.GetOrCreateActivePlanAsync(1);
+        Assert.Empty(plan.Proposals);
+        Assert.Single(plan.UnroutedOrders);
+        Assert.Contains("selección manual", plan.Warnings);
+    }
+
+    [Fact]
     public void OptimizerSkipsOutOfDomainNodesAndVehiclesInsteadOfThrowingNativeSetMin()
     {
         var options = Options.Create(new DeliveryRoutingOptions { SolverTimeLimitMs = 10 });

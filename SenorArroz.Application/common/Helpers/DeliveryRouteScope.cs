@@ -3,6 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using Microsoft.Extensions.Logging;
+using SenorArroz.Application.Options;
+using SenorArroz.Application.Features.DeliveryRouting.Services;
 
 namespace SenorArroz.Application.Common.Helpers;
 
@@ -60,7 +63,8 @@ public static class DeliveryRouteScope
             (double)branch.Latitude!.Value, (double)branch.Longitude!.Value);
 
     public static async Task ObserveDepartureAsync(IApplicationDbContext db, DeliverymanLocation point,
-        DeliveryWorkSession session, DateTime now, CancellationToken ct)
+        DeliveryWorkSession session, DateTime now, CancellationToken ct,
+        ILogger? logger = null, RoutingMeasurementOptions? measurement = null)
     {
         if (!point.DeliveryRouteId.HasValue || !Reliable(point)
             || point.RecordedAt < now.AddMinutes(-2) || point.RecordedAt > now.AddSeconds(15)) return;
@@ -105,5 +109,8 @@ public static class DeliveryRouteScope
                 observedAtUtc = previous.RecordedAt, receivedAtUtc = now, locationId = previous.Id, source = "gps" })
         });
         await db.SaveChangesAsync(ct);
+        if (logger is not null && measurement is not null)
+            RoutingMeasurement.Observe(logger, measurement, now, route.TenantId, route.BranchId,
+                "departed", route.Id, occurredAtUtc: route.DepartedAtUtc);
     }
 }

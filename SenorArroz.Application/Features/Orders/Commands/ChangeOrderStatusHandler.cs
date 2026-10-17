@@ -11,6 +11,9 @@ using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 using BranchPrintSettingsEntity = SenorArroz.Domain.Entities.BranchPrintSettings;
+using Microsoft.Extensions.Options;
+using SenorArroz.Application.Options;
+using SenorArroz.Application.Features.DeliveryRouting.Services;
 
 namespace SenorArroz.Application.Features.Orders.Commands;
 
@@ -29,6 +32,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
     private readonly ILogger<ChangeOrderStatusHandler> _logger;
     private readonly IExternalDeliveryStatusSyncService? _externalDeliveryStatusSync;
     private readonly IInventoryService? _inventory;
+    private readonly RoutingMeasurementOptions _routingMeasurement;
 
     public ChangeOrderStatusHandler(
         IOrderRepository orderRepository,
@@ -43,7 +47,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         ILogger<ChangeOrderStatusHandler> logger,
         IExternalDeliveryStatusSyncService? externalDeliveryStatusSync = null,
         IInventoryService? inventory = null,
-        IOrderMutationContext? mutationContext = null)
+        IOrderMutationContext? mutationContext = null, IOptions<DeliveryRoutingOptions>? routingOptions = null)
     {
         _orderRepository = orderRepository;
         _context = context;
@@ -58,6 +62,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         _logger = logger;
         _externalDeliveryStatusSync = externalDeliveryStatusSync;
         _inventory = inventory;
+        _routingMeasurement = routingOptions?.Value.Measurement ?? new RoutingMeasurementOptions();
     }
 
     public ChangeOrderStatusHandler(
@@ -250,6 +255,15 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
 
             if (tx is not null)
                 await tx.CommitAsync(cancellationToken);
+
+            if (previousStatus != OrderStatus.Ready && order.Status == OrderStatus.Ready)
+                await OrderPostCommitNotifications.Publish(_mutationContext, () =>
+                {
+                    RoutingMeasurement.Observe(_logger, _routingMeasurement, DateTime.UtcNow, order.TenantId,
+                        order.BranchId, "ready", order.DeliveryRouteId, order.Id,
+                        occurredAtUtc: order.GetStatusTimes().GetValueOrDefault("ready", DateTime.UtcNow));
+                    return Task.CompletedTask;
+                });
             return orderDto;
         }
         catch

@@ -6,6 +6,8 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
+using Microsoft.Extensions.Options;
+using SenorArroz.Application.Options;
 
 namespace SenorArroz.Application.Features.Deliverymen.Commands;
 
@@ -37,12 +39,13 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
     private readonly IDeliveryAutoCompletionService? _autoCompletion;
     private readonly ILogger<RecordLocationHandler>? _logger;
     private readonly IDeliveryAutoCompletionRouteLock? _routeLock;
+    private readonly RoutingMeasurementOptions _measurement;
 
     public RecordLocationHandler(IApplicationDbContext db, ICurrentUser currentUser,
         IOrderNotificationService notifications, IClock clock,
         IDeliveryAutoCompletionService? autoCompletion = null,
         ILogger<RecordLocationHandler>? logger = null,
-        IDeliveryAutoCompletionRouteLock? routeLock = null)
+        IDeliveryAutoCompletionRouteLock? routeLock = null, IOptions<DeliveryRoutingOptions>? routingOptions = null)
     {
         _db = db;
         _currentUser = currentUser;
@@ -51,6 +54,7 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
         _autoCompletion = autoCompletion;
         _logger = logger;
         _routeLock = routeLock;
+        _measurement = routingOptions?.Value.Measurement ?? new RoutingMeasurementOptions();
     }
 
     public async Task<RecordLocationResult> Handle(RecordLocationCommand request, CancellationToken ct)
@@ -123,9 +127,9 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
         {
             try
             {
-                if (_routeLock is null) await DeliveryRouteScope.ObserveDepartureAsync(_db, location, session, now, ct);
+                if (_routeLock is null) await DeliveryRouteScope.ObserveDepartureAsync(_db, location, session, now, ct, _logger, _measurement);
                 else await _routeLock.ExecuteAsync(routeId.Value,
-                    token => DeliveryRouteScope.ObserveDepartureAsync(_db, location, session, now, token), ct);
+                    token => DeliveryRouteScope.ObserveDepartureAsync(_db, location, session, now, token, _logger, _measurement), ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             { _logger?.LogWarning(ex, "Departure evidence failed route={RouteId}", routeId); }

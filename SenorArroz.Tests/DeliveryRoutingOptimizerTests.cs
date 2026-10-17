@@ -61,4 +61,21 @@ public sealed class DeliveryRoutingOptimizerTests
         Assert.Empty(result.UnroutedNodeIndexes);
         Assert.Equal(Enumerable.Range(0, 12).Order(), route.NodeIndexes.Order());
     }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(2, true)]
+    public void ExpiredWaitingDeadlineRequiresLeavingOrSplitting(int vehicles, bool allRouted)
+    {
+        var options = Options.Create(new DeliveryRoutingOptions { SolverTimeLimitMs = 150,
+            DroppedOrderBasePenaltySeconds = 100000, DirectionPenaltyPerDegreeSeconds = 0 });
+        var matrix = new ApproximateRoutingCostMatrixProvider(options).Create(6, -75,
+        [new RoutingNode(1, 6.001, -75, Now.AddMinutes(-20), Now, true, 30) { WaitDeadlineAtUtc = Now },
+            new RoutingNode(2, 6.002, -75, Now.AddMinutes(-10), Now.AddSeconds(120), false, 30)]);
+        var result = new OrToolsDeliveryRouteOptimizer(options).Optimize(new(matrix,
+            Enumerable.Range(0, vehicles).Select(_ => new RoutingVehicleSlot(0)).ToArray(), Now));
+        Assert.All(result.Routes, route => Assert.False(route.NodeIndexes.Contains(0) && route.NodeIndexes.Contains(1)));
+        Assert.Equal(allRouted, result.UnroutedNodeIndexes.Count == 0);
+        Assert.Equal(result.Routes.SelectMany(r => r.NodeIndexes).Distinct().Count(), result.Routes.Sum(r => r.NodeIndexes.Count));
+    }
 }

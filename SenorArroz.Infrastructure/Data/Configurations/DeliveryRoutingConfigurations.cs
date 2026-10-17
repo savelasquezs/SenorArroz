@@ -60,6 +60,7 @@ public sealed class DeliveryRouteProposalConfiguration : IEntityTypeConfiguratio
             value => DeliveryRoutingEnumConversion.Parse<DeliveryRouteRecommendation>(value)).HasMaxLength(32).IsRequired();
         builder.Property(x => x.ExpectedDepartureAtUtc).HasColumnName("expected_departure_at_utc").IsRequired();
         builder.Property(x => x.WaitSeconds).HasColumnName("wait_seconds").IsRequired();
+        builder.Property(x => x.WaitDeadlineAtUtc).HasColumnName("wait_deadline_at_utc");
         builder.Property(x => x.ApproximateDrivingDurationSeconds).HasColumnName("approximate_driving_duration_seconds").IsRequired();
         builder.Property(x => x.ApproximateDistanceMeters).HasColumnName("approximate_distance_meters").IsRequired();
         builder.Property(x => x.ValidatedDrivingDurationSeconds).HasColumnName("validated_driving_duration_seconds");
@@ -119,6 +120,10 @@ public sealed class DeliveryRouteProposalStopConfiguration : IEntityTypeConfigur
         builder.Property(x => x.BearingFromBranchDegrees).HasColumnName("bearing_from_branch_degrees").IsRequired();
         builder.Property(x => x.WasReadyAtGeneration).HasColumnName("was_ready_at_generation").IsRequired();
         builder.Property(x => x.IsSuggestedWait).HasColumnName("is_suggested_wait").IsRequired();
+        builder.Property(x => x.ConservativeReadyAtUtc).HasColumnName("conservative_ready_at_utc");
+        builder.Property(x => x.PreparationConfidence).HasColumnName("preparation_confidence").HasMaxLength(16).HasDefaultValue("unknown");
+        builder.Property(x => x.ReadyWithinWindowProbability).HasColumnName("ready_within_window_probability").HasDefaultValue(1d);
+        builder.Property(x => x.PreparationSampleSize).HasColumnName("preparation_sample_size").HasDefaultValue(0);
         builder.Property(x => x.UnroutedReason).HasColumnName("unrouted_reason").HasMaxLength(256);
         DeliveryRoutingPlanConfiguration.ConfigureAudit(builder);
 

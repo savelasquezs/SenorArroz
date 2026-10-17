@@ -41,4 +41,19 @@ internal static class DeliveryRoutingPolicy
             .DefaultIfEmpty(0).Max();
         return Math.Max(Math.Max(0, vehicleAvailableAtSeconds), readyIn);
     }
+
+    internal static DateTime? WaitDeadline(Order order, DeliveryRoutingOptions options) =>
+        order.Status == OrderStatus.Ready
+            ? (order.GetStatusTimes().TryGetValue("ready", out var ready) ? ready : order.CreatedAt)
+                .AddSeconds(Math.Max(0, options.KitchenWaitReferenceSeconds)) : null;
+
+    internal static string SelectionFingerprint(IEnumerable<Order> orders) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            System.Text.Json.JsonSerializer.Serialize(orders.Select(o => new
+            {
+                o.Id, o.TenantId, o.BranchId, o.ManagementVersion, o.Status, o.DeliveryManId,
+                o.DeliveryRouteId, o.UpdatedAt, o.Total, o.Notes, o.PrepareAt, o.ReservedFor, o.DeliveryFee,
+                o.AddressId, latitude = o.Address?.Latitude,
+                longitude = o.Address?.Longitude, addressUpdatedAt = o.Address?.UpdatedAt
+            })))));
 }

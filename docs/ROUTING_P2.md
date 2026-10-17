@@ -38,4 +38,4 @@ Saneamiento de rutas históricas: separar preview y aplicación, limitarse a fil
 
 Regresiones de ruta previa, sesión reemplazada, GPS fuera de orden, presencia probable, posición imprecisa, capacidad sin duplicados, regreso aproximado, salida observada idempotente, agrupación en ruta y preservación de historia. PostgreSQL real aplica el script dos veces, verifica RLS y rechaza asociaciones cross-tenant/driver/branch y salida sin fuente. La prueba de retorno GPS automática existente continúa vigente.
 
-P3 queda pendiente de la aprobación y despliegue de este PR. No habilitar la instrumentación de 14 días antes de validar retención/exportación y escribir T0 real.
+P2 se estabilizó en la rama local `local/routing-p2` (commit `471a38f`). La implementación local posterior está en `ROUTING_P3_P5.md`. No habilitar la instrumentación de 14 días antes de validar retención/exportación y escribir T0 real. No se publicó ni desplegó esta corrección local.

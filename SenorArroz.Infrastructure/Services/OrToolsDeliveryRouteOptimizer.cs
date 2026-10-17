@@ -39,9 +39,11 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
         });
         // Direction preferences are a cost, never fictional driving time.
         routing.SetArcCostEvaluatorOfAllVehicles(cost);
+        routing.SetFixedCostOfAllVehicles(Math.Max(0, _options.RouteDispatchCostSeconds));
         var horizon = Math.Max(86_400, Math.Min(604_800, _options.SoftLastDeliveryTargetSeconds * 4L));
-        routing.AddDimension(transit, horizon, horizon, false, "Time");
+        routing.AddDimension(transit, 0, horizon, false, "Time");
         var time = routing.GetMutableDimension("Time");
+        var solver = routing.solver();
         for (var vehicle = 0; vehicle < request.Vehicles.Count; vehicle++)
         {
             var available = Math.Max(0, request.Vehicles[vehicle].AvailableAtSeconds);
@@ -52,6 +54,8 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
                 continue;
             }
             time.CumulVar(routing.Start(vehicle)).SetRange(available, horizon);
+            time.SetCumulVarSoftUpperBound(routing.Start(vehicle), available, 2);
+            routing.AddVariableMinimizedByFinalizer(time.CumulVar(routing.Start(vehicle)));
         }
         for (var nodeIndex = 1; nodeIndex < nodeCount; nodeIndex++)
         {
@@ -66,8 +70,29 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
                 warnings.Add("Pedidos fuera del horizonte: no se incluyen en salidas inmediatas.");
                 continue;
             }
-            time.CumulVar(index).SetMin(readyIn);
-            time.SetCumulVarSoftUpperBound(index, Math.Max(0, _options.SoftLastDeliveryTargetSeconds), 10);
+            for (var vehicle = 0; vehicle < request.Vehicles.Count; vehicle++)
+            {
+                var usesVehicle = solver.MakeIsEqualCstVar(routing.VehicleVar(index), vehicle);
+                var departure = time.CumulVar(routing.Start(vehicle));
+                solver.Add(departure >= readyIn * usesVehicle);
+                if (node.WaitDeadlineAtUtc is { } deadline)
+                {
+                    var latest = Math.Max(Math.Max(0, request.Vehicles[vehicle].AvailableAtSeconds),
+                        Math.Max(0, (long)(deadline - request.GeneratedAtUtc).TotalSeconds));
+                    solver.Add(departure <= latest + horizon * (1 - usesVehicle));
+                }
+            }
+            time.SetCumulVarSoftUpperBound(index, Math.Max(0, _options.SoftLastDeliveryTargetSeconds - age), 10);
+            if (!node.IsReady && node.ReadyWithinWindowProbability < .6)
+            {
+                for (var other = 1; other < nodeCount; other++)
+                {
+                    if (!request.Matrix.Nodes[other - 1].IsReady) continue;
+                    var readyIndex = manager.NodeToIndex(other);
+                    var sameVehicle = solver.MakeIsEqualVar(routing.VehicleVar(index), routing.VehicleVar(readyIndex));
+                    solver.Add(sameVehicle + routing.ActiveVar(index) + routing.ActiveVar(readyIndex) <= 2);
+                }
+            }
         }
         var search = operations_research_constraint_solver.DefaultRoutingSearchParameters();
         search.FirstSolutionStrategy = FirstSolutionStrategy.Types.Value.ParallelCheapestInsertion;

@@ -665,7 +665,9 @@ public class OrdersController : ControllerBase
         {
             OrderIds = request.OrderIds,
             ProposalId = request.ProposalId,
-            ExpectedPlanVersion = request.ExpectedPlanVersion
+            ExpectedPlanVersion = request.ExpectedPlanVersion,
+            ModifiedProposal = request.ModifiedProposal,
+            SelectionFingerprint = request.SelectionFingerprint
         };
 
         var result = await _mediator.Send(command);

@@ -212,7 +212,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
     public Task<bool> DeliverymanHasPendingOrdersOnActiveRouteAsync(int deliverymanId, int branchId,
         CancellationToken cancellationToken = default, IReadOnlyCollection<int>? excludeOrderIds = null) =>
         _db.Orders.AsNoTracking().AnyAsync(o => o.DeliveryManId == deliverymanId && o.BranchId == branchId
-            && o.DeliveryRouteId != null && o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled
+            && o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled
             && (excludeOrderIds == null || !excludeOrderIds.Contains(o.Id)), cancellationToken);
 
     private IQueryable<DeliveryRoute> ConsolidatableRoutes()

@@ -452,6 +452,10 @@ Reglas:
 ## Planificación de rutas
 
 - Una propuesta permite quitar, añadir pedidos listos y cambiar el orden únicamente antes de aceptarla. La aceptación confirma la selección en una transacción; el domiciliario no puede editar después la ruta aceptada.
+- La vista previa de una selección editada entrega una huella del conjunto ordenado; aceptar exige la misma versión de plan, pedidos listos sin asignar y la misma huella. Una versión vencida o un conflicto concurrente devuelve `409 ROUTING_PLAN_STALE`.
+- La espera por complementos vence en la hora de Listo más `KitchenWaitReferenceSeconds`. Si falta ese timestamp se usa la creación del pedido como referencia conservadora. El recálculo no reinicia el límite; una capacidad futura ya posterior al límite no añade más espera por cocina.
+- El solver carga todos los pedidos en sucursal: la salida del vehículo debe ser posterior a la preparación de todos sus pedidos. La comida lista no comparte salida con complementos cuya probabilidad estimada de estar listos pronto sea menor al 60%.
+- La estimación de cocina usa historia de la sucursal, fase actual, tiempo transcurrido y coincidencias de cantidad/productos/franja cuando hay muestra suficiente. La falta de historia o una preparación fuera de todo el historial mantiene confianza baja y tiempo restante positivo hasta que cocina confirme Listo.
 - Los recálculos mantienen pedidos y orden de rutas aceptadas. Caja y administración conservan sus flujos autorizados, auditados y notificados.
 - Asignación y consolidación no prueban salida física. La salida se observa con GPS confiable de la jornada actual; los cierres administrativos no inventan regreso ni cumplimiento SLA.
 - Los puntos offline conservan evidencia histórica, pero nunca disparan autoentrega ni cambian relojes operativos de una jornada cerrada. La asociación a ruta exige tenant, sucursal, domiciliario e intervalo compatibles con la jornada.

@@ -1,5 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
+using SenorArroz.Application.Features.DeliveryRouting.Services;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
@@ -12,13 +16,18 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
     private readonly IApplicationDbContext _db;
     private readonly IGoogleRoutesDrivingMetricsService _googleRoutes;
     private readonly DeliveryRoutingOptions _options;
+    private readonly IMemoryCache? _cache;
+    private readonly ILogger<DeliverymanAvailabilityService>? _logger;
 
     public DeliverymanAvailabilityService(IApplicationDbContext db,
-        IGoogleRoutesDrivingMetricsService googleRoutes, IOptions<DeliveryRoutingOptions> options)
+        IGoogleRoutesDrivingMetricsService googleRoutes, IOptions<DeliveryRoutingOptions> options, IMemoryCache? cache = null,
+        ILogger<DeliverymanAvailabilityService>? logger = null)
     {
         _db = db;
         _googleRoutes = googleRoutes;
         _options = options.Value;
+        _cache = cache;
+        _logger = logger;
     }
 
     public async Task<DeliveryRoutingCapacity> GetCapacityAsync(int branchId, double branchLatitude,
@@ -55,7 +64,9 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
         var pending = await _db.Orders.AsNoTracking()
             .Where(o => o.BranchId == branchId && o.DeliveryManId.HasValue && courierIds.Contains(o.DeliveryManId.Value)
                 && o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled)
-            .Select(o => new { o.Id, Courier = o.DeliveryManId!.Value, o.DeliveryRouteId }).ToListAsync(ct);
+            .Select(o => new { o.Id, Courier = o.DeliveryManId!.Value, o.DeliveryRouteId,
+                Latitude = o.Address == null ? null : o.Address.Latitude,
+                Longitude = o.Address == null ? null : o.Address.Longitude }).ToListAsync(ct);
         var maximumAge = Math.Max(Math.Clamp(_options.ActiveGpsFreshnessSeconds, 30, 600),
             Math.Clamp(branch.DeliveryTrackingLightIntervalSeconds, 30, 900) * 2 + 30);
         var cutoff = nowUtc.AddSeconds(-maximumAge);
@@ -99,7 +110,30 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
                     confidence = fresh ? "confirmed" : "probable";
                     source = "gps";
                     if (assigned.Count > 0)
+                    {
                         state = fresh && inside && route?.DepartedAtUtc is null ? "loading" : "delivering";
+                        if (fresh && route is not null && assigned.All(o => o.Latitude.HasValue && o.Longitude.HasValue))
+                        {
+                            var previous = ((double)point.Latitude, (double)point.Longitude);
+                            var meters = 0d;
+                            foreach (var order in assigned.OrderBy(o => route.Stops.FirstOrDefault(s => s.OrderId == o.Id)?.StopSequence))
+                            {
+                                var destination = ((double)order.Latitude!.Value, (double)order.Longitude!.Value);
+                                meters += GeoHelper.HaversineDistanceMeters(previous.Item1, previous.Item2, destination.Item1, destination.Item2);
+                                previous = destination;
+                            }
+                            meters += GeoHelper.HaversineDistanceMeters(previous.Item1, previous.Item2, branchLatitude, branchLongitude);
+                            var travel = meters * Math.Clamp(_options.ApproximateRoadFactor, 1, 3)
+                                / (Math.Clamp(_options.ApproximateUrbanSpeedKph, 5, 60) / 3.6);
+                            var seconds = (int)Math.Ceiling(travel * 1.25 + age + assigned.Count * Math.Max(0, _options.ServiceSecondsPerOrder));
+                            availableAt = nowUtc.AddSeconds(seconds);
+                            confidence = "probable";
+                            source = "remainingTrip";
+                            if (seconds > 0 && seconds <= _options.SoonAvailableThresholdSeconds)
+                                slots.Add(new RoutingVehicleSlot(seconds) { DeliverymanId = id, WorkSessionId = session.Id,
+                                    CurrentRouteId = route.Id, AvailableAtUtc = availableAt, Confidence = confidence, Source = source });
+                        }
+                    }
                     else if (inside)
                     {
                         state = fresh ? "available" : "probableAtBranch";
@@ -121,8 +155,27 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
                         {
                             try
                             {
-                                var metrics = await _googleRoutes.ComputeRouteAsync(
-                                    [((double)point.Latitude, (double)point.Longitude), (branchLatitude, branchLongitude)], ct);
+                                var key = ("routing-return", branch.TenantId, branchId, session.Id, point.Id, branchLatitude, branchLongitude);
+                                if (_cache is null || !_cache.TryGetValue(key, out DrivingRouteMetrics metrics))
+                                {
+                                    var timer = Stopwatch.StartNew();
+                                    var failed = true;
+                                    try
+                                    {
+                                        metrics = await _googleRoutes.ComputeRouteAsync(
+                                            [((double)point.Latitude, (double)point.Longitude), (branchLatitude, branchLongitude)], ct);
+                                        failed = metrics.DurationSeconds <= 0;
+                                    }
+                                    finally
+                                    {
+                                        timer.Stop();
+                                        if (_logger is not null)
+                                            RoutingMeasurement.Observe(_logger, _options.Measurement, nowUtc,
+                                                branch.TenantId, branchId, "googleReturn", route.Id,
+                                                googleMs: timer.ElapsedMilliseconds, googleFailed: failed);
+                                    }
+                                    _cache?.Set(key, metrics, TimeSpan.FromSeconds(30));
+                                }
                                 if (metrics.DurationSeconds > 0) { duration = metrics.DurationSeconds; source = "google"; }
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException)

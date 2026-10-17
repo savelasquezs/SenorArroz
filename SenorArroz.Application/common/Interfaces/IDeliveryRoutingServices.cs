@@ -3,7 +3,11 @@ using SenorArroz.Domain.Enums;
 namespace SenorArroz.Application.Common.Interfaces;
 
 public sealed record RoutingNode(int OrderId, double Latitude, double Longitude,
-    DateTime PriorityAnchorUtc, DateTime EstimatedReadyAtUtc, bool IsReady, int ServiceSeconds);
+    DateTime PriorityAnchorUtc, DateTime EstimatedReadyAtUtc, bool IsReady, int ServiceSeconds)
+{
+    public DateTime? WaitDeadlineAtUtc { get; init; }
+    public double ReadyWithinWindowProbability { get; init; } = 1;
+}
 
 public sealed record RoutingVehicleSlot(int AvailableAtSeconds)
 {
@@ -40,7 +44,12 @@ public interface IDeliveryRouteOptimizer
     DeliveryRouteOptimizationResult Optimize(DeliveryRouteOptimizationRequest request);
 }
 
-public sealed record KitchenPreparationEstimate(DateTime EstimatedReadyAtUtc, string Confidence);
+public sealed record KitchenPreparationEstimate(DateTime EstimatedReadyAtUtc, string Confidence)
+{
+    public DateTime? ConservativeReadyAtUtc { get; init; }
+    public double ReadyWithinWindowProbability { get; init; } = 1;
+    public int SampleSize { get; init; }
+}
 public interface IKitchenPreparationEstimator
 {
     Task<IReadOnlyDictionary<int, KitchenPreparationEstimate>> EstimateAsync(int branchId,
