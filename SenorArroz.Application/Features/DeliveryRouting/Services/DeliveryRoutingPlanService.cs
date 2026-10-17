@@ -177,9 +177,11 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         var persisted = await LoadPlanEntityAsync(branchId, ct)
             ?? throw new InvalidOperationException("No fue posible cargar el plan generado.");
         if (transaction is not null) await transaction.CommitAsync(ct);
-        _logger.LogInformation("DeliveryRoutePlanGenerated BranchId={BranchId} PlanId={PlanId} Version={Version} Orders={Orders} Proposals={Proposals} Unrouted={Unrouted} SolverDurationMs={SolverDurationMs}",
+        _logger.LogInformation(
+            "DeliveryRoutePlanGenerated BranchId={BranchId} PlanId={PlanId} Version={Version} Orders={Orders} Proposals={Proposals} Unrouted={Unrouted} AvailableNow={AvailableNow} AvailableSoon={AvailableSoon} SolverDurationMs={SolverDurationMs} MatrixSource={MatrixSource}",
             branchId, persisted.Id, persisted.GenerationNumber, orders.Count, persisted.Proposals.Count,
-            persisted.Stops.Count(x => x.DeliveryRouteProposalId == null), persisted.SolverDurationMs);
+            persisted.Stops.Count(x => x.DeliveryRouteProposalId == null), capacity.AvailableNow,
+            capacity.AvailableSoon, persisted.SolverDurationMs, persisted.MatrixSource);
         try { await _notifications.NotifyDeliveryRoutingPlanChanged(branchId, persisted.Id, persisted.GenerationNumber); }
         catch (Exception ex) { _logger.LogWarning(ex, "Plan {PlanId} persisted; notification failed", persisted.Id); }
         var result = Map(persisted);
@@ -277,20 +279,25 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         try
         {
             var metrics = await _googleRoutes.ComputeRouteAsync(points, ct);
+            timer.Stop();
             if (metrics.DurationSeconds > 0 && metrics.DistanceMeters > 0)
             {
                 proposal.ValidatedDrivingDurationSeconds = Math.Max(0, metrics.DurationSeconds - metrics.ReturnDurationSeconds);
                 proposal.ValidatedDistanceMeters = Math.Max(0, metrics.DistanceMeters - metrics.ReturnDistanceMeters);
                 proposal.GoogleValidationStatus = GoogleRouteValidationStatus.Validated;
+                _logger.LogInformation("ComputeRoutesSuccess GoogleDurationMs={GoogleDurationMs} ValidatedRoutesCount=1",
+                    timer.ElapsedMilliseconds);
                 return;
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         { _logger.LogWarning(ex, "ComputeRoutes failed; retaining approximate route"); }
-        finally { measurement.GoogleMs += timer.ElapsedMilliseconds; }
+        finally { timer.Stop(); measurement.GoogleMs += timer.ElapsedMilliseconds; }
         measurement.GoogleFailures++;
         proposal.GoogleValidationStatus = GoogleRouteValidationStatus.Degraded;
         proposal.PlanningWarnings = "Google no pudo validar la ruta; se conservan las métricas aproximadas.";
+        _logger.LogWarning("ComputeRoutesFailures GoogleDurationMs={GoogleDurationMs} ValidatedRoutesCount=0",
+            timer.ElapsedMilliseconds);
     }
 
     private Task<DeliveryRoutingPlan?> LoadPlanEntityAsync(int branchId, CancellationToken ct) =>
