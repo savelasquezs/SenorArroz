@@ -449,6 +449,13 @@ Reglas:
 - El agente solo debe leer trabajos de su sucursal/tenant.
 - No cambiar payload de impresión sin revisar `senorArrozPrintAgent`.
 
+## Planificación de rutas
+
+- Una propuesta permite quitar, añadir pedidos listos y cambiar el orden únicamente antes de aceptarla. La aceptación confirma la selección en una transacción; el domiciliario no puede editar después la ruta aceptada.
+- Los recálculos mantienen pedidos y orden de rutas aceptadas. Caja y administración conservan sus flujos autorizados, auditados y notificados.
+- Asignación y consolidación no prueban salida física. La salida se observa con GPS confiable de la jornada actual; los cierres administrativos no inventan regreso ni cumplimiento SLA.
+- Los puntos offline conservan evidencia histórica, pero nunca disparan autoentrega ni cambian relojes operativos de una jornada cerrada. La asociación a ruta exige tenant, sucursal, domiciliario e intervalo compatibles con la jornada.
+
 ## Seguridad
 
 Reglas obligatorias:

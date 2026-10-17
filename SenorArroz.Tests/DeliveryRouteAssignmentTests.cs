@@ -67,7 +67,7 @@ public class DeliveryRouteAssignmentTests
     {
         await using var db = CreateDb();
         SeedTrip(db, OrderStatus.OnTheWay, Now.AddDays(-10));
-        db.DeliveryRoutes.Single().LastAssignmentAtUtc = Now;
+        db.DeliveryRoutes.Local.Single().LastAssignmentAtUtc = Now;
         db.Orders.Add(DeliveryOrder(11, 7));
         await db.SaveChangesAsync();
         await CreateService(db).OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 11));
@@ -100,7 +100,7 @@ public class DeliveryRouteAssignmentTests
     {
         await using var db = CreateDb();
         SeedTrip(db, OrderStatus.Delivered, Now.AddMinutes(-20));
-        db.DeliveryRoutes.Single().MetaDurationSeconds = 900;
+        db.DeliveryRoutes.Local.Single().MetaDurationSeconds = 900;
         db.Orders.Add(DeliveryOrder(11, 7));
         await db.SaveChangesAsync();
         await CreateService(db).OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 11));

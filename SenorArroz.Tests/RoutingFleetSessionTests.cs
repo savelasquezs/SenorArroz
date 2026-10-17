@@ -43,6 +43,17 @@ public sealed class RoutingFleetSessionTests
     }
 
     [Fact]
+    public async Task CourierWithoutActiveSessionIsOffDutyAndProducesNoCapacity()
+    {
+        await using var f = new Fixture();
+        f.Db.DeliveryWorkSessions.Local.Single().Status = DeliveryWorkSessionStatus.Closed;
+        await f.Db.SaveChangesAsync();
+        var result = await f.Capacity();
+        Assert.Empty(result.Slots);
+        Assert.Equal("offDuty", Assert.Single(result.Couriers).State);
+    }
+
+    [Fact]
     public async Task BadLatestFixCannotBeReplacedByAnOlderGoodPoint()
     {
         await using var f = new Fixture();
@@ -155,6 +166,26 @@ public sealed class RoutingFleetSessionTests
         Assert.Equal(firstOutside.RecordedAt, route.DepartedAtUtc);
         Assert.Equal("gps", route.DepartureSource);
         Assert.Single(f.Db.EntityAuditLogs.Where(e => e.OperationType == "departure_observed"));
+    }
+
+    [Theory]
+    [InlineData(null, -30, -20, true)]
+    [InlineData(10, -30, -20, true)]
+    [InlineData(11, -30, -20, false)]
+    [InlineData(null, -120, -20, false)]
+    [InlineData(10, -10, -20, false)]
+    public void HistoricalCaptureMustBelongToSessionAndTripInterval(int? sessionId,
+        int startedMinutes, int captureMinutes, bool expected)
+    {
+        var session = new DeliveryWorkSession { Id = 10, TenantId = 1, BranchId = 1,
+            DeliverymanId = 7, StartedAt = Now.AddHours(-1), AutoCloseAt = Now.AddHours(6),
+            EndedAt = Now.AddMinutes(-5), Status = DeliveryWorkSessionStatus.Closed };
+        var route = new DeliveryRoute { TenantId = 1, BranchId = 1, DeliverymanId = 7,
+            WorkSessionId = sessionId, LastAssignmentAtUtc = Now.AddMinutes(startedMinutes),
+            RouteStartedAtUtc = Now.AddMinutes(startedMinutes), CompletedAtUtc = Now.AddMinutes(-6) };
+        Assert.Equal(expected, DeliveryRouteScope.ContainsCapture(route, session, Now.AddMinutes(captureMinutes)));
+        route.TenantId = 2;
+        Assert.False(DeliveryRouteScope.ContainsCapture(route, session, Now.AddMinutes(captureMinutes)));
     }
 
     private sealed class Fixture : IAsyncDisposable

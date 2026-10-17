@@ -98,6 +98,12 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
             routeId = await DeliveryRouteScope.Current(_db, branchId, deliverymanId, now)
                 .AsNoTracking().Select(r => (int?)r.Id).FirstOrDefaultAsync(ct);
         }
+        else if (routeId.HasValue)
+        {
+            var capturedRoute = await _db.DeliveryRoutes.AsNoTracking().SingleAsync(r => r.Id == routeId, ct);
+            if (!DeliveryRouteScope.ContainsCapture(capturedRoute, session, recorded))
+                routeId = null;
+        }
         // Historical points keep their original association; never attach them to a new trip.
         var location = new DeliverymanLocation
         {

@@ -43,6 +43,18 @@ public static class DeliveryRouteScope
         && point.Latitude is >= -90 and <= 90 && point.Longitude is >= -180 and <= 180
         && !(point.Latitude == 0 && point.Longitude == 0);
 
+    public static bool ContainsCapture(DeliveryRoute route, DeliveryWorkSession session, DateTime capturedAt) =>
+        route.TenantId == session.TenantId && route.BranchId == session.BranchId
+        && route.DeliverymanId == session.DeliverymanId
+        && capturedAt >= session.StartedAt && capturedAt < session.AutoCloseAt
+        && (!session.EndedAt.HasValue || capturedAt < session.EndedAt.Value)
+        && (!route.CompletedAtUtc.HasValue || capturedAt <= route.CompletedAtUtc.Value)
+        && (route.WorkSessionId == session.Id
+            ? capturedAt >= (route.RouteStartedAtUtc ?? route.LastAssignmentAtUtc)
+            : route.WorkSessionId == null && route.LastAssignmentAtUtc >= session.StartedAt
+                && capturedAt >= (route.RouteStartedAtUtc ?? route.LastAssignmentAtUtc)
+                && (!route.RouteStartedAtUtc.HasValue || route.RouteStartedAtUtc >= session.StartedAt));
+
     public static double Distance(DeliverymanLocation point, Branch branch) =>
         GeoHelper.HaversineDistanceMeters((double)point.Latitude, (double)point.Longitude,
             (double)branch.Latitude!.Value, (double)branch.Longitude!.Value);

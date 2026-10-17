@@ -34,10 +34,16 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
                 && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled
                     && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier)))))
             .ToListAsync(ct);
-        if (sessions.Count == 0) return new DeliveryRoutingCapacity([], 0, 0, []);
+        var couriers = await _db.Users.AsNoTracking().Where(u => u.BranchId == branchId && u.Active
+            && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled
+                && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier))))
+            .Select(u => new { u.Id, u.Name }).ToListAsync(ct);
+        var offDuty = couriers.Where(u => sessions.All(s => s.DeliverymanId != u.Id))
+            .Select(u => new DeliveryCourierAvailability(u.Id, u.Name, 0, "offDuty", null, [], null, null,
+                "confirmed", "workSession")).ToList();
+        if (sessions.Count == 0) return new DeliveryRoutingCapacity([], 0, 0, []) { Couriers = offDuty };
         var courierIds = sessions.Select(s => s.DeliverymanId).ToArray();
-        var names = await _db.Users.AsNoTracking().Where(u => courierIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => u.Name, ct);
+        var names = couriers.ToDictionary(u => u.Id, u => u.Name);
         var sessionIds = sessions.Select(s => s.Id).ToArray();
         var earliestSession = sessions.Min(s => s.StartedAt);
         var routes = await _db.DeliveryRoutes.AsNoTracking().Include(r => r.Stops)
@@ -59,7 +65,7 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
             .OrderByDescending(p => p.RecordedAt).ThenByDescending(p => p.Id).ToListAsync(ct);
         var latest = points.GroupBy(p => p.WorkSessionId!.Value).ToDictionary(g => g.Key, g => g.First());
         var slots = new List<RoutingVehicleSlot>();
-        var fleet = new List<DeliveryCourierAvailability>();
+        var fleet = new List<DeliveryCourierAvailability>(offDuty);
         var warnings = new List<string>();
         foreach (var session in sessions.OrderBy(s => s.DeliverymanId))
         {

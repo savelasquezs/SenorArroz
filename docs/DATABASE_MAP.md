@@ -291,6 +291,7 @@ Notas:
 Notas:
 
 - `DeliveryRoutingPlan` conserva una versión incremental y solo admite un plan `active` por sucursal mediante índice parcial.
+- `DeliveryRoute.WorkSessionId` vincula la ruta mediante FK compuesta de tenant, jornada, domiciliario y sucursal. `DepartedAtUtc` y `DepartureSource` conservan salida física observada o confirmada sin reemplazar relojes históricos. El script aditivo `add_routing_operational_session.sql` está incluido en `../local-init-completo.sql`.
 - Las propuestas y sus paradas son snapshots operativos; el claim valida nuevamente estado, sucursal, asignación y versión dentro de una transacción serializable.
 - El esquema V1 se instala con `SenorArroz.Infrastructure/Scripts/add_delivery_routing_v1.sql` antes de desplegar el API que consulta estas tablas.
 - `Branch` configura la autoentrega GPS mediante activacion, radio de llegada, radio de salida y permanencia minima. Los valores iniciales son `true`, 50 m, 120 m y 15 s.

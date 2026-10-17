@@ -22,7 +22,9 @@ Migración aditiva `SenorArroz.Infrastructure/Scripts/add_routing_operational_se
 
 No se modifica RLS ni la política de tenant. La FK RESTRICT conserva jornadas referenciadas por historia de rutas. No se encontró consumidor que borre esas jornadas; la retención de puntos GPS es independiente.
 
-Esquema antes de aplicación: respaldar/verificar copia, aplicar SQL con lock_timeout=5s y statement_timeout=60s, comprobar columnas/FK/índices/RLS. Solo entonces merge/deploy. Revertir código conserva estas columnas compatibles; no borrar datos al revertir. No hay EF migration ni alteración de pedidos como parte del DDL. El nombre local-init-completo.sql está referenciado en documentación histórica pero no se encontró ese archivo en este repositorio; el script explícito y EnsureCreated de las pruebas son las rutas verificables.
+Esquema antes de aplicación: respaldar/verificar copia, aplicar SQL con lock_timeout=5s y statement_timeout=60s, comprobar columnas/FK/índices/RLS. Revertir código conserva estas columnas compatibles; no borrar datos al revertir. No hay EF migration ni alteración de pedidos como parte del DDL. El archivo `../local-init-completo.sql`, en la raíz del workspace, incluye el script puntual. En esta ejecución el trabajo es exclusivamente local.
+
+Los puntos históricos solo conservan la ruta enviada cuando coinciden tenant, sucursal, domiciliario, jornada e intervalo de captura. Una asociación inválida se descarta sin perder el punto y sin ejecutar autoentrega ni salida física.
 
 ## Salida y cierre
 
