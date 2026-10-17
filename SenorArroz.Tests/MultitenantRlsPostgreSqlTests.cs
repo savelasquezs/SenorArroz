@@ -1,5 +1,13 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Moq;
 using Npgsql;
+using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Printing;
+using SenorArroz.Application.Options;
+using SenorArroz.Domain.Enums;
+using SenorArroz.Infrastructure.Services;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Data;
 using Testcontainers.PostgreSql;
@@ -141,6 +149,89 @@ public sealed class MultitenantRlsPostgreSqlTests : IAsyncLifetime
         var indexDefinition = (string?)await new NpgsqlCommand(
             "SELECT indexdef FROM pg_indexes WHERE indexname = 'ux_storefront_checkout_idempotency_key'", admin).ExecuteScalarAsync();
         Assert.Contains("tenant_id", indexDefinition, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Print_agent_claims_by_SignalR_id_with_RLS_and_isolates_other_tenants()
+    {
+        const string token = "print-agent-integration-token";
+        const string salt = "print-test-salt";
+        long ownJobId;
+        long secondJobId;
+        long foreignJobId;
+        var adminOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(_adminConnectionString).Options;
+        var tenant = new TestTenantContext(1);
+
+        // Datos aislados por tenant, creados con el rol administrador de esta BD de pruebas.
+        await using (var setup = new ApplicationDbContext(
+            adminOptions, currentTenant: tenant, tenantExecutionContext: tenant))
+        {
+            using var systemScope = tenant.BeginSystemScope();
+            setup.BranchPrintSettings.Add(new BranchPrintSettings
+            {
+                BranchId = 101,
+                TenantId = 1,
+                AgentTokenHash = PrintAgentTokenCrypto.ComputeHash(salt, token),
+                AgentTokenSalt = salt,
+            });
+            var ownJob = new PrintJob
+            {
+                TenantId = 1, BranchId = 101, Kind = PrintJobKind.Kitchen,
+                Status = PrintJobStatus.Pending, OrderIdsJson = "[]", PayloadJson = "{}",
+            };
+            var secondJob = new PrintJob
+            {
+                TenantId = 1, BranchId = 101, Kind = PrintJobKind.Kitchen,
+                Status = PrintJobStatus.Pending, OrderIdsJson = "[]", PayloadJson = "{}",
+            };
+            var foreignJob = new PrintJob
+            {
+                TenantId = 2, BranchId = 202, Kind = PrintJobKind.Kitchen,
+                Status = PrintJobStatus.Pending, OrderIdsJson = "[]", PayloadJson = "{}",
+            };
+            setup.PrintJobs.AddRange(ownJob, secondJob, foreignJob);
+            await setup.SaveChangesAsync();
+            ownJobId = ownJob.Id;
+            secondJobId = secondJob.Id;
+            foreignJobId = foreignJob.Id;
+        }
+
+        // Igual que producción: rol sin BYPASSRLS e interceptores de conexión/comando.
+        var runtimeOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(_runtimeConnectionString)
+            .AddInterceptors(
+                new TenantDbConnectionInterceptor(tenant, tenant),
+                new TenantDbCommandInterceptor(tenant, tenant))
+            .Options;
+
+        await using var db = new ApplicationDbContext(
+            runtimeOptions, currentTenant: tenant, tenantExecutionContext: tenant);
+        var service = new PrintQueueService(
+            db, Options.Create(new ApiPublicOptions()), Options.Create(new BrandingOptions()),
+            Mock.Of<IClock>(), Mock.Of<IPrintAgentNotifier>(), tenant,
+            NullLogger<PrintQueueService>.Instance);
+
+        using var tenantScope = tenant.BeginTenantScope(1);
+        Assert.Null(await service.AuthenticateAgentAsync(101, "wrong-token"));
+        var authenticated = await service.AuthenticateAgentAsync(101, token);
+        Assert.NotNull(authenticated);
+        Assert.Equal(1, authenticated.TenantId);
+
+        // El claim directo abre la conexión con interceptor: antes se abría por Npgsql
+        // y RLS ocultaba la fila. Un segundo claim del mismo ID no debe duplicarse.
+        var claimed = await service.ClaimSpecificForAgentAsync(101, ownJobId);
+        Assert.NotNull(claimed);
+        Assert.Equal(ownJobId, claimed.Id);
+        Assert.Null(await service.ClaimSpecificForAgentAsync(101, ownJobId));
+        Assert.Null(await service.ClaimSpecificForAgentAsync(202, foreignJobId));
+
+        // El polling de respaldo conserva la búsqueda con SKIP LOCKED.
+        var pending = await service.ClaimPendingForAgentAsync(101, [PrintJobKind.Kitchen], 5);
+        Assert.Single(pending);
+        Assert.Equal(secondJobId, pending[0].Id);
+        Assert.Empty(await service.ClaimPendingForAgentAsync(101, [PrintJobKind.Kitchen], 5));
     }
 
     private static async Task SetContextAsync(NpgsqlConnection connection, string tenantId, string systemScope, NpgsqlTransaction? transaction = null)
