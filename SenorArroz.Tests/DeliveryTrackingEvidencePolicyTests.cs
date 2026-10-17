@@ -85,6 +85,22 @@ public class DeliveryTrackingEvidencePolicyTests
     }
 
     [Fact]
+    public void NinetySecondGapBetweenConsistentLocationsDoesNotSplitStay()
+    {
+        var points = Samples().Where((_, i) => i != 9 && i != 10).ToList();
+        var stay = Assert.Single(DeliveryStayDetectionService.Detect(points, 10, 20));
+        Assert.Equal(600, stay.DurationSeconds);
+        Assert.Equal(19, stay.PointCount);
+    }
+
+    [Fact]
+    public void LargeGapStillBreaksStayEvidence()
+    {
+        var points = Samples(32).Where((_, i) => i < 7 || i > 12).ToList();
+        Assert.Empty(DeliveryStayDetectionService.Detect(points, 10, 20));
+    }
+
+    [Fact]
     public void MissingCapturedPointsDoNotBecomeStationaryTime()
     {
         var points = new[] { Samples()[0], Samples()[1], Samples()[20] };

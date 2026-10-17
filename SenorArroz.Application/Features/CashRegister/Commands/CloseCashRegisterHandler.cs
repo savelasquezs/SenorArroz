@@ -23,6 +23,10 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
     private readonly IClock _clock;
     private readonly IUserRepository _userRepository;
     private readonly IEmailService _emailService;
+    private readonly IDeliveryStayDetectionService _stayDetection;
+    private readonly IDeliveryStayClassificationService _stayClassification;
+    private readonly IDeliveryIncidentEvidenceService _stayEvidence;
+    private readonly IDeliveryTrackingAlertService _trackingAlerts;
 
     public CloseCashRegisterHandler(
         ICashRegisterClosureRepository closureRepository,
@@ -31,7 +35,11 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         IMediator mediator,
         IClock clock,
         IUserRepository userRepository,
-        IEmailService emailService)
+        IEmailService emailService,
+        IDeliveryStayDetectionService stayDetection,
+        IDeliveryStayClassificationService stayClassification,
+        IDeliveryIncidentEvidenceService stayEvidence,
+        IDeliveryTrackingAlertService trackingAlerts)
     {
         _closureRepository = closureRepository;
         _context = context;
@@ -40,6 +48,10 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         _clock = clock;
         _userRepository = userRepository;
         _emailService = emailService;
+        _stayDetection = stayDetection;
+        _stayClassification = stayClassification;
+        _stayEvidence = stayEvidence;
+        _trackingAlerts = trackingAlerts;
     }
 
     public async Task<CashClosureDto> Handle(CloseCashRegisterCommand request, CancellationToken cancellationToken)
@@ -217,6 +229,13 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 .OrderBy(x => x.Title)
                 .ToList();
 
+            // Reconcile closed shifts with received GPS before taking the email snapshot.
+            // Active shifts never generate provisional stay alerts.
+            while (await _stayDetection.ProcessPendingSessionsAsync(cancellationToken, branchId) > 0) { }
+            while (await _stayClassification.ProcessPendingStaysAsync(cancellationToken) > 0) { }
+            while (await _stayEvidence.ProcessPendingStaysAsync(cancellationToken) > 0) { }
+            while (await _trackingAlerts.ProcessPendingStayAlertsAsync(cancellationToken) > 0) { }
+
             var trackingAlerts = await _context.DeliveryTrackingAlerts.AsNoTracking()
                 .Where(x => x.BranchId == branchId
                     && x.OccurredAt > periodStartUtc
@@ -247,6 +266,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                             EndedAt = x.RecoveredAt
                                 ?? (x.DurationSeconds.HasValue ? x.LastOccurredAt : null),
                             DurationSeconds = x.DurationSeconds,
+                            IsMinimumDuration = x.AlertType == DeliveryTrackingAlertType.UnexpectedStay,
                             Description = x.Message,
                             StartLatitude = x.StartLatitude,
                             StartLongitude = x.StartLongitude,

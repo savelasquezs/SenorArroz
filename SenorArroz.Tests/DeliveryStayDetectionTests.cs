@@ -59,7 +59,7 @@ public class DeliveryStayDetectionTests
     }
 
     [Fact]
-    public async Task ProcessPendingSessions_UpdatesOngoingStayWithoutDuplicatingIt()
+    public async Task ProcessPendingSessions_SkipsActiveAndReconcilesLateClosedPoints()
     {
         await using var db = CreateDb();
         db.Branches.Add(new Branch
@@ -125,9 +125,15 @@ public class DeliveryStayDetectionTests
             Location(102, 5, 20),
             Location(103, 10, 20));
         await db.SaveChangesAsync();
-        var clock = new FakeClock(BaseTime.AddMinutes(11));
+        var clock = new FakeClock(BaseTime.AddMinutes(20));
         var detector = new DeliveryStayDetectionService(db, clock);
 
+        Assert.Equal(0, await detector.ProcessPendingSessionsAsync());
+        Assert.Equal(0, await detector.ProcessSessionAsync(10));
+        Assert.Empty(db.DeliveryStays);
+
+        db.DeliveryWorkSessions.Single().Close(clock.UtcNow, DeliveryWorkSessionEndReason.UserChange);
+        await db.SaveChangesAsync();
         Assert.Equal(1, await detector.ProcessPendingSessionsAsync());
 
         var firstResult = Assert.Single(db.DeliveryStays);
@@ -141,7 +147,7 @@ public class DeliveryStayDetectionTests
 
         db.DeliverymanLocations.Add(Location(104, 15, 20));
         await db.SaveChangesAsync();
-        clock.UtcNow = BaseTime.AddMinutes(16);
+        clock.UtcNow = BaseTime.AddMinutes(21);
 
         Assert.Equal(1, await detector.ProcessPendingSessionsAsync());
 

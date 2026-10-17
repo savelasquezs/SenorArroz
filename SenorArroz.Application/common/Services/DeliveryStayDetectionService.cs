@@ -44,10 +44,12 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
         _clock = clock;
     }
 
-    public async Task<int> ProcessPendingSessionsAsync(CancellationToken cancellationToken = default)
+    public async Task<int> ProcessPendingSessionsAsync(CancellationToken cancellationToken = default, int? branchId = null)
     {
         var sessionIds = await _db.DeliveryWorkSessions.AsNoTracking()
-            .Where(session => _db.DeliverymanLocations.Any(location =>
+            .Where(session => session.Status == DeliveryWorkSessionStatus.Closed
+                && (!branchId.HasValue || session.BranchId == branchId.Value)
+                && _db.DeliverymanLocations.Any(location =>
                 location.WorkSessionId == session.Id
                 && (!session.StayAnalysisLastLocationId.HasValue
                     || location.Id > session.StayAnalysisLastLocationId.Value)))
@@ -69,7 +71,7 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
     {
         var session = await _db.DeliveryWorkSessions
             .FirstOrDefaultAsync(x => x.Id == workSessionId, cancellationToken);
-        if (session is null)
+        if (session is null || session.Status != DeliveryWorkSessionStatus.Closed)
             return 0;
 
         var branch = await _db.Branches.AsNoTracking()
@@ -211,7 +213,8 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
                 var previous = points[end - 1];
                 // The cadence of the preceding capture defines when the next was
                 // expected; a mode change cannot retroactively excuse a data gap.
-                var maxGap = TimeSpan.FromSeconds(Math.Max(1, previous.ExpectedIntervalSeconds) * 1.5);
+                // Tolerate a missed 30-second reading without merging long GPS outages.
+                var maxGap = TimeSpan.FromSeconds(Math.Max(90, Math.Max(1, previous.ExpectedIntervalSeconds) * 1.5));
                 if (point.DeliveryRouteId != previous.DeliveryRouteId
                     || point.RecordedAt - previous.RecordedAt > maxGap)
                     segmentStart = windowStart = end;
