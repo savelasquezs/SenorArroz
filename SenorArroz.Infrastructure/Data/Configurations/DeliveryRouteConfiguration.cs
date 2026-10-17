@@ -11,17 +11,22 @@ public class DeliveryRouteConfiguration : IEntityTypeConfiguration<DeliveryRoute
     public void Configure(EntityTypeBuilder<DeliveryRoute> builder)
     {
         builder.ToTable("delivery_route");
-
         builder.HasKey(e => e.Id);
         builder.Property(e => e.Id).HasColumnName("id");
-
         builder.Property(e => e.DeliverymanId).HasColumnName("deliveryman_id").IsRequired();
         builder.Property(e => e.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(e => e.Status).HasColumnName("status").HasConversion(
             v => ToSnakeCase(v.ToString()),
-            v => Enum.Parse<DeliveryRouteStatus>(ToPascalCase(v), true))
-            .IsRequired();
-
+            v => Enum.Parse<DeliveryRouteStatus>(ToPascalCase(v), true)).IsRequired();
+        builder.Property(e => e.WorkSessionId).HasColumnName("work_session_id");
+        builder.Property(e => e.DepartedAtUtc).HasColumnName("departed_at_utc");
+        builder.Property(e => e.DepartureSource).HasColumnName("departure_source").HasMaxLength(16);
+        builder.HasOne<DeliveryWorkSession>().WithMany()
+            .HasForeignKey(e => new { e.TenantId, e.WorkSessionId, e.DeliverymanId, e.BranchId })
+            .HasPrincipalKey(e => new { e.TenantId, e.Id, e.DeliverymanId, e.BranchId })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(e => new { e.TenantId, e.WorkSessionId, e.Status })
+            .HasDatabaseName("idx_delivery_route_session_status");
         builder.Property(e => e.LastAssignmentAtUtc).HasColumnName("last_assignment_at_utc");
         builder.Property(e => e.RouteStartedAtUtc).HasColumnName("route_started_at_utc");
         builder.Property(e => e.PlannedDistanceMeters).HasColumnName("planned_distance_meters");
@@ -37,45 +42,24 @@ public class DeliveryRouteConfiguration : IEntityTypeConfiguration<DeliveryRoute
         builder.Property(e => e.CompletedAtUtc).HasColumnName("completed_at_utc");
         builder.Property(e => e.ActualDurationSeconds).HasColumnName("actual_duration_seconds");
         builder.Property(e => e.MetSla).HasColumnName("met_sla");
-
         builder.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
         builder.Property(e => e.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAddOrUpdate()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
-
-        builder.HasOne(e => e.Deliveryman)
-            .WithMany()
-            .HasForeignKey(e => e.DeliverymanId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne(e => e.Branch)
-            .WithMany()
-            .HasForeignKey(e => e.BranchId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasIndex(e => new { e.DeliverymanId, e.BranchId, e.Status })
-            .HasDatabaseName("idx_delivery_route_dm_branch_status");
-
-        builder.HasMany(e => e.Stops)
-            .WithOne(s => s.DeliveryRoute)
-            .HasForeignKey(s => s.DeliveryRouteId)
-            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(e => e.Deliveryman).WithMany().HasForeignKey(e => e.DeliverymanId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(e => e.Branch).WithMany().HasForeignKey(e => e.BranchId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(e => new { e.DeliverymanId, e.BranchId, e.Status }).HasDatabaseName("idx_delivery_route_dm_branch_status");
+        builder.HasMany(e => e.Stops).WithOne(s => s.DeliveryRoute).HasForeignKey(s => s.DeliveryRouteId).OnDelete(DeleteBehavior.Cascade);
     }
 
     private static string ToSnakeCase(string input)
     {
-        if (string.IsNullOrEmpty(input))
-            return input;
-
+        if (string.IsNullOrEmpty(input)) return input;
         var result = new System.Text.StringBuilder();
         result.Append(char.ToLower(input[0]));
         for (int i = 1; i < input.Length; i++)
         {
-            if (char.IsUpper(input[i]))
-            {
-                result.Append('_');
-                result.Append(char.ToLower(input[i]));
-            }
+            if (char.IsUpper(input[i])) { result.Append('_'); result.Append(char.ToLower(input[i])); }
             else result.Append(input[i]);
         }
         return result.ToString();
@@ -83,20 +67,13 @@ public class DeliveryRouteConfiguration : IEntityTypeConfiguration<DeliveryRoute
 
     private static string ToPascalCase(string input)
     {
-        if (string.IsNullOrEmpty(input))
-            return input;
-
+        if (string.IsNullOrEmpty(input)) return input;
         var result = new System.Text.StringBuilder();
         bool capitalizeNext = true;
         foreach (char c in input)
         {
-            if (c == '_')
-                capitalizeNext = true;
-            else if (capitalizeNext)
-            {
-                result.Append(char.ToUpper(c));
-                capitalizeNext = false;
-            }
+            if (c == '_') capitalizeNext = true;
+            else if (capitalizeNext) { result.Append(char.ToUpper(c)); capitalizeNext = false; }
             else result.Append(c);
         }
         return result.ToString();
