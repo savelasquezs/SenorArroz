@@ -503,7 +503,7 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
-    public async Task Ready_transfer_can_reassign_one_bank_payment_without_recreating_money()
+    public async Task Pending_transfer_can_reassign_one_bank_payment_without_recreating_money()
     {
         await using var db = Db();
         var sourceBank = new Bank { BranchId = 2, Name = "Origen banco" };
