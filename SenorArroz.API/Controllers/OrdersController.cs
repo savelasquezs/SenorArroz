@@ -275,6 +275,23 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
+    /// Traslada un pedido aún no preparado a otra sucursal, conservando el número y el historial.
+    /// El backend valida productos, cobros, inventario y versión antes de modificarlo.
+    /// </summary>
+    [HttpPut("{id}/transfer-branch")]
+    [Authorize(Roles = "Superadmin")]
+    public async Task<ActionResult<OrderDto>> TransferOrderBranch(
+        int id, [FromBody] TransferOrderBranchDto transfer)
+    {
+        var result = await _mediator.Send(new TransferOrderBranchCommand
+        {
+            Id = id,
+            TargetBranchId = transfer.TargetBranchId
+        });
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Cambia el estado de un pedido
     /// </summary>
     [HttpPut("{id}/status")]
