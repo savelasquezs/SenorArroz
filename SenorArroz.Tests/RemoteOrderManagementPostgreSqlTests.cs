@@ -179,7 +179,7 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
 
         // Mimics the production order_detail DELETE -> order totals/version trigger.
         await db.Database.ExecuteSqlRawAsync("""
-            CREATE FUNCTION test_order_line_deleted_update_parent() RETURNS trigger LANGUAGE plpgsql AS $
+            CREATE FUNCTION test_order_line_deleted_update_parent() RETURNS trigger LANGUAGE plpgsql AS $body$
             BEGIN
                 UPDATE public."order" SET
                     subtotal = (SELECT COALESCE(SUM(subtotal), 0) FROM public.order_detail WHERE order_id = OLD.order_id),
@@ -187,7 +187,7 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
                       + COALESCE(delivery_fee, 0)
                 WHERE id = OLD.order_id;
                 RETURN OLD;
-            END $;
+            END $body$;
             CREATE TRIGGER test_order_line_deleted_update_parent
                 AFTER DELETE ON public.order_detail FOR EACH ROW
                 EXECUTE FUNCTION test_order_line_deleted_update_parent();
