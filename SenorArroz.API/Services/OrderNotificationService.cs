@@ -45,7 +45,7 @@ public class OrderNotificationService : IOrderNotificationService
         });
     }
 
-    public Task NotifyOrderTransferred(int orderId, int previousBranchId, int targetBranchId)
+    public Task NotifyOrderTransferred(int orderId, int previousBranchId, int targetBranchId, bool announceKitchen)
     {
         var groups = new[]
         {
@@ -54,7 +54,7 @@ public class OrderNotificationService : IOrderNotificationService
         };
         return _hubContext.Clients.Groups(groups).SendAsync("OrderTransferred", new
         {
-            orderId, previousBranchId, targetBranchId
+            orderId, previousBranchId, targetBranchId, announceKitchen
         });
     }
 
