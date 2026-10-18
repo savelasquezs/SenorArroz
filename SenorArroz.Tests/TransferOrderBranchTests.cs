@@ -107,6 +107,7 @@ public sealed class TransferOrderBranchTests
         Assert.Equal(777, detail.ProductId);
         Assert.Equal(93, payment.BankId);
         Assert.True(payment.IsVerified);
+        Assert.Empty(await db.KitchenVoiceEvents.AsNoTracking().Where(e => e.OrderId == 88).ToArrayAsync());
         notifications.Verify(n => n.NotifyOrderTransferred(88, 1, 2), Times.Once);
         notifications.Verify(n => n.NotifyNewOrderToKitchen(It.IsAny<OrderDto>()),
             status is OrderStatus.Taken or OrderStatus.InPreparation ? Times.Once() : Times.Never());
