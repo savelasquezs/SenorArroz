@@ -48,13 +48,9 @@ public sealed class TransferOrderBranchHandler(
         if (!targetExists)
             throw new BusinessException("La sucursal de destino no existe o está inactiva.");
 
-        // A durable kitchen event points to the branch that first heard the order.
-        // Invalidate that technical inbox so the new kitchen can receive a fresh
-        // alert when an active order is moved; order history is unaffected.
+        // Keep the technical voice inbox intact: the runtime DB role has no DELETE
+        // permission on it. The event stream filters out old-branch entries on read.
         var visibleToKitchen = KitchenOrderNotificationEligibility.IsVisibleToActiveKitchen(order, clock.UtcNow);
-        var events = await db.KitchenVoiceEvents.Where(e => e.OrderId == order.Id).ToListAsync(ct);
-        db.KitchenVoiceEvents.RemoveRange(events);
-
         order.BranchId = request.TargetBranchId;
         await db.SaveChangesAsync(ct);
 
@@ -63,11 +59,8 @@ public sealed class TransferOrderBranchHandler(
         var result = mapper.Map<OrderDto>(persisted);
 
         await OrderPostCommitNotifications.Publish(mutation,
-            () => notifications.NotifyOrderTransferred(order.Id, previousBranchId, request.TargetBranchId));
-
-        if (visibleToKitchen)
-            await OrderPostCommitNotifications.Publish(mutation,
-                () => notifications.NotifyNewOrderToKitchen(result));
+            () => notifications.NotifyOrderTransferred(order.Id, previousBranchId,
+                request.TargetBranchId, visibleToKitchen));
 
         return result;
     }
