@@ -7,4 +7,5 @@ public sealed class TransferOrderBranchCommand : IRequest<OrderDto>
 {
     public int Id { get; set; }
     public int TargetBranchId { get; set; }
+    public List<TransferOrderBankPaymentDto> BankPaymentChanges { get; set; } = [];
 }
