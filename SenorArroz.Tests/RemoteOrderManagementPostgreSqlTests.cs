@@ -397,6 +397,109 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
             EXECUTE FUNCTION test_order_line_deleted_update_parent();
         """);
 
+
+    private sealed record SuperadminActor : ICurrentUser
+    {
+        public int Id => 70;
+        public int TenantId => 1;
+        public int BranchId => 1;
+        public string Role => "Superadmin";
+        public bool IsAuthenticated => true;
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Paid_delivered_order_transfer_changes_only_dispatch_branch_and_preserves_consumed_inventory()
+    {
+        await using var db = Db();
+        var catalog = new ProductCategory { BranchId = 2, Name = "Menú" };
+        var expenseCategory = new ExpenseCategory { Name = "Insumos" };
+        var bank = new Bank { BranchId = 2, Name = "Banco origen" };
+        db.AddRange(catalog, expenseCategory, bank);
+        await db.SaveChangesAsync();
+
+        var product = new Product { CategoryId = catalog.Id, Name = "Arroz", Price = 30_000,
+            InventoryEnabled = true, InventoryControlMode = InventoryControlMode.Strict };
+        var expense = new Expense { CategoryId = expenseCategory.Id, Name = "Arroz crudo",
+            TracksInventory = true, InventoryActive = true };
+        db.AddRange(product, expense);
+        await db.SaveChangesAsync();
+        db.Add(new ProductExpenseRequirement { ProductId = product.Id, ExpenseId = expense.Id, BaseQuantity = 1 });
+        db.Add(new InventoryBalance { BranchId = 2, ExpenseId = expense.Id, QuantityOnHand = 10 });
+
+        var order = await db.Orders.SingleAsync(o => o.Id == 10);
+        order.OrderDetails = [new OrderDetail { ProductId = product.Id, Quantity = 1,
+            UnitPrice = 30_000, Subtotal = 30_000 }];
+        order.Subtotal = 30_000;
+        order.Total = 30_000;
+        db.BankPayments.Add(new BankPayment { OrderId = order.Id, BankId = bank.Id,
+            Amount = 30_000, IsVerified = true });
+        await db.SaveChangesAsync();
+        var inventory = new InventoryService(db, new Actor(), TestTenantContext.Default,
+            new Clock(), new TestBranchContext(1));
+        await inventory.SnapshotAndReserveAsync(order, false, "transfer:test:reserve", default);
+        await inventory.ConsumeOrderAsync(order, "transfer:test:consume", default);
+        order.Status = OrderStatus.Delivered;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var version = (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == 10)).ManagementVersion;
+        var allocationsBefore = await db.OrderInventoryAllocations.AsNoTracking()
+            .Where(a => a.OrderId == 10).Select(a => new { a.Id, a.ProductId,
+                a.ReservedQuantity, a.ConsumedQuantity }).ToArrayAsync();
+        var movementsBefore = await db.InventoryMovements.AsNoTracking()
+            .Where(m => m.OrderId == 10).Select(m => new { m.Id, m.BranchId,
+                m.ExpenseId, m.OnHandDelta, m.ReservedDelta }).ToArrayAsync();
+        var balanceBefore = await db.InventoryBalances.AsNoTracking()
+            .Where(b => b.BranchId == 2 && b.ExpenseId == expense.Id)
+            .Select(b => new { b.QuantityOnHand, b.QuantityReserved }).SingleAsync();
+
+        var actor = new SuperadminActor();
+        var branch = new TestBranchContext(1);
+        var mutation = new Snapshot(version);
+        var notifications = new Mock<IOrderNotificationService>();
+        notifications.Setup(n => n.NotifyOrderTransferred(10, 2, 1, false)).Returns(Task.CompletedTask);
+        notifications.Setup(n => n.NotifyOrderManagementChanged(
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<long>()))
+            .Returns(Task.CompletedTask);
+
+        var handler = new TransferOrderBranchHandler(db, new OrderRepository(db, new Clock()),
+            actor, branch, mutation, notifications.Object, Mapper(), new Clock());
+        var pipeline = new OrderMutationBehavior<TransferOrderBranchCommand, OrderDto>(
+            db, actor, branch, notifications.Object,
+            NullLogger<OrderMutationBehavior<TransferOrderBranchCommand, OrderDto>>.Instance,
+            mutation, new Clock());
+        var transfer = new TransferOrderBranchCommand { Id = 10, TargetBranchId = 1 };
+        var result = await pipeline.Handle(transfer, ct => handler.Handle(transfer, ct), default);
+        Assert.Equal(1, result.BranchId);
+        Assert.Null(db.Database.CurrentTransaction);
+
+        await using var check = Db();
+        var saved = await check.Orders.AsNoTracking().SingleAsync(o => o.Id == 10);
+        var payment = await check.BankPayments.Include(p => p.Bank)
+            .AsNoTracking().SingleAsync(p => p.OrderId == 10);
+        var line = await check.OrderDetails.AsNoTracking().SingleAsync(d => d.OrderId == 10);
+        Assert.Equal(1, saved.BranchId);
+        Assert.Equal(1, saved.OriginBranchId);
+        Assert.Equal(OrderStatus.Delivered, saved.Status);
+        Assert.Equal(30_000, saved.Total);
+        Assert.True(saved.ManagementVersion > version);
+        Assert.Equal(bank.Id, payment.BankId);
+        Assert.Equal(2, payment.Bank.BranchId);
+        Assert.True(payment.IsVerified);
+        Assert.Equal(product.Id, line.ProductId);
+        Assert.Equal(allocationsBefore, await check.OrderInventoryAllocations.AsNoTracking()
+            .Where(a => a.OrderId == 10).Select(a => new { a.Id, a.ProductId,
+                a.ReservedQuantity, a.ConsumedQuantity }).ToArrayAsync());
+        Assert.Equal(movementsBefore, await check.InventoryMovements.AsNoTracking()
+            .Where(m => m.OrderId == 10).Select(m => new { m.Id, m.BranchId,
+                m.ExpenseId, m.OnHandDelta, m.ReservedDelta }).ToArrayAsync());
+        Assert.Equal(balanceBefore, await check.InventoryBalances.AsNoTracking()
+            .Where(b => b.BranchId == 2 && b.ExpenseId == expense.Id)
+            .Select(b => new { b.QuantityOnHand, b.QuantityReserved }).SingleAsync());
+        Assert.Single(await check.EntityAuditLogs.Where(a => a.EntityType == "order_management").ToArrayAsync());
+    }
+
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
     public async Task Direct_SQL_updates_increment_version_and_cannot_rewrite_provenance()

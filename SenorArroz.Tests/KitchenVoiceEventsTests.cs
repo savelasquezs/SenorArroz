@@ -6,6 +6,7 @@ using Moq;
 using SenorArroz.API.Controllers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Infrastructure.Data;
 
@@ -30,6 +31,13 @@ public sealed class KitchenVoiceEventsTests
 
         using (tenant.BeginSystemScope())
         {
+            db.Orders.AddRange(
+                new Order { Id = 1, TenantId = 1, BranchId = 101, TakenById = 1, Type = OrderType.Onsite },
+                new Order { Id = 2, TenantId = 1, BranchId = 202, TakenById = 1, Type = OrderType.Onsite },
+                new Order { Id = 3, TenantId = 2, BranchId = 101, TakenById = 1, Type = OrderType.Onsite },
+                new Order { Id = 4, TenantId = 1, BranchId = 101, TakenById = 1, Type = OrderType.Onsite },
+                // Already transferred: old branch has a stored event that must not replay.
+                new Order { Id = 5, TenantId = 1, BranchId = 202, TakenById = 1, Type = OrderType.Onsite });
             db.KitchenVoiceEvents.AddRange(
                 new KitchenVoiceEvent { TenantId = 1, BranchId = 101, OrderId = 1, Kind = "new",
                     CreatedAt = clock.UtcNow.AddSeconds(-15) },
@@ -38,7 +46,9 @@ public sealed class KitchenVoiceEventsTests
                 new KitchenVoiceEvent { TenantId = 2, BranchId = 101, OrderId = 3, Kind = "new",
                     CreatedAt = clock.UtcNow.AddSeconds(-5) },
                 new KitchenVoiceEvent { TenantId = 1, BranchId = 101, OrderId = 4, Kind = "reservation",
-                    CreatedAt = clock.UtcNow.AddHours(-3) });
+                    CreatedAt = clock.UtcNow.AddHours(-3) },
+                new KitchenVoiceEvent { TenantId = 1, BranchId = 101, OrderId = 5, Kind = "new",
+                    CreatedAt = clock.UtcNow.AddSeconds(-3) });
             await db.SaveChangesAsync();
         }
 
