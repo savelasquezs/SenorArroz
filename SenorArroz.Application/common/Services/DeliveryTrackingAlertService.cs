@@ -54,10 +54,10 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
     }
 
     // Called before cash closure email; only reconcile completed stays.
-    public async Task<int> ProcessPendingStayAlertsAsync(CancellationToken cancellationToken = default)
+    public async Task<int> ProcessPendingStayAlertsAsync(CancellationToken cancellationToken = default, int? branchId = null, DateTime? endedSinceUtc = null)
     {
         var changes = await ProcessReviewableStaysAsync(
-            ColombiaTimeHelper.EnsureUtc(_clock.UtcNow), cancellationToken);
+            ColombiaTimeHelper.EnsureUtc(_clock.UtcNow), cancellationToken, branchId, endedSinceUtc);
         if (changes > 0)
             await _db.SaveChangesAsync(cancellationToken);
         return changes;
@@ -850,10 +850,13 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         SyncedAt = source.SyncedAt,
     };
 
-    private async Task<int> ProcessReviewableStaysAsync(DateTime nowUtc, CancellationToken cancellationToken)
+    private async Task<int> ProcessReviewableStaysAsync(DateTime nowUtc, CancellationToken cancellationToken, int? branchId = null, DateTime? endedSinceUtc = null)
     {
         var incidents = await _db.DeliveryTrackingIncidents.AsNoTracking()
             .Where(incident => incident.IncidentType == DeliveryTrackingIncidentType.Stay
+                && (!branchId.HasValue || incident.BranchId == branchId.Value)
+                && (!endedSinceUtc.HasValue || _db.DeliveryWorkSessions.Any(session =>
+                    session.Id == incident.WorkSessionId && session.EndedAt >= endedSinceUtc.Value))
                 && incident.EvidenceComplete
                 && _db.DeliveryWorkSessions.Any(session => session.Id == incident.WorkSessionId
                     && session.Status == DeliveryWorkSessionStatus.Closed)
@@ -905,6 +908,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         var revised = await (from alert in _db.DeliveryTrackingAlerts
             join incident in _db.DeliveryTrackingIncidents on alert.IncidentId equals incident.Id
             where alert.AlertType == DeliveryTrackingAlertType.UnexpectedStay
+                && (!branchId.HasValue || incident.BranchId == branchId.Value)
+                && (!endedSinceUtc.HasValue || _db.DeliveryWorkSessions.Any(session =>
+                    session.Id == incident.WorkSessionId && session.EndedAt >= endedSinceUtc.Value))
                 && incident.UpdatedAt > alert.UpdatedAt
             select new { Alert = alert, Incident = incident }).Take(BatchSize).ToListAsync(cancellationToken);
         foreach (var item in revised)
@@ -934,6 +940,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             join incident in _db.DeliveryTrackingIncidents on alert.IncidentId equals incident.Id
             where alert.Status == DeliveryTrackingAlertStatus.Active
                 && alert.AlertType == DeliveryTrackingAlertType.UnexpectedStay
+                && (!branchId.HasValue || incident.BranchId == branchId.Value)
+                && (!endedSinceUtc.HasValue || _db.DeliveryWorkSessions.Any(session =>
+                    session.Id == incident.WorkSessionId && session.EndedAt >= endedSinceUtc.Value))
                 && incident.ReviewStatus != DeliveryIncidentReviewStatus.Pending
             select alert)
             .ToListAsync(cancellationToken);

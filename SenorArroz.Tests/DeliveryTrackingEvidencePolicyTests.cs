@@ -94,6 +94,15 @@ public class DeliveryTrackingEvidencePolicyTests
     }
 
     [Fact]
+    public void RouteChangeDoesNotSplitAPhysicalStay()
+    {
+        var points = Samples(61).Select((point, i) =>
+            i >= 18 ? point with { DeliveryRouteId = 21 } : point).ToList();
+        var stay = Assert.Single(DeliveryStayDetectionService.Detect(points, 10, 20));
+        Assert.Equal(1800, stay.DurationSeconds);
+    }
+
+    [Fact]
     public void LargeGapStillBreaksStayEvidence()
     {
         var points = Samples(32).Where((_, i) => i < 7 || i > 12).ToList();

@@ -17,11 +17,17 @@ public class DeliveryStayClassificationService : IDeliveryStayClassificationServ
         _clock = clock;
     }
 
-    public async Task<int> ProcessPendingStaysAsync(CancellationToken cancellationToken = default)
+    public async Task<int> ProcessPendingStaysAsync(CancellationToken cancellationToken = default, int? branchId = null, DateTime? endedSinceUtc = null)
     {
-        var stays = await _db.DeliveryStays
-            .Where(x => !x.ClassifiedAt.HasValue || x.ClassifiedAt < x.UpdatedAt)
-            .OrderBy(x => x.StartedAt)
+        var pending = _db.DeliveryStays
+            .Where(x => !x.ClassifiedAt.HasValue || x.ClassifiedAt < x.UpdatedAt);
+        if (branchId.HasValue)
+            pending = pending.Where(x => _db.DeliveryWorkSessions.Any(session =>
+                session.Id == x.WorkSessionId && session.BranchId == branchId.Value));
+        if (endedSinceUtc.HasValue)
+            pending = pending.Where(x => _db.DeliveryWorkSessions.Any(session =>
+                session.Id == x.WorkSessionId && session.EndedAt >= endedSinceUtc.Value));
+        var stays = await pending.OrderBy(x => x.StartedAt)
             .Take(PendingBatchSize)
             .ToListAsync(cancellationToken);
         if (stays.Count == 0)

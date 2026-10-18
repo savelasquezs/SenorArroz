@@ -134,7 +134,9 @@ public class DeliveryStayDetectionTests
 
         db.DeliveryWorkSessions.Single().Close(clock.UtcNow, DeliveryWorkSessionEndReason.UserChange);
         await db.SaveChangesAsync();
-        Assert.Equal(1, await detector.ProcessPendingSessionsAsync());
+        Assert.Equal(0, await detector.ProcessPendingSessionsAsync(branchId: 8));
+        Assert.Equal(0, await detector.ProcessPendingSessionsAsync(endedSinceUtc: BaseTime.AddMinutes(21)));
+        Assert.Equal(1, await detector.ProcessPendingSessionsAsync(branchId: 7, endedSinceUtc: BaseTime.AddMinutes(15)));
 
         var firstResult = Assert.Single(db.DeliveryStays);
         Assert.Equal(3, firstResult.PointCount);

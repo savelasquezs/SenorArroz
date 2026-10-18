@@ -158,9 +158,23 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 .ToList()
         };
 
+        var auditBusinessDate = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(closure.ClosedAt);
+        if (!await _context.DailyAuditDispatches.AsNoTracking().AnyAsync(x =>
+                x.BranchId == branchId && x.BusinessDate == auditBusinessDate.Date, cancellationToken))
+        {
+            // Preserve financial transaction time: reconcile only this branch's closed
+            // shifts for the period and persist evidence independently of cash closure.
+            var fromUtc = lastClosure is not null && lastClosure.ClosedAt < closure.ClosedAt
+                ? lastClosure.ClosedAt
+                : ColombiaTimeHelper.ColombiaCalendarDayStartUtc(auditBusinessDate);
+            while (await _stayDetection.ProcessPendingSessionsAsync(cancellationToken, branchId, fromUtc) > 0) { }
+            while (await _stayClassification.ProcessPendingStaysAsync(cancellationToken, branchId, fromUtc) > 0) { }
+            while (await _stayEvidence.ProcessPendingStaysAsync(cancellationToken, branchId, fromUtc) > 0) { }
+            while (await _trackingAlerts.ProcessPendingStayAlertsAsync(cancellationToken, branchId, fromUtc) > 0) { }
+        }
+
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
         var saved = await _closureRepository.CreateAsync(closure, cancellationToken);
-        var auditBusinessDate = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(saved.ClosedAt);
         var existingDispatch = await _context.DailyAuditDispatches
             .FirstOrDefaultAsync(x => x.BranchId == branchId && x.BusinessDate == auditBusinessDate.Date, cancellationToken);
 
@@ -228,13 +242,6 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 })
                 .OrderBy(x => x.Title)
                 .ToList();
-
-            // Reconcile closed shifts with received GPS before taking the email snapshot.
-            // Active shifts never generate provisional stay alerts.
-            while (await _stayDetection.ProcessPendingSessionsAsync(cancellationToken, branchId) > 0) { }
-            while (await _stayClassification.ProcessPendingStaysAsync(cancellationToken) > 0) { }
-            while (await _stayEvidence.ProcessPendingStaysAsync(cancellationToken) > 0) { }
-            while (await _trackingAlerts.ProcessPendingStayAlertsAsync(cancellationToken) > 0) { }
 
             var trackingAlerts = await _context.DeliveryTrackingAlerts.AsNoTracking()
                 .Where(x => x.BranchId == branchId
