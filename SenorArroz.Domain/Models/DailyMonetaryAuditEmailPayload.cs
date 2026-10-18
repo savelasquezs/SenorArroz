@@ -26,6 +26,7 @@ public class DailyTrackingAlertEmailDetail
     public DateTime OccurredAt { get; set; }
     public DateTime? EndedAt { get; set; }
     public int? DurationSeconds { get; set; }
+    public bool IsMinimumDuration { get; set; }
     public string Description { get; set; } = string.Empty;
     public decimal? StartLatitude { get; set; }
     public decimal? StartLongitude { get; set; }

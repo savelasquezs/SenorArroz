@@ -144,6 +144,7 @@ public class EmailService : IEmailService
 <h2 style='margin:24px 0 12px;color:#171717;'>Auditoría monetaria</h2>
 {emptyState}
 <h2 style='margin:24px 0 12px;color:#171717;'>Alertas de seguimiento de domiciliarios</h2>
+<p style='color:#525252;'>Las permanencias reflejan el intervalo mínimo entre coordenadas fiables de jornadas cerradas. GPS recibido más tarde puede corregir estos registros.</p>
 {trackingSection}";
         var body = BuildBrandedEmail("Auditoría diaria", "Operación monetaria y seguimiento de domiciliarios", content);
 
@@ -251,11 +252,15 @@ public class EmailService : IEmailService
             var endedAt = detail.EndedAt.HasValue
                 ? ColombiaTimeHelper.GetNowInColombiaFromUtc(detail.EndedAt.Value)
                 : (DateTime?)null;
-            var timeSummary = endedAt.HasValue
-                ? $"Inicio: {occurredAt:dd/MM/yyyy HH:mm:ss} · Fin: {endedAt:dd/MM/yyyy HH:mm:ss}"
-                : $"Inicio: {occurredAt:dd/MM/yyyy HH:mm:ss} · Sin recuperación registrada";
+            var timeSummary = detail.IsMinimumDuration && endedAt.HasValue
+                ? $"Primera lectura: {occurredAt:dd/MM/yyyy HH:mm:ss} · Última lectura: {endedAt:dd/MM/yyyy HH:mm:ss}"
+                : endedAt.HasValue
+                    ? $"Inicio: {occurredAt:dd/MM/yyyy HH:mm:ss} · Fin: {endedAt:dd/MM/yyyy HH:mm:ss}"
+                    : $"Inicio: {occurredAt:dd/MM/yyyy HH:mm:ss} · Sin recuperación registrada";
             var duration = detail.DurationSeconds.HasValue
-                ? $" · Duración: {FormatDuration(detail.DurationSeconds.Value)}"
+                ? detail.IsMinimumDuration
+                    ? $" · Permanencia: al menos {FormatDuration(detail.DurationSeconds.Value)}"
+                    : $" · Duración: {FormatDuration(detail.DurationSeconds.Value)}"
                 : string.Empty;
             var locations = string.Join(" · ", new[]
             {

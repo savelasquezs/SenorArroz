@@ -23,6 +23,10 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
     private readonly IClock _clock;
     private readonly IUserRepository _userRepository;
     private readonly IEmailService _emailService;
+    private readonly IDeliveryStayDetectionService _stayDetection;
+    private readonly IDeliveryStayClassificationService _stayClassification;
+    private readonly IDeliveryIncidentEvidenceService _stayEvidence;
+    private readonly IDeliveryTrackingAlertService _trackingAlerts;
 
     public CloseCashRegisterHandler(
         ICashRegisterClosureRepository closureRepository,
@@ -31,7 +35,11 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         IMediator mediator,
         IClock clock,
         IUserRepository userRepository,
-        IEmailService emailService)
+        IEmailService emailService,
+        IDeliveryStayDetectionService stayDetection,
+        IDeliveryStayClassificationService stayClassification,
+        IDeliveryIncidentEvidenceService stayEvidence,
+        IDeliveryTrackingAlertService trackingAlerts)
     {
         _closureRepository = closureRepository;
         _context = context;
@@ -40,6 +48,10 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
         _clock = clock;
         _userRepository = userRepository;
         _emailService = emailService;
+        _stayDetection = stayDetection;
+        _stayClassification = stayClassification;
+        _stayEvidence = stayEvidence;
+        _trackingAlerts = trackingAlerts;
     }
 
     public async Task<CashClosureDto> Handle(CloseCashRegisterCommand request, CancellationToken cancellationToken)
@@ -146,9 +158,23 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                 .ToList()
         };
 
+        var auditBusinessDate = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(closure.ClosedAt);
+        if (!await _context.DailyAuditDispatches.AsNoTracking().AnyAsync(x =>
+                x.BranchId == branchId && x.BusinessDate == auditBusinessDate.Date, cancellationToken))
+        {
+            // Preserve financial transaction time: reconcile only this branch's closed
+            // shifts for the period and persist evidence independently of cash closure.
+            var fromUtc = lastClosure is not null && lastClosure.ClosedAt < closure.ClosedAt
+                ? lastClosure.ClosedAt
+                : ColombiaTimeHelper.ColombiaCalendarDayStartUtc(auditBusinessDate);
+            while (await _stayDetection.ProcessPendingSessionsAsync(cancellationToken, branchId, fromUtc) > 0) { }
+            while (await _stayClassification.ProcessPendingStaysAsync(cancellationToken, branchId, fromUtc) > 0) { }
+            while (await _stayEvidence.ProcessPendingStaysAsync(cancellationToken, branchId, fromUtc) > 0) { }
+            while (await _trackingAlerts.ProcessPendingStayAlertsAsync(cancellationToken, branchId, fromUtc) > 0) { }
+        }
+
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
         var saved = await _closureRepository.CreateAsync(closure, cancellationToken);
-        var auditBusinessDate = ColombiaTimeHelper.ConvertUtcToColombiaCalendarDate(saved.ClosedAt);
         var existingDispatch = await _context.DailyAuditDispatches
             .FirstOrDefaultAsync(x => x.BranchId == branchId && x.BusinessDate == auditBusinessDate.Date, cancellationToken);
 
@@ -219,8 +245,11 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
 
             var trackingAlerts = await _context.DeliveryTrackingAlerts.AsNoTracking()
                 .Where(x => x.BranchId == branchId
-                    && x.OccurredAt > periodStartUtc
-                    && x.OccurredAt <= saved.ClosedAt
+                    // A stay spanning cash closings belongs to the period in which
+                    // its last supported GPS reading occurred, not when it began.
+                    && (x.AlertType == DeliveryTrackingAlertType.UnexpectedStay
+                        ? x.LastOccurredAt > periodStartUtc && x.LastOccurredAt <= saved.ClosedAt
+                        : x.OccurredAt > periodStartUtc && x.OccurredAt <= saved.ClosedAt)
                     && CashClosureAuditMapper.IncludedTrackingAlertTypes.Contains(x.AlertType)
                     && (x.AlertType != DeliveryTrackingAlertType.NoCommunication
                         || x.Severity == DeliveryTrackingAlertSeverity.RequiresReview))
@@ -247,6 +276,7 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
                             EndedAt = x.RecoveredAt
                                 ?? (x.DurationSeconds.HasValue ? x.LastOccurredAt : null),
                             DurationSeconds = x.DurationSeconds,
+                            IsMinimumDuration = x.AlertType == DeliveryTrackingAlertType.UnexpectedStay,
                             Description = x.Message,
                             StartLatitude = x.StartLatitude,
                             StartLongitude = x.StartLongitude,

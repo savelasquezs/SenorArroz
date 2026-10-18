@@ -44,10 +44,13 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
         _clock = clock;
     }
 
-    public async Task<int> ProcessPendingSessionsAsync(CancellationToken cancellationToken = default)
+    public async Task<int> ProcessPendingSessionsAsync(CancellationToken cancellationToken = default, int? branchId = null, DateTime? endedSinceUtc = null)
     {
         var sessionIds = await _db.DeliveryWorkSessions.AsNoTracking()
-            .Where(session => _db.DeliverymanLocations.Any(location =>
+            .Where(session => session.Status == DeliveryWorkSessionStatus.Closed
+                && (!branchId.HasValue || session.BranchId == branchId.Value)
+                && (!endedSinceUtc.HasValue || session.EndedAt >= endedSinceUtc.Value)
+                && _db.DeliverymanLocations.Any(location =>
                 location.WorkSessionId == session.Id
                 && (!session.StayAnalysisLastLocationId.HasValue
                     || location.Id > session.StayAnalysisLastLocationId.Value)))
@@ -69,7 +72,7 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
     {
         var session = await _db.DeliveryWorkSessions
             .FirstOrDefaultAsync(x => x.Id == workSessionId, cancellationToken);
-        if (session is null)
+        if (session is null || session.Status != DeliveryWorkSessionStatus.Closed)
             return 0;
 
         var branch = await _db.Branches.AsNoTracking()
@@ -147,7 +150,10 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
                            !matchedIds.Contains(x.Id) && x.FirstLocationId == candidate.FirstLocationId)
                        ?? existing
                            .Where(x => !matchedIds.Contains(x.Id)
-                                       && x.DeliveryRouteId == candidate.DeliveryRouteId
+                                       && GeoHelper.HaversineDistanceMeters(
+                                           (double)x.CenterLatitude, (double)x.CenterLongitude,
+                                           (double)candidate.CenterLatitude, (double)candidate.CenterLongitude)
+                                           <= DeliveryTrackingEvidencePolicy.StayRadiusMeters
                                        && x.StartedAt <= candidate.EndedAt
                                        && x.EndedAt >= candidate.StartedAt)
                            .OrderBy(x => Math.Abs((x.StartedAt - candidate.StartedAt).TotalSeconds))
@@ -211,9 +217,9 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
                 var previous = points[end - 1];
                 // The cadence of the preceding capture defines when the next was
                 // expected; a mode change cannot retroactively excuse a data gap.
-                var maxGap = TimeSpan.FromSeconds(Math.Max(1, previous.ExpectedIntervalSeconds) * 1.5);
-                if (point.DeliveryRouteId != previous.DeliveryRouteId
-                    || point.RecordedAt - previous.RecordedAt > maxGap)
+                // Tolerate a missed 30-second reading without merging long GPS outages.
+                var maxGap = TimeSpan.FromSeconds(Math.Max(90, Math.Max(1, previous.ExpectedIntervalSeconds) * 1.5));
+                if (point.RecordedAt - previous.RecordedAt > maxGap)
                     segmentStart = windowStart = end;
             }
             if (windowStart > end) continue;
@@ -223,8 +229,10 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
             var sample = points.GetRange(windowStart, end - windowStart + 1);
             var stay = Evaluate(sample, threshold, radiusMeters);
             if (stay is null) continue;
-            if (result.Count > 0 && result[^1].DeliveryRouteId == stay.DeliveryRouteId
-                && result[^1].EndedAt >= stay.StartedAt)
+            if (result.Count > 0 && result[^1].EndedAt >= stay.StartedAt
+                && GeoHelper.HaversineDistanceMeters(
+                    (double)result[^1].CenterLatitude, (double)result[^1].CenterLongitude,
+                    (double)stay.CenterLatitude, (double)stay.CenterLongitude) <= radiusMeters)
             {
                 var previous = result[^1];
                 var combined = points.Skip(segmentStart).Take(end - segmentStart + 1)

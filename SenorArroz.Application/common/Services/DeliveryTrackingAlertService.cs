@@ -53,6 +53,16 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         return changes + incidentChanges;
     }
 
+    // Called before cash closure email; only reconcile completed stays.
+    public async Task<int> ProcessPendingStayAlertsAsync(CancellationToken cancellationToken = default, int? branchId = null, DateTime? endedSinceUtc = null)
+    {
+        var changes = await ProcessReviewableStaysAsync(
+            ColombiaTimeHelper.EnsureUtc(_clock.UtcNow), cancellationToken, branchId, endedSinceUtc);
+        if (changes > 0)
+            await _db.SaveChangesAsync(cancellationToken);
+        return changes;
+    }
+
     private void AddAlert(DeliveryTrackingAlert alert)
     {
         _db.DeliveryTrackingAlerts.Add(alert);
@@ -62,6 +72,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
     private void QueueReviewNotification(DeliveryTrackingAlert alert)
     {
         if (alert.Status != DeliveryTrackingAlertStatus.Active
+            || alert.AlertType == DeliveryTrackingAlertType.UnexpectedStay // reported after the shift, no push
             || !DeliveryTrackingReviewPolicy.Includes(alert.AlertType)
             || alert.Severity == DeliveryTrackingAlertSeverity.Informational
             || (alert.AlertType == DeliveryTrackingAlertType.NoCommunication
@@ -839,10 +850,16 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         SyncedAt = source.SyncedAt,
     };
 
-    private async Task<int> ProcessReviewableStaysAsync(DateTime nowUtc, CancellationToken cancellationToken)
+    private async Task<int> ProcessReviewableStaysAsync(DateTime nowUtc, CancellationToken cancellationToken, int? branchId = null, DateTime? endedSinceUtc = null)
     {
         var incidents = await _db.DeliveryTrackingIncidents.AsNoTracking()
             .Where(incident => incident.IncidentType == DeliveryTrackingIncidentType.Stay
+                && (!branchId.HasValue || incident.BranchId == branchId.Value)
+                && (!endedSinceUtc.HasValue || _db.DeliveryWorkSessions.Any(session =>
+                    session.Id == incident.WorkSessionId && session.EndedAt >= endedSinceUtc.Value))
+                && incident.EvidenceComplete
+                && _db.DeliveryWorkSessions.Any(session => session.Id == incident.WorkSessionId
+                    && session.Status == DeliveryWorkSessionStatus.Closed)
                 && (incident.StayClassification == DeliveryStayClassification.PendingReview
                     || incident.StayClassification == DeliveryStayClassification.UnexpectedPlace)
                 && !_db.DeliveryTrackingAlerts.Any(alert => alert.IncidentId == incident.Id))
@@ -869,9 +886,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
                     ? "Permanencia pendiente de revisión"
                     : "Permanencia en lugar no esperado",
                 Message = incident.StayClassification == DeliveryStayClassification.PendingReview
-                    ? $"Permaneció {FormatDuration(incident.DurationSeconds)} en un lugar que requiere " +
+                    ? $"Permaneció al menos {FormatDuration(incident.DurationSeconds)} en un lugar que requiere " +
                         $"revisión administrativa. {FormatLocationEvidence("Lugar", incident.CenterLatitude, incident.CenterLongitude)}"
-                    : $"Permaneció {FormatDuration(incident.DurationSeconds)} fuera de lugares " +
+                    : $"Permaneció al menos {FormatDuration(incident.DurationSeconds)} fuera de lugares " +
                         $"operativos conocidos. {FormatLocationEvidence("Lugar", incident.CenterLatitude, incident.CenterLongitude)}",
                 OccurredAt = incident.StartedAt,
                 LastOccurredAt = incident.EndedAt,
@@ -891,6 +908,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         var revised = await (from alert in _db.DeliveryTrackingAlerts
             join incident in _db.DeliveryTrackingIncidents on alert.IncidentId equals incident.Id
             where alert.AlertType == DeliveryTrackingAlertType.UnexpectedStay
+                && (!branchId.HasValue || incident.BranchId == branchId.Value)
+                && (!endedSinceUtc.HasValue || _db.DeliveryWorkSessions.Any(session =>
+                    session.Id == incident.WorkSessionId && session.EndedAt >= endedSinceUtc.Value))
                 && incident.UpdatedAt > alert.UpdatedAt
             select new { Alert = alert, Incident = incident }).Take(BatchSize).ToListAsync(cancellationToken);
         foreach (var item in revised)
@@ -903,7 +923,7 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             alert.StartLatitude = incident.CenterLatitude;
             alert.StartLongitude = incident.CenterLongitude;
             alert.Message = supported
-                ? $"Permanencia respaldada por muestras: {FormatDuration(incident.DurationSeconds)}. Requiere revisión del contexto."
+                ? $"Permanencia mínima respaldada por muestras: al menos {FormatDuration(incident.DurationSeconds)}. Requiere revisión del contexto."
                 : "Evidencia recalculada: la permanencia ya no cumple la regla de alerta. Las observaciones y revisiones anteriores se conservan.";
             if (!supported) Resolve(alert, nowUtc, "Evidencia reconciliada con ubicaciones recuperadas o lugar permitido.");
             else if (incident.ReviewStatus == DeliveryIncidentReviewStatus.Pending && alert.ResolvedByUserId == null)
@@ -920,6 +940,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             join incident in _db.DeliveryTrackingIncidents on alert.IncidentId equals incident.Id
             where alert.Status == DeliveryTrackingAlertStatus.Active
                 && alert.AlertType == DeliveryTrackingAlertType.UnexpectedStay
+                && (!branchId.HasValue || incident.BranchId == branchId.Value)
+                && (!endedSinceUtc.HasValue || _db.DeliveryWorkSessions.Any(session =>
+                    session.Id == incident.WorkSessionId && session.EndedAt >= endedSinceUtc.Value))
                 && incident.ReviewStatus != DeliveryIncidentReviewStatus.Pending
             select alert)
             .ToListAsync(cancellationToken);

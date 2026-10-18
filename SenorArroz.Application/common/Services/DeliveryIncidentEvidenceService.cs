@@ -26,17 +26,23 @@ public class DeliveryIncidentEvidenceService : IDeliveryIncidentEvidenceService
         _clock = clock;
     }
 
-    public async Task<int> ProcessPendingStaysAsync(CancellationToken cancellationToken = default)
+    public async Task<int> ProcessPendingStaysAsync(CancellationToken cancellationToken = default, int? branchId = null, DateTime? endedSinceUtc = null)
     {
-        var stays = await _db.DeliveryStays.AsNoTracking()
+        var pending = _db.DeliveryStays.AsNoTracking()
             .Where(stay => stay.ClassifiedAt.HasValue
                 && (RelevantClassifications.Contains(stay.Classification)
                     || _db.DeliveryTrackingIncidents.Any(incident => incident.DeliveryStayId == stay.Id))
                 && !_db.DeliveryTrackingIncidents.Any(incident =>
                     incident.DeliveryStayId == stay.Id
                     && incident.SourceUpdatedAt >= stay.UpdatedAt
-                    && incident.EvidenceComplete))
-            .OrderBy(stay => stay.StartedAt)
+                    && incident.EvidenceComplete));
+        if (branchId.HasValue)
+            pending = pending.Where(stay => _db.DeliveryWorkSessions.Any(session =>
+                session.Id == stay.WorkSessionId && session.BranchId == branchId.Value));
+        if (endedSinceUtc.HasValue)
+            pending = pending.Where(stay => _db.DeliveryWorkSessions.Any(session =>
+                session.Id == stay.WorkSessionId && session.EndedAt >= endedSinceUtc.Value));
+        var stays = await pending.OrderBy(stay => stay.StartedAt)
             .Take(BatchSize)
             .ToListAsync(cancellationToken);
         if (stays.Count == 0)
