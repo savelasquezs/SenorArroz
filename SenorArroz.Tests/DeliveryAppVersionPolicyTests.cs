@@ -63,6 +63,26 @@ public class DeliveryAppVersionPolicyTests
             () => middleware.InvokeAsync(context, CreatePolicy(), CreateAuthRepository()));
     }
 
+    [Theory]
+    [InlineData("/hubs/orders", "1.2.5", true)]
+    [InlineData("/hubs/orders/negotiate", "1.2.5", true)]
+    [InlineData("/hubs/orders", "1.2.4", false)]
+    [InlineData("/api/orders", "1.2.5", false)]
+    [InlineData("/hubs/orders-other", "1.2.5", false)]
+    public async Task Middleware_VersionQueryIsLimitedToOrderHub(string path, string version, bool accepted)
+    {
+        var context = AuthenticatedContext("Deliveryman");
+        context.Request.Path = path;
+        context.Request.QueryString = new QueryString($"?version={version}&build=24&packageName={DeliveryAppVersionOptions.RequiredPackageName}");
+        var called = false;
+        var middleware = new DeliveryAppVersionMiddleware(_ => { called = true; return Task.CompletedTask; });
+        if (accepted)
+            await middleware.InvokeAsync(context, CreatePolicy(), CreateAuthRepository());
+        else
+            await Assert.ThrowsAsync<DeliveryAppUpdateRequiredException>(() => middleware.InvokeAsync(context, CreatePolicy(), CreateAuthRepository()));
+        Assert.Equal(accepted, called);
+    }
+
     [Fact]
     public async Task Middleware_WebDeliveryman_DoesNotRequireFlutterHeaders()
     {

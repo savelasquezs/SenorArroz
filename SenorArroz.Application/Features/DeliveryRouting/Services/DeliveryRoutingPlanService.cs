@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Features.DeliveryRouting.DTOs;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
@@ -160,12 +161,18 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
             {
                 OrderId = order.Id,
                 EstimatedReadyAtUtc = DeliveryRoutingPolicy.ReadyAt(order, estimates, now, _options),
+                ConservativeReadyAtUtc = estimates.GetValueOrDefault(order.Id)?.ConservativeReadyAtUtc,
+                PreparationConfidence = estimates.GetValueOrDefault(order.Id)?.Confidence ?? "unknown",
+                ReadyWithinWindowProbability = estimates.GetValueOrDefault(order.Id)?.ReadyWithinWindowProbability ?? 0,
+                PreparationSampleSize = estimates.GetValueOrDefault(order.Id)?.SampleSize ?? 0,
                 ServiceSeconds = Math.Max(0, _options.ServiceSecondsPerOrder),
                 WasReadyAtGeneration = order.Status == OrderStatus.Ready,
                 UnroutedReason = !DeliveryRoutingPolicy.Coordinates(order.Address?.Latitude, order.Address?.Longitude)
                     ? "requiresLocation" : DeliveryRoutingPolicy.ReadyAt(order, estimates, now, _options) > cutoff
                     ? "preparingLater" : longWait.Contains(order.Id) ? "waitingWouldDelayReadyOrders"
-                    : capacity.Slots.Count == 0 ? "noCapacity" : "notSelectedByOptimizer"
+                    : capacity.Slots.Count == 0 ? "noCapacity"
+                    : order.Status != OrderStatus.Ready && estimates.GetValueOrDefault(order.Id)?.ReadyWithinWindowProbability < .6
+                        ? "preparationUncertain" : "notSelectedByOptimizer"
             });
         }
 
@@ -388,8 +395,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         for (var i = 0; i < values.Length; i++)
         for (var j = i + 1; j < values.Length; j++)
         {
-            var difference = Math.Abs(values[i] - values[j]);
-            maximum = Math.Max(maximum, Math.Min(difference, 360 - difference));
+            maximum = Math.Max(maximum, RoutingDirectionHelper.Separation(values[i], values[j]));
         }
         return Math.Round(maximum, 2);
     }
@@ -405,7 +411,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
     {
         var raw = JsonSerializer.Serialize(new
         {
-            algorithm = "routing-p3-p5", orders = OrderSignature(orders), branch.Latitude, branch.Longitude,
+            algorithm = "routing-corridors-v3", orders = OrderSignature(orders), branch.Latitude, branch.Longitude,
             capacity.AvailableNow, capacity.AvailableSoon,
             slots = capacity.Slots.Select(s => new { s.AvailableAtSeconds, s.DeliverymanId, s.WorkSessionId, s.CurrentRouteId, s.Confidence }),
             readiness = orders.Select(o => DeliveryRoutingPolicy.ReadyAt(o, estimates, now, _options) <= now

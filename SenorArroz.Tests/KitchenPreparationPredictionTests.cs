@@ -12,6 +12,18 @@ public sealed class KitchenPreparationPredictionTests
 {
     private static readonly DateTime Now = new(2026, 10, 17, 17, 0, 0, DateTimeKind.Utc);
 
+    [Theory]
+    [InlineData("2026-10-17T17:00:00Z")]
+    [InlineData("2026-10-17T17:00:00+00:00")]
+    [InlineData("2026-10-17T12:00:00-05:00")]
+    public void StatusTimeOffsetsAreNormalizedToUtc(string timestamp)
+    {
+        var order = new SenorArroz.Domain.Entities.Order { StatusTimes = "{\"ready\":\"" + timestamp + "\"}" };
+        var ready = order.GetStatusTimes()["ready"];
+        Assert.Equal(Now, ready);
+        Assert.Equal(DateTimeKind.Utc, ready.Kind);
+    }
+
     [Fact]
     public async Task RemainingTimeConditionsOnElapsedPreparationAndRejectsOtherBranchHistory()
     {
@@ -51,6 +63,35 @@ public sealed class KitchenPreparationPredictionTests
         Assert.True(next.EstimatedReadyAtUtc > Now.AddMinutes(10));
         Assert.Equal("low", next.Confidence);
         Assert.True(next.ReadyWithinWindowProbability < .6);
+    }
+
+    [Fact]
+    public async Task OverdueFallbackIsStableBetweenReadsButNeverPretendsFoodIsReady()
+    {
+        await using var db = CreateDb();
+        db.Orders.Add(Order(1, Now.AddMinutes(-65)));
+        await db.SaveChangesAsync();
+        var first = (await Service(db).EstimateAsync(1, [1], Now))[1];
+        var next = (await Service(db).EstimateAsync(1, [1], Now.AddSeconds(5)))[1];
+        Assert.Equal(first.EstimatedReadyAtUtc, next.EstimatedReadyAtUtc);
+        Assert.Equal(first.ConservativeReadyAtUtc, next.ConservativeReadyAtUtc);
+        Assert.True(next.EstimatedReadyAtUtc > Now.AddSeconds(5));
+    }
+
+    [Fact]
+    public async Task OneFastHistoricalOrderCannotPromiseAHighChanceOfReadiness()
+    {
+        await using var db = CreateDb();
+        var history = Order(1, Now.AddDays(-1));
+        history.Status = OrderStatus.Delivered;
+        history.AddStatusTime(OrderStatus.InPreparation, history.CreatedAt);
+        history.AddStatusTime(OrderStatus.Ready, history.CreatedAt.AddMinutes(10));
+        db.Orders.Add(history);
+        db.Orders.Add(Order(2, Now.AddMinutes(-5)));
+        await db.SaveChangesAsync();
+        var estimate = (await Service(db).EstimateAsync(1, [2], Now))[2];
+        Assert.Equal("low", estimate.Confidence);
+        Assert.True(estimate.ReadyWithinWindowProbability < .6);
     }
 
     [Fact]

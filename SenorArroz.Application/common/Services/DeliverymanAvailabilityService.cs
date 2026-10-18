@@ -101,7 +101,9 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
                 var cadence = point.TrackingMode == DeliveryTrackingMode.Light
                     ? branch.DeliveryTrackingLightIntervalSeconds : branch.DeliveryTrackingActiveIntervalSeconds;
                 var validAge = Math.Clamp(cadence, 15, 900) * 2 + 30;
-                var fresh = age <= Math.Min(validAge, Math.Clamp(_options.ActiveGpsFreshnessSeconds, 30, 600));
+                var freshness = point.TrackingMode == DeliveryTrackingMode.Light && assigned.Count == 0 && route is null
+                    ? validAge : Math.Min(validAge, Math.Clamp(_options.ActiveGpsFreshnessSeconds, 30, 600));
+                var fresh = age <= freshness;
                 if (age <= validAge)
                 {
                     var distance = GeoHelper.HaversineDistanceMeters((double)point.Latitude,

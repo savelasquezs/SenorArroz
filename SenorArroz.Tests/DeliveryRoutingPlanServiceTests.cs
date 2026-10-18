@@ -77,6 +77,34 @@ public sealed class DeliveryRoutingPlanServiceTests
     }
 
     [Fact]
+    public async Task OverduePreparationDoesNotRegeneratePlanOnEveryReadAndKeepsItsUncertainty()
+    {
+        await using var db = CreateContext();
+        db.Branches.Add(CreateBranch());
+        var address = new Address { Id = 10, CustomerId = 10, AddressText = "Destino",
+            Latitude = 6.3m, Longitude = -75.57m };
+        db.Addresses.Add(address);
+        db.Orders.Add(new Order { Id = 20, BranchId = 1, TakenById = 1,
+            Type = OrderType.Delivery, Status = OrderStatus.InPreparation,
+            AddressId = address.Id, Address = address, CreatedAt = Now.AddMinutes(-65) });
+        await db.SaveChangesAsync();
+        var clock = new FakeClock(Now);
+        var options = Options.Create(new DeliveryRoutingOptions());
+        var service = new DeliveryRoutingPlanService(db, clock, Mock.Of<IRoutingCostMatrixProvider>(),
+            Mock.Of<IDeliveryRouteOptimizer>(), new SenorArroz.Application.Common.Services.KitchenPreparationEstimator(db, options),
+            Mock.Of<IDeliverymanAvailabilityService>(), Mock.Of<IGoogleRoutesDrivingMetricsService>(),
+            Mock.Of<IOrderNotificationService>(), options, Mock.Of<ILogger<DeliveryRoutingPlanService>>());
+        var first = await service.GetOrCreateActivePlanAsync(1);
+        clock.UtcNow = Now.AddSeconds(5);
+        var second = await service.GetOrCreateActivePlanAsync(1);
+        Assert.Equal(first.Version, second.Version);
+        var stop = Assert.Single(second.UnroutedOrders);
+        Assert.Equal("low", stop.PreparationConfidence);
+        Assert.Equal(.5, stop.ReadyWithinWindowProbability);
+        Assert.NotNull(stop.ConservativeReadyAtUtc);
+    }
+
+    [Fact]
     public async Task GetPlan_CreatesNewVersion_WhenOperationalInputsChange()
     {
         await using var db = CreateContext();

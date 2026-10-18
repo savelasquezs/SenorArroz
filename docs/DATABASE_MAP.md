@@ -37,6 +37,14 @@ Una sola base de datos PostgreSQL
 
 ## Fuente principal
 
+Desarrollo móvil local: `senorarroz-delivery-postgres` contiene `senor_arroz_delivery_dev`
+en `127.0.0.1:15433`; el rol `delivery_local` no es propietario ni tiene bypass RLS.
+`scripts/start-delivery-local.ps1` carga su conexión desde User Secrets.
+El inicializador raíz incorpora `complete_local_development_prerequisites.sql`
+antes del aislamiento y las ampliaciones recientes después. El ajuste puntual
+`add_whatsapp_ai_context_columns.sql` agrega únicamente campos ya usados por el modelo,
+sin ejecutar el script destructivo de reinicio de WhatsApp.
+
 DbContext:
 
 ```text

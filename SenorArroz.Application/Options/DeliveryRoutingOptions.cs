@@ -19,6 +19,7 @@ public class DeliveryRoutingOptions
     public double ApproximateRoadFactor { get; set; } = 1.3;
     public double ApproximateUrbanSpeedKph { get; set; } = 22;
     public int DirectionPenaltyPerDegreeSeconds { get; set; } = 3;
+    public double MaximumRouteDirectionSpreadDegrees { get; set; } = 60;
     public int DroppedOrderBasePenaltySeconds { get; set; } = 3600;
     public int MaximumFinalistsToValidate { get; set; } = 12;
     public int ServiceSecondsPerOrder { get; set; } = 240;

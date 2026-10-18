@@ -30,16 +30,38 @@ public sealed class RoutingFleetSessionTests
         Assert.Equal("available", Assert.Single(capacity.Couriers).State);
     }
 
-    [Fact]
-    public async Task OldLightReadingIsProbableRatherThanMissingOrConfirmedFree()
+    [Theory]
+    [InlineData(240, true)]
+    [InlineData(300, true)]
+    [InlineData(630, true)]
+    [InlineData(631, false)]
+    public async Task LightReadingRespectsTheConfiguredFiveMinuteCadence(int ageSeconds, bool available)
     {
         await using var f = new Fixture();
-        f.AddPoint(10, Now.AddMinutes(-4), 6m, DeliveryTrackingMode.Light);
+        f.AddPoint(10, Now.AddSeconds(-ageSeconds), 6m, DeliveryTrackingMode.Light);
         await f.Db.SaveChangesAsync();
         var capacity = await f.Capacity();
-        Assert.Empty(capacity.Slots);
-        Assert.Equal("probableAtBranch", Assert.Single(capacity.Couriers).State);
-        Assert.Equal("probable", capacity.Couriers[0].Confidence);
+        Assert.Equal(available ? 1 : 0, capacity.Slots.Count);
+        Assert.Equal(available ? "available" : "unknown", Assert.Single(capacity.Couriers).State);
+    }
+
+    [Fact]
+    public async Task ActiveDeliveryGpsDoesNotInheritTheLongerLightCadence()
+    {
+        await using var f = new Fixture();
+        f.AddPoint(10, Now.AddMinutes(-4), 6m, DeliveryTrackingMode.ActiveDelivery);
+        await f.Db.SaveChangesAsync();
+        Assert.Empty((await f.Capacity()).Slots);
+    }
+
+    [Fact]
+    public async Task LightPointFromBeforeAssignmentCannotForecastAnActiveTripsReturn()
+    {
+        await using var f = new Fixture();
+        f.AddTrip(20, Now.AddMinutes(-5), OrderStatus.OnTheWay);
+        f.AddPoint(10, Now.AddMinutes(-4), 6m, DeliveryTrackingMode.Light);
+        await f.Db.SaveChangesAsync();
+        Assert.Empty((await f.Capacity()).Slots);
     }
 
     [Fact]

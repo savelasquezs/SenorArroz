@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Google.OrTools.ConstraintSolver;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Options;
 
 namespace SenorArroz.Infrastructure.Services;
@@ -18,8 +19,37 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
                 request.Vehicles.Count == 0 ? ["No hay capacidad de salida disponible."] : []);
 
         var stopwatch = Stopwatch.StartNew();
+        var budget = Math.Clamp(_options.SolverTimeLimitMs, 1, 30_000);
+        var initial = Solve(request, Math.Max(1, budget / 2));
+        var remaining = budget - (int)stopwatch.ElapsedMilliseconds;
+        if (remaining < 1 || initial.Routes.Count == 0)
+            return initial with { SolverDurationMs = (int)stopwatch.ElapsedMilliseconds };
+
+        var included = initial.Routes.SelectMany(route => route.NodeIndexes).ToHashSet();
+        var refined = Solve(request, remaining, included, initial.Routes);
+        var result = refined.Routes.Count > 0 && refined.Routes.Sum(route => route.NodeIndexes.Count) == included.Count
+            ? refined : initial;
+        return result with { SolverDurationMs = (int)stopwatch.ElapsedMilliseconds };
+    }
+
+    private DeliveryRouteOptimizationResult Solve(DeliveryRouteOptimizationRequest request, int milliseconds,
+        HashSet<int>? included = null, IReadOnlyList<OptimizedRoute>? initialRoutes = null)
+    {
+        var stopwatch = Stopwatch.StartNew();
         var warnings = request.Matrix.Warnings.ToList();
         var nodeCount = request.Matrix.Nodes.Count + 1;
+        var horizon = Math.Max(86_400, Math.Min(604_800, _options.SoftLastDeliveryTargetSeconds * 4L));
+        var geographicWeight = included is null ? 0 : SecondaryCostBound(request, horizon) + 1;
+        var corridors = included is null ? null : RoutingDirectionHelper.GroupCorridors(request.Matrix, included,
+            request.Vehicles.Count(vehicle => vehicle.AvailableAtSeconds <= horizon));
+        var corridorCosts = new long[nodeCount, nodeCount];
+        long maximumCorridorCost = 0;
+        if (included is not null)
+            foreach (var from in included)
+            foreach (var to in included)
+                maximumCorridorCost = Math.Max(maximumCorridorCost,
+                    corridorCosts[from + 1, to + 1] = CorridorCost(request.Matrix, from + 1, to + 1));
+        var crossingCost = maximumCorridorCost * (request.Matrix.Nodes.Count + (long)request.Vehicles.Count) + 1;
         using var manager = new RoutingIndexManager(nodeCount, request.Vehicles.Count, 0);
         using var routing = new RoutingModel(manager);
         var transit = routing.RegisterTransitCallback((fromIndex, toIndex) =>
@@ -35,12 +65,14 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
             var to = manager.IndexToNode(toIndex);
             return Math.Max(0, request.Matrix.DurationSeconds[from, to])
                 + (from == 0 ? 0 : Math.Max(0, request.Matrix.Nodes[from - 1].ServiceSeconds))
-                + DirectionPenalty(request.Matrix.BearingFromBranchDegrees, from, to, _options.DirectionPenaltyPerDegreeSeconds);
+                + (included is null
+                    ? DirectionPenalty(request.Matrix.BearingFromBranchDegrees, from, to, _options.DirectionPenaltyPerDegreeSeconds)
+                    : (from > 0 && to > 0 && corridors![from] != corridors[to]
+                        ? crossingCost + corridorCosts[from, to] : 0) * geographicWeight);
         });
         // Direction preferences are a cost, never fictional driving time.
         routing.SetArcCostEvaluatorOfAllVehicles(cost);
         routing.SetFixedCostOfAllVehicles(Math.Max(0, _options.RouteDispatchCostSeconds));
-        var horizon = Math.Max(86_400, Math.Min(604_800, _options.SoftLastDeliveryTargetSeconds * 4L));
         routing.AddDimension(transit, 0, horizon, false, "Time");
         var time = routing.GetMutableDimension("Time");
         var solver = routing.solver();
@@ -61,9 +93,12 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
         {
             var node = request.Matrix.Nodes[nodeIndex - 1];
             var index = manager.NodeToIndex(nodeIndex);
+            if (included is not null)
+                routing.ActiveVar(index).SetValue(included.Contains(nodeIndex - 1) ? 1 : 0);
             var readyIn = Math.Max(0, (long)Math.Ceiling((node.EstimatedReadyAtUtc - request.GeneratedAtUtc).TotalSeconds));
             var age = Math.Max(0, (long)(request.GeneratedAtUtc - node.PriorityAnchorUtc).TotalSeconds);
-            routing.AddDisjunction([index], Math.Max(1, _options.DroppedOrderBasePenaltySeconds) + age * 2);
+            routing.AddDisjunction([index], Math.Max(1, _options.DroppedOrderBasePenaltySeconds)
+                * (node.IsReady ? 2L : 1L) + age * 2);
             if (readyIn > horizon)
             {
                 routing.NextVar(index).SetValue(index);
@@ -94,13 +129,31 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
                 }
             }
         }
+        var bearings = request.Matrix.BearingFromBranchDegrees;
+        var sectors = bearings.Select(RoutingDirectionHelper.Sector).ToArray();
+        var maximumSpread = Math.Clamp(_options.MaximumRouteDirectionSpreadDegrees, 1, 90);
+        for (var first = 1; first < nodeCount; first++)
+        for (var second = first + 1; second < nodeCount; second++)
+        {
+            if (RoutingDirectionHelper.CanShare(sectors[first], bearings[first], sectors[second], bearings[second], maximumSpread))
+                continue;
+            var firstIndex = manager.NodeToIndex(first);
+            var secondIndex = manager.NodeToIndex(second);
+            var sameVehicle = solver.MakeIsEqualVar(routing.VehicleVar(firstIndex), routing.VehicleVar(secondIndex));
+            solver.Add(sameVehicle + routing.ActiveVar(firstIndex) + routing.ActiveVar(secondIndex) <= 2);
+        }
+
         var search = operations_research_constraint_solver.DefaultRoutingSearchParameters();
         search.FirstSolutionStrategy = FirstSolutionStrategy.Types.Value.ParallelCheapestInsertion;
         search.LocalSearchMetaheuristic = LocalSearchMetaheuristic.Types.Value.GuidedLocalSearch;
-        var milliseconds = Math.Clamp(_options.SolverTimeLimitMs, 1, 30_000);
         search.TimeLimit = new Google.Protobuf.WellKnownTypes.Duration
         { Seconds = milliseconds / 1000, Nanos = (milliseconds % 1000) * 1_000_000 };
-        using var solution = routing.SolveWithParameters(search);
+        using var seed = initialRoutes is null ? null : routing.ReadAssignmentFromRoutes(
+            Enumerable.Range(0, request.Vehicles.Count).Select(vehicle => initialRoutes
+                .Where(route => route.VehicleIndex == vehicle).SelectMany(route => route.NodeIndexes)
+                .Select(index => (long)index + 1).ToArray()).ToArray(), true);
+        using var solution = seed is null ? routing.SolveWithParameters(search)
+            : routing.SolveFromAssignmentWithParameters(seed, search);
         stopwatch.Stop();
         if (solution is null)
             return new DeliveryRouteOptimizationResult([], Enumerable.Range(0, request.Matrix.Nodes.Count).ToArray(),
@@ -138,7 +191,20 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
     private static long DirectionPenalty(double[] bearings, int fromNode, int toNode, int secondsPerDegree)
     {
         if (fromNode == 0 || toNode == 0 || secondsPerDegree <= 0) return 0;
-        var difference = Math.Abs(bearings[fromNode] - bearings[toNode]);
-        return (long)Math.Round(Math.Min(difference, 360 - difference) * secondsPerDegree);
+        return (long)Math.Round(RoutingDirectionHelper.Separation(bearings[fromNode], bearings[toNode]) * secondsPerDegree);
+    }
+
+    private static long CorridorCost(RoutingCostMatrix matrix, int from, int to) => from == 0 || to == 0 ? 0
+        : RoutingDirectionHelper.CorridorTransitionCost(matrix.BearingFromBranchDegrees[from],
+            matrix.BearingFromBranchDegrees[to], matrix.DistanceMeters[0, from], matrix.DistanceMeters[0, to],
+            matrix.DistanceMeters[from, to]);
+
+    private long SecondaryCostBound(DeliveryRouteOptimizationRequest request, long horizon)
+    {
+        var lateness = request.Matrix.Nodes.Sum(node => Math.Max(0L,
+            (long)(request.GeneratedAtUtc - node.PriorityAnchorUtc).TotalSeconds
+                - _options.SoftLastDeliveryTargetSeconds));
+        return checked(horizon * (10L * request.Matrix.Nodes.Count + 3L * request.Vehicles.Count)
+            + lateness * 10 + Math.Max(0, _options.RouteDispatchCostSeconds) * (long)request.Vehicles.Count);
     }
 }
