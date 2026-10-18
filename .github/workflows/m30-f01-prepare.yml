@@ -1,41 +1,20 @@
-name: Prepare M30-F01 review branch
+name: WhatsApp inbox regression check
 on:
-  pull_request:
-    branches: [main]
-    types: [synchronize]
-    paths: ['.github/workflows/m30-f01-prepare.yml']
+  workflow_dispatch:
 permissions:
-  contents: write
-concurrency:
-  group: prepare-m30-f01
-  cancel-in-progress: false
+  contents: read
 jobs:
-  prepare:
-    if: github.event.pull_request.head.ref == 'perf/2026-10-18-M30-F01-unread-summary-aggregate' && github.event.pull_request.head.repo.full_name == github.repository
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: perf/2026-10-18-M30-F01-unread-summary-aggregate
-      - name: Correct inferred query type without changing the predicates
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('SenorArroz.API/Controllers/WhatsAppController.cs')
-          s = p.read_text()
-          old = '        var query = accessibleConversations\n'
-          new = '        IQueryable<WhatsAppConversation> query = accessibleConversations\n'
-          assert s.count(old) == 1 or s.count(new) == 1
-          p.write_text(s.replace(old, new))
-          PY
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- SenorArroz.API/Controllers/WhatsAppController.cs
-          if ! git diff --cached --quiet; then
-            git commit -m 'fix(M30-F01): preserve IQueryable type after includes'
-            git push origin HEAD:refs/heads/perf/2026-10-18-M30-F01-unread-summary-aggregate
-          fi
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Run existing inbox tests against isolated PostgreSQL
+        env:
+          RUN_POSTGRES_INTEGRATION_TESTS: 'true'
+        run: dotnet test SenorArroz.Tests/SenorArroz.Tests.csproj -c Release --filter 'FullyQualifiedName~WhatsAppUnreadSummaryPerformanceTests|FullyQualifiedName~WhatsAppOperationalBranchTests'
