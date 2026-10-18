@@ -153,6 +153,69 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Removing_order_line_succeeds_when_detail_delete_trigger_increments_parent_version()
+    {
+        await using var db = Db();
+        var category = new ProductCategory { BranchId = 2, Name = "Menú" };
+        db.ProductCategories.Add(category);
+        await db.SaveChangesAsync();
+        var rice = new Product { CategoryId = category.Id, Name = "Arroz", Price = 44_000 };
+        var drink = new Product { CategoryId = category.Id, Name = "Bebida", Price = 6_000 };
+        db.Products.AddRange(rice, drink);
+        await db.SaveChangesAsync();
+        db.Orders.Add(new Order
+        {
+            Id = 11, BranchId = 2, OriginBranchId = 1, TakenById = 70,
+            Type = OrderType.Onsite, Status = OrderStatus.Taken, StatusTimes = "{}",
+            Subtotal = 50_000, Total = 50_000,
+            OrderDetails =
+            [
+                new() { ProductId = rice.Id, Quantity = 1, UnitPrice = 44_000, Subtotal = 44_000 },
+                new() { ProductId = drink.Id, Quantity = 1, UnitPrice = 6_000, Subtotal = 6_000 }
+            ]
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        // Mimics the production order_detail DELETE -> order totals/version trigger.
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE FUNCTION test_order_line_deleted_update_parent() RETURNS trigger LANGUAGE plpgsql AS $
+            BEGIN
+                UPDATE public."order" SET
+                    subtotal = (SELECT COALESCE(SUM(subtotal), 0) FROM public.order_detail WHERE order_id = OLD.order_id),
+                    total = (SELECT COALESCE(SUM(subtotal), 0) FROM public.order_detail WHERE order_id = OLD.order_id)
+                      + COALESCE(delivery_fee, 0)
+                WHERE id = OLD.order_id;
+                RETURN OLD;
+            END $;
+            CREATE TRIGGER test_order_line_deleted_update_parent
+                AFTER DELETE ON public.order_detail FOR EACH ROW
+                EXECUTE FUNCTION test_order_line_deleted_update_parent();
+            """);
+
+        var repository = new OrderRepository(db, new Clock());
+        var current = (await repository.GetByIdWithDetailsAsync(11))!;
+        await using var otherDb = Db();
+        var stale = (await new OrderRepository(otherDb, new Clock()).GetByIdWithDetailsAsync(11))!;
+        current.OrderDetails.Remove(current.OrderDetails.Single(d => d.ProductId == drink.Id));
+        current.Subtotal = 44_000;
+        current.Total = 44_000;
+
+        await repository.UpdateAsync(current);
+
+        var saved = (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == 11));
+        Assert.Equal(44_000, saved.Total);
+        Assert.True(saved.ManagementVersion > stale.ManagementVersion);
+        Assert.Equal(rice.Id, (await db.OrderDetails.AsNoTracking()
+            .SingleAsync(d => d.OrderId == 11)).ProductId);
+
+        stale.Notes = "edición atrasada";
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+            new OrderRepository(otherDb, new Clock()).UpdateAsync(stale));
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
     public async Task Direct_SQL_updates_increment_version_and_cannot_rewrite_provenance()
     {
         await using var db = Db();
