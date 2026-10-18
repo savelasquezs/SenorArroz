@@ -108,7 +108,7 @@ public sealed class WhatsAppUnreadSummaryPerformanceTests
         Assert.Equal(1, summary.UnreadConversations);
         Assert.Single(counter.Queries);
 
-        db.WhatsAppBranchSettings.Local.Single().IsActive = false;
+        db.WhatsAppBranchSettings.Local.Single(x => x.BranchId == 1).IsActive = false;
         await db.SaveChangesAsync();
         counter.Queries.Clear();
         summary = await SummaryAsync(controller);
@@ -147,6 +147,10 @@ public sealed class WhatsAppUnreadSummaryPerformanceTests
         db.WhatsAppBranchSettings.Add(new WhatsAppBranchSetting
         {
             Id = 1, TenantId = 1, BranchId = 1, IsActive = true, IsVerified = true, PhoneNumberId = "legacy-test"
+        });
+        db.WhatsAppBranchSettings.Add(new WhatsAppBranchSetting
+        {
+            Id = 2, TenantId = 1, BranchId = 2, IsActive = true, IsVerified = true, PhoneNumberId = "legacy-test-two"
         });
         db.WhatsAppChannelSettings.AddRange(Enumerable.Range(1, 4).Select(id => new WhatsAppChannelSetting
         {
