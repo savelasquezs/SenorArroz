@@ -52,11 +52,8 @@ public sealed class TransferOrderBranchHandler(
         // Invalidate that technical inbox so the new kitchen can receive a fresh
         // alert when an active order is moved; order history is unaffected.
         var visibleToKitchen = KitchenOrderNotificationEligibility.IsVisibleToActiveKitchen(order, clock.UtcNow);
-        if (visibleToKitchen)
-        {
-            var events = await db.KitchenVoiceEvents.Where(e => e.OrderId == order.Id).ToListAsync(ct);
-            db.KitchenVoiceEvents.RemoveRange(events);
-        }
+        var events = await db.KitchenVoiceEvents.Where(e => e.OrderId == order.Id).ToListAsync(ct);
+        db.KitchenVoiceEvents.RemoveRange(events);
 
         order.BranchId = request.TargetBranchId;
         await db.SaveChangesAsync(ct);
