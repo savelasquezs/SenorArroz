@@ -37,7 +37,10 @@ public sealed record DeliveryRouteOptimizationRequest(RoutingCostMatrix Matrix,
 public sealed record OptimizedRoute(int VehicleIndex, IReadOnlyList<int> NodeIndexes,
     long ApproximateDurationSeconds, long ApproximateDistanceMeters, long Score);
 public sealed record DeliveryRouteOptimizationResult(IReadOnlyList<OptimizedRoute> Routes,
-    IReadOnlyList<int> UnroutedNodeIndexes, int SolverDurationMs, IReadOnlyList<string> Warnings);
+    IReadOnlyList<int> UnroutedNodeIndexes, int SolverDurationMs, IReadOnlyList<string> Warnings)
+{
+    public IReadOnlyDictionary<int,string> UnroutedReasons { get; init; } = new Dictionary<int,string>();
+}
 
 public interface IDeliveryRouteOptimizer
 {

@@ -30,7 +30,7 @@ public sealed class DeliveryRoutingOptimizerTests
     }
 
     [Fact]
-    public void GeographicCorridorsTakePriorityOverFasterCrossCorridorTrips()
+    public void GeographicCorridorsCannotAddAnUnboundedDelay()
     {
         var options = Options.Create(new DeliveryRoutingOptions { SolverTimeLimitMs = 1000,
             DroppedOrderBasePenaltySeconds = 1000000 });
@@ -49,9 +49,7 @@ public sealed class DeliveryRoutingOptimizerTests
 
         Assert.Empty(result.UnroutedNodeIndexes);
         Assert.Equal(2,result.Routes.Count);
-        Assert.Contains(result.Routes,route=>route.NodeIndexes.Order().SequenceEqual(new[] {0,1}));
-        Assert.Contains(result.Routes,route=>route.NodeIndexes.Order().SequenceEqual(new[] {2,3}));
-        Assert.All(result.Routes,route=>Assert.Equal(1020,route.ApproximateDurationSeconds));
+        Assert.All(result.Routes,route=>Assert.InRange(route.ApproximateDurationSeconds,0,220));
     }
 
     [Fact]
@@ -281,5 +279,46 @@ public sealed class DeliveryRoutingOptimizerTests
         Assert.All(result.Routes, route => Assert.False(route.NodeIndexes.Contains(0) && route.NodeIndexes.Contains(1)));
         Assert.Equal(allRouted, result.UnroutedNodeIndexes.Count == 0);
         Assert.Equal(result.Routes.SelectMany(r => r.NodeIndexes).Distinct().Count(), result.Routes.Sum(r => r.NodeIndexes.Count));
+    }
+
+    [Theory]
+    [InlineData(5)]
+    [InlineData(60)]
+    public void OldReadyOrdersKeepTheirTravelBudget(int ageMinutes)
+    {
+        var options = Options.Create(new DeliveryRoutingOptions { SolverTimeLimitMs=300 });
+        var matrix = new ApproximateRoutingCostMatrixProvider(options).Create(6,-75,
+            Enumerable.Range(0,6).Select(i=>new RoutingNode(i+1,6.001+i*.0001,-75,
+                Now.AddMinutes(-ageMinutes),Now,true,240)).ToArray());
+        var result = new OrToolsDeliveryRouteOptimizer(options).Optimize(new(matrix,[new RoutingVehicleSlot(0)],Now));
+        Assert.Empty(result.UnroutedNodeIndexes);
+        Assert.Equal(6,Assert.Single(result.Routes).NodeIndexes.Count);
+    }
+
+    [Fact]
+    public void RecoveryIncludesAnAffordablePendingStopWithoutRemovingSelectedOrders()
+    {
+        var options = Options.Create(new DeliveryRoutingOptions { SolverTimeLimitMs=300,
+            DroppedOrderBasePenaltySeconds=100,MaximumAdditionalDelaySeconds=0 });
+        var matrix = new ApproximateRoutingCostMatrixProvider(options).Create(6,-75,
+        [new RoutingNode(1,6.001,-75,Now,Now,true,0),new RoutingNode(2,6.002,-75,Now,Now,true,0)]);
+        matrix.DurationSeconds[0,1]=matrix.DurationSeconds[1,0]=10;
+        matrix.DurationSeconds[0,2]=matrix.DurationSeconds[2,0]=300;
+        matrix.DurationSeconds[1,2]=matrix.DurationSeconds[2,1]=300;
+        var result = new OrToolsDeliveryRouteOptimizer(options).Optimize(new(matrix,[new RoutingVehicleSlot(0)],Now));
+        Assert.Empty(result.UnroutedNodeIndexes);
+        Assert.Equal(new[] {0,1},Assert.Single(result.Routes).NodeIndexes);
+    }
+
+    [Fact]
+    public void DeliveryLimitStillAppliesWhenExcludingOrdersIsExpensive()
+    {
+        var options = Options.Create(new DeliveryRoutingOptions { SolverTimeLimitMs=300,
+            MaximumDeliveryAfterDepartureSeconds=300,DroppedOrderBasePenaltySeconds=100000 });
+        var matrix = new ApproximateRoutingCostMatrixProvider(options).Create(6,-75,
+            Enumerable.Range(0,5).Select(i=>new RoutingNode(i+1,6.001,-75,Now,Now,true,240)).ToArray());
+        var result = new OrToolsDeliveryRouteOptimizer(options).Optimize(new(matrix,[new RoutingVehicleSlot(0)],Now));
+        Assert.Equal(2,Assert.Single(result.Routes).NodeIndexes.Count);
+        Assert.Equal(3,result.UnroutedNodeIndexes.Count);
     }
 }

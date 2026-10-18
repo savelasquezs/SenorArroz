@@ -172,7 +172,8 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
                     ? "preparingLater" : longWait.Contains(order.Id) ? "waitingWouldDelayReadyOrders"
                     : capacity.Slots.Count == 0 ? "noCapacity"
                     : order.Status != OrderStatus.Ready && estimates.GetValueOrDefault(order.Id)?.ReadyWithinWindowProbability < .6
-                        ? "preparationUncertain" : "notSelectedByOptimizer"
+                        ? "preparationUncertain" : indexes.TryGetValue(order.Id,out var nodeIndex)
+                            ? optimization.UnroutedReasons.GetValueOrDefault(nodeIndex,"notSelectedByOptimizer") : "notSelectedByOptimizer"
             });
         }
 
@@ -294,7 +295,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
             elapsed += matrix.Nodes[index - 1].ServiceSeconds;
             previous = index;
         }
-        proposal.LastDeliverySeconds = elapsed - Math.Max(0, slot.AvailableAtSeconds);
+        proposal.LastDeliverySeconds = elapsed - departure - matrix.Nodes[indexes[orders[^1].Id]].ServiceSeconds;
         return proposal;
     }
 
@@ -411,7 +412,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
     {
         var raw = JsonSerializer.Serialize(new
         {
-            algorithm = "routing-corridors-v3", orders = OrderSignature(orders), branch.Latitude, branch.Longitude,
+            algorithm = "routing-bounded-coverage-v4", orders = OrderSignature(orders), branch.Latitude, branch.Longitude,
             capacity.AvailableNow, capacity.AvailableSoon,
             slots = capacity.Slots.Select(s => new { s.AvailableAtSeconds, s.DeliverymanId, s.WorkSessionId, s.CurrentRouteId, s.Confidence }),
             readiness = orders.Select(o => DeliveryRoutingPolicy.ReadyAt(o, estimates, now, _options) <= now

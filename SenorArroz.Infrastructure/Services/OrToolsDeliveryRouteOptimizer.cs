@@ -20,20 +20,22 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
 
         var stopwatch = Stopwatch.StartNew();
         var budget = Math.Clamp(_options.SolverTimeLimitMs, 1, 30_000);
-        var initial = Solve(request, Math.Max(1, budget / 2));
-        var remaining = budget - (int)stopwatch.ElapsedMilliseconds;
-        if (remaining < 1 || initial.Routes.Count == 0)
+        var initial = Solve(request, Math.Max(1, budget * 2 / 5));
+        var arrivalLimits = ArrivalLimits(request, initial.Routes);
+        if (initial.Routes.Count == 0)
             return initial with { SolverDurationMs = (int)stopwatch.ElapsedMilliseconds };
 
         var included = initial.Routes.SelectMany(route => route.NodeIndexes).ToHashSet();
-        var refined = Solve(request, remaining, included, initial.Routes);
+        var refined = Solve(request, Math.Max(1, budget * 2 / 5), included, initial.Routes, arrivalLimits);
         var result = refined.Routes.Count > 0 && refined.Routes.Sum(route => route.NodeIndexes.Count) == included.Count
             ? refined : initial;
+        result = RecoverPending(request, result, arrivalLimits, Math.Clamp(budget / 5, 20, 200));
         return result with { SolverDurationMs = (int)stopwatch.ElapsedMilliseconds };
     }
 
     private DeliveryRouteOptimizationResult Solve(DeliveryRouteOptimizationRequest request, int milliseconds,
-        HashSet<int>? included = null, IReadOnlyList<OptimizedRoute>? initialRoutes = null)
+        HashSet<int>? included = null, IReadOnlyList<OptimizedRoute>? initialRoutes = null,
+        IReadOnlyDictionary<int, long>? arrivalLimits = null)
     {
         var stopwatch = Stopwatch.StartNew();
         var warnings = request.Matrix.Warnings.ToList();
@@ -75,6 +77,8 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
         routing.SetFixedCostOfAllVehicles(Math.Max(0, _options.RouteDispatchCostSeconds));
         routing.AddDimension(transit, 0, horizon, false, "Time");
         var time = routing.GetMutableDimension("Time");
+        routing.AddDimension(transit, 0, horizon, true, "RouteElapsed");
+        var elapsed = routing.GetMutableDimension("RouteElapsed");
         var solver = routing.solver();
         for (var vehicle = 0; vehicle < request.Vehicles.Count; vehicle++)
         {
@@ -110,6 +114,9 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
                 var usesVehicle = solver.MakeIsEqualCstVar(routing.VehicleVar(index), vehicle);
                 var departure = time.CumulVar(routing.Start(vehicle));
                 solver.Add(departure >= readyIn * usesVehicle);
+                solver.Add(time.CumulVar(index) <= departure
+                    + Math.Clamp(_options.MaximumDeliveryAfterDepartureSeconds, 60, 86_400)
+                    + horizon * (1 - usesVehicle));
                 if (node.WaitDeadlineAtUtc is { } deadline)
                 {
                     var latest = Math.Max(Math.Max(0, request.Vehicles[vehicle].AvailableAtSeconds),
@@ -117,7 +124,10 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
                     solver.Add(departure <= latest + horizon * (1 - usesVehicle));
                 }
             }
-            time.SetCumulVarSoftUpperBound(index, Math.Max(0, _options.SoftLastDeliveryTargetSeconds - age), 10);
+            time.SetCumulVarSoftUpperBound(index, Math.Max(0, _options.SoftLastDeliveryTargetSeconds), 10);
+            elapsed.SetCumulVarSoftUpperBound(index, 0, 1);
+            if (arrivalLimits?.TryGetValue(nodeIndex - 1, out var latestArrival) == true)
+                time.CumulVar(index).SetMax(latestArrival);
             if (!node.IsReady && node.ReadyWithinWindowProbability < .6)
             {
                 for (var other = 1; other < nodeCount; other++)
@@ -186,6 +196,119 @@ public sealed class OrToolsDeliveryRouteOptimizer : IDeliveryRouteOptimizer
         return new DeliveryRouteOptimizationResult(routes,
             Enumerable.Range(0, request.Matrix.Nodes.Count).Where(i => !routed.Contains(i)).ToArray(),
             (int)stopwatch.ElapsedMilliseconds, warnings.Distinct().ToArray());
+    }
+
+    private Dictionary<int, long> ArrivalLimits(DeliveryRouteOptimizationRequest request,
+        IReadOnlyList<OptimizedRoute> routes)
+    {
+        var limits = new Dictionary<int, long>();
+        foreach (var route in routes)
+        {
+            var schedule = Schedule(request, route.VehicleIndex, route.NodeIndexes);
+            for (var i = 0; i < route.NodeIndexes.Count; i++)
+                limits[route.NodeIndexes[i]] = schedule.Arrivals[i] + Math.Max(0, _options.MaximumAdditionalDelaySeconds);
+        }
+        return limits;
+    }
+
+    private DeliveryRouteOptimizationResult RecoverPending(DeliveryRouteOptimizationRequest request,
+        DeliveryRouteOptimizationResult result, Dictionary<int, long> limits, int budgetMs)
+    {
+        var timer = Stopwatch.StartNew();
+        var paths = Enumerable.Range(0, request.Vehicles.Count).Select(vehicle => result.Routes
+            .FirstOrDefault(route => route.VehicleIndex == vehicle)?.NodeIndexes.ToList() ?? []).ToArray();
+        var pending = result.UnroutedNodeIndexes.ToHashSet();
+        while (pending.Count > 0 && timer.ElapsedMilliseconds < budgetMs)
+        {
+            (int Node, int Vehicle, List<int> Path, (int Ready, DateTime Age, long Geography, long Cost) Rank)? best = null;
+            foreach (var node in pending)
+            for (var vehicle = 0; vehicle < paths.Length; vehicle++)
+            {
+                if (timer.ElapsedMilliseconds >= budgetMs) break;
+                var current = paths[vehicle];
+                var bearing = request.Matrix.BearingFromBranchDegrees[node + 1];
+                if (current.Any(other => !RoutingDirectionHelper.CanShare(RoutingDirectionHelper.Sector(bearing), bearing,
+                    RoutingDirectionHelper.Sector(request.Matrix.BearingFromBranchDegrees[other + 1]),
+                    request.Matrix.BearingFromBranchDegrees[other + 1], Math.Clamp(_options.MaximumRouteDirectionSpreadDegrees, 1, 90)))) continue;
+                var original = Schedule(request, vehicle, current);
+                for (var position = 0; position <= current.Count; position++)
+                {
+                    var candidate = new List<int>(current);
+                    candidate.Insert(position, node);
+                    var schedule = Schedule(request, vehicle, candidate);
+                    if (!Fits(request, vehicle, candidate, schedule.Departure, schedule.Arrivals, limits)) continue;
+                    var drivingDetour = Math.Max(0, schedule.Driving - original.Driving);
+                    var rank = (request.Matrix.Nodes[node].IsReady ? 0 : 1,
+                        request.Matrix.Nodes[node].PriorityAnchorUtc,
+                        current.Count == 0 ? 0 : current.Min(other => CorridorCost(request.Matrix, other + 1, node + 1)),
+                        schedule.Duration - original.Duration
+                            + Math.Max(0, drivingDetour - Math.Max(0, _options.SoftDetourReferenceSeconds)) * 10);
+                    if (best is null || rank.CompareTo(best.Value.Rank) < 0)
+                        best = (node, vehicle, candidate, rank);
+                }
+            }
+            if (best is null) break;
+            var chosen = best.Value;
+            paths[chosen.Vehicle] = chosen.Path;
+            pending.Remove(chosen.Node);
+            var added = Schedule(request, chosen.Vehicle, chosen.Path);
+            limits[chosen.Node] = added.Arrivals[chosen.Path.IndexOf(chosen.Node)]
+                + Math.Max(0, _options.MaximumAdditionalDelaySeconds);
+        }
+        var routes = paths.Select((path, vehicle) =>
+        {
+            var schedule = Schedule(request, vehicle, path);
+            return new OptimizedRoute(vehicle, path, schedule.Duration, schedule.Distance, 0);
+        }).Where(route => route.NodeIndexes.Count > 0).ToArray();
+        var reasons = pending.ToDictionary(index => index, index =>
+            request.Matrix.DurationSeconds[0,index+1] > Math.Clamp(_options.MaximumDeliveryAfterDepartureSeconds,60,86_400)
+                ? "deliveryTimeLimit" : paths.All(path => path.Any(other =>
+                    RoutingDirectionHelper.Separation(request.Matrix.BearingFromBranchDegrees[index+1],
+                        request.Matrix.BearingFromBranchDegrees[other+1]) > Math.Clamp(_options.MaximumRouteDirectionSpreadDegrees,1,90)))
+                    ? "directionConflict" : "additionalDelayOrDurationLimit");
+        return result with { Routes = routes, UnroutedNodeIndexes = pending.Order().ToArray(), UnroutedReasons = reasons };
+    }
+
+    private bool Fits(DeliveryRouteOptimizationRequest request, int vehicle, IReadOnlyList<int> path,
+        long departure, long[] arrivals, IReadOnlyDictionary<int, long> limits)
+    {
+        if (departure > Math.Max(86_400, Math.Min(604_800, _options.SoftLastDeliveryTargetSeconds * 4L))) return false;
+        var hasReady = path.Any(index => request.Matrix.Nodes[index].IsReady);
+        for (var i = 0; i < path.Count; i++)
+        {
+            var node = request.Matrix.Nodes[path[i]];
+            if (arrivals[i] - departure > Math.Clamp(_options.MaximumDeliveryAfterDepartureSeconds, 60, 86_400)
+                || limits.TryGetValue(path[i], out var latest) && arrivals[i] > latest
+                || hasReady && !node.IsReady && node.ReadyWithinWindowProbability < .6) return false;
+            if (node.WaitDeadlineAtUtc is { } deadline && departure > Math.Max(
+                Math.Max(0, request.Vehicles[vehicle].AvailableAtSeconds),
+                Math.Max(0, (long)(deadline - request.GeneratedAtUtc).TotalSeconds))) return false;
+        }
+        return true;
+    }
+
+    private static (long Departure, long[] Arrivals, long Duration, long Driving, long Distance) Schedule(
+        DeliveryRouteOptimizationRequest request, int vehicle, IReadOnlyList<int> path)
+    {
+        var departure = Math.Max(Math.Max(0, request.Vehicles[vehicle].AvailableAtSeconds), path
+            .Select(index => Math.Max(0, (long)Math.Ceiling((request.Matrix.Nodes[index].EstimatedReadyAtUtc
+                - request.GeneratedAtUtc).TotalSeconds))).DefaultIfEmpty(0).Max());
+        var elapsed = departure;
+        long driving = 0, distance = 0;
+        var previous = 0;
+        var arrivals = new long[path.Count];
+        for (var i = 0; i < path.Count; i++)
+        {
+            var index = path[i] + 1;
+            var travel = Math.Max(0, request.Matrix.DurationSeconds[previous, index]);
+            elapsed += travel;
+            driving += travel;
+            distance += Math.Max(0, request.Matrix.DistanceMeters[previous, index]);
+            arrivals[i] = elapsed;
+            elapsed += Math.Max(0, request.Matrix.Nodes[path[i]].ServiceSeconds);
+            previous = index;
+        }
+        return (departure, arrivals, elapsed - departure + Math.Max(0, request.Matrix.DurationSeconds[previous, 0]), driving, distance);
     }
 
     private static long DirectionPenalty(double[] bearings, int fromNode, int toNode, int secondsPerDegree)

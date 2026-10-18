@@ -68,6 +68,9 @@ public sealed class RoutingBranchSimulationTests
         foreach (var route in plan.Proposals)
         {
             Assert.All(route.Stops, stop => Assert.True(route.ExpectedDepartureAtUtc >= stop.EstimatedReadyAtUtc));
+            Assert.Equal((int)(route.Stops.Max(stop=>stop.EstimatedArrivalAtUtc!.Value)-route.ExpectedDepartureAtUtc).TotalSeconds,
+                route.LastDeliverySeconds);
+            Assert.InRange(route.LastDeliverySeconds,0,settings.Value.MaximumDeliveryAfterDepartureSeconds);
             if (route.Stops.Any(s => s.IsReady)) Assert.All(route.Stops, stop => Assert.True(stop.IsReady));
         }
         Assert.Equal(0, await db.Orders.CountAsync(o => o.DeliveryManId.HasValue));
