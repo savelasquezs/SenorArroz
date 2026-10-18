@@ -29,6 +29,7 @@ jobs:
           git merge --no-edit origin/main
           python3 - <<'PY'
           from pathlib import Path
+          import json, os
           p = Path('SenorArroz.API/Controllers/WhatsAppController.cs')
           s = p.read_text(encoding='utf-8-sig')
           if 'private IQueryable<WhatsAppConversation> GetAccessibleConversationsQuery()' not in s:
@@ -88,9 +89,27 @@ jobs:
           '''
               s = s.replace(marker, helper + marker)
               p.write_text(s, encoding='utf-8')
+          p = Path('SenorArroz.Tests/WhatsAppUnreadSummaryPerformanceTests.cs')
+          s = p.read_text()
+          if 'legacy-test-two' not in s:
+              marker = '        db.WhatsAppChannelSettings.AddRange('
+              assert s.count(marker) == 1
+              s = s.replace(marker, '''        db.WhatsAppBranchSettings.Add(new WhatsAppBranchSetting
+                  {
+                      Id = 2, TenantId = 1, BranchId = 2, IsActive = true, IsVerified = true, PhoneNumberId = "legacy-test-two"
+                  });
+          ''' + marker)
+              s = s.replace('db.WhatsAppBranchSettings.Local.Single().IsActive', 'db.WhatsAppBranchSettings.Local.Single(x => x.BranchId == 1).IsActive')
+              p.write_text(s)
+          p = Path('docs/performance/CHECKLIST.md')
+          lines = p.read_text().splitlines()
+          url = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())['pull_request']['html_url']
+          row = '| M30-F01 | Listado bandeja y no leídos | Analizado | 2026-10-18 | [Informe](reviews/2026-10-18-M30-F01.md) | [PR API](' + url + ') | Consulta agrupada y filtros compartidos; CI y frontend pendientes. Sin SQL productivo. |'
+          assert sum(line.startswith('| M30-F01 |') for line in lines) == 1
+          p.write_text('\n'.join(row if line.startswith('| M30-F01 |') else line for line in lines) + '\n')
           PY
           git diff --check
-          git add -- SenorArroz.API/Controllers/WhatsAppController.cs
+          git add -- SenorArroz.API/Controllers/WhatsAppController.cs SenorArroz.Tests/WhatsAppUnreadSummaryPerformanceTests.cs docs/performance/CHECKLIST.md
           if ! git diff --cached --quiet; then
             git commit -m 'perf(M30-F01): share channel-scoped inbox query and aggregate unread in one command'
           fi
