@@ -148,25 +148,20 @@ public class WhatsAppController : ControllerBase
                             || x.OperationalBranchId == _currentUser.BranchId
                             || x.AssignedUserId == _currentUser.Id)))));
 
-        var unreadConversations = await query.CountAsync(cancellationToken);
-        if (unreadConversations == 0)
-        {
-            return Ok(ApiResponse<WhatsAppUnreadSummaryDto>.SuccessResponse(
-                new WhatsAppUnreadSummaryDto(),
-                "Resumen de WhatsApp obtenido."));
-        }
+        // Aggregate unread counts and latest timestamp in a single SQL query.
+        var summary = await query
+            .GroupBy(_ => 1)
+            .Select(group => new WhatsAppUnreadSummaryDto
+            {
+                TotalUnread = group.Sum(x => x.UnreadCount),
+                UnreadConversations = group.Count(),
+                LatestMessageAt = group.Max(x => x.LastMessageAt)
+            })
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? new WhatsAppUnreadSummaryDto();
 
-        var totalUnread = await query.SumAsync(x => x.UnreadCount, cancellationToken);
-        var latestMessageAt = await query
-            .Select(x => x.LastMessageAt)
-            .MaxAsync(cancellationToken);
-
-        return Ok(ApiResponse<WhatsAppUnreadSummaryDto>.SuccessResponse(new WhatsAppUnreadSummaryDto
-        {
-            TotalUnread = totalUnread,
-            UnreadConversations = unreadConversations,
-            LatestMessageAt = latestMessageAt
-        }, "Resumen de WhatsApp obtenido."));
+        return Ok(ApiResponse<WhatsAppUnreadSummaryDto>.SuccessResponse(
+            summary, "Resumen de WhatsApp obtenido."));
     }
 
     [HttpGet("quick-replies")]
