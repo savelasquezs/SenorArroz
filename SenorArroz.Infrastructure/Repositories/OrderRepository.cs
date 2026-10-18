@@ -216,18 +216,19 @@ public class OrderRepository : IOrderRepository
         {
             OrderUpdateGraphForPersistence.DetachReadOnlyNavigations(order);
 
-            // Pedido cargado con AsNoTracking y mutado en memoria: DbSet.Update() no emite DELETE para líneas
-            // quitadas del ICollection (dejan de ser alcanzables en el grafo). Borrar en BD las que ya no estén en el payload.
-            if (order.OrderDetails != null)
-            {
-                var keepIds = order.OrderDetails.Where(d => d.Id > 0).Select(d => d.Id).ToHashSet();
+            // Save the parent and surviving lines before deleting removed lines.
+            // Deleting order_detail fires a trigger that updates order.management_version;
+            // doing it first invalidates the parent's EF concurrency token in this same request.
+            var keepIds = order.OrderDetails?.Where(d => d.Id > 0).Select(d => d.Id).ToHashSet();
+            _context.Orders.Update(order);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            // DbSet.Update() cannot detect lines removed from a no-tracking ICollection.
+            // Delete them only after EF has finished writing the parent.
+            if (keepIds != null)
                 await _context.OrderDetails
                     .Where(od => od.OrderId == order.Id && !keepIds.Contains(od.Id))
                     .ExecuteDeleteAsync(cancellationToken);
-            }
-
-            _context.Orders.Update(order);
-            await _context.SaveChangesAsync(cancellationToken);
             if (tx is not null)
                 await tx.CommitAsync(cancellationToken);
             return await GetByIdAsync(order.Id, cancellationToken) ?? order;
