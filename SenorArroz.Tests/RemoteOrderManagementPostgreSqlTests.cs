@@ -409,7 +409,7 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
-    public async Task Paid_delivered_order_transfer_changes_only_dispatch_branch_and_preserves_consumed_inventory()
+    public async Task Ready_order_transfer_changes_only_dispatch_branch_and_preserves_consumed_inventory()
     {
         await using var db = Db();
         var catalog = new ProductCategory { BranchId = 2, Name = "Menú" };
@@ -439,7 +439,7 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
             new Clock(), new TestBranchContext(1));
         await inventory.SnapshotAndReserveAsync(order, false, "transfer:test:reserve", default);
         await inventory.ConsumeOrderAsync(order, "transfer:test:consume", default);
-        order.Status = OrderStatus.Delivered;
+        order.Status = OrderStatus.Ready;
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
@@ -481,7 +481,7 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
         var line = await check.OrderDetails.AsNoTracking().SingleAsync(d => d.OrderId == 10);
         Assert.Equal(1, saved.BranchId);
         Assert.Equal(1, saved.OriginBranchId);
-        Assert.Equal(OrderStatus.Delivered, saved.Status);
+        Assert.Equal(OrderStatus.Ready, saved.Status);
         Assert.Equal(30_000, saved.Total);
         Assert.True(saved.ManagementVersion > version);
         Assert.Equal(bank.Id, payment.BankId);
