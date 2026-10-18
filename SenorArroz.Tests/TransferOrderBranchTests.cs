@@ -85,9 +85,10 @@ public sealed class TransferOrderBranchTests
         var mapper = new Mock<IMapper>();
         mapper.Setup(m => m.Map<OrderDto>(It.IsAny<Order>()))
             .Returns((Order o) => new OrderDto { Id = o.Id, BranchId = o.BranchId, Status = o.Status });
+        var announceKitchen = status == OrderStatus.Taken || status == OrderStatus.InPreparation;
         var notifications = new Mock<IOrderNotificationService>();
         notifications.Setup(n => n.NotifyOrderTransferred(88, 1, 2,
-            status is OrderStatus.Taken or OrderStatus.InPreparation)).Returns(Task.CompletedTask);
+            announceKitchen)).Returns(Task.CompletedTask);
         notifications.Setup(n => n.NotifyNewOrderToKitchen(It.IsAny<OrderDto>())).Returns(Task.CompletedTask);
 
         var handler = new TransferOrderBranchHandler(db, repository.Object, currentUser.Object,
@@ -111,7 +112,7 @@ public sealed class TransferOrderBranchTests
         Assert.Equal(1, (await db.KitchenVoiceEvents.AsNoTracking()
             .SingleAsync(e => e.OrderId == 88)).BranchId);
         notifications.Verify(n => n.NotifyOrderTransferred(88, 1, 2,
-            status is OrderStatus.Taken or OrderStatus.InPreparation), Times.Once);
+            announceKitchen), Times.Once);
         notifications.Verify(n => n.NotifyNewOrderToKitchen(It.IsAny<OrderDto>()), Times.Never());
     }
 
