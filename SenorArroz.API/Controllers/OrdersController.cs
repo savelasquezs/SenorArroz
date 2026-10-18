@@ -275,8 +275,8 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// Traslada un pedido aún no preparado a otra sucursal, conservando el número y el historial.
-    /// El backend valida productos, cobros, inventario y versión antes de modificarlo.
+    /// Cambia la sucursal de despacho de cualquier pedido sin alterar inventario, pagos
+    /// ni relaciones históricas. Requiere Superadmin y la versión vigente del pedido.
     /// </summary>
     [HttpPut("{id}/transfer-branch")]
     [Authorize(Roles = "Superadmin")]
