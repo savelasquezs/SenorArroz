@@ -76,6 +76,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<PaymentNotificationOutboxMessage> PaymentNotificationOutboxMessages { get; set; }
 
         DbSet<PrintJob> PrintJobs { get; set; }
+        DbSet<KitchenVoiceEvent> KitchenVoiceEvents { get; set; }
 
         DbSet<Customer> Customers { get; set; }
         DbSet<CustomerPhone> CustomerPhones { get; set; }
