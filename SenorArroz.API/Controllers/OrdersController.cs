@@ -159,7 +159,8 @@ public class OrdersController : ControllerBase
         if (after is < 0) return BadRequest("Invalid cursor.");
 
         var query = _db.KitchenVoiceEvents.AsNoTracking().Where(e =>
-            e.TenantId == _currentTenant.TenantId && e.BranchId == scopedBranchId);
+            e.TenantId == _currentTenant.TenantId && e.BranchId == scopedBranchId
+            && _db.Orders.Any(o => o.Id == e.OrderId && o.BranchId == scopedBranchId));
         var latest = after is null
             ? await query.MaxAsync(e => (int?)e.Id, cancellationToken) ?? 0
             : 0;
