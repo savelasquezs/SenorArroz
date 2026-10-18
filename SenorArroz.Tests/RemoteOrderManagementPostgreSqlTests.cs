@@ -500,6 +500,109 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
         Assert.Single(await check.EntityAuditLogs.Where(a => a.EntityType == "order_management").ToArrayAsync());
     }
 
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Ready_transfer_can_reassign_one_bank_payment_without_recreating_money()
+    {
+        await using var db = Db();
+        var sourceBank = new Bank { BranchId = 2, Name = "Origen banco" };
+        var destinationBank = new Bank { BranchId = 1, Name = "Destino banco" };
+        db.Banks.AddRange(sourceBank, destinationBank);
+        await db.SaveChangesAsync();
+        var moved = new BankPayment { OrderId = 10, BankId = sourceBank.Id,
+            Amount = 20_000, IsVerified = true, VerifiedAt = new Clock().UtcNow };
+        var retained = new BankPayment { OrderId = 10, BankId = sourceBank.Id, Amount = 5_000 };
+        db.BankPayments.AddRange(moved, retained);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var actor = new SuperadminActor();
+        var branch = new TestBranchContext(1);
+        var version = (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == 10)).ManagementVersion;
+        var mutation = new Snapshot(version);
+        var notifications = new Mock<IOrderNotificationService>();
+        notifications.Setup(n => n.NotifyOrderTransferred(10, 2, 1, true))
+            .Returns(Task.CompletedTask);
+        notifications.Setup(n => n.NotifyOrderManagementChanged(
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<long>()))
+            .Returns(Task.CompletedTask);
+
+        var handler = new TransferOrderBranchHandler(db, new OrderRepository(db, new Clock()),
+            actor, branch, mutation, notifications.Object, Mapper(), new Clock());
+        var pipeline = new OrderMutationBehavior<TransferOrderBranchCommand, OrderDto>(
+            db, actor, branch, notifications.Object,
+            NullLogger<OrderMutationBehavior<TransferOrderBranchCommand, OrderDto>>.Instance,
+            mutation, new Clock());
+        var request = new TransferOrderBranchCommand { Id = 10, TargetBranchId = 1,
+            BankPaymentChanges = [new(moved.Id, destinationBank.Id)] };
+        await pipeline.Handle(request, ct => handler.Handle(request, ct), default);
+
+        await using var check = Db();
+        var order = await check.Orders.AsNoTracking().SingleAsync(o => o.Id == 10);
+        var actualMoved = await check.BankPayments.AsNoTracking().SingleAsync(p => p.Id == moved.Id);
+        var actualRetained = await check.BankPayments.AsNoTracking().SingleAsync(p => p.Id == retained.Id);
+        Assert.Equal(1, order.BranchId);
+        Assert.Equal(1, order.OriginBranchId);
+        Assert.Equal(OrderStatus.Taken, order.Status);
+        Assert.True(order.ManagementVersion > version);
+        Assert.Equal(destinationBank.Id, actualMoved.BankId);
+        Assert.Equal(20_000, actualMoved.Amount);
+        Assert.False(actualMoved.IsVerified);
+        Assert.Null(actualMoved.VerifiedAt);
+        Assert.Equal(sourceBank.Id, actualRetained.BankId);
+        Assert.Equal(5_000, actualRetained.Amount);
+        var logs = await check.EntityAuditLogs.AsNoTracking().ToListAsync();
+        Assert.Single(logs.Where(x => x.EntityType == "order_management"));
+        var bankAudit = Assert.Single(logs.Where(x => x.EntityType == "order_bank_reassignment"));
+        Assert.Contains("manualBankTransferRequired", bankAudit.MetadataJson);
+        Assert.Null(check.Database.CurrentTransaction);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Reassigning_a_payment_from_a_closed_bank_period_is_rejected_atomically()
+    {
+        await using var db = Db();
+        var source = new Bank { BranchId = 2, Name = "Origen banco" };
+        var destination = new Bank { BranchId = 1, Name = "Destino banco" };
+        db.Banks.AddRange(source, destination);
+        await db.SaveChangesAsync();
+        var payment = new BankPayment { OrderId = 10, BankId = source.Id,
+            Amount = 15_000, IsVerified = true };
+        db.BankPayments.Add(payment);
+        await db.SaveChangesAsync();
+        db.CashRegisterClosures.Add(new CashRegisterClosure
+        {
+            BranchId = 2, CreatedById = 70, ClosedAt = payment.CreatedAt.AddMinutes(1)
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var actor = new SuperadminActor();
+        var branch = new TestBranchContext(1);
+        var version = (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == 10)).ManagementVersion;
+        var mutation = new Snapshot(version);
+        var request = new TransferOrderBranchCommand { Id = 10, TargetBranchId = 1,
+            BankPaymentChanges = [new(payment.Id, destination.Id)] };
+        var handler = new TransferOrderBranchHandler(db, new OrderRepository(db, new Clock()), actor,
+            branch, mutation, Mock.Of<IOrderNotificationService>(), Mapper(), new Clock());
+        var pipeline = new OrderMutationBehavior<TransferOrderBranchCommand, OrderDto>(
+            db, actor, branch, Mock.Of<IOrderNotificationService>(),
+            NullLogger<OrderMutationBehavior<TransferOrderBranchCommand, OrderDto>>.Instance,
+            mutation, new Clock());
+        var error = await Assert.ThrowsAsync<BusinessException>(() =>
+            pipeline.Handle(request, ct => handler.Handle(request, ct), default));
+        Assert.Contains("cierre de caja", error.Message);
+
+        await using var check = Db();
+        Assert.Equal(2, (await check.Orders.AsNoTracking().SingleAsync(o => o.Id == 10)).BranchId);
+        var after = await check.BankPayments.AsNoTracking().SingleAsync(p => p.Id == payment.Id);
+        Assert.Equal(source.Id, after.BankId);
+        Assert.True(after.IsVerified);
+        Assert.Empty(await check.EntityAuditLogs.Where(x => x.EntityType == "order_bank_reassignment").ToListAsync());
+    }
+
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
     public async Task Direct_SQL_updates_increment_version_and_cannot_rewrite_provenance()
