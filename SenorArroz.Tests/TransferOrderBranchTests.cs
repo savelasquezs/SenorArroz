@@ -86,7 +86,8 @@ public sealed class TransferOrderBranchTests
         mapper.Setup(m => m.Map<OrderDto>(It.IsAny<Order>()))
             .Returns((Order o) => new OrderDto { Id = o.Id, BranchId = o.BranchId, Status = o.Status });
         var notifications = new Mock<IOrderNotificationService>();
-        notifications.Setup(n => n.NotifyOrderTransferred(88, 1, 2)).Returns(Task.CompletedTask);
+        notifications.Setup(n => n.NotifyOrderTransferred(88, 1, 2,
+            status is OrderStatus.Taken or OrderStatus.InPreparation)).Returns(Task.CompletedTask);
         notifications.Setup(n => n.NotifyNewOrderToKitchen(It.IsAny<OrderDto>())).Returns(Task.CompletedTask);
 
         var handler = new TransferOrderBranchHandler(db, repository.Object, currentUser.Object,
@@ -107,10 +108,11 @@ public sealed class TransferOrderBranchTests
         Assert.Equal(777, detail.ProductId);
         Assert.Equal(93, payment.BankId);
         Assert.True(payment.IsVerified);
-        Assert.Empty(await db.KitchenVoiceEvents.AsNoTracking().Where(e => e.OrderId == 88).ToArrayAsync());
-        notifications.Verify(n => n.NotifyOrderTransferred(88, 1, 2), Times.Once);
-        notifications.Verify(n => n.NotifyNewOrderToKitchen(It.IsAny<OrderDto>()),
-            status is OrderStatus.Taken or OrderStatus.InPreparation ? Times.Once() : Times.Never());
+        Assert.Equal(1, (await db.KitchenVoiceEvents.AsNoTracking()
+            .SingleAsync(e => e.OrderId == 88)).BranchId);
+        notifications.Verify(n => n.NotifyOrderTransferred(88, 1, 2,
+            status is OrderStatus.Taken or OrderStatus.InPreparation), Times.Once);
+        notifications.Verify(n => n.NotifyNewOrderToKitchen(It.IsAny<OrderDto>()), Times.Never());
     }
 
     [Fact]
