@@ -245,8 +245,11 @@ public class CloseCashRegisterHandler : IRequestHandler<CloseCashRegisterCommand
 
             var trackingAlerts = await _context.DeliveryTrackingAlerts.AsNoTracking()
                 .Where(x => x.BranchId == branchId
-                    && x.OccurredAt > periodStartUtc
-                    && x.OccurredAt <= saved.ClosedAt
+                    // A stay spanning cash closings belongs to the period in which
+                    // its last supported GPS reading occurred, not when it began.
+                    && (x.AlertType == DeliveryTrackingAlertType.UnexpectedStay
+                        ? x.LastOccurredAt > periodStartUtc && x.LastOccurredAt <= saved.ClosedAt
+                        : x.OccurredAt > periodStartUtc && x.OccurredAt <= saved.ClosedAt)
                     && CashClosureAuditMapper.IncludedTrackingAlertTypes.Contains(x.AlertType)
                     && (x.AlertType != DeliveryTrackingAlertType.NoCommunication
                         || x.Severity == DeliveryTrackingAlertSeverity.RequiresReview))

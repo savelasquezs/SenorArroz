@@ -65,8 +65,8 @@ public class DeliveryStayClassificationService : IDeliveryStayClassificationServ
         {
             stay.AuthorizedPlaceId = null;
             stay.DistanceToAuthorizedPlaceMeters = null;
-            if (!sessionBranches.TryGetValue(stay.WorkSessionId, out var branchId)
-                || !branches.TryGetValue(branchId, out var branch))
+            if (!sessionBranches.TryGetValue(stay.WorkSessionId, out var sessionBranchId)
+                || !branches.TryGetValue(sessionBranchId, out var branch))
             {
                 SetClassification(stay, DeliveryStayClassification.PendingReview, "branch_context_missing", nowUtc);
                 continue;
@@ -105,7 +105,7 @@ public class DeliveryStayClassificationService : IDeliveryStayClassificationServ
                 continue;
             }
 
-            var nearestAuthorizedPlace = placesByBranch.GetValueOrDefault(branchId)?
+            var nearestAuthorizedPlace = placesByBranch.GetValueOrDefault(sessionBranchId)?
                 .Select(place => new
                 {
                     Place = place,
