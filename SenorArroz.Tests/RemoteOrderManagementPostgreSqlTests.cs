@@ -458,7 +458,7 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
         var branch = new TestBranchContext(1);
         var mutation = new Snapshot(version);
         var notifications = new Mock<IOrderNotificationService>();
-        notifications.Setup(n => n.NotifyOrderTransferred(10, 2, 1)).Returns(Task.CompletedTask);
+        notifications.Setup(n => n.NotifyOrderTransferred(10, 2, 1, false)).Returns(Task.CompletedTask);
         notifications.Setup(n => n.NotifyOrderManagementChanged(
             It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<long>()))
             .Returns(Task.CompletedTask);
