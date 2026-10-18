@@ -219,12 +219,13 @@ public class OrderRepository : IOrderRepository
             // Save the parent and surviving lines before deleting removed lines.
             // Deleting order_detail fires a trigger that updates order.management_version;
             // doing it first invalidates the parent's EF concurrency token in this same request.
-            var keepIds = order.OrderDetails?.Where(d => d.Id > 0).Select(d => d.Id).ToHashSet();
             _context.Orders.Update(order);
             await _context.SaveChangesAsync(cancellationToken);
 
             // DbSet.Update() cannot detect lines removed from a no-tracking ICollection.
-            // Delete them only after EF has finished writing the parent.
+            // Snapshot IDs after saving: new lines receive their database IDs during SaveChanges.
+            // Delete removed lines only after EF has finished writing the parent.
+            var keepIds = order.OrderDetails?.Select(d => d.Id).ToHashSet();
             if (keepIds != null)
                 await _context.OrderDetails
                     .Where(od => od.OrderId == order.Id && !keepIds.Contains(od.Id))
