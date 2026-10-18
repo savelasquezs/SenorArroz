@@ -109,7 +109,7 @@ public sealed class TransferOrderBranchTests
         Assert.True(payment.IsVerified);
         notifications.Verify(n => n.NotifyOrderTransferred(88, 1, 2), Times.Once);
         notifications.Verify(n => n.NotifyNewOrderToKitchen(It.IsAny<OrderDto>()),
-            status == OrderStatus.Taken ? Times.Once() : Times.Never());
+            status is OrderStatus.Taken or OrderStatus.InPreparation ? Times.Once() : Times.Never());
     }
 
     [Fact]
