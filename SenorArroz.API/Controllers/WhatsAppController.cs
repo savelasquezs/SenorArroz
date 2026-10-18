@@ -640,7 +640,7 @@ public class WhatsAppController : ControllerBase
         if (search.BranchId.HasValue && !isSuperadmin && search.BranchId != adminBranchId)
             return Forbid();
 
-        var query = accessibleConversations
+        IQueryable<WhatsAppConversation> query = accessibleConversations
             .Include(x => x.Branch)
             .Include(x => x.OperationalBranch)
             .Include(x => x.Customer);
