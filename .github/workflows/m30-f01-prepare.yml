@@ -1,117 +1,20 @@
-name: Prepare M30-F01 review branch
+name: WhatsApp inbox regression check
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize]
-    paths: ['.github/workflows/m30-f01-prepare.yml']
+  workflow_dispatch:
 permissions:
-  contents: write
-concurrency:
-  group: prepare-m30-f01
-  cancel-in-progress: false
+  contents: read
 jobs:
-  prepare:
-    if: github.event.pull_request.head.ref == 'perf/2026-10-18-M30-F01-unread-summary-aggregate' && github.event.pull_request.head.repo.full_name == github.repository
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: perf/2026-10-18-M30-F01-unread-summary-aggregate
-          fetch-depth: 0
-      - name: Apply bounded source changes to the review branch only
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git fetch origin main
-          git merge --no-edit origin/main
-          python3 - <<'PY'
-          from pathlib import Path
-          import json, os
-          p = Path('SenorArroz.API/Controllers/WhatsAppController.cs')
-          s = p.read_text(encoding='utf-8-sig')
-          if 'private IQueryable<WhatsAppConversation> GetAccessibleConversationsQuery()' not in s:
-              a = s.index('    [HttpGet("unread-summary")]')
-              b = s.index('    [HttpGet("quick-replies")]', a)
-              section = s[a:b]
-              begin = section.index('        var branchIds =')
-              end = section.index('        // Aggregate unread counts', begin)
-              section = section[:begin] + '        var query = GetAccessibleConversationsQuery().Where(x => x.UnreadCount > 0);\n\n' + section[end:]
-              s = s[:a] + section + s[b:]
-              a = s.index('    [HttpGet("conversations")]')
-              b = s.index('    [HttpPut("conversations/{conversationId:int}/operational-branch")]', a)
-              section = s[a:b]
-              old = '        var allowedBranchIds = await GetAllowedVerifiedBranchIdsQuery().ToListAsync(cancellationToken);\n'
-              assert section.count(old) == 1
-              section = section.replace(old, '        var accessibleConversations = GetAccessibleConversationsQuery();\n')
-              section = section.replace('        var isBranchInboxUser = Roles.IsAdminOrCashier(_currentUser.Role);\n', '')
-              begin = section.index('        var query = _db.WhatsAppConversations')
-              end = section.index('        if (search.BranchId.HasValue)\n', begin)
-              section = section[:begin] + '''        var query = accessibleConversations
-                      .Include(x => x.Branch)
-                      .Include(x => x.OperationalBranch)
-                      .Include(x => x.Customer);
-
-          ''' + section[end:]
-              old = '            .OrderByDescending(x => x.LastMessageAt ?? x.CreatedAt)\n            .Take(200)'
-              assert section.count(old) == 1
-              section = section.replace(old, '            .OrderByDescending(x => x.LastMessageAt ?? x.CreatedAt)\n            .ThenByDescending(x => x.Id)\n            .Take(200)')
-              old = '        var assignedNames = await _db.Users.AsNoTracking().Where(x => assignedIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);'
-              assert section.count(old) == 1
-              section = section.replace(old, '''        var assignedNames = assignedIds.Count == 0 ? new Dictionary<int, string>()
-                      : await _db.Users.AsNoTracking().Where(x => assignedIds.Contains(x.Id))
-                          .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);''')
-              s = s[:a] + section + s[b:]
-              marker = '    private IQueryable<int> GetAllowedVerifiedBranchIdsQuery()'
-              assert s.count(marker) == 1
-              helper = '''    private IQueryable<WhatsAppConversation> GetAccessibleConversationsQuery()
-              {
-                  var branchIds = GetAllowedVerifiedBranchIdsQuery();
-                  var tenantId = TenantId;
-                  var userId = _currentUser.Id;
-                  var branchId = _currentUser.BranchId;
-                  var isSuperadmin = Roles.IsSuperadmin(_currentUser.Role);
-                  var isBranchInboxUser = Roles.IsAdminOrCashier(_currentUser.Role);
-                  var channelIds = _db.WhatsAppChannelSettings.AsNoTracking()
-                      .Where(x => x.TenantId == tenantId && x.IsActive && x.IsVerified)
-                      .Select(x => x.Id);
-
-                  return _db.WhatsAppConversations.AsNoTracking()
-                      .Where(x => x.TenantId == tenantId && (
-                          (x.ChannelSettingId == null && branchIds.Contains(x.BranchId))
-                          || (x.ChannelSettingId.HasValue && channelIds.Contains(x.ChannelSettingId.Value)
-                              && (isSuperadmin || isBranchInboxUser && (x.OperationalBranchId == null
-                                  || x.OperationalBranchId == branchId || x.AssignedUserId == userId)))));
-              }
-
-          '''
-              s = s.replace(marker, helper + marker)
-              p.write_text(s, encoding='utf-8')
-          p = Path('SenorArroz.Tests/WhatsAppUnreadSummaryPerformanceTests.cs')
-          s = p.read_text()
-          if 'legacy-test-two' not in s:
-              marker = '        db.WhatsAppChannelSettings.AddRange('
-              assert s.count(marker) == 1
-              s = s.replace(marker, '''        db.WhatsAppBranchSettings.Add(new WhatsAppBranchSetting
-                  {
-                      Id = 2, TenantId = 1, BranchId = 2, IsActive = true, IsVerified = true, PhoneNumberId = "legacy-test-two"
-                  });
-          ''' + marker)
-              s = s.replace('db.WhatsAppBranchSettings.Local.Single().IsActive', 'db.WhatsAppBranchSettings.Local.Single(x => x.BranchId == 1).IsActive')
-              p.write_text(s)
-          p = Path('docs/performance/CHECKLIST.md')
-          lines = p.read_text().splitlines()
-          url = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())['pull_request']['html_url']
-          row = '| M30-F01 | Listado bandeja y no leídos | Analizado | 2026-10-18 | [Informe](reviews/2026-10-18-M30-F01.md) | [PR API](' + url + ') | Consulta agrupada y filtros compartidos; CI y frontend pendientes. Sin SQL productivo. |'
-          assert sum(line.startswith('| M30-F01 |') for line in lines) == 1
-          p.write_text('\n'.join(row if line.startswith('| M30-F01 |') else line for line in lines) + '\n')
-          PY
-          git diff --check
-          git add -- SenorArroz.API/Controllers/WhatsAppController.cs SenorArroz.Tests/WhatsAppUnreadSummaryPerformanceTests.cs docs/performance/CHECKLIST.md
-          if ! git diff --cached --quiet; then
-            git commit -m 'perf(M30-F01): share channel-scoped inbox query and aggregate unread in one command'
-          fi
-          git push origin HEAD:refs/heads/perf/2026-10-18-M30-F01-unread-summary-aggregate
-          git log -1 --format='%H %s'
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Run existing inbox tests against isolated PostgreSQL
+        env:
+          RUN_POSTGRES_INTEGRATION_TESTS: 'true'
+        run: dotnet test SenorArroz.Tests/SenorArroz.Tests.csproj -c Release --filter 'FullyQualifiedName~WhatsAppUnreadSummaryPerformanceTests|FullyQualifiedName~WhatsAppOperationalBranchTests'
