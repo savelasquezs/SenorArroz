@@ -238,7 +238,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         var proposal = BuildProposal(0, orders, matrix, indexes, new RoutingVehicleSlot(0), estimates, now);
         foreach (var stop in proposal.Stops) stop.Order = byId[stop.OrderId];
         var limits = matrix.Nodes.ToDictionary(node => node.OrderId, node => node.DeliveryTimeLimitSeconds);
-        return MapProposal(proposal, proposal.Stops.Select(stop => MapStop(stop, limits)).ToList(), false) with
+        return MapProposal(proposal, proposal.Stops.Select(stop => MapStop(stop, limits)).ToList(), false, matrix) with
         { Status = "preview", SelectionFingerprint = DeliveryRoutingPolicy.SelectionFingerprint(orders) };
     }
 
@@ -362,7 +362,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
             var visible = proposal.Stops.Where(s => s.Order is not null && eligible(s.Order)).OrderBy(x => x.StopSequence).ToList();
             var stale = visible.Count != proposal.Stops.Count || visible.Any(s => s.WasReadyAtGeneration != (s.Order.Status == OrderStatus.Ready));
             changed |= stale;
-            if (visible.Count > 0) proposals.Add(MapProposal(proposal, visible.Select(stop => MapStop(stop, limits)).ToList(), stale));
+            if (visible.Count > 0) proposals.Add(MapProposal(proposal, visible.Select(stop => MapStop(stop, limits)).ToList(), stale, matrix));
         }
         var proposed = proposals.SelectMany(p => p.Stops).Select(s => s.OrderId).ToHashSet();
         var unrouted = plan.Stops.Where(s => s.DeliveryRouteProposalId == null && !proposed.Contains(s.OrderId)
@@ -375,17 +375,26 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
             proposals, unrouted);
     }
 
-    private static DeliveryRouteProposalDto MapProposal(DeliveryRouteProposal proposal, List<DeliveryRoutingStopDto> stops, bool stale)
+    private static DeliveryRouteProposalDto MapProposal(DeliveryRouteProposal proposal, List<DeliveryRoutingStopDto> stops,
+        bool stale, RoutingCostMatrix? matrix)
     {
         var ready = stops.Where(s => s.IsReady).Select(s => s.OrderId).ToArray();
         var pending = stops.Where(s => !s.IsReady).Select(s => s.OrderId).ToArray();
+        var lastOrderId = stops.LastOrDefault()?.OrderId;
+        var returnIndex = matrix?.Nodes.Select((node, index) => (node.OrderId, Index: index + 1))
+            .FirstOrDefault(node => node.OrderId == lastOrderId).Index ?? 0;
         return new DeliveryRouteProposalDto(proposal.Id, proposal.Sequence, stale ? "stale" : Camel(proposal.Status.ToString()),
             Camel(proposal.Recommendation.ToString()), proposal.ExpectedDepartureAtUtc, proposal.WaitSeconds,
             proposal.ApproximateDrivingDurationSeconds, proposal.ApproximateDistanceMeters,
             proposal.ValidatedDrivingDurationSeconds, proposal.ValidatedDistanceMeters, Camel(proposal.GoogleValidationStatus.ToString()),
             proposal.LastDeliverySeconds, proposal.WorstAgeAtDeliverySeconds, proposal.DirectionSpreadDegrees, proposal.Score,
             !stale && ready.Length > 0, pending.Length == 0, stale ? Array.Empty<int>() : ready, pending,
-            proposal.PlanningWarnings, stops) { WaitDeadlineAtUtc = proposal.WaitDeadlineAtUtc };
+            proposal.PlanningWarnings, stops)
+        {
+            WaitDeadlineAtUtc = proposal.WaitDeadlineAtUtc,
+            ReturnDrivingDurationSeconds = !stale && returnIndex > 0 ? (int)matrix!.DurationSeconds[returnIndex, 0] : null,
+            ReturnDistanceMeters = !stale && returnIndex > 0 ? (int)matrix!.DistanceMeters[returnIndex, 0] : null
+        };
     }
 
     private DeliveryRoutingStopDto MapStop(DeliveryRouteProposalStop stop, IReadOnlyDictionary<int, int?> limits) => new(

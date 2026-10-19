@@ -29,6 +29,9 @@ public sealed record DeliveryRouteProposalDto(
 {
     public DateTime? WaitDeadlineAtUtc { get; init; }
     public string? SelectionFingerprint { get; init; }
+    public int? ReturnDrivingDurationSeconds { get; init; }
+    public int? ReturnDistanceMeters { get; init; }
+    public bool UsesApproximateReturnMetrics { get; init; } = true;
 }
 
 public sealed record DeliveryRoutingCapacityDto(int AvailableNow, int AvailableSoon)

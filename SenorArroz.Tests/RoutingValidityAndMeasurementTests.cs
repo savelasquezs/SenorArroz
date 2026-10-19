@@ -18,6 +18,50 @@ public sealed class RoutingValidityAndMeasurementTests
     private static readonly DateTime Now = new(2026, 10, 16, 17, 0, 0, DateTimeKind.Utc);
 
     [Fact]
+    public async Task ReturnLegUsesTheLastStopAndDirectedCostsInPlanReloadAndEditedPreviews()
+    {
+        var provider = new Mock<IRoutingCostMatrixProvider>();
+        provider.Setup(p => p.Create(It.IsAny<double>(), It.IsAny<double>(), It.IsAny<IReadOnlyList<RoutingNode>>()))
+            .Returns((double _, double _, IReadOnlyList<RoutingNode> nodes) =>
+            {
+                var durations = new long[nodes.Count + 1, nodes.Count + 1];
+                var distances = new long[nodes.Count + 1, nodes.Count + 1];
+                for (var from = 0; from <= nodes.Count; from++)
+                for (var to = 0; to <= nodes.Count; to++)
+                {
+                    if (from == to) continue;
+                    durations[from, to] = to == 0 ? nodes[from - 1].OrderId == 20 ? 700 : 900 : 100;
+                    distances[from, to] = durations[from, to] * 10;
+                }
+                return new RoutingCostMatrix(nodes, durations, distances, new double[nodes.Count + 1],
+                    RoutingMatrixSource.Approximate, Now, []);
+            });
+        await using var f = new Fixture(provider.Object);
+        await f.AddOrder(20, OrderStatus.Ready);
+        await f.AddOrder(21, OrderStatus.Ready);
+        var plan = await f.Service.GetOrCreateActivePlanAsync(1);
+        var reload = await f.Service.GetOrCreateActivePlanAsync(1);
+        var preview = await f.Service.PreviewAsync(1, [20, 21]);
+        foreach (var route in new[] { plan.Proposals.Single(), reload.Proposals.Single(), preview })
+        {
+            Assert.Equal(900, route.ReturnDrivingDurationSeconds);
+            Assert.Equal(9000, route.ReturnDistanceMeters);
+            Assert.True(route.UsesApproximateReturnMetrics);
+            Assert.Equal(200, route.ApproximateDrivingDurationSeconds);
+            Assert.Equal(2000, route.ApproximateDistanceMeters);
+            Assert.All(route.Stops, stop => Assert.Equal(240, stop.ServiceSeconds));
+        }
+        var reversed = await f.Service.PreviewAsync(1, [21, 20]);
+        var removed = await f.Service.PreviewAsync(1, [20]);
+        Assert.Equal(700, reversed.ReturnDrivingDurationSeconds);
+        Assert.Equal(7000, reversed.ReturnDistanceMeters);
+        Assert.Equal(700, removed.ReturnDrivingDurationSeconds);
+        Assert.Equal(7000, removed.ReturnDistanceMeters);
+        Assert.Equal(plan.Version, reload.Version);
+        Assert.All(f.Db.Orders, order => Assert.Null(order.DeliveryRouteId));
+    }
+
+    [Fact]
     public void MeasurementIsDisabledByDefaultAndExpiresWithoutRestartingItsClock()
     {
         var options = new RoutingMeasurementOptions();
@@ -162,7 +206,7 @@ public sealed class RoutingValidityAndMeasurementTests
         internal int AvailableInSeconds;
         internal Action? DuringSolve;
 
-        internal Fixture()
+        internal Fixture(IRoutingCostMatrixProvider? matrixProvider = null)
         {
             Db.Branches.Add(new Branch { Id = 1, Name = "Branch", Address = "Store", Phone1 = "3000000000", Latitude = 6.2m, Longitude = -75.5m });
             var options = Options.Create(new DeliveryRoutingOptions { MaximumFinalistsToValidate = 0 });
@@ -181,7 +225,7 @@ public sealed class RoutingValidityAndMeasurementTests
                 DuringSolve?.Invoke();
                 return new DeliveryRouteOptimizationResult([new OptimizedRoute(0, Enumerable.Range(0, request.Matrix.Nodes.Count).ToArray(), 100, 100, 1)], [], 1, []);
             });
-            Service = new DeliveryRoutingPlanService(Db, Clock, new ApproximateRoutingCostMatrixProvider(options), optimizer.Object,
+            Service = new DeliveryRoutingPlanService(Db, Clock, matrixProvider ?? new ApproximateRoutingCostMatrixProvider(options), optimizer.Object,
                 estimator.Object, capacity.Object, Mock.Of<IGoogleRoutesDrivingMetricsService>(), Mock.Of<IOrderNotificationService>(),
                 options, Mock.Of<ILogger<DeliveryRoutingPlanService>>());
         }

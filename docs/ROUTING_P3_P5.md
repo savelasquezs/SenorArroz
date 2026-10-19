@@ -1,6 +1,6 @@
 # Ruteo P3–P5 local
 
-Implementación local sobre `local/routing-p2` (`471a38f`). API y Flutter trabajan en `local/routing-p3-p5`. Sin push, PR, merge a main, migración de producción, Railway ni Google Play.
+Implementación local sobre `local/routing-p2` (`471a38f`), desarrollada en `local/routing-p3-p5` e integrada localmente en `main` por solicitud del usuario. Sin push, PR, migración de producción, Railway ni Google Play.
 
 ## Predicción y capacidad
 
@@ -16,7 +16,9 @@ Los complementos con probabilidad inferior al 60% no comparten vehículo con com
 
 ## Edición y aceptación
 
-Flutter permite quitar, agregar pedidos listos y cambiar el orden en un único editor antes de aceptar. Actualizar estimación consulta el preview existente; no agrega polling ni otra suscripción SignalR. Cualquier edición invalida el preview anterior.
+Flutter permite quitar, agregar pedidos listos y cambiar el orden en un único editor antes de aceptar. La dirección es principal; barrio y número son secundarios. Quitar y tomar de otra propuesta exigen confirmación. El preview se consulta al abrir y después de cada edición con debounce; no agrega polling ni otra suscripción SignalR. Se ignoran respuestas anteriores y solo la estimación vigente permite aceptar. Un fallo ofrece reintentar; un plan vencido exige actualizar las propuestas. Se conservan jornada y GPS obligatorios.
+
+Tarjetas y editor muestran distancia, duración con todas las paradas y hora local aproximada hasta terminar la última entrega y hasta regresar a sucursal. El regreso es acumulado desde salida y añade solo el tramo dirigido desde la última parada a la sucursal; no duplica la ida ni la espera previa. Ese tramo se calcula con la matriz disponible, se marca como aproximado y se vuelve a calcular al cambiar la última parada. El contrato es aditivo y no necesita columnas nuevas.
 
 El preview devuelve una huella del conjunto ordenado y valida la versión vigente. La aceptación valida de nuevo versión/edad del plan, tenant/sucursal, estado Ready, ausencia de asignación y la huella; conserva transacción serializable y convierte conflictos de serialización, deadlock o concurrencia en 409. Se audita la aceptación y sus IDs ordenados. Los DTOs exponen `deliveryRouteStopSequence` para conservar ese orden en reconexiones y refrescos. La ruta aceptada no tiene editor del domiciliario.
 
@@ -42,3 +44,10 @@ P6 debe retirar también `RoutingMeasurement.Observe`, sus llamadas/opciones opc
 - Simulaciones de 8 y 16 pedidos en varias zonas, con 1 y 3 domiciliarios, reservas futuras y preparación incierta. No se duplican pedidos ni se asignan durante la planificación.
 - Carrera de dos domiciliarios sobre una selección editada: un solo ganador; recálculo posterior conserva las paradas aceptadas.
 - La versión publicada, GPS físico, tráfico real, retención remota y medición en producción requieren piloto posterior. No se afirma mejora operativa calibrada a partir de pruebas sintéticas.
+
+## Revisión para integración local a main — 2026-10-18
+
+- Flutter: 174 pruebas aprobadas y análisis limpio en el módulo modificado; compilación web y recorrido del editor comprobados contra `http://127.0.0.1:5000`.
+- API: suite completa con 969 aprobadas, 26 omitidas por requisitos de integración y ninguna fallida. Se ejecutaron además las pruebas PostgreSQL de aceptación concurrente y esquema aditivo/idempotente: 2 aprobadas sobre contenedores desechables, sin usar la base de desarrollo operativa ni producción.
+- Exportador temporal: 6 pruebas Python aprobadas.
+- Los scripts `add_routing_operational_session.sql` y `add_routing_prediction_snapshots.sql` siguen siendo prerrequisito para publicar el backend. Este merge local no los aplica en producción ni publica una nueva app Android.
