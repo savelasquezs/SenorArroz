@@ -35,7 +35,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M06-F02 | Alta/edición cliente | Pendiente | — | — | — | — |
 | M06-F03 | Direcciones y barrio | Pendiente | — | — | — | — |
 | M06-F04 | Dirección-servicio por sucursal | Pendiente | — | — | — | — |
-| M06-F05 | Historial y estadísticas cliente | Pendiente | — | — | — | — |
+| M06-F05 | Historial y estadísticas cliente | Bloqueado | 2026-10-19 | [Informe](reviews/2026-10-19-M06-F05.md) | [PR backend #44](https://github.com/savelasquezs/SenorArroz/pull/44) | CI y mediciones pendientes; PR borrador |
 | M07-F01 | Carga promociones del día | Pendiente | — | — | — | — |
 | M07-F02 | Guardar y desactivar promoción | Pendiente | — | — | — | — |
 | M07-F03 | Validar y aplicar cupón | Pendiente | — | — | — | — |
@@ -140,7 +140,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M29-F04 | Ventas por productos/categorías | Pendiente | — | — | — | — |
 | M29-F05 | Rendimiento de domicilios | Pendiente | — | — | — | — |
 | M29-F06 | Comparación entre sucursales | Pendiente | — | — | — | — |
-| M30-F01 | Listado bandeja y no leídos | Pendiente | — | — | — | — |
+| M30-F01 | Listado bandeja y no leídos | Analizado | 2026-10-18 | [Informe](reviews/2026-10-18-M30-F01.md) | [PR API](https://github.com/savelasquezs/SenorArroz/pull/41) | Consulta agrupada y filtros compartidos; CI y frontend pendientes. Sin SQL productivo. |
 | M30-F02 | Carga mensajes y adjuntos | Pendiente | — | — | — | — |
 | M30-F03 | Enviar texto/medios/menú | Pendiente | — | — | — | — |
 | M30-F04 | Plantillas y respuestas rápidas | Pendiente | — | — | — | — |
