@@ -80,6 +80,20 @@ public sealed class RemoteOrderManagementTests
     }
 
     [Fact]
+    public void Only_same_tenant_superadmin_can_verify_retained_cross_branch_bank_receipts()
+    {
+        var order = Remote();
+        OrderAccessRules.EnsureExistingBankPaymentBranch(order, bankBranchId: 1,
+            bankTenantId: 1, new Actor(Role: "Superadmin"));
+        Assert.Throws<BusinessException>(() => OrderAccessRules.EnsureExistingBankPaymentBranch(
+            order, bankBranchId: 1, bankTenantId: 1, new Actor(Role: "Cashier")));
+        Assert.Throws<BusinessException>(() => OrderAccessRules.EnsureExistingBankPaymentBranch(
+            order, bankBranchId: 1, bankTenantId: 2, new Actor(Role: "Superadmin")));
+        Assert.Throws<BusinessException>(() => OrderAccessRules.EnsureExistingBankPaymentBranch(
+            order, bankBranchId: 1, bankTenantId: 1, new Actor(Role: "Superadmin", TenantId: 2)));
+    }
+
+    [Fact]
     public async Task Remote_search_filters_origin_before_count_and_pagination()
     {
         await using var db = Db(); await SeedBranches(db);
