@@ -13,6 +13,7 @@ public sealed record RoutingNode(int OrderId, double Latitude, double Longitude,
 
 public sealed record RoutingVehicleSlot(int AvailableAtSeconds)
 {
+    public string? InputSignature { get; init; }
     public int DeliverymanId { get; init; }
     public int WorkSessionId { get; init; }
     public int? CurrentRouteId { get; init; }

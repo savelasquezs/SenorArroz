@@ -328,6 +328,8 @@ Reglas:
 - Solo los pedidos actualmente Listos de una propuesta pueden reclamarse. Tomado y En preparación son informativos y se mantienen como espera sugerida.
 - La toma desde una propuesta exige versión de plan y se ejecuta en una transacción serializable; ante una carrera responde `ROUTING_PLAN_STALE` sin asignación parcial.
 - La consulta del plan es idempotente para una misma huella operativa: reutiliza la versión activa y no publica `DeliveryRoutingPlanChanged` si pedidos elegibles, coordenadas y capacidad permanecen iguales. El recálculo explícito conserva su semántica forzada.
+- El envejecimiento de una misma evidencia GPS no cambia por sí solo la huella de disponibilidad; sí la cambian nueva evidencia, ruta, pedidos pendientes, estimación base, clasificación o pérdida de vigencia. El resultado de Google para un regreso se reutiliza mientras esa evidencia siga vigente, incluyendo el respaldo aproximado si Google falla.
+- El plan expone `expiresAtUtc`. La app renueva automáticamente al vencer, reconectar o volver al primer plano, ignora avisos de versiones ya conocidas y acepta la versión anunciada aunque el aviso llegue antes de su respuesta HTTP. Mantiene una sola consulta simultánea y hasta tres reintentos transitorios, a 1, 2 y 4 segundos, sin temporizadores de renovación en segundo plano. Las rutas aceptadas no se modifican.
 - La selección manual de pedidos continúa disponible como respaldo operativo.
 
 - Domiciliarios son usuarios o entidades asociadas al tenant.

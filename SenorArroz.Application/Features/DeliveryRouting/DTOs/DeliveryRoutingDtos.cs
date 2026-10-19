@@ -45,7 +45,10 @@ public sealed record DeliveryRoutingFleetDto(DateTime ObservedAtUtc, int BranchI
 public sealed record DeliveryRoutingPlanDto(int Id, long Version, string Status,
     DateTime GeneratedAtUtc, string MatrixSource, DeliveryRoutingCapacityDto Capacity,
     int SolverDurationMs, string? Warnings, IReadOnlyList<DeliveryRouteProposalDto> Proposals,
-    IReadOnlyList<DeliveryRoutingStopDto> UnroutedOrders);
+    IReadOnlyList<DeliveryRoutingStopDto> UnroutedOrders)
+{
+    public DateTime ExpiresAtUtc { get; init; }
+}
 
 public sealed record PreviewDeliveryRouteRequest(IReadOnlyList<int> OrderIds, long? ExpectedPlanVersion = null);
 
