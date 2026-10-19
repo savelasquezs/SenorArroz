@@ -96,6 +96,7 @@ public class CancelOrderHandlerTests
 
     private sealed class NullLoyaltyCycle : ILoyaltyCycleService
     {
+        public Task ApplyLoyaltyPreviewsToCustomerDtosAsync(IReadOnlyCollection<CustomerDto> dtos, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task ApplyLoyaltyPreviewToCustomerDtoAsync(CustomerDto dto, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
