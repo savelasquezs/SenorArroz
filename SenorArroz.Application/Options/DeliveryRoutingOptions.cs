@@ -11,7 +11,10 @@ public class DeliveryRoutingOptions
     public int SoftDetourReferenceSeconds { get; set; } = 600;
     public int SoftLastDeliveryTargetSeconds { get; set; } = 2100;
     public int MaximumDeliveryAfterDepartureSeconds { get; set; } = 2100;
-    public int MaximumAdditionalDelaySeconds { get; set; } = 180;
+    public int MaximumCompletionDeliverySeconds { get; set; } = 2400;
+    public int MaximumAdditionalDelaySeconds { get; set; } = 300;
+    public int LongDistanceMarginSeconds { get; set; } = 600;
+    public int CentralGroupingRadiusMeters { get; set; } = 100;
     public int SolverTimeLimitMs { get; set; } = 1000;
     public int ActiveGpsFreshnessSeconds { get; set; } = 180;
     public int PreparationHistoryDays { get; set; } = 30;

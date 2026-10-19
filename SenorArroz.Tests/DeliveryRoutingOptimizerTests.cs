@@ -259,8 +259,10 @@ public sealed class DeliveryRoutingOptimizerTests
         var result = new OrToolsDeliveryRouteOptimizer(options).Optimize(new(matrix,
             Enumerable.Range(0,4).Select(_=>new RoutingVehicleSlot(0)).ToArray(),Now));
         var served = result.Routes.SelectMany(r=>r.NodeIndexes).ToHashSet();
-        Assert.All(Enumerable.Range(0,13).Where(i=>i!=6),i=>Assert.Contains(i,served));
-        Assert.DoesNotContain(6,served);
+        Assert.All(Enumerable.Range(0,13),i=>Assert.Contains(i,served));
+        Assert.NotNull(matrix.Nodes[6].DeliveryTimeLimitSeconds);
+        Assert.All(result.Routes.Where(route => route.NodeIndexes.Any(index => index < 13)),
+            route => Assert.All(route.NodeIndexes, index => Assert.True(matrix.Nodes[index].IsReady)));
         Assert.InRange(result.Routes.Count,1,4);
     }
 
@@ -314,11 +316,133 @@ public sealed class DeliveryRoutingOptimizerTests
     public void DeliveryLimitStillAppliesWhenExcludingOrdersIsExpensive()
     {
         var options = Options.Create(new DeliveryRoutingOptions { SolverTimeLimitMs=300,
-            MaximumDeliveryAfterDepartureSeconds=300,DroppedOrderBasePenaltySeconds=100000 });
+            MaximumDeliveryAfterDepartureSeconds=300,MaximumCompletionDeliverySeconds=300,DroppedOrderBasePenaltySeconds=100000 });
         var matrix = new ApproximateRoutingCostMatrixProvider(options).Create(6,-75,
             Enumerable.Range(0,5).Select(i=>new RoutingNode(i+1,6.001,-75,Now,Now,true,240)).ToArray());
         var result = new OrToolsDeliveryRouteOptimizer(options).Optimize(new(matrix,[new RoutingVehicleSlot(0)],Now));
         Assert.Equal(2,Assert.Single(result.Routes).NodeIndexes.Count);
         Assert.Equal(3,result.UnroutedNodeIndexes.Count);
+    }
+
+    [Fact]
+    public void ChronologicalSelectionUsesDatesNotIdsOrInputOrder()
+    {
+        var options = Options.Create(new DeliveryRoutingOptions());
+        var nodes = Enumerable.Range(0,13).Select(index => new RoutingNode(1000-index,6.01,-75,
+            Now.AddMinutes(-50+index*2),Now,true,240)).Reverse().ToArray();
+        var matrix = new ApproximateRoutingCostMatrixProvider(options).Create(6,-75,nodes);
+        var result = new OrToolsDeliveryRouteOptimizer(options).Optimize(new(matrix,[new RoutingVehicleSlot(0)],Now));
+        var ids = result.Routes.SelectMany(route => route.NodeIndexes).Select(index => nodes[index].OrderId).Order().ToArray();
+        Assert.Equal(Enumerable.Range(991,10),ids);
+        Assert.Equal(new[] {988,989,990},result.UnroutedNodeIndexes.Select(index => nodes[index].OrderId).Order());
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void DistantExceptionsCannotDisplaceOlderOrders(int couriers)
+    {
+        var options = Options.Create(new DeliveryRoutingOptions());
+        var matrix = new ApproximateRoutingCostMatrixProvider(options).Create(6,-75,
+        [new RoutingNode(90,6.01,-75,Now.AddMinutes(-50),Now,true,240),
+            new RoutingNode(5,6,-74.99,Now.AddMinutes(-40),Now,true,240),
+            new RoutingNode(1,5.8,-75,Now.AddMinutes(-10),Now,true,240)]);
+        var result = new OrToolsDeliveryRouteOptimizer(options).Optimize(new(matrix,
+            Enumerable.Range(0,couriers).Select(_ => new RoutingVehicleSlot(0)).ToArray(),Now));
+        Assert.Contains(0,result.Routes.SelectMany(route => route.NodeIndexes));
+        if(couriers==2) Assert.Contains(1,result.Routes.SelectMany(route => route.NodeIndexes));
+        Assert.Contains(2,result.UnroutedNodeIndexes);
+    }
+
+    [Theory]
+    [InlineData(1,3)]
+    [InlineData(1,5)]
+    [InlineData(2,3)]
+    [InlineData(2,5)]
+    [InlineData(3,3)]
+    [InlineData(3,5)]
+    public void OriginalAddressPackagesRespectAgeDirectionsAndIndividualLimits(int package, int couriers)
+    {
+        using var fixture = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"delivery-routing-addresses.json")));
+        var points = fixture.RootElement[package-1].EnumerateArray().ToArray();
+        var nodes = points.Select((point,index) => new RoutingNode(18+index,point[3].GetDouble(),point[4].GetDouble(),
+            Now.AddMinutes(-50+index*2),Now,true,240)).ToArray();
+        var options = Options.Create(new DeliveryRoutingOptions());
+        var matrix = new ApproximateRoutingCostMatrixProvider(options).Create(6.308047,-75.574383,nodes);
+        var request = new DeliveryRouteOptimizationRequest(matrix,Enumerable.Range(0,couriers).Select(_ => new RoutingVehicleSlot(0)).ToArray(),Now);
+        var result = new OrToolsDeliveryRouteOptimizer(options).Optimize(request);
+        var included = result.Routes.SelectMany(route => route.NodeIndexes).ToArray();
+        Assert.Equal(included.Length,included.Distinct().Count());
+        Assert.Equal(20,included.Length+result.UnroutedNodeIndexes.Count);
+        Assert.Contains(0,included);
+        Assert.InRange(result.Routes.Count,1,couriers);
+        foreach(var route in result.Routes)
+        {
+            var schedule = RoutingScheduleHelper.Calculate(request,route.VehicleIndex,route.NodeIndexes);
+            Assert.True(RoutingScheduleHelper.Fits(request,route.VehicleIndex,route.NodeIndexes,schedule,new Dictionary<int,long>(),options.Value));
+        }
+        if(package==1 && couriers==3) Assert.All(Enumerable.Range(0,10),index => Assert.Contains(index,included));
+        if(couriers==5) Assert.Equal(20,included.Length);
+    }
+
+    [Fact]
+    public void ALocalCentralStopDoesNotJoinOppositeExternalDirections()
+    {
+        var options=Options.Create(new DeliveryRoutingOptions());
+        var matrix=new ApproximateRoutingCostMatrixProvider(options).Create(6,-75,
+        [new RoutingNode(1,6.0001,-75,Now,Now,true,240),
+            new RoutingNode(2,6.01,-75,Now,Now,true,240),new RoutingNode(3,5.99,-75,Now,Now,true,240)]);
+        Assert.True(RoutingScheduleHelper.CanShare(matrix,0,1,options.Value));
+        Assert.True(RoutingScheduleHelper.CanShare(matrix,0,2,options.Value));
+        Assert.False(RoutingScheduleHelper.CanShare(matrix,1,2,options.Value));
+        var result=new OrToolsDeliveryRouteOptimizer(options).Optimize(new(matrix,[new RoutingVehicleSlot(0)],Now));
+        Assert.Equal(2,Assert.Single(result.Routes).NodeIndexes.Count);
+    }
+
+    [Fact]
+    public void ArrivalAllowanceIsCumulativeAndCannotDelayAnOnTimeReservation()
+    {
+        var options=new DeliveryRoutingOptions();
+        var matrix=new ApproximateRoutingCostMatrixProvider(Options.Create(options)).Create(6,-75,
+        [new RoutingNode(1,6.01,-75,Now,Now,true,240),
+            new RoutingNode(2,6.01,-75,Now,Now,true,240) {DeliveryDueAtUtc=Now.AddSeconds(800)}]);
+        var request=new DeliveryRouteOptimizationRequest(matrix,[new RoutingVehicleSlot(0)],Now);
+        Assert.Equal(900,RoutingScheduleHelper.LatestArrival(request,0,600,options));
+        Assert.Equal(800,RoutingScheduleHelper.LatestArrival(request,1,600,options));
+        Assert.Equal(1000,RoutingScheduleHelper.LatestArrival(request,1,1000,options));
+        var limits=new Dictionary<int,long>{{0,900}};
+        matrix.DurationSeconds[0,1]=901;
+        Assert.False(RoutingScheduleHelper.Fits(request,0,[0],RoutingScheduleHelper.Calculate(request,0,[0]),limits,options));
+    }
+
+    [Fact]
+    public void RebalancingSplitsAFullerRouteToAvoidAnUnnecessarySoloDeparture()
+    {
+        var options=Options.Create(new DeliveryRoutingOptions());
+        var matrix=new ApproximateRoutingCostMatrixProvider(options).Create(6,-75,
+            Enumerable.Range(0,5).Select(index=>new RoutingNode(index+1,index==0 ? 6.08 : 6.001,-75,Now,Now,true,240)).ToArray());
+        Assert.Null(matrix.Nodes[0].DeliveryTimeLimitSeconds);
+        for(var from=0;from<6;from++)
+        for(var to=0;to<6;to++)
+            matrix.DurationSeconds[from,to]=from==to ? 0 : from==1 || to==1 ? (from==0 || to==0 ? 2000 : 1980) : 10;
+        var request=new DeliveryRouteOptimizationRequest(matrix,[new RoutingVehicleSlot(0),new RoutingVehicleSlot(0)],Now);
+        var result=new OrToolsDeliveryRouteOptimizer(options).Optimize(request);
+        Assert.Empty(result.UnroutedNodeIndexes);
+        Assert.Equal(2,result.Routes.Count);
+        Assert.All(result.Routes,route=>Assert.True(route.NodeIndexes.Count>=2));
+        var distant=Assert.Single(result.Routes,route=>route.NodeIndexes.Contains(0));
+        var schedule=RoutingScheduleHelper.Calculate(request,distant.VehicleIndex,distant.NodeIndexes);
+        Assert.InRange(schedule.Arrivals[distant.NodeIndexes.ToList().IndexOf(0)],2101,2300);
+    }
+
+    [Fact]
+    public void MinimumSearchBudgetStillPreservesAFeasibleInitialProposal()
+    {
+        var options=Options.Create(new DeliveryRoutingOptions {SolverTimeLimitMs=1});
+        var matrix=new ApproximateRoutingCostMatrixProvider(options).Create(6,-75,
+            Enumerable.Range(0,6).Select(index=>new RoutingNode(index+1,6.001,-75,Now,Now,true,240)).ToArray());
+        var result=new OrToolsDeliveryRouteOptimizer(options).Optimize(new(matrix,[new RoutingVehicleSlot(0)],Now));
+        Assert.NotEmpty(result.Routes);
+        Assert.Empty(result.UnroutedNodeIndexes);
     }
 }

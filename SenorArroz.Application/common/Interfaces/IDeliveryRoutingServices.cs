@@ -7,6 +7,8 @@ public sealed record RoutingNode(int OrderId, double Latitude, double Longitude,
 {
     public DateTime? WaitDeadlineAtUtc { get; init; }
     public double ReadyWithinWindowProbability { get; init; } = 1;
+    public DateTime? DeliveryDueAtUtc { get; init; }
+    public int? DeliveryTimeLimitSeconds { get; init; }
 }
 
 public sealed record RoutingVehicleSlot(int AvailableAtSeconds)
@@ -25,7 +27,10 @@ public sealed record DeliveryCourierAvailability(int DeliverymanId, string Name,
 
 public sealed record RoutingCostMatrix(IReadOnlyList<RoutingNode> Nodes, long[,] DurationSeconds,
     long[,] DistanceMeters, double[] BearingFromBranchDegrees, RoutingMatrixSource Source,
-    DateTime GeneratedAtUtc, IReadOnlyList<string> Warnings);
+    DateTime GeneratedAtUtc, IReadOnlyList<string> Warnings)
+{
+    public double[] StraightDistanceFromBranchMeters { get; init; } = [];
+}
 
 public interface IRoutingCostMatrixProvider
 {

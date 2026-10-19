@@ -12,6 +12,11 @@ public sealed record DeliveryRoutingStopDto(
     public string PreparationConfidence { get; init; } = "unknown";
     public double ReadyWithinWindowProbability { get; init; }
     public int PreparationSampleSize { get; init; }
+    public DateTime CreatedAtUtc { get; init; }
+    public DateTime PriorityAnchorUtc { get; init; }
+    public DateTime? ReservedForUtc { get; init; }
+    public int? DeliveryTimeLimitSeconds { get; init; }
+    public string? DeliveryTimeLimitReason { get; init; }
 }
 
 public sealed record DeliveryRouteProposalDto(

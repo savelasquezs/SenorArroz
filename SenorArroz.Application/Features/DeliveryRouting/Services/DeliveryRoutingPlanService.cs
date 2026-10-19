@@ -131,7 +131,8 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         var indexes = validOrders.Select((order, index) => (order.Id, index)).ToDictionary(x => x.Id, x => x.index);
         var proposed = new HashSet<int>();
         var longWait = new HashSet<int>();
-        foreach (var optimized in optimization.Routes)
+        foreach (var optimized in optimization.Routes.OrderBy(route => route.NodeIndexes.Min(index => matrix!.Nodes[index].PriorityAnchorUtc))
+            .ThenBy(route => route.NodeIndexes.Min(index => validOrders[index].Id)))
         {
             var routeOrders = optimized.NodeIndexes.Select(index => validOrders[index]).ToList();
             var slot = capacity.Slots[optimized.VehicleIndex];
@@ -236,18 +237,20 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         var indexes = orders.Select((o, i) => (o.Id, i)).ToDictionary(x => x.Id, x => x.i);
         var proposal = BuildProposal(0, orders, matrix, indexes, new RoutingVehicleSlot(0), estimates, now);
         foreach (var stop in proposal.Stops) stop.Order = byId[stop.OrderId];
-        return MapProposal(proposal, proposal.Stops.Select(MapStop).ToList(), false) with
+        var limits = matrix.Nodes.ToDictionary(node => node.OrderId, node => node.DeliveryTimeLimitSeconds);
+        return MapProposal(proposal, proposal.Stops.Select(stop => MapStop(stop, limits)).ToList(), false) with
         { Status = "preview", SelectionFingerprint = DeliveryRoutingPolicy.SelectionFingerprint(orders) };
     }
 
     private RoutingNode Node(Order order, IReadOnlyDictionary<int, KitchenPreparationEstimate> estimates, DateTime now) =>
         new(order.Id, (double)order.Address!.Latitude!.Value, (double)order.Address.Longitude!.Value,
-            order.Type == OrderType.Reservation ? order.PrepareAt ?? order.CreatedAt : order.CreatedAt,
+            DeliveryRoutingPolicy.PriorityAnchor(order, _options),
             DeliveryRoutingPolicy.ReadyAt(order, estimates, now, _options), order.Status == OrderStatus.Ready,
             Math.Max(0, _options.ServiceSecondsPerOrder))
         {
             WaitDeadlineAtUtc = DeliveryRoutingPolicy.WaitDeadline(order, _options),
-            ReadyWithinWindowProbability = estimates.GetValueOrDefault(order.Id)?.ReadyWithinWindowProbability ?? 0
+            ReadyWithinWindowProbability = estimates.GetValueOrDefault(order.Id)?.ReadyWithinWindowProbability ?? 0,
+            DeliveryDueAtUtc = order.Type == OrderType.Reservation ? order.ReservedFor : null
         };
 
     private DeliveryRouteProposal BuildProposal(int sequence, IReadOnlyList<Order> orders, RoutingCostMatrix matrix,
@@ -276,7 +279,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
             elapsed += travel;
             proposal.ApproximateDrivingDurationSeconds += travel;
             proposal.ApproximateDistanceMeters += (int)matrix.DistanceMeters[previous, index];
-            var anchor = order.Type == OrderType.Reservation ? order.PrepareAt ?? order.CreatedAt : order.CreatedAt;
+            var anchor = DeliveryRoutingPolicy.PriorityAnchor(order, _options);
             proposal.WorstAgeAtDeliverySeconds = Math.Max(proposal.WorstAgeAtDeliverySeconds,
                 Math.Max(0, (int)(now.AddSeconds(elapsed) - anchor).TotalSeconds));
             proposal.Stops.Add(new DeliveryRouteProposalStop
@@ -335,6 +338,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
 
     private Task<DeliveryRoutingPlan?> LoadPlanEntityAsync(int branchId, CancellationToken ct) =>
         _db.DeliveryRoutingPlans.AsNoTracking().AsSplitQuery()
+            .Include(x => x.Branch)
             .Include(x => x.Proposals).ThenInclude(x => x.Stops).ThenInclude(x => x.Order)
                 .ThenInclude(x => x.Address).ThenInclude(x => x!.Neighborhood)
             .Include(x => x.Stops).ThenInclude(x => x.Order).ThenInclude(x => x.Address).ThenInclude(x => x!.Neighborhood)
@@ -345,17 +349,24 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
     {
         var eligible = DeliveryRoutingPolicy.Eligible(plan.BranchId, _clock.UtcNow, _options).Compile();
         var changed = false;
+        var located = plan.Stops.Select(stop => stop.Order).Where(order => order is not null
+            && DeliveryRoutingPolicy.Coordinates(order.Address?.Latitude, order.Address?.Longitude)).DistinctBy(order => order.Id).ToArray();
+        var matrix = located.Length > 0 && plan.Branch is not null && DeliveryRoutingPolicy.Coordinates(plan.Branch.Latitude, plan.Branch.Longitude)
+            ? _matrixProvider.Create((double)plan.Branch.Latitude!.Value, (double)plan.Branch.Longitude!.Value,
+                located.Select(order => new RoutingNode(order.Id, (double)order.Address!.Latitude!.Value,
+                    (double)order.Address.Longitude!.Value, order.CreatedAt, plan.GeneratedAtUtc, order.Status == OrderStatus.Ready, 0)).ToArray()) : null;
+        var limits = matrix?.Nodes.ToDictionary(node => node.OrderId, node => node.DeliveryTimeLimitSeconds) ?? new Dictionary<int, int?>();
         var proposals = new List<DeliveryRouteProposalDto>();
         foreach (var proposal in plan.Proposals.Where(x => x.Status == DeliveryRouteProposalStatus.Available).OrderBy(x => x.Sequence))
         {
             var visible = proposal.Stops.Where(s => s.Order is not null && eligible(s.Order)).OrderBy(x => x.StopSequence).ToList();
             var stale = visible.Count != proposal.Stops.Count || visible.Any(s => s.WasReadyAtGeneration != (s.Order.Status == OrderStatus.Ready));
             changed |= stale;
-            if (visible.Count > 0) proposals.Add(MapProposal(proposal, visible.Select(MapStop).ToList(), stale));
+            if (visible.Count > 0) proposals.Add(MapProposal(proposal, visible.Select(stop => MapStop(stop, limits)).ToList(), stale));
         }
         var proposed = proposals.SelectMany(p => p.Stops).Select(s => s.OrderId).ToHashSet();
         var unrouted = plan.Stops.Where(s => s.DeliveryRouteProposalId == null && !proposed.Contains(s.OrderId)
-            && s.Order is not null && eligible(s.Order)).Select(MapStop).ToList();
+            && s.Order is not null && eligible(s.Order)).Select(stop => MapStop(stop, limits)).ToList();
         changed |= unrouted.Count != plan.Stops.Count(s => s.DeliveryRouteProposalId == null);
         return new DeliveryRoutingPlanDto(plan.Id, plan.GenerationNumber, changed ? "stale" : Camel(plan.Status.ToString()),
             plan.GeneratedAtUtc, Camel(plan.MatrixSource.ToString()),
@@ -377,7 +388,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
             proposal.PlanningWarnings, stops) { WaitDeadlineAtUtc = proposal.WaitDeadlineAtUtc };
     }
 
-    private static DeliveryRoutingStopDto MapStop(DeliveryRouteProposalStop stop) => new(
+    private DeliveryRoutingStopDto MapStop(DeliveryRouteProposalStop stop, IReadOnlyDictionary<int, int?> limits) => new(
         stop.OrderId, stop.StopSequence, Camel(stop.Order.Type?.ToString() ?? string.Empty), Camel(stop.Order.Status.ToString()),
         stop.Order.Address?.AddressText ?? stop.Order.ExternalDeliveryAddress ?? string.Empty,
         stop.Order.Address?.AdditionalInfo, stop.Order.Address?.Neighborhood?.Name,
@@ -386,7 +397,11 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         stop.Order.Status != OrderStatus.Ready, stop.UnroutedReason)
         {
             ConservativeReadyAtUtc = stop.ConservativeReadyAtUtc, PreparationConfidence = stop.PreparationConfidence,
-            ReadyWithinWindowProbability = stop.ReadyWithinWindowProbability, PreparationSampleSize = stop.PreparationSampleSize
+            ReadyWithinWindowProbability = stop.ReadyWithinWindowProbability, PreparationSampleSize = stop.PreparationSampleSize,
+            CreatedAtUtc = stop.Order.CreatedAt, ReservedForUtc = stop.Order.ReservedFor,
+            PriorityAnchorUtc = DeliveryRoutingPolicy.PriorityAnchor(stop.Order, _options),
+            DeliveryTimeLimitSeconds = limits.GetValueOrDefault(stop.OrderId),
+            DeliveryTimeLimitReason = limits.GetValueOrDefault(stop.OrderId).HasValue ? "Excepción automática por distancia; solo aplica a este pedido." : null
         };
 
     private static double DirectionSpread(IEnumerable<double> bearings)
@@ -412,7 +427,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
     {
         var raw = JsonSerializer.Serialize(new
         {
-            algorithm = "routing-bounded-coverage-v4", orders = OrderSignature(orders), branch.Latitude, branch.Longitude,
+            algorithm = "routing-priority-pipeline-v1", orders = OrderSignature(orders), branch.Latitude, branch.Longitude,
             capacity.AvailableNow, capacity.AvailableSoon,
             slots = capacity.Slots.Select(s => new { s.AvailableAtSeconds, s.DeliverymanId, s.WorkSessionId, s.CurrentRouteId, s.Confidence }),
             readiness = orders.Select(o => DeliveryRoutingPolicy.ReadyAt(o, estimates, now, _options) <= now

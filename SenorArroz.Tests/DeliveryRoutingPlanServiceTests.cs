@@ -141,6 +141,46 @@ public sealed class DeliveryRoutingPlanServiceTests
             currentTenant: TestTenantContext.Default,
             tenantExecutionContext: TestTenantContext.Default);
 
+    [Fact]
+    public async Task AutomaticExceptionAndReservationPrioritySurviveReloadAndPreview()
+    {
+        await using var db=CreateContext();
+        var branch=CreateBranch();
+        branch.Latitude=6.308047m;
+        branch.Longitude=-75.574383m;
+        db.Branches.Add(branch);
+        (int Id,decimal Lat,decimal Lon)[] points=[(18,6.377581m,-75.446200m),(19,6.309520m,-75.559221m),(20,6.288625m,-75.573932m)];
+        foreach(var point in points)
+        {
+            var address=new Address {Id=point.Id,CustomerId=1,AddressText=$"Destino {point.Id}",Latitude=point.Lat,Longitude=point.Lon};
+            db.Addresses.Add(address);
+            db.Orders.Add(new Order {Id=point.Id,BranchId=1,TakenById=1,AddressId=point.Id,Address=address,
+                Type=point.Id==19 ? OrderType.Reservation : OrderType.Delivery,Status=OrderStatus.Ready,
+                CreatedAt=point.Id==19 ? Now.AddDays(-2) : Now.AddMinutes(-50+point.Id-18),
+                ReservedFor=point.Id==19 ? Now.AddMinutes(35) : null});
+        }
+        await db.SaveChangesAsync();
+        var options=Options.Create(new DeliveryRoutingOptions {MaximumFinalistsToValidate=0,SolverTimeLimitMs=500});
+        var availability=new Mock<IDeliverymanAvailabilityService>();
+        availability.Setup(service=>service.GetCapacityAsync(1,It.IsAny<double>(),It.IsAny<double>(),It.IsAny<DateTime>(),It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeliveryRoutingCapacity([new RoutingVehicleSlot(0),new RoutingVehicleSlot(0)],2,0,[]));
+        var service=new DeliveryRoutingPlanService(db,new FakeClock(Now),new SenorArroz.Infrastructure.Services.ApproximateRoutingCostMatrixProvider(options),
+            new SenorArroz.Infrastructure.Services.OrToolsDeliveryRouteOptimizer(options),new SenorArroz.Application.Common.Services.KitchenPreparationEstimator(db,options),availability.Object,
+            Mock.Of<IGoogleRoutesDrivingMetricsService>(),Mock.Of<IOrderNotificationService>(),options,Mock.Of<ILogger<DeliveryRoutingPlanService>>());
+        var plan=await service.GetOrCreateActivePlanAsync(1);
+        var reload=await service.GetOrCreateActivePlanAsync(1);
+        var preview=await service.PreviewAsync(1,[19,18]);
+        var distant=Assert.Single(plan.Proposals.SelectMany(route=>route.Stops),stop=>stop.OrderId==18);
+        Assert.NotNull(distant.DeliveryTimeLimitSeconds);
+        Assert.Equal(plan.Version,reload.Version);
+        Assert.Equal(distant.DeliveryTimeLimitSeconds,reload.Proposals.SelectMany(route=>route.Stops).Single(stop=>stop.OrderId==18).DeliveryTimeLimitSeconds);
+        Assert.Equal(distant.DeliveryTimeLimitSeconds,preview.Stops.Single(stop=>stop.OrderId==18).DeliveryTimeLimitSeconds);
+        var reservation=preview.Stops.Single(stop=>stop.OrderId==19);
+        Assert.Equal(Now,reservation.PriorityAnchorUtc);
+        Assert.Null(reservation.DeliveryTimeLimitSeconds);
+        Assert.All(db.Orders,order=>Assert.Null(order.DeliveryRouteId));
+    }
+
     private static Branch CreateBranch() => new()
     {
         Id = 1,

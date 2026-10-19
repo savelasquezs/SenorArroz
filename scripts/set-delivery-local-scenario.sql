@@ -14,6 +14,24 @@ SELECT set_config('app.system_scope','on',false);
 BEGIN;
 CREATE TEMP TABLE scenario_settings(couriers integer CHECK(couriers IN (3,5)),age integer CHECK(age BETWEEN 1 AND 180)) ON COMMIT DROP;
 INSERT INTO scenario_settings VALUES (:'courier_count',:'age_minutes');
+CREATE TEMP TABLE scenario_addresses ON COMMIT DROP AS
+SELECT ordinality::integer n,(value->>0)::integer source_id,value->>1 address,value->>2 neighborhood,
+    (value->>3)::numeric latitude,(value->>4)::numeric longitude
+FROM jsonb_array_elements(:'address_data'::jsonb) WITH ORDINALITY;
+DO $$ BEGIN
+    IF (SELECT count(*) FROM scenario_addresses)<>20
+        OR (SELECT count(*) FROM "order" WHERE tenant_id=1 AND branch_id=1 AND id BETWEEN 18 AND 37
+            AND notes LIKE 'Prueba coordenadas 2026-10-18%' AND delivery_man_id IS NULL AND delivery_route_id IS NULL)<>20 THEN
+        RAISE EXCEPTION 'Se requieren 20 direcciones y 20 pedidos de prueba locales libres';
+    END IF;
+END $$;
+INSERT INTO neighborhood(tenant_id,branch_id,name,delivery_fee,active,created_at,updated_at)
+SELECT DISTINCT 1,1,s.neighborhood,3000,true,now(),now() FROM scenario_addresses s
+WHERE NOT EXISTS(SELECT 1 FROM neighborhood n WHERE n.tenant_id=1 AND n.branch_id=1 AND n.name=s.neighborhood);
+UPDATE address a SET address=s.address,latitude=s.latitude,longitude=s.longitude,
+    neighborhood_id=(SELECT min(id) FROM neighborhood WHERE tenant_id=1 AND branch_id=1 AND name=s.neighborhood),updated_at=now()
+FROM scenario_addresses s JOIN "order" o ON o.id=17+s.n AND o.tenant_id=1 AND o.branch_id=1
+WHERE a.id=o.address_id AND a.tenant_id=1;
 CREATE TEMP TABLE test_couriers ON COMMIT DROP AS
 SELECT id,row_number() OVER (ORDER BY CASE email WHEN 'domiciliario@pruebas.local' THEN 0 ELSE 1 END,email) n
 FROM "user" WHERE tenant_id=1 AND branch_id=1 AND email IN ('domiciliario@pruebas.local',
@@ -37,9 +55,10 @@ INSERT INTO deliveryman_location(tenant_id,deliveryman_id,work_session_id,latitu
 SELECT 1,s.deliveryman_id,s.id,b.latitude,b.longitude,now(),now(),8,true,true,'light'
 FROM delivery_work_session s JOIN branch b ON b.id=s.branch_id AND b.tenant_id=s.tenant_id
 WHERE s.tenant_id=1 AND s.status='active' AND s.deliveryman_id IN (SELECT id FROM test_couriers WHERE n<=(SELECT couriers FROM scenario_settings));
-UPDATE "order" SET status='ready',created_at=now()-make_interval(mins=>cfg.age),updated_at=now(),
-    status_times=jsonb_build_object('taken',now()-make_interval(mins=>cfg.age),
-        'inpreparation',now()-make_interval(mins=>greatest(1,cfg.age-5)), 'ready',now()-interval '1 minute')
+UPDATE "order" SET status='ready',type='delivery',prepare_at=NULL,reserved_for=NULL,
+    created_at=now()-make_interval(mins=>cfg.age+38-(id-18)*2),updated_at=now(),
+    status_times=jsonb_build_object('taken',now()-make_interval(mins=>cfg.age+38-(id-18)*2),
+        'inpreparation',now()-make_interval(mins=>greatest(1,cfg.age+33-(id-18)*2)), 'ready',now()-interval '1 minute')
 FROM scenario_settings cfg WHERE tenant_id=1 AND branch_id=1 AND notes LIKE 'Prueba coordenadas 2026-10-18%'
-    AND delivery_man_id IS NULL AND delivery_route_id IS NULL;
+    AND id BETWEEN 18 AND 37 AND delivery_man_id IS NULL AND delivery_route_id IS NULL;
 COMMIT;

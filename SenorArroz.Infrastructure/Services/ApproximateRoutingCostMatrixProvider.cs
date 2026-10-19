@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Enums;
 
@@ -23,12 +24,14 @@ public sealed class ApproximateRoutingCostMatrixProvider : IRoutingCostMatrixPro
         var durations = new long[count, count];
         var distances = new long[count, count];
         var bearings = new double[count];
+        var straightDistances = new double[count];
         var coordinates = new (double Latitude, double Longitude)[count];
         coordinates[0] = (branchLatitude, branchLongitude);
 
         for (var index = 0; index < nodes.Count; index++)
         {
             coordinates[index + 1] = (nodes[index].Latitude, nodes[index].Longitude);
+            straightDistances[index + 1] = Haversine(coordinates[0], coordinates[index + 1]);
             bearings[index + 1] = Bearing(
                 branchLatitude,
                 branchLongitude,
@@ -54,13 +57,14 @@ public sealed class ApproximateRoutingCostMatrixProvider : IRoutingCostMatrixPro
         }
 
         return new RoutingCostMatrix(
-            nodes,
+            nodes.Select((node, index) => node with
+            { DeliveryTimeLimitSeconds = RoutingScheduleHelper.ExceptionLimit(durations[0, index + 1], _options) }).ToArray(),
             durations,
             distances,
             bearings,
             RoutingMatrixSource.Approximate,
             DateTime.UtcNow,
-            []);
+            []) { StraightDistanceFromBranchMeters = straightDistances };
     }
 
     private static double Haversine(

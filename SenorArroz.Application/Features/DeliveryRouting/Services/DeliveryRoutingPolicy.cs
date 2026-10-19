@@ -56,4 +56,9 @@ internal static class DeliveryRoutingPolicy
                 o.AddressId, latitude = o.Address?.Latitude,
                 longitude = o.Address?.Longitude, addressUpdatedAt = o.Address?.UpdatedAt
             })))));
+
+    internal static DateTime PriorityAnchor(Order order, DeliveryRoutingOptions options) =>
+        order.Type == OrderType.Reservation
+            ? order.ReservedFor?.AddSeconds(-Math.Max(0, options.SoftLastDeliveryTargetSeconds)) ?? order.PrepareAt ?? order.CreatedAt
+            : order.CreatedAt;
 }

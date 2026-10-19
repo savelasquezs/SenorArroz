@@ -31,6 +31,25 @@ public sealed class RoutingFleetSessionTests
     }
 
     [Theory]
+    [InlineData(6.0009, false, "available", 1, 0)]
+    [InlineData(6.0063, true, "returning", 0, 1)]
+    [InlineData(6.0063, false, "away", 0, 0)]
+    public async Task SixHundredMeterRadiusDistinguishesFreeAndReturningCouriers(double latitude,bool delivered,
+        string state,int now,int soon)
+    {
+        await using var f=new Fixture();
+        f.Db.Branches.Local.Single().DeliveryTrackingAllowedDistanceMeters=600;
+        if(delivered) f.AddTrip(20,Now.AddMinutes(-20),OrderStatus.Delivered);
+        f.AddPoint(10,Now,(decimal)latitude);
+        await f.Db.SaveChangesAsync();
+        var capacity=await f.Capacity();
+        Assert.Equal(state,Assert.Single(capacity.Couriers).State);
+        Assert.Equal(now,capacity.AvailableNow);
+        Assert.Equal(soon,capacity.AvailableSoon);
+        Assert.All(capacity.Couriers,courier=>Assert.Empty(courier.PendingOrderIds));
+    }
+
+    [Theory]
     [InlineData(240, true)]
     [InlineData(300, true)]
     [InlineData(630, true)]
