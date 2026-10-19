@@ -37,5 +37,7 @@ namespace SenorArroz.Domain.Interfaces.Repositories
         Task<(DateTime? First, DateTime? Last)> GetOrderDateRangeAsync(int customerId, CancellationToken cancellationToken = default);
         /// <summary>Suma de <c>Order.Total</c> en pedidos no cancelados.</summary>
         Task<int> GetTotalOrderRevenueAsync(int customerId, CancellationToken cancellationToken = default);
+        Task<IReadOnlyDictionary<int, CustomerOrderStatistics>> GetOrderStatisticsForCustomersAsync(IReadOnlyCollection<int> customerIds, CancellationToken cancellationToken = default);
     }
+    public sealed record CustomerOrderStatistics(int TotalOrders, DateTime? FirstOrderDate, DateTime? LastOrderDate, int TotalAccumulated);
 }
