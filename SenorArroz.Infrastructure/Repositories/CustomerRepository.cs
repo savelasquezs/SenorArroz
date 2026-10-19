@@ -253,6 +253,20 @@ public class CustomerRepository : ICustomerRepository
         return await query.AnyAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyDictionary<int, CustomerOrderStatistics>> GetOrderStatisticsForCustomersAsync(IReadOnlyCollection<int> customerIds, CancellationToken cancellationToken = default)
+    {
+        if (customerIds.Count == 0) return new Dictionary<int, CustomerOrderStatistics>();
+        var ids = customerIds.Distinct().ToArray();
+        var grouped = await _context.Orders.AsNoTracking()
+            .Where(o => o.TenantId == _tenantId && o.CustomerId.HasValue && ids.Contains(o.CustomerId.Value)
+                && o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.AwaitingPayment)
+            .GroupBy(o => o.CustomerId!.Value)
+            .Select(g => new { Id = g.Key, Count = g.Count(), First = g.Min(o => (DateTime?)o.CreatedAt),
+                Last = g.Max(o => (DateTime?)o.CreatedAt), Total = g.Sum(o => o.Total) })
+            .ToListAsync(cancellationToken);
+        return grouped.ToDictionary(x => x.Id, x => new CustomerOrderStatistics(x.Count, x.First, x.Last, x.Total));
+    }
+
     public async Task<int> GetTotalOrdersAsync(int customerId, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
