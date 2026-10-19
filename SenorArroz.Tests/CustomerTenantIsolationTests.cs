@@ -5,6 +5,7 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.Commands;
 using SenorArroz.Application.Features.Customers.DTOs;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Repositories;
 
@@ -218,6 +219,57 @@ public sealed class CustomerTenantIsolationTests
         var address = Assert.Single(await db.Addresses.Include(value => value.BranchServices).ToListAsync());
         Assert.Equal(createdCustomer.Id, address.CustomerId);
         Assert.Equal(serviceBranch.Id, Assert.Single(address.BranchServices).BranchId);
+    }
+
+    [Fact]
+    public async Task Aggregated_statistics_are_tenant_scoped_and_page_sort_is_stable()
+    {
+        await using var db = CreateDb();
+        var branchOne = new Branch { Id = 1, TenantId = 1, Name = "A", Address = "A", Phone1 = "1" };
+        var branchTwo = new Branch { Id = 2, TenantId = 2, Name = "B", Address = "B", Phone1 = "2" };
+        var customerOne = Customer(10, 1, branchOne, "Same", "3001111111");
+        var customerTwo = Customer(11, 1, branchOne, "Same", "3002222222");
+        var foreignCustomer = Customer(20, 2, branchTwo, "Other tenant", "3003333333");
+        db.AddRange(branchOne, branchTwo, customerOne, customerTwo, foreignCustomer,
+            new Order { TenantId = 1, BranchId = 1, TakenById = 1, CustomerId = 10, Status = OrderStatus.Delivered, Total = 12000, CreatedAt = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Order { TenantId = 1, BranchId = 1, TakenById = 1, CustomerId = 10, Status = OrderStatus.AwaitingPayment, Total = 99000 },
+            new Order { TenantId = 2, BranchId = 2, TakenById = 2, CustomerId = 20, Status = OrderStatus.Delivered, Total = 50000 });
+        using (TestTenantContext.Default.BeginSystemScope())
+            await db.SaveChangesAsync();
+
+        var repository = new CustomerRepository(db, new FixedTenant(1));
+        var stats = await repository.GetOrderStatisticsForCustomersAsync(new[] { 10, 11, 20 });
+
+        Assert.Single(stats);
+        Assert.Equal(1, stats[10].TotalOrders);
+        Assert.Equal(1, stats[10].DeliveredOrders);
+        Assert.Equal(12000, stats[10].TotalAccumulated);
+        Assert.False(stats.ContainsKey(20));
+        Assert.False(stats.ContainsKey(11));
+
+        var first = await repository.GetPagedAsync(1, page: 1, pageSize: 1, sortBy: "name");
+        var second = await repository.GetPagedAsync(1, page: 2, pageSize: 1, sortBy: "name");
+        Assert.Equal(10, Assert.Single(first.Items).Id);
+        Assert.Equal(11, Assert.Single(second.Items).Id);
+    }
+
+    [Fact]
+    public async Task Active_loyalty_steps_respect_tenant_and_branch()
+    {
+        await using var db = CreateDb();
+        db.AddRange(
+            new Branch { Id = 1, TenantId = 1, Name = "A", Address = "A", Phone1 = "1" },
+            new Branch { Id = 2, TenantId = 2, Name = "B", Address = "B", Phone1 = "2" },
+            new LoyaltyCycleStep { TenantId = 1, BranchId = 1, StepIndex = 1, RewardLabel = "Active", IsActive = true },
+            new LoyaltyCycleStep { TenantId = 1, BranchId = 1, StepIndex = 2, RewardLabel = "Inactive", IsActive = false },
+            new LoyaltyCycleStep { TenantId = 2, BranchId = 2, StepIndex = 1, RewardLabel = "Foreign", IsActive = true });
+        using (TestTenantContext.Default.BeginSystemScope())
+            await db.SaveChangesAsync();
+
+        var steps = await new LoyaltyCycleStepRepository(db)
+            .GetActiveStepsForBranchesAsync(new[] { 1, 2 });
+
+        Assert.Equal("Active", Assert.Single(steps).RewardLabel);
     }
 
     private static Customer Customer(int id, int tenantId, Branch branch, string name, string phone)
