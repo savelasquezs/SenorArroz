@@ -231,9 +231,9 @@ public sealed class CustomerTenantIsolationTests
         var customerTwo = Customer(11, 1, branchOne, "Same", "3002222222");
         var foreignCustomer = Customer(20, 2, branchTwo, "Other tenant", "3003333333");
         db.AddRange(branchOne, branchTwo, customerOne, customerTwo, foreignCustomer,
-            new Order { TenantId = 1, BranchId = 1, TakenById = 1, CustomerId = 10, Status = OrderStatus.Delivered, Total = 12000, CreatedAt = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc) },
-            new Order { TenantId = 1, BranchId = 1, TakenById = 1, CustomerId = 10, Status = OrderStatus.AwaitingPayment, Total = 99000 },
-            new Order { TenantId = 2, BranchId = 2, TakenById = 2, CustomerId = 20, Status = OrderStatus.Delivered, Total = 50000 });
+            new Order { TenantId = 1, BranchId = 1, TakenById = 1, CustomerId = 10, Type = OrderType.Onsite, Status = OrderStatus.Delivered, Total = 12000, CreatedAt = new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Order { TenantId = 1, BranchId = 1, TakenById = 1, CustomerId = 10, Type = OrderType.Onsite, Status = OrderStatus.AwaitingPayment, Total = 99000 },
+            new Order { TenantId = 2, BranchId = 2, TakenById = 2, CustomerId = 20, Type = OrderType.Onsite, Status = OrderStatus.Delivered, Total = 50000 });
         using (TestTenantContext.Default.BeginSystemScope())
             await db.SaveChangesAsync();
 
