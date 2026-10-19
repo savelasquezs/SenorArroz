@@ -64,7 +64,9 @@ namespace SenorArroz.Application.Features.Users.Commands
                     throw new BusinessException("Solo administradores y cajeros pueden usar la app de domicilios como rol adicional.");
                 existingUser.DeliveryAppEnabled = false;
             }
-            if (existingUser.Role != UserRole.Deliveryman)
+            if (existingUser.Role == UserRole.Kitchen)
+                existingUser.WebAccessEnabled = request.UserData.WebAccessEnabled ?? (previousRole == UserRole.Kitchen && existingUser.WebAccessEnabled);
+            else if (existingUser.Role != UserRole.Deliveryman)
                 existingUser.WebAccessEnabled = true;
             else if (previousRole != UserRole.Deliveryman)
                 existingUser.WebAccessEnabled = false;

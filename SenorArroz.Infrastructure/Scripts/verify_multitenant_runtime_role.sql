@@ -16,7 +16,7 @@ DECLARE
         'delivery_route_proposal_stop','delivery_route_stop','delivery_routing_plan','delivery_stay',
         'delivery_tracking_alert','delivery_tracking_incident','delivery_work_session','deliveryman_advance',
         'deliveryman_day_state','deliveryman_location','discount_code','email_outbox_message',
-        'entity_audit_log','expense','expense_bank_payment','expense_category','expense_detail',
+        'employee_lunch','entity_audit_log','expense','expense_bank_payment','expense_category','expense_detail',
         'expense_header','expense_menu_target','expense_unit_conversion','external_delivery_order','integration_webhook_event',
         'inventory_balance','inventory_count','inventory_count_line','inventory_movement','inventory_transfer',
         'inventory_transfer_line','order_inventory_allocation','product_expense_requirement',

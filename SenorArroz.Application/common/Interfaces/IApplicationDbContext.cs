@@ -163,6 +163,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<SupplierExpense> SupplierExpenses { get; set; }
 
         DbSet<User> Users { get; set; }
+        DbSet<EmployeeLunch> EmployeeLunches { get; set; }
 
         DbSet<UserDeviceToken> UserDeviceTokens { get; set; }
 

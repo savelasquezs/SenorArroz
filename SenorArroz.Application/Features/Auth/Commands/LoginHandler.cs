@@ -49,6 +49,8 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 || request.DeliveryAppVersion?.BuildNumber is not null
                 || request.DeliveryAppVersion?.PackageName is not null;
             var isDeliveryAppLogin = !request.IsWebClient && (isDeliveryman || hasDeliveryAppMetadata);
+            if (user.Role == UserRole.Kitchen && !user.WebAccessEnabled)
+                throw new BusinessException("Esta cuenta registra almuerzos desde la pantalla compartida de cocina.");
             if (request.IsWebClient && isDeliveryman && !user.WebAccessEnabled)
                 throw new DeliverymanWebAccessDeniedException();
             if (isDeliveryAppLogin)

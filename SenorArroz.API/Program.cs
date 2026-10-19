@@ -35,9 +35,11 @@ GoogleCredentialBootstrap.ApplyFromConfiguration(builder.Configuration);
 
 // Add services to the container
 builder.Services.AddScoped<BranchScopeActionFilter>();
+builder.Services.AddScoped<EmployeeLunchFilter>();
 builder.Services.AddControllers(options =>
 {
     options.Filters.AddService<BranchScopeActionFilter>();
+    options.Filters.AddService<EmployeeLunchFilter>(-100);
 }).AddJsonOptions(options =>
 {
     options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;

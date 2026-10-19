@@ -313,7 +313,7 @@ Reglas:
 
 - La app de domiciliarios se distribuye exclusivamente mediante Google Play.
 - Todo `Deliveryman` debe informar el package oficial, la versión visible exacta y un build igual o mayor al mínimo configurado. La política se valida antes de efectos de login, antes de rotar refresh tokens y en cada request autenticado; una incompatibilidad responde HTTP 426.
-- Admin, Superadmin, Cashier y Kitchen conservan acceso web y no están sujetos al control de versión Flutter.
+- Admin, Superadmin y Cashier conservan acceso web; Kitchen solo con WebAccessEnabled. No están sujetos al control de versión Flutter.
 - Un `Deliveryman` tiene el acceso web deshabilitado por defecto. Solo Superadmin puede habilitarlo individualmente; el permiso se valida en login, refresh y cada request web autenticado, y su revocación responde HTTP 403 desde la siguiente solicitud.
 - El frontend web se identifica con `X-Senor-Arroz-Client: web`; SignalR usa `client=web`. Un domiciliario no identificado como cliente web debe cumplir siempre la versión Flutter exigida.
 
@@ -569,3 +569,13 @@ Admin, Cashier y Superadmin del origen pueden gestionar únicamente esos pedidos
 Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Version` del formulario. Son obligatorios al gestionar desde origen. `409 ORDER_VERSION_CONFLICT` exige cerrar y recargar; nunca reintentar con una versión nueva silenciosamente. Transacción y bloqueo ordenado del pedido en PostgreSQL protegen cambios y pagos; ManagementVersion aumenta también en cambios a hijos. La respuesta expone cabeceras de versión. Se registra actor/comando/sucursal de trabajo/destino/versión en entity_audit_log, además de la auditoría monetaria existente. SignalR invalida únicamente grupos administrativos de origen y destino, aislados por tenant. El frontend refresca la lista visible y conserva el filtro/pestaña; no carga GPS hasta abrir seguimiento.
 
 **Despliegue manual posterior a revisión:** aplicar primero `SenorArroz.Infrastructure/Scripts/add_remote_order_management.sql` con cuenta de mantenimiento; después backend y frontend. SQL aditivo/idempotente, sin backfill, sin migraciones EF. No se ejecuta desde CI ni se modifica producción en esta rama. Cobrar desde origen no traslada dinero entre cajas: el registro pertenece al destino; transferencias físicas entre sedes continúan por los procesos existentes.
+
+## Almuerzos del personal
+
+- Cada empleado registra salida y regreso con su contraseña personal; las horas oficiales son UTC del servidor. Un intervalo abierto determina el descanso, persiste entre sesiones y no se cierra automáticamente.
+- Cocina admite varios empleados activos sin acceso web y cuentas de pantalla compartida con acceso web. Solo las primeras registran almuerzos, desde la pantalla de su sucursal. Se conservan IDs, gastos y nómina; no se reactivan ni convierten cuentas automáticamente.
+- Una cuenta personal almorzando no puede realizar mutaciones operativas. Puede consultar, finalizar el almuerzo, mantener seguimiento/dispositivo/jornada y cerrar sesión. Admin/Superadmin no corrigen registros mientras su propio almuerzo esté abierto.
+- Un domiciliario no puede iniciar almuerzo con pedidos pendientes ni recibir pedidos mientras almuerza. La disponibilidad y los avisos de pedidos lo excluyen; PostgreSQL serializa almuerzo/asignación por empleado incluso ante propuestas antiguas.
+- El almuerzo no cierra la jornada ni suspende GPS: los puntos se conservan y sincronizan. Su intervalo se excluye del análisis de permanencias y no cuenta como silencio de comunicación. Al regresar rigen los requisitos GPS existentes de disponibilidad.
+- Historial por fecha Colombia y sucursal dentro del tenant. Cocina solo consulta sus empleados personales de hoy. Correcciones Admin/Superadmin exigen motivo, versión vigente y auditoría antes/después, sin solapamientos ni fechas futuras.
+- Script aditivo e idempotente: SenorArroz.Infrastructure/Scripts/add_employee_lunch.sql, antes del backend y las interfaces. Sin cambios automáticos de nómina ni dependencia de facturación electrónica.

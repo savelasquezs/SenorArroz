@@ -1,4 +1,4 @@
-﻿// SenorArroz.Application/Features/Users/Commands/CreateUserHandler.cs
+// SenorArroz.Application/Features/Users/Commands/CreateUserHandler.cs
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -80,14 +80,7 @@ namespace SenorArroz.Application.Features.Users.Commands
                 {
                     throw new BusinessException("Un administrador no puede crear usuarios con rol Admin o Superadmin.");
                 }
-                if (request.UserData.Role == UserRole.Kitchen)
-                {
-                    bool kitchenExists = await _userRepository.KitchenExistsInBranchAsync(request.UserData.BranchId, cancellationToken);
-                    if (kitchenExists)
-                    {
-                        throw new BusinessException("Solo puede existir un usuario con rol Cocina por sucursal.");
-                    }
-                }
+
             }
             else if (Roles.IsSuperadmin(creatorRole))
             {
@@ -110,14 +103,7 @@ namespace SenorArroz.Application.Features.Users.Commands
                     }
                 }
 
-                if (request.UserData.Role == UserRole.Kitchen)
-                {
-                    bool  kitchenExists = await _userRepository.KitchenExistsInBranchAsync(request.UserData.BranchId, cancellationToken);
-                    if (kitchenExists)
-                    {
-                        throw new BusinessException("Solo puede existir un usuario con rol Cocina en la aplicación.");
-                    }
-                }
+
             }
             else
             {
@@ -138,7 +124,9 @@ namespace SenorArroz.Application.Features.Users.Commands
             var user = _mapper.Map<User>(request.UserData);
             user.TenantId = branch.TenantId;
             user.DeliveryAppEnabled = request.UserData.DeliveryAppEnabled;
-            user.WebAccessEnabled = user.Role != UserRole.Deliveryman;
+            user.WebAccessEnabled = user.Role == UserRole.Kitchen
+                ? request.UserData.WebAccessEnabled ?? false
+                : user.Role != UserRole.Deliveryman;
 
             // 3. Hashear la contraseña
             user.PasswordHash = _passwordService.HashPassword(request.UserData.Password);
