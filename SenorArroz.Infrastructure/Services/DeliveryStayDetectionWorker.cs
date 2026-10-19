@@ -7,7 +7,8 @@ namespace SenorArroz.Infrastructure.Services;
 
 public class DeliveryStayDetectionWorker : BackgroundService
 {
-    private static readonly TimeSpan Period = TimeSpan.FromMinutes(1);
+    // Check closed shifts periodically for late GPS, never analyze an active shift.
+    private static readonly TimeSpan Period = TimeSpan.FromMinutes(5);
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<DeliveryStayDetectionWorker> _logger;
 

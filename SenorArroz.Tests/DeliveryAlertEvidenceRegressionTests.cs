@@ -104,6 +104,8 @@ public class DeliveryAlertEvidenceRegressionTests
             TrackingMode = DeliveryTrackingMode.ActiveDelivery, RecordedAt = Start.AddSeconds(i * 30), SyncedAt = Start.AddMinutes(10) }));
         await db.SaveChangesAsync();
         var clock = new FakeClock(Start.AddMinutes(10));
+        db.DeliveryWorkSessions.Single().Close(clock.UtcNow, DeliveryWorkSessionEndReason.UserChange);
+        await db.SaveChangesAsync();
         var detection = new DeliveryStayDetectionService(db, clock);
         await detection.ProcessSessionAsync(10);
         var stay = Assert.Single(db.DeliveryStays);

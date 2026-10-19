@@ -17,11 +17,17 @@ public class DeliveryStayClassificationService : IDeliveryStayClassificationServ
         _clock = clock;
     }
 
-    public async Task<int> ProcessPendingStaysAsync(CancellationToken cancellationToken = default)
+    public async Task<int> ProcessPendingStaysAsync(CancellationToken cancellationToken = default, int? branchId = null, DateTime? endedSinceUtc = null)
     {
-        var stays = await _db.DeliveryStays
-            .Where(x => !x.ClassifiedAt.HasValue || x.ClassifiedAt < x.UpdatedAt)
-            .OrderBy(x => x.StartedAt)
+        var pending = _db.DeliveryStays
+            .Where(x => !x.ClassifiedAt.HasValue || x.ClassifiedAt < x.UpdatedAt);
+        if (branchId.HasValue)
+            pending = pending.Where(x => _db.DeliveryWorkSessions.Any(session =>
+                session.Id == x.WorkSessionId && session.BranchId == branchId.Value));
+        if (endedSinceUtc.HasValue)
+            pending = pending.Where(x => _db.DeliveryWorkSessions.Any(session =>
+                session.Id == x.WorkSessionId && session.EndedAt >= endedSinceUtc.Value));
+        var stays = await pending.OrderBy(x => x.StartedAt)
             .Take(PendingBatchSize)
             .ToListAsync(cancellationToken);
         if (stays.Count == 0)
@@ -59,8 +65,8 @@ public class DeliveryStayClassificationService : IDeliveryStayClassificationServ
         {
             stay.AuthorizedPlaceId = null;
             stay.DistanceToAuthorizedPlaceMeters = null;
-            if (!sessionBranches.TryGetValue(stay.WorkSessionId, out var branchId)
-                || !branches.TryGetValue(branchId, out var branch))
+            if (!sessionBranches.TryGetValue(stay.WorkSessionId, out var sessionBranchId)
+                || !branches.TryGetValue(sessionBranchId, out var branch))
             {
                 SetClassification(stay, DeliveryStayClassification.PendingReview, "branch_context_missing", nowUtc);
                 continue;
@@ -99,7 +105,7 @@ public class DeliveryStayClassificationService : IDeliveryStayClassificationServ
                 continue;
             }
 
-            var nearestAuthorizedPlace = placesByBranch.GetValueOrDefault(branchId)?
+            var nearestAuthorizedPlace = placesByBranch.GetValueOrDefault(sessionBranchId)?
                 .Select(place => new
                 {
                     Place = place,

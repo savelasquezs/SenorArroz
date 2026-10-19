@@ -80,11 +80,14 @@ public sealed class OrderMutationBehavior<TRequest, TResponse>(
                 TenantId = user.TenantId, BranchId = change.Branch, EntityType = "order_management",
                 EntityId = change.Id, OperationType = "updated", ChangedAt = auditAt,
                 BusinessDate = auditAt.AddHours(-5).Date, ChangedByUserId = user.Id,
-                SummaryText = $"Pedido #{change.Id}: {typeof(TRequest).Name}",
+                SummaryText = request is TransferOrderBranchCommand
+                    ? $"Pedido #{change.Id}: traslado de sucursal {before.First(o => o.Id == change.Id).BranchId} a {change.Branch}"
+                    : $"Pedido #{change.Id}: {typeof(TRequest).Name}",
                 MetadataJson = JsonSerializer.Serialize(new
                 {
                     command = typeof(TRequest).Name, workspaceBranchId = branch.EffectiveBranchId,
-                    originBranchId = change.Origin, destinationBranchId = change.Branch,
+                    originBranchId = change.Origin, previousBranchId = before.First(o => o.Id == change.Id).BranchId,
+                    destinationBranchId = change.Branch,
                     managementVersion = change.Version
                 })
             });
@@ -99,6 +102,13 @@ public sealed class OrderMutationBehavior<TRequest, TResponse>(
                 await OrderPostCommitNotifications.Publish(mutation,
                     () => notifications.NotifyOrderManagementChanged(change.Id, change.Branch,
                         change.Origin, change.Version));
+                // A moved order must also disappear from the previous dispatch branch.
+                if (request is TransferOrderBranchCommand
+                    && before.First(o => o.Id == change.Id).BranchId != change.Branch)
+                    await OrderPostCommitNotifications.Publish(mutation,
+                        () => notifications.NotifyOrderManagementChanged(change.Id,
+                            before.First(o => o.Id == change.Id).BranchId,
+                            change.Origin, change.Version));
             }
             catch (Exception ex)
             {
@@ -168,6 +178,7 @@ public sealed class OrderMutationBehavior<TRequest, TResponse>(
         int? orderId = request switch
         {
             UpdateOrderCommand r => r.Id,
+            TransferOrderBranchCommand r => r.Id,
             ChangeOrderStatusCommand r => r.Id,
             CancelOrderCommand r => r.Id,
             DeleteOrderCommand r => r.Id,

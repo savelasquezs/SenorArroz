@@ -95,7 +95,7 @@ public class DeliveryTrackingAlertTests
 
         await service.ProcessAsync();
 
-        Assert.Equal(5, db.DeliveryTrackingAlerts.Count());
+        Assert.Equal(4, db.DeliveryTrackingAlerts.Count());
         var gpsAlert = db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.GpsDisabled);
         Assert.Equal(DeliveryTrackingAlertStatus.Active, gpsAlert.Status);
         Assert.Equal(BaseTime.AddMinutes(2), gpsAlert.RecoveredAt);
@@ -121,19 +121,15 @@ public class DeliveryTrackingAlertTests
         var queued = db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.OfflineLocationsQueued);
         Assert.Equal(DeliveryTrackingAlertSeverity.Informational, queued.Severity);
         Assert.Contains("4 ubicaciones", queued.Message);
-        Assert.Equal(DeliveryTrackingAlertSeverity.RequiresReview,
-            db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.UnexpectedStay).Severity);
-        var stay = db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.UnexpectedStay);
-        Assert.Equal(660, stay.DurationSeconds);
-        Assert.Equal(4.6m, stay.StartLatitude);
-        Assert.Equal(-74.08m, stay.StartLongitude);
+        Assert.DoesNotContain(db.DeliveryTrackingAlerts,
+            x => x.AlertType == DeliveryTrackingAlertType.UnexpectedStay);
         Assert.Contains("interrupción", db.DeliveryTrackingAlerts
             .Single(x => x.AlertType == DeliveryTrackingAlertType.NoCommunication).Message);
         var interruption = db.DeliveryTrackingIncidents.Single(
             x => x.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption);
         Assert.Equal("stop_cause_not_determined", interruption.ClassificationReason);
         Assert.Equal(205, interruption.SourceDeviceEventId);
-        Assert.Equal(4, fcm.Sends.Count);
+        Assert.Equal(3, fcm.Sends.Count);
         Assert.All(fcm.Sends, send => Assert.Equal(["deliveryman-token"], send.Tokens));
         Assert.All(fcm.Sends, send =>
         {
@@ -144,23 +140,24 @@ public class DeliveryTrackingAlertTests
         });
         Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "gps_disabled");
         Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "location_permission_revoked");
-        Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "unexpected_stay");
+        Assert.DoesNotContain(fcm.Sends, send => send.Data!["alertType"] == "unexpected_stay");
         Assert.Contains(fcm.Sends, send => send.Data!["alertType"] == "no_communication");
-        Assert.Contains(fcm.Sends, send => send.Body.Contains("permanencia"));
         Assert.Contains(fcm.Sends, send => send.Body.Contains("ubicación desactivada"));
         Assert.Equal(0, await service.ProcessAsync());
-        Assert.Equal(4, fcm.Sends.Count);
+        Assert.Equal(3, fcm.Sends.Count);
 
         var incident = db.DeliveryTrackingIncidents.Single(
             x => x.IncidentType == DeliveryTrackingIncidentType.Stay);
         incident.ReviewStatus = DeliveryIncidentReviewStatus.Justified;
-        db.DeliveryWorkSessions.Single().LastCommunicationAt = BaseTime.AddMinutes(17);
+        db.DeliveryWorkSessions.Single().Close(BaseTime.AddMinutes(17), DeliveryWorkSessionEndReason.UserChange);
         await db.SaveChangesAsync();
         clock.UtcNow = BaseTime.AddMinutes(17);
 
         Assert.True(await service.ProcessAsync() >= 2);
-        Assert.Equal(DeliveryTrackingAlertStatus.Resolved,
-            db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.UnexpectedStay).Status);
+        var completedStay = db.DeliveryTrackingAlerts.Single(x => x.AlertType == DeliveryTrackingAlertType.UnexpectedStay);
+        Assert.Equal(DeliveryTrackingAlertStatus.Resolved, completedStay.Status);
+        Assert.Equal(660, completedStay.DurationSeconds);
+        Assert.Contains("al menos", completedStay.Message);
         var recoveredInterruption = db.DeliveryTrackingAlerts.Single(
             x => x.AlertType == DeliveryTrackingAlertType.NoCommunication);
         Assert.Equal(DeliveryTrackingAlertStatus.Resolved, recoveredInterruption.Status);
@@ -559,6 +556,13 @@ public class DeliveryTrackingAlertTests
     public async Task Process_AddsPendingReviewStayToAlertsConsumedByDailyAudit()
     {
         await using var db = CreateDb();
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10, BranchId = 7, DeliverymanId = 1, DeviceInstallationId = "device",
+            DevicePlatform = "android", StartedAt = BaseTime,
+            AutoCloseAt = BaseTime.AddHours(8), EndedAt = BaseTime.AddMinutes(15),
+            LastCommunicationAt = BaseTime.AddMinutes(15), Status = DeliveryWorkSessionStatus.Closed,
+        });
         var pending = PendingReviewStay(300);
         var reviewed = PendingReviewStay(301);
         reviewed.ReviewStatus = DeliveryIncidentReviewStatus.Justified;
@@ -591,16 +595,22 @@ public class DeliveryTrackingAlertTests
         Assert.Equal(DeliveryTrackingAlertStatus.Resolved, reviewedAlert.Status);
         Assert.Equal(reviewed.ReviewedAt, reviewedAlert.ResolvedAt);
         Assert.Equal(reviewed.ReviewedByUserId, reviewedAlert.ResolvedByUserId);
-        Assert.Single(fcm.Sends);
-        Assert.Equal("unexpected_stay", fcm.Sends[0].Data!["alertType"]);
+        Assert.Empty(fcm.Sends);
         Assert.Equal(0, await service.ProcessAsync());
-        Assert.Single(fcm.Sends);
+        Assert.Empty(fcm.Sends);
     }
 
     [Fact]
-    public async Task Process_PersistsReviewAlertWhenFcmFails()
+    public async Task Process_PersistsCompletedStayWithoutSendingFcm()
     {
         await using var db = CreateDb();
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 10, BranchId = 7, DeliverymanId = 1, DeviceInstallationId = "device",
+            DevicePlatform = "android", StartedAt = BaseTime,
+            AutoCloseAt = BaseTime.AddHours(8), EndedAt = BaseTime.AddMinutes(15),
+            LastCommunicationAt = BaseTime.AddMinutes(15), Status = DeliveryWorkSessionStatus.Closed,
+        });
         db.DeliveryTrackingIncidents.Add(PendingReviewStay(300));
         db.UserDeviceTokens.Add(new UserDeviceToken
         {
@@ -615,7 +625,7 @@ public class DeliveryTrackingAlertTests
         await service.ProcessAsync();
 
         Assert.Equal(DeliveryTrackingAlertStatus.Active, db.DeliveryTrackingAlerts.Single().Status);
-        Assert.Single(fcm.Sends);
+        Assert.Empty(fcm.Sends);
     }
 
     private static DeliveryDeviceEvent DeviceEvent(

@@ -52,6 +52,22 @@ public class DailyAuditTrackingAlertsEmailTests
                             EndLongitude = -74.090001m,
                         }
                     ],
+                },
+                new DailyTrackingAlertEmailGroup
+                {
+                    Title = "Permanencia",
+                    Severity = "Requiere revisión",
+                    EventCount = 1,
+                    ActiveCount = 1,
+                    Details = [new DailyTrackingAlertEmailDetail
+                    {
+                        DeliverymanName = "Lucía Domiciliaria",
+                        OccurredAt = new DateTime(2026, 7, 20, 19, 0, 0, DateTimeKind.Utc),
+                        EndedAt = new DateTime(2026, 7, 20, 19, 12, 0, DateTimeKind.Utc),
+                        DurationSeconds = 720,
+                        IsMinimumDuration = true,
+                        Description = "Permaneció al menos 12 min en el punto observado.",
+                    }],
                 }
             ],
         };
@@ -66,6 +82,9 @@ public class DailyAuditTrackingAlertsEmailTests
         Assert.Contains(">3<", email.Body);
         Assert.Contains("Carlos Domiciliario", email.Body);
         Assert.Contains("7 min 30 s", email.Body);
+        Assert.Contains("Permanencia: al menos 12 min", email.Body);
+        Assert.Contains("Primera lectura:", email.Body);
+        Assert.Contains("Última lectura:", System.Net.WebUtility.HtmlDecode(email.Body));
         Assert.Contains("https://www.google.com/maps?q=4.600001,-74.080001", email.Body);
         Assert.Contains("https://www.google.com/maps?q=4.610001,-74.090001", email.Body);
     }
