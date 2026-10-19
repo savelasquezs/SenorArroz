@@ -135,6 +135,20 @@ public sealed class EmployeeLunchTests
     }
 
     [Fact]
+    public async Task BranchHistoryFollowsRecordedBranchAfterEmployeeTransfer() {
+        await using var db = Db();
+        db.Users.AddRange(Employee(1, branch: 2), Employee(2, branch: 1));
+        db.EmployeeLunches.AddRange(
+            new EmployeeLunch { UserId = 1, BranchId = 1, StartedAt = Now.AddHours(-1), EndedAt = Now, EndedByUserId = 1 },
+            new EmployeeLunch { UserId = 2, BranchId = 2, StartedAt = Now.AddHours(-1), EndedAt = Now, EndedByUserId = 2 });
+        await db.SaveChangesAsync();
+        var result = await new EmployeeLunchQueries(db, Actor(10, "Admin"), Branch(), new FakeClock(Now))
+            .Handle(new GetBranchLunchesQuery(), default);
+        Assert.Single(result.Items.Single(x => x.UserId == 1).Lunches);
+        Assert.Empty(result.Items.Single(x => x.UserId == 2).Lunches);
+    }
+
+    [Fact]
     public async Task StayAnalysisSplitsAtLunchAndKeepsRawCoordinates() {
         await using var db = Db();
         db.Branches.Add(new Branch { Id = 1, Name = "Branch" });
