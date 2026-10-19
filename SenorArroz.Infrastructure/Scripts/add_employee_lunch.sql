@@ -85,4 +85,11 @@ END $$;
 DROP TRIGGER IF EXISTS prevent_lunch_assignment ON public."order";
 CREATE TRIGGER prevent_lunch_assignment BEFORE INSERT OR UPDATE OF delivery_man_id, status ON public."order"
     FOR EACH ROW EXECUTE FUNCTION public.prevent_lunch_assignment();
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'senorarroz_runtime') THEN
+        GRANT SELECT, INSERT, UPDATE ON public.employee_lunch TO senorarroz_runtime;
+        GRANT USAGE, SELECT ON SEQUENCE public.employee_lunch_id_seq TO senorarroz_runtime;
+    END IF;
+END $$;
 COMMIT;

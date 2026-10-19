@@ -14,6 +14,7 @@ public sealed class EmployeeLunchPostgreSqlTests
         await admin.OpenAsync();
         await Sql(admin, """
             CREATE SCHEMA app;
+            CREATE ROLE senorarroz_runtime NOBYPASSRLS NOSUPERUSER;
             CREATE FUNCTION app.current_tenant_id() RETURNS integer LANGUAGE sql STABLE
               AS $$ SELECT nullif(current_setting('app.current_tenant_id', true), '')::integer $$;
             CREATE FUNCTION app.is_system_scope() RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
@@ -31,6 +32,7 @@ public sealed class EmployeeLunchPostgreSqlTests
             directory = directory.Parent;
         var script = await File.ReadAllTextAsync(Path.Combine(directory!.FullName, "SenorArroz.Infrastructure/Scripts/add_employee_lunch.sql"));
         await Sql(admin, script); await Sql(admin, script);
+        Assert.Equal(1L, await Scalar(admin, "SELECT count(*) WHERE has_table_privilege('senorarroz_runtime', 'employee_lunch', 'SELECT,INSERT,UPDATE') AND has_sequence_privilege('senorarroz_runtime', 'employee_lunch_id_seq', 'USAGE,SELECT')"));
         await Sql(admin, """
             CREATE ROLE lunch_runtime LOGIN PASSWORD 'test-only-password' NOBYPASSRLS NOSUPERUSER;
             GRANT USAGE ON SCHEMA public,app TO lunch_runtime;
