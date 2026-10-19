@@ -409,7 +409,7 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
-    public async Task Paid_delivered_order_transfer_changes_only_dispatch_branch_and_preserves_consumed_inventory()
+    public async Task Ready_order_transfer_changes_only_dispatch_branch_and_preserves_consumed_inventory()
     {
         await using var db = Db();
         var catalog = new ProductCategory { BranchId = 2, Name = "Menú" };
@@ -439,7 +439,7 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
             new Clock(), new TestBranchContext(1));
         await inventory.SnapshotAndReserveAsync(order, false, "transfer:test:reserve", default);
         await inventory.ConsumeOrderAsync(order, "transfer:test:consume", default);
-        order.Status = OrderStatus.Delivered;
+        order.Status = OrderStatus.Ready;
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
@@ -481,7 +481,7 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
         var line = await check.OrderDetails.AsNoTracking().SingleAsync(d => d.OrderId == 10);
         Assert.Equal(1, saved.BranchId);
         Assert.Equal(1, saved.OriginBranchId);
-        Assert.Equal(OrderStatus.Delivered, saved.Status);
+        Assert.Equal(OrderStatus.Ready, saved.Status);
         Assert.Equal(30_000, saved.Total);
         Assert.True(saved.ManagementVersion > version);
         Assert.Equal(bank.Id, payment.BankId);
@@ -498,6 +498,118 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
             .Where(b => b.BranchId == 2 && b.ExpenseId == expense.Id)
             .Select(b => new { b.QuantityOnHand, b.QuantityReserved }).SingleAsync());
         Assert.Single(await check.EntityAuditLogs.Where(a => a.EntityType == "order_management").ToArrayAsync());
+    }
+
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Pending_transfer_can_reassign_one_bank_payment_without_recreating_money()
+    {
+        await using var db = Db();
+        var sourceBank = new Bank { BranchId = 2, Name = "Origen banco" };
+        var destinationBank = new Bank { BranchId = 1, Name = "Destino banco" };
+        db.Banks.AddRange(sourceBank, destinationBank);
+        await db.SaveChangesAsync();
+        var moved = new BankPayment { OrderId = 10, BankId = sourceBank.Id,
+            Amount = 20_000, IsVerified = true, VerifiedAt = new Clock().UtcNow };
+        var retained = new BankPayment { OrderId = 10, BankId = sourceBank.Id, Amount = 5_000 };
+        db.BankPayments.AddRange(moved, retained);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var actor = new SuperadminActor();
+        var branch = new TestBranchContext(1);
+        var version = (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == 10)).ManagementVersion;
+        var mutation = new Snapshot(version);
+        var notifications = new Mock<IOrderNotificationService>();
+        notifications.Setup(n => n.NotifyOrderTransferred(10, 2, 1, true))
+            .Returns(Task.CompletedTask);
+        notifications.Setup(n => n.NotifyOrderManagementChanged(
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<long>()))
+            .Returns(Task.CompletedTask);
+
+        var handler = new TransferOrderBranchHandler(db, new OrderRepository(db, new Clock()),
+            actor, branch, mutation, notifications.Object, Mapper(), new Clock());
+        var pipeline = new OrderMutationBehavior<TransferOrderBranchCommand, OrderDto>(
+            db, actor, branch, notifications.Object,
+            NullLogger<OrderMutationBehavior<TransferOrderBranchCommand, OrderDto>>.Instance,
+            mutation, new Clock());
+        var request = new TransferOrderBranchCommand { Id = 10, TargetBranchId = 1,
+            BankPaymentChanges = [new(moved.Id, destinationBank.Id)] };
+        await pipeline.Handle(request, ct => handler.Handle(request, ct), default);
+
+        await using var check = Db();
+        var order = await check.Orders.AsNoTracking().SingleAsync(o => o.Id == 10);
+        var actualMoved = await check.BankPayments.AsNoTracking().SingleAsync(p => p.Id == moved.Id);
+        var actualRetained = await check.BankPayments.AsNoTracking().SingleAsync(p => p.Id == retained.Id);
+        Assert.Equal(1, order.BranchId);
+        Assert.Equal(1, order.OriginBranchId);
+        Assert.Equal(OrderStatus.Taken, order.Status);
+        Assert.True(order.ManagementVersion > version);
+        Assert.Equal(destinationBank.Id, actualMoved.BankId);
+        Assert.Equal(20_000, actualMoved.Amount);
+        Assert.False(actualMoved.IsVerified);
+        Assert.Null(actualMoved.VerifiedAt);
+        Assert.Equal(sourceBank.Id, actualRetained.BankId);
+        Assert.Equal(5_000, actualRetained.Amount);
+        // A retained payment belongs financially to its original bank. Superadmin
+        // must still be able to verify it after the dispatch branch has changed.
+        var verification = new SenorArroz.Application.Features.BankPayments.Commands.VerifyBankPaymentHandler(
+            new BankPaymentRepository(check), actor, branch);
+        Assert.True(await verification.Handle(
+            new SenorArroz.Application.Features.BankPayments.Commands.VerifyBankPaymentCommand
+            { Id = retained.Id }, default));
+        Assert.True((await check.BankPayments.AsNoTracking()
+            .SingleAsync(p => p.Id == retained.Id)).IsVerified);
+        var logs = await check.EntityAuditLogs.AsNoTracking().ToListAsync();
+        Assert.Single(logs.Where(x => x.EntityType == "order_management"));
+        var bankAudit = Assert.Single(logs.Where(x => x.EntityType == "order_bank_reassignment"));
+        Assert.Contains("manualBankTransferRequired", bankAudit.MetadataJson);
+        Assert.Null(check.Database.CurrentTransaction);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Reassigning_a_payment_from_a_closed_bank_period_is_rejected_atomically()
+    {
+        await using var db = Db();
+        var source = new Bank { BranchId = 2, Name = "Origen banco" };
+        var destination = new Bank { BranchId = 1, Name = "Destino banco" };
+        db.Banks.AddRange(source, destination);
+        await db.SaveChangesAsync();
+        var payment = new BankPayment { OrderId = 10, BankId = source.Id,
+            Amount = 15_000, IsVerified = true };
+        db.BankPayments.Add(payment);
+        await db.SaveChangesAsync();
+        db.CashRegisterClosures.Add(new CashRegisterClosure
+        {
+            BranchId = 2, CreatedById = 70, ClosedAt = payment.CreatedAt.AddMinutes(1)
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var actor = new SuperadminActor();
+        var branch = new TestBranchContext(1);
+        var version = (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == 10)).ManagementVersion;
+        var mutation = new Snapshot(version);
+        var request = new TransferOrderBranchCommand { Id = 10, TargetBranchId = 1,
+            BankPaymentChanges = [new(payment.Id, destination.Id)] };
+        var handler = new TransferOrderBranchHandler(db, new OrderRepository(db, new Clock()), actor,
+            branch, mutation, Mock.Of<IOrderNotificationService>(), Mapper(), new Clock());
+        var pipeline = new OrderMutationBehavior<TransferOrderBranchCommand, OrderDto>(
+            db, actor, branch, Mock.Of<IOrderNotificationService>(),
+            NullLogger<OrderMutationBehavior<TransferOrderBranchCommand, OrderDto>>.Instance,
+            mutation, new Clock());
+        var error = await Assert.ThrowsAsync<BusinessException>(() =>
+            pipeline.Handle(request, ct => handler.Handle(request, ct), default));
+        Assert.Contains("cierre de caja", error.Message);
+
+        await using var check = Db();
+        Assert.Equal(2, (await check.Orders.AsNoTracking().SingleAsync(o => o.Id == 10)).BranchId);
+        var after = await check.BankPayments.AsNoTracking().SingleAsync(p => p.Id == payment.Id);
+        Assert.Equal(source.Id, after.BankId);
+        Assert.True(after.IsVerified);
+        Assert.Empty(await check.EntityAuditLogs.Where(x => x.EntityType == "order_bank_reassignment").ToListAsync());
     }
 
     [PostgreSqlIntegrationFact]

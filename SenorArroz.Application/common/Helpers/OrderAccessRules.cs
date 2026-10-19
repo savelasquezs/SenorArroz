@@ -38,6 +38,19 @@ public static class OrderAccessRules
             ? origin.Value : destination);
     }
 
+    // Existing payments may belong to a former dispatch branch after a Superadmin
+    // transfer. Only Superadmin may verify/unverify such bank receipts; the bank
+    // must remain in the authenticated tenant. Other payment mutations still use
+    // the strict two-argument branch check.
+    public static void EnsureExistingBankPaymentBranch(
+        Order order, int bankBranchId, int bankTenantId, ICurrentUser actor)
+    {
+        if (bankBranchId == order.BranchId) return;
+        if (Roles.IsSuperadmin(actor.Role) && actor.TenantId > 0
+            && actor.TenantId == order.TenantId && bankTenantId == actor.TenantId) return;
+        EnsurePaymentBranch(order, bankBranchId);
+    }
+
     public static void EnsurePaymentBranch(Order order, int bankBranchId)
     {
         if (bankBranchId != order.BranchId)
