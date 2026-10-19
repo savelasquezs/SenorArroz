@@ -15,7 +15,7 @@ public sealed class WhatsAppAiTelemetryWorkerOptions
 
 public sealed class WhatsAppAiTelemetryWorker(
     WhatsAppAiTelemetryQueue queue,
-    IDbContextFactory<ApplicationDbContext> factory,
+    IServiceScopeFactory scopeFactory,
     IOptions<WhatsAppAiTelemetryWorkerOptions> options,
     ILogger<WhatsAppAiTelemetryWorker> logger,
     ITenantExecutionContext tenantExecutionContext) : IHostedService
@@ -61,6 +61,8 @@ public sealed class WhatsAppAiTelemetryWorker(
                         if (tenantBatch.Key <= 0)
                             throw new InvalidOperationException("La telemetrÃ­a de WhatsApp AI no tiene tenant.");
                         using var tenantScope = tenantExecutionContext.BeginTenantScope(tenantBatch.Key);
+                        await using var scope = scopeFactory.CreateAsyncScope();
+                        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
                         await using var db = await factory.CreateDbContextAsync(forceStop);
                         db.WhatsAppAiInvocations.AddRange(tenantBatch);
                         await db.SaveChangesAsync(forceStop);

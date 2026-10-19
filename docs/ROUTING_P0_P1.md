@@ -1,6 +1,6 @@
 # Ruteo P0/P1: validez y medición temporal
 
-Fecha de preparación: 2026-10-16. Backend PR #36; Flutter `delivery_app` PR #9. Estado: ramas de revisión, sin despliegue ni medición activa.
+Fecha de preparación: 2026-10-16. Backend PR #36 y Flutter `delivery_app` PR #9 integrados. Este registro no confirma el estado de despliegue remoto; la implementación P2–P5 actual se valida exclusivamente localmente. Activación de medición: pendiente de verificación operativa.
 
 ## Alcance
 
@@ -58,6 +58,8 @@ python scripts/routing_measurement_report.py exportacion.log > reporte.json
 Acepta JSONL con el payload o líneas de consola con el marcador. Ignora otras líneas, desduplica sampleId y separa tenant/sucursal/algoritmo/ventana. Exportar solo a un destino privado autorizado. `ignoredLines` no mide fallos operativos. La ausencia de logs no cuenta como éxito. El reporte de P0 no demuestra reducción de tiempo de entrega por sí solo.
 
 ## Retirada física P6
+
+La extensión P3–P5 agrega `RoutingObservationV1`, `RoutingMeasurement.Observe` y llamadas de medición en transición de Listo, aceptación, salida física y regreso. Retirarlas junto con sus opciones de inyección y el exportador; conservar snapshots funcionales de preparación, límite de espera, auditoría y pruebas de ruteo. Ver `ROUTING_P3_P5.md`.
 
 Al vencer: exportar informe y desactivar; luego PR a main para eliminar:
 - RoutingMeasurement.cs y sus llamadas/parámetros en DeliveryRoutingPlanService.

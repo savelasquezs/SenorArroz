@@ -75,18 +75,12 @@ public static class DependencyInjection
         services.AddSingleton<StorefrontMetaAttributionInterceptor>();
         services.AddSingleton<TenantDbCommandInterceptor>();
         services.AddSingleton<TenantDbConnectionInterceptor>();
-        services.AddDbContext<ApplicationDbContext>((provider, options) =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
-                .AddInterceptors(
-                    provider.GetRequiredService<TenantDbConnectionInterceptor>(),
-                    provider.GetRequiredService<TenantDbCommandInterceptor>(),
-                    provider.GetRequiredService<StorefrontMetaAttributionInterceptor>()));
         services.AddDbContextFactory<ApplicationDbContext>((provider, options) =>
             options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
                 .AddInterceptors(
                     provider.GetRequiredService<TenantDbConnectionInterceptor>(),
                     provider.GetRequiredService<TenantDbCommandInterceptor>(),
-                    provider.GetRequiredService<StorefrontMetaAttributionInterceptor>()));
+                    provider.GetRequiredService<StorefrontMetaAttributionInterceptor>()), ServiceLifetime.Scoped);
 
         services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IDeliveryAutoCompletionRouteLock, PostgresDeliveryAutoCompletionRouteLock>();

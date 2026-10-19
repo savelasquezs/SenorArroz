@@ -9,6 +9,9 @@ using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
+using Microsoft.Extensions.Options;
+using SenorArroz.Application.Options;
+using SenorArroz.Application.Features.DeliveryRouting.Services;
 
 namespace SenorArroz.Application.Common.Services;
 
@@ -22,19 +25,21 @@ public sealed class DeliveryAutoCompletionService : IDeliveryAutoCompletionServi
     private readonly IClock _clock;
     private readonly ILogger<DeliveryAutoCompletionService> _logger;
     private readonly IDeliveryAutoCompletionRouteLock _routeLock;
+    private readonly RoutingMeasurementOptions _measurement;
 
     public DeliveryAutoCompletionService(
         IApplicationDbContext db,
         ISender sender,
         IClock clock,
         ILogger<DeliveryAutoCompletionService> logger,
-        IDeliveryAutoCompletionRouteLock routeLock)
+        IDeliveryAutoCompletionRouteLock routeLock, IOptions<DeliveryRoutingOptions>? routingOptions = null)
     {
         _db = db;
         _sender = sender;
         _clock = clock;
         _logger = logger;
         _routeLock = routeLock;
+        _measurement = routingOptions?.Value.Measurement ?? new RoutingMeasurementOptions();
     }
 
     public async Task EvaluateLocationAsync(
@@ -601,6 +606,8 @@ public sealed class DeliveryAutoCompletionService : IDeliveryAutoCompletionServi
         }
         route.Status = DeliveryRouteStatus.Completed;
         await _db.SaveChangesAsync(ct);
+        RoutingMeasurement.Observe(_logger, _measurement, _clock.UtcNow, route.TenantId, route.BranchId,
+            "returned", route.Id, occurredAtUtc: returnedAt);
     }
 
     private void AuditReturn(DeliveryRoute route, string operation, object metadata) =>

@@ -108,11 +108,14 @@ public class Order : TenantOwnedEntity
     public virtual ICollection<OrderInventoryAllocation> InventoryAllocations { get; set; } = new List<OrderInventoryAllocation>();
 
     // Helper methods para StatusTimes
-    public Dictionary<string, DateTime> GetStatusTimes()
+    public Dictionary<string, DateTime> GetStatusTimes() => ParseStatusTimes(StatusTimes);
+
+    public static Dictionary<string, DateTime> ParseStatusTimes(string value)
     {
         try
         {
-            return JsonSerializer.Deserialize<Dictionary<string, DateTime>>(StatusTimes) ?? new Dictionary<string, DateTime>();
+            return JsonSerializer.Deserialize<Dictionary<string, DateTimeOffset>>(value)?
+                .ToDictionary(pair => pair.Key, pair => pair.Value.UtcDateTime) ?? new Dictionary<string, DateTime>();
         }
         catch
         {

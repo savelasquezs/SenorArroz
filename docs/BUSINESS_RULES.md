@@ -12,6 +12,9 @@
 
 Este documento resume reglas funcionales que Codex debe respetar antes de modificar pedidos, pagos, cocina, domicilios, impresión, caja o módulos relacionados.
 
+Los timestamps de estados con `Z` u offset explícito se normalizan a UTC al leerlos;
+la zona horaria del servidor no modifica los instantes ni los límites de espera.
+
 ## Inventario
 
 - Registrar una compra inventariable confirma que el insumo ya llegó: convierte la presentación a unidad base, aumenta existencia y actualiza el costo promedio en la misma transacción.
@@ -67,6 +70,8 @@ Pendiente de producto SaaS: capabilities, control plane, planes, add-ons, suscri
 - La matriz vinculante incluye RLS, contexto PostgreSQL, unicidades, tiempo real, archivos e impresión.
 
 ## Regla general
+
+- SignalR de pedidos valida la misma versión de app que HTTP. En `/hubs/orders` admite versión, compilación y paquete desde query para clientes WebSocket de navegador; los endpoints HTTP operativos siguen exigiendo cabeceras.
 
 El sistema ya opera con clientes reales. Todo cambio debe ser pequeño, seguro y compatible con datos existentes.
 
@@ -315,6 +320,10 @@ Reglas:
 - El enrutador dinámico V1 agrupa por sucursal pedidos internos Delivery y reservas con dirección en Tomado, En preparación o Listo, sin domiciliario ni ruta asignados.
 - La matriz de optimización V1 es local y aproximada (Haversine, factor vial y velocidad configurables); Google Route Matrix no es una dependencia de esta versión.
 - OR-Tools decide orden, agrupación y visitas opcionales sin imponer un máximo fijo de paradas. La capacidad se modela con domiciliarios libres ahora o próximos a regresar.
+- Las rutas respetan la dispersión direccional configurada. La llegada a cada destino se limita a `MaximumDeliveryAfterDepartureSeconds` desde la salida (35 minutos inicialmente), incluyendo atención en paradas anteriores. La antigüedad aumenta la prioridad; no reduce a cero el presupuesto de viaje de un pedido atrasado.
+- El reagrupamiento geográfico y la reinserción de pendientes conservan los pedidos seleccionados y no pueden retrasar sus llegadas más de `MaximumAdditionalDelaySeconds` (180 segundos inicialmente) respecto al cálculo inicial. El límite es acumulado entre fases, no se renueva con cada inserción. Se conservan ventanas de preparación, certeza de cocina y disponibilidad del domiciliario.
+- Los pendientes se evalúan en todas las posiciones de las rutas compatibles, priorizando pedidos listos, antigüedad y cercanía al corredor. `SoftDetourReferenceSeconds` penaliza el incremento de conducción por encima de su referencia. Los pedidos que excedan los límites permanecen pendientes.
+- La app muestra conducción y llegada estimada al último destino por separado; esta última incluye atención de las paradas anteriores y se mide desde la salida, sin añadir la atención posterior a la última llegada.
 - Google Compute Routes solo valida propuestas finales. Si Google falla, la propuesta conserva métricas aproximadas, queda marcada como degradada y nunca presenta ceros como validación exitosa.
 - Solo los pedidos actualmente Listos de una propuesta pueden reclamarse. Tomado y En preparación son informativos y se mantienen como espera sugerida.
 - La toma desde una propuesta exige versión de plan y se ejecuta en una transacción serializable; ante una carrera responde `ROUTING_PLAN_STALE` sin asignación parcial.
@@ -448,6 +457,38 @@ Reglas:
 - El token del agente nunca debe exponerse ni guardarse en repositorio.
 - El agente solo debe leer trabajos de su sucursal/tenant.
 - No cambiar payload de impresión sin revisar `senorArrozPrintAgent`.
+
+## Planificación de rutas
+
+- El cálculo usa una tubería de selección cronológica, refinamiento geográfico y redistribución con un presupuesto global (`SolverTimeLimitMs`). Se conserva la última solución válida. La comida lista se selecciona desde los pedidos más antiguos; antes de saltar uno se intenta redistribuir el conjunto anterior más ese candidato, sin sustituir pedidos antiguos por recientes. Fechas iguales no crean una prioridad artificial por ID. El número de pedido es solo un desempate.
+- Para un domicilio normal, la prioridad proviene de `CreatedAt`; para una reserva, de `ReservedFor` menos la meta de entrega, con respaldo en `PrepareAt` y `CreatedAt`. Las propuestas se numeran por el pedido más urgente que contienen. La entrega dentro de cada ruta optimiza recorrido y llegada ponderada por antigüedad, sin imponer FIFO rígido que provoque devolverse. Las reservas penalizan atraso y no admiten retraso adicional si ya estaban puntuales.
+- La meta normal es 35 minutos desde salida; el techo de inclusión es 40 minutos. Tras construir el conjunto inicial se fija una sola vez un margen acumulado máximo de cinco minutos por entrega. Refinamiento, inserciones y movimientos entre rutas comparten ese límite; no se reinicia al mover un pedido. La antigüedad decide la prioridad pero no consume el presupuesto de viaje: se distinguen minutos desde toma y minutos desde salida.
+- Un viaje directo que supera el límite normal recibe automáticamente un límite individual de viaje directo más diez minutos, con tope técnico de un día. No necesita autorización, columnas de excepción ni una primera falla; se publica su motivo en plan, recarga y vista previa. No amplía los límites de sus compañeros ni desplaza pedidos más antiguos. Si no existe capacidad o compatibilidad, sigue pendiente con un motivo real; no se inventa un domiciliario ni se altera una ruta aceptada.
+- La redistribución conserva todos los seleccionados y evalúa completar con pendientes, trasladar, reordenar e intercambiar paradas. Prioriza pendientes antiguos, atraso de reservas y evitar rutas de un solo pedido; después compara cambios de corredor, retrasos, llegada ponderada y ocupación hasta regresar. Dentro de un corredor manda el tiempo, no ordenar los ángulos. Puede liberar una salida al fusionar una ruta individual o dividir un corredor entre varios domiciliarios. Mantiene una ruta individual cuando no hay una alternativa compatible dentro de los límites; no exige una salida por cada domiciliario ni una ruta exclusiva por sector.
+- Los destinos a 100 m geodésicos o menos de la sucursal no restringen el rumbo de una salida, pero conservan sus tiempos y servicio. Nunca permiten encadenar otros destinos opuestos. Este radio central no es el radio operativo de 600 m de los domiciliarios. Coordenadas y sectores son una aproximación geométrica: sin una matriz vial no se infieren cruces, autopistas ni sentidos de calles. No se presenta una ruta aproximada como validación vial de Google.
+- Los tres paquetes de veinte direcciones se conservan en `scripts/delivery-routing-addresses.json`. El escenario local prepara las mismas veinte órdenes, todas listas, sin reservas y con edades correlativas; reporta coordenadas/direcciones del paquete elegido, tiempos desde salida y pendientes. Se prueba con 3 y 5 domiciliarios, sin crear ni aceptar rutas manualmente.
+
+- Antes de agrupar automáticamente, cada destino se clasifica en ocho sectores de 45° respecto a la sucursal (N, NE, E, SE, S, SO, O, NO). Una propuesta puede abarcar sectores contiguos dentro del arco configurado (60° por defecto, nunca más de 90°); no admite destinos opuestos aunque la distancia o la cantidad hagan rentable juntarlos. La comparación es circular alrededor del norte y se aplica entre todas las paradas, no solo entre paradas consecutivas. Esto no modifica rutas ya aceptadas.
+- La optimización conserva primero el conjunto de pedidos seleccionados con las restricciones de capacidad, cocina y espera. Sobre ese conjunto genera corredores dinámicos con centros en destinos reales, considerando ángulo, cercanía y desvío lateral respecto a la sucursal, sin IDs ni barrios predefinidos. El barrido circular empieza después del mayor hueco angular; no impone límites rígidos en los puntos cardinales ni un máximo de paradas.
+- La cercanía del agrupador se normaliza por el segundo vecino de cada destino (o el único vecino disponible), con una referencia mínima de 100 metros. Se usa la menor escala local de cada pareja para no absorber un núcleo compacto con pedidos alejados solo por compartir ángulo. Los cálculos de afinidad conservan decimales; el redondeo de costos del solver no decide la pertenencia geográfica. Se comparan hasta ocho inicializaciones distribuidas sobre el barrido circular y se conserva la de menor costo geográfico, evitando depender de un único centro inicial.
+- Una segunda búsqueda prioriza evitar cambios de corredor y usa el desvío lateral para distinguir cruces alternativos; dentro de un mismo corredor el orden se optimiza exclusivamente por los costos de tiempo. Los costos geográficos no se suman al tiempo de conducción. La cobertura seleccionada no se reduce en esa búsqueda; si no produce una solución válida dentro del presupuesto, se conserva la primera solución. La matriz aproximada no reconoce cruces, sentidos viales ni barreras; no se afirma compatibilidad vial real sin una matriz de calles.
+
+- Descartar comida lista tiene el doble de penalización base que descartar preparación prevista; la antigüedad sigue sumando prioridad. La meta de entrega continúa siendo un costo suave y se conservan la espera máxima y la separación de preparaciones inciertas.
+- La disponibilidad GPS liviana respeta dos intervalos de su cadencia configurada más treinta segundos; el modo de entrega conserva el límite activo más estricto. Precisión, jornada, sucursal y GPS habilitado siguen siendo obligatorios.
+- Una historia insuficiente no puede anunciar más del 50% de probabilidad de preparación; los tiempos de respaldo vencidos avanzan en ventanas ancladas a la fase, evitando publicar una nueva versión por cada consulta.
+- Un pedido descartado por costo no se presenta como inviable. Las exclusiones conservan su confianza y probabilidad reales; la validación Google desactivada en desarrollo se muestra como métricas aproximadas, no como fallo de red.
+
+- Una propuesta permite quitar, añadir pedidos listos y cambiar el orden únicamente antes de aceptarla. La aceptación confirma la selección en una transacción; el domiciliario no puede editar después la ruta aceptada.
+- En el editor móvil/web, la dirección es la identificación principal y barrio/número son secundarios. La selección de añadidos incluye listos sin propuesta y listos de otras propuestas aún disponibles; tomar de otra propuesta y quitar de la selección piden confirmación. Solo la aceptación oficial modifica asignaciones y deja obsoleto el plan anterior; editar una selección no reserva ni transfiere pedidos.
+- La vista previa se calcula al abrir y tras cada edición, agrupando cambios rápidos. La aceptación requiere la última respuesta correspondiente al orden y selección vigentes; respuestas anteriores no restauran una estimación ni habilitan el botón. No hay botón permanente de actualizar estimación; solo se ofrece reintentar ante un error. Un plan vencido exige volver a revisar las propuestas actualizadas. Se conservan GPS, jornada y validaciones concurrentes del flujo oficial.
+- Las propuestas y su editor distinguen última entrega y regreso a la sucursal. Distancia y duración son acumuladas desde la salida prevista, sin sumar otra vez la espera de cocina; la duración incluye el servicio de todas las paradas, incluida la última. El regreso añade exclusivamente el tramo dirigido desde la última parada hasta la sucursal, no duplica la ida. Se muestran horas locales aproximadas y se señala si el regreso cruza de día. El tramo de regreso se calcula con la matriz disponible y se identifica como aproximado; no exige nuevas consultas a Google ni modifica agrupación, límites o asignaciones.
+- La vista previa de una selección editada entrega una huella del conjunto ordenado; aceptar exige la misma versión de plan, pedidos listos sin asignar y la misma huella. Una versión vencida o un conflicto concurrente devuelve `409 ROUTING_PLAN_STALE`.
+- La espera por complementos vence en la hora de Listo más `KitchenWaitReferenceSeconds`. Si falta ese timestamp se usa la creación del pedido como referencia conservadora. El recálculo no reinicia el límite; una capacidad futura ya posterior al límite no añade más espera por cocina.
+- El solver carga todos los pedidos en sucursal: la salida del vehículo debe ser posterior a la preparación de todos sus pedidos. La comida lista no comparte salida con complementos cuya probabilidad estimada de estar listos pronto sea menor al 60%.
+- La estimación de cocina usa historia de la sucursal, fase actual, tiempo transcurrido y coincidencias de cantidad/productos/franja cuando hay muestra suficiente. La falta de historia o una preparación fuera de todo el historial mantiene confianza baja y tiempo restante positivo hasta que cocina confirme Listo.
+- Los recálculos mantienen pedidos y orden de rutas aceptadas. Caja y administración conservan sus flujos autorizados, auditados y notificados.
+- Asignación y consolidación no prueban salida física. La salida se observa con GPS confiable de la jornada actual; los cierres administrativos no inventan regreso ni cumplimiento SLA.
+- Los puntos offline conservan evidencia histórica, pero nunca disparan autoentrega ni cambian relojes operativos de una jornada cerrada. La asociación a ruta exige tenant, sucursal, domiciliario e intervalo compatibles con la jornada.
 
 ## Seguridad
 

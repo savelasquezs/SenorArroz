@@ -6,7 +6,7 @@ namespace SenorArroz.Application.Features.DeliveryRouting;
 
 public sealed record GetDeliveryRoutingPlanQuery(int? BranchId) : IRequest<DeliveryRoutingPlanDto>;
 public sealed record RecalculateDeliveryRoutingPlanCommand(int? BranchId) : IRequest<DeliveryRoutingPlanDto>;
-public sealed record PreviewDeliveryRouteQuery(int? BranchId, IReadOnlyList<int> OrderIds) : IRequest<DeliveryRouteProposalDto>;
+public sealed record PreviewDeliveryRouteQuery(int? BranchId, IReadOnlyList<int> OrderIds, long? ExpectedPlanVersion = null) : IRequest<DeliveryRouteProposalDto>;
 
 public sealed class GetDeliveryRoutingPlanHandler : IRequestHandler<GetDeliveryRoutingPlanQuery, DeliveryRoutingPlanDto>
 {
@@ -50,5 +50,5 @@ public sealed class PreviewDeliveryRouteHandler : IRequestHandler<PreviewDeliver
     }
 
     public Task<DeliveryRouteProposalDto> Handle(PreviewDeliveryRouteQuery request, CancellationToken cancellationToken) =>
-        _plans.PreviewAsync(_branchContext.RequireBranch(request.BranchId), request.OrderIds, cancellationToken);
+        _plans.PreviewAsync(_branchContext.RequireBranch(request.BranchId), request.OrderIds, cancellationToken, request.ExpectedPlanVersion);
 }

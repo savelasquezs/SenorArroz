@@ -30,7 +30,8 @@ public class VerifyBankPaymentHandler : IRequestHandler<VerifyBankPaymentCommand
         if (bankPayment == null)
             return false;
         OrderAccessRules.EnsureAccess(bankPayment.Order, _currentUser, _branchContext);
-        OrderAccessRules.EnsurePaymentBranch(bankPayment.Order, bankPayment.Bank.BranchId);
+        OrderAccessRules.EnsureExistingBankPaymentBranch(
+            bankPayment.Order, bankPayment.Bank.BranchId, bankPayment.Bank.TenantId, _currentUser);
 
         // Check if user has access to this bank payment's branch
 

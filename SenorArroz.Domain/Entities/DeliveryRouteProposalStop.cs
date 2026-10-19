@@ -9,6 +9,10 @@ public class DeliveryRouteProposalStop : TenantOwnedEntity
     public int OrderId { get; set; }
     public int? StopSequence { get; set; }
     public DateTime EstimatedReadyAtUtc { get; set; }
+    public DateTime? ConservativeReadyAtUtc { get; set; }
+    public string PreparationConfidence { get; set; } = "unknown";
+    public double ReadyWithinWindowProbability { get; set; } = 1;
+    public int PreparationSampleSize { get; set; }
     public DateTime? EstimatedArrivalAtUtc { get; set; }
     public int TravelFromPreviousSeconds { get; set; }
     public int ServiceSeconds { get; set; }

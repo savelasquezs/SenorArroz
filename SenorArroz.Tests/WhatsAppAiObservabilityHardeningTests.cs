@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SenorArroz.API.Controllers;
@@ -6,11 +8,33 @@ using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Models;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Data;
+using SenorArroz.Infrastructure;
 
 namespace SenorArroz.Tests;
 
 public class WhatsAppAiObservabilityHardeningTests
 {
+    [Fact]
+    public async Task Infrastructure_context_factory_resolves_inside_scope_with_scope_validation()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=local_test;Username=local_test",
+            ["Multitenancy:DefaultTenantId"] = "1"
+        }).Build();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddInfrastructureServices(configuration);
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+        await using var created = await factory.CreateDbContextAsync();
+        Assert.Equal(1, created.CurrentTenantIdForFilter);
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+        Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>());
+    }
+
     [Theory]
     [InlineData("openai", 100, 0, 20, 0, 100, 0, 20)]
     [InlineData("openai", 100, 25, 20, 10, 75, 25, 20)]
@@ -88,7 +112,13 @@ public class WhatsAppAiObservabilityHardeningTests
 
     private static WhatsAppAiTelemetryQueue NewQueue() => new(NullLogger<WhatsAppAiTelemetryQueue>.Instance);
     private static WhatsAppAiInvocation Invocation() => new() { TenantId=1,BranchId=1,ConversationId=1,IncomingMessageId=1,Provider="openai",Model="m",StartedAt=DateTime.UtcNow,CreatedAt=DateTime.UtcNow };
-    private static WhatsAppAiTelemetryWorker Worker(WhatsAppAiTelemetryQueue queue, IDbContextFactory<ApplicationDbContext> factory, int timeout) => new(queue,factory,Options.Create(new WhatsAppAiTelemetryWorkerOptions{DrainTimeoutSeconds=timeout,BatchSize=50}),NullLogger<WhatsAppAiTelemetryWorker>.Instance,TestTenantContext.Default);
+    private static WhatsAppAiTelemetryWorker Worker(WhatsAppAiTelemetryQueue queue, IDbContextFactory<ApplicationDbContext> factory, int timeout)
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<IDbContextFactory<ApplicationDbContext>>(_ => factory);
+        var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+        return new(queue, provider.GetRequiredService<IServiceScopeFactory>(), Options.Create(new WhatsAppAiTelemetryWorkerOptions { DrainTimeoutSeconds = timeout, BatchSize = 50 }), NullLogger<WhatsAppAiTelemetryWorker>.Instance, TestTenantContext.Default);
+    }
 
     private sealed class TestFactory(DbContextOptions<ApplicationDbContext> options) : IDbContextFactory<ApplicationDbContext>
     {

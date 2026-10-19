@@ -48,7 +48,8 @@ public sealed class RoutingMeasurementSafetyTests
         {
             "schema", "sampleId", "algorithm", "timestampUtc", "experimentStartedAtUtc", "expiresAtUtc",
             "tenantId", "branchId", "outcome", "totalMs", "lockWaitMs", "inputMs", "candidates",
-            "solverMsOnPlan", "googleCalls", "googleMs", "googleFailures", "planId", "version", "proposals", "unrouted"
+            "solverMsOnPlan", "googleCalls", "googleMs", "googleFailures", "planId", "version", "proposals", "unrouted",
+            "routeSnapshots", "exclusions", "returnForecasts"
         };
         Assert.Equal(2, logger.Payloads.Count);
         using var first = JsonDocument.Parse(logger.Payloads[0]);

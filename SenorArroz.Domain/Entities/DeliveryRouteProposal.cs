@@ -11,6 +11,7 @@ public class DeliveryRouteProposal : TenantOwnedEntity
     public DeliveryRouteRecommendation Recommendation { get; set; }
     public DateTime ExpectedDepartureAtUtc { get; set; }
     public int WaitSeconds { get; set; }
+    public DateTime? WaitDeadlineAtUtc { get; set; }
     public int ApproximateDrivingDurationSeconds { get; set; }
     public int ApproximateDistanceMeters { get; set; }
     public int? ValidatedDrivingDurationSeconds { get; set; }

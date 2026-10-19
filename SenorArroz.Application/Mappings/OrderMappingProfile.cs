@@ -35,6 +35,8 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.StatusTimes, opt => opt.MapFrom(src => src.GetStatusTimes()))
             .ForMember(dest => dest.DeliveryRoutePlanningWarnings, opt => opt.MapFrom(src =>
                 src.DeliveryRoute != null ? src.DeliveryRoute.PlanningWarnings : null))
+            .ForMember(dest => dest.DeliveryRouteStopSequence, opt => opt.MapFrom(src =>
+                src.DeliveryRouteStop != null ? (int?)src.DeliveryRouteStop.StopSequence : null))
             .ForMember(dest => dest.DeliveryRouteStartedAtUtc, opt => opt.MapFrom(src =>
                 src.DeliveryRoute != null ? src.DeliveryRoute.RouteStartedAtUtc : null))
             .ForMember(dest => dest.DeliveryRouteCompletedAtUtc, opt => opt.MapFrom(src =>

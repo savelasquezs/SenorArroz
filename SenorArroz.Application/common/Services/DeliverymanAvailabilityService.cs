@@ -1,5 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
+using SenorArroz.Application.Features.DeliveryRouting.Services;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
@@ -12,106 +16,187 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
     private readonly IApplicationDbContext _db;
     private readonly IGoogleRoutesDrivingMetricsService _googleRoutes;
     private readonly DeliveryRoutingOptions _options;
+    private readonly IMemoryCache? _cache;
+    private readonly ILogger<DeliverymanAvailabilityService>? _logger;
 
-    public DeliverymanAvailabilityService(
-        IApplicationDbContext db,
-        IGoogleRoutesDrivingMetricsService googleRoutes,
-        IOptions<DeliveryRoutingOptions> options)
+    public DeliverymanAvailabilityService(IApplicationDbContext db,
+        IGoogleRoutesDrivingMetricsService googleRoutes, IOptions<DeliveryRoutingOptions> options, IMemoryCache? cache = null,
+        ILogger<DeliverymanAvailabilityService>? logger = null)
     {
         _db = db;
         _googleRoutes = googleRoutes;
         _options = options.Value;
+        _cache = cache;
+        _logger = logger;
     }
 
-    public async Task<DeliveryRoutingCapacity> GetCapacityAsync(
-        int branchId,
-        double branchLatitude,
-        double branchLongitude,
-        DateTime nowUtc,
-        CancellationToken cancellationToken = default)
+    public async Task<DeliveryRoutingCapacity> GetCapacityAsync(int branchId, double branchLatitude,
+        double branchLongitude, DateTime nowUtc, CancellationToken ct = default)
     {
+        var branch = await _db.Branches.AsNoTracking().SingleAsync(b => b.Id == branchId, ct);
         var today = ColombiaTimeHelper.GetTodayDateOnlyColombiaFromUtc(nowUtc);
-        var blockedIds = await _db.DeliverymanDayStates
-            .AsNoTracking()
-            .Where(x => x.BranchId == branchId && x.Date == today && x.Blocked)
-            .Select(x => x.DeliverymanId)
-            .ToListAsync(cancellationToken);
-        var sessions = await _db.DeliveryWorkSessions
-            .AsNoTracking()
-            .Where(x => x.BranchId == branchId
-                        && x.Status == DeliveryWorkSessionStatus.Active
-                        && x.AutoCloseAt > nowUtc
-                        && !blockedIds.Contains(x.DeliverymanId))
-            .Select(x => new { x.Id, x.DeliverymanId })
-            .ToListAsync(cancellationToken);
-        if (sessions.Count == 0)
-            return new DeliveryRoutingCapacity([], 0, 0, []);
-
-        var deliverymanIds = sessions.Select(x => x.DeliverymanId).Distinct().ToList();
-        var pendingIds = await _db.Orders
-            .AsNoTracking()
-            .Where(x => x.BranchId == branchId
-                        && x.DeliveryManId.HasValue
-                        && deliverymanIds.Contains(x.DeliveryManId.Value)
-                        && x.Status != OrderStatus.Delivered
-                        && x.Status != OrderStatus.Cancelled)
-            .Select(x => x.DeliveryManId!.Value)
-            .Distinct()
-            .ToListAsync(cancellationToken);
-        var freshnessCutoff = nowUtc.AddSeconds(-Math.Max(30, _options.ActiveGpsFreshnessSeconds));
-        var sessionIds = sessions.Select(x => x.Id).ToList();
-        var locationRows = await _db.DeliverymanLocations
-            .AsNoTracking()
-            .Where(x => x.WorkSessionId.HasValue
-                        && sessionIds.Contains(x.WorkSessionId.Value)
-                        && x.RecordedAt >= freshnessCutoff
-                        && x.GpsEnabled != false)
-            .OrderByDescending(x => x.RecordedAt)
-            .ThenByDescending(x => x.Id)
-            .Select(x => new { x.DeliverymanId, x.Latitude, x.Longitude })
-            .ToListAsync(cancellationToken);
-        var latest = locationRows.GroupBy(x => x.DeliverymanId).ToDictionary(x => x.Key, x => x.First());
-        var allowedMeters = await _db.Branches
-            .AsNoTracking()
-            .Where(x => x.Id == branchId)
-            .Select(x => x.DeliveryTrackingAllowedDistanceMeters)
-            .SingleAsync(cancellationToken);
-
+        var blocked = await _db.DeliverymanDayStates.AsNoTracking()
+            .Where(s => s.BranchId == branchId && s.Date == today && s.Blocked)
+            .Select(s => s.DeliverymanId).ToListAsync(ct);
+        var sessions = await DeliveryRouteScope.ActiveSessions(_db, branchId, nowUtc).AsNoTracking()
+            .Where(s => _db.Users.Any(u => u.Id == s.DeliverymanId && u.BranchId == branchId && u.Active
+                && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled
+                    && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier)))))
+            .ToListAsync(ct);
+        var couriers = await _db.Users.AsNoTracking().Where(u => u.BranchId == branchId && u.Active
+            && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled
+                && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier))))
+            .Select(u => new { u.Id, u.Name }).ToListAsync(ct);
+        var offDuty = couriers.Where(u => sessions.All(s => s.DeliverymanId != u.Id))
+            .Select(u => new DeliveryCourierAvailability(u.Id, u.Name, 0, "offDuty", null, [], null, null,
+                "confirmed", "workSession")).ToList();
+        if (sessions.Count == 0) return new DeliveryRoutingCapacity([], 0, 0, []) { Couriers = offDuty };
+        var courierIds = sessions.Select(s => s.DeliverymanId).ToArray();
+        var names = couriers.ToDictionary(u => u.Id, u => u.Name);
+        var sessionIds = sessions.Select(s => s.Id).ToArray();
+        var earliestSession = sessions.Min(s => s.StartedAt);
+        var routes = await _db.DeliveryRoutes.AsNoTracking().Include(r => r.Stops)
+            .Where(r => r.BranchId == branchId && courierIds.Contains(r.DeliverymanId)
+                && (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress)
+                && (r.WorkSessionId.HasValue && sessionIds.Contains(r.WorkSessionId.Value)
+                    || r.WorkSessionId == null && r.LastAssignmentAtUtc >= earliestSession))
+            .OrderByDescending(r => r.LastAssignmentAtUtc).ThenByDescending(r => r.Id).ToListAsync(ct);
+        var pending = await _db.Orders.AsNoTracking()
+            .Where(o => o.BranchId == branchId && o.DeliveryManId.HasValue && courierIds.Contains(o.DeliveryManId.Value)
+                && o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled)
+            .Select(o => new { o.Id, Courier = o.DeliveryManId!.Value, o.DeliveryRouteId,
+                Latitude = o.Address == null ? null : o.Address.Latitude,
+                Longitude = o.Address == null ? null : o.Address.Longitude }).ToListAsync(ct);
+        var maximumAge = Math.Max(Math.Clamp(_options.ActiveGpsFreshnessSeconds, 30, 600),
+            Math.Clamp(branch.DeliveryTrackingLightIntervalSeconds, 30, 900) * 2 + 30);
+        var cutoff = nowUtc.AddSeconds(-maximumAge);
+        var points = await _db.DeliverymanLocations.AsNoTracking()
+            .Where(p => p.WorkSessionId.HasValue && sessionIds.Contains(p.WorkSessionId.Value)
+                && p.RecordedAt >= cutoff && p.RecordedAt <= nowUtc.AddSeconds(15))
+            .OrderByDescending(p => p.RecordedAt).ThenByDescending(p => p.Id).ToListAsync(ct);
+        var latest = points.GroupBy(p => p.WorkSessionId!.Value).ToDictionary(g => g.Key, g => g.First());
         var slots = new List<RoutingVehicleSlot>();
+        var fleet = new List<DeliveryCourierAvailability>(offDuty);
         var warnings = new List<string>();
-        var availableNow = 0;
-        var availableSoon = 0;
-        foreach (var deliverymanId in deliverymanIds)
+        foreach (var session in sessions.OrderBy(s => s.DeliverymanId))
         {
-            if (!latest.TryGetValue(deliverymanId, out var point) || pendingIds.Contains(deliverymanId))
-                continue;
-
-            var distance = GeoHelper.HaversineDistanceMeters(
-                (double)point.Latitude,
-                (double)point.Longitude,
-                branchLatitude,
-                branchLongitude);
-            if (distance <= Math.Max(1, allowedMeters))
+            var id = session.DeliverymanId;
+            var assigned = pending.Where(o => o.Courier == id).ToList();
+            var ownedRoutes = routes.Where(r => r.Stops.Count > 0 && DeliveryRouteScope.BelongsToSession(r, session, nowUtc)).ToList();
+            var route = ownedRoutes.FirstOrDefault();
+            latest.TryGetValue(session.Id, out var point);
+            var state = "unknown";
+            var confidence = "unknown";
+            var source = "none";
+            DateTime? availableAt = null;
+            if (blocked.Contains(id)) state = "unavailable";
+            else if (ownedRoutes.Count > 1 || assigned.Any(o => o.DeliveryRouteId != route?.Id))
             {
-                slots.Add(new RoutingVehicleSlot(0));
-                availableNow++;
-                continue;
+                state = "inconsistent";
+                warnings.Add($"El domiciliario {id} requiere revisión de su ruta/jornada.");
             }
-
-            var metrics = await _googleRoutes.ComputeRouteAsync(
-                [((double)point.Latitude, (double)point.Longitude), (branchLatitude, branchLongitude)],
-                cancellationToken);
-            if (metrics.DurationSeconds is > 0 && metrics.DurationSeconds <= _options.SoonAvailableThresholdSeconds)
+            else if (point is not null && point.DeliverymanId == id && DeliveryRouteScope.Reliable(point))
             {
-                slots.Add(new RoutingVehicleSlot(metrics.DurationSeconds));
-                availableSoon++;
+                var age = Math.Max(0, (nowUtc - point.RecordedAt).TotalSeconds);
+                var cadence = point.TrackingMode == DeliveryTrackingMode.Light
+                    ? branch.DeliveryTrackingLightIntervalSeconds : branch.DeliveryTrackingActiveIntervalSeconds;
+                var validAge = Math.Clamp(cadence, 15, 900) * 2 + 30;
+                var freshness = point.TrackingMode == DeliveryTrackingMode.Light && assigned.Count == 0 && route is null
+                    ? validAge : Math.Min(validAge, Math.Clamp(_options.ActiveGpsFreshnessSeconds, 30, 600));
+                var fresh = age <= freshness;
+                if (age <= validAge)
+                {
+                    var distance = GeoHelper.HaversineDistanceMeters((double)point.Latitude,
+                        (double)point.Longitude, branchLatitude, branchLongitude);
+                    var inside = distance <= Math.Max(1, branch.DeliveryTrackingAllowedDistanceMeters);
+                    confidence = fresh ? "confirmed" : "probable";
+                    source = "gps";
+                    if (assigned.Count > 0)
+                    {
+                        state = fresh && inside && route?.DepartedAtUtc is null ? "loading" : "delivering";
+                        if (fresh && route is not null && assigned.All(o => o.Latitude.HasValue && o.Longitude.HasValue))
+                        {
+                            var previous = ((double)point.Latitude, (double)point.Longitude);
+                            var meters = 0d;
+                            foreach (var order in assigned.OrderBy(o => route.Stops.FirstOrDefault(s => s.OrderId == o.Id)?.StopSequence))
+                            {
+                                var destination = ((double)order.Latitude!.Value, (double)order.Longitude!.Value);
+                                meters += GeoHelper.HaversineDistanceMeters(previous.Item1, previous.Item2, destination.Item1, destination.Item2);
+                                previous = destination;
+                            }
+                            meters += GeoHelper.HaversineDistanceMeters(previous.Item1, previous.Item2, branchLatitude, branchLongitude);
+                            var travel = meters * Math.Clamp(_options.ApproximateRoadFactor, 1, 3)
+                                / (Math.Clamp(_options.ApproximateUrbanSpeedKph, 5, 60) / 3.6);
+                            var seconds = (int)Math.Ceiling(travel * 1.25 + age + assigned.Count * Math.Max(0, _options.ServiceSecondsPerOrder));
+                            availableAt = nowUtc.AddSeconds(seconds);
+                            confidence = "probable";
+                            source = "remainingTrip";
+                            if (seconds > 0 && seconds <= _options.SoonAvailableThresholdSeconds)
+                                slots.Add(new RoutingVehicleSlot(seconds) { DeliverymanId = id, WorkSessionId = session.Id,
+                                    CurrentRouteId = route.Id, AvailableAtUtc = availableAt, Confidence = confidence, Source = source });
+                        }
+                    }
+                    else if (inside)
+                    {
+                        state = fresh ? "available" : "probableAtBranch";
+                        if (fresh)
+                        {
+                            availableAt = nowUtc;
+                            slots.Add(new RoutingVehicleSlot(0) { DeliverymanId = id, WorkSessionId = session.Id,
+                                CurrentRouteId = route?.Id, AvailableAtUtc = nowUtc, Confidence = confidence, Source = source });
+                        }
+                    }
+                    else if (route is not null)
+                    {
+                        state = "returning";
+                        source = "approximate";
+                        confidence = "probable";
+                        var duration = (int)Math.Ceiling(distance * Math.Clamp(_options.ApproximateRoadFactor, 1, 3)
+                            / (Math.Clamp(_options.ApproximateUrbanSpeedKph, 5, 60) / 3.6));
+                        if (fresh)
+                        {
+                            try
+                            {
+                                var key = ("routing-return", branch.TenantId, branchId, session.Id, point.Id, branchLatitude, branchLongitude);
+                                if (_cache is null || !_cache.TryGetValue(key, out DrivingRouteMetrics metrics))
+                                {
+                                    var timer = Stopwatch.StartNew();
+                                    var failed = true;
+                                    try
+                                    {
+                                        metrics = await _googleRoutes.ComputeRouteAsync(
+                                            [((double)point.Latitude, (double)point.Longitude), (branchLatitude, branchLongitude)], ct);
+                                        failed = metrics.DurationSeconds <= 0;
+                                    }
+                                    finally
+                                    {
+                                        timer.Stop();
+                                        if (_logger is not null)
+                                            RoutingMeasurement.Observe(_logger, _options.Measurement, nowUtc,
+                                                branch.TenantId, branchId, "googleReturn", route.Id,
+                                                googleMs: timer.ElapsedMilliseconds, googleFailed: failed);
+                                    }
+                                    _cache?.Set(key, metrics, TimeSpan.FromSeconds(30));
+                                }
+                                if (metrics.DurationSeconds > 0) { duration = metrics.DurationSeconds; source = "google"; }
+                            }
+                            catch (Exception ex) when (ex is not OperationCanceledException)
+                            { warnings.Add($"Regreso aproximado del domiciliario {id}; Google no respondió."); }
+                        }
+                        var conservative = Math.Max(30, duration + (int)Math.Ceiling(age) + Math.Max(30, duration / 4));
+                        availableAt = nowUtc.AddSeconds(conservative);
+                        if (conservative <= Math.Max(0, _options.SoonAvailableThresholdSeconds))
+                            slots.Add(new RoutingVehicleSlot(conservative) { DeliverymanId = id, WorkSessionId = session.Id,
+                                CurrentRouteId = route.Id, AvailableAtUtc = availableAt, Confidence = confidence, Source = source });
+                    }
+                    else state = "away";
+                }
             }
-            else if (metrics.DurationSeconds == 0)
-            {
-                warnings.Add($"No fue posible estimar el regreso del domiciliario {deliverymanId}.");
-            }
+            fleet.Add(new DeliveryCourierAvailability(id, names.GetValueOrDefault(id, string.Empty), session.Id,
+                state, route?.Id, assigned.Select(o => o.Id).OrderBy(x => x).ToArray(),
+                point?.RecordedAt, availableAt, confidence, source));
         }
-
-        return new DeliveryRoutingCapacity(slots, availableNow, availableSoon, warnings);
+        return new DeliveryRoutingCapacity(slots, slots.Count(s => s.AvailableAtSeconds == 0),
+            slots.Count(s => s.AvailableAtSeconds > 0), warnings) { Couriers = fleet };
     }
 }

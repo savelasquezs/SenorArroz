@@ -37,6 +37,14 @@ Una sola base de datos PostgreSQL
 
 ## Fuente principal
 
+Desarrollo móvil local: `senorarroz-delivery-postgres` contiene `senor_arroz_delivery_dev`
+en `127.0.0.1:15433`; el rol `delivery_local` no es propietario ni tiene bypass RLS.
+`scripts/start-delivery-local.ps1` carga su conexión desde User Secrets.
+El inicializador raíz incorpora `complete_local_development_prerequisites.sql`
+antes del aislamiento y las ampliaciones recientes después. El ajuste puntual
+`add_whatsapp_ai_context_columns.sql` agrega únicamente campos ya usados por el modelo,
+sin ejecutar el script destructivo de reinicio de WhatsApp.
+
 DbContext:
 
 ```text
@@ -291,6 +299,8 @@ Notas:
 Notas:
 
 - `DeliveryRoutingPlan` conserva una versión incremental y solo admite un plan `active` por sucursal mediante índice parcial.
+- P3–P5 agrega `wait_deadline_at_utc` en `delivery_route_proposal` y snapshots `conservative_ready_at_utc`, `preparation_confidence`, `ready_within_window_probability`, `preparation_sample_size` en sus paradas. Script idempotente: `add_routing_prediction_snapshots.sql`; no realiza backfill ni cambia pedidos. `../local-init-completo.sql` crea primero tablas V1, aplica aislamiento y luego los cambios aditivos P2/P3.
+- `DeliveryRoute.WorkSessionId` vincula la ruta mediante FK compuesta de tenant, jornada, domiciliario y sucursal. `DepartedAtUtc` y `DepartureSource` conservan salida física observada o confirmada sin reemplazar relojes históricos. El script aditivo `add_routing_operational_session.sql` está incluido en `../local-init-completo.sql`.
 - Las propuestas y sus paradas son snapshots operativos; el claim valida nuevamente estado, sucursal, asignación y versión dentro de una transacción serializable.
 - El esquema V1 se instala con `SenorArroz.Infrastructure/Scripts/add_delivery_routing_v1.sql` antes de desplegar el API que consulta estas tablas.
 - `Branch` configura la autoentrega GPS mediante activacion, radio de llegada, radio de salida y permanencia minima. Los valores iniciales son `true`, 50 m, 120 m y 15 s.

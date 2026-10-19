@@ -144,7 +144,7 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
             .SumAsync(d => d.Amount, cancellationToken);
 
         var bankPaymentsInPeriodTotal = await _context.BankPayments
-            .Where(bp => bp.Order.BranchId == branchId
+            .Where(bp => bp.Bank.BranchId == branchId
                 && !bp.SourceReservationDepositId.HasValue
                 && !bp.IsAppSettlement
                 && !bp.Order.Deposits.Any(d =>
@@ -188,7 +188,6 @@ public class GetCashRegisterExpectedHandler : IRequestHandler<GetCashRegisterExp
 
             var bankPaymentsIn = await _context.BankPayments
                 .Where(bp => bp.BankId == bank.Id
-                    && bp.Order.BranchId == branchId
                     && !bp.SourceReservationDepositId.HasValue
                     && !bp.Order.Deposits.Any(d =>
                         !d.IsEffective

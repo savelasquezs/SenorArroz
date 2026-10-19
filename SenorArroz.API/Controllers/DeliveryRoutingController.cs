@@ -12,31 +12,29 @@ namespace SenorArroz.API.Controllers;
 public sealed class DeliveryRoutingController : ControllerBase
 {
     private readonly IMediator _mediator;
-
-    public DeliveryRoutingController(IMediator mediator)
-    {
-        _mediator = mediator;
-    }
+    public DeliveryRoutingController(IMediator mediator) => _mediator = mediator;
 
     [HttpGet("plan")]
     [Authorize(Roles = "Deliveryman,Admin,Cashier,Superadmin")]
-    public async Task<ActionResult<DeliveryRoutingPlanDto>> GetPlan(
-        [FromQuery] int? branchId = null,
+    public async Task<ActionResult<DeliveryRoutingPlanDto>> GetPlan([FromQuery] int? branchId = null,
         CancellationToken cancellationToken = default) =>
         Ok(await _mediator.Send(new GetDeliveryRoutingPlanQuery(branchId), cancellationToken));
 
+    [HttpGet("fleet")]
+    [Authorize(Roles = "Deliveryman,Admin,Cashier,Superadmin")]
+    public async Task<ActionResult<DeliveryRoutingFleetDto>> GetFleet([FromQuery] int? branchId = null,
+        CancellationToken cancellationToken = default) =>
+        Ok(await _mediator.Send(new GetDeliveryRoutingFleetQuery(branchId), cancellationToken));
+
     [HttpPost("recalculate")]
     [Authorize(Roles = "Admin,Cashier,Superadmin")]
-    public async Task<ActionResult<DeliveryRoutingPlanDto>> Recalculate(
-        [FromQuery] int? branchId = null,
+    public async Task<ActionResult<DeliveryRoutingPlanDto>> Recalculate([FromQuery] int? branchId = null,
         CancellationToken cancellationToken = default) =>
         Ok(await _mediator.Send(new RecalculateDeliveryRoutingPlanCommand(branchId), cancellationToken));
 
     [HttpPost("preview")]
     [Authorize(Roles = "Deliveryman,Admin,Cashier,Superadmin")]
-    public async Task<ActionResult<DeliveryRouteProposalDto>> Preview(
-        [FromBody] PreviewDeliveryRouteRequest request,
-        [FromQuery] int? branchId = null,
-        CancellationToken cancellationToken = default) =>
-        Ok(await _mediator.Send(new PreviewDeliveryRouteQuery(branchId, request.OrderIds), cancellationToken));
+    public async Task<ActionResult<DeliveryRouteProposalDto>> Preview([FromBody] PreviewDeliveryRouteRequest request,
+        [FromQuery] int? branchId = null, CancellationToken cancellationToken = default) =>
+        Ok(await _mediator.Send(new PreviewDeliveryRouteQuery(branchId, request.OrderIds, request.ExpectedPlanVersion), cancellationToken));
 }

@@ -34,7 +34,8 @@ public sealed class DeliveryAppVersionMiddleware(RequestDelegate next)
             }
             else
             {
-                versionPolicy.EnsureCompatible(DeliveryAppVersionHeaders.Read(context.Request));
+                versionPolicy.EnsureCompatible(DeliveryAppVersionHeaders.Read(context.Request,
+                    allowQuery: context.Request.Path.StartsWithSegments("/hubs/orders")));
             }
         }
 

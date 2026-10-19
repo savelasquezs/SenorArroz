@@ -268,6 +268,10 @@ public class DeliveryWorkSessionTests
             Type = OrderType.Delivery,
             Status = OrderStatus.OnTheWay,
         });
+        db.DeliveryRouteStops.Add(new DeliveryRouteStop
+        {
+            DeliveryRouteId = 20, OrderId = 30, StopSequence = 1,
+        });
         await db.SaveChangesAsync();
         var handler = new RecordLocationHandler(
             db,
@@ -404,7 +408,7 @@ public class DeliveryWorkSessionTests
             7, 1, 20, 4.60971, -74.08175, capturedAt), Times.Once);
         autoCompletion.Verify(x => x.EvaluateLocationAsync(
             It.Is<DeliverymanLocation>(location => location.ClientPointId == pointId),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

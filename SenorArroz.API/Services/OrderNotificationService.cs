@@ -45,6 +45,19 @@ public class OrderNotificationService : IOrderNotificationService
         });
     }
 
+    public Task NotifyOrderTransferred(int orderId, int previousBranchId, int targetBranchId, bool announceKitchen)
+    {
+        var groups = new[]
+        {
+            Group(previousBranchId, "Kitchen"), Group(targetBranchId, "Kitchen"),
+            Group(previousBranchId, "Delivery"), Group(targetBranchId, "Delivery")
+        };
+        return _hubContext.Clients.Groups(groups).SendAsync("OrderTransferred", new
+        {
+            orderId, previousBranchId, targetBranchId, announceKitchen
+        });
+    }
+
     public async Task NotifyNewOrderToKitchen(OrderDto order)
     {
         await RecordKitchenVoiceEventAsync(order, "new");

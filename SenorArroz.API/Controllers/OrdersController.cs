@@ -159,7 +159,8 @@ public class OrdersController : ControllerBase
         if (after is < 0) return BadRequest("Invalid cursor.");
 
         var query = _db.KitchenVoiceEvents.AsNoTracking().Where(e =>
-            e.TenantId == _currentTenant.TenantId && e.BranchId == scopedBranchId);
+            e.TenantId == _currentTenant.TenantId && e.BranchId == scopedBranchId
+            && _db.Orders.Any(o => o.Id == e.OrderId && o.BranchId == scopedBranchId));
         var latest = after is null
             ? await query.MaxAsync(e => (int?)e.Id, cancellationToken) ?? 0
             : 0;
@@ -271,6 +272,24 @@ public class OrdersController : ControllerBase
         
         var result = await _mediator.Send(command);
         OrderAccessRules.EnsureReturnedScope(result.BranchId, result.OriginBranchId, _currentUser, _branchContext);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Cambia de sucursal pedidos hasta el estado Listo. Opcionalmente reasigna pagos
+    /// bancarios ordinarios aún no cerrados, sin mover dinero físicamente.
+    /// </summary>
+    [HttpPut("{id}/transfer-branch")]
+    [Authorize(Roles = "Superadmin")]
+    public async Task<ActionResult<OrderDto>> TransferOrderBranch(
+        int id, [FromBody] TransferOrderBranchDto transfer)
+    {
+        var result = await _mediator.Send(new TransferOrderBranchCommand
+        {
+            Id = id,
+            TargetBranchId = transfer.TargetBranchId,
+            BankPaymentChanges = transfer.BankPaymentChanges ?? []
+        });
         return Ok(result);
     }
 
@@ -665,7 +684,9 @@ public class OrdersController : ControllerBase
         {
             OrderIds = request.OrderIds,
             ProposalId = request.ProposalId,
-            ExpectedPlanVersion = request.ExpectedPlanVersion
+            ExpectedPlanVersion = request.ExpectedPlanVersion,
+            ModifiedProposal = request.ModifiedProposal,
+            SelectionFingerprint = request.SelectionFingerprint
         };
 
         var result = await _mediator.Send(command);
