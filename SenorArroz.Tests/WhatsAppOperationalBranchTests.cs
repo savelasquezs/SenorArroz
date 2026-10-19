@@ -99,6 +99,36 @@ public sealed class WhatsAppOperationalBranchTests
     }
 
     [Fact]
+    public async Task Unread_summary_sums_visible_conversations_and_picks_latest_message()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, operationalBranchId: 1, assignedUserId: null, unreadCount: 2);
+        var initial = await db.WhatsAppConversations.SingleAsync();
+        var earlier = new DateTime(2026, 10, 18, 12, 0, 0, DateTimeKind.Utc);
+        initial.LastMessageAt = earlier;
+        db.WhatsAppConversations.AddRange(
+            new WhatsAppConversation
+            {
+                Id = 12, TenantId = 1, BranchId = 1, ChannelSettingId = 1,
+                UnreadCount = 3, LastMessageAt = earlier.AddMinutes(5)
+            },
+            new WhatsAppConversation
+            {
+                Id = 13, TenantId = 1, BranchId = 1, ChannelSettingId = 1,
+                OperationalBranchId = 2, AssignedUserId = 8, UnreadCount = 20,
+                LastMessageAt = earlier.AddHours(1)
+            });
+        await db.SaveChangesAsync();
+
+        var result = await CreateController(db).GetUnreadSummary(default);
+        var payload = Assert.IsType<OkObjectResult>(result.Result).Value as ApiResponse<WhatsAppUnreadSummaryDto>;
+        Assert.NotNull(payload?.Data);
+        Assert.Equal(5, payload.Data.TotalUnread);
+        Assert.Equal(2, payload.Data.UnreadConversations);
+        Assert.Equal(earlier.AddMinutes(5), payload.Data.LatestMessageAt);
+    }
+
+    [Fact]
     public async Task Transferring_between_operational_branches_clears_assigned_cashier()
     {
         await using var db = CreateDb();
