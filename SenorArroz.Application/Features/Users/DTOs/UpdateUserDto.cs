@@ -10,6 +10,7 @@ namespace SenorArroz.Application.Features.Users.DTOs
         public UserRole Role { get; set; }
         // Null preserva el permiso en clientes anteriores.
         public bool? DeliveryAppEnabled { get; set; }
+        public bool? WebAccessEnabled { get; set; }
         public bool Active { get; set; }
 
         /// <summary>Nueva sucursal (solo aplica si el actor es superadmin).</summary>

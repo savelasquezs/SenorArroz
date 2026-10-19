@@ -754,6 +754,9 @@ public class OrderRepository : IOrderRepository
                 && u.Active && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier)))
                 && u.BranchId == order.BranchId && u.TenantId == order.TenantId, cancellationToken))
             throw new BusinessException("El domiciliario debe estar activo y pertenecer a la sucursal que despacha el pedido.");
+        if (order.Status != OrderStatus.Delivered && await _context.EmployeeLunches.AsNoTracking()
+            .AnyAsync(l => l.UserId == deliveryManId && l.EndedAt == null, cancellationToken))
+            throw new BusinessException("El domiciliario está almorzando.");
         order.DeliveryManId = deliveryManId;
         order.TouchDeliveryManAssignedAtUtc(_clock.UtcNow);
         await _context.SaveChangesAsync(cancellationToken);

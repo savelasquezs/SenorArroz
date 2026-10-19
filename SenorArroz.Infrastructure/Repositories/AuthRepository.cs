@@ -71,7 +71,7 @@ public class AuthRepository : IAuthRepository
             ? activeSession.AnyAsync(user => user.Role == UserRole.Deliveryman
                 || (user.DeliveryAppEnabled && (user.Role == UserRole.Admin || user.Role == UserRole.Cashier)),
                 cancellationToken)
-            : activeSession.AnyAsync(user => user.Role == role, cancellationToken);
+            : activeSession.AnyAsync(user => user.Role == role && (user.Role != UserRole.Kitchen || user.WebAccessEnabled), cancellationToken);
     }
 
     public async Task<bool> IsTenantAccessCurrentAsync(

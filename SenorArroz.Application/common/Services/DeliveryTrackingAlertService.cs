@@ -997,6 +997,9 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
         var keys = relevantAlerts.Select(x => x.DeduplicationKey).ToHashSet();
         var changes = 0;
 
+        var lunchUserIds = sessions.Select(s => s.DeliverymanId).Distinct().ToArray();
+        var lunches = await _db.EmployeeLunches.AsNoTracking().Where(l => lunchUserIds.Contains(l.UserId)
+            && l.StartedAt <= nowUtc).ToListAsync(cancellationToken);
         foreach (var session in sessions)
         {
             if (!branches.TryGetValue(session.BranchId, out var branch))
@@ -1008,7 +1011,10 @@ public class DeliveryTrackingAlertService : IDeliveryTrackingAlertService
             var thresholdSeconds = Math.Max(180, Math.Max(1, intervalSeconds) + 60);
             var lastLocation = locationRows.Where(x => x.SessionId == session.Id)
                 .OrderByDescending(x => x.RecordedAt).ThenByDescending(x => x.Id).FirstOrDefault();
-            var silenceSeconds = (nowUtc - session.LastCommunicationAt).TotalSeconds;
+            var lastExpectedCommunication = lunches.Where(l => l.UserId == session.DeliverymanId
+                    && l.StartedAt >= session.StartedAt && (l.EndedAt == null || l.EndedAt > session.LastCommunicationAt))
+                .Select(l => l.EndedAt ?? nowUtc).Append(session.LastCommunicationAt).Max();
+            var silenceSeconds = (nowUtc - lastExpectedCommunication).TotalSeconds;
             if (silenceSeconds >= thresholdSeconds)
             {
                 var key = $"session:{session.Id}:no_communication:{session.LastCommunicationAt.Ticks}";

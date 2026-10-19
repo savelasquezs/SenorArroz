@@ -38,6 +38,8 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
         var blocked = await _db.DeliverymanDayStates.AsNoTracking()
             .Where(s => s.BranchId == branchId && s.Date == today && s.Blocked)
             .Select(s => s.DeliverymanId).ToListAsync(ct);
+        var lunchIds = await _db.EmployeeLunches.AsNoTracking().Where(l => l.EndedAt == null)
+            .Select(l => l.UserId).ToListAsync(ct);
         var sessions = await DeliveryRouteScope.ActiveSessions(_db, branchId, nowUtc).AsNoTracking()
             .Where(s => _db.Users.Any(u => u.Id == s.DeliverymanId && u.BranchId == branchId && u.Active
                 && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled
@@ -89,7 +91,7 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
             var confidence = "unknown";
             var source = "none";
             DateTime? availableAt = null;
-            if (blocked.Contains(id)) state = "unavailable";
+            if (blocked.Contains(id) || lunchIds.Contains(id)) state = "unavailable";
             else if (ownedRoutes.Count > 1 || assigned.Any(o => o.DeliveryRouteId != route?.Id))
             {
                 state = "inconsistent";

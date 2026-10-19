@@ -109,8 +109,14 @@ public class DeliveryStayDetectionService : IDeliveryStayDetectionService
         if (points.Count == 0)
             return 0;
 
+        var lunches = await _db.EmployeeLunches.AsNoTracking()
+            .Where(l => l.UserId == session.DeliverymanId && l.StartedAt <= session.EndedAt
+                && (l.EndedAt == null || l.EndedAt >= session.StartedAt)).ToListAsync(cancellationToken);
+        var analysisPoints = points.Select(p => lunches.Any(l => p.RecordedAt >= l.StartedAt
+            && (l.EndedAt == null || p.RecordedAt < l.EndedAt)) ? p with { GpsEnabled = false } : p)
+            .Concat(lunches.Select(l => new DeliveryStayPoint(-l.Id, 0, 0, null, false, null, l.StartedAt))).ToList();
         var detected = Detect(
-            points,
+            analysisPoints,
             DeliveryTrackingEvidencePolicy.StayMinutes,
             DeliveryTrackingEvidencePolicy.StayRadiusMeters);
         var routeIds = detected

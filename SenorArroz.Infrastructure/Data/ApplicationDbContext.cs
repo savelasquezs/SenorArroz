@@ -30,6 +30,7 @@ namespace SenorArroz.Infrastructure.Data
         public bool IsTenantSystemScope => _tenantExecutionContext?.IsSystemScope == true;
 
         public virtual DbSet<Address> Addresses { get; set; }
+        public virtual DbSet<EmployeeLunch> EmployeeLunches { get; set; }
         public virtual DbSet<AddressBranch> AddressBranches { get; set; }
 
         public virtual DbSet<App> Apps { get; set; }

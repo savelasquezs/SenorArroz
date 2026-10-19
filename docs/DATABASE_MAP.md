@@ -585,3 +585,7 @@ comandas se emiten **después del COMMIT**: no pueden convertirse en rollback de
 mensajes ya enviados; si fallan se registran para diagnóstico y no presentan el
 pedido como no creado. Los clientes POS antiguos sin `posCreationKey` siguen
 siendo aceptados, pero no disponen de la protección entre reintentos.
+
+## Almuerzos
+
+EmployeeLunch (employee_lunch) es tenant-owned, con sucursal histórica, empleado, salida/regreso UTC y actores. FK compuestas por tenant, RLS forzado, índice de intervalo abierto único y trigger de no solapamiento. Las asignaciones operativas y los almuerzos escriben la misma fila de usuario para serializar y detectar snapshots serializables obsoletos; no se cambia la identidad ni sus asociaciones. UpdatedAt es la versión de corrección administrativa. Script: add_employee_lunch.sql. El inicializador raíz incorpora el mismo SQL sin depender de facturación electrónica.
