@@ -276,8 +276,8 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// Cambia la sucursal de despacho de cualquier pedido sin alterar inventario, pagos
-    /// ni relaciones históricas. Requiere Superadmin y la versión vigente del pedido.
+    /// Cambia de sucursal pedidos hasta el estado Listo. Opcionalmente reasigna pagos
+    /// bancarios ordinarios aún no cerrados, sin mover dinero físicamente.
     /// </summary>
     [HttpPut("{id}/transfer-branch")]
     [Authorize(Roles = "Superadmin")]
@@ -287,7 +287,8 @@ public class OrdersController : ControllerBase
         var result = await _mediator.Send(new TransferOrderBranchCommand
         {
             Id = id,
-            TargetBranchId = transfer.TargetBranchId
+            TargetBranchId = transfer.TargetBranchId,
+            BankPaymentChanges = transfer.BankPaymentChanges ?? []
         });
         return Ok(result);
     }

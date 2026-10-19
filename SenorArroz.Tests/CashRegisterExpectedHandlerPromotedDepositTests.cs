@@ -336,6 +336,46 @@ public class CashRegisterExpectedHandlerPromotedDepositTests
     }
 
     [Fact]
+    public async Task Bank_receipt_from_transferred_order_remains_in_the_original_bank_branch_cash_register()
+    {
+        var utcNow = new DateTime(2026, 10, 19, 14, 0, 0, DateTimeKind.Utc);
+        using var db = CreateCtx(nameof(Bank_receipt_from_transferred_order_remains_in_the_original_bank_branch_cash_register));
+        var (_, bank, user) = SeedBase(db, utcNow);
+        var dispatchBranch = new Branch { Id = 2, Name = "Destino", Address = "B", Phone1 = "2" };
+        db.Branches.Add(dispatchBranch);
+        var order = new Order
+        {
+            Id = 810, BranchId = 2, OriginBranchId = 1, TakenById = user.Id,
+            Type = OrderType.Delivery, Status = OrderStatus.Taken,
+            StatusTimes = "{}", CreatedAt = utcNow.AddHours(-1),
+        };
+        db.Orders.Add(order);
+        db.BankPayments.Add(new BankPayment
+        {
+            Id = 811, OrderId = order.Id, BankId = bank.Id, Amount = 15_000m,
+            CreatedAt = utcNow.AddMinutes(-30), Order = order, Bank = bank,
+        });
+        await db.SaveChangesAsync();
+
+        var originalBranch = await BuildHandler(db, bank, utcNow).Handle(
+            new GetCashRegisterExpectedQuery { BranchId = 1 }, CancellationToken.None);
+        Assert.Equal(15_000m, originalBranch.BankPaymentsAddedToGlobalTotal);
+        Assert.Equal(15_000m, originalBranch.ExpectedGlobalTotal);
+        Assert.Equal(15_000m, Assert.Single(originalBranch.Banks).ExpectedBalance);
+
+        var bankRepo = new Mock<IBankRepository>();
+        bankRepo.Setup(r => r.GetByBranchIdAsync(2, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Bank>().AsEnumerable());
+        var handler = new GetCashRegisterExpectedHandler(
+            Mock.Of<ICashRegisterClosureRepository>(), bankRepo.Object, db,
+            new TestCurrentUser(), new FakeClock(utcNow));
+        var destinationBranch = await handler.Handle(
+            new GetCashRegisterExpectedQuery { BranchId = 2 }, CancellationToken.None);
+        Assert.Equal(0m, destinationBranch.BankPaymentsAddedToGlobalTotal);
+        Assert.Equal(0m, destinationBranch.ExpectedGlobalTotal);
+    }
+
+    [Fact]
     public async Task App_settlement_bank_payment_increases_bank_but_not_global_period_transfers()
     {
         var utcNow = new DateTime(2026, 6, 18, 16, 0, 0, DateTimeKind.Utc);
