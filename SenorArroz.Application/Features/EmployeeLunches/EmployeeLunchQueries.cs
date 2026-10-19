@@ -30,7 +30,7 @@ public sealed class EmployeeLunchQueries(IApplicationDbContext db, ICurrentUser 
 
     public async Task<PagedResult<EmployeeLunchStateDto>> Handle(GetBranchLunchesQuery request, CancellationToken ct)
     {
-        if (!Roles.IsAdminOrSuperadmin(actor.Role) && !actor.Role.Equals("Kitchen", StringComparison.OrdinalIgnoreCase))
+        if (!Roles.IsSuperadminOrAdminOrCashier(actor.Role) && !Roles.IsKitchen(actor.Role))
             throw new UnauthorizedAccessException();
         var branchId = branch.RequireBranch();
         var date = request.Date ?? ColombiaTimeHelper.GetTodayDateOnlyColombiaFromUtc(clock.UtcNow);
