@@ -7,6 +7,9 @@ public interface ILoyaltyCycleService
     /// <summary>Rellena conteo de entregados y próximo premio (sin columna en cliente; deriva de pedidos).</summary>
     Task ApplyLoyaltyPreviewToCustomerDtoAsync(CustomerDto dto, CancellationToken cancellationToken = default);
 
+    /// <summary>Usa LoyaltyDeliveredCount ya agregado en los DTOs; no reconsulta pedidos por cliente.</summary>
+    Task ApplyLoyaltyPreviewsToCustomerDtosAsync(IReadOnlyCollection<CustomerDto> dtos, CancellationToken cancellationToken = default);
+
     /// <summary>Al pasar a entregado con cliente: asigna paso y snapshot. Idempotente si ya tenía paso.</summary>
     Task OnOrderDeliveredAsync(int orderId, int branchId, int? customerId, CancellationToken cancellationToken = default);
 
