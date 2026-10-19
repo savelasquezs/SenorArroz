@@ -238,6 +238,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new KitchenVoiceEventConfiguration());
             modelBuilder.ApplyConfiguration(new PrintJobConfiguration());
             modelBuilder.ApplyConfiguration(new UserConfiguration());
+            modelBuilder.ApplyConfiguration(new EmployeeLunchConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerPhoneConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerMergeHistoryConfiguration());

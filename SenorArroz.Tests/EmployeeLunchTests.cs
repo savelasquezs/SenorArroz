@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Controllers;
@@ -45,6 +46,20 @@ public sealed class EmployeeLunchTests
         passwords.Setup(x => x.VerifyPassword("correct", "hash")).Returns(true);
         return new(db, actor ?? Actor(), Branch(), passwords.Object, clock ?? new(Now),
             Mock.Of<IOrderNotificationService>(), NullLogger<EmployeeLunchCommands>.Instance);
+    }
+
+    [Fact]
+    public void LunchTableAndColumnsMatchProductionSql()
+    {
+        using var db = Db();
+        var entity = db.Model.FindEntityType(typeof(EmployeeLunch))!;
+        Assert.Equal("employee_lunch", entity.GetTableName());
+        var table = StoreObjectIdentifier.Table("employee_lunch", null);
+        Assert.Equal("id", entity.FindProperty(nameof(EmployeeLunch.Id))?.GetColumnName(table));
+        Assert.Equal("tenant_id", entity.FindProperty(nameof(EmployeeLunch.TenantId))?.GetColumnName(table));
+        Assert.Equal("user_id", entity.FindProperty(nameof(EmployeeLunch.UserId))?.GetColumnName(table));
+        Assert.Equal("started_at", entity.FindProperty(nameof(EmployeeLunch.StartedAt))?.GetColumnName(table));
+        Assert.Equal("ended_at", entity.FindProperty(nameof(EmployeeLunch.EndedAt))?.GetColumnName(table));
     }
 
     [Fact]
