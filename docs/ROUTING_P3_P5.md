@@ -1,6 +1,6 @@
 # Ruteo P3–P5 local
 
-Implementación local sobre `local/routing-p2` (`471a38f`), desarrollada en `local/routing-p3-p5` e integrada localmente en `main` por solicitud del usuario. Sin push, PR, migración de producción, Railway ni Google Play.
+Implementación sobre `local/routing-p2` (`471a38f`), desarrollada y validada primero en `local/routing-p3-p5` e integrada en `main` por solicitud del usuario. La preparación y publicación de producción requieren autorización separada; la entrega autorizada se registra al final.
 
 ## Predicción y capacidad
 
@@ -26,7 +26,7 @@ Los clientes anteriores conservan el contrato de reclamo exacto y selección man
 
 ## Instalación local y futura entrega
 
-Aplicar `add_routing_operational_session.sql` y `add_routing_prediction_snapshots.sql` sobre el esquema multitenant existente. Ambos son aditivos e idempotentes. El SQL raíz incluye creación V1 antes de aislamiento y los scripts puntuales después. Las pruebas usan bases aisladas desechables; ningún script se ejecutó en producción. Revertir código conserva columnas y datos.
+Aplicar `add_routing_operational_session.sql` y `add_routing_prediction_snapshots.sql` sobre el esquema multitenant existente antes de publicar. Ambos son aditivos e idempotentes. El SQL raíz incluye creación V1 antes de aislamiento y los scripts puntuales después. Las pruebas usan bases aisladas desechables y no aplican scripts en producción. Revertir código conserva columnas y datos.
 
 ## Medición temporal
 
@@ -51,3 +51,10 @@ P6 debe retirar también `RoutingMeasurement.Observe`, sus llamadas/opciones opc
 - API: suite completa con 969 aprobadas, 26 omitidas por requisitos de integración y ninguna fallida. Se ejecutaron además las pruebas PostgreSQL de aceptación concurrente y esquema aditivo/idempotente: 2 aprobadas sobre contenedores desechables, sin usar la base de desarrollo operativa ni producción.
 - Exportador temporal: 6 pruebas Python aprobadas.
 - Los scripts `add_routing_operational_session.sql` y `add_routing_prediction_snapshots.sql` siguen siendo prerrequisito para publicar el backend. Este merge local no los aplica en producción ni publica una nueva app Android.
+
+## Preparación de producción autorizada — 2026-10-18
+
+- Se integraron los cambios nuevos de `origin/main` sin sobrescribirlos: API hasta `8209f31` y app hasta `1261d7d`. La API integrada pasó 979 pruebas; 35 pruebas dependientes de entornos de integración quedaron omitidas.
+- El usuario autorizó expresamente aplicar los SQL aditivos y subir `main`, incluyendo el despliegue de Railway y la publicación de Google Play interno configurados por push.
+- Se comprobó que faltaban las ocho columnas operativas/predictivas. En `MainDatabase`, entorno `production`, se ejecutaron desde Bash mediante `railway connect MainDatabase` los scripts `add_routing_operational_session.sql` y `add_routing_prediction_snapshots.sql`, ambos con `COMMIT` correcto y sus límites de bloqueo/ejecución.
+- Se verificaron las ocho columnas, los dos índices y las dos restricciones validadas. Las tres tablas conservan RLS habilitado y forzado. Los conteos antes/después fueron idénticos: 4079 rutas, 3593 propuestas y 16181 paradas de propuestas. No se ejecutaron semillas, reinicios ni cambios de coordenadas/pedidos de prueba en producción.
