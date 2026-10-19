@@ -8,4 +8,7 @@ public interface ILoyaltyCycleStepRepository
     Task<int> GetCycleLengthAsync(int branchId, CancellationToken cancellationToken = default);
 
     Task<LoyaltyCycleStep?> GetByBranchAndStepIndexAsync(int branchId, int stepIndex, CancellationToken cancellationToken = default);
+
+    /// <summary>Pasos activos para varias sucursales del tenant actual, sin consultas por cliente.</summary>
+    Task<IReadOnlyList<LoyaltyCycleStep>> GetActiveStepsForBranchesAsync(IReadOnlyCollection<int> branchIds, CancellationToken cancellationToken = default);
 }
