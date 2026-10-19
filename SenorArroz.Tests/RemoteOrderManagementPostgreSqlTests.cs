@@ -552,6 +552,15 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
         Assert.Null(actualMoved.VerifiedAt);
         Assert.Equal(sourceBank.Id, actualRetained.BankId);
         Assert.Equal(5_000, actualRetained.Amount);
+        // A retained payment belongs financially to its original bank. Superadmin
+        // must still be able to verify it after the dispatch branch has changed.
+        var verification = new SenorArroz.Application.Features.BankPayments.Commands.VerifyBankPaymentHandler(
+            new BankPaymentRepository(check), actor, branch);
+        Assert.True(await verification.Handle(
+            new SenorArroz.Application.Features.BankPayments.Commands.VerifyBankPaymentCommand
+            { Id = retained.Id }, default));
+        Assert.True((await check.BankPayments.AsNoTracking()
+            .SingleAsync(p => p.Id == retained.Id)).IsVerified);
         var logs = await check.EntityAuditLogs.AsNoTracking().ToListAsync();
         Assert.Single(logs.Where(x => x.EntityType == "order_management"));
         var bankAudit = Assert.Single(logs.Where(x => x.EntityType == "order_bank_reassignment"));
