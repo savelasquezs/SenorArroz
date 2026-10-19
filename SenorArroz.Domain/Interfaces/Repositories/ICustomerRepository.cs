@@ -30,12 +30,7 @@ namespace SenorArroz.Domain.Interfaces.Repositories
         Task<bool> PhoneExistsAsync(string phone, int tenantId, int? excludeId = null, CancellationToken cancellationToken = default);
         /// <summary>Pedidos no cancelados.</summary>
         Task<int> GetTotalOrdersAsync(int customerId, CancellationToken cancellationToken = default);
-        /// <summary>
-        /// Devuelve la fecha del primer y último pedido no cancelado en una sola query.
-        /// Retorna (null, null) si el cliente no tiene pedidos.
-        /// </summary>
-        Task<(DateTime? First, DateTime? Last)> GetOrderDateRangeAsync(int customerId, CancellationToken cancellationToken = default);
-        /// <summary>Suma de <c>Order.Total</c> en pedidos no cancelados.</summary>
-        Task<int> GetTotalOrderRevenueAsync(int customerId, CancellationToken cancellationToken = default);
+        Task<IReadOnlyDictionary<int, CustomerOrderStatistics>> GetOrderStatisticsForCustomersAsync(IReadOnlyCollection<int> customerIds, CancellationToken cancellationToken = default);
     }
+    public sealed record CustomerOrderStatistics(int TotalOrders, DateTime? FirstOrderDate, DateTime? LastOrderDate, int TotalAccumulated, int DeliveredOrders);
 }

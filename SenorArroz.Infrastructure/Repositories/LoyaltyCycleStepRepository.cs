@@ -28,4 +28,14 @@ public class LoyaltyCycleStepRepository : ILoyaltyCycleStepRepository
         return _context.LoyaltyCycleSteps.AsNoTracking()
             .FirstOrDefaultAsync(s => s.BranchId == branchId && s.StepIndex == stepIndex && s.IsActive, cancellationToken);
     }
+
+    public async Task<IReadOnlyList<LoyaltyCycleStep>> GetActiveStepsForBranchesAsync(
+        IReadOnlyCollection<int> branchIds, CancellationToken cancellationToken = default)
+    {
+        if (branchIds.Count == 0) return Array.Empty<LoyaltyCycleStep>();
+        var ids = branchIds.Distinct().ToArray();
+        return await _context.LoyaltyCycleSteps.AsNoTracking()
+            .Where(s => ids.Contains(s.BranchId) && s.IsActive)
+            .ToListAsync(cancellationToken);
+    }
 }

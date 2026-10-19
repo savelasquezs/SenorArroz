@@ -92,6 +92,7 @@ public class ChangeOrderStatusHandlerReservationTests
 
     private sealed class NullLoyaltyCycle : ILoyaltyCycleService
     {
+        public Task ApplyLoyaltyPreviewsToCustomerDtosAsync(IReadOnlyCollection<CustomerDto> dtos, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task ApplyLoyaltyPreviewToCustomerDtoAsync(CustomerDto dto, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task OnOrderDeliveredAsync(int orderId, int branchId, int? customerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task OnOrderLeftDeliveredAsync(int orderId, CancellationToken cancellationToken = default) => Task.CompletedTask;

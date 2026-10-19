@@ -69,13 +69,11 @@ namespace SenorArroz.Application.Features.Customers.Commands
             var updatedCustomer = await _customerRepository.GetByIdWithAddressesAsync(customer.Id, cancellationToken);
             var customerDto = _mapper.Map<CustomerDto>(updatedCustomer);
 
-            // Add additional data
-            customerDto.TotalOrders = await _customerRepository.GetTotalOrdersAsync(customer.Id, cancellationToken);
-            var (first, last) = await _customerRepository.GetOrderDateRangeAsync(customer.Id, cancellationToken);
-            customerDto.FirstOrderDate = first;
-            customerDto.LastOrderDate = last;
-            customerDto.TotalAccumulated = await _customerRepository.GetTotalOrderRevenueAsync(customer.Id, cancellationToken);
-            await _loyaltyCycle.ApplyLoyaltyPreviewToCustomerDtoAsync(customerDto, cancellationToken);
+            var orderStatistics = await _customerRepository.GetOrderStatisticsForCustomersAsync(
+                new[] { customer.Id }, cancellationToken);
+            orderStatistics.TryGetValue(customer.Id, out var stats);
+            customerDto.ApplyOrderStatistics(stats);
+            await _loyaltyCycle.ApplyLoyaltyPreviewsToCustomerDtosAsync(new[] { customerDto }, cancellationToken);
 
             return customerDto;
         }

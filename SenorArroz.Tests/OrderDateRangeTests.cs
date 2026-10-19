@@ -7,8 +7,7 @@ using SenorArroz.Infrastructure.Repositories;
 namespace SenorArroz.Tests;
 
 /// <summary>
-/// Verifica que GetOrderDateRangeAsync devuelve las fechas correctas en una sola query,
-/// excluyendo órdenes canceladas y manejando el caso de cliente sin órdenes.
+/// Verifica rangos y agregación de pedidos por cliente, estados excluidos y ausencia de pedidos.
 /// </summary>
 public class OrderDateRangeTests
 {
@@ -89,7 +88,8 @@ public class OrderDateRangeTests
         await ctx.SaveChangesAsync();
 
         var repo = new CustomerRepository(ctx);
-        var (first, last) = await repo.GetOrderDateRangeAsync(customer.Id);
+        var stats = (await repo.GetOrderStatisticsForCustomersAsync(new[] { customer.Id }))[customer.Id];
+        var (first, last) = (stats.FirstOrderDate, stats.LastOrderDate);
 
         Assert.Equal(validDate1, first);
         Assert.Equal(validDate2, last);
@@ -109,7 +109,8 @@ public class OrderDateRangeTests
         await ctx.SaveChangesAsync();
 
         var repo = new CustomerRepository(ctx);
-        var (first, last) = await repo.GetOrderDateRangeAsync(customer.Id);
+        var stats = (await repo.GetOrderStatisticsForCustomersAsync(new[] { customer.Id }))[customer.Id];
+        var (first, last) = (stats.FirstOrderDate, stats.LastOrderDate);
 
         Assert.NotNull(first);
         Assert.NotNull(last);
@@ -127,10 +128,9 @@ public class OrderDateRangeTests
         var (_, _, customer) = await SeedBaseEntitiesAsync(ctx);
 
         var repo = new CustomerRepository(ctx);
-        var (first, last) = await repo.GetOrderDateRangeAsync(customer.Id);
+        var stats = await repo.GetOrderStatisticsForCustomersAsync(new[] { customer.Id });
 
-        Assert.Null(first);
-        Assert.Null(last);
+        Assert.Empty(stats);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -154,9 +154,38 @@ public class OrderDateRangeTests
         await ctx.SaveChangesAsync();
 
         var repo = new CustomerRepository(ctx);
-        var (first, last) = await repo.GetOrderDateRangeAsync(customer.Id);
+        var stats = (await repo.GetOrderStatisticsForCustomersAsync(new[] { customer.Id }))[customer.Id];
+        var (first, last) = (stats.FirstOrderDate, stats.LastOrderDate);
 
         Assert.Equal(oldest, first);
         Assert.Equal(newest, last);
     }
+    [Fact]
+    public async Task GetOrderStatistics_ExcludesAwaitingPaymentAndCancelled_AndSeparatesDelivered()
+    {
+        using var ctx = CreateCtx(nameof(GetOrderStatistics_ExcludesAwaitingPaymentAndCancelled_AndSeparatesDelivered));
+        var (branch, user, customer) = await SeedBaseEntitiesAsync(ctx);
+        var day = new DateTime(2026, 10, 19, 0, 0, 0, DateTimeKind.Utc);
+
+        var delivered = MakeOrder(branch.Id, user.Id, customer.Id, OrderStatus.Delivered, day);
+        delivered.Total = 12000;
+        var taken = MakeOrder(branch.Id, user.Id, customer.Id, OrderStatus.Taken, day.AddMinutes(10));
+        taken.Total = 8000;
+        var awaiting = MakeOrder(branch.Id, user.Id, customer.Id, OrderStatus.AwaitingPayment, day.AddMinutes(20));
+        awaiting.Total = 9000;
+        var cancelled = MakeOrder(branch.Id, user.Id, customer.Id, OrderStatus.Cancelled, day.AddMinutes(30));
+        cancelled.Total = 7000;
+        ctx.Orders.AddRange(delivered, taken, awaiting, cancelled);
+        await ctx.SaveChangesAsync();
+
+        var repo = new CustomerRepository(ctx);
+        var stats = (await repo.GetOrderStatisticsForCustomersAsync(new[] { customer.Id, customer.Id }))[customer.Id];
+
+        Assert.Equal(2, stats.TotalOrders);
+        Assert.Equal(1, stats.DeliveredOrders);
+        Assert.Equal(20000, stats.TotalAccumulated);
+        Assert.Equal(day, stats.FirstOrderDate);
+        Assert.Equal(day.AddMinutes(10), stats.LastOrderDate);
+    }
+
 }

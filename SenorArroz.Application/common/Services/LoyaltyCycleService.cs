@@ -1,5 +1,6 @@
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Customers.DTOs;
+using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Application.Common.Services;
@@ -17,10 +18,48 @@ public class LoyaltyCycleService : ILoyaltyCycleService
 
     public async Task ApplyLoyaltyPreviewToCustomerDtoAsync(CustomerDto dto, CancellationToken cancellationToken = default)
     {
-        var cycleLen = await _steps.GetCycleLengthAsync(dto.BranchId, cancellationToken);
-        if (cycleLen <= 0)
+        var cycleLength = await _steps.GetCycleLengthAsync(dto.BranchId, cancellationToken);
+        var delivered = await _orders.CountDeliveredOrdersForCustomerAsync(dto.Id, cancellationToken);
+        LoyaltyCycleStep? nextStep = null;
+        if (cycleLength > 0)
         {
-            dto.LoyaltyDeliveredCount = await _orders.CountDeliveredOrdersForCustomerAsync(dto.Id, cancellationToken);
+            var milestone = LoyaltyDeliveriesPerReward.GetNextRewardMilestoneDeliveries(delivered);
+            var stepIndex = LoyaltyDeliveriesPerReward.GetStepIndexAtMilestone(milestone, cycleLength);
+            nextStep = await _steps.GetByBranchAndStepIndexAsync(dto.BranchId, stepIndex, cancellationToken);
+        }
+        ApplyPreview(dto, delivered, cycleLength, nextStep);
+    }
+
+    public async Task ApplyLoyaltyPreviewsToCustomerDtosAsync(
+        IReadOnlyCollection<CustomerDto> dtos, CancellationToken cancellationToken = default)
+    {
+        if (dtos.Count == 0) return;
+
+        var branchIds = dtos.Select(dto => dto.BranchId).Distinct().ToArray();
+        var activeSteps = await _steps.GetActiveStepsForBranchesAsync(branchIds, cancellationToken);
+        var stepsByBranch = activeSteps.GroupBy(step => step.BranchId)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+
+        foreach (var dto in dtos)
+        {
+            stepsByBranch.TryGetValue(dto.BranchId, out var branchSteps);
+            var cycleLength = branchSteps?.Max(step => step.StepIndex) ?? 0;
+            LoyaltyCycleStep? nextStep = null;
+            if (cycleLength > 0)
+            {
+                var milestone = LoyaltyDeliveriesPerReward.GetNextRewardMilestoneDeliveries(dto.LoyaltyDeliveredCount);
+                var stepIndex = LoyaltyDeliveriesPerReward.GetStepIndexAtMilestone(milestone, cycleLength);
+                nextStep = branchSteps!.FirstOrDefault(step => step.StepIndex == stepIndex);
+            }
+            ApplyPreview(dto, dto.LoyaltyDeliveredCount, cycleLength, nextStep);
+        }
+    }
+
+    private static void ApplyPreview(CustomerDto dto, int delivered, int cycleLength, LoyaltyCycleStep? nextStep)
+    {
+        dto.LoyaltyDeliveredCount = delivered;
+        if (cycleLength <= 0)
+        {
             dto.LoyaltyNextStepIndex = null;
             dto.LoyaltyNextRewardLabel = null;
             dto.LoyaltyDeliveriesUntilNextReward = null;
@@ -29,20 +68,16 @@ public class LoyaltyCycleService : ILoyaltyCycleService
             return;
         }
 
-        var delivered = await _orders.CountDeliveredOrdersForCustomerAsync(dto.Id, cancellationToken);
-        dto.LoyaltyDeliveredCount = delivered;
         var nextMilestone = LoyaltyDeliveriesPerReward.GetNextRewardMilestoneDeliveries(delivered);
-        var nextStepIndex = LoyaltyDeliveriesPerReward.GetStepIndexAtMilestone(nextMilestone, cycleLen);
-        dto.LoyaltyNextStepIndex = nextStepIndex;
-        var step = await _steps.GetByBranchAndStepIndexAsync(dto.BranchId, nextStepIndex, cancellationToken);
-        dto.LoyaltyNextRewardLabel = step?.RewardLabel;
-        if (!string.IsNullOrWhiteSpace(step?.RewardLabel))
+        dto.LoyaltyNextStepIndex = LoyaltyDeliveriesPerReward.GetStepIndexAtMilestone(nextMilestone, cycleLength);
+        dto.LoyaltyNextRewardLabel = nextStep?.RewardLabel;
+        if (!string.IsNullOrWhiteSpace(nextStep?.RewardLabel))
         {
-            var falta = LoyaltyDeliveriesPerReward.GetDeliveriesUntilNextReward(delivered);
-            dto.LoyaltyDeliveriesUntilNextReward = falta;
-            dto.LoyaltyRewardDueOnCurrentOrder = falta == 1;
+            var missing = LoyaltyDeliveriesPerReward.GetDeliveriesUntilNextReward(delivered);
+            dto.LoyaltyDeliveriesUntilNextReward = missing;
+            dto.LoyaltyRewardDueOnCurrentOrder = missing == 1;
             dto.LoyaltyNextRewardMessage =
-                $"Este cliente tiene {delivered} pedido(s) entregado(s) con nosotros. Le faltan {falta} entrega(s) para el premio: {step!.RewardLabel}.";
+                $"Este cliente tiene {delivered} pedido(s) entregado(s) con nosotros. Le faltan {missing} entrega(s) para el premio: {nextStep!.RewardLabel}.";
         }
         else
         {
