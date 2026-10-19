@@ -135,18 +135,36 @@ public sealed class EmployeeLunchTests
         await Assert.ThrowsAsync<OrderConcurrencyException>(() => admin.Handle(new CorrectEmployeeLunchCommand(started.Id, Now, Now.AddMinutes(41), started.UpdatedAt, "Cambio obsoleto"), default));
     }
 
-    [Fact]
-    public async Task LunchQueriesRespectTenantBranchAndHideSharedKitchenAccounts() {
+    [Theory]
+    [InlineData("Cashier")]
+    [InlineData("Admin")]
+    [InlineData("Superadmin")]
+    public async Task LunchQueriesRespectTenantBranchAndHideSharedKitchenAccounts(string role) {
         await using var db = Db();
         db.Users.AddRange(Employee(), Employee(2, branch: 2), Employee(3, UserRole.Kitchen));
         var screen = Employee(4, UserRole.Kitchen); screen.WebAccessEnabled = true; db.Users.Add(screen);
         await db.SaveChangesAsync();
         using (TestTenantContext.Default.BeginTenantScope(2)) { db.Users.Add(Employee(5)); await db.SaveChangesAsync(); }
-        var queries = new EmployeeLunchQueries(db, Actor(10, "Admin"), Branch(), new FakeClock(Now));
+        var queries = new EmployeeLunchQueries(db, Actor(10, role), Branch(), new FakeClock(Now));
         var result = await queries.Handle(new GetBranchLunchesQuery(), default);
         Assert.Equal(new[] { 1, 3 }, result.Items.Select(x => x.UserId));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => new EmployeeLunchQueries(db, Actor(), Branch(), new FakeClock(Now))
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => new EmployeeLunchQueries(db, Actor(1, "Deliveryman"), Branch(), new FakeClock(Now))
             .Handle(new GetBranchLunchesQuery(), default));
+    }
+
+    [Fact]
+    public async Task CashierCanReadPreviousLunchesButCannotCorrectThem() {
+        await using var db = Db();
+        db.Users.Add(Employee());
+        db.EmployeeLunches.Add(new EmployeeLunch { UserId = 1, BranchId = 1,
+            StartedAt = Now.AddDays(-1), EndedAt = Now.AddDays(-1).AddMinutes(35), EndedByUserId = 1 });
+        await db.SaveChangesAsync();
+        var result = await new EmployeeLunchQueries(db, Actor(), Branch(), new FakeClock(Now))
+            .Handle(new GetBranchLunchesQuery(new DateOnly(2026, 10, 18)), default);
+        var lunch = Assert.Single(Assert.Single(result.Items).Lunches);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Commands(db).Handle(
+            new CorrectEmployeeLunchCommand(lunch.Id, lunch.StartedAt, lunch.EndedAt, lunch.UpdatedAt, "Corrección"), default));
+        Assert.Empty(await db.EntityAuditLogs.ToListAsync());
     }
 
     [Fact]

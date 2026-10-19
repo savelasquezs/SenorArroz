@@ -13,7 +13,7 @@ public sealed class EmployeeLunchController(IMediator mediator) : ControllerBase
     [HttpGet("me")]
     public Task<EmployeeLunchStateDto> Me(CancellationToken ct) => mediator.Send(new GetEmployeeLunchQuery(), ct);
 
-    [HttpGet("branch"), Authorize(Roles = "Superadmin,Admin,Kitchen")]
+    [HttpGet("branch"), Authorize(Roles = "Superadmin,Admin,Cashier,Kitchen")]
     public Task<PagedResult<EmployeeLunchStateDto>> Branch([FromQuery] DateOnly? date,
         [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default) =>
         mediator.Send(new GetBranchLunchesQuery(date, page, pageSize), ct);
