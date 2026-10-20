@@ -1,3 +1,5 @@
+using SenorArroz.Domain.Enums;
+
 namespace SenorArroz.Application.Features.Auth.DTOs
 {
     public class UserInfoDto
@@ -7,6 +9,7 @@ namespace SenorArroz.Application.Features.Auth.DTOs
         public string Email { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
         public string Role { get; set; } = string.Empty;
+        public EmployeeAccountType AccountType { get; set; }
         public int BranchId { get; set; }
         public string BranchName { get; set; } = string.Empty;
         public string BranchAddress { get; set; } = string.Empty;

@@ -1,9 +1,8 @@
-// SenorArroz.Application/Features/Users/Commands/CreateUserHandler.cs
 using AutoMapper;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
-using SenorArroz.Application.Features.Users;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -11,132 +10,56 @@ using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Domain.Interfaces.Services;
 
-namespace SenorArroz.Application.Features.Users.Commands
+namespace SenorArroz.Application.Features.Users.Commands;
+
+public class CreateUserHandler(IUserRepository userRepository, IPasswordService passwordService, IMapper mapper,
+    ICurrentUser currentUser, IBranchContext branchContext, ICurrentTenant currentTenant, IApplicationDbContext db)
+    : IRequestHandler<CreateUserCommand, UserDto>
 {
-    public class CreateUserHandler : IRequestHandler<CreateUserCommand, UserDto>
+    public async Task<UserDto> Handle(CreateUserCommand request, CancellationToken ct)
     {
-        private readonly IUserRepository _userRepository;
-        private readonly IPasswordService _passwordService;
-        private readonly IMapper _mapper;
-        private readonly ICurrentUser _currentUser;
-        private readonly IBranchContext _branchContext;
-        private readonly ICurrentTenant _currentTenant;
-        private readonly IApplicationDbContext _db;
-
-        public CreateUserHandler(
-            IUserRepository userRepository,
-            IPasswordService passwordService,
-            IMapper mapper,
-            ICurrentUser currentUser,
-            IBranchContext branchContext,
-            ICurrentTenant currentTenant,
-            IApplicationDbContext db)
+        var input = request.UserData;
+        input.BranchId = branchContext.RequireBranch(input.BranchId);
+        if (!currentTenant.HasTenant) throw new BusinessException("No se pudo determinar el tenant autenticado.");
+        var branch = await db.Branches.AsNoTracking().SingleOrDefaultAsync(x => x.Id == input.BranchId && x.TenantId == currentTenant.TenantId, ct)
+            ?? throw new BusinessException("La sucursal no pertenece al tenant autenticado.");
+        if (await userRepository.EmailExistsAsync(input.Email, cancellationToken: ct))
+            throw new BusinessException($"Ya existe un usuario con el email '{input.Email}'");
+        if (Roles.IsAdmin(currentUser.Role))
         {
-            _userRepository = userRepository;
-            _passwordService = passwordService;
-            _mapper = mapper;
-            _currentUser = currentUser;
-            _branchContext = branchContext;
-            _currentTenant = currentTenant;
-            _db = db;
+            if (currentUser.BranchId <= 0 || currentUser.BranchId != input.BranchId)
+                throw new BusinessException("Un administrador solo puede crear usuarios de su sucursal.");
+            if (input.Role is UserRole.Admin or UserRole.Superadmin)
+                throw new BusinessException("Un administrador no puede crear usuarios con rol Admin o Superadmin.");
         }
-
-        public async Task<UserDto> Handle(CreateUserCommand request, CancellationToken cancellationToken)
+        else if (Roles.IsSuperadmin(currentUser.Role))
         {
-
-            string creatorRole = _currentUser.Role;
-            int creatorBranchId= _currentUser.BranchId;
-            request.UserData.BranchId = _branchContext.RequireBranch(request.UserData.BranchId);
-            if (!_currentTenant.HasTenant)
-                throw new BusinessException("No se pudo determinar el tenant autenticado.");
-
-            var branch = await _db.Branches.AsNoTracking().FirstOrDefaultAsync(
-                candidate => candidate.Id == request.UserData.BranchId
-                             && candidate.TenantId == _currentTenant.TenantId,
-                cancellationToken)
-                ?? throw new BusinessException("La sucursal no pertenece al tenant autenticado.");
-       
-            // 1. Validar que el email no exista
-            if (await _userRepository.EmailExistsAsync(request.UserData.Email, cancellationToken: cancellationToken))
-            {
-                throw new BusinessException($"Ya existe un usuario con el email '{request.UserData.Email}'");
-            }
-
-            if (Roles.IsAdmin(creatorRole))
-            {
-                // Solo puede crear usuarios de su sucursal
-                if (creatorBranchId == 0)
-                    throw new BusinessException("Un administrador debe estar asociado a una sucursal.");
-
-                if (creatorBranchId != request.UserData.BranchId)
-                    throw new BusinessException("Un administrador solo puede crear usuarios de su sucursal");
-
-                // Forzamos la sucursal para evitar fraude
-                request.UserData.BranchId = creatorBranchId;
-
-                // Admin NO puede crear admin ni superadmin
-                if (request.UserData.Role == UserRole.Admin ||
-                    request.UserData.Role == UserRole.Superadmin)
-                {
-                    throw new BusinessException("Un administrador no puede crear usuarios con rol Admin o Superadmin.");
-                }
-
-            }
-            else if (Roles.IsSuperadmin(creatorRole))
-            {
-                // Validar restricciones de rol
-                if (request.UserData.Role == UserRole.Superadmin)
-                {
-                    bool superadminExists = await _userRepository.RoleExistsAsync(UserRole.Superadmin, cancellationToken);
-                    if (superadminExists)
-                    {
-                        throw new BusinessException("Solo puede existir un Superadmin en la aplicación.");
-                    }
-                }
-
-                if (request.UserData.Role == UserRole.Admin)
-                {
-                    bool adminExists = await _userRepository.AdminExistsInBranchAsync(request.UserData.BranchId, cancellationToken);
-                    if (adminExists)
-                    {
-                        throw new BusinessException("Ya existe un Admin en esta sucursal.");
-                    }
-                }
-
-
-            }
-            else
-            {
-                // Otros roles no pueden crear usuarios
-                throw new BusinessException("No tienes permisos para crear usuarios.");
-            }
-
-            await UserPayrollExpenseRules.ValidatePayrollExpenseAssignmentAsync(
-                request.UserData.PayrollExpenseId,
-                excludeUserId: null,
-                _db,
-                cancellationToken);
-
-            if (request.UserData.DeliveryAppEnabled && request.UserData.Role is not (UserRole.Admin or UserRole.Cashier))
-                throw new BusinessException("El acceso a la app de domicilios solo aplica a administradores y cajeros.");
-
-            // 2. Mapear DTO a entidad
-            var user = _mapper.Map<User>(request.UserData);
-            user.TenantId = branch.TenantId;
-            user.DeliveryAppEnabled = request.UserData.DeliveryAppEnabled;
-            user.WebAccessEnabled = user.Role == UserRole.Kitchen
-                ? request.UserData.WebAccessEnabled ?? false
-                : user.Role != UserRole.Deliveryman;
-
-            // 3. Hashear la contraseña
-            user.PasswordHash = _passwordService.HashPassword(request.UserData.Password);
-
-            // 4. Guardar en la base de datos
-            var createdUser = await _userRepository.AddAsync(user, cancellationToken);
-
-            var reloaded = await _userRepository.GetByIdAsync(createdUser.Id, cancellationToken);
-            return _mapper.Map<UserDto>(reloaded ?? createdUser);
+            if (input.Role == UserRole.Superadmin && await userRepository.RoleExistsAsync(UserRole.Superadmin, ct))
+                throw new BusinessException("Solo puede existir un Superadmin en la aplicación.");
+            if (input.Role == UserRole.Admin && await userRepository.AdminExistsInBranchAsync(input.BranchId, ct))
+                throw new BusinessException("Ya existe un Admin en esta sucursal.");
         }
+        else throw new UnauthorizedAccessException();
+        if (!Enum.IsDefined(input.AccountType)) throw new BusinessException("Tipo de cuenta inválido.");
+        if (input.AccountType == EmployeeAccountType.Terminal)
+        {
+            if (input.Role != UserRole.Kitchen || input.PayrollExpenseId.HasValue || input.DeliveryAppEnabled)
+                throw new BusinessException("La terminal de cocina no puede tener nómina ni acceso a domicilios.");
+            var actor = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == currentUser.Id && x.Active, ct)
+                ?? throw new UnauthorizedAccessException();
+            try { EmployeePasswordConfirmation.Verify(actor, input.ConfirmationPassword, passwordService); }
+            finally { input.ConfirmationPassword = null; }
+        }
+        await UserPayrollExpenseRules.ValidatePayrollExpenseAssignmentAsync(input.PayrollExpenseId, null, db, ct);
+        if (input.DeliveryAppEnabled && input.Role is not (UserRole.Admin or UserRole.Cashier))
+            throw new BusinessException("El acceso adicional a domicilios solo aplica a administradores y cajeros.");
+        var user = mapper.Map<User>(input);
+        user.TenantId = branch.TenantId;
+        user.AccountType = input.AccountType;
+        user.DeliveryAppEnabled = input.DeliveryAppEnabled;
+        user.WebAccessEnabled = user.Role == UserRole.Kitchen ? input.WebAccessEnabled ?? true : user.Role != UserRole.Deliveryman;
+        user.PasswordHash = passwordService.HashPassword(input.Password);
+        var created = await userRepository.AddAsync(user, ct);
+        return mapper.Map<UserDto>(await userRepository.GetByIdAsync(created.Id, ct) ?? created);
     }
-
 }

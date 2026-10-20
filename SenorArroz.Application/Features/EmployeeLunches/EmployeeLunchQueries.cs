@@ -23,28 +23,30 @@ public sealed class EmployeeLunchQueries(IApplicationDbContext db, ICurrentUser 
 {
     public async Task<EmployeeLunchStateDto> Handle(GetEmployeeLunchQuery request, CancellationToken ct)
     {
-        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == actor.Id, ct)
+        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == actor.Id && x.Active, ct)
             ?? throw new NotFoundException("Usuario no encontrado.");
+        if (user.IsTerminal) throw new UnauthorizedAccessException();
         return (await States([user], ColombiaTimeHelper.GetTodayDateOnlyColombiaFromUtc(clock.UtcNow), ct))[0];
     }
 
     public async Task<PagedResult<EmployeeLunchStateDto>> Handle(GetBranchLunchesQuery request, CancellationToken ct)
     {
-        if (!Roles.IsSuperadminOrAdminOrCashier(actor.Role) && !Roles.IsKitchen(actor.Role))
+        var kitchen = actor.Role.Equals("Kitchen", StringComparison.OrdinalIgnoreCase);
+        if (!Roles.IsSuperadminOrAdminOrCashier(actor.Role) && !kitchen) throw new UnauthorizedAccessException();
+        if (kitchen && !await db.Users.AnyAsync(x => x.Id == actor.Id && x.Active && x.WebAccessEnabled
+            && x.Role == UserRole.Kitchen && x.AccountType == EmployeeAccountType.Terminal, ct))
             throw new UnauthorizedAccessException();
         var branchId = branch.RequireBranch();
         var date = request.Date ?? ColombiaTimeHelper.GetTodayDateOnlyColombiaFromUtc(clock.UtcNow);
         var from = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).AddHours(5);
         var to = from.AddDays(1);
-        var users = db.Users.AsNoTracking().Where(x =>
-            x.Active && x.BranchId == branchId && !(x.Role == UserRole.Kitchen && x.WebAccessEnabled)
-            || db.EmployeeLunches.Any(l => l.UserId == x.Id && l.BranchId == branchId
-                && l.StartedAt < to && (l.EndedAt == null || l.EndedAt > from)));
-        if (actor.Role.Equals("Kitchen", StringComparison.OrdinalIgnoreCase))
+        var users = db.Users.AsNoTracking().Where(x => x.AccountType == EmployeeAccountType.Personal
+            && (x.Active && x.BranchId == branchId || db.EmployeeLunches.Any(l => l.UserId == x.Id && l.BranchId == branchId
+                && l.StartedAt < to && (l.EndedAt == null || l.EndedAt > from))));
+        if (kitchen)
         {
-            if (date != ColombiaTimeHelper.GetTodayDateOnlyColombiaFromUtc(clock.UtcNow))
-                throw new UnauthorizedAccessException();
-            users = users.Where(x => x.Active && x.BranchId == branchId && x.Role == UserRole.Kitchen && !x.WebAccessEnabled);
+            if (date != ColombiaTimeHelper.GetTodayDateOnlyColombiaFromUtc(clock.UtcNow)) throw new UnauthorizedAccessException();
+            users = users.Where(x => x.Active && x.BranchId == branchId && x.Role == UserRole.Kitchen);
         }
         var page = Math.Max(1, request.Page);
         var size = Math.Clamp(request.PageSize, 1, 100);

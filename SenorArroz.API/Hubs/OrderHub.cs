@@ -1,70 +1,58 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Domain.Enums;
 
 namespace SenorArroz.API.Hubs;
 
 [Authorize]
 [DisableRateLimiting]
-public class OrderHub : Hub
+public class OrderHub(IApplicationDbContext db) : Hub
 {
     public override async Task OnConnectedAsync()
     {
-        var branchId = Context.User?.FindFirst("branch_id")?.Value;
-        var tenantId = Context.User?.FindFirst("tenant_id")?.Value;
+        var tenantClaim = Context.User?.FindFirst("tenant_id")?.Value;
+        var userClaim = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!int.TryParse(tenantClaim, out var tenantId) || !int.TryParse(userClaim, out var userId))
+        { Context.Abort(); return; }
+        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == userId && x.TenantId == tenantId && x.Active,
+            Context.ConnectionAborted);
+        if (user is null || user.Role == UserRole.Kitchen && !user.WebAccessEnabled)
+        { Context.Abort(); return; }
+
+        if (!user.IsTerminal)
+            await Groups.AddToGroupAsync(Context.ConnectionId, EmployeeLeaveRealtime.UserGroup(tenantId, userId));
+
+        // Un cocinero personal NO recibe eventos de pedidos ni datos de los grupos generales de sucursal.
+        if (user.Role == UserRole.Kitchen && !user.IsTerminal)
+        { await base.OnConnectedAsync(); return; }
+        if (user.IsTerminal && user.Role != UserRole.Kitchen)
+        { Context.Abort(); return; }
+
         var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
-        if (role == "Superadmin")
-            branchId = ResolveSelectedBranchId();
-        
-        if (int.TryParse(tenantId, out var parsedTenantId) && parsedTenantId > 0
-            && int.TryParse(branchId, out var parsedBranchId) && parsedBranchId > 0)
+        var branchId = role == "Superadmin" ? ResolveSelectedBranchId() : user.BranchId;
+        if (branchId is > 0)
         {
-            await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.Branch(parsedTenantId, parsedBranchId));
-            
-            // Agregar a grupo específico de rol
-            // Admin/Superadmin can use the kitchen screen and must receive its events.
+            if (!await db.Branches.AnyAsync(x => x.Id == branchId.Value && x.TenantId == tenantId, Context.ConnectionAborted))
+            { Context.Abort(); return; }
+            await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.Branch(tenantId, branchId.Value));
             if (role is "Kitchen" or "Admin" or "Superadmin")
-                await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Kitchen"));
+                await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(tenantId, branchId.Value, "Kitchen"));
             if (role == "Deliveryman")
-                await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Delivery"));
+                await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(tenantId, branchId.Value, "Delivery"));
             if (role is "Admin" or "Superadmin" or "Cashier")
-                await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Admin"));
+                await Groups.AddToGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(tenantId, branchId.Value, "Admin"));
         }
-        
         await base.OnConnectedAsync();
     }
-    
-    public override async Task OnDisconnectedAsync(Exception? exception)
-    {
-        var branchId = Context.User?.FindFirst("branch_id")?.Value;
-        var tenantId = Context.User?.FindFirst("tenant_id")?.Value;
-        var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
-        if (role == "Superadmin")
-            branchId = ResolveSelectedBranchId();
-        
-        if (int.TryParse(tenantId, out var parsedTenantId) && parsedTenantId > 0
-            && int.TryParse(branchId, out var parsedBranchId) && parsedBranchId > 0)
-        {
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantRealtimeGroups.Branch(parsedTenantId, parsedBranchId));
-            
-            if (role is "Kitchen" or "Admin" or "Superadmin")
-                await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Kitchen"));
-            if (role == "Deliveryman")
-                await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Delivery"));
-            if (role is "Admin" or "Superadmin" or "Cashier")
-                await Groups.RemoveFromGroupAsync(Context.ConnectionId, TenantRealtimeGroups.BranchRole(parsedTenantId, parsedBranchId, "Admin"));
-        }
-        
-        await base.OnDisconnectedAsync(exception);
-    }
 
-    private string? ResolveSelectedBranchId()
+    // SignalR elimina todos los grupos de la conexión al desconectarse; no se reconstruye contexto obsoleto.
+    private int? ResolveSelectedBranchId()
     {
         var raw = Context.GetHttpContext()?.Request.Query["branchId"].FirstOrDefault();
-        return int.TryParse(raw, out var branchId) && branchId > 0
-            ? branchId.ToString()
-            : null;
+        return int.TryParse(raw, out var branchId) && branchId > 0 ? branchId : null;
     }
 }
-

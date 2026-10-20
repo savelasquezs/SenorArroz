@@ -12,13 +12,23 @@ public sealed class EmployeeLunchFilter(IApplicationDbContext db, ICurrentUser a
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
         var action = (ControllerActionDescriptor)context.ActionDescriptor;
+        var terminal = false;
+        if (actor.IsAuthenticated && actor.Role.Equals("Kitchen", StringComparison.OrdinalIgnoreCase))
+        {
+            var account = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == actor.Id && x.Active,
+                context.HttpContext.RequestAborted);
+            int? target = context.ActionArguments.TryGetValue("id", out var id) && id is int value ? value : null;
+            if (account is null || !EmployeeAccountAccess.Allows(account, action.ControllerName, action.ActionName, target))
+            { context.Result = new ForbidResult(); return; }
+            terminal = account.IsTerminal;
+        }
         var read = HttpMethods.IsGet(context.HttpContext.Request.Method) || HttpMethods.IsHead(context.HttpContext.Request.Method);
-        var allowed = action.ControllerName == "EmployeeLunch" && action.ActionName is "Me" or "Branch" or "Start" or "Finish"
+        var allowed = action.ControllerName == "EmployeeLeaves"
+            || action.ControllerName == "EmployeeLunch" && action.ActionName is "Me" or "Branch" or "Start" or "Finish"
             || action.ControllerName == "Auth" && action.ActionName is "RefreshToken" or "Logout"
             || action.ControllerName == "Deliveryman" && action.ActionName is "RecordLocation" or "RecordDeviceEvent"
                 or "StartWorkSession" or "RegisterDeviceToken" or "RemoveDeviceToken" or "CloseWorkSession";
-        if (actor.IsAuthenticated && !read && !allowed
-            && !actor.Role.Equals("Kitchen", StringComparison.OrdinalIgnoreCase)
+        if (actor.IsAuthenticated && !read && !allowed && !terminal
             && await db.EmployeeLunches.AnyAsync(x => x.UserId == actor.Id && x.EndedAt == null, context.HttpContext.RequestAborted))
         {
             context.Result = new ObjectResult(new { success = false, code = "EMPLOYEE_ON_LUNCH",

@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
@@ -24,17 +25,15 @@ public sealed class EmployeeLunchCommands(IApplicationDbContext db, ICurrentUser
     public async Task<EmployeeLunchDto> Handle(ChangeEmployeeLunchCommand request, CancellationToken ct)
     {
         var id = request.UserId ?? actor.Id;
-        var kitchen = actor.Role.Equals("Kitchen", StringComparison.OrdinalIgnoreCase);
-        if (id != actor.Id && !kitchen) throw new UnauthorizedAccessException();
+        var terminal = actor.Role.Equals("Kitchen", StringComparison.OrdinalIgnoreCase)
+            && await db.Users.AnyAsync(x => x.Id == actor.Id && x.Active && x.WebAccessEnabled
+                && x.Role == UserRole.Kitchen && x.AccountType == EmployeeAccountType.Terminal, ct);
+        if (id != actor.Id && !terminal) throw new UnauthorizedAccessException();
         var user = await db.Users.SingleOrDefaultAsync(x => x.Id == id && x.Active, ct)
             ?? throw new NotFoundException("Empleado no encontrado.");
-        if (kitchen && (user.Role != UserRole.Kitchen || user.WebAccessEnabled || user.BranchId != actor.BranchId))
+        if (terminal && (user.Role != UserRole.Kitchen || user.IsTerminal || user.BranchId != actor.BranchId))
             throw new UnauthorizedAccessException();
-        if (user.Role == UserRole.Kitchen && user.WebAccessEnabled)
-            throw new BusinessException("Selecciona al empleado; la pantalla compartida no registra almuerzos propios.");
-        if (string.IsNullOrEmpty(request.Password) || request.Password.Length > 256
-            || !passwords.VerifyPassword(request.Password, user.PasswordHash))
-            throw new BusinessException("Contraseña incorrecta.");
+        EmployeePasswordConfirmation.Verify(user, request.Password, passwords);
 
         var now = new DateTime(clock.UtcNow.Ticks / 10 * 10, DateTimeKind.Utc);
         var lunch = await db.EmployeeLunches.SingleOrDefaultAsync(x => x.UserId == id && x.EndedAt == null, ct);
@@ -69,8 +68,7 @@ public sealed class EmployeeLunchCommands(IApplicationDbContext db, ICurrentUser
         var lunch = await db.EmployeeLunches.SingleOrDefaultAsync(x => x.Id == request.Id, ct)
             ?? throw new NotFoundException("Almuerzo no encontrado.");
         branch.EnsureAccess(lunch.BranchId);
-        if (request.ExpectedUpdatedAt != lunch.UpdatedAt)
-            throw new OrderConcurrencyException();
+        if (request.ExpectedUpdatedAt != lunch.UpdatedAt) throw new OrderConcurrencyException();
         if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length > 500)
             throw new BusinessException("Indica un motivo de máximo 500 caracteres.");
         if (request.StartedAt.Kind != DateTimeKind.Utc || request.EndedAt is { Kind: not DateTimeKind.Utc }
