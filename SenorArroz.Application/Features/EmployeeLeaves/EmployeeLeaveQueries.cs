@@ -74,7 +74,6 @@ public sealed class EmployeeLeaveQueries(IApplicationDbContext db, ICurrentUser 
         }
         if (request.From is { Kind: not DateTimeKind.Utc } || request.To is { Kind: not DateTimeKind.Utc } || request.From > request.To)
             throw new BusinessException("Rango de fechas no válido.");
-        // Half-open intervals: an all-day absence does not spill into the following day.
         if (request.From.HasValue) query = query.Where(x => x.EndsAt > request.From.Value);
         if (request.To.HasValue) query = query.Where(x => x.StartsAt < request.To.Value);
         var page = Math.Clamp(request.Page, 1, 100000);
@@ -104,7 +103,7 @@ public sealed class EmployeeLeaveQueries(IApplicationDbContext db, ICurrentUser 
             leave.SupportStatus, leave.ReturnedAt, leave.ReturnVerifiedAt, leave.VerificationReason,
             EmployeeLeaveRules.CanEdit(actor, leave), review,
             (own || review) && (leave.Status is "pending" or "postponed" || leave.Status == "approved" && leave.StartsAt > clock.UtcNow && leave.ReturnedAt == null),
-            own && leave.Kind != "lactation" && leave.Status == "approved" && leave.ReturnedAt == null && leave.StartsAt <= clock.UtcNow,
+            own && (leave.Kind != "lactation" || leave.PolicyVersion < 2) && leave.Status == "approved" && leave.ReturnedAt == null && leave.StartsAt <= clock.UtcNow,
             await Reviewers(db, leave).AnyAsync(ct),
             leave.Attachments.OrderBy(x => x.CreatedAt).Select(x => new EmployeeLeaveAttachmentDto(x.Id, x.FileName, x.ContentType,
                 x.Size, x.CreatedAt, x.EvidenceCode, x.ReviewStatus, x.ReviewReason, x.ReviewedAt, x.SupersededAt, x.ReplacesAttachmentId)).ToList(),
@@ -136,5 +135,5 @@ public sealed class EmployeeLeaveQueries(IApplicationDbContext db, ICurrentUser 
     public static EmployeeLeaveListDto Map(EmployeeLeaveRequest x, int actorId) => new(x.PublicId, x.UserId, x.BranchId,
         x.Branch?.Name ?? "", x.ApplicantName, x.ApplicantRole, x.Kind, x.Status, x.StartsAt, x.EndsAt, x.CreatedAt, x.UpdatedAt,
         x.Version, x.UserId == actorId && x.Version > x.LastReadVersion, x.IsAllDay,
-        x.RequestedIsPaid ?? EmployeeLeaveRules.Kind(x.Kind).PaidByCompanyPolicy, x.IsPaid, x.SupportStatus, x.Kind == "lactation");
+        x.RequestedIsPaid ?? EmployeeLeaveRules.Kind(x.Kind).PaidByCompanyPolicy, x.IsPaid, x.SupportStatus, x.Kind == "lactation" && x.PolicyVersion >= 2);
 }
