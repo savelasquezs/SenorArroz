@@ -87,7 +87,7 @@ public sealed class EmployeeLeaveV2Tests
     [InlineData("medical_emergency")]
     [InlineData("bereavement")]
     [InlineData("domestic_calamity")]
-    public async TaskUrgencyDoesNotRequireAnImpossiblePriorFile(string kind)
+    public async Task UrgencyDoesNotRequireAnImpossiblePriorFile(string kind)
     {
         await using var f = new Fixture();
         await f.Commands().Handle(new SaveEmployeeLeaveCommand(null, f.Input(kind)), default);
@@ -95,7 +95,7 @@ public sealed class EmployeeLeaveV2Tests
     }
 
     [Fact]
-    public async Task MultipartSubmissionIsIdempotentAndBindsFileBytesToRequestKey()
+    public async Task MultipartSubmissionIsIdempotententAndBindsFileBytesToRequestKey()
     {
         await using var f = new Fixture(); var input = f.Input(); var file = Fixture.File();
         var id = await f.Commands().Handle(new SaveEmployeeLeaveCommand(null, input, [file]), default);
