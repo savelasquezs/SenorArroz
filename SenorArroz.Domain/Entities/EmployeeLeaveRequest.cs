@@ -15,6 +15,11 @@ public sealed class EmployeeLeaveRequest : TenantOwnedEntity
     public string Status { get; set; } = "pending";
     public DateTime StartsAt { get; set; }
     public DateTime EndsAt { get; set; }
+    public bool IsAllDay { get; set; }
+    public bool? RequestedIsPaid { get; set; }
+    // Existing requests keep policy 1. Only a new submission adopts the current requirements.
+    public int PolicyVersion { get; set; } = 1;
+    public string? SubmissionDigest { get; set; }
     public string Justification { get; set; } = "";
     public bool? IsPaid { get; set; }
     public int? DecidedByUserId { get; set; }
@@ -43,5 +48,12 @@ public sealed class EmployeeLeaveAttachment : TenantOwnedEntity
     public string ContentType { get; set; } = "";
     public string StorageKey { get; set; } = "";
     public int Size { get; set; }
+    public string EvidenceCode { get; set; } = "additional";
+    public string ReviewStatus { get; set; } = "submitted";
+    public string? ReviewReason { get; set; }
+    public int? ReviewedByUserId { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public int? ReplacesAttachmentId { get; set; }
+    public DateTime? SupersededAt { get; set; }
     public EmployeeLeaveRequest Request { get; set; } = null!;
 }
