@@ -51,7 +51,7 @@ public sealed partial class EmployeeLeaveCommands : IRequestHandler<SaveEmployee
         var before = Snapshot(leave);
         var review = EmployeeLeaveQueries.CanReview(current, actor, leave);
         var own = leave.UserId == actor.Id;
-        var kind = EmployeeLeaveRules.Kind(leave.Kind);
+        var periodRecord = leave.PolicyVersion >= EmployeeLeaveRules.CurrentPolicyVersion && EmployeeLeaveRules.Kind(leave.Kind).IsPeriodRecord;
         var reason = command.Action == "return" ? "Regreso confirmado por el trabajador."
             : EmployeeLeaveRules.RequiredText(input.Reason, 1000, "Motivo");
         switch (command.Action)
@@ -66,8 +66,9 @@ public sealed partial class EmployeeLeaveCommands : IRequestHandler<SaveEmployee
                         throw new BusinessException("Verifica los soportes previos antes de aprobar. Los documentos posteriores pueden quedar pendientes.");
                     if (input.SupportDueAt is { Kind: not DateTimeKind.Utc } || input.SupportDueAt.HasValue && input.SupportDueAt < clock.UtcNow)
                         throw new BusinessException("El plazo para presentar soporte debe ser una fecha UTC vigente.");
-                    if (!kind.IsPeriodRecord && await db.EmployeeLeaveRequests.AnyAsync(x => x.UserId == leave.UserId
-                        && x.Id != leave.Id && x.Kind != "lactation" && x.Status == "approved" && x.StartsAt < leave.EndsAt && x.EndsAt > leave.StartsAt, ct))
+                    if (!periodRecord && await db.EmployeeLeaveRequests.AnyAsync(x => x.UserId == leave.UserId
+                        && x.Id != leave.Id && (x.Kind != "lactation" || x.PolicyVersion < 2) && x.Status == "approved"
+                        && x.StartsAt < leave.EndsAt && x.EndsAt > leave.StartsAt, ct))
                         throw new BusinessException("El trabajador ya tiene un permiso aprobado que se cruza con este intervalo.");
                     leave.SupportRequired |= input.SupportRequired;
                     leave.SupportDueAt = leave.SupportRequired ? input.SupportDueAt : null;
@@ -89,7 +90,7 @@ public sealed partial class EmployeeLeaveCommands : IRequestHandler<SaveEmployee
                 leave.DecidedByUserId = actor.Id;
                 break;
             case "return":
-                if (!own || kind.IsPeriodRecord || leave.Status != "approved" || leave.ReturnedAt.HasValue || leave.StartsAt > clock.UtcNow)
+                if (!own || periodRecord || leave.Status != "approved" || leave.ReturnedAt.HasValue || leave.StartsAt > clock.UtcNow)
                     throw new BusinessException("No se puede registrar el regreso de este permiso.");
                 leave.ReturnedAt = clock.UtcNow;
                 break;
@@ -111,7 +112,7 @@ public sealed partial class EmployeeLeaveCommands : IRequestHandler<SaveEmployee
                 }
                 if (input.VerifyReturn)
                 {
-                    if (kind.IsPeriodRecord || leave.Status != "approved" || !leave.ReturnedAt.HasValue)
+                    if (periodRecord || leave.Status != "approved" || !leave.ReturnedAt.HasValue)
                         throw new BusinessException("El trabajador aún no ha registrado el regreso de un permiso aprobado.");
                     leave.ReturnVerifiedAt = clock.UtcNow;
                     leave.ReturnVerifiedByUserId = actor.Id;
