@@ -53,10 +53,17 @@ CREATE TABLE IF NOT EXISTS public.employee_leave_request (
     CHECK (status IN ('pending','approved','denied','postponed','cancelled')),
     CHECK (support_status IN ('not_required','pending','submitted','verified','rejected')),
     CHECK (status <> 'approved' OR (is_paid IS NOT NULL AND decided_by_user_id IS NOT NULL AND decided_at IS NOT NULL)),
-    CHECK (status NOT IN ('denied','postponed','cancelled') OR length(btrim(decision_reason)) > 0),
     CHECK (return_verified_at IS NULL OR (returned_at IS NOT NULL AND return_verified_by_user_id IS NOT NULL)),
     CHECK (returned_at IS NULL OR returned_at >= starts_at)
 );
+-- CHECK debe rechazar NULL explícitamente, también al actualizar una instalación previa.
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'employee_leave_decision_reason_check'
+        AND conrelid = 'public.employee_leave_request'::regclass) THEN
+        ALTER TABLE public.employee_leave_request ADD CONSTRAINT employee_leave_decision_reason_check
+            CHECK (status = 'pending' OR (decision_reason IS NOT NULL AND length(btrim(decision_reason)) > 0));
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS ix_employee_leave_request_tenant ON public.employee_leave_request(tenant_id);
 CREATE INDEX IF NOT EXISTS ix_employee_leave_request_inbox ON public.employee_leave_request(tenant_id, branch_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_employee_leave_request_person ON public.employee_leave_request(tenant_id, user_id, created_at DESC);

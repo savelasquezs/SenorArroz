@@ -78,7 +78,7 @@ public sealed class EmployeeLeaveQueries(IApplicationDbContext db, ICurrentUser 
             || request.From > request.To) throw new BusinessException("Rango de fechas no válido.");
         if (request.From.HasValue) query = query.Where(x => x.EndsAt >= request.From.Value);
         if (request.To.HasValue) query = query.Where(x => x.StartsAt <= request.To.Value);
-        var page = Math.Max(1, request.Page);
+        var page = Math.Clamp(request.Page, 1, 100000);
         var size = Math.Clamp(request.PageSize, 1, 100);
         var total = await query.CountAsync(ct);
         var rows = await query.Include(x => x.Branch).OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id)
@@ -128,12 +128,12 @@ public sealed class EmployeeLeaveQueries(IApplicationDbContext db, ICurrentUser 
             ?? throw new NotFoundException("Permiso no encontrado.");
         EnsureRead(current, actor, leave);
         var query = db.EntityAuditLogs.AsNoTracking().Where(x => x.EntityType == "employee_leave_request" && x.EntityId == leave.Id);
-        var page = Math.Max(1, request.Page);
+        var page = Math.Clamp(request.Page, 1, 100000);
         var size = Math.Clamp(request.PageSize, 1, 100);
         var total = await query.CountAsync(ct);
         var items = await query.OrderByDescending(x => x.ChangedAt).ThenByDescending(x => x.Id)
             .Skip((page - 1) * size).Take(size).Select(x => new EmployeeLeaveHistoryDto(x.Id,
-                x.OperationType, x.ChangedAt, db.Users.Where(u => u.Id == x.ChangedByUserId)
+                x.OperationType, x.ChangedAt, x.ChangedByNameSnapshot ?? db.Users.Where(u => u.Id == x.ChangedByUserId)
                     .Select(u => u.Name).FirstOrDefault() ?? "Usuario no disponible", x.SummaryText ?? "")).ToListAsync(ct);
         return new() { Items = items, Page = page, PageSize = size, TotalCount = total,
             TotalPages = (int)Math.Ceiling((double)total / size) };
