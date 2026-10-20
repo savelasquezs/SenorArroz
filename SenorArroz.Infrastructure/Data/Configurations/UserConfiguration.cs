@@ -23,6 +23,11 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
                 v => v.ToString().ToLower(),
                 v => Enum.Parse<UserRole>(v, true))
             .HasDefaultValue(UserRole.Deliveryman);
+        builder.Property(u => u.AccountType).HasColumnName("account_type")
+            .HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<EmployeeAccountType>(v, true))
+            .HasMaxLength(16).HasDefaultValue(EmployeeAccountType.Personal)
+            .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+        builder.Ignore(u => u.IsTerminal);
         builder.Property(u => u.Name).HasColumnName("name").HasMaxLength(150).IsRequired();
         builder.Property(u => u.Email).HasColumnName("email").HasMaxLength(100).IsRequired();
         builder.Property(u => u.Phone).HasColumnName("phone").HasMaxLength(10).IsRequired();
