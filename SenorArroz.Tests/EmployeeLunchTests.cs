@@ -27,7 +27,13 @@ public sealed class EmployeeLunchTests
         .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
         currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
     private static User Employee(int id = 1, UserRole role = UserRole.Cashier, int branch = 1) =>
-        new() { Id = id, BranchId = branch, Role = role, Name = $"Employee {id}", PasswordHash = "hash", WebAccessEnabled = role != UserRole.Kitchen };
+        new() { Id = id, BranchId = branch, Role = role, Name = $"Employee {id}", PasswordHash = "hash", WebAccessEnabled = true };
+    private static User Terminal(int id = 10)
+    {
+        var screen = Employee(id, UserRole.Kitchen);
+        screen.AccountType = EmployeeAccountType.Terminal;
+        return screen;
+    }
     private static ICurrentUser Actor(int id = 1, string role = "Cashier") {
         var mock = new Mock<ICurrentUser>();
         mock.SetupGet(x => x.Id).Returns(id); mock.SetupGet(x => x.Role).Returns(role);
@@ -81,12 +87,13 @@ public sealed class EmployeeLunchTests
     [Fact]
     public async Task KitchenEmployeesLunchIndependentlyWithoutChangingScreenAccount() {
         await using var db = Db();
-        db.Users.AddRange(Employee(1, UserRole.Kitchen), Employee(2, UserRole.Kitchen), Employee(3, UserRole.Kitchen));
+        db.Users.AddRange(Employee(1, UserRole.Kitchen), Employee(2, UserRole.Kitchen), Employee(3, UserRole.Kitchen), Terminal());
         await db.SaveChangesAsync();
         var screen = Commands(db, Actor(10, "Kitchen"));
         foreach (var id in new[] { 1, 2, 3 }) await screen.Handle(new ChangeEmployeeLunchCommand(false, "correct", id), default);
         Assert.Equal(3, await db.EmployeeLunches.CountAsync());
         Assert.All(await db.EmployeeLunches.ToListAsync(), x => Assert.Equal(10, x.StartedByUserId));
+        Assert.Empty(await db.EmployeeLunches.Where(x => x.UserId == 10).ToListAsync());
     }
 
     [Theory]
@@ -101,11 +108,25 @@ public sealed class EmployeeLunchTests
     [Theory]
     [InlineData(2, false, 2)]
     [InlineData(1, true, 2)]
-    public async Task KitchenCannotUseAnotherBranchOrSharedScreen(int branch, bool web, int id) {
+    public async Task KitchenCannotUseAnotherBranchOrSharedScreen(int branch, bool terminal, int id) {
         await using var db = Db();
-        var employee = Employee(id, UserRole.Kitchen, branch); employee.WebAccessEnabled = web;
-        db.Users.Add(employee); await db.SaveChangesAsync();
+        var employee = Employee(id, UserRole.Kitchen, branch);
+        employee.AccountType = terminal ? EmployeeAccountType.Terminal : EmployeeAccountType.Personal;
+        db.Users.AddRange(employee, Terminal()); await db.SaveChangesAsync();
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Commands(db, Actor(10, "Kitchen")).Handle(new ChangeEmployeeLunchCommand(false, "correct", id), default));
+    }
+
+    [Fact]
+    public async Task PersonalKitchenLoginCanManageOwnLunchButCannotImpersonateAnotherCook() {
+        await using var db = Db();
+        db.Users.AddRange(Employee(1, UserRole.Kitchen), Employee(2, UserRole.Kitchen));
+        await db.SaveChangesAsync();
+        var commands = Commands(db, Actor(1, "Kitchen"));
+        await commands.Handle(new ChangeEmployeeLunchCommand(false, "correct"), default);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => commands.Handle(new ChangeEmployeeLunchCommand(false, "correct", 2), default));
+        Assert.Equal(1, Assert.Single(await db.EmployeeLunches.ToListAsync()).UserId);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => new EmployeeLunchQueries(db, Actor(1, "Kitchen"), Branch(), new FakeClock(Now))
+            .Handle(new GetBranchLunchesQuery(), default));
     }
 
     [Fact]
@@ -141,8 +162,7 @@ public sealed class EmployeeLunchTests
     [InlineData("Superadmin")]
     public async Task LunchQueriesRespectTenantBranchAndHideSharedKitchenAccounts(string role) {
         await using var db = Db();
-        db.Users.AddRange(Employee(), Employee(2, branch: 2), Employee(3, UserRole.Kitchen));
-        var screen = Employee(4, UserRole.Kitchen); screen.WebAccessEnabled = true; db.Users.Add(screen);
+        db.Users.AddRange(Employee(), Employee(2, branch: 2), Employee(3, UserRole.Kitchen), Terminal(4));
         await db.SaveChangesAsync();
         using (TestTenantContext.Default.BeginTenantScope(2)) { db.Users.Add(Employee(5)); await db.SaveChangesAsync(); }
         var queries = new EmployeeLunchQueries(db, Actor(10, role), Branch(), new FakeClock(Now));
@@ -199,6 +219,8 @@ public sealed class EmployeeLunchTests
     [Theory]
     [InlineData("Orders", "CreateOrder", "POST", false)]
     [InlineData("EmployeeLunch", "Correct", "PATCH", false)]
+    [InlineData("EmployeeLeaves", "Create", "POST", true)]
+    [InlineData("EmployeeLeaves", "Decide", "POST", true)]
     [InlineData("Auth", "Logout", "POST", true)]
     [InlineData("EmployeeLunch", "Finish", "POST", true)]
     [InlineData("Deliveryman", "RecordLocation", "POST", true)]
@@ -225,7 +247,7 @@ public sealed class EmployeeLunchTests
     [Fact]
     public async Task DisablingKitchenWebAccessRejectsAnExistingSessionWithoutDisablingTheEmployee() {
         await using var db = Db();
-        var user = Employee(1, UserRole.Kitchen); user.ActiveSessionId = Guid.NewGuid();
+        var user = Employee(1, UserRole.Kitchen); user.ActiveSessionId = Guid.NewGuid(); user.WebAccessEnabled = false;
         db.Users.Add(user); await db.SaveChangesAsync();
         var auth = new AuthRepository(db, Mock.Of<IPasswordService>());
         Assert.False(await auth.IsSessionCurrentAsync(1, user.ActiveSessionId, "Kitchen"));
