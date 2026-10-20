@@ -41,9 +41,24 @@ public sealed partial class EmployeeLeaveCommands
             if (!EmployeeLeaveRules.CanEdit(actor, leave)) throw new UnauthorizedAccessException();
             CheckVersion(leave, input.Version);
             before = Snapshot(leave);
-            // Preserve old evidence, but never let evidence for another cause attest to the new cause.
-            if (leave.Kind != input.Kind)
-                foreach (var file in leave.Attachments) file.EvidenceCode = "additional";
+            var differentKind = leave.Kind != input.Kind;
+            var differentInterval = leave.StartsAt != input.StartsAt || leave.EndsAt != input.EndsAt || leave.IsAllDay != input.IsAllDay;
+            if (differentKind || differentInterval)
+            {
+                foreach (var file in leave.Attachments.Where(x => x.SupersededAt == null))
+                {
+                    if (differentKind) file.EvidenceCode = "additional";
+                    // A verified document for the old appointment cannot approve new dates automatically.
+                    // A previously rejected file remains rejected until the employee replaces it.
+                    if (file.ReviewStatus == "verified")
+                    {
+                        file.ReviewStatus = "submitted"; file.ReviewReason = null;
+                        file.ReviewedByUserId = null; file.ReviewedAt = null; file.UpdatedAt = clock.UtcNow;
+                    }
+                }
+                leave.SupportDueAt = null;
+                if (differentKind) leave.SupportRequired = false;
+            }
             leave.Version = checked(leave.Version + 1);
             leave.Status = "pending";
             leave.DecisionReason = null;
@@ -58,7 +73,6 @@ public sealed partial class EmployeeLeaveCommands
             if (previous is not null)
             {
                 if (previous.SubmissionDigest == digest) return previous.PublicId;
-                // A replay of a pre-v2 JSON submission is read-only; it never changes a historical request.
                 if (previous.SubmissionDigest == null && files.Count == 0 && previous.Kind == input.Kind
                     && previous.StartsAt == input.StartsAt && previous.EndsAt == input.EndsAt
                     && previous.IsAllDay == input.IsAllDay && previous.Justification == justification && previous.DocumentNumber == document)
@@ -82,7 +96,6 @@ public sealed partial class EmployeeLeaveCommands
         leave.SubmissionDigest = digest;
         leave.Justification = justification;
         foreach (var file in prepared) leave.Attachments.Add(file);
-        // Validate BEFORE uploading or writing any rows. Neither checkbox nor client version can waive required evidence.
         EmployeeLeaveRules.RequirePriorEvidence(leave);
         EmployeeLeaveRules.RefreshSupport(leave);
         var uploaded = new List<string>();
