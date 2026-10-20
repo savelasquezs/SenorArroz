@@ -85,9 +85,13 @@ public sealed class EmployeeLeaveCommands(IApplicationDbContext db, ICurrentUser
         User actor;
         try { actor = await ConfirmAsync(input.Password, ct); }
         finally { input.Password = ""; }
+        // Autorizar sin seguimiento antes del bloqueo; cargar la versión mutable DESPUÉS de adquirirlo.
+        var scope = await db.EmployeeLeaveRequests.AsNoTracking().SingleOrDefaultAsync(x => x.PublicId == command.PublicId, ct)
+            ?? throw new NotFoundException("Permiso no encontrado.");
+        EmployeeLeaveQueries.EnsureRead(current, actor, scope);
+        await using var transaction = await BeginAsync(actor.TenantId, scope.UserId, ct);
         var leave = await LoadAsync(command.PublicId, ct);
         EmployeeLeaveQueries.EnsureRead(current, actor, leave);
-        await using var transaction = await BeginAsync(actor.TenantId, leave.UserId, ct);
         CheckVersion(leave, input.Version);
         var before = Snapshot(leave);
         var review = EmployeeLeaveQueries.CanReview(current, actor, leave);
@@ -99,20 +103,23 @@ public sealed class EmployeeLeaveCommands(IApplicationDbContext db, ICurrentUser
             case "decision":
                 if (!review || leave.Status is not ("pending" or "postponed")) throw new UnauthorizedAccessException();
                 EmployeeLeaveRules.ValidateDecision(input.Status ?? "", leave.Kind, input.IsPaid);
-                if (input.SupportDueAt is { Kind: not DateTimeKind.Utc }
-                    || input.SupportDueAt.HasValue && input.SupportDueAt < clock.UtcNow)
-                    throw new BusinessException("El plazo para presentar soporte debe ser una fecha UTC vigente.");
-                if (input.Status == "approved" && await db.EmployeeLeaveRequests.AnyAsync(x => x.UserId == leave.UserId
-                    && x.Id != leave.Id && x.Status == "approved" && x.StartsAt < leave.EndsAt && x.EndsAt > leave.StartsAt, ct))
-                    throw new BusinessException("El trabajador ya tiene un permiso aprobado que se cruza con este intervalo.");
+                if (input.Status == "approved")
+                {
+                    if (input.SupportDueAt is { Kind: not DateTimeKind.Utc }
+                        || input.SupportDueAt.HasValue && input.SupportDueAt < clock.UtcNow)
+                        throw new BusinessException("El plazo para presentar soporte debe ser una fecha UTC vigente.");
+                    if (await db.EmployeeLeaveRequests.AnyAsync(x => x.UserId == leave.UserId
+                        && x.Id != leave.Id && x.Status == "approved" && x.StartsAt < leave.EndsAt && x.EndsAt > leave.StartsAt, ct))
+                        throw new BusinessException("El trabajador ya tiene un permiso aprobado que se cruza con este intervalo.");
+                    leave.SupportRequired |= input.SupportRequired;
+                    leave.SupportDueAt = leave.SupportRequired ? input.SupportDueAt : null;
+                    if (leave.SupportRequired && leave.SupportStatus == "not_required") leave.SupportStatus = "pending";
+                }
                 leave.Status = input.Status!;
                 leave.IsPaid = input.Status == "approved" ? input.IsPaid : null;
                 leave.DecisionReason = reason;
                 leave.DecidedAt = clock.UtcNow;
                 leave.DecidedByUserId = actor.Id;
-                leave.SupportRequired = input.SupportRequired || leave.SupportRequired;
-                leave.SupportDueAt = input.SupportDueAt;
-                if (leave.SupportRequired && leave.SupportStatus == "not_required") leave.SupportStatus = "pending";
                 break;
             case "cancel":
                 if (!(own || review) || !(leave.Status is "pending" or "postponed"
@@ -157,11 +164,13 @@ public sealed class EmployeeLeaveCommands(IApplicationDbContext db, ICurrentUser
     public async Task<Unit> Handle(MarkEmployeeLeaveReadCommand command, CancellationToken ct)
     {
         var actor = await EmployeeLeaveQueries.ActorAsync(db, current, ct);
+        await using var transaction = await BeginAsync(actor.TenantId, actor.Id, ct);
         var leave = await LoadAsync(command.PublicId, ct);
         if (leave.UserId != actor.Id) throw new NotFoundException("Permiso no encontrado.");
         if (command.Version < 1 || command.Version > leave.Version) throw new EmployeeLeaveConflictException();
         leave.LastReadVersion = Math.Max(leave.LastReadVersion, command.Version);
         await db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
         return Unit.Value;
     }
 
@@ -182,6 +191,9 @@ public sealed class EmployeeLeaveCommands(IApplicationDbContext db, ICurrentUser
         {
             if (previous.FileName != file.FileName || previous.ContentType != file.ContentType || previous.Size != input.Content.Length)
                 throw new EmployeeLeaveConflictException();
+            // El nombre y el tamaño no identifican los bytes: un reintento debe ser el mismo soporte.
+            var saved = await storage.DownloadAsync(previous.StorageKey, previous.Size, ct);
+            if (!saved.AsSpan().SequenceEqual(input.Content)) throw new EmployeeLeaveConflictException();
             return leave.PublicId;
         }
         CheckVersion(leave, input.Version);
@@ -200,13 +212,15 @@ public sealed class EmployeeLeaveCommands(IApplicationDbContext db, ICurrentUser
             leave.SupportStatus = "submitted";
             leave.Version = checked(leave.Version + 1);
             await PersistAsync(actor, leave, "attachment_added", $"Soporte adjunto: {file.FileName}", before, ct);
-            if (transaction is not null) await transaction.CommitAsync(ct);
         }
         catch
         {
             await DeleteStorageBestEffortAsync(key);
             throw;
         }
+        // Si se pierde la confirmación del COMMIT, conservar el objeto: puede estar ya referenciado.
+        // Reintentar con la misma UploadKey consulta el registro, sin duplicar ni borrar el archivo confirmado.
+        if (transaction is not null) await transaction.CommitAsync(ct);
         signal.Pulse();
         return leave.PublicId;
     }
@@ -256,10 +270,7 @@ public sealed class EmployeeLeaveCommands(IApplicationDbContext db, ICurrentUser
         return actor;
     }
 
-    private Task<EmployeeLeaveRequest> LoadAsync(Guid publicId, CancellationToken ct) =>
-        LoadRequiredAsync(publicId, ct);
-
-    private async Task<EmployeeLeaveRequest> LoadRequiredAsync(Guid publicId, CancellationToken ct) =>
+    private async Task<EmployeeLeaveRequest> LoadAsync(Guid publicId, CancellationToken ct) =>
         await db.EmployeeLeaveRequests.Include(x => x.Attachments).Include(x => x.Branch)
             .SingleOrDefaultAsync(x => x.PublicId == publicId, ct)
         ?? throw new NotFoundException("Permiso no encontrado.");
