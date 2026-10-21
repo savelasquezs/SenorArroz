@@ -152,6 +152,47 @@ public class BranchRepository : IBranchRepository
         return await query.AnyAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyDictionary<int, BranchListStatistics>> GetListStatisticsForBranchesAsync(
+        IReadOnlyCollection<int> branchIds, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var ids = branchIds.Distinct().ToArray();
+        if (ids.Length == 0)
+            return new Dictionary<int, BranchListStatistics>();
+
+        // Tres agregaciones en lugar de cinco CountAsync por sucursal. Se mantienen
+        // los filtros globales de tenant de EF y RLS PostgreSQL existentes.
+        var users = await _context.Users.AsNoTracking()
+            .Where(u => ids.Contains(u.BranchId))
+            .GroupBy(u => u.BranchId)
+            .Select(g => new { BranchId = g.Key, Total = g.Count(), Active = g.Count(u => u.Active) })
+            .ToDictionaryAsync(x => x.BranchId, cancellationToken);
+
+        var customers = await _context.Customers.AsNoTracking()
+            .Where(c => ids.Contains(c.BranchId))
+            .GroupBy(c => c.BranchId)
+            .Select(g => new { BranchId = g.Key, Total = g.Count(), Active = g.Count(c => c.Active) })
+            .ToDictionaryAsync(x => x.BranchId, cancellationToken);
+
+        var neighborhoods = await _context.Neighborhoods.AsNoTracking()
+            .Where(n => ids.Contains(n.BranchId))
+            .GroupBy(n => n.BranchId)
+            .Select(g => new { BranchId = g.Key, Total = g.Count() })
+            .ToDictionaryAsync(x => x.BranchId, x => x.Total, cancellationToken);
+
+        var result = new Dictionary<int, BranchListStatistics>(ids.Length);
+        foreach (var id in ids)
+        {
+            users.TryGetValue(id, out var userCount);
+            customers.TryGetValue(id, out var customerCount);
+            result[id] = new BranchListStatistics(
+                userCount?.Total ?? 0, userCount?.Active ?? 0,
+                customerCount?.Total ?? 0, customerCount?.Active ?? 0,
+                neighborhoods.GetValueOrDefault(id));
+        }
+        return result;
+    }
+
     public async Task<int> GetTotalUsersAsync(int branchId, CancellationToken cancellationToken = default)
     {
         return await _context.Users.CountAsync(u => u.BranchId == branchId, cancellationToken);
