@@ -532,16 +532,16 @@ Reglas:
 - La tienda `900173116` es padre y la `900173117` hereda su menú. Solo se publica el menú al padre.
 - En sandbox `store_integration_id` es `900173116` para la tienda padre y `900173117` para la hija; en POS Tester se selecciona `POS=SeñorArrozDevV2` e `INTEGRACIÓN=SENORARROZDEVV2`.
 - Cada webhook tiene un secreto distinto, cifrado en base de datos. La firma usa HMAC-SHA256 sobre `timestamp.rawPayload` y comparación en tiempo constante.
-- El Sandbox Tester de Integrations Manager firma una representación heredada que convierte valores booleanos, numéricos y `null` a cadenas; la validación intenta primero el payload crudo y acepta esa representación exacta solo como fallback.
+- El Sandbox Tester de Integrations Manager firma una representación heredada que convierte valores booleanos, numéricos y `null` a cadenas; la validación intenta primero el payload crudo y acepta esa representación exacta solo como fallback cuando la conexión declara `Environment=sandbox`. Para conexiones configuradas `Environment=production` se valida exclusivamente el payload crudo (el host/credenciales no cambian ese campo automáticamente); cabeceras con `t` o `sign` repetidos se rechazan.
 - Si Rappi ya tiene un webhook activo pero el secreto local falta, se rota mediante `reset-secret` y se guarda cifrado antes de continuar; no se intenta crear un duplicado.
 - `STORE_CONNECTIVITY` acepta tanto el contrato documentado (`external_store_id`, `enabled`) como el contrato real del Sandbox Tester (`store_id`, `online`, `checked_at`); solo actualiza el estado operativo de la tienda.
-- Todo webhook se persiste antes de procesarse y es idempotente por integración y evento.
+- Todo webhook aceptado se persiste antes de procesarse y es idempotente por integración y evento. `PING` solo devuelve `status=OK` para una tienda configurada en la conexión y un tenant/sucursal locales activos; no depende del flag remoto `ConnectivityEnabled`, para no impedir la reconexión del POS. Un PING duplicado vuelve a evaluar esa salud local.
 - El catálogo Rappi es una selección uno a uno de productos internos. Los SKU `product-{ProductId}` y categorías `category-{ProductCategoryId}` son inmutables.
 - El Sprint 1 publica únicamente productos simples, sin toppings ni modificadores.
 - La disponibilidad deriva del producto seleccionado, activo y disponible según las reglas internas, y se sincroniza en ambas tiendas.
 - Solo se admiten órdenes `delivery` con courier Rappi.
 - Una orden válida se toma automáticamente y se crea en estado `Taken`. SKU, precio, stock, modificadores o totales inconsistentes la dejan retenida.
-- La orden Rappi no genera impresión al ingresar. La comanda de cocina se encola cuando el pedido cambia por primera vez a `Ready`.
+- La impresión Rappi respeta la configuración de cocina de la sucursal: `KitchenAutoPrintTrigger=whenOrderCreated` puede encolar comanda al aceptar/crear; la configuración de impresión al quedar `Ready` sigue el flujo normal e idempotente. Sandbox no desactiva inventario, pagos, cocina ni impresión.
 - Las órdenes retenidas solo permiten revalidar y aceptar o rechazar; no se permiten sustituciones particulares.
 - La recuperación de `SENT` consulta la ventana oficial de 10 minutos y deduplica por conexión y `order_id`.
 - `total_order` es el total autoritativo. Descuentos Rappi, descuentos del aliado, cargos, comisión estimada, neto esperado, consignación real y diferencia se conservan por separado.

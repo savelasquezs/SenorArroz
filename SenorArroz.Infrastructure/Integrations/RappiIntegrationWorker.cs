@@ -378,7 +378,21 @@ public sealed class RappiIntegrationWorker(
             .Where(x =>
                 x.Status == "pending"
                 && (!x.NextAttemptAt.HasValue || x.NextAttemptAt <= now)
-                && x.Store.StoreIntegrationId != null)
+                && x.Connection.Provider == "rappi"
+                && x.Connection.IsActive && x.Connection.IsVerified
+                && x.Connection.TenantId == x.TenantId
+                && x.Store.TenantId == x.TenantId
+                && x.ProductMapping.TenantId == x.TenantId
+                && x.ProductMapping.Product.TenantId == x.TenantId
+                && x.ProductMapping.Product.Category.TenantId == x.TenantId
+                && x.ProductMapping.Product.Category.BranchId == x.Connection.BranchId
+                && x.Connection.Branch.TenantId == x.TenantId
+                && x.Connection.Branch.IsActive
+                && x.Store.ConnectionId == x.ConnectionId
+                && x.ProductMapping.ConnectionId == x.ConnectionId
+                && x.ProductMapping.IsSelected
+                && x.Store.StoreIntegrationId != null
+                && x.Store.StoreIntegrationId.Trim() != "")
             .OrderBy(x => x.Id)
             .Take(500)
             .ToListAsync(ct);
@@ -479,14 +493,23 @@ public sealed class RappiIntegrationWorker(
         CancellationToken ct)
     {
         var publications = await db.RappiMenuPublications
-            .AsNoTracking()
             .Where(x => x.Status == "submitted")
             .OrderBy(x => x.CreatedAt)
             .Take(20)
-            .Select(x => new { x.Id, x.ConnectionId, x.StoreId })
             .ToListAsync(ct);
         foreach (var publication in publications)
         {
+            // The provider approval endpoint identifies only a store, not a publication.
+            // Historical parallel submissions cannot be safely disambiguated by polling.
+            var pending = await db.RappiMenuPublications.CountAsync(x =>
+                x.ConnectionId == publication.ConnectionId && x.StoreId == publication.StoreId
+                && (x.Status == "submitting" || x.Status == "submitted" || x.Status == "approval_review_required"), ct);
+            if (pending != 1)
+            {
+                publication.Error = "Hay varios menús pendientes para esta tienda; requiere revisión manual con Rappi.";
+                await db.SaveChangesAsync(ct);
+                continue;
+            }
             var result = await rappi.GetMenuApprovalAsync(publication.StoreId, ct);
             if (!result.Success)
                 continue;

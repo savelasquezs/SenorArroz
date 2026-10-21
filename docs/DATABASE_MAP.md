@@ -527,6 +527,14 @@ Unicidades:
 
 El esquema se aplica con `SenorArroz.Infrastructure/Scripts/upgrade_rappi_v2_sandbox.sql`; no se usan migraciones EF para esta integración.
 
+Preparación interna 2026-10-21: `rappi_menu_publication.status` es token de
+concurrencia EF para no sobrescribir una revisión de aprobación con una respuesta
+tardía. Es metadata del modelo sobre la columna existente, sin DDL. Los estados
+`approval_review_required` y `integration_webhook_event.cancel_effects_pending` /
+`cancel_effects_leased` caben en los `varchar(40)` actuales, que no tienen CHECK
+de valores. La fase de efectos de cancelación reutiliza el JSON del inbox; no
+crea tabla ni columna. Ver `RAPPI_INTERNAL_READINESS_2026-10-21.md` para rollout.
+
 ## Pago en línea Wompi
 
 Tablas:

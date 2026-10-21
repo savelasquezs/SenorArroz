@@ -37,7 +37,9 @@ public sealed class RappiWebhookSignatureTests
         Assert.True(RappiWebhookSignature.IsValid(
             $"t=1786723564421,sign={signature}",
             payload,
-            "event-secret"));
+            "event-secret", allowSandboxTesterPayload: true));
+        Assert.False(RappiWebhookSignature.IsValid(
+            $"t=1786723564421,sign={signature}", payload, "event-secret"));
     }
 
     [Fact]

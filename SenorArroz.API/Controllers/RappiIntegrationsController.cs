@@ -71,7 +71,9 @@ public sealed class RappiIntegrationsController(
     {
         if (!CanAdminister(branchId))
             return Forbid();
-        if (!await db.Branches.AnyAsync(x => x.Id == branchId, ct))
+        var branchTenantId = await db.Branches.Where(x => x.Id == branchId)
+            .Select(x => (int?)x.TenantId).FirstOrDefaultAsync(ct);
+        if (!branchTenantId.HasValue)
             return NotFound();
         if (!await db.Apps.AnyAsync(x =>
                 x.Id == dto.FinancialAppId
@@ -88,7 +90,7 @@ public sealed class RappiIntegrationsController(
         if (dto.EstimatedCommissionRate is < 0 or > 1)
             return BadRequest(ApiResponse<object>.ErrorResponse(
                 "La comisión estimada debe estar entre 0 y 1."));
-        if (dto.Stores.Count > 0 && dto.Stores.Count(x => x.IsParent) != 1)
+        if (dto.Stores is { Count: > 0 } && dto.Stores.Count(x => x.IsParent) != 1)
             return BadRequest(ApiResponse<object>.ErrorResponse(
                 "Debe existir exactamente una tienda padre."));
 
@@ -103,6 +105,19 @@ public sealed class RappiIntegrationsController(
             || !await db.Users.AnyAsync(x => x.Id == technicalUserId && x.BranchId == branchId, ct))
             return BadRequest(ApiResponse<object>.ErrorResponse(
                 "Ejecuta el script Rappi v2 para crear el usuario técnico de la sucursal."));
+
+        await using var transaction = db.Database.IsRelational()
+            ? await db.Database.BeginTransactionAsync(ct)
+            : null;
+        // Store identifiers are tenant-wide routing keys. Serialize this small configuration
+        // transaction across branches as well, including first-time connection creation.
+        if (transaction is not null && db.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL")
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(1380012113, {branchTenantId.Value})", ct);
+        if (transaction is not null)
+            await db.DeliveryAppConnections
+                .Where(x => x.BranchId == branchId && x.Provider == "rappi")
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.UpdatedAt, x => x.UpdatedAt), ct);
 
         var connection = await db.DeliveryAppConnections
             .Include(x => x.Stores)
@@ -120,6 +135,43 @@ public sealed class RappiIntegrationsController(
             db.DeliveryAppConnections.Add(connection);
         }
 
+        // Validate the complete proposed store set without changing historical tracked rows.
+        var proposed = new DeliveryAppConnection
+        {
+            Stores = connection.Stores.Select(x => new DeliveryAppStore
+            {
+                RappiStoreId = x.RappiStoreId,
+                StoreIntegrationId = x.StoreIntegrationId,
+                Name = x.Name,
+                IsParent = x.IsParent,
+                ManualReadyForPickupEnabled = x.ManualReadyForPickupEnabled
+            }).ToList()
+        };
+        var storesError = UpsertStores(proposed, dto.Stores);
+        if (storesError is not null)
+            return BadRequest(ApiResponse<object>.ErrorResponse(storesError));
+        var proposedIds = proposed.Stores.Select(x => x.RappiStoreId.Trim()).ToList();
+        var proposedIntegrationIds = proposed.Stores.Where(x => !string.IsNullOrWhiteSpace(x.StoreIntegrationId))
+            .Select(x => x.StoreIntegrationId!.Trim()).ToList();
+        if (await db.DeliveryAppStores.AnyAsync(x => x.ConnectionId != connection.Id
+                && x.Connection.Provider == "rappi"
+                && (proposedIds.Contains(x.RappiStoreId.Trim())
+                    || proposedIntegrationIds.Contains(x.RappiStoreId.Trim())
+                    || (x.StoreIntegrationId != null && (proposedIntegrationIds.Contains(x.StoreIntegrationId.Trim())
+                        || proposedIds.Contains(x.StoreIntegrationId.Trim())))), ct))
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Una tienda Rappi ya está asignada a otra conexión de este negocio; revisa el mapeo entre sucursales."));
+        var routingChanged = !connection.Stores.Select(x =>
+                (x.RappiStoreId.Trim(), x.StoreIntegrationId?.Trim() ?? "", x.IsParent)).ToHashSet()
+            .SetEquals(proposed.Stores.Select(x =>
+                (x.RappiStoreId.Trim(), x.StoreIntegrationId?.Trim() ?? "", x.IsParent)));
+        UpsertStores(connection, dto.Stores);
+        if (routingChanged)
+        {
+            connection.IsVerified = false;
+            connection.LastVerifiedAt = null;
+        }
+
         connection.DisplayName = string.IsNullOrWhiteSpace(dto.DisplayName)
             ? "Rappi"
             : dto.DisplayName.Trim();
@@ -131,8 +183,9 @@ public sealed class RappiIntegrationsController(
         connection.PiiRetentionDays = 90;
         connection.IsActive = dto.IsActive;
         connection.UpdatedAt = clock.UtcNow;
-        UpsertStores(connection, dto.Stores);
         await db.SaveChangesAsync(ct);
+        if (transaction is not null)
+            await transaction.CommitAsync(ct);
 
         var saved = await ConnectionQuery().FirstAsync(x => x.Id == connection.Id, ct);
         return Ok(ApiResponse<object>.SuccessResponse(ToDto(saved), "Configuración Rappi guardada."));
@@ -367,9 +420,26 @@ public sealed class RappiIntegrationsController(
     {
         if (!CanAdminister(branchId))
             return Forbid();
+
+        // Serialize reservation of the existing connection, not the remote HTTP call.
+        // The tenant-filtered no-op UPDATE obtains a row lock without a new schema/lock service.
+        await using var transaction = db.Database.IsRelational()
+            ? await db.Database.BeginTransactionAsync(ct)
+            : null;
+        if (transaction is not null)
+            await db.DeliveryAppConnections
+                .Where(x => x.BranchId == branchId && x.Provider == "rappi")
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.UpdatedAt, x => x.UpdatedAt), ct);
+
         var build = await BuildMenuAsync(branchId, ct);
         if (build.Error is not null)
             return BadRequest(ApiResponse<object>.ErrorResponse(build.Error));
+        if (await db.RappiMenuPublications.AnyAsync(x =>
+                x.ConnectionId == build.Connection!.Id
+                && x.StoreId == build.Menu!.StoreId
+                && (x.Status == "submitting" || x.Status == "submitted" || x.Status == "approval_review_required"), ct))
+            return Conflict(ApiResponse<object>.ErrorResponse(
+                "Ya hay un menú pendiente para esta tienda. Espera su aprobación o revisa el envío incierto antes de publicar otro."));
 
         var serialized = JsonSerializer.Serialize(build.Menu, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(serialized))).ToLowerInvariant();
@@ -385,14 +455,33 @@ public sealed class RappiIntegrationsController(
         };
         db.RappiMenuPublications.Add(publication);
         await db.SaveChangesAsync(ct);
+        if (transaction is not null)
+            await transaction.CommitAsync(ct);
+
         var result = await rappi.PublishMenuAsync(build.Menu, ct);
-        publication.Status = result.Success ? "submitted" : "failed";
-        publication.Error = result.Error;
-        build.Connection.LastError = result.Success ? null : result.Error;
-        await db.SaveChangesAsync(ct);
+        // A transport failure does not prove Rappi rejected the menu. Do not open a
+        // second submission while the outcome is unknown; preserve the durable reservation.
+        var uncertain = !result.Success && (result.StatusCode is null or 408 or >= 500);
+        publication.Status = result.Success ? "submitted" : uncertain ? "submitting" : "failed";
+        publication.Error = uncertain
+            ? "Envío de menú con resultado incierto; requiere verificar en Rappi antes de volver a publicar."
+            : result.Error;
+        publication.UpdatedAt = clock.UtcNow;
+        build.Connection.LastError = result.Success ? null : publication.Error;
+        try
+        {
+            // Status is an EF concurrency token: a callback hold wins over this stale
+            // tracked response, and the implicit SaveChanges transaction preserves its diagnostics.
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(ApiResponse<object>.ErrorResponse(
+                "El estado del menú cambió mientras Rappi respondía. Recarga y revisa la publicación antes de reintentar."));
+        }
         if (!result.Success)
             return BadRequest(ApiResponse<object>.ErrorResponse(
-                result.Error ?? "Rappi rechazó la publicación del menú."));
+                publication.Error ?? "Rappi rechazó la publicación del menú."));
         return Ok(ApiResponse<object>.SuccessResponse(new
         {
             publication.Id,
@@ -683,22 +772,48 @@ public sealed class RappiIntegrationsController(
                     && x.IsActive, ct);
         }
         var subscription = connection?.WebhookSubscriptions
-            .FirstOrDefault(x => x.EventType == normalizedEvent && x.IsActive);
+            .FirstOrDefault(x => x.TenantId == connection.TenantId
+                && x.ConnectionId == connection.Id && x.EventType == normalizedEvent && x.IsActive);
         if (connection is null || subscription is null)
             return NotFound();
         using var tenantScope = tenantExecutionContext.BeginTenantScope(connection.TenantId);
 
         using var reader = new StreamReader(Request.Body, Encoding.UTF8);
         var payload = await reader.ReadToEndAsync(ct);
-        var signatureHeader = Request.Headers["Rappi-Signature"].FirstOrDefault();
-        if (!RappiWebhookSignature.IsValid(
-                signatureHeader,
+        var signatureHeaders = Request.Headers["Rappi-Signature"];
+        if (signatureHeaders.Count != 1 || !RappiWebhookSignature.TryValidate(
+                signatureHeaders[0],
                 payload,
-                protector.Unprotect(subscription.EncryptedSecret)))
+                protector.Unprotect(subscription.EncryptedSecret),
+                out var timestamp,
+                allowSandboxTesterPayload: connection.Environment.Equals("sandbox", StringComparison.OrdinalIgnoreCase)))
             return Unauthorized();
+        DeliveryAppStore? pingStore = null;
         try
         {
-            using var _ = JsonDocument.Parse(payload);
+            using var document = JsonDocument.Parse(payload);
+            if (normalizedEvent == "PING")
+            {
+                var root = document.RootElement;
+                var storeId = root.ValueKind == JsonValueKind.Object
+                    && root.TryGetProperty("store_id", out var storeNode)
+                    ? storeNode.ToString() : null;
+                var matches = connection.Stores.Where(x => x.TenantId == connection.TenantId
+                    && x.ConnectionId == connection.Id && !string.IsNullOrWhiteSpace(storeId)
+                    && (x.RappiStoreId == storeId || x.StoreIntegrationId == storeId)).ToList();
+                if (matches.Count != 1)
+                    return BadRequest(new { status = "ERROR", description = "Tienda no configurada para esta integración." });
+                pingStore = matches[0];
+                // PING reports local POS readiness, not the provider's on/off flag:
+                // gating on ConnectivityEnabled would prevent a healthy POS reconnecting.
+                // Evaluate before duplicate detection so an old successful PING cannot
+                // mask a subsequently disabled branch or suspended tenant.
+                if (!await db.Branches.AnyAsync(x => x.Id == connection.BranchId && x.IsActive, ct)
+                    || !await db.Tenants.AnyAsync(x => x.Id == connection.TenantId
+                        && x.IsActive && x.Status == TenantStatus.Active, ct))
+                    return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                        new { status = "ERROR", description = "Tienda no disponible." });
+            }
         }
         catch (JsonException)
         {
@@ -707,7 +822,6 @@ public sealed class RappiIntegrationsController(
 
         var payloadHash = Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
-        var timestamp = RappiWebhookSignature.GetTimestamp(signatureHeader) ?? "unknown";
         var eventKey = $"{normalizedEvent}:{timestamp}:{payloadHash}";
         var exists = await db.IntegrationWebhookEvents.AnyAsync(x =>
             x.ConnectionId == connection.Id && x.EventKey == eventKey, ct);
@@ -734,17 +848,8 @@ public sealed class RappiIntegrationsController(
         subscription.LastError = null;
         connection.LastWebhookAt = clock.UtcNow;
 
-        if (normalizedEvent == "PING")
-        {
-            using var document = JsonDocument.Parse(payload);
-            var storeId = document.RootElement.TryGetProperty("store_id", out var storeNode)
-                ? storeNode.ToString()
-                : null;
-            var store = connection.Stores.FirstOrDefault(x =>
-                x.RappiStoreId == storeId || x.StoreIntegrationId == storeId);
-            if (store is not null)
-                store.LastPingAt = clock.UtcNow;
-        }
+        if (pingStore is not null)
+            pingStore.LastPingAt = clock.UtcNow;
         try
         {
             await db.SaveChangesAsync(ct);
@@ -936,9 +1041,10 @@ public sealed class RappiIntegrationsController(
             return new(null, null, "La integración Rappi no existe.");
         if (!connection.IsVerified || !connection.IsActive)
             return new(connection, null, "Activa y verifica la conexión antes de publicar.");
-        var parent = connection.Stores.SingleOrDefault(x => x.IsParent);
-        if (parent is null)
+        var parents = connection.Stores.Where(x => x.IsParent).ToList();
+        if (parents.Count != 1)
             return new(connection, null, "Debe existir exactamente una tienda padre.");
+        var parent = parents[0];
         var selected = connection.ProductMappings
             .Where(x => x.IsSelected)
             .OrderBy(x => x.Product.Category.Name)
@@ -997,13 +1103,26 @@ public sealed class RappiIntegrationsController(
         return new(connection, new RappiMenuRequest(parent.RappiStoreId, items), null);
     }
 
-    private static void UpsertStores(
+    private static string? UpsertStores(
         DeliveryAppConnection connection,
         IReadOnlyCollection<UpsertRappiStoreDto>? input)
     {
-        var requested = input is { Count: > 0 }
+        // Omitted configuration keeps persisted stores; never replace historical FK targets
+        // or silently append the sandbox defaults to a previously configured connection.
+        var existing = connection.Stores.ToList();
+        if (existing.Any(x => string.IsNullOrWhiteSpace(x.RappiStoreId) || x.RappiStoreId.Trim().Length > 120)
+            || existing.Select(x => x.RappiStoreId.Trim()).Distinct(StringComparer.Ordinal).Count() != existing.Count)
+            return "La configuración contiene identificadores de tienda inválidos o duplicados; requiere revisión antes de editar.";
+        IReadOnlyCollection<UpsertRappiStoreDto> requested = input is { Count: > 0 }
             ? input
-            :
+            : existing.Count > 0
+                ? existing.Select(x => new UpsertRappiStoreDto
+                {
+                    RappiStoreId = x.RappiStoreId, StoreIntegrationId = x.StoreIntegrationId,
+                    Name = x.Name, IsParent = x.IsParent,
+                    ManualReadyForPickupEnabled = x.ManualReadyForPickupEnabled
+                }).ToList()
+                :
             [
                 new UpsertRappiStoreDto
                 {
@@ -1021,25 +1140,45 @@ public sealed class RappiIntegrationsController(
                 }
             ];
         if (requested.Count(x => x.IsParent) != 1)
-            throw new ArgumentException("Debe existir exactamente una tienda padre.");
-        foreach (var dto in requested)
+            return "Debe existir exactamente una tienda padre.";
+        var normalized = requested.Select(x => new { Dto = x, Id = x.RappiStoreId?.Trim() ?? "" }).ToList();
+        if (normalized.Any(x => x.Id.Length is 0 or > 120 || (x.Dto.StoreIntegrationId?.Trim().Length ?? 0) > 120))
+            return "Cada tienda requiere identificadores Rappi válidos de hasta 120 caracteres.";
+        if (normalized.Select(x => x.Id).Distinct(StringComparer.Ordinal).Count() != normalized.Count)
+            return "No se puede repetir el identificador de una tienda Rappi.";
+        var finalParents = existing.ToDictionary(x => x.RappiStoreId.Trim(), x => x.IsParent, StringComparer.Ordinal);
+        var finalIntegrationIds = existing.ToDictionary(x => x.RappiStoreId.Trim(), x => x.StoreIntegrationId?.Trim(), StringComparer.Ordinal);
+        foreach (var item in normalized)
         {
-            var store = connection.Stores.FirstOrDefault(x => x.RappiStoreId == dto.RappiStoreId);
+            finalParents[item.Id] = item.Dto.IsParent;
+            finalIntegrationIds[item.Id] = item.Dto.StoreIntegrationId?.Trim();
+        }
+        var nonblankIntegrationIds = finalIntegrationIds.Values.Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+        if (nonblankIntegrationIds.Distinct(StringComparer.Ordinal).Count() != nonblankIntegrationIds.Count
+            || finalIntegrationIds.Any(x => !string.IsNullOrWhiteSpace(x.Value)
+                && x.Value != x.Key && finalIntegrationIds.ContainsKey(x.Value)))
+            return "Los identificadores de integración deben resolver una sola tienda; hay identificadores duplicados o ambiguos.";
+        if (finalParents.Count(x => x.Value) != 1)
+            return "El cambio dejaría varias tiendas padre. Incluye explícitamente la tienda anterior como hija; no se eliminan tiendas históricas.";
+
+        // Validate the merged final collection completely before mutating tracked entities.
+        foreach (var item in normalized)
+        {
+            var dto = item.Dto;
+            var store = existing.FirstOrDefault(x => string.Equals(x.RappiStoreId.Trim(), item.Id, StringComparison.Ordinal));
             if (store is null)
             {
-                store = new DeliveryAppStore
-                {
-                    RappiStoreId = dto.RappiStoreId.Trim(),
-                    CreatedAt = DateTime.UtcNow
-                };
+                store = new DeliveryAppStore { RappiStoreId = item.Id, CreatedAt = DateTime.UtcNow };
                 connection.Stores.Add(store);
             }
+            store.RappiStoreId = item.Id;
             store.Name = dto.Name.Trim();
             store.StoreIntegrationId = Clean(dto.StoreIntegrationId, 120);
             store.IsParent = dto.IsParent;
             store.ManualReadyForPickupEnabled = dto.ManualReadyForPickupEnabled;
             store.UpdatedAt = DateTime.UtcNow;
         }
+        return null;
     }
 
     private bool CanAdminister(int branchId) =>

@@ -6,36 +6,59 @@ namespace SenorArroz.Application.Common.Helpers;
 
 public static class RappiWebhookSignature
 {
-    public static bool IsValid(string? header, string rawPayload, string secret)
+    public static bool IsValid(string? header, string rawPayload, string secret,
+        bool allowSandboxTesterPayload = false) =>
+        TryValidate(header, rawPayload, secret, out _, allowSandboxTesterPayload);
+
+    /// <summary>The timestamp returned here is the same value authenticated by the HMAC.</summary>
+    public static bool TryValidate(string? header, string rawPayload, string secret,
+        out string? authenticatedTimestamp, bool allowSandboxTesterPayload = false)
     {
-        if (string.IsNullOrWhiteSpace(header) || string.IsNullOrWhiteSpace(secret))
+        authenticatedTimestamp = null;
+        if (string.IsNullOrWhiteSpace(secret)
+            || !TryParse(header, out var timestamp, out var suppliedSignature))
             return false;
 
-        string? timestamp = null;
-        string? suppliedSignature = null;
+        var supplied = suppliedSignature!.ToLowerInvariant();
+        var valid = Matches(timestamp!, rawPayload, secret, supplied);
+        if (!valid && allowSandboxTesterPayload)
+        {
+            var sandboxPayload = NormalizeSandboxTesterPayload(rawPayload);
+            valid = sandboxPayload != rawPayload
+                && Matches(timestamp!, sandboxPayload, secret, supplied);
+        }
+        if (valid)
+            authenticatedTimestamp = timestamp;
+        return valid;
+    }
+
+    private static bool TryParse(string? header, out string? timestamp, out string? suppliedSignature)
+    {
+        timestamp = null;
+        suppliedSignature = null;
+        if (string.IsNullOrWhiteSpace(header))
+            return false;
         foreach (var part in header.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var separator = part.IndexOf('=');
             if (separator <= 0 || separator == part.Length - 1)
-                continue;
+                return false;
             var key = part[..separator].Trim();
             var value = part[(separator + 1)..].Trim();
             if (key.Equals("t", StringComparison.OrdinalIgnoreCase))
+            {
+                if (timestamp is not null)
+                    return false;
                 timestamp = value;
+            }
             else if (key.Equals("sign", StringComparison.OrdinalIgnoreCase))
+            {
+                if (suppliedSignature is not null)
+                    return false;
                 suppliedSignature = value;
+            }
         }
-
-        if (string.IsNullOrWhiteSpace(timestamp) || string.IsNullOrWhiteSpace(suppliedSignature))
-            return false;
-
-        var supplied = suppliedSignature.ToLowerInvariant();
-        if (Matches(timestamp, rawPayload, secret, supplied))
-            return true;
-
-        var sandboxPayload = NormalizeSandboxTesterPayload(rawPayload);
-        return sandboxPayload != rawPayload
-            && Matches(timestamp, sandboxPayload, secret, supplied);
+        return !string.IsNullOrWhiteSpace(timestamp) && !string.IsNullOrWhiteSpace(suppliedSignature);
     }
 
     private static bool Matches(
@@ -65,15 +88,6 @@ public static class RappiWebhookSignature
         return Regex.Replace(normalized, @":(\s*)null", ":\"null\"");
     }
 
-    public static string? GetTimestamp(string? header)
-    {
-        if (string.IsNullOrWhiteSpace(header))
-            return null;
-        return header
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(x => x.Split('=', 2, StringSplitOptions.TrimEntries))
-            .Where(x => x.Length == 2 && x[0].Equals("t", StringComparison.OrdinalIgnoreCase))
-            .Select(x => x[1])
-            .FirstOrDefault();
-    }
+    public static string? GetTimestamp(string? header) =>
+        TryParse(header, out var timestamp, out _) ? timestamp : null;
 }
