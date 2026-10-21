@@ -20,7 +20,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M02-F04 | Perfil y foto | Pendiente | — | — | — | — |
 | M02-F05 | Estadísticas de nómina | Pendiente | — | — | — | — |
 | M03-F01 | Carga y selección de sucursales | Pendiente | — | — | — | — |
-| M03-F02 | CRUD y estadísticas sucursales | Pendiente | — | — | — | — |
+| M03-F02 | CRUD y estadísticas sucursales | PR listo para revisión | 2026-10-21 | [Informe](reviews/2026-10-21-M03-F02.md) | [API #50](https://github.com/savelasquezs/SenorArroz/pull/50) | CI: 1142 aprobadas/1 omitida; 5/5 regresiones nuevas. PostgreSQL aislado: estadísticas de 10 sucursales, 50 COUNT → 3 SELECT agrupados; vacío → 0. Sin migración, merge ni despliegue; métricas productivas pendientes. |
 | M03-F03 | Contexto y permisos cross-branch | Pendiente | — | — | — | — |
 | M03-F04 | Tenant RLS y contexto PostgreSQL | Pendiente | — | — | — | — |
 | M04-F01 | Horarios de atención | Pendiente | — | — | — | — |
@@ -43,7 +43,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M08-F01 | Consultar progreso/beneficios | Pendiente | — | — | — | — |
 | M08-F02 | Aplicar beneficio al pedido | Pendiente | — | — | — | — |
 | M08-F03 | Configuración ciclo y niveles | Pendiente | — | — | — | — |
-| M09-F01 | Inicialización de pantalla POS | Pendiente | — | — | — | — |
+| M09-F01 | Inicialización de pantalla POS | PR listo para revisión | 2026-10-21 | [Informe 2026-10-20 y seguimiento](reviews/2026-10-20-M09-F01.md) | [Vue #33](https://github.com/savelasquezs/senorArrozFront/pull/33) | Build OK; Vitest 582/582, incluidas 20 regresiones POS. Solicitud compartida por sucursal/modo, invalidación de sesión y errores reintentables. Sin merge ni despliegue; medición productiva pendiente. |
 | M09-F02 | Búsqueda y selección de productos | Pendiente | — | — | — | — |
 | M09-F03 | Borradores y cambio de pestañas | Pendiente | — | — | — | — |
 | M09-F04 | Cliente/dirección y cotización | Pendiente | — | — | — | — |
