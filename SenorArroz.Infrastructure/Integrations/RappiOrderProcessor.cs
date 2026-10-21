@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
@@ -24,9 +25,16 @@ public sealed class RappiOrderProcessor(
     IDeliveryRouteWorkflowService deliveryRouteWorkflow,
     ILogger<RappiOrderProcessor> logger,
     IPrintQueueService? printQueue = null,
-    IInventoryService? inventory = null) : IRappiOrderProcessor
+    IInventoryService? inventory = null,
+    IServiceScopeFactory? serviceScopeFactory = null) : IRappiOrderProcessor
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const int WebhookMaxAttempts = 5;
+    // A distinct status makes rollout safe: legacy workers never stamped a lease on
+    // `processing`, so even a very old UpdatedAt cannot prove that claim is abandoned.
+    private const string LeasedWebhookStatus = "processing_leased";
+    // A claim must outlive normal provider retries, but must not survive a crashed worker forever.
+    private static readonly TimeSpan WebhookProcessingLease = TimeSpan.FromMinutes(15);
 
     public async Task<RappiOrderProcessingResult> IngestNewOrderAsync(
         int connectionId,
@@ -62,6 +70,8 @@ public sealed class RappiOrderProcessor(
                 && x.ExternalOrderId == parsed.OrderId, ct);
         if (existing?.InternalOrderId is int internalOrderId)
             return new(true, existing.Id, internalOrderId);
+        if (TerminalOrderResult(existing) is { } terminalResult)
+            return terminalResult;
 
         var external = existing ?? new ExternalDeliveryOrder
         {
@@ -111,6 +121,8 @@ public sealed class RappiOrderProcessor(
             return new(false, Error: "La orden Rappi no existe.");
         if (external.InternalOrderId.HasValue)
             return new(true, external.Id, external.InternalOrderId);
+        if (TerminalOrderResult(external) is { } terminalResult)
+            return terminalResult;
 
         var parsed = ParseOrder(external.RawPayloadJson);
         ApplyParsedOrder(external, external.Connection, external.Store, parsed);
@@ -344,44 +356,226 @@ public sealed class RappiOrderProcessor(
 
     public async Task ProcessPendingWebhookEventsAsync(CancellationToken ct)
     {
-        var pendingIds = await db.IntegrationWebhookEvents
+        var now = clock.UtcNow;
+        await ExhaustedWebhookEvents(db.IntegrationWebhookEvents, now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, "failed")
+                .SetProperty(x => x.LastError,
+                    "Se agotaron los intentos del webhook Rappi; requiere revisión y reintento manual.")
+                .SetProperty(x => x.UpdatedAt, now), ct);
+        await UncertainWebhookEvents(db.IntegrationWebhookEvents, now)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, "failed")
+                .SetProperty(x => x.LastError,
+                    "Webhook interrumpido con resultado incierto; revisar menú o conectividad antes de reintentar.")
+                .SetProperty(x => x.UpdatedAt, now), ct);
+
+        var pending = await ClaimableWebhookEvents(db.IntegrationWebhookEvents, now)
             .AsNoTracking()
-            .Where(x => x.Provider == "rappi" && x.Status == "received")
             .OrderBy(x => x.CreatedAt)
-            .Select(x => x.Id)
+            .Select(x => new { x.Id, x.AttemptCount })
             .Take(50)
             .ToListAsync(ct);
 
-        foreach (var id in pendingIds)
+        foreach (var candidate in pending)
         {
-            var claimed = await db.IntegrationWebhookEvents
-                .Where(x => x.Id == id && x.Status == "received")
+            var id = candidate.Id;
+            var attemptCount = candidate.AttemptCount + 1;
+            var claimedAt = clock.UtcNow;
+            // Recheck the lease in the UPDATE: another instance may have claimed this row
+            // since the candidate list was read. Tenant filters remain on both queries.
+            var claimed = await ClaimableWebhookEvents(db.IntegrationWebhookEvents, claimedAt)
+                .Where(x => x.Id == id && x.AttemptCount == candidate.AttemptCount)
                 .ExecuteUpdateAsync(
                     setters => setters
-                        .SetProperty(x => x.Status, "processing")
-                        .SetProperty(x => x.AttemptCount, x => x.AttemptCount + 1),
+                        .SetProperty(x => x.Status, LeasedWebhookStatus)
+                        .SetProperty(x => x.AttemptCount, x => x.AttemptCount + 1)
+                        .SetProperty(x => x.UpdatedAt, claimedAt),
                     ct);
             if (claimed == 0)
                 continue;
 
-            var webhookEvent = await db.IntegrationWebhookEvents
-                .FirstAsync(x => x.Id == id, ct);
+            var webhookEvent = await OwnedWebhookClaim(db.IntegrationWebhookEvents, id, attemptCount)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(ct);
+            if (webhookEvent is null)
+                continue;
+            string status;
+            string? error;
+            DateTime? processedAt;
+            using var processingTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            using var heartbeatStop = new CancellationTokenSource();
+            processingTimeout.CancelAfter(TimeSpan.FromMinutes(5));
+            // Production DI always supplies the scope factory. Direct unit-test constructors
+            // may omit it, but do not exercise long-running work or lease renewal.
+            var heartbeat = serviceScopeFactory is null
+                ? Task.CompletedTask
+                : KeepWebhookLeaseAliveAsync(id, attemptCount, webhookEvent.TenantId,
+                    processingTimeout, heartbeatStop.Token);
+            if (serviceScopeFactory is null)
+                logger.LogWarning("Rappi webhook {EventId} has no scope factory; lease heartbeat is unavailable.", id);
             try
             {
-                await ProcessWebhookEventAsync(webhookEvent, ct);
-                webhookEvent.Status = "processed";
-                webhookEvent.ProcessedAt = clock.UtcNow;
-                webhookEvent.LastError = null;
+                // Normal work is bounded well below the recovery lease. A long batch may
+                // safely replay its already committed/idempotent items on the next attempt.
+                await ProcessWebhookEventAsync(webhookEvent, processingTimeout.Token);
+                status = "processed";
+                processedAt = clock.UtcNow;
+                error = null;
+                // Keep pending business changes (notably menu/connectivity) atomic with
+                // completion. Individual order handlers finish their own transactions first.
+                await using var transaction = await db.Database.BeginTransactionAsync(processingTimeout.Token);
+                await db.SaveChangesAsync(processingTimeout.Token);
+                var completed = await OwnedWebhookClaim(db.IntegrationWebhookEvents, id, attemptCount)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(x => x.Status, status)
+                        .SetProperty(x => x.ProcessedAt, processedAt)
+                        .SetProperty(x => x.LastError, error)
+                        .SetProperty(x => x.UpdatedAt, clock.UtcNow), processingTimeout.Token);
+                if (completed == 1)
+                    await transaction.CommitAsync(processingTimeout.Token);
+                else
+                {
+                    await transaction.RollbackAsync(ct);
+                    ClearTracking();
+                }
+                continue;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Leave the claim durable. A future worker can recover it after its lease.
+                throw;
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed processing Rappi webhook event {EventId}.", id);
-                webhookEvent.LastError = Limit(ex.Message, 1000);
-                webhookEvent.Status = webhookEvent.AttemptCount < 5 ? "received" : "failed";
+                // Do not accidentally persist partially mutated business entities while
+                // recording a retry. Already committed operations retain their idempotency.
+                ClearTracking();
+                error = Limit(ex.Message, 1000);
+                status = attemptCount < WebhookMaxAttempts ? "received" : "failed";
+                processedAt = null;
             }
-            await db.SaveChangesAsync(ct);
+            finally
+            {
+                // Do not link this CTS to timeout/shutdown: a callback which ignores its
+                // cancellation token is still alive and must retain its lease until it exits.
+                heartbeatStop.Cancel();
+                await heartbeat;
+            }
+
+            var completedAt = clock.UtcNow;
+            // AttemptCount is the fencing token: a late completion cannot overwrite a
+            // newer claim after lease recovery. The event is deliberately not tracked.
+            await OwnedWebhookClaim(db.IntegrationWebhookEvents, id, attemptCount)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Status, status)
+                    .SetProperty(x => x.ProcessedAt, processedAt)
+                    .SetProperty(x => x.LastError, error)
+                    .SetProperty(x => x.UpdatedAt, completedAt), ct);
         }
     }
+
+    private async Task KeepWebhookLeaseAliveAsync(
+        int eventId,
+        int attemptCount,
+        int tenantId,
+        CancellationTokenSource processing,
+        CancellationToken stop)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stop))
+            {
+                try
+                {
+                    if (await RenewWebhookLeaseAsync(eventId, attemptCount, tenantId, stop))
+                        continue;
+                    processing.Cancel();
+                    logger.LogWarning("Rappi webhook {EventId} lost claim {AttemptCount}.", eventId, attemptCount);
+                    return;
+                }
+                catch (OperationCanceledException) when (stop.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    // Ask cooperative work to stop; while it remains alive keep trying to
+                    // renew. A prolonged DB partition still relies on fenced/idempotent writes.
+                    processing.Cancel();
+                    logger.LogError(ex, "Could not renew Rappi webhook {EventId} claim.", eventId);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task<bool> RenewWebhookLeaseAsync(
+        int eventId, int attemptCount, int tenantId, CancellationToken ct)
+    {
+        if (serviceScopeFactory is null)
+            throw new InvalidOperationException("Rappi lease renewal requires an independent dependency scope.");
+        await using var scope = serviceScopeFactory.CreateAsyncScope();
+        var execution = scope.ServiceProvider.GetRequiredService<ITenantExecutionContext>();
+        using var tenantScope = execution.BeginTenantScope(tenantId);
+        var scopedDb = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
+        var renewedAt = clock.UtcNow;
+        return await OwnedWebhookClaim(scopedDb.IntegrationWebhookEvents, eventId, attemptCount)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.UpdatedAt, renewedAt), ct) == 1;
+    }
+
+    private static IQueryable<IntegrationWebhookEvent> ClaimableWebhookEvents(
+        IQueryable<IntegrationWebhookEvent> events,
+        DateTime now)
+    {
+        var expiredBefore = now - WebhookProcessingLease;
+        return events.Where(x => x.Provider == "rappi"
+            && x.AttemptCount < WebhookMaxAttempts
+            && (x.Status == "received"
+                || (x.Status == LeasedWebhookStatus && x.UpdatedAt <= expiredBefore
+                    && (x.EventType == "NEW_ORDER" || x.EventType == "ORDER_EVENT_CANCEL"
+                        || x.EventType == "ORDER_OTHER_EVENT"))));
+    }
+
+    private static IQueryable<IntegrationWebhookEvent> UncertainWebhookEvents(
+        IQueryable<IntegrationWebhookEvent> events,
+        DateTime now)
+    {
+        var expiredBefore = now - WebhookProcessingLease;
+        return events.Where(x => x.Provider == "rappi" && x.Status == LeasedWebhookStatus
+            && x.UpdatedAt <= expiredBefore
+            && x.EventType != "NEW_ORDER" && x.EventType != "ORDER_EVENT_CANCEL"
+            && x.EventType != "ORDER_OTHER_EVENT");
+    }
+
+    private static IQueryable<IntegrationWebhookEvent> ExhaustedWebhookEvents(
+        IQueryable<IntegrationWebhookEvent> events,
+        DateTime now)
+    {
+        var expiredBefore = now - WebhookProcessingLease;
+        return events.Where(x => x.Provider == "rappi"
+            && x.AttemptCount >= WebhookMaxAttempts
+            && (x.Status == "received"
+                || (x.Status == LeasedWebhookStatus && x.UpdatedAt <= expiredBefore)));
+    }
+
+    private static IQueryable<IntegrationWebhookEvent> OwnedWebhookClaim(
+        IQueryable<IntegrationWebhookEvent> events,
+        int id,
+        int attemptCount) =>
+        events.Where(x => x.Id == id && x.Provider == "rappi"
+            && x.Status == LeasedWebhookStatus && x.AttemptCount == attemptCount);
+
+    private static RappiOrderProcessingResult? TerminalOrderResult(ExternalDeliveryOrder? external) =>
+        external is { Status: ExternalOrderStatus.Cancelled or ExternalOrderStatus.Rejected
+            or ExternalOrderStatus.Expired or ExternalOrderStatus.ReconciliationRequired }
+            ? new(false, external.Id, Held: true,
+                Error: "La orden Rappi está cerrada o requiere conciliación; no puede aceptarse de nuevo.")
+            : null;
 
     private async Task ProcessWebhookEventAsync(IntegrationWebhookEvent webhookEvent, CancellationToken ct)
     {
@@ -519,7 +713,7 @@ public sealed class RappiOrderProcessor(
             return;
 
         if (eventName.Equals("hand_to_domiciliary", StringComparison.OrdinalIgnoreCase)
-            && external.InternalOrder.Status is not (OrderStatus.Delivered or OrderStatus.Cancelled))
+            && external.InternalOrder.Status is not (OrderStatus.OnTheWay or OrderStatus.Delivered or OrderStatus.Cancelled))
         {
             if (inventory is not null)
                 await inventory.ConsumeOrderAsync(external.InternalOrder, $"order:{external.InternalOrder.Id}:rappi-consume", ct);
@@ -527,7 +721,7 @@ public sealed class RappiOrderProcessor(
             external.InternalOrder.AddStatusTime(OrderStatus.OnTheWay, clock.UtcNow);
         }
         else if (eventName.Equals("close_order", StringComparison.OrdinalIgnoreCase)
-                 && external.InternalOrder.Status != OrderStatus.Cancelled)
+                 && external.InternalOrder.Status is not (OrderStatus.Delivered or OrderStatus.Cancelled))
         {
             external.InternalOrder.Status = OrderStatus.Delivered;
             external.InternalOrder.AddStatusTime(OrderStatus.Delivered, clock.UtcNow);
