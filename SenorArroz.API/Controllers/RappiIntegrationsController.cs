@@ -451,10 +451,28 @@ public sealed class RappiIntegrationsController(
                     || x.Status == ExternalOrderStatus.BlockedMapping
                     || x.Status == ExternalOrderStatus.SyncError
                     || x.Status == ExternalOrderStatus.ReconciliationRequired), ct);
+        var readySyncFailed = connection is null
+            ? 0
+            : await db.IntegrationWebhookEvents.CountAsync(x =>
+                x.ConnectionId == connection.Id
+                && x.Provider == "rappi"
+                && x.EventType == RappiReadyOutboxPolicy.EventType
+                && (x.Status == RappiReadyOutboxPolicy.Failed
+                    || x.Status == RappiReadyOutboxPolicy.Pending
+                        && x.AttemptCount >= RappiReadyOutboxPolicy.MaxAttempts), ct);
+        // Legacy workers did not timestamp their processing claim. Report these
+        // rows for review, but never automatically replay or rewrite them on rollout.
+        var webhookLegacyProcessing = connection is null
+            ? 0
+            : await db.IntegrationWebhookEvents.CountAsync(x =>
+                x.ConnectionId == connection.Id && x.Provider == "rappi"
+                && x.Status == "processing", ct);
         return Ok(ApiResponse<object>.SuccessResponse(new
         {
             rappi = connection is null ? null : ToDto(connection),
-            pending
+            pending,
+            readySyncFailed,
+            webhookLegacyProcessing
         }));
     }
 
@@ -470,10 +488,19 @@ public sealed class RappiIntegrationsController(
         var rows = await db.ExternalDeliveryOrders
             .AsNoTracking()
             .Include(x => x.Store)
+            .Include(x => x.Connection)
+            .Include(x => x.InternalOrder)
             .Where(x => x.BranchId == resolved)
             .OrderByDescending(x => x.CreatedAt)
             .Take(100)
             .ToListAsync(ct);
+        var readyKeys = rows.Select(x => RappiReadyOutboxPolicy.EventKey(x.ConnectionId, x.ExternalOrderId))
+            .ToList();
+        var readyEvents = await db.IntegrationWebhookEvents.AsNoTracking()
+            .Where(x => x.Provider == "rappi"
+                && x.EventType == RappiReadyOutboxPolicy.EventType
+                && readyKeys.Contains(x.EventKey))
+            .ToDictionaryAsync(x => x.EventKey, ct);
         return Ok(ApiResponse<object>.SuccessResponse(rows.Select(x => new
         {
             x.Id,
@@ -499,8 +526,92 @@ public sealed class RappiIntegrationsController(
             x.LastError,
             x.AcceptedAt,
             x.PiiPurgedAt,
-            x.CreatedAt
+            x.CreatedAt,
+            readyForPickup = readyEvents.TryGetValue(
+                RappiReadyOutboxPolicy.EventKey(x.ConnectionId, x.ExternalOrderId), out var ready)
+                ? new
+                {
+                    ready.Status,
+                    ready.AttemptCount,
+                    ready.ProcessedAt,
+                    ready.UpdatedAt,
+                    // Old stored errors may contain raw provider content.
+                    error = string.IsNullOrWhiteSpace(ready.LastError) ? null
+                        : "READY_FOR_PICKUP requiere revisión; consulta el estado y los intentos.",
+                    retryable = RappiReadyOutboxPolicy.CanRequeue(ready) && RappiReadyOutboxPolicy.CanSend(x)
+                }
+                : null
         })));
+    }
+
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    [HttpPost("api/integrations/apps/rappi/orders/{id:int}/retry-ready-for-pickup")]
+    public async Task<ActionResult<ApiResponse<object>>> RetryReadyForPickup(int id, CancellationToken ct)
+    {
+        var external = await db.ExternalDeliveryOrders.AsNoTracking()
+            .Include(x => x.Connection)
+            .Include(x => x.Store)
+            .Include(x => x.InternalOrder)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (external is null)
+            return NotFound();
+        if (!CanOperate(external.BranchId))
+            return Forbid();
+        if (!RappiReadyOutboxPolicy.CanSend(external))
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "El pedido debe estar listo, aceptado y con la integración y READY_FOR_PICKUP habilitados."));
+
+        var eventKey = RappiReadyOutboxPolicy.EventKey(external.ConnectionId, external.ExternalOrderId);
+        var row = await db.IntegrationWebhookEvents.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.ConnectionId == external.ConnectionId
+                && x.Provider == "rappi"
+                && x.EventType == RappiReadyOutboxPolicy.EventType
+                && x.EventKey == eventKey, ct);
+        if (row is null)
+            return NotFound(ApiResponse<object>.ErrorResponse("No existe un envío READY_FOR_PICKUP para reintentar."));
+        if (row.Status == "processed")
+            return Ok(ApiResponse<object>.SuccessResponse(new { queued = false, alreadyProcessed = true }));
+        if (row.Status == RappiReadyOutboxPolicy.Pending && row.AttemptCount < RappiReadyOutboxPolicy.MaxAttempts)
+            return Ok(ApiResponse<object>.SuccessResponse(new { queued = true, alreadyQueued = true }));
+        if (!RappiReadyOutboxPolicy.CanRequeue(row))
+            return Conflict(ApiResponse<object>.ErrorResponse("El envío no admite reintento en su estado actual."));
+
+        var now = clock.UtcNow;
+        // Compare-and-set: repeated/concurrent clicks cannot reset an active retry.
+        // The correlated eligibility check also rejects an order changed after the initial read.
+        var changed = await db.IntegrationWebhookEvents
+            .Where(x => x.Id == row.Id
+                && x.ConnectionId == external.ConnectionId
+                && x.Provider == "rappi"
+                && x.EventType == RappiReadyOutboxPolicy.EventType
+                && x.AttemptCount == row.AttemptCount
+                && x.Status == row.Status
+                && x.UpdatedAt == row.UpdatedAt
+                && db.ExternalDeliveryOrders.Any(order => order.Id == id
+                    && order.ConnectionId == x.ConnectionId
+                    && order.Connection.Provider == "rappi"
+                    && order.Connection.IsActive && order.Connection.IsVerified
+                    && order.Status == ExternalOrderStatus.Accepted
+                    && order.Store != null && order.Store.ManualReadyForPickupEnabled
+                    && order.InternalOrder != null && order.InternalOrder.Status == OrderStatus.Ready))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, RappiReadyOutboxPolicy.Pending)
+                .SetProperty(x => x.AttemptCount, 0)
+                .SetProperty(x => x.LastError, (string?)null)
+                .SetProperty(x => x.ProcessedAt, (DateTime?)null)
+                .SetProperty(x => x.UpdatedAt, now), ct);
+        if (changed == 0)
+        {
+            var alreadyQueued = await db.IntegrationWebhookEvents.AsNoTracking()
+                .AnyAsync(x => x.Id == row.Id && x.Status == RappiReadyOutboxPolicy.Pending
+                    && x.AttemptCount < RappiReadyOutboxPolicy.MaxAttempts, ct);
+            if (alreadyQueued)
+                return Ok(ApiResponse<object>.SuccessResponse(new { queued = true, alreadyQueued = true }));
+            return Conflict(ApiResponse<object>.ErrorResponse("La orden o el envío cambió; recarga antes de reintentar."));
+        }
+        workSignal.Pulse();
+        return Ok(ApiResponse<object>.SuccessResponse(new { queued = true, alreadyQueued = false },
+            "READY_FOR_PICKUP programado nuevamente; aún no está confirmado por Rappi."));
     }
 
     [Authorize(Roles = "Superadmin, Admin, Cashier")]

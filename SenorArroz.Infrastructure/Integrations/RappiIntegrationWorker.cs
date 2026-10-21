@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
@@ -89,7 +90,11 @@ public sealed class RappiIntegrationWorker(
         var candidates = await db.ExternalDeliveryOrders
             .AsNoTracking()
             .Where(x =>
-                x.Store != null
+                x.Connection.Provider == "rappi"
+                && x.Connection.IsActive
+                && x.Connection.IsVerified
+                && x.Status == ExternalOrderStatus.Accepted
+                && x.Store != null
                 && x.Store.ManualReadyForPickupEnabled
                 && x.InternalOrder != null
                 && x.InternalOrder.Status == OrderStatus.Ready)
@@ -132,38 +137,124 @@ public sealed class RappiIntegrationWorker(
             await db.SaveChangesAsync(ct);
         }
 
-        var rows = await db.IntegrationWebhookEvents
-            .Where(x =>
-                x.Provider == "rappi"
-                && x.EventType == "READY_FOR_PICKUP_OUTBOX"
-                && x.Status == "outbox_pending"
-                && x.AttemptCount < 10)
-            .OrderBy(x => x.CreatedAt)
-            .Take(20)
-            .ToListAsync(ct);
+        // A lease is substantially longer than the complete operation timeout below,
+        // including OAuth, retries and response-body reads (ResponseHeadersRead).
+        // Recover only abandoned claims; current sends remain exclusive.
+        var expiredBefore = clock.UtcNow - RappiReadyOutboxPolicy.ProcessingLease;
+        var abandoned = await db.IntegrationWebhookEvents.AsNoTracking()
+            .Where(x => x.Provider == "rappi"
+                && x.EventType == RappiReadyOutboxPolicy.EventType
+                && x.Status == RappiReadyOutboxPolicy.Processing
+                && x.UpdatedAt < expiredBefore)
+            .OrderBy(x => x.UpdatedAt).Take(50).ToListAsync(ct);
+        foreach (var row in abandoned)
+            await TransitionAsync(row,
+                row.AttemptCount >= RappiReadyOutboxPolicy.MaxAttempts
+                    ? RappiReadyOutboxPolicy.Failed : RappiReadyOutboxPolicy.Pending,
+                row.AttemptCount, "El envío READY_FOR_PICKUP fue interrumpido; se recuperó su intento pendiente.", null);
+
+        var rows = await db.IntegrationWebhookEvents.AsNoTracking()
+            .Where(x => x.Provider == "rappi"
+                && x.EventType == RappiReadyOutboxPolicy.EventType
+                && x.Status == RappiReadyOutboxPolicy.Pending)
+            .OrderBy(x => x.CreatedAt).Take(20).ToListAsync(ct);
         foreach (var row in rows)
         {
-            row.AttemptCount++;
+            if (row.AttemptCount >= RappiReadyOutboxPolicy.MaxAttempts)
+            {
+                await TransitionAsync(row, RappiReadyOutboxPolicy.Failed, row.AttemptCount,
+                    "READY_FOR_PICKUP agotó sus 10 intentos. Requiere reintento manual.", null);
+                continue;
+            }
+            var claimed = false;
             try
             {
                 using var document = JsonDocument.Parse(row.PayloadJson);
-                var externalOrderId = document.RootElement
-                    .GetProperty("externalOrderId")
-                    .GetString();
+                var externalOrderId = document.RootElement.GetProperty("externalOrderId").GetString();
                 if (string.IsNullOrWhiteSpace(externalOrderId))
                     throw new InvalidOperationException("Orden externa ausente en outbox.");
-                var result = await rappi.ReadyForPickupAsync(externalOrderId, ct);
-                row.Status = result.Success ? "processed" : "outbox_pending";
-                row.ProcessedAt = result.Success ? clock.UtcNow : null;
-                row.LastError = result.Error;
+                var external = await db.ExternalDeliveryOrders.AsNoTracking()
+                    .Include(x => x.Connection).Include(x => x.Store).Include(x => x.InternalOrder)
+                    .FirstOrDefaultAsync(x => x.ConnectionId == row.ConnectionId
+                        && x.ExternalOrderId == externalOrderId, ct);
+                if (external is null
+                    || row.EventKey != RappiReadyOutboxPolicy.EventKey(row.ConnectionId, externalOrderId))
+                {
+                    await TransitionAsync(row, RappiReadyOutboxPolicy.Failed, row.AttemptCount,
+                        "El envío READY_FOR_PICKUP no corresponde a una orden de esta integración.", null);
+                    continue;
+                }
+                if (!RappiReadyOutboxPolicy.CanSend(external))
+                {
+                    await TransitionAsync(row,
+                        external.InternalOrder?.Status is OrderStatus.Cancelled or OrderStatus.Delivered
+                            ? RappiReadyOutboxPolicy.Skipped : RappiReadyOutboxPolicy.Failed,
+                        row.AttemptCount,
+                        "READY_FOR_PICKUP no enviado: la orden debe estar lista y la integración y capacidad habilitadas.", null);
+                    continue;
+                }
+
+                var claimedAt = clock.UtcNow;
+                var nextAttempt = row.AttemptCount + 1;
+                var affected = await ExpectedRow(row)
+                    .Where(x => db.ExternalDeliveryOrders.Any(order => order.Id == external.Id
+                        && order.ConnectionId == x.ConnectionId
+                        && order.Connection.Provider == "rappi"
+                        && order.Connection.IsActive && order.Connection.IsVerified
+                        && order.Status == ExternalOrderStatus.Accepted
+                        && order.Store != null && order.Store.ManualReadyForPickupEnabled
+                        && order.InternalOrder != null && order.InternalOrder.Status == OrderStatus.Ready))
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(x => x.Status, RappiReadyOutboxPolicy.Processing)
+                        .SetProperty(x => x.AttemptCount, nextAttempt)
+                        .SetProperty(x => x.LastError, (string?)null)
+                        .SetProperty(x => x.UpdatedAt, claimedAt), ct);
+                if (affected == 0)
+                    continue;
+                claimed = true;
+                row.Status = RappiReadyOutboxPolicy.Processing;
+                row.AttemptCount = nextAttempt;
+                row.UpdatedAt = claimedAt;
+                using var attemptTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                attemptTimeout.CancelAfter(RappiReadyOutboxPolicy.AttemptTimeout);
+                var result = await rappi.ReadyForPickupAsync(externalOrderId, attemptTimeout.Token);
+                await TransitionAsync(row,
+                    result.Success ? "processed"
+                        : nextAttempt >= RappiReadyOutboxPolicy.MaxAttempts
+                            ? RappiReadyOutboxPolicy.Failed : RappiReadyOutboxPolicy.Pending,
+                    nextAttempt,
+                    result.Success ? null : RappiReadyOutboxPolicy.FailureMessage(result.StatusCode),
+                    result.Success ? clock.UtcNow : null);
             }
-            catch (Exception ex)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                row.LastError = ex.Message.Length <= 1000 ? ex.Message : ex.Message[..1000];
+                // Do not erase the durable claim on shutdown; its lease makes it recoverable.
+                throw;
+            }
+            catch (Exception)
+            {
+                await TransitionAsync(row,
+                    !claimed || row.AttemptCount >= RappiReadyOutboxPolicy.MaxAttempts
+                        ? RappiReadyOutboxPolicy.Failed : RappiReadyOutboxPolicy.Pending,
+                    row.AttemptCount, RappiReadyOutboxPolicy.FailureMessage(null), null);
             }
         }
-        if (rows.Count > 0)
-            await db.SaveChangesAsync(ct);
+
+        IQueryable<IntegrationWebhookEvent> ExpectedRow(IntegrationWebhookEvent snapshot) =>
+            db.IntegrationWebhookEvents.Where(x => x.Id == snapshot.Id
+                && x.ConnectionId == snapshot.ConnectionId
+                && x.Provider == "rappi" && x.EventType == RappiReadyOutboxPolicy.EventType
+                && x.Status == snapshot.Status && x.AttemptCount == snapshot.AttemptCount
+                && x.UpdatedAt == snapshot.UpdatedAt);
+
+        Task<int> TransitionAsync(IntegrationWebhookEvent snapshot, string status, int attempts,
+            string? error, DateTime? processedAt) =>
+            ExpectedRow(snapshot).ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, status)
+                .SetProperty(x => x.AttemptCount, attempts)
+                .SetProperty(x => x.LastError, error)
+                .SetProperty(x => x.ProcessedAt, processedAt)
+                .SetProperty(x => x.UpdatedAt, clock.UtcNow), ct);
     }
 
     private async Task SyncCapabilitiesAsync(
