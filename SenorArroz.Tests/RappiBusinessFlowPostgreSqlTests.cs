@@ -37,6 +37,7 @@ using SenorArroz.Infrastructure.Services;
 namespace SenorArroz.Tests;
 
 /// <summary>Real PostgreSQL persistence, inventory and print queue; provider/transports and DTO mapping are simulated. Not provider homologation.</summary>
+[Collection("Rappi provider token cache")]
 public sealed class RappiBusinessFlowPostgreSqlTests
 {
     [PostgreSqlIntegrationFact]
@@ -349,6 +350,239 @@ public sealed class RappiBusinessFlowPostgreSqlTests
     }
 
     [PostgreSqlIntegrationFact]
+    public async Task Failed_acceptance_does_not_reopen_cancelled_history_or_accept_incidental_event_text()
+    {
+        // First case follows the official GET /events example (cancel newer than take).
+        var histories = new[]
+        {
+            new[] { """{"event":"canceled_with_charge","event_time":"2020-05-28T12:31:12.501Z","additional_information":{}}""",
+                """{"event":"taken_visible_order","event_time":"2020-05-28T12:30:12.501Z","additional_information":{"eta_to_store":"15"}}""" },
+            new[] { """{"event":"new_provider_event","event_time":"2020-05-28T12:30:12.501Z","additional_information":{"message":"taken_visible_order was not successful"}}""" },
+            new[] { """{"event":"close_order","event_time":"2020-05-28T12:30:12.501Z"}""" },
+            new[] { """{"event":"taken_visible_order","event_time":"2020-05-28T12:30:12.501Z"}""",
+                """{"event":"future_provider_state","event_time":"2020-05-28T12:31:12.501Z"}""" }
+        };
+        foreach (var history in histories)
+        {
+            await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+            await using var db = fixture.Db();
+            var flow = new Flow(db, 1, 11);
+            flow.Provider.Setup(x => x.AcceptOrderAsync("history-check", 25, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new RappiOperationResult(false, 400, "Invalid state transition"));
+            flow.Provider.Setup(x => x.GetOrderEventsAsync("history-check", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new RappiOrderEventsResult(true, history.Select(ParseHistoryEvent).ToArray()));
+            var result = await flow.Processor.IngestNewOrderAsync(11, Payload(11, "history-check"), default);
+            Assert.False(result.Success);
+            Assert.True(result.Held);
+            db.ChangeTracker.Clear();
+            Assert.Empty(await db.Orders.ToListAsync());
+            Assert.Empty(await db.AppPayments.ToListAsync());
+            Assert.Empty(await db.PrintJobs.ToListAsync());
+            Assert.Empty(await db.InventoryMovements.ToListAsync());
+            Assert.Equal(0, (await db.InventoryBalances.SingleAsync(x => x.BranchId == 11)).QuantityReserved);
+            var external = await db.ExternalDeliveryOrders.SingleAsync();
+            Assert.Equal(ExternalOrderStatus.SyncError, external.Status);
+            Assert.False(string.IsNullOrWhiteSpace(external.LastError));
+            Assert.NotNull(external.LastAttemptAt);
+            Assert.False((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "history-check"), default)).Success);
+            flow.Provider.Verify(x => x.AcceptOrderAsync("history-check", 25, It.IsAny<CancellationToken>()), Times.Once);
+            flow.Notifications.VerifyNoOtherCalls();
+            flow.PrintTransport.VerifyNoOtherCalls();
+        }
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Repeated_NEW_and_manual_retry_recheck_uncertain_history_before_any_new_acceptance()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using var db = fixture.Db();
+        var flow = new Flow(db, 1, 11);
+        var history = new RappiOrderEventsResult(true, [new("unknown_state", DateTimeOffset.Parse("2020-05-28T12:30:12.501Z"))]);
+        flow.Provider.Setup(x => x.AcceptOrderAsync("uncertain", 25, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(false, 400, "Invalid state transition"));
+        flow.Provider.Setup(x => x.GetOrderEventsAsync("uncertain", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => history);
+        Assert.False((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "uncertain"), default)).Success);
+        var external = await db.ExternalDeliveryOrders.SingleAsync();
+        Assert.NotNull(external.LastAttemptAt);
+        Assert.False((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "uncertain"), default)).Success);
+        Assert.False((await flow.Processor.RevalidateAndAcceptAsync(external.Id, 11, default)).Success);
+        // Legacy failure rows must also keep the guard when NEW rewrites status.
+        external = await db.ExternalDeliveryOrders.SingleAsync();
+        external.LastAttemptAt = null;
+        await db.SaveChangesAsync();
+        Assert.False((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "uncertain"), default)).Success);
+        Assert.Empty(await db.Orders.ToListAsync());
+        Assert.Empty(await db.InventoryMovements.ToListAsync());
+        Assert.Empty(await db.AppPayments.ToListAsync());
+        Assert.Empty(await db.PrintJobs.ToListAsync());
+        flow.Provider.Verify(x => x.AcceptOrderAsync("uncertain", 25, It.IsAny<CancellationToken>()), Times.Once);
+        flow.Provider.Verify(x => x.GetOrderEventsAsync("uncertain", It.IsAny<CancellationToken>()), Times.Exactly(4));
+        // A later coherent response can recover through the SAME existing route,
+        // without a new PUT or a permanently terminal/manual-unlock status.
+        history = new(true, [new("taken_visible_order", DateTimeOffset.Parse("2020-05-28T12:30:12.501Z"))]);
+        Assert.True((await flow.Processor.RevalidateAndAcceptAsync(external.Id, 11, default)).Success);
+        Assert.Single(await db.Orders.ToListAsync());
+        Assert.Single(await db.AppPayments.ToListAsync());
+        Assert.Equal(1, (await db.InventoryBalances.SingleAsync(x => x.BranchId == 11)).QuantityReserved);
+        flow.Provider.Verify(x => x.AcceptOrderAsync("uncertain", 25, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Disabled_connection_still_blocks_retry_before_provider_history_read()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using var db = fixture.Db();
+        var flow = new Flow(db, 1, 11);
+        flow.Provider.Setup(x => x.AcceptOrderAsync("disabled-retry", 25, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(false, 400));
+        flow.Provider.Setup(x => x.GetOrderEventsAsync("disabled-retry", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOrderEventsResult(false, Error: "Synthetic unknown"));
+        var result = await flow.Processor.IngestNewOrderAsync(11, Payload(11, "disabled-retry"), default);
+        var connection = await db.DeliveryAppConnections.SingleAsync(x => x.Id == 11);
+        connection.IsActive = false;
+        var legacy = await db.ExternalDeliveryOrders.SingleAsync();
+        legacy.LastAttemptAt = null;
+        await db.SaveChangesAsync();
+        flow.Provider.Reset(); // Strict mock: any external call now fails the test.
+        Assert.False((await flow.Processor.RevalidateAndAcceptAsync(result.ExternalOrderId!.Value, 11, default)).Success);
+        flow.Provider.VerifyNoOtherCalls();
+        Assert.NotNull((await db.ExternalDeliveryOrders.SingleAsync()).LastAttemptAt);
+        // A rolled-back inventory exception reaches the failure writer with the
+        // original legacy SyncError. Moving to BlockedMapping must not lose it.
+        legacy.Status = ExternalOrderStatus.SyncError;
+        legacy.LastAttemptAt = null;
+        await db.SaveChangesAsync();
+        var failureWrite = (Task)typeof(RappiOrderProcessor)
+            .GetMethod("RecordAcceptanceFailureAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(flow.Processor, [legacy.Id, ExternalOrderStatus.BlockedMapping, "Synthetic inventory failure", true, CancellationToken.None])!;
+        await failureWrite;
+        Assert.NotNull((await db.ExternalDeliveryOrders.SingleAsync()).LastAttemptAt);
+        connection = await db.DeliveryAppConnections.SingleAsync(x => x.Id == 11);
+        connection.IsActive = true;
+        await db.SaveChangesAsync();
+        flow.Provider.Setup(x => x.GetOrderEventsAsync("disabled-retry", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOrderEventsResult(false, Error: "Synthetic unresolved"));
+        Assert.False((await flow.Processor.RevalidateAndAcceptAsync(result.ExternalOrderId!.Value, 11, default)).Success);
+        flow.Provider.Verify(x => x.GetOrderEventsAsync("disabled-retry", It.IsAny<CancellationToken>()), Times.Once);
+        flow.Provider.Verify(x => x.AcceptOrderAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Empty(await db.Orders.ToListAsync());
+        Assert.Empty(await db.InventoryMovements.ToListAsync());
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Exhausted_real_HTTP_transport_failure_is_durable_and_retry_reads_before_new_PUT()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using var db = fixture.Db();
+        var flow = new Flow(db, 1, 11);
+        var transport = new FailingAcceptanceTransport();
+        var realProvider = new RappiDeliveryProvider(new HttpClient(transport), Options.Create(new RappiOptions
+        {
+            AuthUrl = "https://synthetic.invalid/token/login/integrations",
+            ApiBaseUrl = "https://synthetic.invalid/api/v2/restaurants-integrations-public-api",
+            ClientId = "synthetic", ClientSecret = "synthetic"
+        }));
+        flow.Provider.Setup(x => x.AcceptOrderAsync("transport-failure", 25, It.IsAny<CancellationToken>()))
+            .Returns((string id, int cookingTime, CancellationToken ct) => realProvider.AcceptOrderAsync(id, cookingTime, ct));
+        flow.Provider.Setup(x => x.GetOrderEventsAsync("transport-failure", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOrderEventsResult(true,
+                [new("canceled_with_charge", DateTimeOffset.Parse("2020-05-28T12:30:12.501Z"))]));
+        Assert.False((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "transport-failure"), default)).Success);
+        var external = await db.ExternalDeliveryOrders.SingleAsync();
+        Assert.Equal(ExternalOrderStatus.SyncError, external.Status);
+        Assert.NotNull(external.LastAttemptAt);
+        Assert.Equal(3, transport.AcceptanceRequests);
+        Assert.False((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "transport-failure"), default)).Success);
+        Assert.Equal(3, transport.AcceptanceRequests);
+        flow.Provider.Verify(x => x.GetOrderEventsAsync("transport-failure", It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Empty(await db.Orders.ToListAsync());
+        Assert.Empty(await db.InventoryMovements.ToListAsync());
+        Assert.Empty(await db.AppPayments.ToListAsync());
+        Assert.Empty(await db.PrintJobs.ToListAsync());
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Uncancelled_timeout_and_history_transport_error_preserve_retry_marker()
+    {
+        foreach (var failure in new Exception[] { new TaskCanceledException("synthetic timeout"), new HttpRequestException("synthetic history failure") })
+        {
+            await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+            await using var db = fixture.Db();
+            var flow = new Flow(db, 1, 11);
+            flow.Provider.Setup(x => x.AcceptOrderAsync("history-transport", 25, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new RappiOperationResult(false, 400));
+            flow.Provider.Setup(x => x.GetOrderEventsAsync("history-transport", It.IsAny<CancellationToken>()))
+                .ThrowsAsync(failure);
+            Assert.False((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "history-transport"), default)).Success);
+            Assert.False((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "history-transport"), default)).Success);
+            var external = await db.ExternalDeliveryOrders.SingleAsync();
+            Assert.Equal(ExternalOrderStatus.SyncError, external.Status);
+            Assert.NotNull(external.LastAttemptAt);
+            flow.Provider.Verify(x => x.AcceptOrderAsync("history-transport", 25, It.IsAny<CancellationToken>()), Times.Once);
+            Assert.Empty(await db.Orders.ToListAsync());
+            Assert.Empty(await db.InventoryMovements.ToListAsync());
+        }
+    }
+
+    private sealed class FailingAcceptanceTransport : HttpMessageHandler
+    {
+        public int AcceptanceRequests { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/token/login/integrations"))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                    { Content = new StringContent("""{"access_token":"synthetic-token","expires_in":3600}""") });
+            Assert.Equal(HttpMethod.Put, request.Method);
+            AcceptanceRequests++;
+            throw new HttpRequestException("Synthetic transport failure, no remote service");
+        }
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Failed_acceptance_with_confirmed_taken_recovers_once_without_second_PUT()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using var db = fixture.Db();
+        var flow = new Flow(db, 1, 11);
+        flow.Provider.Setup(x => x.AcceptOrderAsync("confirmed-taken", 25, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(false, 400, "Invalid state transition"));
+        flow.Provider.Setup(x => x.GetOrderEventsAsync("confirmed-taken", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOrderEventsResult(true,
+                [new("taken_visible_order", DateTimeOffset.Parse("2020-05-28T12:30:12.501Z"))]));
+        Assert.True((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "confirmed-taken"), default)).Success);
+        Assert.True((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "confirmed-taken"), default)).Success);
+        Assert.Single(await db.Orders.ToListAsync());
+        Assert.Single(await db.AppPayments.ToListAsync());
+        Assert.Single(await db.PrintJobs.ToListAsync());
+        Assert.Equal(1, (await db.InventoryBalances.SingleAsync(x => x.BranchId == 11)).QuantityReserved);
+        flow.Provider.Verify(x => x.AcceptOrderAsync("confirmed-taken", 25, It.IsAny<CancellationToken>()), Times.Once);
+        flow.Provider.Verify(x => x.GetOrderEventsAsync("confirmed-taken", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Empty_history_after_400_is_not_expired_and_can_retry_only_after_reading_again()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using var db = fixture.Db();
+        var flow = new Flow(db, 1, 11);
+        var calls = new List<string>();
+        var accepted = false;
+        flow.Provider.Setup(x => x.AcceptOrderAsync("empty-history", 25, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { calls.Add("PUT"); return new RappiOperationResult(accepted, accepted ? 200 : 400); });
+        flow.Provider.Setup(x => x.GetOrderEventsAsync("empty-history", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { calls.Add("GET"); return new RappiOrderEventsResult(true, []); });
+        var first = await flow.Processor.IngestNewOrderAsync(11, Payload(11, "empty-history"), default);
+        Assert.False(first.Success);
+        Assert.Equal(ExternalOrderStatus.SyncError, (await db.ExternalDeliveryOrders.SingleAsync()).Status);
+        Assert.Empty(await db.Orders.ToListAsync());
+        accepted = true;
+        Assert.True((await flow.Processor.RevalidateAndAcceptAsync(first.ExternalOrderId!.Value, 11, default)).Success);
+        Assert.Equal(new[] { "PUT", "GET", "GET", "PUT" }, calls);
+        Assert.Single(await db.Orders.ToListAsync());
+    }
+
+    [PostgreSqlIntegrationFact]
     public async Task Failed_provider_acceptance_rolls_back_real_order_payment_inventory_and_print()
     {
         await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
@@ -434,6 +668,14 @@ public sealed class RappiBusinessFlowPostgreSqlTests
             discounts = new[] { new { title = "Synthetic Growth", type = "campaign", sku = $"product-{branch}", value = 3000, amount_by_rappi = 2000, amount_by_partner = 1000 } }
         }
     });
+
+    private static RappiOrderEvent ParseHistoryEvent(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var item = document.RootElement;
+        return new(item.GetProperty("event").GetString()!, item.GetProperty("event_time").GetDateTimeOffset(),
+            item.TryGetProperty("additional_information", out var info) ? info.Clone() : null);
+    }
 
     private sealed class Flow
     {

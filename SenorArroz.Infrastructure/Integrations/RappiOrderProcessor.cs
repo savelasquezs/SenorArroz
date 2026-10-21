@@ -95,6 +95,9 @@ public sealed class RappiOrderProcessor(
             if (existing is null)
                 db.ExternalDeliveryOrders.Add(external);
 
+            // Legacy SyncError rows may predate the durable attempt marker.
+            if (existing?.Status == ExternalOrderStatus.SyncError && !external.LastAttemptAt.HasValue)
+                external.LastAttemptAt = clock.UtcNow;
             external.RawPayloadJson = rawOrderJson;
             ApplyParsedOrder(external, connection, store, parsed);
 
@@ -144,6 +147,10 @@ public sealed class RappiOrderProcessor(
                 return new(true, external.Id, external.InternalOrderId);
             if (TerminalOrderResult(external) is { } terminalResult)
                 return terminalResult;
+            // Preserve the retry guard even if local validation moves a legacy
+            // SyncError without a timestamp into BlockedMapping.
+            if (external.Status == ExternalOrderStatus.SyncError && !external.LastAttemptAt.HasValue)
+                external.LastAttemptAt = clock.UtcNow;
 
             var parsed = ParseOrder(external.RawPayloadJson);
             ApplyParsedOrder(external, external.Connection, external.Store, parsed);
@@ -159,6 +166,25 @@ public sealed class RappiOrderProcessor(
                 await db.SaveChangesAsync(ct);
                 if (transaction is not null) await transaction.CommitAsync(ct);
                 return new(false, external.Id, Held: true, Error: external.LastError);
+            }
+
+            // LastAttemptAt survives duplicate NEW_ORDER ingestion and validation
+            // changes. Every retry first checks history before reserving stock or
+            // repeating the remote PUT, not only after another failed acceptance.
+            var alreadyTaken = false;
+            if (external.LastAttemptAt.HasValue || external.Status == ExternalOrderStatus.SyncError)
+            {
+                var evidence = await GetAcceptanceEvidenceAsync(external.ExternalOrderId, ct);
+                alreadyTaken = evidence.Accepted;
+                if (!alreadyTaken && !evidence.MayAttempt)
+                {
+                    external.Status = ExternalOrderStatus.SyncError;
+                    external.LastAttemptAt = clock.UtcNow;
+                    external.LastError = evidence.Error;
+                    await db.SaveChangesAsync(ct);
+                    if (transaction is not null) await transaction.CommitAsync(ct);
+                    return new(false, external.Id, Held: true, Error: external.LastError);
+                }
             }
 
             external.Status = ExternalOrderStatus.Processing;
@@ -241,16 +267,23 @@ public sealed class RappiOrderProcessor(
             await db.SaveChangesAsync(ct);
             if (inventory is not null)
                 await inventory.SnapshotAndReserveAsync(order, false, $"order:{order.Id}:rappi-taken", ct);
-            var taken = await rappi.AcceptOrderAsync(
-                external.ExternalOrderId,
-                external.CookingTimeMinutes,
-                ct);
-            if (!taken.Success && !await IsAlreadyTakenAsync(external.ExternalOrderId, ct))
+            if (!alreadyTaken)
             {
-                if (transaction is not null) await transaction.RollbackAsync(ct);
-                return await RecordAcceptanceFailureAsync(externalOrderId,
-                    taken.StatusCode == 400 ? ExternalOrderStatus.Expired : ExternalOrderStatus.SyncError,
-                    taken.Error, taken.StatusCode == 400, ct);
+                var taken = await rappi.AcceptOrderAsync(
+                    external.ExternalOrderId,
+                    external.CookingTimeMinutes,
+                    ct);
+                if (!taken.Success)
+                {
+                    var evidence = await GetAcceptanceEvidenceAsync(external.ExternalOrderId, ct);
+                    if (!evidence.Accepted)
+                    {
+                        if (transaction is not null) await transaction.RollbackAsync(ct);
+                        // 400 means invalid state transition, not proof of expiry.
+                        return await RecordAcceptanceFailureAsync(externalOrderId,
+                            ExternalOrderStatus.SyncError, evidence.Error, true, ct);
+                    }
+                }
             }
             var commission = decimal.Round(
                 external.Total * external.Connection.EstimatedCommissionRate,
@@ -282,6 +315,15 @@ public sealed class RappiOrderProcessor(
                 await TryEnqueueKitchenPrintWhenOrderCreatedAsync(fullOrder, ct);
             }
             return new(true, external.Id, order.Id);
+        }
+        catch (Exception ex) when (ex is HttpRequestException
+            || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            // The provider can throw after its last transport retry, including
+            // OAuth or the history read. The transaction has disposed/rolled back;
+            // preserve an ordinary failure marker, never swallow host shutdown.
+            return await RecordAcceptanceFailureAsync(externalOrderId, ExternalOrderStatus.SyncError,
+                "La comunicación con Rappi quedó incierta; se consultará el historial antes de reintentar aceptación.", true, ct);
         }
         catch (DbUpdateException ex)
         {
@@ -318,7 +360,10 @@ public sealed class RappiOrderProcessor(
         await ReloadTrackedAsync(failed, ct);
         if (failed.InternalOrderId.HasValue) return new(true, failed.Id, failed.InternalOrderId);
         if (TerminalOrderResult(failed) is { } terminal) return terminal;
+        var needsRetryGuard = status == ExternalOrderStatus.SyncError || failed.Status == ExternalOrderStatus.SyncError;
         failed.Status = status;
+        if (needsRetryGuard)
+            failed.LastAttemptAt = clock.UtcNow;
         failed.LastError = Limit(error, 1000);
         if (status == ExternalOrderStatus.BlockedMapping)
             failed.ValidationErrorsJson = JsonSerializer.Serialize(new[] { error }, JsonOptions);
@@ -968,17 +1013,32 @@ public sealed class RappiOrderProcessor(
         store.LastError = FindString(document.RootElement, "message");
     }
 
-    private async Task<bool> IsAlreadyTakenAsync(string orderId, CancellationToken ct)
+    private async Task<AcceptanceEvidence> GetAcceptanceEvidenceAsync(string orderId, CancellationToken ct)
     {
-        var events = await rappi.GetOrderEventsAsync(orderId, ct);
-        if (!events.Success || events.Events is null)
-            return false;
-        return events.Events.Any(x =>
-            x.Contains("taken_visible_order", StringComparison.OrdinalIgnoreCase)
-            || x.Contains("ready_for_pick", StringComparison.OrdinalIgnoreCase)
-            || x.Contains("hand_to_domiciliary", StringComparison.OrdinalIgnoreCase)
-            || x.Contains("close_order", StringComparison.OrdinalIgnoreCase));
+        var result = await rappi.GetOrderEventsAsync(orderId, ct);
+        if (!result.Success || result.Events is null)
+            return new(false, false, "No se pudo confirmar el estado Rappi; se consultará de nuevo antes de reintentar. "
+                + Limit(result.Error, 500));
+        if (result.Events.Count == 0)
+            return new(false, true, "Rappi no devolvió eventos que confirmen aceptación; no se presume expiración.");
+
+        // Do not assume array order or ignore an unknown/newer event. A repeated
+        // taken can also mean courier assignment, so it cannot undo any advanced
+        // or terminal event. This is acceptance recovery, not state reconciliation.
+        if (result.Events.Any(x => x.EventTime.Offset != TimeSpan.Zero || x.EventTime > clock.UtcNow))
+            return new(false, false, "El historial Rappi contiene fechas ambiguas o futuras; requiere revisión antes de aceptar.");
+        if (result.Events.Any(x => x.Event is not ("taken_visible_order" or "replace_storekeeper")))
+            return new(false, false, "El historial Rappi contiene cancelación, avance o eventos no reconocidos; requiere revisión y no se reabre como Taken.");
+        if (result.Events.GroupBy(x => x.EventTime).Any(group => group.Select(x => x.Event).Distinct().Count() > 1))
+            return new(false, false, "El historial Rappi contiene eventos distintos con la misma fecha; requiere revisión.");
+        var takenEvents = result.Events.Where(x => x.Event == "taken_visible_order").ToList();
+        if (takenEvents.Count == 0
+            || result.Events.Any(x => x.Event == "replace_storekeeper" && x.EventTime < takenEvents.Min(t => t.EventTime)))
+            return new(false, false, "El historial Rappi no confirma una aceptación coherente; requiere revisión.");
+        return new(true, false, null);
     }
+
+    private sealed record AcceptanceEvidence(bool Accepted, bool MayAttempt, string? Error);
 
     private static List<string> Validate(
         DeliveryAppConnection connection,

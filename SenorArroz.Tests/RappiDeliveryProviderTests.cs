@@ -8,11 +8,16 @@ using SenorArroz.Infrastructure.Integrations;
 
 namespace SenorArroz.Tests;
 
+[Collection("Rappi provider token cache")]
 public sealed class RappiDeliveryProviderTests
 {
     [Fact]
     public async Task Provider_UsesValidatedSandboxContracts()
     {
+        // Isolate the existing process-wide production token cache from the other
+        // synthetic HTTP fixtures; collection prevents concurrent cache mutation.
+        typeof(RappiDeliveryProvider).GetMethod("ClearToken", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, null);
         var handler = new ContractHandler();
         var provider = new RappiDeliveryProvider(
             new HttpClient(handler),

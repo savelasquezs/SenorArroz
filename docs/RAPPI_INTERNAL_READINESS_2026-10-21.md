@@ -85,12 +85,12 @@ loopback, servicios reales de inventario/repositorio/impresión y transportes fa
 El slice HTTP usa TestServer explícito sin arrancar `Program`, workers ajenos,
 configuración de despliegue ni clientes externos.
 
-Resultado local del árbol final: build Release **0 errores**; **167/167** casos
-dirigidos aprobados, sin omisiones (incluye 8 del harness de negocio/HTTP, 11 de
-cancelación/ciclo de vida y 45 de catálogo). La ejecución amplia aprobó **1147**
-casos y omitió **95** por las puertas PostgreSQL; se excluyeron además los 3 tests
+Resultado local del árbol final: build Release **0 errores**; **221/221** casos
+dirigidos aprobados, sin omisiones (incluye 15 del harness de negocio/HTTP, 11 de
+cancelación/ciclo de vida y 55 de catálogo). La ejecución amplia aprobó **1194**
+casos y omitió **102** por las puertas PostgreSQL; se excluyeron además los 3 tests
 que arrancan el host completo de rate limiting. La unión de las dos ejecuciones
-cubre **1209 casos distintos aprobados**. Se ejecutaron también **6/6** pruebas Python
+cubre **1263 casos distintos aprobados** (identidad `testId` del TRX). Se ejecutaron también **6/6** pruebas Python
 del exporter de routing. Las omisiones locales no se presentan como aprobadas;
 la CI completa debe verificarse sobre el mismo árbol antes de considerar merge.
 
@@ -154,3 +154,48 @@ homologación y configuración productiva por sucursal.
   [consulta de aprobación](https://dev-portal.rappi.com/en/api-reference/menus/#get-menu-approved-store-id).
 - [Firma de webhooks](https://dev-portal.rappi.com/webhook-events/) y
   [salud por tienda](https://dev-portal.rappi.com/en/managing-availability/).
+
+## Continuación con la plataforma de integración (18:23 UTC)
+
+Se aprovecharon el validador de menú del portal DEV y su verificador HMAC con
+entradas sintéticas, sin enviar menú, generar pedidos ni configurar callbacks.
+El validador de menú puede comprobar imágenes: no se presenta como completamente
+local. Rechazó menú vacío, precio negativo, SKU duplicado y URL con espacios
+literales; aceptó la estructura mínima y `%20`, este último con advertencia de
+accesibilidad/CORS. Validar no equivale a publicar, aprobar ni homologar.
+
+- El preflight del menú ahora rechaza whitespace literal en imágenes (también una
+  imagen formada solo por espacios) antes del envío; admite ausencia y `%20`.
+  Nuevas regresiones usan BuildMenu real: solo padre, precio completo, sin rebajar
+  catálogo por Growth. Verifican fees/tip sin sumarlos al pago autoritativo y
+  mantienen toppings fuera del alcance simple, retenidos sin pedido/pago.
+- El vector sintético comprobado en el HMAC 100% client-side del portal se reproduce
+  como regresión local: la firma de JSON con number/bool/null debe corresponder a
+  esos bytes, no a una conversión a strings. No elimina la compatibilidad histórica
+  explícita del tester sandbox ni acredita un webhook real.
+- `/events` ahora usa el array oficial de objetos tipados, nombre exacto y fecha
+  UTC; rechaza wrappers, claves duplicadas y fechas inválidas. Conserva información
+  adicional sin interpretarla como estado. El ejemplo público de cancelación
+  posterior a aceptación reprodujo una falsa aceptación local con el código previo.
+- Tras un PUT fallido ya no se buscan palabras en JSON ni se interpreta 400 como
+  expiración. Solo historial coherente de TAKEN (y reasignación posterior con TAKEN)
+  permite recuperar aceptación; cancelación, avance, evento desconocido, fecha futura
+  o empate conflictivo quedan en `SyncError` con diagnóstico, sin crear Taken.
+- Cada intento previo queda marcado con `LastAttemptAt` existente. En revalidación
+  o NEW repetido se vuelve a consultar el historial **antes** de reservar/crear o
+  repetir Accept. Un historial incierto/avanzado/terminal no dispara otro PUT; uno
+  vacío permite intentar, pero solo 200/TAKEN inequívoco confirma el negocio. Una
+  consulta coherente posterior puede recuperarse por la ruta existente, sin estado
+  permanentemente bloqueado ni endpoint nuevo. Los errores previos sin marca se
+  protegen también. El timestamp se actualiza para no monopolizar la selección de
+  reintentos existente. Fallos ordinarios de transporte/OAuth/timeout también
+  conservan el marcador tras rollback. Una caída del proceso o cancelación del host
+  antes de persistir el fallo sigue siendo una ventana preexistente: no se promete
+  detectar todo PUT remoto confirmado antes de un crash. Esto no agrega barrido/replay
+  ni reconciliación histórica.
+
+Evidencia pública: [eventos y errores de aceptación](https://dev-portal.rappi.com/en/api-reference/orders/),
+[ciclo de vida](https://dev-portal.rappi.com/en/managing-user-orders/),
+[validaciones de menú](https://dev-portal.rappi.com/en/managing-store-menus/).
+Las pruebas contra el portal son estructurales con datos sintéticos, no aprobación
+operativa de tiendas ni confirmación del estado real de una orden.

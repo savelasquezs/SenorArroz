@@ -43,6 +43,20 @@ public sealed class RappiWebhookSignatureTests
     }
 
     [Fact]
+    public void Synthetic_vector_checked_in_Rappi_portal_matches_strict_raw_payload_validation()
+    {
+        // Checked in the DEV portal's 100% client-side verifier on 2026-10-21.
+        // Deliberately synthetic secret/payload; not a credential or received webhook.
+        const string secret = "rappi-readiness-test-only";
+        const string payload = """{"store_id":"audit-local","quantity":2,"enabled":false,"note":null}""";
+        const string rawSignature = "0234b3cb73c82ae2fd95cfc358a437e7883b349dd1eafe16a64b7143cdf6c991";
+        const string normalizedSignature = "841ea79ef2e531b58d85439879c6e9d36b1f5d2052ff9f97adc337a84b246838";
+        Assert.True(RappiWebhookSignature.IsValid($"t=1792594800000,sign={rawSignature}", payload, secret));
+        Assert.False(RappiWebhookSignature.IsValid($"t=1792594800000,sign={normalizedSignature}", payload, secret));
+        Assert.False(RappiWebhookSignature.IsValid($"t=1792594800000,sign={rawSignature}", payload.Replace("2", "3"), secret));
+    }
+
+    [Fact]
     public void IsValid_RejectsModifiedPayloadAndMalformedHeaders()
     {
         const string header =

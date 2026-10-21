@@ -11,6 +11,7 @@ using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Integrations;
+using SenorArroz.Shared.Models;
 
 namespace SenorArroz.Tests;
 
@@ -334,6 +335,136 @@ public sealed class RappiCatalogReadinessTests
         var original = await db.DeliveryAppStores.Where(x => x.ConnectionId == 1).SingleAsync();
         Assert.True(original.IsParent);
         Assert.Equal("900173116", original.StoreIntegrationId);
+        provider.VerifyNoOtherCalls();
+    }
+
+    // Synthetic fixtures derived from the public menu contract, not a live store publication:
+    // https://dev-portal.rappi.com/en/managing-store-menus/ (parent store, gross price, SKU, image URL).
+    [Theory]
+    [InlineData(false, 18000)]
+    [InlineData(true, 19000)]
+    public async Task Catalog_build_sends_only_parent_menu_with_stable_SKUs_and_configured_full_price(bool overridePrice, int expectedPrice)
+    {
+        await using var db = RappiCatalogTestData.NewDb();
+        await RappiCatalogTestData.SeedAsync(db);
+        var mapping = await db.DeliveryAppProductMappings.SingleAsync();
+        mapping.OverridePrice = overridePrice ? 19000 : null;
+        mapping.PublishedPrice = 17000; // Historical snapshot is not the current catalog price.
+        mapping.OverrideName = "Nombre visible";
+        db.DeliveryAppStores.Add(new DeliveryAppStore
+        { Id = 2, ConnectionId = 1, RappiStoreId = "child-store", StoreIntegrationId = "child-external", Name = "Child", IsParent = false });
+        await db.SaveChangesAsync();
+        RappiMenuRequest? sent = null;
+        var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
+        provider.Setup(x => x.PublishMenuAsync(It.IsAny<RappiMenuRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<RappiMenuRequest, CancellationToken>((menu, _) => sent = menu)
+            .ReturnsAsync(new RappiOperationResult(true, 200));
+        Assert.IsType<OkObjectResult>((await RappiCatalogTestData.Controller(db, provider.Object).PublishMenu(1, default)).Result);
+        Assert.NotNull(sent);
+        Assert.Equal("900173116", sent.StoreId);
+        var item = Assert.Single(sent.Items);
+        Assert.Equal(expectedPrice, item.Price);
+        Assert.Equal("product-26", item.Sku);
+        Assert.Equal("category-1", item.Category.Id);
+        Assert.Equal("Nombre visible", item.Name);
+        Assert.Equal("Synthetic test description", item.Description);
+        Assert.Equal("PRODUCT", item.Type);
+        Assert.Empty(item.Children);
+        Assert.Equal(0, item.Category.MinQty);
+        Assert.Equal(0, item.Category.MaxQty);
+        Assert.Equal(0, item.Category.SortingPosition);
+        Assert.Equal(0, item.SortingPosition);
+        provider.Verify(x => x.PublishMenuAsync(It.IsAny<RappiMenuRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // Official image_url_complies forbids literal whitespace. The DEV portal validator
+    // independently rejected the space variant and accepted %20 on 2026-10-21; no menu was sent.
+    [Theory]
+    [InlineData(" ", false)]
+    [InlineData("https://example.test/rice bowl.jpg", false)]
+    [InlineData("https://example.test/rice\tbowl.jpg", false)]
+    [InlineData("https://example.test/rice\nbowl.jpg", false)]
+    [InlineData("https://example.test/rice%20bowl.jpg", true)]
+    [InlineData("https://example.test/rice.jpg", true)]
+    public async Task Menu_preflight_distinguishes_encoded_spaces_from_literal_URL_whitespace(string imageUrl, bool valid)
+    {
+        await using var db = RappiCatalogTestData.NewDb();
+        await RappiCatalogTestData.SeedAsync(db);
+        (await db.DeliveryAppProductMappings.SingleAsync()).OverrideImageUrl = imageUrl;
+        await db.SaveChangesAsync();
+        var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
+        var controller = RappiCatalogTestData.Controller(db, provider.Object);
+        var preview = await controller.PreviewMenu(1, default);
+        if (valid)
+        {
+            var response = Assert.IsType<ApiResponse<object>>(Assert.IsType<OkObjectResult>(preview.Result).Value);
+            var menu = Assert.IsType<RappiMenuRequest>(response.Data);
+            Assert.Equal(imageUrl, Assert.Single(menu.Items).ImageUrl);
+        }
+        else
+        {
+            Assert.IsType<BadRequestObjectResult>(preview.Result);
+            Assert.IsType<BadRequestObjectResult>((await controller.PublishMenu(1, default)).Result);
+            Assert.Empty(await db.RappiMenuPublications.ToListAsync());
+        }
+        provider.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Delivery_Growth_payment_uses_authoritative_restaurant_total_without_adding_fees_or_courier_tip()
+    {
+        await using var db = RappiCatalogTestData.NewDb();
+        await RappiCatalogTestData.SeedAsync(db);
+        var payload = JsonNode.Parse(RappiCatalogTestData.ValidOrder)!;
+        var detail = payload["order_detail"]!;
+        detail["totals"]!["total_order"] = 17000;
+        detail["totals"]!["total_discounts"] = 6000;
+        detail["totals"]!["charges"] = new JsonObject { ["shipping"] = 3000, ["service_fee"] = 500 };
+        detail["totals"]!["other_totals"] = new JsonObject { ["tip"] = 2000 };
+        detail["discounts"]!.AsArray().Add(JsonSerializer.SerializeToNode(new
+        { title = "Envío financiado por Rappi", type = "shipping", value = 3000, amount_by_rappi = 3000, amount_by_partner = 0 }));
+        var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
+        provider.Setup(x => x.AcceptOrderAsync("rappi-order-1", 25, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(true, 200));
+        var result = await RappiCatalogTestData.Processor(db, provider.Object).IngestNewOrderAsync(1, payload.ToJsonString(), default);
+        Assert.True(result.Success, result.Error);
+        var order = await db.Orders.SingleAsync();
+        Assert.Equal(18000, order.Subtotal);
+        Assert.Equal(17000, order.Total);
+        Assert.Equal(3500, order.ExternalCharges);
+        Assert.Equal(1000, order.ExternalDiscountByPartner);
+        Assert.Equal(5000, order.ExternalDiscountByRappi);
+        var payment = await db.AppPayments.SingleAsync();
+        Assert.Equal(17000, payment.Amount);
+        Assert.Equal(4250m, payment.EstimatedCommissionAmount);
+        Assert.Equal(12750m, payment.ExpectedNetAmount);
+    }
+
+    [Fact]
+    public async Task Documented_TOPPING_shape_is_held_without_silent_loss_or_business_creation_in_simple_product_sprint()
+    {
+        await using var db = RappiCatalogTestData.NewDb();
+        await RappiCatalogTestData.SeedAsync(db);
+        var payload = JsonNode.Parse(RappiCatalogTestData.ValidOrder)!;
+        var detail = payload["order_detail"]!;
+        detail["totals"]!["total_products"] = 21500;
+        detail["totals"]!["total_order"] = 21500;
+        detail["totals"]!["total_discounts"] = 0;
+        detail["totals"]!["total_discount_by_partner"] = 0;
+        detail["discounts"] = new JsonArray();
+        detail["items"]![0]!["subitems"] = new JsonArray(JsonSerializer.SerializeToNode(new
+        { id = "synthetic-topping", sku = "topping-cheese", name = "Queso", type = "TOPPING", price = 3500, quantity = 1 }));
+        var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
+        var result = await RappiCatalogTestData.Processor(db, provider.Object).IngestNewOrderAsync(1, payload.ToJsonString(), default);
+        Assert.True(result.Held);
+        Assert.False(result.Success);
+        Assert.Contains("modificadores no soportados", result.Error);
+        var external = await db.ExternalDeliveryOrders.SingleAsync();
+        Assert.Contains("topping-cheese", external.LinesJson);
+        Assert.Contains("topping-cheese", external.RawPayloadJson);
+        Assert.Empty(await db.Orders.ToListAsync());
+        Assert.Empty(await db.AppPayments.ToListAsync());
+        Assert.Empty(await db.InventoryMovements.ToListAsync());
         provider.VerifyNoOtherCalls();
     }
 

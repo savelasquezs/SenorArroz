@@ -1206,9 +1206,10 @@ public sealed class RappiIntegrationsController(
 
     private static bool IsValidHttpUrl(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        if (string.IsNullOrEmpty(value))
             return true;
-        return Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        return !value.Any(char.IsWhiteSpace)
+            && Uri.TryCreate(value, UriKind.Absolute, out var uri)
             && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
     }
 
