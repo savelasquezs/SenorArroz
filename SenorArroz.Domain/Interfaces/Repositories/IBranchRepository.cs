@@ -26,6 +26,10 @@ public interface IBranchRepository
     Task<bool> NameExistsAsync(string name, int? excludeId = null, CancellationToken cancellationToken = default);
     Task<bool> PhoneExistsAsync(string phone, int? excludeId = null, CancellationToken cancellationToken = default);
 
+    // Lectura batch de los cinco contadores del listado, sin N+1 por sucursal.
+    Task<IReadOnlyDictionary<int, BranchListStatistics>> GetListStatisticsForBranchesAsync(
+        IReadOnlyCollection<int> branchIds, CancellationToken cancellationToken = default);
+
     // Statistics methods
     Task<int> GetTotalUsersAsync(int branchId, CancellationToken cancellationToken = default);
     Task<int> GetActiveUsersAsync(int branchId, CancellationToken cancellationToken = default);
@@ -42,3 +46,8 @@ public interface IBranchRepository
     // Delivery fee statistics
     Task<(int min, int max, decimal average)> GetDeliveryFeeStatsAsync(int branchId, CancellationToken cancellationToken = default);
 }
+
+public sealed record BranchListStatistics(
+    int TotalUsers, int ActiveUsers,
+    int TotalCustomers, int ActiveCustomers,
+    int TotalNeighborhoods);
