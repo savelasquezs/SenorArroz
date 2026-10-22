@@ -52,6 +52,36 @@ public sealed class ElectronicInvoicingTests
         Assert.Empty(p.GetProperty("allTaxTotals").EnumerateArray());
         Assert.Equal("2026-10-19", p.GetProperty("date").GetString());
         Assert.False(p.GetProperty("send_email").GetBoolean());
+        Assert.Equal(10m, p.GetProperty("items")[0].GetProperty("allowance_charges")[0].GetProperty("multiplier_factor_numeric").GetDecimal());
+        Assert.Equal(100m, p.GetProperty("items")[1].GetProperty("allowance_charges")[0].GetProperty("multiplier_factor_numeric").GetDecimal());
+    }
+
+    [Theory]
+    [InlineData(132000, 750)]
+    [InlineData(24000, 750)]
+    [InlineData(2000, 750)]
+    [InlineData(1000, 750)]
+    public void Discount_percentage_preserves_fractional_amounts(int gross, int discount)
+    {
+        var order = new Order { Total = gross - discount };
+        order.OrderDetails.Add(new OrderDetail { Quantity = 1, UnitPrice = gross, Discount = discount, Product = new Product { Name = "Producto" } });
+        using var payload = JsonDocument.Parse(ElectronicInvoiceService.BuildInvoicePayload(order, Recipient, Integration, "SETT", 1, DateTime.UtcNow));
+        var allowance = payload.RootElement.GetProperty("items")[0].GetProperty("allowance_charges")[0];
+        Assert.Equal(discount * 100m / gross, allowance.GetProperty("multiplier_factor_numeric").GetDecimal());
+        Assert.Equal(discount, allowance.GetProperty("amount").GetDecimal());
+        Assert.Equal(gross, allowance.GetProperty("base_amount").GetDecimal());
+    }
+
+    [Theory]
+    [InlineData("{\"success\":false,\"info\":\"Internal server error\",\"data\":[{\"field\":\"number\",\"reason\":\"unknown\"}]}")]
+    [InlineData("{\"success\":false,\"info\":\"Error at line 0: Invalid data structure\",\"data\":[]}")]
+    [InlineData("{\"success\":false,\"info\":\"Error at line 0: Invalid data structure\",\"data\":[{\"field\":\"number\"}]}")]
+    [InlineData("{\"success\":true,\"info\":\"Error at line 0: Invalid data structure\",\"data\":[{\"field\":\"number\",\"reason\":\"required\"}]}")]
+    [InlineData("{\"success\":false,\"cufe\":\"abc\",\"info\":\"Error at line 0: Invalid data structure\",\"data\":[{\"field\":\"number\",\"reason\":\"required\"}]}")]
+    [InlineData("<html>500</html>")]
+    public void Unknown_provider_failures_are_not_structural_rejections(string response)
+    {
+        Assert.Null(PlemsiInvoiceProvider.DataValidationError(response));
     }
 
     [Fact]

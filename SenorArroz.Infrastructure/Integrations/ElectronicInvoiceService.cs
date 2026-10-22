@@ -142,14 +142,15 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
                 result = await provider.FindAsync(i, d.Kind, d.Prefix + d.Number, ct);
                 if (result is null)
                 {
-                    d.Status = "verifying";
-                    d.LastError = "Sin confirmación del proveedor. Se consultará el mismo consecutivo; no se ha emitido otra factura.";
+                    var validationError = PlemsiInvoiceProvider.DataValidationError(d.ResponseJson);
+                    d.Status = validationError is null ? "verifying" : "rejected";
+                    d.LastError = validationError ?? "Sin confirmación del proveedor. Se consultará el mismo consecutivo; no se ha emitido otra factura.";
                     return;
                 }
             }
             else
             {
-                d.Status = "processing"; d.SubmittedAt = clock.UtcNow; d.AttemptCount++;
+                d.Status = "processing"; d.SubmittedAt = clock.UtcNow; d.AttemptCount++; d.ResponseJson = null;
                 await db.SaveChangesAsync(ct);
                 result = await provider.SubmitAsync(i, d.Kind, d.PayloadJson!, ct);
             }
@@ -188,7 +189,9 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
                 {
                     using var response = JsonDocument.Parse(providerError.ProviderResponse);
                     d.ResponseJson = response.RootElement.GetRawText();
-                    d.LastError = PlemsiInvoiceProvider.FindString(response.RootElement, "StatusDescription", "message", "error") ?? d.LastError;
+                    var validationError = PlemsiInvoiceProvider.DataValidationError(d.ResponseJson);
+                    if (validationError is not null && d.Status is not ("issued" or "credited")) d.Status = "rejected";
+                    d.LastError = validationError ?? PlemsiInvoiceProvider.FindString(response.RootElement, "StatusDescription", "message", "error") ?? d.LastError;
                 }
                 catch (JsonException) { }
             }
@@ -242,7 +245,8 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
                 unit_measure_id = 70, line_extension_amount = net, free_of_charge_indicator = net == 0,
                 description = line.Product.Name, code = line.ProductId.ToString(), type_item_identification_id = 1,
                 price_amount = line.UnitPrice, base_quantity = 1, invoiced_quantity = line.Quantity,
-                allowance_charges = discount > 0 ? new[] { new { charge_indicator = false, allowance_charge_reason = "Descuento del pedido", amount = discount, base_amount = gross } } : [],
+                allowance_charges = discount > 0 ? new[] { new { charge_indicator = false, allowance_charge_reason = "Descuento del pedido",
+                    multiplier_factor_numeric = discount * 100m / gross, amount = discount, base_amount = gross } } : [],
                 tax_totals = Array.Empty<object>()
             }));
         }

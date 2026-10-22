@@ -121,6 +121,35 @@ public sealed class PlemsiInvoiceProvider(HttpClient http, IIntegrationSecretPro
         }
         return null;
     }
+
+    public static string? DataValidationError(string? response)
+    {
+        if (string.IsNullOrWhiteSpace(response)) return null;
+        try
+        {
+            using var json = JsonDocument.Parse(response);
+            var root = json.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("success", out var success) || success.ValueKind != JsonValueKind.False
+                || !root.TryGetProperty("info", out var info) || info.ValueKind != JsonValueKind.String
+                || !info.GetString()!.EndsWith(": Invalid data structure", StringComparison.Ordinal)
+                || !root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array
+                || data.GetArrayLength() == 0 || DianValidation(root).HasValue
+                || !string.IsNullOrWhiteSpace(FindString(root, "cufe", "cude", "uuid"))) return null;
+            var errors = new List<string>();
+            foreach (var error in data.EnumerateArray())
+            {
+                if (error.ValueKind != JsonValueKind.Object
+                    || !error.TryGetProperty("field", out var field) || field.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(field.GetString())
+                    || !error.TryGetProperty("reason", out var reason) || reason.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(reason.GetString())) return null;
+                errors.Add($"{field.GetString()}: {reason.GetString()}");
+            }
+            return "Plemsi rechazó la estructura de los datos antes de emitir: " + string.Join("; ", errors.Distinct());
+        }
+        catch (JsonException) { return null; }
+    }
 }
 
 public sealed class PlemsiRequestException(HttpStatusCode status, string response) : HttpRequestException(

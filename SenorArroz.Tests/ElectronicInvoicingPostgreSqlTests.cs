@@ -120,6 +120,44 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
     }
 
     [InvoicePostgresFact]
+    public async Task Structural_http_500_is_rejected_and_existing_unknown_document_recovers_without_resubmission()
+    {
+        const string response = """{"code":500,"success":false,"info":"Error at line 0: Invalid data structure","data":[{"field":"multiplier_factor_numeric","reason":"Path `multiplier_factor_numeric` is required."}]}""";
+        var provider = new Mock<IElectronicInvoiceProvider>(); provider.SetupGet(x => x.Code).Returns("plemsi");
+        provider.Setup(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new PlemsiRequestException(System.Net.HttpStatusCode.InternalServerError, response));
+        provider.Setup(x => x.FindAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", "SETT1", It.IsAny<CancellationToken>())).ReturnsAsync((JsonElement?)null);
+        await using var db = Db(); var service = new ElectronicInvoiceService(db, [provider.Object], Clock());
+        var document = await service.RequestAsync(await db.Orders.SingleAsync(x => x.Id == 1), Recipient(), 1, default);
+        await service.ProcessAsync(document.Id, default);
+        Assert.Equal("rejected", document.Status);
+        Assert.Contains("multiplier_factor_numeric", document.LastError);
+        await db.Entry(document).ReloadAsync();
+        var submitted = document.SubmittedAt;
+        document.Status = "verifying"; document.LastError = "Sin confirmación"; await db.SaveChangesAsync();
+        await service.ProcessAsync(document.Id, default);
+        Assert.Equal("rejected", document.Status); Assert.Equal(submitted, document.SubmittedAt);
+        Assert.Contains("multiplier_factor_numeric", document.LastError);
+        Assert.Equal(1, document.Number); Assert.Equal(2, (await db.ElectronicInvoiceIntegrations.SingleAsync()).NextNumber);
+        Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(response), System.Text.Json.Nodes.JsonNode.Parse(document.ResponseJson!)));
+        provider.Verify(x => x.FindAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", "SETT1", It.IsAny<CancellationToken>()), Times.Once);
+        provider.Verify(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        var user = new Mock<ICurrentUser>(); user.SetupGet(x => x.TenantId).Returns(1);
+        var controller = new ElectronicInvoicingController(db, user.Object, Mock.Of<IBranchContext>(), Mock.Of<IIntegrationSecretProtector>(), [provider.Object], service, Clock(), new ConfigurationBuilder().Build());
+        await controller.Retry(document.Id, Recipient(), default);
+        Assert.Equal("pending", document.Status); Assert.Null(document.SubmittedAt); Assert.Equal(1, document.Number);
+        Assert.Equal(2, (await db.ElectronicInvoiceIntegrations.SingleAsync()).NextNumber);
+        provider.Verify(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        provider.Setup(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("timeout after retry"));
+        await service.ProcessAsync(document.Id, default);
+        Assert.Equal("verifying", document.Status); Assert.Null(document.ResponseJson);
+        await service.ProcessAsync(document.Id, default);
+        Assert.Equal("verifying", document.Status); Assert.Equal(1, document.Number);
+        provider.Verify(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [InvoicePostgresFact]
     public async Task Different_integrations_cannot_reuse_a_tenant_document_number()
     {
         await using var db = Db();

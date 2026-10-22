@@ -574,6 +574,8 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 
 ## Facturación electrónica
 
+- Los descuentos por línea envían el porcentaje `multiplier_factor_numeric` calculado sobre su base bruta. Un rechazo estructurado de Plemsi por datos inválidos se registra como Rechazada aunque llegue con HTTP 500; un error genérico o timeout conserva Por verificar. Los documentos existentes con ese rechazo se reclasifican tras consultar sin resultado el mismo consecutivo, sin retransmitirlos automáticamente. El reintento explícito reconstruye los datos y conserva el número reservado.
+
 - El historial fiscal autorizado por pedido expone fechas de solicitud/transmisión/validación y el snapshot sin credenciales. La transmisión a Plemsi no prueba recepción DIAN y el correo aceptado por Plemsi no acredita entrega al buzón. Los snapshots identifican pagos bancarios originados por anticipos para evitar contarlos dos veces en su representación.
 
 - Si Plemsi devuelve el último consecutivo nulo, Superadmin puede confirmar expresamente un número disponible tras verificar DIAN y el proveedor anterior. La activación registra actor, fecha y respuesta. No permite reutilizar números conocidos ni omitir rango o vigencia; la numeración debe dedicarse al sistema.
