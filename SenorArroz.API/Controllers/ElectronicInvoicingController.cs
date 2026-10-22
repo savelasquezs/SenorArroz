@@ -178,7 +178,9 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
         await Order(orderId, ct);
         var documents = await db.ElectronicInvoiceDocuments.AsNoTracking().Where(x => x.OrderId == orderId).OrderByDescending(x => x.Id)
             .Select(x => new { x.Id, x.Kind, x.Status, x.Environment, x.Prefix, x.Number, x.Cufe, x.EmailStatus, x.CreditRequested,
-                x.LastError, x.CreatedAt, x.SubmittedAt, x.IssuedAt, x.OriginalDocumentId, x.Reason, x.RecipientJson, x.SnapshotJson,
+                LastError = x.Status == "rejected" ? PlemsiInvoiceProvider.DianError(x.ResponseJson) ?? x.LastError : x.LastError,
+                dianRejected = x.Status == "rejected" && PlemsiInvoiceProvider.DianError(x.ResponseJson) != null,
+                x.CreatedAt, x.SubmittedAt, x.IssuedAt, x.OriginalDocumentId, x.Reason, x.RecipientJson, x.SnapshotJson,
                 hasPdf = x.Pdf != null, hasXml = x.Xml != null }).ToListAsync(ct);
         return Success(documents);
     }
@@ -220,7 +222,7 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
                 d.PayloadJson = ElectronicInvoiceService.BuildInvoicePayload(order, JsonSerializer.Deserialize<BillingRecipientDto>(d.RecipientJson)!, integration, d.Prefix, d.Number.Value, clock.UtcNow);
                 d.SnapshotJson = ElectronicInvoiceService.BuildSnapshot(order, integration);
             }
-            d.SubmittedAt = null; d.Status = "pending";
+            d.SubmittedAt = null; d.Status = "pending"; d.LastError = null;
         }
         d.NextAttemptAt = clock.UtcNow;
         await db.SaveChangesAsync(ct);

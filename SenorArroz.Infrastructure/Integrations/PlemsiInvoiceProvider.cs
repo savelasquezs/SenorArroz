@@ -150,6 +150,36 @@ public sealed class PlemsiInvoiceProvider(HttpClient http, IIntegrationSecretPro
         }
         catch (JsonException) { return null; }
     }
+
+    public static string? DianError(JsonElement response)
+    {
+        if (DianValidation(response) != false) return null;
+        var errors = new List<string>();
+        void Collect(JsonElement element, bool insideError = false)
+        {
+            if (element.ValueKind == JsonValueKind.String && insideError && !string.IsNullOrWhiteSpace(element.GetString()))
+                errors.Add(element.GetString()!);
+            else if (element.ValueKind == JsonValueKind.Array)
+                foreach (var item in element.EnumerateArray()) Collect(item, insideError);
+            else if (element.ValueKind == JsonValueKind.Object)
+                foreach (var property in element.EnumerateObject())
+                    Collect(property.Value, insideError || property.Name.Equals("ErrorMessage", StringComparison.OrdinalIgnoreCase));
+        }
+        Collect(response);
+        return "DIAN rechazó el documento:\n" + (errors.Count > 0 ? string.Join("\n", errors.Distinct())
+            : FindString(response, "StatusDescription", "message") ?? "Revisa los datos del documento antes de reintentar.");
+    }
+
+    public static string? DianError(string? response)
+    {
+        if (string.IsNullOrWhiteSpace(response)) return null;
+        try
+        {
+            using var json = JsonDocument.Parse(response);
+            return DianError(json.RootElement);
+        }
+        catch (JsonException) { return null; }
+    }
 }
 
 public sealed class PlemsiRequestException(HttpStatusCode status, string response) : HttpRequestException(

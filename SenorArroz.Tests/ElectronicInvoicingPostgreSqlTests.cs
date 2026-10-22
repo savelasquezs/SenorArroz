@@ -203,6 +203,44 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
     }
 
     [InvoicePostgresFact]
+    public async Task Dian_rejection_exposes_rules_and_corrected_retry_keeps_number_until_validated_and_delivered()
+    {
+        const string rejected = """{"success":true,"data":{"cude":"rejected-cufe","response":{"data":{"IsValid":"false","ErrorMessage":{"string":["Regla: FAU04, Rechazo: Base imponible inválida.","Regla: FAK24, Rechazo: DV inválido."]}}}}}""";
+        using var rejection = JsonDocument.Parse(rejected);
+        using var accepted = JsonDocument.Parse("""{"success":true,"data":{"cude":"accepted-cufe","response":{"data":{"IsValid":"true"}}}}""");
+        var provider = new Mock<IElectronicInvoiceProvider>(); provider.SetupGet(x => x.Code).Returns("plemsi");
+        provider.SetupSequence(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(rejection.RootElement.Clone()).ReturnsAsync(accepted.RootElement.Clone());
+        provider.Setup(x => x.DownloadAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", "accepted-cufe", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new byte[] { 1, 2, 3 });
+        await using var db = Db(); var service = new ElectronicInvoiceService(db, [provider.Object], Clock());
+        var recipient = Recipient() with { DocumentType = 6, Identification = "900507876", Email = "cliente@example.com" };
+        var document = await service.RequestAsync(await db.Orders.SingleAsync(x => x.Id == 1), recipient, 1, default);
+        await service.ProcessAsync(document.Id, default);
+        Assert.Equal("rejected", document.Status); Assert.Contains("FAU04", document.LastError); Assert.Contains("FAK24", document.LastError);
+        Assert.Null(document.IssuedAt); Assert.Null(document.Pdf); Assert.Equal("pending", document.EmailStatus);
+        document.LastError = "Mensaje genérico legacy"; await db.SaveChangesAsync();
+        var user = new Mock<ICurrentUser>(); user.SetupGet(x => x.TenantId).Returns(1);
+        var controller = new ElectronicInvoicingController(db, user.Object, Mock.Of<IBranchContext>(), Mock.Of<IIntegrationSecretProtector>(), [provider.Object], service, Clock(), new ConfigurationBuilder().Build());
+        var result = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(await controller.Documents(1, default));
+        var history = JsonSerializer.Serialize(result.Value);
+        Assert.Contains("FAU04", history); Assert.Contains("FAK24", history); Assert.DoesNotContain("response_json", history);
+        await controller.Retry(document.Id, recipient, default);
+        Assert.Null(document.LastError); Assert.Equal(1, document.Number);
+        using var payload = JsonDocument.Parse(document.PayloadJson!);
+        Assert.Equal("7", payload.RootElement.GetProperty("customer").GetProperty("dv").GetString());
+        Assert.Equal(10000, payload.RootElement.GetProperty("invoiceBaseTotal").GetDecimal());
+        Assert.Equal(0, payload.RootElement.GetProperty("invoiceTaxExclusiveTotal").GetDecimal());
+        Assert.Equal(0, payload.RootElement.GetProperty("allowanceTotal").GetDecimal());
+        await service.ProcessAsync(document.Id, default);
+        Assert.Equal("issued", document.Status); Assert.Equal("accepted-cufe", document.Cufe); Assert.NotNull(document.IssuedAt);
+        Assert.Equal(new byte[] { 1, 2, 3 }, document.Pdf); Assert.NotNull(document.Xml); Assert.Equal("accepted", document.EmailStatus);
+        Assert.Single(await db.ElectronicInvoiceDocuments.ToListAsync()); Assert.Equal(1, document.Number);
+        Assert.Equal(2, (await db.ElectronicInvoiceIntegrations.SingleAsync()).NextNumber);
+        provider.Verify(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        provider.Verify(x => x.SendEmailAsync(It.IsAny<ElectronicInvoiceIntegration>(), "accepted-cufe", "cliente@example.com", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [InvoicePostgresFact]
     public async Task Rejected_invoice_retry_rebuilds_persisted_amounts_without_allocating_another_number()
     {
         var provider = new Mock<IElectronicInvoiceProvider>(); provider.SetupGet(x => x.Code).Returns("plemsi");

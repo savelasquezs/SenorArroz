@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -45,8 +46,9 @@ public sealed class ElectronicInvoicingTests
         using var payload = JsonDocument.Parse(ElectronicInvoiceService.BuildInvoicePayload(order, Recipient, Integration, "SETT", 1, new DateTime(2026, 10, 20, 2, 0, 0, DateTimeKind.Utc)));
         var p = payload.RootElement;
         Assert.Equal(21000, p.GetProperty("totalToPay").GetDecimal());
-        Assert.Equal(4000, p.GetProperty("allowanceTotal").GetDecimal());
-        Assert.Equal(25000, p.GetProperty("invoiceBaseTotal").GetDecimal());
+        Assert.Equal(0, p.GetProperty("allowanceTotal").GetDecimal());
+        Assert.Equal(21000, p.GetProperty("invoiceBaseTotal").GetDecimal());
+        Assert.Equal(0, p.GetProperty("invoiceTaxExclusiveTotal").GetDecimal());
         Assert.Equal(3, p.GetProperty("items").GetArrayLength());
         Assert.True(p.GetProperty("items")[1].GetProperty("free_of_charge_indicator").GetBoolean());
         Assert.Empty(p.GetProperty("allTaxTotals").EnumerateArray());
@@ -54,6 +56,75 @@ public sealed class ElectronicInvoicingTests
         Assert.False(p.GetProperty("send_email").GetBoolean());
         Assert.Equal(10m, p.GetProperty("items")[0].GetProperty("allowance_charges")[0].GetProperty("multiplier_factor_numeric").GetDecimal());
         Assert.Equal(100m, p.GetProperty("items")[1].GetProperty("allowance_charges")[0].GetProperty("multiplier_factor_numeric").GetDecimal());
+    }
+
+    [Fact]
+    public void Discounted_untaxed_invoice_satisfies_DIAN_monetary_equations()
+    {
+        var order = new Order { Id = 8466, TenantId = 1, DeliveryFee = 12000, Total = 168000 };
+        foreach (var (quantity, price) in new[] { (2, 66000), (2, 12000), (10, 200), (10, 100) })
+            order.OrderDetails.Add(new OrderDetail { Quantity = quantity, UnitPrice = price, Discount = 750, Product = new Product { Name = "Producto" } });
+        using var payload = JsonDocument.Parse(ElectronicInvoiceService.BuildInvoicePayload(order,
+            Recipient with { Identification = "900507876" }, Integration, "SAV", 1, DateTime.UtcNow));
+        var p = payload.RootElement;
+        var lines = p.GetProperty("items").EnumerateArray().ToArray();
+        var net = lines.Sum(x => x.GetProperty("line_extension_amount").GetDecimal());
+        Assert.Equal(168000, net);
+        Assert.Equal(net, p.GetProperty("invoiceBaseTotal").GetDecimal());
+        Assert.Equal(0, p.GetProperty("invoiceTaxExclusiveTotal").GetDecimal());
+        Assert.Equal(net + p.GetProperty("allTaxTotals").EnumerateArray().Sum(x => x.GetProperty("tax_amount").GetDecimal()), p.GetProperty("invoiceTaxInclusiveTotal").GetDecimal());
+        Assert.Equal(0, p.GetProperty("allowanceTotal").GetDecimal());
+        Assert.Equal(p.GetProperty("invoiceTaxInclusiveTotal").GetDecimal() - p.GetProperty("allowanceTotal").GetDecimal(), p.GetProperty("totalToPay").GetDecimal());
+        Assert.Equal(3000, lines.Where(x => x.TryGetProperty("allowance_charges", out _)).Sum(x => x.GetProperty("allowance_charges").EnumerateArray().Sum(a => a.GetProperty("amount").GetDecimal())));
+        Assert.Equal("7", p.GetProperty("customer").GetProperty("dv").GetString());
+    }
+
+    [Theory]
+    [InlineData("900507876", "900507876", "7")]
+    [InlineData("900507876-7", "900507876", "7")]
+    [InlineData("1038414022", "1038414022", "9")]
+    [InlineData("800197268-4", "800197268", "4")]
+    [InlineData("3", "3", "2")]
+    [InlineData("0", "0", "0")]
+    [InlineData("4", "4", "1")]
+    public void Nit_is_sent_with_a_separate_verification_digit(string identification, string number, string digit)
+    {
+        Assert.Equal((number, digit), ColombianTaxId.Parse(identification));
+        var order = new Order { Total = 1000 };
+        order.OrderDetails.Add(new OrderDetail { Quantity = 1, UnitPrice = 1000, Product = new Product { Name = "Producto" } });
+        using var payload = JsonDocument.Parse(ElectronicInvoiceService.BuildInvoicePayload(order, Recipient with { Identification = identification }, Integration, "SETT", 1, DateTime.UtcNow));
+        var customer = payload.RootElement.GetProperty("customer");
+        Assert.Equal(number, customer.GetProperty("identification_number").GetString());
+        Assert.Equal(digit, customer.GetProperty("dv").GetString());
+    }
+
+    [Theory]
+    [InlineData("900507876-1")]
+    [InlineData("900507876-")]
+    [InlineData("900507876-77")]
+    [InlineData("900507876--7")]
+    [InlineData("ABC")]
+    [InlineData("1234567890123456")]
+    public void Invalid_nit_is_rejected_before_transmission(string identification)
+    {
+        Assert.Throws<BusinessException>(() => ElectronicInvoiceService.ValidateRecipient(Recipient with { Identification = identification }));
+    }
+
+    [Fact]
+    public void Citizenship_card_has_no_nit_verification_digit()
+    {
+        var order = new Order { Total = 1000 };
+        order.OrderDetails.Add(new OrderDetail { Quantity = 1, UnitPrice = 1000, Product = new Product { Name = "Producto" } });
+        using var payload = JsonDocument.Parse(ElectronicInvoiceService.BuildInvoicePayload(order, Recipient with { DocumentType = 3, Identification = "71366347" }, Integration, "SETT", 1, DateTime.UtcNow));
+        Assert.False(payload.RootElement.GetProperty("customer").TryGetProperty("dv", out _));
+    }
+
+    [Fact]
+    public void Dian_rejection_reports_nested_rules_instead_of_generic_success()
+    {
+        const string response = """{"success":true,"data":{"cude":"abc","response":{"data":{"IsValid":"false","ErrorMessage":{"string":["Regla: FAU02, Rechazo: Total inválido.","Regla: FAK24, Rechazo: DV inválido.","Regla: FAU02, Rechazo: Total inválido."]},"StatusDescription":"Validación contiene errores."}}}}""";
+        Assert.Equal("DIAN rechazó el documento:\nRegla: FAU02, Rechazo: Total inválido.\nRegla: FAK24, Rechazo: DV inválido.", PlemsiInvoiceProvider.DianError(response));
+        Assert.Null(PlemsiInvoiceProvider.DianError("""{"success":true,"IsValid":true,"ErrorMessage":{"string":["Notificación"]}}"""));
     }
 
     [Theory]

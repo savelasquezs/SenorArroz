@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
@@ -43,6 +44,7 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
         if (!Validator.TryValidateObject(recipient, new ValidationContext(recipient), errors, true)
             || string.IsNullOrWhiteSpace(recipient.Name) || string.IsNullOrWhiteSpace(recipient.Identification))
             throw new BusinessException("Completa identificación y nombre; verifica el correo de facturación.");
+        if (recipient.DocumentType == 6) ColombianTaxId.Parse(recipient.Identification);
     }
 
     public static void EnsureReady(ElectronicInvoiceIntegration i)
@@ -158,7 +160,8 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
             var valid = PlemsiInvoiceProvider.DianValidation(result.Value);
             d.Cufe = PlemsiInvoiceProvider.FindString(result.Value, "cufe", "cude", "uuid");
             d.Status = valid == true && !string.IsNullOrWhiteSpace(d.Cufe) ? "issued" : valid == false ? "rejected" : "verifying";
-            d.LastError = d.Status == "issued" ? null : "Consulta la respuesta de Plemsi: falta validación DIAN o existen rechazos.";
+            d.LastError = d.Status == "issued" ? null : PlemsiInvoiceProvider.DianError(result.Value)
+                ?? "Plemsi aún no confirma la validación DIAN. Se consultará el mismo consecutivo.";
             if (d.Status == "issued")
             {
                 d.IssuedAt = clock.UtcNow;
@@ -191,7 +194,8 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
                     d.ResponseJson = response.RootElement.GetRawText();
                     var validationError = PlemsiInvoiceProvider.DataValidationError(d.ResponseJson);
                     if (validationError is not null && d.Status is not ("issued" or "credited")) d.Status = "rejected";
-                    d.LastError = validationError ?? PlemsiInvoiceProvider.FindString(response.RootElement, "StatusDescription", "message", "error") ?? d.LastError;
+                    d.LastError = validationError ?? PlemsiInvoiceProvider.DianError(response.RootElement)
+                        ?? PlemsiInvoiceProvider.FindString(response.RootElement, "StatusDescription", "message", "error") ?? d.LastError;
                 }
                 catch (JsonException) { }
             }
@@ -232,14 +236,14 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
     {
         ValidateRecipient(recipient);
         var items = new JsonArray();
-        decimal total = 0, grossTotal = 0, discounts = 0;
+        decimal total = 0;
         foreach (var line in order.OrderDetails)
         {
             decimal gross = (decimal)line.UnitPrice * line.Quantity;
             decimal discount = line.Discount;
             if (line.Quantity <= 0 || gross < discount || discount < 0) throw new BusinessException("Línea de pedido inválida para facturación.");
             var net = gross - discount;
-            total += net; grossTotal += gross; discounts += discount;
+            total += net;
             items.Add(JsonSerializer.SerializeToNode(new
             {
                 unit_measure_id = 70, line_extension_amount = net, free_of_charge_indicator = net == 0,
@@ -256,22 +260,29 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
             items.Add(JsonSerializer.SerializeToNode(new { unit_measure_id = 70, line_extension_amount = delivery, free_of_charge_indicator = false,
                 description = "Domicilio", code = "DELIVERY", type_item_identification_id = 1, price_amount = delivery, base_quantity = 1, invoiced_quantity = 1,
                 tax_totals = Array.Empty<object>() }));
-            total += delivery; grossTotal += delivery;
+            total += delivery;
         }
         if (total != order.Total || total <= 0) throw new BusinessException("Los importes fiscales no coinciden con el total persistido del pedido.");
+        var customer = JsonSerializer.SerializeToNode(new { identification_number = recipient.Identification, name = recipient.Name,
+            email = recipient.Email, type_document_identification_id = recipient.DocumentType })!.AsObject();
+        if (recipient.DocumentType == 6)
+        {
+            var nit = ColombianTaxId.Parse(recipient.Identification);
+            customer["identification_number"] = nit.Number;
+            customer["dv"] = nit.VerificationDigit;
+        }
         var payload = new JsonObject
         {
             ["prefix"] = prefix, ["number"] = number, ["resolution"] = integration.Resolution,
             ["orderReference"] = JsonSerializer.SerializeToNode(new { id_order = $"order-{order.TenantId}-{order.Id}" }),
             ["send_email"] = false,
-            ["customer"] = JsonSerializer.SerializeToNode(new { identification_number = recipient.Identification, name = recipient.Name,
-                email = recipient.Email, type_document_identification_id = recipient.DocumentType }),
+            ["customer"] = customer,
             ["payment"] = JsonSerializer.SerializeToNode(new {
                 payment_form_id = (order.PaidInStoreCashAmount ?? 0) + order.BankPayments.Sum(x => x.Amount) + order.AppPayments.Sum(x => x.Amount) + order.Deposits.Sum(x => x.Amount) >= order.Total ? 1 : 2,
                 payment_method_id = order.BankPayments.Count > 0 || order.AppPayments.Count > 0 ? 1 : 10,
                 payment_due_date = new DateTimeOffset(DateTime.SpecifyKind(now, DateTimeKind.Utc)).ToOffset(TimeSpan.FromHours(-5)).ToString("yyyy-MM-dd"), duration_measure = "0" }),
-            ["items"] = items, ["invoiceBaseTotal"] = grossTotal, ["allowanceTotal"] = discounts,
-            ["invoiceTaxExclusiveTotal"] = total, ["invoiceTaxInclusiveTotal"] = total, ["totalToPay"] = total,
+            ["items"] = items, ["invoiceBaseTotal"] = total, ["allowanceTotal"] = 0,
+            ["invoiceTaxExclusiveTotal"] = 0, ["invoiceTaxInclusiveTotal"] = total, ["totalToPay"] = total,
             ["allTaxTotals"] = new JsonArray(), ["allHoldingsTaxTotals"] = new JsonArray()
         };
         SetDate(payload, now);
