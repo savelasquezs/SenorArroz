@@ -2,7 +2,7 @@
 
 ## Fundación multitenant terminada
 
-- Las 104 entidades operativas tienen filtro EF, write guard, `tenant_id NOT NULL`, FK y RLS forzado.
+- Las 108 entidades operativas tienen filtro EF, write guard, `tenant_id NOT NULL`, FK y RLS forzado.
 - PostgreSQL recibe `app.current_tenant_id` y `app.system_scope` en cada conexión/comando; el pool limpia el contexto y prohíbe `No Reset On Close`.
 - El rol runtime de producción debe ser `NOSUPERUSER NOBYPASSRLS`; el backend aborta el arranque cuando el rol o la cobertura RLS son inseguros.
 - SignalR, almacenamiento y agente de impresión usan namespaces de tenant. El token del agente resuelve su tenant persistido antes de procesar.
@@ -572,6 +572,22 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 
 **Despliegue manual posterior a revisión:** aplicar primero `SenorArroz.Infrastructure/Scripts/add_remote_order_management.sql` con cuenta de mantenimiento; después backend y frontend. SQL aditivo/idempotente, sin backfill, sin migraciones EF. No se ejecuta desde CI ni se modifica producción en esta rama. Cobrar desde origen no traslada dinero entre cajas: el registro pertenece al destino; transferencias físicas entre sedes continúan por los procesos existentes.
 
+## Facturación electrónica
+
+- Si Plemsi devuelve el último consecutivo nulo, Superadmin puede confirmar expresamente un número disponible tras verificar DIAN y el proveedor anterior. La activación registra actor, fecha y respuesta. No permite reutilizar números conocidos ni omitir rango o vigencia; la numeración debe dedicarse al sistema.
+
+- La indisponibilidad de facturación ofrece continuar con Solo pedido, sin emisión silenciosa. La activación vuelve a consultar Plemsi y valida resolución, prefijo, rango, vigencia y un consecutivo confirmado; no se infiere desde el inicio del rango.
+- La emisión real requiere además ElectronicInvoicing__ProductionEnabled=true en el servidor; el valor por defecto es false. El detalle fiscal muestra el destinatario histórico del documento y el reenvío conserva ese correo.
+
+- Configuración y correo empresarial pertenecen al tenant, compartidos por sucursales y administrados por Superadmin. Plemsi es el primer proveedor; emisión real desactivada hasta completar y validar la cuenta.
+- El cliente admite varios destinatarios fiscales y un predeterminado. El modal compartido se abre desde el cliente, OrderSidebar y detalle del pedido. Guardar datos no emite facturas ni modifica documentos históricos.
+- Sin datos fiscales completos, Enviar pedido conserva el flujo actual; con datos se sugiere y exige confirmación explícita. No hay emisión automática a consumidor final.
+- Pedido y solicitud se guardan atómicamente. Las llamadas a Plemsi ocurren después del commit. Una falla fiscal no revierte un pedido creado. Reservas/programados emiten al entregarse.
+- Emitida exige validación DIAN y CUFE/CUDE. Un timeout se reconcilia consultando el mismo consecutivo, nunca generando otro documento. El estado del correo es independiente.
+- Solo Admin/Superadmin autorizan nota crédito total. La cancelación operativa puede dejar anulación fiscal pendiente. Una factura aceptada necesita nota crédito antes de corregir importes; los documentos impiden eliminar definitivamente el pedido.
+- Se conserva tratamiento inicial sin IVA ni INC, importes persistidos y descuentos/domicilio. Los archivos fiscales se guardan privados bajo aislamiento tenant y se descargan con autorización de pedido.
+- El correo del emisor es configurable y se sincroniza con Plemsi conservando otras direcciones; no se promete un remitente personalizado sin validación del proveedor.
+- Detalles de instalación, endpoints y pruebas: docs/ELECTRONIC_INVOICING.md del backend.
 ## Almuerzos del personal
 
 - Cada empleado registra salida y regreso con su contraseña personal; las horas oficiales son UTC del servidor. Un intervalo abierto determina el descanso, persiste entre sesiones y no se cierra automáticamente.

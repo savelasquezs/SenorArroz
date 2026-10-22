@@ -50,4 +50,5 @@ jobs:
         env:
           RUN_POSTGRES_INTEGRATION_TESTS: 'true'
           FLOW_POSTGRES_TEST_CONNECTION: 'Host=localhost;Port=5432;Database=flow_test;Username=flow_test;Password=flow_test'
+          INVOICE_TEST_POSTGRES: 'Host=localhost;Port=5432;Database=flow_test;Username=flow_test;Password=flow_test'
         run: dotnet test SenorArroz.Tests/SenorArroz.Tests.csproj --configuration Release --no-build --logger "console;verbosity=normal"

@@ -30,6 +30,9 @@ namespace SenorArroz.Infrastructure.Data
         public bool IsTenantSystemScope => _tenantExecutionContext?.IsSystemScope == true;
 
         public virtual DbSet<Address> Addresses { get; set; }
+        public DbSet<ElectronicInvoiceIntegration> ElectronicInvoiceIntegrations { get; set; }
+        public DbSet<CustomerBillingRecipient> CustomerBillingRecipients { get; set; }
+        public DbSet<ElectronicInvoiceDocument> ElectronicInvoiceDocuments { get; set; }
         public virtual DbSet<AddressBranch> AddressBranches { get; set; }
 
         public virtual DbSet<App> Apps { get; set; }
@@ -205,6 +208,9 @@ namespace SenorArroz.Infrastructure.Data
         {
             modelBuilder.ApplyConfiguration(new BranchConfiguration());
             modelBuilder.ApplyConfiguration(new TenantConfiguration());
+            modelBuilder.ApplyConfiguration(new ElectronicInvoiceIntegrationConfiguration());
+            modelBuilder.ApplyConfiguration(new CustomerBillingRecipientConfiguration());
+            modelBuilder.ApplyConfiguration(new ElectronicInvoiceDocumentConfiguration());
             modelBuilder.ApplyConfiguration(new BranchBusinessHourConfiguration());
             modelBuilder.ApplyConfiguration(new BranchAiSettingConfiguration());
             modelBuilder.ApplyConfiguration(new BranchPrintSettingsConfiguration());

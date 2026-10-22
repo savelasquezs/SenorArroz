@@ -69,6 +69,16 @@ public class GlobalExceptionMiddleware
 
         switch (exception)
         {
+            case SenorArroz.Infrastructure.Integrations.PlemsiRequestException providerError:
+                response.StatusCode = StatusCodes.Status502BadGateway;
+                errorResponse.Code = "electronic_invoice_provider_error";
+                errorResponse.Message = providerError.Message;
+                break;
+            case Exception fiscal when IsInvoiceLock(fiscal):
+                response.StatusCode = StatusCodes.Status409Conflict;
+                errorResponse.Code = "electronic_invoice_order_locked";
+                errorResponse.Message = "El pedido tiene una factura en proceso o emitida. Espera la confirmación o solicita una nota crédito antes de modificar importes.";
+                break;
             case OrderConcurrencyException:
             case Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException:
                 response.StatusCode = StatusCodes.Status409Conflict;
@@ -154,6 +164,10 @@ public class GlobalExceptionMiddleware
     }
 
     /// <summary>Texto acotado (sin pila) para diagnosticar 500 en producción.</summary>
+    private static bool IsInvoiceLock(Exception exception) =>
+        exception is Npgsql.PostgresException { ConstraintName: "electronic_invoice_order_locked" }
+        || exception.InnerException is not null && IsInvoiceLock(exception.InnerException);
+
     private static string ExceptionSummary(Exception exception)
     {
         var t = exception.GetType().Name;

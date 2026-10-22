@@ -97,6 +97,9 @@ public static class DependencyInjection
         services.AddHttpClient<IWhatsAppCloudClient, WhatsAppCloudClient>();
         services.AddSingleton<IWhatsAppFlowCrypto, WhatsAppFlowCrypto>();
         services.AddSingleton<IIntegrationSecretProtector, IntegrationSecretProtector>();
+        services.AddHttpClient<IElectronicInvoiceProvider, PlemsiInvoiceProvider>(client => client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddScoped<IElectronicInvoiceService, ElectronicInvoiceService>();
+        services.AddHostedService<ElectronicInvoiceWorker>();
         services.AddHttpClient<IWompiPaymentService, WompiPaymentService>(client => client.Timeout = TimeSpan.FromSeconds(15));
         services.AddHttpClient<MetaConversionsClient>(client => client.Timeout = TimeSpan.FromSeconds(15));
         services.AddHttpClient<MetaWebsiteConversionsClient>(client => client.Timeout = TimeSpan.FromSeconds(8));

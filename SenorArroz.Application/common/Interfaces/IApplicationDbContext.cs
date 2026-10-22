@@ -7,6 +7,9 @@ namespace SenorArroz.Application.Common.Interfaces
     public interface IApplicationDbContext
     {
         DatabaseFacade Database { get; }
+        DbSet<ElectronicInvoiceIntegration> ElectronicInvoiceIntegrations { get; set; }
+        DbSet<CustomerBillingRecipient> CustomerBillingRecipients { get; set; }
+        DbSet<ElectronicInvoiceDocument> ElectronicInvoiceDocuments { get; set; }
         DbSet<Address> Addresses { get; set; }
         DbSet<AddressBranch> AddressBranches { get; set; }
 

@@ -60,6 +60,9 @@ Orden de despliegue recomendado:
 - Control plane SaaS: onboarding real, altas, invitaciones, planes, suscripciones, metering y portal `/platform`.
 - Tenant 2 existe solamente en pruebas automatizadas y datos locales; estos scripts no lo crean en producción.
 
+## Facturación electrónica
+
+ElectronicInvoiceIntegration, CustomerBillingRecipient y ElectronicInvoiceDocument son tenant-owned. RLS forzado, índices y FKs compuestas se instalan con add_electronic_invoicing.sql. ElectronicInvoiceWorker usa TenantWorkerRunner y nunca procesa documentos de un tenant suspendido; los bytes PDF/XML permanecen privados bajo RLS y autorización del pedido.
 ## EmployeeLunch
 
 employee_lunch: ITenantOwned, filtro EF, tenant obligatorio y concurrency token, FKs (tenant_id, id) a empleado, sucursal y actores, RLS ENABLE/FORCE. EmployeeLunchChanged usa el grupo de sucursal aislado por tenant. Cocina consulta solo personal de su sucursal; administración queda limitada por BranchContext. La prueba EmployeeLunchPostgreSqlTests comprueba aislamiento con rol NOBYPASSRLS y carreras con aceptación serializable.
