@@ -17,6 +17,15 @@ namespace SenorArroz.Tests;
 public sealed class ElectronicInvoicingTests
 {
     private static BillingRecipientDto Recipient => new() { DocumentType = 6, Identification = "900123456", Name = "Cliente SA", Email = "cliente@example.com" };
+    [Fact]
+    public async Task New_requests_require_the_restaurant_identity_before_saving_a_fiscal_document()
+    {
+        var tenant = new TestTenantContext(); await using var db = Db(tenant);
+        db.ElectronicInvoiceIntegrations.Add(Integration);
+        var order = new Order { Type = OrderType.Onsite }; db.Orders.Add(order); await db.SaveChangesAsync();
+        var error = await Assert.ThrowsAsync<BusinessException>(() => new ElectronicInvoiceService(db, [], Mock.Of<IClock>()).RequestAsync(order, Recipient, 1, default));
+        Assert.Contains("logo", error.Message); Assert.Empty(await db.ElectronicInvoiceDocuments.ToListAsync());
+    }
     [Theory]
     [InlineData("invoice")]
     [InlineData("credit")]
@@ -283,6 +292,7 @@ public sealed class ElectronicInvoicingTests
         var tenant = new TestTenantContext();
         await using var db = Db(tenant);
         db.ElectronicInvoiceIntegrations.Add(Integration);
+        db.ElectronicInvoiceBrandings.Add(new ElectronicInvoiceBranding { DisplayName = "Restaurante", Logo = InvoiceDeliveryTests.Logo });
         var order = new Order { Type = OrderType.Reservation, Status = OrderStatus.Taken };
         db.Orders.Add(order);
         await db.SaveChangesAsync();

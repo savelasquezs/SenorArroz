@@ -2,6 +2,12 @@ using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
+public sealed class ElectronicInvoiceBranding : TenantOwnedEntity
+{
+    public string DisplayName { get; set; } = "";
+    public byte[] Logo { get; set; } = [];
+}
+
 public sealed class ElectronicInvoiceIntegration : TenantOwnedEntity
 {
     public string Name { get; set; } = "Plemsi";
@@ -39,6 +45,7 @@ public sealed class ElectronicInvoiceDocument : TenantOwnedEntity
 {
     public int OrderId { get; set; }
     public int IntegrationId { get; set; }
+    public int? BrandingId { get; set; }
     public int? OriginalDocumentId { get; set; }
     public string Kind { get; set; } = "invoice";
     public string Status { get; set; } = "pending";

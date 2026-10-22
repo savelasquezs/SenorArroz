@@ -31,6 +31,16 @@ public sealed class ElectronicInvoiceIntegrationConfiguration : IEntityTypeConfi
     }
 }
 
+public sealed class ElectronicInvoiceBrandingConfiguration : IEntityTypeConfiguration<ElectronicInvoiceBranding>
+{
+    public void Configure(EntityTypeBuilder<ElectronicInvoiceBranding> b)
+    {
+        ElectronicInvoiceIntegrationConfiguration.Map(b, "electronic_invoice_branding");
+        b.Property(x => x.DisplayName).HasMaxLength(150);
+        b.HasIndex(x => new { x.TenantId, x.Id }).IsUnique();
+    }
+}
+
 public sealed class CustomerBillingRecipientConfiguration : IEntityTypeConfiguration<CustomerBillingRecipient>
 {
     public void Configure(EntityTypeBuilder<CustomerBillingRecipient> b)
@@ -57,6 +67,7 @@ public sealed class ElectronicInvoiceDocumentConfiguration : IEntityTypeConfigur
         b.HasIndex(x => new { x.TenantId, x.IntegrationId, x.Environment, x.Kind, x.Prefix, x.Number }).IsUnique();
         b.HasIndex(x => new { x.TenantId, x.Environment, x.Kind, x.Prefix, x.Number }).IsUnique();
         b.HasOne<Order>().WithMany().HasForeignKey(x => new { x.TenantId, x.OrderId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ElectronicInvoiceBranding>().WithMany().HasForeignKey(x => new { x.TenantId, x.BrandingId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_invoice_document_branding");
         b.HasOne<ElectronicInvoiceIntegration>().WithMany().HasForeignKey(x => new { x.TenantId, x.IntegrationId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ElectronicInvoiceDocument>().WithMany().HasForeignKey(x => new { x.TenantId, x.OriginalDocumentId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
     }

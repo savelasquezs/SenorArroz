@@ -28,9 +28,11 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
             ?? throw new BusinessException("El negocio no tiene un proveedor de facturación activo.");
         if (integration.Environment == "production" && !ProductionEnabled)
             throw new BusinessException("La emisión real está desactivada en este servidor. Configura y valida primero el ambiente de pruebas.");
+        var branding = await db.ElectronicInvoiceBrandings.OrderByDescending(x => x.Id).FirstOrDefaultAsync(ct)
+            ?? throw new BusinessException("Configura el nombre comercial y el logo del restaurante antes de solicitar facturas.");
         var document = new ElectronicInvoiceDocument
         {
-            TenantId = order.TenantId, OrderId = order.Id, IntegrationId = integration.Id,
+            TenantId = order.TenantId, OrderId = order.Id, IntegrationId = integration.Id, BrandingId = branding.Id,
             Environment = integration.Environment, RequestedById = userId,
             RecipientJson = JsonSerializer.Serialize(recipient),
             EmailStatus = string.IsNullOrWhiteSpace(recipient.Email) ? "notRequested" : "pending",

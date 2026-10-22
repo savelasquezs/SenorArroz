@@ -15,6 +15,19 @@ namespace SenorArroz.Infrastructure.Helpers;
 
 public static class InvoicePdf
 {
+    public const int CurrentVersion = 2;
+    public static void ValidateLogo(byte[] bytes)
+    {
+        if (bytes.Length is 0 or > 500000 || !(bytes.AsSpan().StartsWith(new byte[] {137,80,78,71,13,10,26,10}) || bytes.AsSpan().StartsWith(new byte[] {255,216,255})))
+            throw new BusinessException("El logo debe ser PNG o JPG de máximo 500 KB.");
+        try
+        {
+            using var image = XImage.FromStream(new MemoryStream(bytes));
+            if (image.PixelWidth > 3000 || image.PixelHeight > 3000) throw new BusinessException("El logo admite hasta 3000 × 3000 píxeles.");
+        }
+        catch (BusinessException) { throw; }
+        catch (Exception) { throw new BusinessException("No se pudo leer el logo. Selecciona una imagen PNG o JPG válida."); }
+    }
     private static readonly CultureInfo Colombian = CultureInfo.GetCultureInfo("es-CO");
     private static readonly object FontLock = new();
     private static readonly XBrush Ink = new XSolidBrush(XColor.FromArgb(28, 43, 55));
@@ -137,7 +150,7 @@ public static class InvoicePdf
         return payments.Where(x => x.Amount > 0).GroupBy(x => x.Label).Select(x => (x.Key, x.Sum(v => v.Amount))).ToArray();
     }
 
-    public static byte[] Create(ElectronicInvoiceDocument document)
+    public static byte[] Create(ElectronicInvoiceDocument document, ElectronicInvoiceBranding? branding = null)
     {
         var data = Read(document);
         lock (FontLock) { GlobalFontSettings.FontResolver ??= new EmbeddedFonts(); }
@@ -147,6 +160,7 @@ public static class InvoicePdf
         XFont regular = new("InvoiceVera", 9), bold = new("InvoiceVera", 9, XFontStyleEx.Bold);
         XFont small = new("InvoiceVera", 7), title = new("InvoiceVera", 17, XFontStyleEx.Bold);
         XGraphics g = null!;
+        using var logo = branding is { Logo.Length: > 0 } ? XImage.FromStream(new MemoryStream(branding.Logo)) : null;
         double y = 0;
         const double left = 36, width = 523, bottom = 650;
         List<string> Wrap(string text, XFont font, double max)
@@ -191,8 +205,20 @@ public static class InvoicePdf
             var page = pdf.AddPage(); page.Size = PdfSharp.PageSize.A4;
             g = XGraphics.FromPdfPage(page);
             g.DrawLine(new XPen(XColor.FromArgb(0, 148, 106), 2), left, 32, 559, 32);
-            y = Block(string.IsNullOrWhiteSpace(data.TradeName) ? data.Issuer : data.TradeName, left, 48, title, 330);
-            if (!string.IsNullOrWhiteSpace(data.TradeName) && data.TradeName != data.Issuer) y = Block(data.Issuer, left, y + 4, regular, 330);
+            var identityLeft = left;
+            if (logo is not null)
+            {
+                var scale = 76d / Math.Max(logo.PixelWidth, logo.PixelHeight);
+                var logoWidth = logo.PixelWidth * scale; var logoHeight = logo.PixelHeight * scale;
+                g.DrawImage(logo, left + (76 - logoWidth) / 2, 47 + (76 - logoHeight) / 2, logoWidth, logoHeight);
+                identityLeft += 88;
+            }
+            var displayName = branding?.DisplayName ?? (string.IsNullOrWhiteSpace(data.TradeName) ? data.Issuer : data.TradeName);
+            var identityWidth = 330 - (identityLeft - left);
+            var identitySize = Math.Clamp(17 * identityWidth * 2 / Math.Max(identityWidth * 2, g.MeasureString(displayName, title).Width), 10, 17);
+            y = Block(displayName, identityLeft, 48, new XFont("InvoiceVera", identitySize, XFontStyleEx.Bold), identityWidth);
+            if (displayName != data.Issuer) y = Block(data.Issuer, identityLeft, y + 5, small, 330 - (identityLeft - left));
+            y = Math.Max(y, logo is null ? y : 115);
             y = Block("NIT " + data.IssuerId, left, y + 4, regular, 330);
             if (data.IssuerAddress.Length > 0) y = Block(data.IssuerAddress, left, y + 2, small, 330, Muted);
             if (data.IssuerContact.Length > 0) y = Block(data.IssuerContact, left, y + 2, small, 330, Muted);

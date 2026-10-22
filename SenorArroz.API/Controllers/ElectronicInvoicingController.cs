@@ -8,6 +8,7 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Infrastructure.Integrations;
+using SenorArroz.Infrastructure.Helpers;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
@@ -23,9 +24,40 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
     private IActionResult Success(object? value) => Ok(ApiResponse<object>.SuccessResponse(value!));
 
     [HttpGet("availability")]
-    public async Task<IActionResult> Availability(CancellationToken ct) => Success(new { enabled = await db.ElectronicInvoiceIntegrations.AnyAsync(x => x.IsActive && (x.Environment != "production" || ProductionEnabled), ct), productionEnabled = ProductionEnabled });
+    public async Task<IActionResult> Availability(CancellationToken ct) => Success(new { enabled = await db.ElectronicInvoiceBrandings.AnyAsync(ct) && await db.ElectronicInvoiceIntegrations.AnyAsync(x => x.IsActive && (x.Environment != "production" || ProductionEnabled), ct), productionEnabled = ProductionEnabled });
 
     private bool ProductionEnabled => configuration.GetValue<bool>("ElectronicInvoicing:ProductionEnabled");
+
+    [HttpGet("branding")]
+    [Authorize(Roles = "Superadmin")]
+    public async Task<IActionResult> Branding(CancellationToken ct)
+    {
+        var branding = await db.ElectronicInvoiceBrandings.AsNoTracking().OrderByDescending(x => x.Id).FirstOrDefaultAsync(ct);
+        return Success(branding is null ? null : new { branding.Id, branding.DisplayName, logoBase64 = Convert.ToBase64String(branding.Logo) });
+    }
+
+    [HttpPost("branding")]
+    [Authorize(Roles = "Superadmin")]
+    public async Task<IActionResult> SaveBranding(InvoiceBrandingDto dto, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DisplayName)) throw new BusinessException("Indica el nombre comercial del restaurante.");
+        byte[] logo;
+        try { logo = Convert.FromBase64String(dto.LogoBase64); }
+        catch (FormatException) { throw new BusinessException("Selecciona un logo válido."); }
+        InvoicePdf.ValidateLogo(logo);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({user.TenantId}, -783)", ct);
+        var current = await db.ElectronicInvoiceBrandings.OrderByDescending(x => x.Id).FirstOrDefaultAsync(ct);
+        if (current is not null && current.DisplayName == dto.DisplayName.Trim() && current.Logo.SequenceEqual(logo))
+        {
+            await tx.CommitAsync(ct);
+            return Success(new { current.Id, current.DisplayName, logoBase64 = Convert.ToBase64String(current.Logo) });
+        }
+        var branding = new ElectronicInvoiceBranding { DisplayName = dto.DisplayName.Trim(), Logo = logo };
+        db.ElectronicInvoiceBrandings.Add(branding); await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return Success(new { branding.Id, branding.DisplayName, logoBase64 = Convert.ToBase64String(branding.Logo) });
+    }
 
     [HttpGet("integrations")]
     [Authorize(Roles = "Superadmin")]
@@ -246,7 +278,7 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
     public async Task<IActionResult> Download(int id, string format, CancellationToken ct)
     {
         var d = await Document(id, ct);
-        if (format == "pdf" && d.PdfVersion < 1) await service.PreparePdfAsync(id, ct);
+        if (format == "pdf" && d.PdfVersion < InvoicePdf.CurrentVersion) await service.PreparePdfAsync(id, ct);
         var bytes = format == "pdf" ? d.Pdf : d.Xml;
         if (bytes is null) throw new BusinessException("El archivo todavía no está disponible.");
         return File(bytes, format == "pdf" ? "application/pdf" : "application/xml", $"{d.Prefix}{d.Number}.{format}");
@@ -263,6 +295,7 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
         var previous = await db.ElectronicInvoiceDocuments.FirstOrDefaultAsync(x => x.OriginalDocumentId == id, ct);
         if (previous is not null) return Success(new { previous.Id, previous.Status });
         var credit = new ElectronicInvoiceDocument { TenantId = d.TenantId, OrderId = d.OrderId, IntegrationId = d.IntegrationId,
+            BrandingId = d.BrandingId,
             OriginalDocumentId = d.Id, Kind = "credit", Environment = d.Environment, RecipientJson = d.RecipientJson,
             Reason = dto.Reason.Trim(), RequestedById = user.Id, AuthorizedById = user.Id,
             EmailStatus = JsonSerializer.Deserialize<BillingRecipientDto>(d.RecipientJson)!.Email is null ? "notRequested" : "pending" };
@@ -314,3 +347,4 @@ public sealed record InvoiceIntegrationDto
 }
 public sealed record ActivationDto(bool Enabled, bool NumberingConfirmed = false);
 public sealed record CreditDto([Required, MinLength(5), MaxLength(500)] string Reason);
+public sealed record InvoiceBrandingDto([Required, MaxLength(150)] string DisplayName, [Required, MaxLength(670000)] string LogoBase64);

@@ -17,6 +17,7 @@ namespace SenorArroz.Tests;
 
 public sealed class InvoiceDeliveryTests
 {
+    internal static byte[] Logo => Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGNkmJLFwMDAxAAGAAuoAQInK8WLAAAAAElFTkSuQmCC");
     internal static byte[] Xml(string number = "SETT1", string cufe = "abc", string kind = "invoice", int count = 1, string method = "47", string customerId = "12345")
     {
         XElement Party(string name, string id) => new("Party", new XElement("PartyTaxScheme", new XElement("RegistrationName", name), new XElement("CompanyID", id)),
@@ -43,6 +44,17 @@ public sealed class InvoiceDeliveryTests
         RecipientJson = """{"Name":"Cliente","Identification":"12345","Email":"client@example.com"}""",
         SnapshotJson = """{"issuer":{"TaxId":"123","BillingEmail":"billing@example.com"}}"""
     };
+    [Fact]
+    public void Restaurant_identity_and_logo_are_embedded_on_every_page()
+    {
+        var document = Document(); document.Xml = Xml(count: 40);
+        var branding = new ElectronicInvoiceBranding { DisplayName = "Restaurante propio", Logo = Logo };
+        InvoicePdf.ValidateLogo(branding.Logo);
+        using var pdf = PdfReader.Open(new MemoryStream(InvoicePdf.Create(document, branding)), PdfDocumentOpenMode.Import);
+        Assert.True(pdf.PageCount > 1);
+        Assert.All(pdf.Pages.Cast<PdfSharp.Pdf.PdfPage>(), page => Assert.NotNull(page.Elements.GetDictionary("/Resources")?.Elements.GetDictionary("/XObject")));
+        Assert.Throws<BusinessException>(() => InvoicePdf.ValidateLogo(Encoding.UTF8.GetBytes("<svg/>")));
+    }
     [Theory]
     [InlineData("invoice", "1", "Instrumento no definido")]
     [InlineData("invoice", "47", "Transferencia bancaria")]
@@ -106,18 +118,23 @@ public sealed class InvoiceDeliveryTests
                 var snapshotPath = Environment.GetEnvironmentVariable("INVOICE_PDF_SOURCE_SNAPSHOT");
                 document.SnapshotJson = string.IsNullOrWhiteSpace(snapshotPath) ? "{}" : File.ReadAllText(snapshotPath);
                 document.RecipientJson = "{}";
-                File.WriteAllBytes(Path.Combine(samplePath, $"factura-{id}-copia.pdf"), InvoicePdf.Create(document));
+                var logoPath = Environment.GetEnvironmentVariable("INVOICE_PDF_SOURCE_LOGO");
+                var branding = string.IsNullOrWhiteSpace(logoPath) ? null : new ElectronicInvoiceBranding { DisplayName = Environment.GetEnvironmentVariable("INVOICE_PDF_DISPLAY_NAME") ?? "Restaurante", Logo = File.ReadAllBytes(logoPath) };
+                File.WriteAllBytes(Path.Combine(samplePath, $"factura-{id}-copia.pdf"), InvoicePdf.Create(document, branding));
             }
         }
     }
-    [Fact]
-    public async Task Own_email_attaches_exact_files_uses_verified_sender_and_stable_key()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Own_email_attaches_exact_files_uses_verified_sender_and_stable_key(bool withLogo)
     {
         var tenant = new TestTenantContext();
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options, currentTenant: tenant, tenantExecutionContext: tenant);
         var document = Document(); document.Pdf = InvoicePdf.Create(document); document.PdfVersion = 1;
+        if (withLogo) { db.ElectronicInvoiceBrandings.Add(new ElectronicInvoiceBranding { Id = 1, DisplayName = "Mi restaurante", Logo = Logo }); document.BrandingId = 1; }
         db.ElectronicInvoiceDocuments.Add(document); await db.SaveChangesAsync();
-        var metadata = JsonSerializer.Serialize(new { fromName = "Restaurante <Pruebas>", replyTo = "billing@example.com", filename = "SETT1", pdfHash = InvoiceDeliveryService.Hash(document.Pdf), xmlHash = InvoiceDeliveryService.Hash(document.Xml!) });
+        var metadata = JsonSerializer.Serialize(new { fromName = "Restaurante <Pruebas>", replyTo = "billing@example.com", filename = "SETT1", pdfHash = InvoiceDeliveryService.Hash(document.Pdf), xmlHash = InvoiceDeliveryService.Hash(document.Xml!), logoHash = withLogo ? InvoiceDeliveryService.Hash(Logo) : null });
         var message = new EmailOutboxMessage { Id = 12, TenantId = 1, MessageType = "electronic_invoice", RelatedEntityId = 1, ToEmailsJson = "[\"client@example.com\"]", MetadataJson = metadata };
         var attempts = 0;
         var handler = new Handler(async request =>
@@ -127,7 +144,8 @@ public sealed class InvoiceDeliveryTests
             using var payload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
             Assert.Contains("verified@example.com", payload.RootElement.GetProperty("from").GetString());
             Assert.Equal("billing@example.com", payload.RootElement.GetProperty("reply_to").GetString());
-            var attachments = payload.RootElement.GetProperty("attachments"); Assert.Equal(2, attachments.GetArrayLength());
+            var attachments = payload.RootElement.GetProperty("attachments"); Assert.Equal(withLogo ? 3 : 2, attachments.GetArrayLength());
+            if (withLogo) Assert.Equal("invoice-logo", attachments[2].GetProperty("content_id").GetString());
             Assert.Equal(document.Pdf, Convert.FromBase64String(attachments[0].GetProperty("content").GetString()!));
             Assert.Equal(document.Xml, Convert.FromBase64String(attachments[1].GetProperty("content").GetString()!));
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"id\":\"resend-123\"}") };

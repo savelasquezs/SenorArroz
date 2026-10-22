@@ -32,7 +32,8 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
             var path = Path.Combine(dir.FullName, "SenorArroz.Infrastructure", "Scripts", "add_electronic_invoicing.sql");
-            if (File.Exists(path)) return File.ReadAllText(path) + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_invoice_delivery.sql"));
+            if (File.Exists(path)) return File.ReadAllText(path) + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_invoice_delivery.sql"))
+                + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_invoice_branding.sql"));
         }
         throw new FileNotFoundException("add_electronic_invoicing.sql");
     }
@@ -68,6 +69,7 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
             db.Products.Add(new Product { Id = 1, TenantId = 1, CategoryId = 1, Name = "Arroz", Price = 10000 });
             db.Orders.AddRange(new Order { Id = 1, TenantId = 1, BranchId = 1, TakenById = 1, Total = 10000, Subtotal = 10000 }, new Order { Id = 2, TenantId = 1, BranchId = 1, TakenById = 1, Total = 10000, Subtotal = 10000 });
             db.ElectronicInvoiceIntegrations.Add(new ElectronicInvoiceIntegration { Id = 1, TenantId = 1, TaxId = "123", LegalName = "Restaurante", EncryptedToken = "test", IsActive = true, Resolution = "123", Prefix = "SETT", LastNumber = 100, ValidUntil = DateTime.UtcNow.AddDays(30), TestedAt = DateTime.UtcNow });
+            db.ElectronicInvoiceBrandings.Add(new ElectronicInvoiceBranding { Id = 1, TenantId = 1, DisplayName = "Restaurante", Logo = InvoiceDeliveryTests.Logo });
             await db.SaveChangesAsync();
             db.OrderDetails.AddRange(new OrderDetail { TenantId = 1, OrderId = 1, ProductId = 1, Quantity = 1, UnitPrice = 10000, Subtotal = 10000 }, new OrderDetail { TenantId = 1, OrderId = 2, ProductId = 1, Quantity = 1, UnitPrice = 10000, Subtotal = 10000 });
             await db.SaveChangesAsync();
@@ -235,7 +237,7 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         Assert.Equal(0, payload.RootElement.GetProperty("allowanceTotal").GetDecimal());
         await service.ProcessAsync(document.Id, default);
         Assert.Equal("issued", document.Status); Assert.Equal("accepted-cufe", document.Cufe); Assert.NotNull(document.IssuedAt);
-        Assert.NotNull(document.Pdf); Assert.Equal(1, document.PdfVersion); Assert.NotNull(document.Xml); Assert.Equal("queued", document.EmailStatus);
+        Assert.NotNull(document.Pdf); Assert.Equal(InvoicePdf.CurrentVersion, document.PdfVersion); Assert.NotNull(document.Xml); Assert.Equal("queued", document.EmailStatus);
         Assert.Single(await db.ElectronicInvoiceDocuments.ToListAsync()); Assert.Equal(1, document.Number);
         Assert.Equal(2, (await db.ElectronicInvoiceIntegrations.SingleAsync()).NextNumber);
         provider.Verify(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
@@ -414,6 +416,28 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         Assert.Equal(2, requests.Count); Assert.Equal(requests[0], requests[1]);
         Assert.Equal("sent", document.EmailStatus); Assert.Single(await db.EmailOutboxMessages.ToListAsync());
         Assert.Single(await db.ElectronicInvoiceDocuments.ToListAsync());
+    }
+
+    [InvoicePostgresFact]
+    public async Task Branding_is_immutable_tenant_owned_and_documents_keep_the_selected_version()
+    {
+        await using var db = Db(true);
+        using (tenant.BeginTenantScope(2))
+        {
+            db.ElectronicInvoiceBrandings.Add(new ElectronicInvoiceBranding { Id = 20, DisplayName = "Negocio ajeno", Logo = InvoiceDeliveryTests.Logo });
+            await db.SaveChangesAsync();
+        }
+        Assert.DoesNotContain(await db.ElectronicInvoiceBrandings.IgnoreQueryFilters().AsNoTracking().ToListAsync(), x => x.Id == 20);
+        var document = InvoiceDeliveryTests.Document(); document.OrderId = 1; document.IntegrationId = 1; document.BrandingId = 1;
+        db.ElectronicInvoiceDocuments.Add(document); await db.SaveChangesAsync();
+        db.ElectronicInvoiceBrandings.Add(new ElectronicInvoiceBranding { Id = 2, DisplayName = "Nueva identidad", Logo = InvoiceDeliveryTests.Logo });
+        await db.SaveChangesAsync();
+        await new InvoiceDeliveryService(db, Clock()).PreparePdfAsync(document.Id, default);
+        Assert.Equal(1, document.BrandingId); Assert.Equal(InvoicePdf.CurrentVersion, document.PdfVersion);
+        await Assert.ThrowsAsync<PostgresException>(() => db.Database.ExecuteSqlRawAsync("UPDATE electronic_invoice_branding SET display_name='Cambio' WHERE id=1"));
+        await using var cross = Db(true);
+        var invalid = await cross.ElectronicInvoiceDocuments.SingleAsync(); invalid.BrandingId = 20;
+        await Assert.ThrowsAsync<DbUpdateException>(() => cross.SaveChangesAsync());
     }
 
     private static BillingRecipientDto Recipient() => new() { DocumentType = 3, Identification = "12345", Name = "Cliente" };

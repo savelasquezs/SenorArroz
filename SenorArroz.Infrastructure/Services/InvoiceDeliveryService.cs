@@ -21,12 +21,20 @@ public sealed class InvoiceDeliveryService(ApplicationDbContext db, IClock clock
         await LockAsync(documentId, ct);
         var document = await db.ElectronicInvoiceDocuments.SingleAsync(x => x.Id == documentId, ct);
         await db.Entry(document).ReloadAsync(ct);
-        if (document.PdfVersion < 1 || document.Pdf is null)
+        if (document.PdfVersion < InvoicePdf.CurrentVersion || document.Pdf is null)
         {
-            var pdf = InvoicePdf.Create(document);
+            if (document.Pdf is not null && await db.EmailOutboxMessages.AnyAsync(x => x.MessageType == "electronic_invoice" && x.RelatedEntityId == documentId, ct))
+            {
+                await tx.CommitAsync(ct); return;
+            }
+            if (document.BrandingId is null)
+                document.BrandingId = await db.ElectronicInvoiceBrandings.OrderByDescending(x => x.Id).Select(x => (int?)x.Id).FirstOrDefaultAsync(ct);
+            var branding = document.BrandingId.HasValue ? await db.ElectronicInvoiceBrandings.SingleAsync(x => x.Id == document.BrandingId, ct) : null;
+            if (branding is null) throw new BusinessException("Configura el nombre comercial y el logo del restaurante para preparar su PDF.");
+            var pdf = InvoicePdf.Create(document, branding);
             document.ProviderPdf ??= document.Pdf;
             document.Pdf = pdf;
-            document.PdfVersion = 1;
+            document.PdfVersion = InvoicePdf.CurrentVersion;
             await db.SaveChangesAsync(ct);
         }
         await tx.CommitAsync(ct);
@@ -57,6 +65,8 @@ public sealed class InvoiceDeliveryService(ApplicationDbContext db, IClock clock
             if (previous.SentAt > clock.UtcNow.AddMinutes(-1)) return;
         }
         var fiscal = InvoicePdf.Read(document);
+        var branding = document.BrandingId.HasValue ? await db.ElectronicInvoiceBrandings.SingleAsync(x => x.Id == document.BrandingId, ct) : null;
+        var displayName = branding?.DisplayName ?? fiscal.Issuer;
         using var snapshot = JsonDocument.Parse(document.SnapshotJson);
         var replyTo = snapshot.RootElement.TryGetProperty("issuer", out var issuer) && issuer.TryGetProperty("BillingEmail", out var email) ? email.GetString() : null;
         var generation = await db.EmailOutboxMessages.CountAsync(x => x.RelatedEntityType == "electronic_invoice" && x.RelatedEntityId == documentId, ct);
@@ -65,7 +75,8 @@ public sealed class InvoiceDeliveryService(ApplicationDbContext db, IClock clock
         var body = $"""
             <!doctype html><html lang="es"><body style="margin:0;background:#f5f8f7;font-family:Arial,sans-serif;color:#243b36;padding:24px">
             <main style="max-width:600px;margin:auto;background:white;border-radius:12px;border-top:4px solid #00946a;padding:28px">
-            <p style="color:#00946a;font-weight:bold">{H(fiscal.Issuer)}</p><h1 style="font-size:23px">{H(label)} {H(fiscal.Number)}</h1>
+            {(branding is null ? "" : "<img src=\"cid:invoice-logo\" width=\"88\" height=\"88\" alt=\"Logo del restaurante\" style=\"object-fit:contain\">")}
+            <p style="color:#00946a;font-weight:bold;font-size:20px">{H(displayName)}</p><p style="font-size:12px;color:#64756f">{H(fiscal.Issuer)} · NIT {H(fiscal.IssuerId)}</p><h1 style="font-size:23px">{H(label)} {H(fiscal.Number)}</h1>
             <p>Hola, {H(recipient.Name)}.</p><p>Adjuntamos la copia PDF y el XML del documento validado por la DIAN.</p>
             <p style="background:#edf8f3;padding:16px;font-size:20px"><strong>Total: {H(fiscal.Total.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-CO")))} {H(fiscal.Currency)}</strong></p>
             <p>Fecha de emisión: {H(fiscal.Date)}<br>Forma de pago: {H(fiscal.Form)}<br>Medio de pago: {H(fiscal.Method)}</p>
@@ -77,8 +88,9 @@ public sealed class InvoiceDeliveryService(ApplicationDbContext db, IClock clock
         {
             TenantId = document.TenantId, MessageType = "electronic_invoice", RelatedEntityType = "electronic_invoice", RelatedEntityId = document.Id,
             DeduplicationKey = $"invoice-{document.Id}-delivery-{generation}", ToEmailsJson = JsonSerializer.Serialize(new[] { recipient.Email }),
-            Subject = $"{label} {fiscal.Number} · {fiscal.Issuer}", Body = body, IsHtml = true, NextAttemptAt = clock.UtcNow,
-            MetadataJson = JsonSerializer.Serialize(new { fromName = fiscal.Issuer, fromEmail = configuration?["ResendSettings:FromEmail"], replyTo, pdfHash = Hash(document.Pdf), xmlHash = Hash(document.Xml), filename = fiscal.Number })
+            Subject = $"{label} {fiscal.Number} · {displayName}", Body = body, IsHtml = true, NextAttemptAt = clock.UtcNow,
+            MetadataJson = JsonSerializer.Serialize(new { fromName = displayName, fromEmail = configuration?["ResendSettings:FromEmail"], replyTo,
+                pdfHash = Hash(document.Pdf), xmlHash = Hash(document.Xml), logoHash = branding is null ? null : Hash(branding.Logo), filename = fiscal.Number })
         });
         document.EmailChannel = "application"; document.EmailStatus = "queued"; document.EmailError = null;
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);

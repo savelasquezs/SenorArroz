@@ -603,6 +603,9 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 - Un timeout de correo reintenta el mismo mensaje y clave dentro de 23 horas. Fuera de esa ventana o agotados intentos ambiguos, queda verifying, bloqueando reenvío hasta verificar externamente. HTTP 4xx definitivos quedan failed. Reenvíos explícitos exigen confirmación y reutilizan cualquier trabajo pendiente; doble clic y reenvíos dentro del minuto posterior al envío se consolidan.
 - Descarga de copia histórica puede generar el diseño propio sin emitir ni enviar correo. La generación valida consecutivo, CUFE/CUDE, emisor y total contra el documento persistido; XML con DTD o entidades externas se rechaza.
 
+- La identidad visual del restaurante es tenant-owned y compartida por sucursales y proveedores. Superadmin configura nombre comercial y logo PNG/JPG de hasta 500 KB y 3000 × 3000 píxeles sin desactivar la integración. Se almacena una versión inmutable en electronic_invoice_branding y cada documento conserva su BrandingId; no se duplica el logo en cada snapshot.
+- El encabezado de cada página muestra logo proporcionado y nombre comercial como identidad principal; la razón social, NIT y datos fiscales permanecen visibles desde el XML. El correo usa el mismo nombre y logo inline CID, adjuntado dentro del único mensaje. Nuevas solicitudes requieren identidad configurada.
+- Las copias previas sin entrega propia en cola pueden adoptar el diseño con logo sin reenviar correo ni cambiar XML. Si existe un outbox propio, el PDF se conserva para no alterar los adjuntos congelados de sus reintentos.
 ## Almuerzos del personal
 
 - Cada empleado registra salida y regreso con su contraseña personal; las horas oficiales son UTC del servidor. Un intervalo abierto determina el descanso, persiste entre sesiones y no se cierra automáticamente.

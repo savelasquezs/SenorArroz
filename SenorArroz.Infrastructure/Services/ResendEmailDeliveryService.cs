@@ -79,11 +79,20 @@ public class ResendEmailDeliveryService
                 if (info.TryGetProperty("replyTo", out var reply) && !string.IsNullOrWhiteSpace(reply.GetString()))
                     payload["reply_to"] = reply.GetString()!;
                 var filename = new string((info.GetProperty("filename").GetString() ?? "factura").Where(x => char.IsAsciiLetterOrDigit(x) || x is '-' or '_').ToArray());
-                payload["attachments"] = new[]
+                var attachments = new List<object>
                 {
                     new { filename = filename + ".pdf", content = Convert.ToBase64String(document.Pdf), content_type = "application/pdf" },
                     new { filename = filename + ".xml", content = Convert.ToBase64String(document.Xml), content_type = "application/xml" }
                 };
+                if (document.BrandingId.HasValue)
+                {
+                    var branding = await _db!.ElectronicInvoiceBrandings.AsNoTracking().SingleOrDefaultAsync(x => x.Id == document.BrandingId && x.TenantId == message.TenantId, cancellationToken);
+                    if (branding is null || !info.TryGetProperty("logoHash", out var logoHash) || logoHash.GetString() != InvoiceDeliveryService.Hash(branding.Logo))
+                        return EmailSendResult.Fail(ProviderName, "El logo no coincide con la identidad congelada del correo.", true);
+                    var png = branding.Logo[0] == 137;
+                    attachments.Add(new { filename = png ? "logo.png" : "logo.jpg", content = Convert.ToBase64String(branding.Logo), content_type = png ? "image/png" : "image/jpeg", content_id = "invoice-logo" });
+                }
+                payload["attachments"] = attachments;
             }
             using var request = new HttpRequestMessage(HttpMethod.Post, "emails") { Content = JsonContent.Create(payload) };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);

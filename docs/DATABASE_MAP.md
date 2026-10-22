@@ -595,3 +595,5 @@ EmployeeLunch (employee_lunch) es tenant-owned, con sucursal histórica, emplead
 
 ## Entrega fiscal propia
 add_invoice_delivery.sql amplía electronic_invoice_document con provider_pdf, pdf_version, email_channel, email_error y email_sent_at. EmailOutboxMessage incorpora deduplication_key única por tenant, first_attempted_at, lease_until y provider_message_id. Los adjuntos se referencian por documento y hashes SHA-256 en metadata_json; no se duplican los bytes. RLS y trigger impiden correos fiscales que referencien documentos de otro tenant.
+
+La identidad visual se versiona en electronic_invoice_branding (RLS, logo privado, trigger inmutable) y electronic_invoice_document.branding_id utiliza FK compuesta por tenant. Un logo se almacena una sola vez por versión, compartida entre documentos. Script: add_invoice_branding.sql.
