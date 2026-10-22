@@ -16,6 +16,17 @@ namespace SenorArroz.Tests;
 public sealed class ElectronicInvoicingTests
 {
     private static BillingRecipientDto Recipient => new() { DocumentType = 6, Identification = "900123456", Name = "Cliente SA", Email = "cliente@example.com" };
+    [Fact]
+    public void Snapshot_identifies_deposit_bank_payments_without_mutating_order_amounts()
+    {
+        var order = new Order { Id = 5, Total = 23000, DeliveryFee = 3000 };
+        order.BankPayments.Add(new BankPayment { BankId = 2, Amount = 5000, SourceReservationDepositId = 9 });
+        using var snapshot = JsonDocument.Parse(ElectronicInvoiceService.BuildSnapshot(order, Integration));
+        var persisted = snapshot.RootElement.GetProperty("order");
+        Assert.Equal(23000, persisted.GetProperty("Total").GetInt32());
+        Assert.Equal(9, persisted.GetProperty("bankPayments")[0].GetProperty("SourceReservationDepositId").GetInt32());
+        Assert.Equal(5000, order.BankPayments.Single().Amount);
+    }
     private static ElectronicInvoiceIntegration Integration => new()
     {
         TaxId = "900111222", LegalName = "Restaurante", EncryptedToken = "protected", IsActive = true,

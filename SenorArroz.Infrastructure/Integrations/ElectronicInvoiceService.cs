@@ -220,7 +220,7 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
         order = new { order.Id, order.CustomerId, order.Total, order.Subtotal, order.DiscountTotal,
             order.DeliveryFee, order.PaidInStoreCashAmount,
             lines = order.OrderDetails.Select(x => new { x.ProductId, name = x.Product.Name, x.Quantity, x.UnitPrice, x.Discount }),
-            bankPayments = order.BankPayments.Select(x => new { x.BankId, x.Amount }),
+            bankPayments = order.BankPayments.Select(x => new { x.BankId, x.Amount, x.SourceReservationDepositId }),
             appPayments = order.AppPayments.Select(x => new { x.AppId, x.Amount }),
             deposits = order.Deposits.Select(x => new { x.Amount, x.IsEffective, x.BankId, x.AppId }) }
     });

@@ -178,7 +178,8 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
         await Order(orderId, ct);
         var documents = await db.ElectronicInvoiceDocuments.AsNoTracking().Where(x => x.OrderId == orderId).OrderByDescending(x => x.Id)
             .Select(x => new { x.Id, x.Kind, x.Status, x.Environment, x.Prefix, x.Number, x.Cufe, x.EmailStatus, x.CreditRequested,
-                x.LastError, x.IssuedAt, x.OriginalDocumentId, x.Reason, x.RecipientJson, hasPdf = x.Pdf != null, hasXml = x.Xml != null }).ToListAsync(ct);
+                x.LastError, x.CreatedAt, x.SubmittedAt, x.IssuedAt, x.OriginalDocumentId, x.Reason, x.RecipientJson, x.SnapshotJson,
+                hasPdf = x.Pdf != null, hasXml = x.Xml != null }).ToListAsync(ct);
         return Success(documents);
     }
 

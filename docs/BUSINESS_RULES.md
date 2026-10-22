@@ -574,6 +574,8 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 
 ## Facturación electrónica
 
+- El historial fiscal autorizado por pedido expone fechas de solicitud/transmisión/validación y el snapshot sin credenciales. La transmisión a Plemsi no prueba recepción DIAN y el correo aceptado por Plemsi no acredita entrega al buzón. Los snapshots identifican pagos bancarios originados por anticipos para evitar contarlos dos veces en su representación.
+
 - Si Plemsi devuelve el último consecutivo nulo, Superadmin puede confirmar expresamente un número disponible tras verificar DIAN y el proveedor anterior. La activación registra actor, fecha y respuesta. No permite reutilizar números conocidos ni omitir rango o vigencia; la numeración debe dedicarse al sistema.
 
 - La indisponibilidad de facturación ofrece continuar con Solo pedido, sin emisión silenciosa. La activación vuelve a consultar Plemsi y valida resolución, prefijo, rango, vigencia y un consecutivo confirmado; no se infiere desde el inicio del rango.
