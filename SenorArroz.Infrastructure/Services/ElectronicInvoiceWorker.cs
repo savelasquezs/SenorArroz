@@ -22,7 +22,7 @@ public sealed class ElectronicInvoiceWorker(IServiceScopeFactory scopes, ILogger
                     var ids = await db.ElectronicInvoiceDocuments.AsNoTracking().Where(x =>
                         (x.NextAttemptAt == null || x.NextAttemptAt <= clock.UtcNow) && (x.LeaseUntil == null || x.LeaseUntil < clock.UtcNow)
                         && (x.Status == "pending" || x.Status == "scheduled" || x.Status == "processing" || x.Status == "verifying"
-                            || (x.Status == "issued" || x.Status == "credited") && (x.Xml == null || x.Kind == "invoice" && x.Pdf == null || x.EmailStatus == "pending"
+                            || (x.Status == "issued" || x.Status == "credited") && (x.Xml == null || x.Pdf == null || x.EmailStatus == "pending"
                                 || x.Kind == "invoice" && !x.CreditRequested && db.Orders.Any(o => o.Id == x.OrderId && o.Status == OrderStatus.Cancelled))))
                         .OrderBy(x => x.Id).Select(x => x.Id).Take(20).ToListAsync(stoppingToken);
                     foreach (var id in ids)

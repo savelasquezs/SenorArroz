@@ -62,5 +62,10 @@ public sealed class ElectronicInvoiceDocument : TenantOwnedEntity
     public DateTime? SubmittedAt { get; set; }
     public DateTime? IssuedAt { get; set; }
     public byte[]? Pdf { get; set; }
+    public byte[]? ProviderPdf { get; set; }
+    public int PdfVersion { get; set; }
+    public string EmailChannel { get; set; } = "application";
+    public string? EmailError { get; set; }
+    public DateTime? EmailSentAt { get; set; }
     public byte[]? Xml { get; set; }
 }

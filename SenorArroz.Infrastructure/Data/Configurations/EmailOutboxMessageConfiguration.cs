@@ -27,6 +27,11 @@ public class EmailOutboxMessageConfiguration : IEntityTypeConfiguration<EmailOut
         builder.Property(x => x.RelatedEntityType).HasColumnName("related_entity_type").HasMaxLength(100);
         builder.Property(x => x.RelatedEntityId).HasColumnName("related_entity_id");
         builder.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb").IsRequired();
+        builder.Property(x => x.DeduplicationKey).HasColumnName("deduplication_key").HasMaxLength(256);
+        builder.Property(x => x.FirstAttemptedAt).HasColumnName("first_attempted_at");
+        builder.Property(x => x.LeaseUntil).HasColumnName("lease_until").IsConcurrencyToken();
+        builder.Property(x => x.ProviderMessageId).HasColumnName("provider_message_id").HasMaxLength(256);
+        builder.HasIndex(x => new { x.TenantId, x.DeduplicationKey }).HasDatabaseName("ux_email_outbox_message_tenant_deduplication").IsUnique().HasFilter("deduplication_key IS NOT NULL");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
 

@@ -9,10 +9,13 @@ using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Infrastructure.Data;
+using SenorArroz.Infrastructure.Helpers;
+using SenorArroz.Infrastructure.Services;
 
 namespace SenorArroz.Infrastructure.Integrations;
 
-public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerable<IElectronicInvoiceProvider> providers, IClock clock, IConfiguration? configuration = null) : IElectronicInvoiceService
+public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerable<IElectronicInvoiceProvider> providers, IClock clock, IConfiguration? configuration = null,
+    IBackgroundWorkSignal<EmailOutboxWork>? emailSignal = null) : IElectronicInvoiceService
 {
     private bool ProductionEnabled => configuration is not null && configuration.GetValue<bool>("ElectronicInvoicing:ProductionEnabled");
     public async Task<ElectronicInvoiceDocument> RequestAsync(Order order, BillingRecipientDto recipient, int userId, CancellationToken ct)
@@ -185,7 +188,9 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
             if (d.Status is not ("issued" or "credited"))
                 d.Status = ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.UnprocessableEntity }
                     ? "rejected" : d.SubmittedAt.HasValue ? "verifying" : ex is BusinessException ? "rejected" : "pending";
-            d.LastError = ex is BusinessException ? ex.Message : "No se pudo confirmar la operación con Plemsi. Se conservará el mismo documento.";
+            d.LastError = ex is BusinessException ? ex.Message : d.Status is "issued" or "credited"
+                ? "La factura sigue validada. No se pudo preparar su PDF/XML o correo; se reintentará sin volver a emitir."
+                : "No se pudo confirmar la operación con Plemsi. Se conservará el mismo documento.";
             if (ex is PlemsiRequestException providerError)
             {
                 try
@@ -211,18 +216,21 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
 
     private async Task CompleteFilesAndEmailAsync(ElectronicInvoiceDocument d, ElectronicInvoiceIntegration i, IElectronicInvoiceProvider provider, CancellationToken ct)
     {
-        if (d.Pdf is null && d.Kind == "invoice") d.Pdf = await provider.DownloadAsync(i, d.Kind, d.Cufe!, "pdf", ct);
         d.Xml ??= await provider.DownloadAsync(i, d.Kind, d.Cufe!, "xml", ct);
-        var recipient = JsonSerializer.Deserialize<BillingRecipientDto>(d.RecipientJson)!;
-        if (!string.IsNullOrWhiteSpace(recipient.Email) && d.EmailStatus != "accepted")
-        {
-            await provider.SendEmailAsync(i, d.Cufe!, recipient.Email, ct);
-            d.EmailStatus = "accepted";
-        }
+        await db.SaveChangesAsync(ct);
+        var delivery = new InvoiceDeliveryService(db, clock, configuration, emailSignal);
+        await delivery.PreparePdfAsync(d.Id, ct);
+        await delivery.QueueAsync(d.Id, false, ct);
     }
+
+    public Task QueueEmailAsync(int documentId, CancellationToken ct) => new InvoiceDeliveryService(db, clock, configuration, emailSignal).QueueAsync(documentId, true, ct);
+    public Task PreparePdfAsync(int documentId, CancellationToken ct) => new InvoiceDeliveryService(db, clock).PreparePdfAsync(documentId, ct);
 
     public static string BuildSnapshot(Order order, ElectronicInvoiceIntegration i) => JsonSerializer.Serialize(new
     {
+        fiscalLines = FiscalInvoiceLines.Build(order).Select(x => new { name = x.Source.Product.Name, Quantity = x.Source.Quantity,
+            UnitPrice = x.Net == 0 ? x.Source.UnitPrice : x.Net / x.Source.Quantity, Discount = x.Net == 0 ? (decimal)x.Source.UnitPrice * x.Source.Quantity : 0m, Net = x.Net }),
+        discountPolicy = "net-prices-v1",
         issuer = new { i.TaxId, i.LegalName, i.BillingEmail, i.Resolution },
         order = new { order.Id, order.CustomerId, order.Total, order.Subtotal, order.DiscountTotal,
             order.DeliveryFee, order.PaidInStoreCashAmount,
@@ -237,20 +245,22 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
         ValidateRecipient(recipient);
         var items = new JsonArray();
         decimal total = 0;
-        foreach (var line in order.OrderDetails)
+        foreach (var fiscal in FiscalInvoiceLines.Build(order))
         {
+            var line = fiscal.Source;
             decimal gross = (decimal)line.UnitPrice * line.Quantity;
-            decimal discount = line.Discount;
-            if (line.Quantity <= 0 || gross < discount || discount < 0) throw new BusinessException("Línea de pedido inválida para facturación.");
-            var net = gross - discount;
+            var net = fiscal.Net;
+            var unit = net / line.Quantity;
+            var exactUnit = decimal.Round(unit, 2) * line.Quantity == net;
+            var fullyDiscounted = net == 0 && gross > 0;
             total += net;
             items.Add(JsonSerializer.SerializeToNode(new
             {
                 unit_measure_id = 70, line_extension_amount = net, free_of_charge_indicator = net == 0,
                 description = line.Product.Name, code = line.ProductId.ToString(), type_item_identification_id = 1,
-                price_amount = line.UnitPrice, base_quantity = 1, invoiced_quantity = line.Quantity,
-                allowance_charges = discount > 0 ? new[] { new { charge_indicator = false, allowance_charge_reason = "Descuento del pedido",
-                    multiplier_factor_numeric = discount * 100m / gross, amount = discount, base_amount = gross } } : [],
+                price_amount = fullyDiscounted ? line.UnitPrice : exactUnit ? unit : net, base_quantity = exactUnit || fullyDiscounted ? 1 : line.Quantity, invoiced_quantity = line.Quantity,
+                allowance_charges = fullyDiscounted ? new[] { new { charge_indicator = false, allowance_charge_reason = fiscal.Gift ? "Obsequio" : "Descuento del pedido",
+                    multiplier_factor_numeric = 100m, amount = gross, base_amount = gross } } : [],
                 tax_totals = Array.Empty<object>()
             }));
         }

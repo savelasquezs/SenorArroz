@@ -9,6 +9,8 @@ using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Integrations;
 using SenorArroz.API.Controllers;
 using Microsoft.Extensions.Configuration;
+using SenorArroz.Infrastructure.Services;
+using SenorArroz.Infrastructure.Helpers;
 
 namespace SenorArroz.Tests;
 
@@ -30,7 +32,7 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
             var path = Path.Combine(dir.FullName, "SenorArroz.Infrastructure", "Scripts", "add_electronic_invoicing.sql");
-            if (File.Exists(path)) return File.ReadAllText(path);
+            if (File.Exists(path)) return File.ReadAllText(path) + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_invoice_delivery.sql"));
         }
         throw new FileNotFoundException("add_electronic_invoicing.sql");
     }
@@ -184,16 +186,16 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         var provider = new Mock<IElectronicInvoiceProvider>(); provider.SetupGet(x => x.Code).Returns("plemsi");
         using var accepted = JsonDocument.Parse("{\"data\":{\"cufe\":\"abc\",\"IsValid\":true}}");
         provider.Setup(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(accepted.RootElement.Clone());
-        provider.Setup(x => x.DownloadAsync(It.IsAny<ElectronicInvoiceIntegration>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new byte[] { 1 });
-        provider.SetupSequence(x => x.SendEmailAsync(It.IsAny<ElectronicInvoiceIntegration>(), "abc", "cliente@example.com", It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("mail unavailable")).Returns(Task.CompletedTask);
+        provider.SetupSequence(x => x.DownloadAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", "abc", "xml", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("file unavailable")).ReturnsAsync(InvoiceDeliveryTests.Xml());
         await using var db = Db(); var service = new ElectronicInvoiceService(db, [provider.Object], Clock());
         var order = await db.Orders.SingleAsync(x => x.Id == 1);
         var document = await service.RequestAsync(order, Recipient() with { Email = "cliente@example.com" }, 1, default);
         await service.ProcessAsync(document.Id, default);
         Assert.Equal("issued", document.Status); Assert.Equal("pending", document.EmailStatus);
         await service.ProcessAsync(document.Id, default);
-        Assert.Equal("accepted", document.EmailStatus); Assert.Null(document.LastError);
+        Assert.Equal("queued", document.EmailStatus); Assert.Null(document.LastError);
+        Assert.Single(await db.EmailOutboxMessages.ToListAsync());
         provider.Verify(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         await db.Database.ExecuteSqlRawAsync("UPDATE order_detail SET notes='Sin cebolla' WHERE order_id=1");
         order.Status = OrderStatus.Cancelled; await db.SaveChangesAsync();
@@ -211,7 +213,7 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         var provider = new Mock<IElectronicInvoiceProvider>(); provider.SetupGet(x => x.Code).Returns("plemsi");
         provider.SetupSequence(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(rejection.RootElement.Clone()).ReturnsAsync(accepted.RootElement.Clone());
-        provider.Setup(x => x.DownloadAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", "accepted-cufe", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new byte[] { 1, 2, 3 });
+        provider.Setup(x => x.DownloadAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", "accepted-cufe", "xml", It.IsAny<CancellationToken>())).ReturnsAsync(InvoiceDeliveryTests.Xml(cufe: "accepted-cufe", customerId: "900507876"));
         await using var db = Db(); var service = new ElectronicInvoiceService(db, [provider.Object], Clock());
         var recipient = Recipient() with { DocumentType = 6, Identification = "900507876", Email = "cliente@example.com" };
         var document = await service.RequestAsync(await db.Orders.SingleAsync(x => x.Id == 1), recipient, 1, default);
@@ -233,11 +235,10 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         Assert.Equal(0, payload.RootElement.GetProperty("allowanceTotal").GetDecimal());
         await service.ProcessAsync(document.Id, default);
         Assert.Equal("issued", document.Status); Assert.Equal("accepted-cufe", document.Cufe); Assert.NotNull(document.IssuedAt);
-        Assert.Equal(new byte[] { 1, 2, 3 }, document.Pdf); Assert.NotNull(document.Xml); Assert.Equal("accepted", document.EmailStatus);
+        Assert.NotNull(document.Pdf); Assert.Equal(1, document.PdfVersion); Assert.NotNull(document.Xml); Assert.Equal("queued", document.EmailStatus);
         Assert.Single(await db.ElectronicInvoiceDocuments.ToListAsync()); Assert.Equal(1, document.Number);
         Assert.Equal(2, (await db.ElectronicInvoiceIntegrations.SingleAsync()).NextNumber);
         provider.Verify(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
-        provider.Verify(x => x.SendEmailAsync(It.IsAny<ElectronicInvoiceIntegration>(), "accepted-cufe", "cliente@example.com", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [InvoicePostgresFact]
@@ -319,6 +320,100 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         var controller = new ElectronicInvoicingController(db, user.Object, Mock.Of<IBranchContext>(), Mock.Of<IIntegrationSecretProtector>(), [provider.Object], Mock.Of<IElectronicInvoiceService>(), Clock(), new ConfigurationBuilder().Build());
         await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => controller.Activate(1, new ActivationDto(true), default));
         Assert.False(integration.IsActive);
+    }
+
+    [InvoicePostgresFact]
+    public async Task Own_delivery_claims_and_enqueue_are_tenant_isolated_and_idempotent()
+    {
+        await using (var setup = Db())
+        {
+            var document = InvoiceDeliveryTests.Document(); document.OrderId = 1; document.IntegrationId = 1;
+            document.Pdf = InvoicePdf.Create(document); document.PdfVersion = 1;
+            setup.ElectronicInvoiceDocuments.Add(document); await setup.SaveChangesAsync();
+        }
+        async Task Queue() { await using var db = Db(true); await new InvoiceDeliveryService(db, Clock()).QueueAsync(1, false, default); }
+        await Task.WhenAll(Queue(), Queue());
+        var sends = 0;
+        var http = new InvoiceDeliveryTests.Handler(async request =>
+        {
+            Interlocked.Increment(ref sends); await Task.Delay(80);
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent("{\"id\":\"resend-accepted\"}") };
+        });
+        async Task Deliver() { await using var db = Db(true); await EmailOutboxWorker.ProcessMessageAsync(db, InvoiceDeliveryTests.Sender(db, http), Clock(), 1, default); }
+        await Task.WhenAll(Deliver(), Deliver());
+        await using var check = Db(true);
+        Assert.Equal(1, sends);
+        Assert.Equal("sent", (await check.ElectronicInvoiceDocuments.SingleAsync()).EmailStatus);
+        Assert.Equal("resend-accepted", (await check.EmailOutboxMessages.SingleAsync()).ProviderMessageId);
+        await new InvoiceDeliveryService(check, Clock()).QueueAsync(1, true, default);
+        Assert.Single(await check.EmailOutboxMessages.ToListAsync());
+        using (tenant.BeginTenantScope(2))
+        {
+            Assert.Empty(await check.EmailOutboxMessages.IgnoreQueryFilters().AsNoTracking().ToListAsync());
+            await Assert.ThrowsAsync<PostgresException>(() => check.Database.ExecuteSqlRawAsync("""
+                INSERT INTO email_outbox_message(tenant_id,message_type,related_entity_type,related_entity_id,to_emails_json,subject,body,is_html,status,attempt_count,max_attempts,metadata_json)
+                VALUES(2,'electronic_invoice','electronic_invoice',1,'[]','Cruce','',false,'pending',0,5,jsonb_build_object())
+                """));
+        }
+    }
+
+    [InvoicePostgresFact]
+    public async Task Expired_mail_idempotency_window_stops_automatic_and_manual_resend()
+    {
+        await using var db = Db(true);
+        var document = InvoiceDeliveryTests.Document(); document.OrderId = 1; document.IntegrationId = 1;
+        document.Pdf = InvoicePdf.Create(document); document.PdfVersion = 1;
+        db.ElectronicInvoiceDocuments.Add(document); await db.SaveChangesAsync();
+        await new InvoiceDeliveryService(db, Clock()).QueueAsync(1, false, default);
+        await db.Database.ExecuteSqlRawAsync("UPDATE email_outbox_message SET first_attempted_at=NOW()-INTERVAL '25 hours', status='processing', lease_until=NOW()-INTERVAL '1 minute'");
+        await using var worker = Db(true);
+        var sends = 0;
+        var http = new InvoiceDeliveryTests.Handler(request => { sends++; throw new InvalidOperationException("No debe enviarse"); });
+        await EmailOutboxWorker.ProcessMessageAsync(worker, InvoiceDeliveryTests.Sender(worker, http), Clock(), 1, default);
+        Assert.Equal(0, sends); Assert.Equal("verifying", (await worker.EmailOutboxMessages.SingleAsync()).Status);
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => new InvoiceDeliveryService(worker, Clock()).QueueAsync(1, true, default));
+    }
+
+    [InvoicePostgresFact]
+    public async Task Historical_provider_delivery_does_not_send_again_when_preparing_a_new_copy()
+    {
+        await using var db = Db(true);
+        var document = InvoiceDeliveryTests.Document(); document.OrderId = 1; document.IntegrationId = 1;
+        document.Pdf = [1, 2, 3]; document.EmailStatus = "accepted"; document.EmailChannel = "plemsi";
+        db.ElectronicInvoiceDocuments.Add(document); await db.SaveChangesAsync();
+        var xml = document.Xml;
+        var delivery = new InvoiceDeliveryService(db, Clock());
+        await delivery.PreparePdfAsync(1, default); await delivery.QueueAsync(1, false, default);
+        var copy = document.Pdf;
+        await delivery.PreparePdfAsync(1, default);
+        Assert.Equal(copy, document.Pdf); Assert.Equal(new byte[] { 1, 2, 3 }, document.ProviderPdf);
+        Assert.Equal(xml, document.Xml); Assert.Equal("accepted", document.EmailStatus);
+        Assert.Empty(await db.EmailOutboxMessages.ToListAsync());
+    }
+
+    [InvoicePostgresFact]
+    public async Task Lost_email_acceptance_retries_the_same_message_key_and_attachments()
+    {
+        await using var db = Db(true);
+        var document = InvoiceDeliveryTests.Document(); document.OrderId = 1; document.IntegrationId = 1;
+        document.Pdf = InvoicePdf.Create(document); document.PdfVersion = 1;
+        db.ElectronicInvoiceDocuments.Add(document); await db.SaveChangesAsync();
+        await new InvoiceDeliveryService(db, Clock()).QueueAsync(1, false, default);
+        var requests = new List<(string Key, string Body)>();
+        var http = new InvoiceDeliveryTests.Handler(async request =>
+        {
+            requests.Add((request.Headers.GetValues("Idempotency-Key").Single(), await request.Content!.ReadAsStringAsync()));
+            if (requests.Count == 1) throw new TaskCanceledException("Respuesta perdida después de aceptar");
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent("{\"id\":\"same-email\"}") };
+        });
+        var sender = InvoiceDeliveryTests.Sender(db, http);
+        await EmailOutboxWorker.ProcessMessageAsync(db, sender, Clock(), 1, default);
+        Assert.Equal("queued", document.EmailStatus);
+        await db.Database.ExecuteSqlRawAsync("UPDATE email_outbox_message SET next_attempt_at=NOW()-INTERVAL '1 minute'");
+        await EmailOutboxWorker.ProcessMessageAsync(db, sender, Clock(), 1, default);
+        Assert.Equal(2, requests.Count); Assert.Equal(requests[0], requests[1]);
+        Assert.Equal("sent", document.EmailStatus); Assert.Single(await db.EmailOutboxMessages.ToListAsync());
+        Assert.Single(await db.ElectronicInvoiceDocuments.ToListAsync());
     }
 
     private static BillingRecipientDto Recipient() => new() { DocumentType = 3, Identification = "12345", Name = "Cliente" };

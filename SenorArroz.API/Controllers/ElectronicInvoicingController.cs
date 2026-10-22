@@ -177,7 +177,7 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
     {
         await Order(orderId, ct);
         var documents = await db.ElectronicInvoiceDocuments.AsNoTracking().Where(x => x.OrderId == orderId).OrderByDescending(x => x.Id)
-            .Select(x => new { x.Id, x.Kind, x.Status, x.Environment, x.Prefix, x.Number, x.Cufe, x.EmailStatus, x.CreditRequested,
+            .Select(x => new { x.Id, x.Kind, x.Status, x.Environment, x.Prefix, x.Number, x.Cufe, x.EmailStatus, x.EmailChannel, x.EmailError, x.EmailSentAt, x.PdfVersion, x.CreditRequested,
                 LastError = x.Status == "rejected" ? PlemsiInvoiceProvider.DianError(x.ResponseJson) ?? x.LastError : x.LastError,
                 dianRejected = x.Status == "rejected" && PlemsiInvoiceProvider.DianError(x.ResponseJson) != null,
                 x.CreatedAt, x.SubmittedAt, x.IssuedAt, x.OriginalDocumentId, x.Reason, x.RecipientJson, x.SnapshotJson,
@@ -237,9 +237,8 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
         if (d.Status is not ("issued" or "credited")) throw new BusinessException("Espera la validación DIAN antes de enviar el correo.");
         var recipient = JsonSerializer.Deserialize<BillingRecipientDto>(d.RecipientJson)!;
         if (string.IsNullOrWhiteSpace(recipient.Email)) throw new BusinessException("El documento no tiene correo de entrega.");
-        var i = await Integration(d.IntegrationId, ct);
-        await Provider(i).SendEmailAsync(i, d.Cufe!, recipient.Email, ct);
-        d.EmailStatus = "accepted"; await db.SaveChangesAsync(ct);
+        await service.PreparePdfAsync(id, ct);
+        await service.QueueEmailAsync(id, ct);
         return Success(new { d.EmailStatus });
     }
 
@@ -247,6 +246,7 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
     public async Task<IActionResult> Download(int id, string format, CancellationToken ct)
     {
         var d = await Document(id, ct);
+        if (format == "pdf" && d.PdfVersion < 1) await service.PreparePdfAsync(id, ct);
         var bytes = format == "pdf" ? d.Pdf : d.Xml;
         if (bytes is null) throw new BusinessException("El archivo todavía no está disponible.");
         return File(bytes, format == "pdf" ? "application/pdf" : "application/xml", $"{d.Prefix}{d.Number}.{format}");

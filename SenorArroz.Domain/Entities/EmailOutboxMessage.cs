@@ -19,4 +19,8 @@ public class EmailOutboxMessage : TenantOwnedEntity
     public string? RelatedEntityType { get; set; }
     public int? RelatedEntityId { get; set; }
     public string MetadataJson { get; set; } = "{}";
+    public string? DeduplicationKey { get; set; }
+    public DateTime? FirstAttemptedAt { get; set; }
+    public DateTime? LeaseUntil { get; set; }
+    public string? ProviderMessageId { get; set; }
 }

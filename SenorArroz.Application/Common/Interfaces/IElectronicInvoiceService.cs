@@ -18,6 +18,8 @@ public interface IElectronicInvoiceService
 {
     Task<ElectronicInvoiceDocument> RequestAsync(Order order, BillingRecipientDto recipient, int userId, CancellationToken ct);
     Task ProcessAsync(int documentId, CancellationToken ct);
+    Task QueueEmailAsync(int documentId, CancellationToken ct);
+    Task PreparePdfAsync(int documentId, CancellationToken ct);
 }
 
 public interface IElectronicInvoiceProvider
@@ -30,6 +32,5 @@ public interface IElectronicInvoiceProvider
     Task SyncEmailAsync(ElectronicInvoiceIntegration integration, CancellationToken ct);
     Task<JsonElement> SubmitAsync(ElectronicInvoiceIntegration integration, string kind, string payload, CancellationToken ct);
     Task<JsonElement?> FindAsync(ElectronicInvoiceIntegration integration, string kind, string number, CancellationToken ct);
-    Task SendEmailAsync(ElectronicInvoiceIntegration integration, string reference, string email, CancellationToken ct);
     Task<byte[]> DownloadAsync(ElectronicInvoiceIntegration integration, string kind, string reference, string format, CancellationToken ct);
 }

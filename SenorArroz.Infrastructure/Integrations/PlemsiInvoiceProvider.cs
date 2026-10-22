@@ -60,17 +60,18 @@ public sealed class PlemsiInvoiceProvider(HttpClient http, IIntegrationSecretPro
         await CallAsync(i, HttpMethod.Put, "common/company/update", new JsonObject { ["email"] = emails }.ToJsonString(), ct);
     }
 
-    public Task<JsonElement> SubmitAsync(ElectronicInvoiceIntegration i, string kind, string payload, CancellationToken ct) =>
-        CallAsync(i, HttpMethod.Post, $"billing/{(kind == "credit" ? "credit" : "invoice")}", payload, ct);
+    public Task<JsonElement> SubmitAsync(ElectronicInvoiceIntegration i, string kind, string payload, CancellationToken ct)
+    {
+        var document = JsonNode.Parse(payload)!.AsObject();
+        document["send_email"] = false;
+        return CallAsync(i, HttpMethod.Post, $"billing/{(kind == "credit" ? "credit" : "invoice")}", document.ToJsonString(), ct);
+    }
 
     public async Task<JsonElement?> FindAsync(ElectronicInvoiceIntegration i, string kind, string number, CancellationToken ct)
     {
         try { return await CallAsync(i, HttpMethod.Get, $"billing/{(kind == "credit" ? "credit" : "invoice")}/one?by=number&value={Uri.EscapeDataString(number)}", null, ct); }
         catch (KeyNotFoundException) { return null; }
     }
-
-    public async Task SendEmailAsync(ElectronicInvoiceIntegration i, string reference, string email, CancellationToken ct) =>
-        await CallAsync(i, HttpMethod.Post, "billing/general/utility/send-email", JsonSerializer.Serialize(new { cude = reference, targetEmail = email }), ct);
 
     public async Task<byte[]> DownloadAsync(ElectronicInvoiceIntegration i, string kind, string reference, string format, CancellationToken ct)
     {

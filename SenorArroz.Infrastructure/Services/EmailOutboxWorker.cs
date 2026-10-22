@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Infrastructure.Data;
 
 namespace SenorArroz.Infrastructure.Services;
 
@@ -56,70 +57,68 @@ public class EmailOutboxWorker : BackgroundService
         IServiceProvider services,
         CancellationToken cancellationToken)
     {
-        var context = services.GetRequiredService<IApplicationDbContext>();
+        var context = services.GetRequiredService<ApplicationDbContext>();
         var sender = services.GetRequiredService<ResendEmailDeliveryService>();
         var clock = services.GetRequiredService<IClock>();
         var now = clock.UtcNow;
 
-        var staleProcessingMessages = await context.EmailOutboxMessages
-            .Where(x => x.Status == "processing"
-                && x.LastAttemptedAt != null
-                && x.LastAttemptedAt <= now.AddMinutes(-2)
-                && x.AttemptCount < x.MaxAttempts)
-            .ToListAsync(cancellationToken);
-
-        foreach (var staleMessage in staleProcessingMessages)
-        {
-            staleMessage.Status = "retry";
-            staleMessage.NextAttemptAt = now;
-            staleMessage.LastError = "Recovered stale processing message.";
-        }
-
-        if (staleProcessingMessages.Count > 0)
-            await context.SaveChangesAsync(cancellationToken);
-
-        var messages = await context.EmailOutboxMessages
-            .Where(x => (x.Status == "pending" || x.Status == "retry")
-                && (x.NextAttemptAt == null || x.NextAttemptAt <= now)
-                && x.AttemptCount < x.MaxAttempts)
-            .OrderBy(x => x.CreatedAt)
-            .Take(10)
-            .ToListAsync(cancellationToken);
-
-        foreach (var message in messages)
-        {
-            message.Status = "processing";
-            message.LastAttemptedAt = now;
-            message.AttemptCount += 1;
-            await context.SaveChangesAsync(cancellationToken);
-
-            var result = await sender.SendAsync(message, cancellationToken);
-
-            if (result.Success)
-            {
-                message.Status = "sent";
-                message.SentAt = clock.UtcNow;
-                message.LastError = null;
-                message.NextAttemptAt = null;
-            }
-            else if (message.AttemptCount >= message.MaxAttempts)
-            {
-                message.Status = "failed";
-                message.LastError = result.ErrorMessage;
-                message.NextAttemptAt = null;
-            }
-            else
-            {
-                message.Status = "retry";
-                message.LastError = result.ErrorMessage;
-                message.NextAttemptAt = clock.UtcNow.AddMinutes(Math.Min(Math.Pow(2, message.AttemptCount), 60));
-            }
-
-            await UpdateRelatedDispatchAsync(context, message, result, clock.UtcNow, cancellationToken);
-            await context.SaveChangesAsync(cancellationToken);
-        }
+        var ids = await context.EmailOutboxMessages.AsNoTracking()
+            .Where(x => ((x.Status == "pending" || x.Status == "retry") && x.AttemptCount < x.MaxAttempts
+                    && (x.NextAttemptAt == null || x.NextAttemptAt <= now)
+                || x.Status == "processing" && (x.LeaseUntil == null ? x.LastAttemptedAt <= now.AddMinutes(-2) : x.LeaseUntil < now)))
+            .OrderBy(x => x.CreatedAt).Select(x => x.Id).Take(10).ToListAsync(cancellationToken);
+        foreach (var id in ids)
+            await ProcessMessageAsync(context, sender, clock, id, cancellationToken);
     }
 
+    public static async Task ProcessMessageAsync(ApplicationDbContext context, ResendEmailDeliveryService sender, IClock clock, int id, CancellationToken ct)
+    {
+        var now = clock.UtcNow;
+        var claimed = await context.EmailOutboxMessages.Where(x => x.Id == id
+            && (x.Status == "pending" || x.Status == "retry" || x.Status == "processing")
+            && (x.LeaseUntil == null || x.LeaseUntil < now)
+            && (x.Status == "processing" || x.NextAttemptAt == null || x.NextAttemptAt <= now))
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, "processing")
+                .SetProperty(x => x.LeaseUntil, now.AddMinutes(2))
+                .SetProperty(x => x.FirstAttemptedAt, x => x.FirstAttemptedAt ?? x.LastAttemptedAt ?? now)
+                .SetProperty(x => x.LastAttemptedAt, now)
+                .SetProperty(x => x.AttemptCount, x => x.AttemptCount + 1), ct);
+        if (claimed != 1) return;
+        var message = await context.EmailOutboxMessages.SingleAsync(x => x.Id == id, ct);
+        await context.Entry(message).ReloadAsync(ct);
+        var invoice = message.MessageType == "electronic_invoice";
+        SenorArroz.Domain.Models.EmailSendResult result;
+        if (invoice && message.FirstAttemptedAt <= now.AddHours(-23))
+        {
+            message.Status = "verifying";
+            result = SenorArroz.Domain.Models.EmailSendResult.Fail("resend", "El envío requiere verificación: venció la ventana segura de reintento. No se reenviará automáticamente.");
+        }
+        else
+        {
+            result = await sender.SendAsync(message, ct);
+            if (result.Success)
+            {
+                message.Status = "sent"; message.SentAt = clock.UtcNow; message.ProviderMessageId = result.MessageId;
+            }
+            else if (result.PermanentFailure || message.AttemptCount >= message.MaxAttempts)
+                message.Status = invoice && !result.PermanentFailure ? "verifying" : "failed";
+            else message.Status = "retry";
+        }
+        message.LeaseUntil = null;
+        message.LastError = result.Success ? null : result.ErrorMessage;
+        message.NextAttemptAt = message.Status == "retry" ? clock.UtcNow.AddMinutes(Math.Min(Math.Pow(2, message.AttemptCount), 60)) : null;
+        if (invoice)
+        {
+            var document = await context.ElectronicInvoiceDocuments.SingleOrDefaultAsync(x => x.Id == message.RelatedEntityId && x.TenantId == message.TenantId, ct);
+            if (document is not null)
+            {
+                document.EmailStatus = message.Status == "sent" ? "sent" : message.Status == "retry" ? "queued" : message.Status;
+                document.EmailError = message.LastError; document.EmailSentAt = message.SentAt;
+            }
+        }
+        await UpdateRelatedDispatchAsync(context, message, result, clock.UtcNow, ct);
+        await context.SaveChangesAsync(ct);
+    }
     private static async Task UpdateRelatedDispatchAsync(
         IApplicationDbContext context,
         SenorArroz.Domain.Entities.EmailOutboxMessage message,
@@ -143,7 +142,7 @@ public class EmailOutboxWorker : BackgroundService
             return;
         }
 
-        dispatch.DispatchStatus = message.AttemptCount >= message.MaxAttempts ? "failed" : "retrying";
+        dispatch.DispatchStatus = message.Status == "failed" ? "failed" : "retrying";
         dispatch.DispatchError = $"Provider: {result.Provider}. Error: {result.ErrorMessage}";
         dispatch.DispatchedAt = null;
     }

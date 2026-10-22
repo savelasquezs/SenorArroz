@@ -5,17 +5,21 @@ public class EmailSendResult
     public bool Success { get; init; }
     public string Provider { get; init; } = string.Empty;
     public string? ErrorMessage { get; init; }
+    public string? MessageId { get; init; }
+    public bool PermanentFailure { get; init; }
 
-    public static EmailSendResult Ok(string provider) => new()
+    public static EmailSendResult Ok(string provider, string? messageId = null) => new()
     {
         Success = true,
-        Provider = provider
+        Provider = provider,
+        MessageId = messageId
     };
 
-    public static EmailSendResult Fail(string provider, string? errorMessage) => new()
+    public static EmailSendResult Fail(string provider, string? errorMessage, bool permanent = false) => new()
     {
         Success = false,
         Provider = provider,
-        ErrorMessage = errorMessage
+        ErrorMessage = errorMessage,
+        PermanentFailure = permanent
     };
 }
