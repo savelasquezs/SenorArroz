@@ -39,7 +39,9 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         if (AdminConnection is null) return;
         database = "invoice_test_" + Guid.NewGuid().ToString("N"); runtimeRole = database + "_runtime";
         await using var admin = new NpgsqlConnection(AdminConnection); await admin.OpenAsync();
-        await new NpgsqlCommand($"CREATE DATABASE {database}; CREATE ROLE {runtimeRole} LOGIN NOSUPERUSER NOBYPASSRLS", admin).ExecuteNonQueryAsync();
+        var password = new NpgsqlConnectionStringBuilder(AdminConnection).Password;
+        var passwordClause = string.IsNullOrEmpty(password) ? "" : " PASSWORD '" + password.Replace("'", "''") + "'";
+        await new NpgsqlCommand($"CREATE DATABASE {database}; CREATE ROLE {runtimeRole} LOGIN NOSUPERUSER NOBYPASSRLS{passwordClause}", admin).ExecuteNonQueryAsync();
         var cs = new NpgsqlConnectionStringBuilder(AdminConnection) { Database = database };
         connection = cs.ConnectionString;
         await using var db = Db();
@@ -118,6 +120,27 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
     }
 
     [InvoicePostgresFact]
+    public async Task Different_integrations_cannot_reuse_a_tenant_document_number()
+    {
+        await using var db = Db();
+        var previous = new ElectronicInvoiceIntegration { Id = 2, Name = "Anterior", Prefix = "SETT", Environment = "sandbox" };
+        db.ElectronicInvoiceIntegrations.Add(previous); await db.SaveChangesAsync();
+        db.ElectronicInvoiceDocuments.Add(new ElectronicInvoiceDocument { OrderId = 2, IntegrationId = previous.Id,
+            Environment = "sandbox", Prefix = "SETT", Number = 1, Status = "credited", RequestedById = 1 });
+        await db.SaveChangesAsync();
+        var provider = new Mock<IElectronicInvoiceProvider>(); provider.SetupGet(x => x.Code).Returns("plemsi");
+        var service = new ElectronicInvoiceService(db, [provider.Object], Clock());
+        var request = await service.RequestAsync(await db.Orders.SingleAsync(x => x.Id == 1), Recipient(), 1, default);
+        await service.ProcessAsync(request.Id, default);
+        Assert.Equal("rejected", request.Status); Assert.Null(request.Number);
+        Assert.Equal(1, (await db.ElectronicInvoiceIntegrations.SingleAsync(x => x.Id == 1)).NextNumber);
+        provider.Verify(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        db.ElectronicInvoiceDocuments.Add(new ElectronicInvoiceDocument { OrderId = 1, IntegrationId = 1,
+            Environment = "sandbox", Prefix = "SETT", Number = 1, Kind = "invoice", Status = "cancelled", RequestedById = 1 });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [InvoicePostgresFact]
     public async Task Email_failure_does_not_reissue_and_operational_cancellation_requests_authorization()
     {
         var provider = new Mock<IElectronicInvoiceProvider>(); provider.SetupGet(x => x.Code).Returns("plemsi");
@@ -139,6 +162,28 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         await service.ProcessAsync(document.Id, default);
         Assert.True(document.CreditRequested);
         Assert.Single(await db.ElectronicInvoiceDocuments.ToListAsync());
+    }
+
+    [InvoicePostgresFact]
+    public async Task Rejected_invoice_retry_rebuilds_persisted_amounts_without_allocating_another_number()
+    {
+        var provider = new Mock<IElectronicInvoiceProvider>(); provider.SetupGet(x => x.Code).Returns("plemsi");
+        using var rejection = JsonDocument.Parse("""{"IsValid":false}""");
+        provider.Setup(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(rejection.RootElement.Clone());
+        await using var db = Db(); var service = new ElectronicInvoiceService(db, [provider.Object], Clock());
+        var document = await service.RequestAsync(await db.Orders.SingleAsync(x => x.Id == 1), Recipient(), 1, default);
+        await service.ProcessAsync(document.Id, default); Assert.Equal("rejected", document.Status);
+        var line = await db.OrderDetails.SingleAsync(x => x.OrderId == 1); line.UnitPrice = 12000; line.Subtotal = 12000;
+        var order = await db.Orders.SingleAsync(x => x.Id == 1); order.Total = 12000; order.Subtotal = 12000;
+        await db.SaveChangesAsync();
+        var user = new Mock<ICurrentUser>(); user.SetupGet(x => x.TenantId).Returns(1);
+        var controller = new ElectronicInvoicingController(db, user.Object, Mock.Of<IBranchContext>(), Mock.Of<IIntegrationSecretProtector>(), [provider.Object], service, Clock(), new ConfigurationBuilder().Build());
+        await controller.Retry(document.Id, Recipient() with { Name = "Cliente corregido" }, default);
+        using var payload = JsonDocument.Parse(document.PayloadJson!);
+        Assert.Equal(12000, payload.RootElement.GetProperty("totalToPay").GetDecimal());
+        Assert.Equal("Cliente corregido", payload.RootElement.GetProperty("customer").GetProperty("name").GetString());
+        Assert.Equal("pending", document.Status); Assert.Null(document.SubmittedAt); Assert.Equal(1, document.Number);
+        Assert.Equal(2, (await db.ElectronicInvoiceIntegrations.SingleAsync()).NextNumber);
     }
 
     [InvoicePostgresFact]

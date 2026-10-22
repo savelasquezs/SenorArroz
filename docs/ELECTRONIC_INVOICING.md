@@ -12,7 +12,7 @@ Las credenciales utilizan `Integrations__EncryptionKey`, el protector existente 
 
 Completar en Plemsi/DIAN el TestID de habilitación, firma digital y asociación de la resolución. Solicitar a Plemsi un token para el NIT emisor. Guardar NIT sin DV, razón social y correo empresarial, probar el token y verificar que corresponde al mismo NIT. Consultar resoluciones y registrar prefijo, consecutivo inicial disponible, límite y vencimiento; usar un rango dedicado a este sistema. Registrar también prefijo y consecutivo de notas crédito.
 
-La declaración de preparación para producción se marca solo después de validar factura, nota crédito, respuesta DIAN, XML/PDF y correo en pruebas. No activa automáticamente la integración. El tratamiento fiscal implementado es sin IVA ni INC: no habilitar negocios con otro tratamiento hasta parametrizar y validar sus impuestos.
+La declaración de preparación para producción confirma la habilitación del emisor, firma digital y resolución en Plemsi/DIAN. No activa automáticamente la integración. La primera emisión real requiere una venta legítima y confirmación del usuario. El tratamiento fiscal implementado es sin IVA ni INC: no habilitar negocios con otro tratamiento hasta parametrizar y validar sus impuestos.
 
 La API pública no incluye ejemplos de las respuestas de emisión. El adaptador exige `IsValid`/`is_valid` explícito y CUFE/CUDE para considerar emitido el documento. Una respuesta HTTP exitosa sin esos datos queda por verificar, nunca emitida. La validación de contratos reales requiere las credenciales del tenant; las pruebas automatizadas del proveedor usan respuestas controladas.
 
@@ -53,10 +53,16 @@ Si la consulta de disponibilidad falla al crear el pedido, se ofrece reintentar,
 
 `ElectronicInvoicing:ProductionEnabled` es false por defecto en appsettings. Bloquea la activación de producción, nuevas solicitudes, la asignación de números pendientes y las mutaciones HTTP de Plemsi en producción. Las consultas de documentos previamente transmitidos siguen disponibles para reconciliación. No establecerlo a true hasta validar los contratos reales y recibir autorización de activación.
 
-La activación consulta de nuevo resoluciones y folios. `InvoiceNumbering` normaliza las respuestas reconocidas y comprueba que la configuración pertenece a un único rango coincidente y vigente. El siguiente número requiere `next_number` o un consecutivo actual explícito; no se deduce del inicio del rango ni de un conteo genérico de folios. Las respuestas desconocidas bloquean la activación hasta adaptar y verificar el contrato real. La numeración reservada para este sistema sigue siendo obligatoria.
+La activación consulta de nuevo resoluciones y folios. `InvoiceNumbering` normaliza las respuestas reconocidas y comprueba que la configuración pertenece a un único rango coincidente y vigente. El siguiente número se obtiene de `next_number` o de un consecutivo actual explícito; no se deduce del inicio del rango ni de un conteo genérico de folios. Si el contador es nulo, requiere confirmación manual de Superadmin descrita abajo; un rango desconocido sigue bloqueando la activación. La numeración reservada para este sistema sigue siendo obligatoria.
 
 El detalle muestra el snapshot del destinatario del documento, fecha de validación y estado independiente de correo. Sin correo no aparece reenvío. CUFE, XML y nota crédito están en detalles secundarios. La solicitud de nota crédito no autoriza corregir importes hasta su validación.
 
 BaseDialog administra el foco, Escape, Tab, diálogos anidados y restauración del foco. DialogHost reutiliza este comportamiento. Los datos tributarios y disponibilidad comparten consultas por sesión mediante Pinia; las respuestas de una sesión anterior se descartan. La edición actualiza los accesos abiertos sin otra consulta. La consulta periódica del detalle se pausa con la pantalla oculta.
 
 Pruebas locales con Docker: PostgreSQL 17, puerto publicado solo en 127.0.0.1, contenedor sin volúmenes persistentes. Establecer `INVOICE_TEST_POSTGRES` con la conexión de ese contenedor antes de `dotnet test --filter FullyQualifiedName~ElectronicInvoicing`. Las pruebas crean bases y roles temporales, comprueban RLS con rol NOBYPASSRLS y eliminan únicamente sus bases y roles. No usar credenciales Plemsi reales para estas pruebas automatizadas.
+
+## Publicación autorizada 2026-10-22
+
+Producción reconoce el NIT en `data.dni.number` y los folios en `lastNumberUsed` o `data[].invoice.number`. Un contador nulo permanece desconocido; no se transforma automáticamente en 1. Superadmin confirma en el modal el número disponible verificado en DIAN y en su proveedor anterior y el uso exclusivo de la serie. La activación registra la confirmación en `resolutions_json`, junto con actor, fecha y respuesta consultada. Si Plemsi informa un consecutivo, se respeta su piso incluso con confirmación manual.
+
+Aplicar primero el SQL idempotente, incluidos permisos de las tres tablas y secuencias para `senorarroz_runtime`. Habilitar `ElectronicInvoicing__ProductionEnabled=true` en Railway permite configurar y activar producción; esto no activa ninguna integración ni solicita documentos por sí solo. La emisión sigue requiriendo integración activa y confirmación del usuario. El valor de appsettings permanece false para instalaciones nuevas.

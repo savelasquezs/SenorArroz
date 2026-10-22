@@ -33,7 +33,7 @@ public sealed record InvoiceNumbering(string Resolution, string Prefix, long Fro
                 var date = Text(node, "date_to", "to_date", "valid_until");
                 DateTime? expiry = DateTime.TryParse(date, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed) ? parsed : null;
                 var next = Number(node, "next_number", "nextNumber");
-                var current = Number(node, "current", "current_number");
+                var current = Number(node, "current", "current_number", "lastNumberUsed");
                 if (!next.HasValue && current.HasValue && current.Value < long.MaxValue) next = Math.Max(from.Value, current.Value + 1);
                 result.Add(new(resolution, prefix, from.Value, to.Value, expiry, next));
                 return;
@@ -45,10 +45,17 @@ public sealed record InvoiceNumbering(string Resolution, string Prefix, long Fro
     }
     public static long? ReadNext(JsonElement value)
     {
+        if (value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in value.EnumerateArray())
+                if (ReadNext(item) is long number) return number;
+            return null;
+        }
         if (value.ValueKind != JsonValueKind.Object) return null;
         var next = Number(value, "next_number", "nextNumber");
         if (next.HasValue) return next;
-        var current = Number(value, "current", "current_number");
+        var current = Number(value, "current", "current_number", "lastNumberUsed");
+        if (!current.HasValue && value.TryGetProperty("invoice", out var invoice)) current = Number(invoice, "number");
         if (current.HasValue && current.Value < long.MaxValue) return current.Value + 1;
         foreach (var property in value.EnumerateObject())
         {
@@ -57,7 +64,7 @@ public sealed record InvoiceNumbering(string Resolution, string Prefix, long Fro
         }
         return null;
     }
-    public static void Validate(ElectronicInvoiceIntegration integration, IReadOnlyList<InvoiceNumbering> rows, JsonElement? remaining, DateTime now)
+    public static void Validate(ElectronicInvoiceIntegration integration, IReadOnlyList<InvoiceNumbering> rows, JsonElement? remaining, DateTime now, bool numberingConfirmed = false)
     {
         var matches = rows.Where(r => r.Resolution == integration.Resolution && r.Prefix == integration.Prefix).ToList();
         if (matches.Count != 1) throw new BusinessException("La resolución y el prefijo no coinciden con una numeración de Plemsi. Consulta y selecciona la numeración correcta.");
@@ -68,8 +75,8 @@ public sealed record InvoiceNumbering(string Resolution, string Prefix, long Fro
             || row.From < 1 || row.To < row.From || integration.LastNumber > row.To
             || integration.NextNumber < row.From || integration.NextNumber > integration.LastNumber)
             throw new BusinessException("El rango o la vigencia configurados no coinciden con la numeración autorizada por Plemsi.");
-        if (!next.HasValue) throw new BusinessException("Plemsi no confirmó el próximo consecutivo disponible. Confírmalo con soporte antes de activar; no uses automáticamente el inicio del rango.");
-        if (integration.NextNumber < Math.Max(row.From, next.Value))
+        if (!next.HasValue && !numberingConfirmed) throw new BusinessException("Plemsi no confirmó el próximo consecutivo. Verifica el último utilizado en DIAN y en tu proveedor anterior, configura uno disponible y confirma la numeración dedicada antes de activar.");
+        if (next.HasValue && integration.NextNumber < Math.Max(row.From, next.Value))
             throw new BusinessException("El consecutivo configurado ya pudo ser utilizado. Consulta los folios y configura un consecutivo disponible.");
     }
 }

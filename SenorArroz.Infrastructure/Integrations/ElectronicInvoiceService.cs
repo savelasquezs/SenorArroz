@@ -101,25 +101,21 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
                 await db.Entry(order).Collection(x => x.OrderDetails).Query().Include(x => x.Product).LoadAsync(ct);
                 if (d.Status == "scheduled" && order.Status != OrderStatus.Delivered) return;
                 if (order.Status == OrderStatus.Cancelled && d.Kind == "invoice") { d.Status = "cancelled"; return; }
-                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({i.TenantId}, {i.Id})", ct);
+                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({i.TenantId}, -782)", ct);
                 await db.Entry(i).ReloadAsync(ct);
                 if (d.Kind == "invoice") EnsureReady(i);
                 else if (string.IsNullOrWhiteSpace(i.EncryptedToken) || string.IsNullOrWhiteSpace(i.CreditPrefix)
                     || i.Environment == "production" && !i.ProductionReady)
                     throw new BusinessException("Completa las credenciales y numeración de notas crédito.");
                 d.Prefix = d.Kind == "credit" ? i.CreditPrefix : i.Prefix;
+                var nextNumber = d.Kind == "credit" ? i.NextCreditNumber : i.NextNumber;
+                if (await db.ElectronicInvoiceDocuments.AnyAsync(x => x.Environment == i.Environment && x.Kind == d.Kind
+                    && x.Prefix == d.Prefix && x.Number == nextNumber, ct))
+                    throw new BusinessException("El consecutivo está reservado por otro documento del negocio. Revisa la numeración antes de continuar.");
                 d.Number = d.Kind == "credit" ? i.NextCreditNumber++ : i.NextNumber++;
                 if (d.Kind == "invoice")
                 {
-                    d.SnapshotJson = JsonSerializer.Serialize(new
-                    {
-                        issuer = new { i.TaxId, i.LegalName, i.BillingEmail, i.Resolution },
-                        order = new { order.Id, order.CustomerId, order.Total, order.Subtotal, order.DiscountTotal,
-                            order.DeliveryFee, order.PaidInStoreCashAmount,
-                            bankPayments = order.BankPayments.Select(x => new { x.BankId, x.Amount }),
-                            appPayments = order.AppPayments.Select(x => new { x.AppId, x.Amount }),
-                            deposits = order.Deposits.Select(x => new { x.Amount, x.IsEffective, x.BankId, x.AppId }) }
-                    });
+                    d.SnapshotJson = BuildSnapshot(order, i);
                     var recipient = JsonSerializer.Deserialize<BillingRecipientDto>(d.RecipientJson)!;
                     d.PayloadJson = BuildInvoicePayload(order, recipient, i, d.Prefix, d.Number.Value, clock.UtcNow);
                 }
@@ -217,6 +213,17 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
             d.EmailStatus = "accepted";
         }
     }
+
+    public static string BuildSnapshot(Order order, ElectronicInvoiceIntegration i) => JsonSerializer.Serialize(new
+    {
+        issuer = new { i.TaxId, i.LegalName, i.BillingEmail, i.Resolution },
+        order = new { order.Id, order.CustomerId, order.Total, order.Subtotal, order.DiscountTotal,
+            order.DeliveryFee, order.PaidInStoreCashAmount,
+            lines = order.OrderDetails.Select(x => new { x.ProductId, name = x.Product.Name, x.Quantity, x.UnitPrice, x.Discount }),
+            bankPayments = order.BankPayments.Select(x => new { x.BankId, x.Amount }),
+            appPayments = order.AppPayments.Select(x => new { x.AppId, x.Amount }),
+            deposits = order.Deposits.Select(x => new { x.Amount, x.IsEffective, x.BankId, x.AppId }) }
+    });
 
     public static string BuildInvoicePayload(Order order, BillingRecipientDto recipient, ElectronicInvoiceIntegration integration, string prefix, long number, DateTime now)
     {

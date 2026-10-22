@@ -73,7 +73,7 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
     {
         var i = await Integration(id, ct);
         var company = await Provider(i).CompanyAsync(i, ct);
-        var remoteTaxId = PlemsiInvoiceProvider.FindString(company, "identification_number", "nit", "tax_id");
+        var remoteTaxId = PlemsiInvoiceProvider.CompanyTaxId(company);
         if (string.IsNullOrWhiteSpace(remoteTaxId) || remoteTaxId != i.TaxId)
             throw new BusinessException("El NIT configurado no coincide con la empresa del token. Verifica la respuesta de empresa con Plemsi.");
         i.CompanyJson = company.GetRawText();
@@ -116,8 +116,11 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
             ElectronicInvoiceService.EnsureReady(i);
             var resolutions = await Provider(i).ResolutionsAsync(i, ct);
             var remaining = await Provider(i).RemainingAsync(i, i.Resolution, ct);
-            InvoiceNumbering.Validate(i, InvoiceNumbering.Read(resolutions), remaining, clock.UtcNow);
-            i.ResolutionsJson = JsonSerializer.Serialize(new { resolutions, remaining });
+            InvoiceNumbering.Validate(i, InvoiceNumbering.Read(resolutions), remaining, clock.UtcNow, dto.NumberingConfirmed);
+            if (await db.ElectronicInvoiceDocuments.AnyAsync(x => x.Environment == i.Environment
+                && x.Kind == "invoice" && x.Prefix == i.Prefix && x.Number >= i.NextNumber, ct))
+                throw new BusinessException("El consecutivo ya fue utilizado o reservado en este negocio. Configura uno superior al último registrado.");
+            i.ResolutionsJson = JsonSerializer.Serialize(new { resolutions, remaining, numberingConfirmed = dto.NumberingConfirmed, confirmedBy = user.Id, confirmedAt = clock.UtcNow });
             var others = await db.ElectronicInvoiceIntegrations.Where(x => x.IsActive && x.Id != id).ToListAsync(ct);
             foreach (var other in others) other.IsActive = false;
             await db.SaveChangesAsync(ct);
@@ -193,6 +196,11 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
     [HttpPost("documents/{id:int}/retry")]
     public async Task<IActionResult> Retry(int id, BillingRecipientDto? recipient, CancellationToken ct)
     {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var orderId = await db.ElectronicInvoiceDocuments.Where(x => x.Id == id).Select(x => (int?)x.OrderId).SingleOrDefaultAsync(ct)
+            ?? throw new NotFoundException("Documento no encontrado");
+        await Order(orderId, ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM public.\"order\" WHERE id = {orderId} AND tenant_id = {user.TenantId} FOR UPDATE", ct);
         var d = await Document(id, ct);
         if (d.LeaseUntil > clock.UtcNow) throw new BusinessException("El documento está siendo procesado.");
         if (d.Status == "rejected")
@@ -201,19 +209,21 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
             {
                 ElectronicInvoiceService.ValidateRecipient(recipient);
                 d.RecipientJson = JsonSerializer.Serialize(recipient);
-                if (d.PayloadJson is not null)
-                {
-                    var payload = System.Text.Json.Nodes.JsonNode.Parse(d.PayloadJson)!.AsObject();
-                    payload["customer"] = JsonSerializer.SerializeToNode(new { identification_number = recipient.Identification,
-                        name = recipient.Name, email = recipient.Email, type_document_identification_id = recipient.DocumentType });
-                    d.PayloadJson = payload.ToJsonString();
-                }
                 d.EmailStatus = string.IsNullOrWhiteSpace(recipient.Email) ? "notRequested" : "pending";
+            }
+            if (d.Kind == "invoice" && d.Number.HasValue)
+            {
+                var order = await db.Orders.Include(x => x.OrderDetails).ThenInclude(x => x.Product)
+                    .Include(x => x.BankPayments).Include(x => x.AppPayments).Include(x => x.Deposits).SingleAsync(x => x.Id == d.OrderId, ct);
+                var integration = await Integration(d.IntegrationId, ct);
+                d.PayloadJson = ElectronicInvoiceService.BuildInvoicePayload(order, JsonSerializer.Deserialize<BillingRecipientDto>(d.RecipientJson)!, integration, d.Prefix, d.Number.Value, clock.UtcNow);
+                d.SnapshotJson = ElectronicInvoiceService.BuildSnapshot(order, integration);
             }
             d.SubmittedAt = null; d.Status = "pending";
         }
         d.NextAttemptAt = clock.UtcNow;
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return Success(new { d.Status });
     }
 
@@ -299,5 +309,5 @@ public sealed record InvoiceIntegrationDto
     [Range(1, long.MaxValue)] public long NextCreditNumber { get; init; } = 1;
     public bool ProductionReady { get; init; }
 }
-public sealed record ActivationDto(bool Enabled);
+public sealed record ActivationDto(bool Enabled, bool NumberingConfirmed = false);
 public sealed record CreditDto([Required, MinLength(5), MaxLength(500)] string Reason);

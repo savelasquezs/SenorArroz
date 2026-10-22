@@ -574,6 +574,8 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 
 ## Facturación electrónica
 
+- Si Plemsi devuelve el último consecutivo nulo, Superadmin puede confirmar expresamente un número disponible tras verificar DIAN y el proveedor anterior. La activación registra actor, fecha y respuesta. No permite reutilizar números conocidos ni omitir rango o vigencia; la numeración debe dedicarse al sistema.
+
 - La indisponibilidad de facturación ofrece continuar con Solo pedido, sin emisión silenciosa. La activación vuelve a consultar Plemsi y valida resolución, prefijo, rango, vigencia y un consecutivo confirmado; no se infiere desde el inicio del rango.
 - La emisión real requiere además ElectronicInvoicing__ProductionEnabled=true en el servidor; el valor por defecto es false. El detalle fiscal muestra el destinatario histórico del documento y el reenvío conserva ese correo.
 

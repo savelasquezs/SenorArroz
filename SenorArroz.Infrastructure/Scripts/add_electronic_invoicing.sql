@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS electronic_invoice_document (
 CREATE UNIQUE INDEX IF NOT EXISTS ux_invoice_order_active ON electronic_invoice_document(tenant_id,order_id)
  WHERE kind='invoice' AND status NOT IN ('credited','cancelled');
 CREATE UNIQUE INDEX IF NOT EXISTS ux_invoice_credit_original ON electronic_invoice_document(original_document_id) WHERE original_document_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_invoice_tenant_number ON electronic_invoice_document(tenant_id,environment,kind,prefix,number);
 CREATE INDEX IF NOT EXISTS ix_invoice_work ON electronic_invoice_document(tenant_id,status,next_attempt_at);
 
 DO $rls$
@@ -93,4 +94,14 @@ DROP TRIGGER IF EXISTS protect_invoiced_order ON public."order";
 CREATE TRIGGER protect_invoiced_order BEFORE UPDATE OR DELETE ON public."order" FOR EACH ROW EXECUTE FUNCTION prevent_invoiced_order_mutation();
 DROP TRIGGER IF EXISTS protect_invoiced_order_detail ON order_detail;
 CREATE TRIGGER protect_invoiced_order_detail BEFORE INSERT OR UPDATE OR DELETE ON order_detail FOR EACH ROW EXECUTE FUNCTION prevent_invoiced_order_mutation();
+DO $grants$
+DECLARE t text;
+BEGIN
+ IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='senorarroz_runtime') THEN
+  FOREACH t IN ARRAY ARRAY['electronic_invoice_integration','customer_billing_recipient','electronic_invoice_document'] LOOP
+   EXECUTE format('GRANT SELECT, INSERT, UPDATE ON public.%I TO senorarroz_runtime',t);
+   EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE public.%I TO senorarroz_runtime',t||'_id_seq');
+  END LOOP;
+ END IF;
+END $grants$;
 COMMIT;

@@ -177,6 +177,40 @@ public sealed class ElectronicInvoicingTests
         Assert.Throws<BusinessException>(() => InvoiceNumbering.Validate(integration, rows, remaining.RootElement, DateTime.UtcNow));
     }
 
+    [Theory]
+    [InlineData("{\"data\":{\"dni\":{\"type\":\"NIT\",\"number\":\"1038414022\",\"verificationDigit\":\"9\"}}}", "1038414022")]
+    [InlineData("{\"data\":{\"dni\":{\"number\":1038414022}}}", "1038414022")]
+    [InlineData("{\"data\":{\"identification_number\":\"900123456\"}}", "900123456")]
+    [InlineData("{\"data\":{\"invoice\":{\"number\":\"123\"}}}", null)]
+    public void Company_identity_accepts_live_dni_contract_without_confusing_other_numbers(string json, string? taxId)
+    {
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal(taxId, PlemsiInvoiceProvider.CompanyTaxId(document.RootElement));
+    }
+
+    [Theory]
+    [InlineData("{\"data\":[{\"invoice\":{\"prefix\":\"SAV\",\"number\":40},\"remaining\":999959}]}", 41L)]
+    [InlineData("{\"data\":{\"lastNumberUsed\":40}}", 41L)]
+    [InlineData("{\"data\":[{\"invoice\":{\"number\":null},\"remaining\":null}]}", null)]
+    public void Numbering_accepts_live_remaining_contract_and_keeps_null_unknown(string json, long? next)
+    {
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal(next, InvoiceNumbering.ReadNext(document.RootElement));
+    }
+
+    [Fact]
+    public void Unknown_provider_counter_requires_explicit_confirmation_and_never_overrides_known_floor()
+    {
+        var integration = Integration; integration.LastNumber = 100;
+        var rows = new[] { new InvoiceNumbering(integration.Resolution, integration.Prefix, 1, 100, DateTime.UtcNow.AddDays(30), null) };
+        Assert.Throws<BusinessException>(() => InvoiceNumbering.Validate(integration, rows, null, DateTime.UtcNow));
+        InvoiceNumbering.Validate(integration, rows, null, DateTime.UtcNow, numberingConfirmed: true);
+        rows[0] = rows[0] with { NextNumber = 20 };
+        Assert.Throws<BusinessException>(() => InvoiceNumbering.Validate(integration, rows, null, DateTime.UtcNow, numberingConfirmed: true));
+        integration.NextNumber = 101;
+        Assert.Throws<BusinessException>(() => InvoiceNumbering.Validate(integration, rows, null, DateTime.UtcNow, numberingConfirmed: true));
+    }
+
     [Fact]
     public async Task Production_mutations_are_blocked_without_contacting_provider()
     {

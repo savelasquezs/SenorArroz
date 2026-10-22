@@ -76,7 +76,7 @@ public sealed class PlemsiInvoiceProvider(HttpClient http, IIntegrationSecretPro
     {
         var result = await CallAsync(i, HttpMethod.Get, $"billing/{(kind == "credit" ? "credit" : "invoice")}/{format}/{Uri.EscapeDataString(reference)}", null, ct);
         var data = result.GetProperty("data");
-        var value = data.ValueKind == JsonValueKind.String ? data.GetString() : FindString(data, "base64", "content", "xml", "pdf");
+        var value = data.ValueKind == JsonValueKind.String ? data.GetString() : FindString(data, "base64", "b64data", "content", "xml", "pdf");
         if (string.IsNullOrWhiteSpace(value)) throw new BusinessException("Plemsi no devolvió el archivo solicitado.");
         return Convert.FromBase64String(value);
     }
@@ -94,6 +94,16 @@ public sealed class PlemsiInvoiceProvider(HttpClient http, IIntegrationSecretPro
             if (found is not null) return found;
         }
         return null;
+    }
+
+    public static string? CompanyTaxId(JsonElement company)
+    {
+        var data = company.TryGetProperty("data", out var nested) ? nested : company;
+        if (data.ValueKind != JsonValueKind.Object) return null;
+        if (data.TryGetProperty("dni", out var dni) && dni.ValueKind == JsonValueKind.Object
+            && dni.TryGetProperty("number", out var number) && number.ValueKind is JsonValueKind.String or JsonValueKind.Number)
+            return number.ToString();
+        return FindString(data, "identification_number", "nit", "tax_id");
     }
 
     public static bool? DianValidation(JsonElement element)

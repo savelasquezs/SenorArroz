@@ -55,6 +55,7 @@ public sealed class ElectronicInvoiceDocumentConfiguration : IEntityTypeConfigur
         b.HasIndex(x => new { x.TenantId, x.OrderId }).IsUnique().HasFilter("kind = 'invoice' AND status NOT IN ('credited', 'cancelled')");
         b.HasIndex(x => x.OriginalDocumentId).IsUnique().HasFilter("original_document_id IS NOT NULL");
         b.HasIndex(x => new { x.TenantId, x.IntegrationId, x.Environment, x.Kind, x.Prefix, x.Number }).IsUnique();
+        b.HasIndex(x => new { x.TenantId, x.Environment, x.Kind, x.Prefix, x.Number }).IsUnique();
         b.HasOne<Order>().WithMany().HasForeignKey(x => new { x.TenantId, x.OrderId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ElectronicInvoiceIntegration>().WithMany().HasForeignKey(x => new { x.TenantId, x.IntegrationId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ElectronicInvoiceDocument>().WithMany().HasForeignKey(x => new { x.TenantId, x.OriginalDocumentId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
