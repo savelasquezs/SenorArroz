@@ -75,6 +75,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<WhatsAppCommerceSessionToken> WhatsAppCommerceSessionTokens { get; set; }
 
         public virtual DbSet<WhatsAppFlowExchange> WhatsAppFlowExchanges { get; set; }
+
         public virtual DbSet<WhatsAppCommerceOutboxMessage> WhatsAppCommerceOutboxMessages { get; set; }
         public virtual DbSet<WhatsAppCommerceEvent> WhatsAppCommerceEvents { get; set; }
 
@@ -194,6 +195,9 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<SupplierExpense> SupplierExpenses { get; set; }
 
         public virtual DbSet<User> Users { get; set; }
+        public virtual DbSet<EmployeeLunch> EmployeeLunches { get; set; }
+        public virtual DbSet<EmployeeLeaveRequest> EmployeeLeaveRequests { get; set; }
+        public virtual DbSet<EmployeeLeaveAttachment> EmployeeLeaveAttachments { get; set; }
 
         public virtual DbSet<UserDeviceToken> UserDeviceTokens { get; set; }
 
@@ -243,6 +247,9 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new KitchenVoiceEventConfiguration());
             modelBuilder.ApplyConfiguration(new PrintJobConfiguration());
             modelBuilder.ApplyConfiguration(new UserConfiguration());
+            modelBuilder.ApplyConfiguration(new EmployeeLunchConfiguration());
+            modelBuilder.ApplyConfiguration(new EmployeeLeaveRequestConfiguration());
+            modelBuilder.ApplyConfiguration(new EmployeeLeaveAttachmentConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerPhoneConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerMergeHistoryConfiguration());

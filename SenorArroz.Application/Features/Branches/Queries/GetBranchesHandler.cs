@@ -26,21 +26,22 @@ public class GetBranchesHandler : IRequestHandler<GetBranchesQuery, PagedResult<
             request.Page,
             request.PageSize,
             request.SortBy,
-            request.SortOrder);
+            request.SortOrder,
+            cancellationToken);
 
-        var branchDtos = new List<BranchDto>();
-
-        foreach (var branch in pagedBranches.Items)
+        var branches = pagedBranches.Items.ToList();
+        var stats = await _branchRepository.GetListStatisticsForBranchesAsync(
+            branches.Select(b => b.Id).ToArray(), cancellationToken);
+        var branchDtos = new List<BranchDto>(branches.Count);
+        foreach (var branch in branches)
         {
             var branchDto = _mapper.Map<BranchDto>(branch);
-
-            // Add statistics
-            branchDto.TotalUsers = await _branchRepository.GetTotalUsersAsync(branch.Id, cancellationToken);
-            branchDto.ActiveUsers = await _branchRepository.GetActiveUsersAsync(branch.Id, cancellationToken);
-            branchDto.TotalCustomers = await _branchRepository.GetTotalCustomersAsync(branch.Id, cancellationToken);
-            branchDto.ActiveCustomers = await _branchRepository.GetActiveCustomersAsync(branch.Id, cancellationToken);
-            branchDto.TotalNeighborhoods = await _branchRepository.GetTotalNeighborhoodsAsync(branch.Id, cancellationToken);
-
+            stats.TryGetValue(branch.Id, out var counts);
+            branchDto.TotalUsers = counts?.TotalUsers ?? 0;
+            branchDto.ActiveUsers = counts?.ActiveUsers ?? 0;
+            branchDto.TotalCustomers = counts?.TotalCustomers ?? 0;
+            branchDto.ActiveCustomers = counts?.ActiveCustomers ?? 0;
+            branchDto.TotalNeighborhoods = counts?.TotalNeighborhoods ?? 0;
             branchDtos.Add(branchDto);
         }
 

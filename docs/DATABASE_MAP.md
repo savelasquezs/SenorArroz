@@ -589,3 +589,6 @@ siendo aceptados, pero no disponen de la protección entre reintentos.
 ## Facturación electrónica por tenant
 
 electronic_invoice_integration conserva proveedor, ambiente, credenciales cifradas y numeraciones. customer_billing_recipient conserva perfiles globales por cliente. electronic_invoice_document conserva snapshots, trabajos recuperables, validación y archivos privados. Las tres entidades son tenant-owned con RLS forzado y FKs compuestas. Script: SenorArroz.Infrastructure/Scripts/add_electronic_invoicing.sql; operación: docs/ELECTRONIC_INVOICING.md.
+## Almuerzos
+
+EmployeeLunch (employee_lunch) es tenant-owned, con sucursal histórica, empleado, salida/regreso UTC y actores. FK compuestas por tenant, RLS forzado, índice de intervalo abierto único y trigger de no solapamiento. Las asignaciones operativas y los almuerzos escriben la misma fila de usuario para serializar y detectar snapshots serializables obsoletos; no se cambia la identidad ni sus asociaciones. UpdatedAt es la versión de corrección administrativa. Script: add_employee_lunch.sql. El inicializador raíz incorpora el mismo SQL sin depender de facturación electrónica.

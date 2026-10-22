@@ -65,6 +65,19 @@ public sealed class RoutingPlanPublicationPostgreSqlTests
         Assert.Equal(new[] { 1 }, proposal.ClaimableReadyOrderIds);
         Assert.Equal("validated", proposal.GoogleValidationStatus);
         Assert.Equal(plan.Id, (await service.GetOrCreateActivePlanAsync(1)).Id);
+        var concurrent = await Task.WhenAll(Enumerable.Range(0, 3).Select(async _ =>
+        {
+            await using var reader = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseNpgsql(postgres.GetConnectionString()).Options,
+                currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
+            var planner = new DeliveryRoutingPlanService(reader, new FakeClock(now), new ApproximateRoutingCostMatrixProvider(options),
+                optimizer.Object, estimator.Object, availability.Object, google.Object, notifications.Object,
+                options, Mock.Of<ILogger<DeliveryRoutingPlanService>>());
+            return await planner.GetOrCreateActivePlanAsync(1);
+        }));
+        Assert.All(concurrent, current => Assert.Equal(plan.Version, current.Version));
+        Assert.Single(await db.DeliveryRoutingPlans.AsNoTracking().ToListAsync());
+        notifications.Verify(n => n.NotifyDeliveryRoutingPlanChanged(1, plan.Id, plan.Version), Times.Once);
         google.Verify(g => g.ComputeRouteAsync(It.IsAny<IReadOnlyList<(double Latitude, double Longitude)>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 }

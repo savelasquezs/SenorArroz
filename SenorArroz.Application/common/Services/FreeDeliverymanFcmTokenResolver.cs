@@ -47,6 +47,8 @@ public class FreeDeliverymanFcmTokenResolver : IFreeDeliverymanFcmTokenResolver
             .Select(o => o.DeliveryManId!.Value)
             .Distinct()
             .ToListAsync(cancellationToken);
+        busyDeliverymanIds.AddRange(await _db.EmployeeLunches.AsNoTracking()
+            .Where(l => l.EndedAt == null).Select(l => l.UserId).ToListAsync(cancellationToken));
 
         var candidateTokens = await _db.UserDeviceTokens
             .AsNoTracking()

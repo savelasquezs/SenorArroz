@@ -62,6 +62,8 @@ namespace SenorArroz.Application.Features.Auth.Commands
             var isDeliveryAppClient = !request.IsWebClient
                 && (user.Role == Domain.Enums.UserRole.Deliveryman
                     || string.Equals(originalRole, "Deliveryman", StringComparison.OrdinalIgnoreCase));
+            if (user.Role == Domain.Enums.UserRole.Kitchen && !user.WebAccessEnabled)
+                throw new BusinessException("Esta cuenta no tiene acceso web.");
             if (request.IsWebClient && user.Role == Domain.Enums.UserRole.Deliveryman && !user.WebAccessEnabled)
                 throw new DeliverymanWebAccessDeniedException();
             if (isDeliveryAppClient)

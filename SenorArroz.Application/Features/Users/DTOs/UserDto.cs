@@ -8,6 +8,7 @@ namespace SenorArroz.Application.Features.Users.DTOs
         public int BranchId { get; set; }
         public string BranchName { get; set; } = string.Empty;
         public UserRole Role { get; set; }
+        public EmployeeAccountType AccountType { get; set; }
         public string RoleName => Role.ToString().ToLower();
         public string Name { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;

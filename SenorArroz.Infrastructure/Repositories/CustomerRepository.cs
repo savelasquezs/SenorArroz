@@ -41,6 +41,7 @@ public class CustomerRepository : ICustomerRepository
 
         var query = _context.Customers
             .AsNoTracking()
+            .AsSplitQuery() // Avoid Cartesian products across phones/addresses/branch services.
             .Include(c => c.Branch)
             .Include(c => c.Phones)
             .Include(c => c.Addresses)
@@ -96,10 +97,10 @@ public class CustomerRepository : ICustomerRepository
 
         query = sortBy.ToLower() switch
         {
-            "name" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
-            "phone1" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(c => c.Phone1) : query.OrderBy(c => c.Phone1),
-            "createdat" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt),
-            _ => query.OrderBy(c => c.Name)
+            "name" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(c => c.Name).ThenBy(c => c.Id) : query.OrderBy(c => c.Name).ThenBy(c => c.Id),
+            "phone1" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(c => c.Phone1).ThenBy(c => c.Id) : query.OrderBy(c => c.Phone1).ThenBy(c => c.Id),
+            "createdat" => sortOrder.ToLower() == "desc" ? query.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id) : query.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id),
+            _ => query.OrderBy(c => c.Name).ThenBy(c => c.Id)
         };
 
         return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
@@ -118,6 +119,7 @@ public class CustomerRepository : ICustomerRepository
     {
         return await _context.Customers
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(c => c.Branch)
             .Include(c => c.Phones)
             .Include(c => c.Addresses)
@@ -253,6 +255,21 @@ public class CustomerRepository : ICustomerRepository
         return await query.AnyAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyDictionary<int, CustomerOrderStatistics>> GetOrderStatisticsForCustomersAsync(IReadOnlyCollection<int> customerIds, CancellationToken cancellationToken = default)
+    {
+        if (customerIds.Count == 0) return new Dictionary<int, CustomerOrderStatistics>();
+        var ids = customerIds.Distinct().ToArray();
+        var grouped = await _context.Orders.AsNoTracking()
+            .Where(o => o.TenantId == _tenantId && o.CustomerId.HasValue && ids.Contains(o.CustomerId.Value)
+                && o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.AwaitingPayment)
+            .GroupBy(o => o.CustomerId!.Value)
+            .Select(g => new { Id = g.Key, Count = g.Count(), Delivered = g.Count(o => o.Status == OrderStatus.Delivered),
+                First = g.Min(o => (DateTime?)o.CreatedAt),
+                Last = g.Max(o => (DateTime?)o.CreatedAt), Total = g.Sum(o => o.Total) })
+            .ToListAsync(cancellationToken);
+        return grouped.ToDictionary(x => x.Id, x => new CustomerOrderStatistics(x.Count, x.First, x.Last, x.Total, x.Delivered));
+    }
+
     public async Task<int> GetTotalOrdersAsync(int customerId, CancellationToken cancellationToken = default)
     {
         return await _context.Orders
@@ -263,32 +280,4 @@ public class CustomerRepository : ICustomerRepository
                 o.Status != OrderStatus.AwaitingPayment, cancellationToken);
     }
 
-    public async Task<(DateTime? First, DateTime? Last)> GetOrderDateRangeAsync(int customerId, CancellationToken cancellationToken = default)
-    {
-        var result = await _context.Orders
-            .AsNoTracking()
-            .Where(o => o.TenantId == _tenantId && o.CustomerId == customerId
-                && o.Status != OrderStatus.Cancelled
-                && o.Status != OrderStatus.AwaitingPayment)
-            .GroupBy(_ => 1)
-            .Select(g => new
-            {
-                First = (DateTime?)g.Min(o => o.CreatedAt),
-                Last  = (DateTime?)g.Max(o => o.CreatedAt)
-            })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return (result?.First, result?.Last);
-    }
-
-    public async Task<int> GetTotalOrderRevenueAsync(int customerId, CancellationToken cancellationToken = default)
-    {
-        return await _context.Orders
-            .Where(o =>
-                o.TenantId == _tenantId &&
-                o.CustomerId == customerId &&
-                o.Status != OrderStatus.Cancelled &&
-                o.Status != OrderStatus.AwaitingPayment)
-            .SumAsync(o => o.Total, cancellationToken);
-    }
 }

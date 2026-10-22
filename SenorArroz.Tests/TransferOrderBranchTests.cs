@@ -26,12 +26,14 @@ public sealed class TransferOrderBranchTests
     }
 
     [Theory]
-    [InlineData(OrderStatus.Delivered)]
-    [InlineData(OrderStatus.OnTheWay)]
-    [InlineData(OrderStatus.Cancelled)]
-    [InlineData(OrderStatus.InPreparation)]
-    [InlineData(OrderStatus.Taken)]
-    public async Task Any_order_status_moves_without_reassigning_payments_products_or_delivery(OrderStatus status)
+    [InlineData(OrderStatus.AwaitingPayment, true)]
+    [InlineData(OrderStatus.Taken, true)]
+    [InlineData(OrderStatus.InPreparation, true)]
+    [InlineData(OrderStatus.Ready, true)]
+    [InlineData(OrderStatus.OnTheWay, false)]
+    [InlineData(OrderStatus.Delivered, false)]
+    [InlineData(OrderStatus.Cancelled, false)]
+    public async Task Only_orders_not_dispatched_or_closed_can_move(OrderStatus status, bool allowed)
     {
         var tenant = new TestTenantContext();
         await using var db = new ApplicationDbContext(
@@ -94,6 +96,16 @@ public sealed class TransferOrderBranchTests
         var handler = new TransferOrderBranchHandler(db, repository.Object, currentUser.Object,
             branch.Object, mutation.Object, notifications.Object, mapper.Object, clock.Object);
 
+        if (!allowed)
+        {
+            await Assert.ThrowsAsync<BusinessException>(() =>
+                handler.Handle(new TransferOrderBranchCommand { Id = 88, TargetBranchId = 2 }, default));
+            Assert.Equal(1, (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == 88)).BranchId);
+            Assert.Equal(93, (await db.BankPayments.AsNoTracking().SingleAsync(p => p.OrderId == 88)).BankId);
+            notifications.Verify(n => n.NotifyOrderTransferred(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>()), Times.Never());
+            return;
+        }
         var result = await handler.Handle(new TransferOrderBranchCommand { Id = 88, TargetBranchId = 2 }, default);
         var saved = await db.Orders.AsNoTracking().SingleAsync(o => o.Id == 88);
         var detail = await db.OrderDetails.AsNoTracking().SingleAsync(d => d.OrderId == 88);

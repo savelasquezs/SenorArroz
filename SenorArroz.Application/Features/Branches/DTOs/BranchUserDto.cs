@@ -1,3 +1,5 @@
+using SenorArroz.Domain.Enums;
+
 namespace SenorArroz.Application.Features.Branches.DTOs;
 
 public class BranchUserDto
@@ -8,6 +10,7 @@ public class BranchUserDto
     public string Email { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
+    public EmployeeAccountType AccountType { get; set; }
     public bool Active { get; set; }
     public bool WebAccessEnabled { get; set; }
     public bool DeliveryAppEnabled { get; set; }

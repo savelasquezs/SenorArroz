@@ -24,8 +24,8 @@ public sealed class SetDeliverymanWebAccessHandler(
             .FirstOrDefaultAsync(candidate => candidate.Id == request.UserId, cancellationToken)
             ?? throw new NotFoundException($"Usuario con ID {request.UserId} no encontrado");
 
-        if (user.Role != UserRole.Deliveryman)
-            throw new BusinessException("El permiso de acceso web solo aplica a domiciliarios.");
+        if (user.Role is not (UserRole.Deliveryman or UserRole.Kitchen))
+            throw new BusinessException("El permiso de acceso web solo aplica a domiciliarios y cocina.");
 
         user.WebAccessEnabled = request.Enabled;
         await db.SaveChangesAsync(cancellationToken);

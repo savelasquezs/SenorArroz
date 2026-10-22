@@ -126,47 +126,22 @@ public class WhatsAppController : ControllerBase
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppUnreadSummaryDto>>> GetUnreadSummary(CancellationToken cancellationToken)
     {
-        var branchIds = await GetAllowedVerifiedBranchIdsQuery().ToListAsync(cancellationToken);
-        var centralEnabled = await _db.WhatsAppChannelSettings.AsNoTracking()
-            .AnyAsync(x => x.TenantId == TenantId && x.IsActive && x.IsVerified, cancellationToken);
-        if (branchIds.Count == 0 && !centralEnabled)
-        {
-            return Ok(ApiResponse<WhatsAppUnreadSummaryDto>.SuccessResponse(
-                new WhatsAppUnreadSummaryDto(),
-                "Resumen de WhatsApp obtenido."));
-        }
+        var query = GetAccessibleConversationsQuery().Where(x => x.UnreadCount > 0);
 
-        var isSuperadmin = Roles.IsSuperadmin(_currentUser.Role);
-        var isBranchInboxUser = Roles.IsAdminOrCashier(_currentUser.Role);
-        var query = _db.WhatsAppConversations
-            .AsNoTracking()
-            .Where(x => x.UnreadCount > 0 && (
-                (x.ChannelSettingId == null && branchIds.Contains(x.BranchId))
-                || (x.ChannelSettingId != null && x.TenantId == TenantId
-                    && (isSuperadmin
-                        || isBranchInboxUser && (x.OperationalBranchId == null
-                            || x.OperationalBranchId == _currentUser.BranchId
-                            || x.AssignedUserId == _currentUser.Id)))));
+        // Aggregate unread counts and latest timestamp in a single SQL query.
+        var summary = await query
+            .GroupBy(_ => 1)
+            .Select(group => new WhatsAppUnreadSummaryDto
+            {
+                TotalUnread = group.Sum(x => x.UnreadCount),
+                UnreadConversations = group.Count(),
+                LatestMessageAt = group.Max(x => x.LastMessageAt)
+            })
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? new WhatsAppUnreadSummaryDto();
 
-        var unreadConversations = await query.CountAsync(cancellationToken);
-        if (unreadConversations == 0)
-        {
-            return Ok(ApiResponse<WhatsAppUnreadSummaryDto>.SuccessResponse(
-                new WhatsAppUnreadSummaryDto(),
-                "Resumen de WhatsApp obtenido."));
-        }
-
-        var totalUnread = await query.SumAsync(x => x.UnreadCount, cancellationToken);
-        var latestMessageAt = await query
-            .Select(x => x.LastMessageAt)
-            .MaxAsync(cancellationToken);
-
-        return Ok(ApiResponse<WhatsAppUnreadSummaryDto>.SuccessResponse(new WhatsAppUnreadSummaryDto
-        {
-            TotalUnread = totalUnread,
-            UnreadConversations = unreadConversations,
-            LatestMessageAt = latestMessageAt
-        }, "Resumen de WhatsApp obtenido."));
+        return Ok(ApiResponse<WhatsAppUnreadSummaryDto>.SuccessResponse(
+            summary, "Resumen de WhatsApp obtenido."));
     }
 
     [HttpGet("quick-replies")]
@@ -659,25 +634,16 @@ public class WhatsAppController : ControllerBase
         [FromQuery] WhatsAppConversationSearchDto search,
         CancellationToken cancellationToken)
     {
-        var allowedBranchIds = await GetAllowedVerifiedBranchIdsQuery().ToListAsync(cancellationToken);
+        var accessibleConversations = GetAccessibleConversationsQuery();
         var isSuperadmin = Roles.IsSuperadmin(_currentUser.Role);
-        var isBranchInboxUser = Roles.IsAdminOrCashier(_currentUser.Role);
         var adminBranchId = _currentUser.BranchId;
         if (search.BranchId.HasValue && !isSuperadmin && search.BranchId != adminBranchId)
             return Forbid();
 
-        var query = _db.WhatsAppConversations
-            .AsNoTracking()
+        IQueryable<WhatsAppConversation> query = accessibleConversations
             .Include(x => x.Branch)
             .Include(x => x.OperationalBranch)
-            .Include(x => x.Customer)
-            .Where(x =>
-                (x.ChannelSettingId == null && allowedBranchIds.Contains(x.BranchId))
-                || (x.ChannelSettingId != null
-                    && x.TenantId == TenantId
-                    && (isSuperadmin || isBranchInboxUser && (x.OperationalBranchId == null
-                        || x.OperationalBranchId == adminBranchId
-                        || x.AssignedUserId == _currentUser.Id))));
+            .Include(x => x.Customer);
 
         if (search.BranchId.HasValue)
             query = query.Where(x => x.ChannelSettingId == null
@@ -708,10 +674,13 @@ public class WhatsAppController : ControllerBase
 
         var conversationEntities = await query
             .OrderByDescending(x => x.LastMessageAt ?? x.CreatedAt)
+            .ThenByDescending(x => x.Id)
             .Take(200)
             .ToListAsync(cancellationToken);
         var assignedIds = conversationEntities.Where(x => x.AssignedUserId.HasValue).Select(x => x.AssignedUserId!.Value).Distinct().ToList();
-        var assignedNames = await _db.Users.AsNoTracking().Where(x => assignedIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var assignedNames = assignedIds.Count == 0 ? new Dictionary<int, string>()
+            : await _db.Users.AsNoTracking().Where(x => assignedIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
         var waitingIds = conversationEntities
             .Where(x => x.AttentionMode == WhatsAppAttentionMode.WaitingForHuman)
             .Select(x => x.Id)
@@ -1558,6 +1527,26 @@ public class WhatsAppController : ControllerBase
 
         if (changed)
             await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    private IQueryable<WhatsAppConversation> GetAccessibleConversationsQuery()
+    {
+        var branchIds = GetAllowedVerifiedBranchIdsQuery();
+        var tenantId = TenantId;
+        var userId = _currentUser.Id;
+        var branchId = _currentUser.BranchId;
+        var isSuperadmin = Roles.IsSuperadmin(_currentUser.Role);
+        var isBranchInboxUser = Roles.IsAdminOrCashier(_currentUser.Role);
+        var channelIds = _db.WhatsAppChannelSettings.AsNoTracking()
+            .Where(x => x.TenantId == tenantId && x.IsActive && x.IsVerified)
+            .Select(x => x.Id);
+
+        return _db.WhatsAppConversations.AsNoTracking()
+            .Where(x => x.TenantId == tenantId && (
+                (x.ChannelSettingId == null && branchIds.Contains(x.BranchId))
+                || (x.ChannelSettingId.HasValue && channelIds.Contains(x.ChannelSettingId.Value)
+                    && (isSuperadmin || isBranchInboxUser && (x.OperationalBranchId == null
+                        || x.OperationalBranchId == branchId || x.AssignedUserId == userId)))));
     }
 
     private IQueryable<int> GetAllowedVerifiedBranchIdsQuery()

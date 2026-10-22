@@ -56,24 +56,21 @@ namespace SenorArroz.Application.Features.Customers.Queries
                 request.Page,
                 request.PageSize,
                 request.SortBy,
-                request.SortOrder);
+                request.SortOrder,
+                cancellationToken);
 
-            var customerDtos = new List<CustomerDto>();
-
-            foreach (var customer in pagedCustomers.Items)
+            var customers = pagedCustomers.Items.ToList();
+            var orderStats = await _customerRepository.GetOrderStatisticsForCustomersAsync(
+                customers.Select(customer => customer.Id).ToArray(), cancellationToken);
+            var customerDtos = new List<CustomerDto>(customers.Count);
+            foreach (var customer in customers)
             {
                 var customerDto = _mapper.Map<CustomerDto>(customer);
-
-                // Add additional data
-                customerDto.TotalOrders = await _customerRepository.GetTotalOrdersAsync(customer.Id, cancellationToken);
-                var (first, last) = await _customerRepository.GetOrderDateRangeAsync(customer.Id, cancellationToken);
-                customerDto.FirstOrderDate = first;
-                customerDto.LastOrderDate = last;
-                customerDto.TotalAccumulated = await _customerRepository.GetTotalOrderRevenueAsync(customer.Id, cancellationToken);
-                await _loyaltyCycle.ApplyLoyaltyPreviewToCustomerDtoAsync(customerDto, cancellationToken);
-
+                orderStats.TryGetValue(customer.Id, out var stats);
+                customerDto.ApplyOrderStatistics(stats);
                 customerDtos.Add(customerDto);
             }
+            await _loyaltyCycle.ApplyLoyaltyPreviewsToCustomerDtosAsync(customerDtos, cancellationToken);
 
             return new PagedResult<CustomerDto>
             {

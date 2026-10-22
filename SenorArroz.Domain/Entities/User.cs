@@ -7,6 +7,8 @@ public class User : TenantOwnedEntity
 {
     public int BranchId { get; set; }
     public UserRole? Role { get; set; }
+    public EmployeeAccountType AccountType { get; set; } = EmployeeAccountType.Personal;
+    public bool IsTerminal => AccountType == EmployeeAccountType.Terminal;
     public string Name { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
@@ -15,8 +17,8 @@ public class User : TenantOwnedEntity
     public bool WebAccessEnabled { get; set; } = true;
     // Permiso para operar como domiciliario sin modificar el rol principal.
     public bool DeliveryAppEnabled { get; set; }
-    public bool CanDeliver => Role == UserRole.Deliveryman
-        || (DeliveryAppEnabled && (Role == UserRole.Admin || Role == UserRole.Cashier));
+    public bool CanDeliver => !IsTerminal && (Role == UserRole.Deliveryman
+        || (DeliveryAppEnabled && (Role == UserRole.Admin || Role == UserRole.Cashier)));
     public string? ProfileImageUrl { get; set; }
 
     /// <summary>

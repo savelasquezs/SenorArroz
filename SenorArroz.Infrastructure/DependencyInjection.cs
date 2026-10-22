@@ -64,6 +64,7 @@ public static class DependencyInjection
         });
         services.AddSingleton<IFirebaseGcsStorage, FirebaseGcsStorageService>();
         services.AddScoped<IBusinessDocumentStorage, BusinessDocumentStorage>();
+        services.AddScoped<SenorArroz.Application.Features.EmployeeLeaves.IEmployeeLeaveStorage, EmployeeLeaveStorage>();
         services.AddSingleton<IBlogPublishingConfiguration, BlogPublishingConfiguration>();
         services.AddHttpClient<INotionBlogClient, NotionBlogClient>(client => client.Timeout = TimeSpan.FromSeconds(20));
 

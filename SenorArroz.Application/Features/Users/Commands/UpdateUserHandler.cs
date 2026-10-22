@@ -18,11 +18,8 @@ namespace SenorArroz.Application.Features.Users.Commands
         private readonly ICurrentUser _currentUser;
         private readonly IApplicationDbContext _context;
 
-        public UpdateUserHandler(
-            IUserRepository userRepository,
-            IMapper mapper,
-            ICurrentUser currentUser,
-            IApplicationDbContext context)
+        public UpdateUserHandler(IUserRepository userRepository, IMapper mapper,
+            ICurrentUser currentUser, IApplicationDbContext context)
         {
             _userRepository = userRepository;
             _mapper = mapper;
@@ -32,30 +29,25 @@ namespace SenorArroz.Application.Features.Users.Commands
 
         public async Task<UserDto> Handle(UpdateUserCommand request, CancellationToken cancellationToken)
         {
-            // 1. Verificar que el usuario existe
-            var existingUser = await _userRepository.GetByIdAsync(request.UserId, cancellationToken);
-            if (existingUser == null)
-            {
-                throw new NotFoundException($"Usuario con ID {request.UserId} no encontrado");
-            }
-
-            // 2. Verificar que el email no esté en uso por otro usuario
+            var existingUser = await _userRepository.GetByIdAsync(request.UserId, cancellationToken)
+                ?? throw new NotFoundException($"Usuario con ID {request.UserId} no encontrado");
+            if (!Roles.IsAdminOrSuperadmin(_currentUser.Role)) throw new UnauthorizedAccessException();
+            if (Roles.IsAdmin(_currentUser.Role) && (existingUser.BranchId != _currentUser.BranchId
+                || existingUser.Role is UserRole.Admin or UserRole.Superadmin
+                || request.UserData.Role is UserRole.Admin or UserRole.Superadmin))
+                throw new UnauthorizedAccessException();
+            if (existingUser.IsTerminal && (request.UserData.Role != UserRole.Kitchen
+                || request.UserData.PayrollExpenseId.HasValue || request.UserData.DeliveryAppEnabled == true))
+                throw new BusinessException("Una terminal no puede convertirse en empleado ni recibir nómina o acceso a domicilios.");
             if (await _userRepository.EmailExistsAsync(request.UserData.Email, request.UserId, cancellationToken))
-            {
                 throw new BusinessException($"Ya existe otro usuario con el email '{request.UserData.Email}'");
-            }
-
             await UserPayrollExpenseRules.ValidatePayrollExpenseAssignmentAsync(
-                request.UserData.PayrollExpenseId,
-                request.UserId,
-                _context,
-                cancellationToken);
+                request.UserData.PayrollExpenseId, request.UserId, _context, cancellationToken);
 
-            // 3. Mapear los cambios al usuario existente (BranchId se ignora en el perfil de AutoMapper)
             var previousRole = existingUser.Role;
             var previousDeliveryAppEnabled = existingUser.DeliveryAppEnabled;
             var previousBranchId = existingUser.BranchId;
-            _mapper.Map(request.UserData, existingUser);
+            _mapper.Map(request.UserData, existingUser); // AccountType es inmutable y está excluido del mapping.
             if (request.UserData.DeliveryAppEnabled.HasValue)
                 existingUser.DeliveryAppEnabled = request.UserData.DeliveryAppEnabled.Value;
             if (existingUser.Role is not (UserRole.Admin or UserRole.Cashier))
@@ -64,47 +56,32 @@ namespace SenorArroz.Application.Features.Users.Commands
                     throw new BusinessException("Solo administradores y cajeros pueden usar la app de domicilios como rol adicional.");
                 existingUser.DeliveryAppEnabled = false;
             }
-            if (existingUser.Role != UserRole.Deliveryman)
+            if (existingUser.Role == UserRole.Kitchen)
+                existingUser.WebAccessEnabled = request.UserData.WebAccessEnabled ?? existingUser.WebAccessEnabled;
+            else if (existingUser.Role != UserRole.Deliveryman)
                 existingUser.WebAccessEnabled = true;
             else if (previousRole != UserRole.Deliveryman)
                 existingUser.WebAccessEnabled = false;
 
-            // 4. Cambio de sucursal: solo superadmin
             if (request.UserData.BranchId.HasValue)
             {
                 if (!Roles.IsSuperadmin(_currentUser.Role))
                     throw new BusinessException("Solo el superadministrador puede cambiar la sucursal de un usuario");
-
                 var newBranchId = request.UserData.BranchId.Value;
-                if (newBranchId <= 0)
-                    throw new BusinessException("Sucursal inválida");
-
+                if (newBranchId <= 0) throw new BusinessException("Sucursal inválida");
                 var newBranch = await _context.Branches.AsNoTracking().FirstOrDefaultAsync(
-                    branch => branch.Id == newBranchId,
-                    cancellationToken);
-                if (newBranch is null)
-                    throw new NotFoundException($"Sucursal con ID {newBranchId} no encontrada");
-
+                    branch => branch.Id == newBranchId, cancellationToken)
+                    ?? throw new NotFoundException($"Sucursal con ID {newBranchId} no encontrada");
                 if (newBranch.TenantId != existingUser.TenantId)
                     throw new BusinessException("No se puede asignar un usuario a una sucursal de otro tenant.");
-
                 existingUser.BranchId = newBranchId;
             }
-
-            // Cambio de identidad/permiso: invalidar inmediatamente el JWT anterior.
-            if (previousRole != existingUser.Role
-                || previousDeliveryAppEnabled != existingUser.DeliveryAppEnabled
-                || previousBranchId != existingUser.BranchId)
-                existingUser.ActiveSessionId = null;
-
-            // 5. Actualizar en la base de datos
+            if (previousRole != existingUser.Role || previousDeliveryAppEnabled != existingUser.DeliveryAppEnabled
+                || previousBranchId != existingUser.BranchId) existingUser.ActiveSessionId = null;
             await _userRepository.UpdateAsync(existingUser, cancellationToken);
-
-            var reloaded = await _userRepository.GetByIdAsync(request.UserId, cancellationToken);
-            return _mapper.Map<UserDto>(reloaded!);
+            return _mapper.Map<UserDto>((await _userRepository.GetByIdAsync(request.UserId, cancellationToken))!);
         }
     }
 
-    // Comando para actualizar usuario
     public record UpdateUserCommand(int UserId, UpdateUserDto UserData) : IRequest<UserDto>;
 }

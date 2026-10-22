@@ -45,6 +45,10 @@ public class OrderNotificationService : IOrderNotificationService
         });
     }
 
+    public Task NotifyEmployeeLunchChanged(int branchId, int userId) =>
+        _hubContext.Clients.Group(TenantRealtimeGroups.Branch(_tenant.TenantId, branchId))
+            .SendAsync("EmployeeLunchChanged", new { userId });
+
     public Task NotifyOrderTransferred(int orderId, int previousBranchId, int targetBranchId, bool announceKitchen)
     {
         var groups = new[]

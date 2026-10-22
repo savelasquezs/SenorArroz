@@ -313,7 +313,7 @@ Reglas:
 
 - La app de domiciliarios se distribuye exclusivamente mediante Google Play.
 - Todo `Deliveryman` debe informar el package oficial, la versión visible exacta y un build igual o mayor al mínimo configurado. La política se valida antes de efectos de login, antes de rotar refresh tokens y en cada request autenticado; una incompatibilidad responde HTTP 426.
-- Admin, Superadmin, Cashier y Kitchen conservan acceso web y no están sujetos al control de versión Flutter.
+- Admin, Superadmin y Cashier conservan acceso web; Kitchen solo con WebAccessEnabled. No están sujetos al control de versión Flutter.
 - Un `Deliveryman` tiene el acceso web deshabilitado por defecto. Solo Superadmin puede habilitarlo individualmente; el permiso se valida en login, refresh y cada request web autenticado, y su revocación responde HTTP 403 desde la siguiente solicitud.
 - El frontend web se identifica con `X-Senor-Arroz-Client: web`; SignalR usa `client=web`. Un domiciliario no identificado como cliente web debe cumplir siempre la versión Flutter exigida.
 
@@ -328,6 +328,8 @@ Reglas:
 - Solo los pedidos actualmente Listos de una propuesta pueden reclamarse. Tomado y En preparación son informativos y se mantienen como espera sugerida.
 - La toma desde una propuesta exige versión de plan y se ejecuta en una transacción serializable; ante una carrera responde `ROUTING_PLAN_STALE` sin asignación parcial.
 - La consulta del plan es idempotente para una misma huella operativa: reutiliza la versión activa y no publica `DeliveryRoutingPlanChanged` si pedidos elegibles, coordenadas y capacidad permanecen iguales. El recálculo explícito conserva su semántica forzada.
+- El envejecimiento de una misma evidencia GPS no cambia por sí solo la huella de disponibilidad; sí la cambian nueva evidencia, ruta, pedidos pendientes, estimación base, clasificación o pérdida de vigencia. El resultado de Google para un regreso se reutiliza mientras esa evidencia siga vigente, incluyendo el respaldo aproximado si Google falla.
+- El plan expone `expiresAtUtc`. La app renueva automáticamente al vencer, reconectar o volver al primer plano, ignora avisos de versiones ya conocidas y acepta la versión anunciada aunque el aviso llegue antes de su respuesta HTTP. Mantiene una sola consulta simultánea y hasta tres reintentos transitorios, a 1, 2 y 4 segundos, sin temporizadores de renovación en segundo plano. Las rutas aceptadas no se modifican.
 - La selección manual de pedidos continúa disponible como respaldo operativo.
 
 - Domiciliarios son usuarios o entidades asociadas al tenant.
@@ -584,3 +586,12 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 - Se conserva tratamiento inicial sin IVA ni INC, importes persistidos y descuentos/domicilio. Los archivos fiscales se guardan privados bajo aislamiento tenant y se descargan con autorización de pedido.
 - El correo del emisor es configurable y se sincroniza con Plemsi conservando otras direcciones; no se promete un remitente personalizado sin validación del proveedor.
 - Detalles de instalación, endpoints y pruebas: docs/ELECTRONIC_INVOICING.md del backend.
+## Almuerzos del personal
+
+- Cada empleado registra salida y regreso con su contraseña personal; las horas oficiales son UTC del servidor. Un intervalo abierto determina el descanso, persiste entre sesiones y no se cierra automáticamente.
+- Cocina admite varios empleados activos sin acceso web y cuentas de pantalla compartida con acceso web. Solo las primeras registran almuerzos, desde la pantalla de su sucursal. Se conservan IDs, gastos y nómina; no se reactivan ni convierten cuentas automáticamente.
+- Una cuenta personal almorzando no puede realizar mutaciones operativas. Puede consultar, finalizar el almuerzo, mantener seguimiento/dispositivo/jornada y cerrar sesión. Admin/Superadmin no corrigen registros mientras su propio almuerzo esté abierto.
+- Un domiciliario no puede iniciar almuerzo con pedidos pendientes ni recibir pedidos mientras almuerza. La disponibilidad y los avisos de pedidos lo excluyen; PostgreSQL serializa almuerzo/asignación por empleado incluso ante propuestas antiguas.
+- El almuerzo no cierra la jornada ni suspende GPS: los puntos se conservan y sincronizan. Su intervalo se excluye del análisis de permanencias y no cuenta como silencio de comunicación. Al regresar rigen los requisitos GPS existentes de disponibilidad.
+- Historial en el menú Almuerzos, por fecha Colombia y sucursal dentro del tenant. Cajero y Admin consultan su sucursal; Superadmin consulta la sucursal seleccionada. Cocina solo consulta sus empleados personales de hoy desde su pantalla. Solo Admin/Superadmin pueden corregir, con motivo, versión vigente y auditoría antes/después, sin solapamientos ni fechas futuras.
+- Script aditivo e idempotente: SenorArroz.Infrastructure/Scripts/add_employee_lunch.sql, antes del backend y las interfaces. Sin cambios automáticos de nómina ni dependencia de facturación electrónica.

@@ -20,7 +20,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M02-F04 | Perfil y foto | Pendiente | — | — | — | — |
 | M02-F05 | Estadísticas de nómina | Pendiente | — | — | — | — |
 | M03-F01 | Carga y selección de sucursales | Pendiente | — | — | — | — |
-| M03-F02 | CRUD y estadísticas sucursales | Pendiente | — | — | — | — |
+| M03-F02 | CRUD y estadísticas sucursales | PR listo para revisión | 2026-10-21 | [Informe](reviews/2026-10-21-M03-F02.md) | [API #50](https://github.com/savelasquezs/SenorArroz/pull/50) | CI: 1142 aprobadas/1 omitida; 5/5 regresiones nuevas. PostgreSQL aislado: estadísticas de 10 sucursales, 50 COUNT → 3 SELECT agrupados; vacío → 0. Sin migración, merge ni despliegue; métricas productivas pendientes. |
 | M03-F03 | Contexto y permisos cross-branch | Pendiente | — | — | — | — |
 | M03-F04 | Tenant RLS y contexto PostgreSQL | Pendiente | — | — | — | — |
 | M04-F01 | Horarios de atención | Pendiente | — | — | — | — |
@@ -35,7 +35,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M06-F02 | Alta/edición cliente | Pendiente | — | — | — | — |
 | M06-F03 | Direcciones y barrio | Pendiente | — | — | — | — |
 | M06-F04 | Dirección-servicio por sucursal | Pendiente | — | — | — | — |
-| M06-F05 | Historial y estadísticas cliente | Pendiente | — | — | — | — |
+| M06-F05 | Historial y estadísticas cliente | PR listo para revisión | 2026-10-19 | [Informe](reviews/2026-10-19-M06-F05.md) | [PR backend #44](https://github.com/savelasquezs/SenorArroz/pull/44) | CI verde; p50/p95 y SQL por medir antes de merge |
 | M07-F01 | Carga promociones del día | Pendiente | — | — | — | — |
 | M07-F02 | Guardar y desactivar promoción | Pendiente | — | — | — | — |
 | M07-F03 | Validar y aplicar cupón | Pendiente | — | — | — | — |
@@ -43,7 +43,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M08-F01 | Consultar progreso/beneficios | Pendiente | — | — | — | — |
 | M08-F02 | Aplicar beneficio al pedido | Pendiente | — | — | — | — |
 | M08-F03 | Configuración ciclo y niveles | Pendiente | — | — | — | — |
-| M09-F01 | Inicialización de pantalla POS | Pendiente | — | — | — | — |
+| M09-F01 | Inicialización de pantalla POS | PR listo para revisión | 2026-10-21 | [Informe 2026-10-20 y seguimiento](reviews/2026-10-20-M09-F01.md) | [Vue #33](https://github.com/savelasquezs/senorArrozFront/pull/33) | Build OK; Vitest 582/582, incluidas 20 regresiones POS. Solicitud compartida por sucursal/modo, invalidación de sesión y errores reintentables. Sin merge ni despliegue; medición productiva pendiente. |
 | M09-F02 | Búsqueda y selección de productos | Pendiente | — | — | — | — |
 | M09-F03 | Borradores y cambio de pestañas | Pendiente | — | — | — | — |
 | M09-F04 | Cliente/dirección y cotización | Pendiente | — | — | — | — |
@@ -140,7 +140,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M29-F04 | Ventas por productos/categorías | Pendiente | — | — | — | — |
 | M29-F05 | Rendimiento de domicilios | Pendiente | — | — | — | — |
 | M29-F06 | Comparación entre sucursales | Pendiente | — | — | — | — |
-| M30-F01 | Listado bandeja y no leídos | Pendiente | — | — | — | — |
+| M30-F01 | Listado bandeja y no leídos | Analizado | 2026-10-18 | [Informe](reviews/2026-10-18-M30-F01.md) | [PR API](https://github.com/savelasquezs/SenorArroz/pull/41) | Consulta agrupada y filtros compartidos; CI y frontend pendientes. Sin SQL productivo. |
 | M30-F02 | Carga mensajes y adjuntos | Pendiente | — | — | — | — |
 | M30-F03 | Enviar texto/medios/menú | Pendiente | — | — | — | — |
 | M30-F04 | Plantillas y respuestas rápidas | Pendiente | — | — | — | — |

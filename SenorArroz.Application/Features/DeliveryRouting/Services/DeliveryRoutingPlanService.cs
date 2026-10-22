@@ -95,7 +95,7 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         {
             var current = await LoadPlanEntityAsync(branchId, ct);
             if (current?.InputFingerprint == fingerprint && current.GeneratedAtUtc <= now
-                && now - current.GeneratedAtUtc <= TimeSpan.FromSeconds(Math.Clamp(_options.PlanMaxAgeSeconds, 30, 300)))
+                && now - current.GeneratedAtUtc < TimeSpan.FromSeconds(Math.Clamp(_options.PlanMaxAgeSeconds, 30, 300)))
             {
                 var cached = Map(current);
                 cached = cached with { Capacity = cached.Capacity with { Couriers = capacity.Couriers } };
@@ -372,7 +372,10 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
             plan.GeneratedAtUtc, Camel(plan.MatrixSource.ToString()),
             new DeliveryRoutingCapacityDto(plan.AvailableSlotCount, plan.SoonSlotCount), plan.SolverDurationMs,
             JoinWarnings(new[] { plan.Warnings ?? "", changed ? "El plan cambió; actualiza antes de tomar una ruta." : "" }),
-            proposals, unrouted);
+            proposals, unrouted)
+        {
+            ExpiresAtUtc = plan.GeneratedAtUtc.AddSeconds(Math.Clamp(_options.PlanMaxAgeSeconds, 30, 300))
+        };
     }
 
     private static DeliveryRouteProposalDto MapProposal(DeliveryRouteProposal proposal, List<DeliveryRoutingStopDto> stops,
@@ -436,9 +439,14 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
     {
         var raw = JsonSerializer.Serialize(new
         {
-            algorithm = "routing-priority-pipeline-v1", orders = OrderSignature(orders), branch.Latitude, branch.Longitude,
+            algorithm = "routing-stable-availability-v2", orders = OrderSignature(orders), branch.Latitude, branch.Longitude,
             capacity.AvailableNow, capacity.AvailableSoon,
-            slots = capacity.Slots.Select(s => new { s.AvailableAtSeconds, s.DeliverymanId, s.WorkSessionId, s.CurrentRouteId, s.Confidence }),
+            slots = capacity.Slots.OrderBy(s => s.DeliverymanId).ThenBy(s => s.WorkSessionId).Select(s => new
+            {
+                availability = s.AvailableAtSeconds == 0 ? "now" : "soon",
+                input = s.InputSignature ?? s.AvailableAtSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                s.DeliverymanId, s.WorkSessionId, s.CurrentRouteId, s.Confidence, s.Source
+            }),
             readiness = orders.Select(o => DeliveryRoutingPolicy.ReadyAt(o, estimates, now, _options) <= now
                 ? "due" : DeliveryRoutingPolicy.ReadyAt(o, estimates, now, _options).ToString("O")),
             options = _options
