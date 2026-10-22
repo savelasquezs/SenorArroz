@@ -76,7 +76,7 @@ public sealed class PlemsiInvoiceProvider(HttpClient http, IIntegrationSecretPro
     {
         var result = await CallAsync(i, HttpMethod.Get, $"billing/{(kind == "credit" ? "credit" : "invoice")}/{format}/{Uri.EscapeDataString(reference)}", null, ct);
         var data = result.GetProperty("data");
-        var value = data.ValueKind == JsonValueKind.String ? data.GetString() : FindString(data, "base64", "b64data", "content", "xml", "pdf");
+        var value = data.ValueKind == JsonValueKind.String ? data.GetString() : FindString(data, "AttachedDocumentB64", "base64", "b64data", "content", "xml", "pdf");
         if (string.IsNullOrWhiteSpace(value)) throw new BusinessException("Plemsi no devolvió el archivo solicitado.");
         return Convert.FromBase64String(value);
     }

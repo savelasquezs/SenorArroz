@@ -17,6 +17,52 @@ namespace SenorArroz.Tests;
 public sealed class ElectronicInvoicingTests
 {
     private static BillingRecipientDto Recipient => new() { DocumentType = 6, Identification = "900123456", Name = "Cliente SA", Email = "cliente@example.com" };
+    [Theory]
+    [InlineData(10000, 0, 1, 47)]
+    [InlineData(0, 10000, 1, 10)]
+    [InlineData(5000, 5000, 1, 1)]
+    [InlineData(5000, 0, 2, 47)]
+    [InlineData(0, 0, 2, 1)]
+    public void Payment_form_and_method_reflect_persisted_payments(int bank, int cash, int form, int method)
+    {
+        var order = new Order { Total = 10000, PaidInStoreCashAmount = cash };
+        order.OrderDetails.Add(new OrderDetail { Quantity = 1, UnitPrice = 10000, Product = new Product { Name = "Producto" } });
+        if (bank > 0) order.BankPayments.Add(new BankPayment { BankId = 1, Amount = bank });
+        using var payload = JsonDocument.Parse(ElectronicInvoiceService.BuildInvoicePayload(order, Recipient, Integration, "SETT", 1, DateTime.UtcNow));
+        var payment = payload.RootElement.GetProperty("payment");
+        Assert.Equal(form, payment.GetProperty("payment_form_id").GetInt32());
+        Assert.Equal(method, payment.GetProperty("payment_method_id").GetInt32());
+    }
+
+    [Fact]
+    public void Partial_bank_deposit_is_counted_once_when_choosing_credit_or_cash_payment_form()
+    {
+        var order = new Order { Total = 10000 };
+        order.OrderDetails.Add(new OrderDetail { Quantity = 1, UnitPrice = 10000, Product = new Product { Name = "Producto" } });
+        order.Deposits.Add(new ReservationDeposit { Id = 1, Amount = 5000, IsEffective = false, BankId = 1 });
+        order.BankPayments.Add(new BankPayment { Amount = 5000, BankId = 1, SourceReservationDepositId = 1 });
+        using var payload = JsonDocument.Parse(ElectronicInvoiceService.BuildInvoicePayload(order, Recipient, Integration, "SETT", 1, DateTime.UtcNow));
+        Assert.Equal(2, payload.RootElement.GetProperty("payment").GetProperty("payment_form_id").GetInt32());
+        Assert.Equal(47, payload.RootElement.GetProperty("payment").GetProperty("payment_method_id").GetInt32());
+    }
+    [Theory]
+    [InlineData("xml")]
+    [InlineData("pdf")]
+    public async Task Provider_download_reads_official_XML_envelope_and_PDF_string(string format)
+    {
+        var file = Encoding.UTF8.GetBytes(format == "xml" ? "<AttachedDocument/>" : "%PDF-1.7");
+        var encoded = Convert.ToBase64String(file);
+        var body = format == "xml" ? JsonSerializer.Serialize(new { success = true, data = new { Filename = "invoice.xml", AttachedDocumentB64 = encoded } })
+            : JsonSerializer.Serialize(new { success = true, data = encoded });
+        var secret = new Mock<IIntegrationSecretProtector>(); secret.Setup(x => x.Unprotect("protected")).Returns("test-token");
+        var provider = new PlemsiInvoiceProvider(new HttpClient(new FakeHttp(request =>
+        {
+            Assert.Equal($"/api/billing/invoice/{format}/test-cufe", request.RequestUri!.AbsolutePath);
+            Assert.Equal(HttpMethod.Get, request.Method);
+            return Task.FromResult(Json(body));
+        })), secret.Object);
+        Assert.Equal(file, await provider.DownloadAsync(Integration, "invoice", "test-cufe", format, default));
+    }
     [Fact]
     public void Snapshot_identifies_deposit_bank_payments_without_mutating_order_amounts()
     {

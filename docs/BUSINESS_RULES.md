@@ -574,6 +574,8 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 
 ## Facturación electrónica
 
+- Los pagos bancarios identificados usan transferencia (47), efectivo puro usa efectivo (10) y los pagos mixtos o de instrumento desconocido usan 1. Los anticipos trasladados a pagos bancarios se cuentan una sola vez para determinar contado/crédito. Este mapeo se aplica al preparar documentos nuevos o rechazados; nunca modifica una factura validada.
+
 - Para el tratamiento sin IVA ni INC, `invoiceBaseTotal` suma las líneas netas y el domicilio; `invoiceTaxExclusiveTotal` es cero al no existir bases tributarias. Los descuentos ya discriminados por línea no se repiten en `allowanceTotal` global. NIT y DV se envían separados; el DV se calcula y valida en backend, sin pedir otro campo al cajero. Los rechazos DIAN muestran sus reglas concretas y un reintento limpia el error anterior, conserva el consecutivo y exige nueva validación antes de enviar correo o habilitar archivos.
 
 - Los descuentos por línea envían el porcentaje `multiplier_factor_numeric` calculado sobre su base bruta. Un rechazo estructurado de Plemsi por datos inválidos se registra como Rechazada aunque llegue con HTTP 500; un error genérico o timeout conserva Por verificar. Los documentos existentes con ese rechazo se reclasifican tras consultar sin resultado el mismo consecutivo, sin retransmitirlos automáticamente. El reintento explícito reconstruye los datos y conserva el número reservado.

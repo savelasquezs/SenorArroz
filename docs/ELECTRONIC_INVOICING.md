@@ -30,6 +30,8 @@ Los triggers protegen cambios monetarios de pedidos pendientes, transmitidos o e
 
 Los archivos PDF/XML se conservan como bytes privados en la fila tenant-owned; se descargan exclusivamente por endpoints autorizados. El estado fiscal es independiente del correo. El envío usa Plemsi después de validar el documento; `accepted` indica aceptación por Plemsi, no entrega confirmada al buzón. Un error de descarga/correo se reintenta sin volver a emitir. El correo empresarial se sincroniza preservando las otras direcciones de la empresa; no se anuncia personalización del remitente “De”.
 
+La descarga XML de Plemsi devuelve `data.AttachedDocumentB64` y `data.Filename`; se decodifica el AttachedDocument completo, con la factura y validación DIAN. PDF también admite `data` como cadena base64. Un archivo pendiente no cambia una factura validada a rechazada ni autoriza otra emisión.
+
 ## Endpoints
 
 Base: `/api/electronic-invoicing`.
