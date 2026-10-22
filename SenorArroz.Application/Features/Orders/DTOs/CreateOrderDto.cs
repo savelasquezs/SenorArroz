@@ -5,6 +5,8 @@ namespace SenorArroz.Application.Features.Orders.DTOs;
 
 public class CreateOrderDto
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SenorArroz.Application.Common.Interfaces.BillingRecipientDto? ElectronicInvoice { get; set; }
     public int BranchId { get; set; }
     /// <summary>UUID estable del borrador POS para que los reintentos no creen pedidos nuevos.</summary>
     public string? PosCreationKey { get; set; }

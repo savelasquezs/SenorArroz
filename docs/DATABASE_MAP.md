@@ -4,7 +4,7 @@ Este mapa existe para que Codex ubique rápido las entidades y entienda cómo pr
 
 ## Estado de aislamiento v2
 
-- Inventario EF: 105 entidades; `Tenant` global y 104 tenant-owned.
+- Inventario EF: 109 entidades; `Tenant` global y 108 tenant-owned.
 - Contrato común: `ITenantOwned` y `TenantOwnedEntity`.
 - EF aplica centralmente `tenant_id` obligatorio, índice, concurrency token y query filter.
 - `SaveChanges` asigna el tenant actual en altas sin tenant y rechaza altas, cambios o borrados cross-tenant.
@@ -585,3 +585,7 @@ comandas se emiten **después del COMMIT**: no pueden convertirse en rollback de
 mensajes ya enviados; si fallan se registran para diagnóstico y no presentan el
 pedido como no creado. Los clientes POS antiguos sin `posCreationKey` siguen
 siendo aceptados, pero no disponen de la protección entre reintentos.
+
+## Facturación electrónica por tenant
+
+electronic_invoice_integration conserva proveedor, ambiente, credenciales cifradas y numeraciones. customer_billing_recipient conserva perfiles globales por cliente. electronic_invoice_document conserva snapshots, trabajos recuperables, validación y archivos privados. Las tres entidades son tenant-owned con RLS forzado y FKs compuestas. Script: SenorArroz.Infrastructure/Scripts/add_electronic_invoicing.sql; operación: docs/ELECTRONIC_INVOICING.md.

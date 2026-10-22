@@ -59,3 +59,7 @@ Orden de despliegue recomendado:
 
 - Control plane SaaS: onboarding real, altas, invitaciones, planes, suscripciones, metering y portal `/platform`.
 - Tenant 2 existe solamente en pruebas automatizadas y datos locales; estos scripts no lo crean en producción.
+
+## Facturación electrónica
+
+ElectronicInvoiceIntegration, CustomerBillingRecipient y ElectronicInvoiceDocument son tenant-owned. RLS forzado, índices y FKs compuestas se instalan con add_electronic_invoicing.sql. ElectronicInvoiceWorker usa TenantWorkerRunner y nunca procesa documentos de un tenant suspendido; los bytes PDF/XML permanecen privados bajo RLS y autorización del pedido.

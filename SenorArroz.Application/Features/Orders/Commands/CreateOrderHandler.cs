@@ -28,6 +28,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     private readonly ILogger<CreateOrderHandler>? _logger;
     private readonly IInventoryService? _inventory;
     private readonly IBranchContext? _branchContext;
+    private readonly IElectronicInvoiceService? _electronicInvoices;
 
     public CreateOrderHandler(
         IOrderRepository orderRepository,
@@ -39,7 +40,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         IPrintQueueService? printQueue = null,
         ILogger<CreateOrderHandler>? logger = null,
         IInventoryService? inventory = null,
-        IBranchContext? branchContext = null)
+        IBranchContext? branchContext = null,
+        IElectronicInvoiceService? electronicInvoices = null)
     {
         _orderRepository = orderRepository;
         _db = db;
@@ -51,6 +53,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         _logger = logger;
         _inventory = inventory;
         _branchContext = branchContext;
+        _electronicInvoices = electronicInvoices;
     }
 
     public async Task<OrderDto> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
@@ -293,6 +296,12 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             fullOrder = await _orderRepository.GetByIdWithFullDetailsAsync(createdOrder.Id, cancellationToken)
                 ?? throw new BusinessException("Pedido no encontrado");
             result = _mapper.Map<OrderDto>(fullOrder);
+
+            if (request.Order.ElectronicInvoice is not null)
+            {
+                if (_electronicInvoices is null) throw new BusinessException("Facturación electrónica no disponible.");
+                await _electronicInvoices.RequestAsync(fullOrder, request.Order.ElectronicInvoice, _currentUser.Id, cancellationToken);
+            }
 
             if (createTransaction is not null)
                 await createTransaction.CommitAsync(cancellationToken);
