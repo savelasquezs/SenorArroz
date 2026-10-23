@@ -485,6 +485,10 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => controller.SaveDirectoryRecipient(saved with { Email = "nuevo@example.com" }, default));
         var updated = Assert.IsType<BillingRecipientDto>(ResponseData(await controller.SaveDirectoryRecipient(saved with { Email = "nuevo@example.com", ConfirmSharedUpdate = true }, default)));
         Assert.NotEqual(saved.ProfileVersion, updated.ProfileVersion);
+        var service = new ElectronicInvoiceService(db, [], Clock());
+        var secondOrder = await db.Orders.SingleAsync(x => x.Id == 2);
+        var stale = await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => service.RequestAsync(secondOrder, saved, 1, default));
+        Assert.Contains("cambiaron", stale.Message);
         await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => controller.SaveDirectoryRecipient(saved with { Email = "obsoleto@example.com", ConfirmSharedUpdate = true }, default));
         var linked = (IEnumerable<BillingRecipientDto>)ResponseData(await controller.Recipients(1, default));
         Assert.Equal("nuevo@example.com", Assert.Single(linked).Email);

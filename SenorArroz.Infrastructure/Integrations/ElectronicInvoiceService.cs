@@ -24,6 +24,15 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
         if (order.Status == OrderStatus.Cancelled) throw new BusinessException("No se puede facturar un pedido cancelado.");
         var existing = await db.ElectronicInvoiceDocuments.FirstOrDefaultAsync(x => x.OrderId == order.Id && x.Kind == "invoice" && x.Status != "credited" && x.Status != "cancelled", ct);
         if (existing is not null) return existing;
+        if (recipient.ProfileId.HasValue)
+        {
+            var profile = await db.BillingRecipientProfiles.AsNoTracking().SingleOrDefaultAsync(x => x.Id == recipient.ProfileId, ct)
+                ?? throw new BusinessException("El destinatario no está registrado en este negocio. Selecciónalo nuevamente.");
+            if (profile.NeedsReview || recipient.ProfileVersion != profile.UpdatedAt || profile.DocumentType != recipient.DocumentType
+                || profile.Identification != BillingRecipientDirectory.Normalize(recipient.DocumentType, recipient.Identification)
+                || profile.Name != recipient.Name.Trim() || profile.Email != (string.IsNullOrWhiteSpace(recipient.Email) ? null : recipient.Email.Trim()))
+                throw new BusinessException("Los datos compartidos de facturación cambiaron. Selecciona nuevamente el destinatario antes de solicitar la factura.");
+        }
         var integration = await db.ElectronicInvoiceIntegrations.SingleOrDefaultAsync(x => x.IsActive, ct)
             ?? throw new BusinessException("El negocio no tiene un proveedor de facturación activo.");
         if (integration.Environment == "production" && !ProductionEnabled)
