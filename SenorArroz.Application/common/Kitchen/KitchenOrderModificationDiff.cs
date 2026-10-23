@@ -3,7 +3,7 @@ using SenorArroz.Domain.Entities;
 
 namespace SenorArroz.Application.Common.Kitchen;
 
-public readonly record struct DetailSnap(int Id, int ProductId, int Quantity, string ProductName);
+public readonly record struct DetailSnap(int Id, int ProductId, int Quantity, string ProductName, string? Notes = null);
 
 /// <summary>
 /// Compara dos snapshots de líneas del pedido y arma <see cref="KitchenOrderModificationSummary"/> para cocina.
@@ -31,6 +31,8 @@ public static class KitchenOrderModificationDiff
                 {
                     PreviousProductName = b.ProductName,
                     NewProductName = a.ProductName,
+                    NewQuantity = a.Quantity,
+                    NewNotes = NormalizeNotes(a.Notes),
                 });
             }
             else if (b.Quantity != a.Quantity)
@@ -42,12 +44,27 @@ public static class KitchenOrderModificationDiff
                     NewQuantity = a.Quantity,
                 });
             }
+
+            if (b.ProductId == a.ProductId
+                && !string.Equals(NormalizeNotes(b.Notes), NormalizeNotes(a.Notes), StringComparison.Ordinal))
+            {
+                summary.LineNoteChanges.Add(new KitchenOrderLineNoteChangeDto
+                {
+                    ProductName = a.ProductName,
+                    Quantity = a.Quantity,
+                    PreviousNotes = NormalizeNotes(b.Notes),
+                    Notes = NormalizeNotes(a.Notes),
+                });
+            }
         }
 
         foreach (var (id, a) in afterById)
         {
             if (!beforeById.ContainsKey(id))
-                summary.AddedLines.Add(new KitchenOrderAddedLineDto { ProductName = a.ProductName, Quantity = a.Quantity });
+                summary.AddedLines.Add(new KitchenOrderAddedLineDto
+                {
+                    ProductName = a.ProductName, Quantity = a.Quantity, Notes = NormalizeNotes(a.Notes),
+                });
         }
 
         if (summary.RemovedLines.Count == 1
@@ -59,6 +76,8 @@ public static class KitchenOrderModificationDiff
             {
                 PreviousProductName = summary.RemovedLines[0].ProductName,
                 NewProductName = summary.AddedLines[0].ProductName,
+                NewQuantity = summary.AddedLines[0].Quantity,
+                NewNotes = summary.AddedLines[0].Notes,
             });
             summary.RemovedLines.Clear();
             summary.AddedLines.Clear();
@@ -72,5 +91,8 @@ public static class KitchenOrderModificationDiff
             d.Id,
             d.ProductId,
             d.Quantity,
-            string.IsNullOrWhiteSpace(d.Product?.Name) ? $"Producto #{d.ProductId}" : d.Product!.Name.Trim())).ToList();
+            string.IsNullOrWhiteSpace(d.Product?.Name) ? $"Producto #{d.ProductId}" : d.Product!.Name.Trim(),
+            NormalizeNotes(d.Notes))).ToList();
+
+    private static string? NormalizeNotes(string? notes) => string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
 }

@@ -126,4 +126,89 @@ public class KitchenNotificationEligibilityAndDiffTests
         Assert.Single(s.RemovedLines);
         Assert.Equal("B", s.RemovedLines[0].ProductName);
     }
+
+    [Theory]
+    [InlineData(null, "Sin cebolla")]
+    [InlineData("Sin cebolla", "Poco picante")]
+    [InlineData("Sin cebolla", "")]
+    public void Diff_detects_note_add_edit_and_removal_on_the_correct_line(string? previous, string notes)
+    {
+        var before = new[] { new DetailSnap(1, 10, 1, "Arroz", previous), new DetailSnap(2, 10, 2, "Arroz", "Separar") };
+        var after = new[] { new DetailSnap(1, 10, 1, "Arroz", notes), before[1] };
+
+        var summary = KitchenOrderModificationDiff.Build(before, after);
+
+        var change = Assert.Single(summary.LineNoteChanges);
+        Assert.Equal("Arroz", change.ProductName);
+        Assert.Equal(1, change.Quantity);
+        Assert.Equal(previous, change.PreviousNotes);
+        Assert.Equal(string.IsNullOrWhiteSpace(notes) ? null : notes, change.Notes);
+        Assert.Empty(summary.QuantityChanges);
+        Assert.Empty(summary.AddedLines);
+        Assert.Empty(summary.ProductReplacements);
+    }
+
+    [Fact]
+    public void Diff_preserves_both_quantity_and_note_changes()
+    {
+        var summary = KitchenOrderModificationDiff.Build(
+            [new(1, 10, 1, "Arroz", "Sin cebolla")],
+            [new(1, 10, 3, "Arroz", "Separar")]);
+
+        Assert.Single(summary.QuantityChanges);
+        Assert.Equal(3, Assert.Single(summary.LineNoteChanges).Quantity);
+    }
+
+    [Theory]
+    [InlineData(null, " ")]
+    [InlineData(" Sin cebolla ", "Sin cebolla")]
+    public void Diff_ignores_equivalent_notes(string? before, string after)
+    {
+        var summary = KitchenOrderModificationDiff.Build(
+            [new(1, 10, 1, "Arroz", before)], [new(1, 10, 1, "Arroz", after)]);
+
+        Assert.Empty(summary.LineNoteChanges);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Diff_replacement_keeps_the_new_product_note_and_quantity(int newLineId)
+    {
+        var summary = KitchenOrderModificationDiff.Build(
+            [new(1, 10, 1, "Arroz", "Nota anterior")],
+            [new(newLineId, 20, 2, "Pollo", "Sin salsa")]);
+
+        var replacement = Assert.Single(summary.ProductReplacements);
+        Assert.Equal("Pollo", replacement.NewProductName);
+        Assert.Equal(2, replacement.NewQuantity);
+        Assert.Equal("Sin salsa", replacement.NewNotes);
+        Assert.Empty(summary.LineNoteChanges);
+        Assert.Empty(summary.QuantityChanges);
+    }
+
+    [Fact]
+    public void Snapshot_and_diff_preserve_notes_when_an_order_entity_is_mutated()
+    {
+        var order = BaseOrder();
+        order.OrderDetails.Add(new OrderDetail
+        {
+            Id = 1, ProductId = 10, Quantity = 2, Notes = "Sin cebolla",
+            Product = new Product { Name = "Arroz paisa" },
+        });
+        var before = KitchenOrderModificationDiff.SnapshotFromOrder(order);
+        order.OrderDetails.Single().Notes = "Separar";
+
+        var summary = KitchenOrderModificationDiff.Build(before, KitchenOrderModificationDiff.SnapshotFromOrder(order));
+
+        Assert.Equal("Sin cebolla", Assert.Single(summary.LineNoteChanges).PreviousNotes);
+        Assert.Equal("Separar", summary.LineNoteChanges[0].Notes);
+    }
+
+    [Fact]
+    public void Diff_added_line_keeps_its_note()
+    {
+        var summary = KitchenOrderModificationDiff.Build([], [new(1, 10, 2, "Arroz", "Sin cebolla")]);
+        Assert.Equal("Sin cebolla", Assert.Single(summary.AddedLines).Notes);
+    }
 }

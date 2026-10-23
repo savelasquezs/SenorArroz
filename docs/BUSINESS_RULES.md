@@ -183,6 +183,9 @@ Reglas:
 - Al seleccionar productos/pedidos y marcarlos listos, los que estaban tomados deben avanzar correctamente sin saltarse reglas internas.
 - No romper la agrupación por categoría.
 - No eliminar información operacional visible necesaria para cocina.
+- Las notas de cada línea se muestran bajo su producto en pedidos activos y listos. Los anuncios de pedidos nuevos, reservas y traslados leen la nota junto al nombre completo y la cantidad de su producto; las notas generales se identifican aparte.
+- Cada línea anuncia su producto una sola vez y lee inmediatamente su nota antes del siguiente producto. Los avisos de edición también nombran el producto una sola vez.
+- Las modificaciones de notas de productos en pedidos visibles de cocina se notifican por OrderModified, identificando producto, cantidad y si la nota se agregó, cambió o eliminó. Una nota nueva o modificada se lee completa hasta el límite de voz vigente de 400 caracteres por nota; una eliminación no vuelve a leer instrucciones descartadas. Los avisos de productos agregados o sustituidos incluyen sus notas actuales. Se conservan elegibilidad por estado/horario, tenant, sucursal y activación manual de voz.
 
 Codex debe revisar frontend y backend si cambia:
 

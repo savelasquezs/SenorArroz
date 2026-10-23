@@ -136,6 +136,58 @@ public class UpdateOrderHandlerSchedulePreserveTests
         repo.Verify(r => r.UpdateAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData(OrderStatus.Taken, null, "Sin cebolla", true)]
+    [InlineData(OrderStatus.InPreparation, "Sin cebolla", "Salsa aparte", true)]
+    [InlineData(OrderStatus.Taken, "Sin cebolla", "", true)]
+    [InlineData(OrderStatus.Ready, "Sin cebolla", "Salsa aparte", false)]
+    public async Task Product_note_only_updates_publish_the_correct_kitchen_change(
+        OrderStatus status, string? previousNotes, string notes, bool shouldNotify)
+    {
+        var utc = new DateTime(2026, 10, 22, 18, 0, 0, DateTimeKind.Utc);
+        var order = new Order
+        {
+            Id = 148, BranchId = 1, TakenById = 1, Type = OrderType.Delivery,
+            Status = status, CreatedAt = utc, Notes = "Nota general sin cambios",
+            OrderDetails = [new()
+            {
+                Id = 1, OrderId = 148, ProductId = 10, Quantity = 2,
+                UnitPrice = 10000, Subtotal = 20000, Notes = previousNotes,
+                Product = new Product { Name = "Arroz paisa familiar" },
+            }],
+        };
+        var repo = new Mock<IOrderRepository>();
+        repo.Setup(r => r.GetByIdWithDetailsAsync(148, It.IsAny<CancellationToken>())).ReturnsAsync(order);
+        repo.Setup(r => r.UpdateAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()))
+            .Returns<Order, CancellationToken>((o, _) => Task.FromResult(o));
+        var notifications = new CaptureNotifications();
+        var handler = BuildHandler(repo.Object, Mock.Of<IAddressRepository>(), utc, notifications);
+
+        await handler.Handle(new UpdateOrderCommand
+        {
+            Id = 148, Order = new UpdateOrderDto { OrderDetails = [new()
+            {
+                Id = 1, ProductId = 10, Quantity = 2, UnitPrice = 10000, Notes = notes,
+            }] },
+        }, CancellationToken.None);
+
+        Assert.Equal(notes, order.OrderDetails.Single().Notes);
+        Assert.Equal(20000, order.OrderDetails.Single().Subtotal);
+        Assert.Equal("Nota general sin cambios", order.Notes);
+        Assert.Equal(shouldNotify ? 1 : 0, notifications.KitchenModifiedCalls);
+        if (shouldNotify)
+        {
+            Assert.Equal("content", notifications.LastModificationKind);
+            var summary = Assert.IsType<KitchenOrderModificationSummary>(notifications.LastKitchenChanges);
+            Assert.False(summary.NotesChanged);
+            var change = Assert.Single(summary.LineNoteChanges);
+            Assert.Equal("Arroz paisa familiar", change.ProductName);
+            Assert.Equal(2, change.Quantity);
+            Assert.Equal(previousNotes, change.PreviousNotes);
+            Assert.Equal(notes.Length == 0 ? null : notes, change.Notes);
+        }
+    }
+
     [Fact]
     public async Task Type_change_reservation_to_delivery_without_schedule_in_dto_preserves_times()
     {
