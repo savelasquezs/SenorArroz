@@ -34,7 +34,8 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
             var path = Path.Combine(dir.FullName, "SenorArroz.Infrastructure", "Scripts", "add_electronic_invoicing.sql");
             if (File.Exists(path)) return File.ReadAllText(path) + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_invoice_delivery.sql"))
                 + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_invoice_branding.sql"))
-                + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_billing_recipient_directory.sql"));
+                + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_billing_recipient_directory.sql"))
+                + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_email_delivery_tracking.sql"));
         }
         throw new FileNotFoundException("add_electronic_invoicing.sql");
     }
@@ -355,6 +356,104 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         var controller = new ElectronicInvoicingController(db, user.Object, Mock.Of<IBranchContext>(), Mock.Of<IIntegrationSecretProtector>(), [provider.Object], Mock.Of<IElectronicInvoiceService>(), Clock(), new ConfigurationBuilder().Build());
         await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => controller.Activate(1, new ActivationDto(true), default));
         Assert.False(integration.IsActive);
+    }
+
+    [InvoicePostgresFact]
+    public async Task Delivery_confirmation_is_idempotent_tenant_isolated_and_never_reissues_or_resends()
+    {
+        const string emailId = "56761188-7520-42d8-8898-ff6fc54ce618";
+        await using (var setup = Db())
+        {
+            var document = InvoiceDeliveryTests.Document(); document.OrderId = 1; document.IntegrationId = 1;
+            document.Pdf = InvoicePdf.Create(document); document.PdfVersion = 1; document.EmailStatus = "sent";
+            setup.ElectronicInvoiceDocuments.Add(document); await setup.SaveChangesAsync();
+            setup.EmailOutboxMessages.Add(new EmailOutboxMessage { MessageType = "electronic_invoice", RelatedEntityType = "electronic_invoice", RelatedEntityId = 1,
+                Status = "sent", SentAt = Clock().UtcNow.AddMinutes(-2), ProviderMessageId = emailId, ToEmailsJson = "[\"client@example.com\"]" });
+            await setup.SaveChangesAsync();
+        }
+        var delivered = new ResendWebhook.DeliveryEvent(emailId, "delivered", Clock().UtcNow, ["client@example.com"], null, null);
+        using (tenant.BeginTenantScope(2))
+        {
+            await using var other = Db(true);
+            await new InvoiceDeliveryService(other, Clock()).RecordDeliveryAsync(1, delivered, "wrong-tenant", default);
+            Assert.Empty(await other.EmailOutboxMessages.ToListAsync());
+        }
+        await using (var check = Db(true))
+        {
+            var delivery = new InvoiceDeliveryService(check, Clock());
+            await delivery.RecordDeliveryAsync(1, delivered with { Recipients = ["other@example.com"] }, "wrong-recipient", default);
+            Assert.Null((await check.EmailOutboxMessages.SingleAsync()).DeliveryStatus);
+            await delivery.RecordDeliveryAsync(1, delivered with { Status = "delayed" }, "delayed", default);
+            await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => delivery.QueueAsync(1, true, default));
+        }
+        async Task Confirm() { await using var db = Db(true); await new InvoiceDeliveryService(db, Clock()).RecordDeliveryAsync(1, delivered, "delivered", default); }
+        await Task.WhenAll(Confirm(), Confirm());
+        await using var result = Db(true);
+        var service = new InvoiceDeliveryService(result, Clock());
+        await service.RecordDeliveryAsync(1, delivered with { Status = "delayed", OccurredAt = delivered.OccurredAt.AddSeconds(1) }, "late-delayed", default);
+        await service.RecordDeliveryAsync(1, delivered with { Status = "bounced", OccurredAt = delivered.OccurredAt.AddSeconds(-1) }, "old-bounce", default);
+        Assert.Equal("delivered", (await result.EmailOutboxMessages.SingleAsync()).DeliveryStatus);
+        await service.RecordDeliveryAsync(1, delivered with { Status = "bounced", OccurredAt = delivered.OccurredAt.AddSeconds(2), Error = "Mailbox unavailable" }, "bounce", default);
+        Assert.Equal("bounced", (await result.EmailOutboxMessages.SingleAsync()).DeliveryStatus);
+        var doc = await result.ElectronicInvoiceDocuments.SingleAsync();
+        Assert.Equal("issued", doc.Status); Assert.Equal("sent", doc.EmailStatus); Assert.NotNull(doc.Pdf);
+        Assert.Equal(1, (await result.ElectronicInvoiceIntegrations.SingleAsync()).NextNumber);
+        await service.QueueAsync(1, false, default); Assert.Single(await result.EmailOutboxMessages.ToListAsync());
+        await service.QueueAsync(1, true, default);
+        Assert.Equal(2, await result.EmailOutboxMessages.CountAsync());
+        var user = new Mock<ICurrentUser>(); user.SetupGet(x => x.TenantId).Returns(1);
+        var controller = new ElectronicInvoicingController(result, user.Object, Mock.Of<IBranchContext>(), Mock.Of<IIntegrationSecretProtector>(), [], Mock.Of<IElectronicInvoiceService>(), Clock(), new ConfigurationBuilder().Build());
+        var response = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(await controller.Documents(1, default));
+        Assert.DoesNotContain("Mailbox unavailable", JsonSerializer.Serialize(response.Value));
+    }
+
+    [InvoicePostgresFact]
+    public async Task Signed_event_can_arrive_before_send_commit_but_requires_persisted_attempt_and_matching_tag()
+    {
+        await using var db = Db(true);
+        var document = InvoiceDeliveryTests.Document(); document.OrderId = 1; document.IntegrationId = 1;
+        db.ElectronicInvoiceDocuments.Add(document); await db.SaveChangesAsync();
+        var message = new EmailOutboxMessage { MessageType = "electronic_invoice", RelatedEntityType = "electronic_invoice", RelatedEntityId = 1,
+            Status = "processing", FirstAttemptedAt = Clock().UtcNow, ToEmailsJson = "[\"client@example.com\"]" };
+        db.EmailOutboxMessages.Add(message); await db.SaveChangesAsync();
+        var notification = new ResendWebhook.DeliveryEvent("56761188-7520-42d8-8898-ff6fc54ce618", "delivered", Clock().UtcNow, ["client@example.com"], message.Id + 1, null);
+        var service = new InvoiceDeliveryService(db, Clock());
+        await service.RecordDeliveryAsync(message.Id, notification, "wrong-tag", default); Assert.Null(message.DeliveryStatus);
+        await service.RecordDeliveryAsync(message.Id, notification with { OutboxId = message.Id }, "early", default);
+        Assert.Equal("delivered", message.DeliveryStatus); Assert.Equal(notification.EmailId, message.ProviderMessageId);
+        Assert.Equal("processing", message.Status); Assert.Single(await db.EmailOutboxMessages.ToListAsync());
+    }
+
+    [InvoicePostgresFact]
+    public async Task Signed_webhook_resolves_tenant_from_registered_message_instead_of_payload_or_current_scope()
+    {
+        const string emailId = "56761188-7520-42d8-8898-ff6fc54ce618", secret = "whsec_plJ3nmyCDGBKInavdOK15jsl", eventId = "msg-test";
+        await using (var setup = Db())
+        {
+            var document = InvoiceDeliveryTests.Document(); document.OrderId = 1; document.IntegrationId = 1;
+            setup.ElectronicInvoiceDocuments.Add(document); await setup.SaveChangesAsync();
+            setup.EmailOutboxMessages.Add(new EmailOutboxMessage { MessageType = "electronic_invoice", RelatedEntityType = "electronic_invoice", RelatedEntityId = 1,
+                Status = "sent", ProviderMessageId = emailId, ToEmailsJson = "[\"client@example.com\"]" });
+            await setup.SaveChangesAsync();
+        }
+        using (tenant.BeginTenantScope(2))
+        {
+            await using var db = Db(true);
+            var body = JsonSerializer.Serialize(new { type = "email.delivered", created_at = Clock().UtcNow, tenant_id = 2, data = new { email_id = emailId, to = new[] { "client@example.com" } } });
+            var timestamp = new DateTimeOffset(Clock().UtcNow).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var signature = Convert.ToBase64String(System.Security.Cryptography.HMACSHA256.HashData(Convert.FromBase64String(secret[6..]), System.Text.Encoding.UTF8.GetBytes($"{eventId}.{timestamp}.{body}")));
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["ResendSettings:WebhookSecret"] = secret }).Build();
+            var controller = new ResendWebhooksController(db, tenant, config, Clock())
+            { ControllerContext = new() { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() } };
+            controller.Request.Body = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(body));
+            controller.Request.Headers["svix-id"] = eventId; controller.Request.Headers["svix-timestamp"] = timestamp;
+            controller.Request.Headers["svix-signature"] = "v1," + signature; controller.Request.Headers["X-Tenant-Id"] = "2";
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkResult>(await controller.Receive(default));
+            Assert.Empty(await db.EmailOutboxMessages.ToListAsync()); Assert.Equal(2, tenant.TenantId);
+        }
+        await using var check = Db(true);
+        Assert.Equal("delivered", (await check.EmailOutboxMessages.SingleAsync()).DeliveryStatus);
+        Assert.Equal("issued", (await check.ElectronicInvoiceDocuments.SingleAsync()).Status);
     }
 
     [InvoicePostgresFact]

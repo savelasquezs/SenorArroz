@@ -142,6 +142,8 @@ public sealed class InvoiceDeliveryTests
             attempts++;
             Assert.Equal("email-outbox-1-12", request.Headers.GetValues("Idempotency-Key").Single());
             using var payload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            Assert.Equal("outbox_id", payload.RootElement.GetProperty("tags")[0].GetProperty("name").GetString());
+            Assert.Equal("12", payload.RootElement.GetProperty("tags")[0].GetProperty("value").GetString());
             Assert.Contains("verified@example.com", payload.RootElement.GetProperty("from").GetString());
             Assert.Equal("billing@example.com", payload.RootElement.GetProperty("reply_to").GetString());
             var attachments = payload.RootElement.GetProperty("attachments"); Assert.Equal(withLogo ? 3 : 2, attachments.GetArrayLength());

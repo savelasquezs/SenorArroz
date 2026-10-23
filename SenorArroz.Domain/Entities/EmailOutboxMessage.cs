@@ -23,4 +23,8 @@ public class EmailOutboxMessage : TenantOwnedEntity
     public DateTime? FirstAttemptedAt { get; set; }
     public DateTime? LeaseUntil { get; set; }
     public string? ProviderMessageId { get; set; }
+    public string? DeliveryStatus { get; set; }
+    public DateTime? DeliveryEventAt { get; set; }
+    public string? DeliveryEventId { get; set; }
+    public string? DeliveryError { get; set; }
 }

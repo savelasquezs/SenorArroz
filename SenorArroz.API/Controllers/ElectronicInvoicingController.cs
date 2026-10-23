@@ -235,6 +235,8 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
         await Order(orderId, ct);
         var documents = await db.ElectronicInvoiceDocuments.AsNoTracking().Where(x => x.OrderId == orderId).OrderByDescending(x => x.Id)
             .Select(x => new { x.Id, x.Kind, x.Status, x.Environment, x.Prefix, x.Number, x.Cufe, x.EmailStatus, x.EmailChannel, x.EmailError, x.EmailSentAt, x.PdfVersion, x.CreditRequested,
+                emailDelivery = db.EmailOutboxMessages.Where(m => m.MessageType == "electronic_invoice" && m.RelatedEntityId == x.Id)
+                    .OrderByDescending(m => m.Id).Select(m => new { status = m.DeliveryStatus, occurredAt = m.DeliveryEventAt, error = m.DeliveryError }).FirstOrDefault(),
                 LastError = x.Status == "rejected" ? PlemsiInvoiceProvider.DianError(x.ResponseJson) ?? x.LastError : x.LastError,
                 dianRejected = x.Status == "rejected" && PlemsiInvoiceProvider.DianError(x.ResponseJson) != null,
                 x.CreatedAt, x.SubmittedAt, x.IssuedAt, x.OriginalDocumentId, x.Reason, x.RecipientJson, x.SnapshotJson,

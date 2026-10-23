@@ -98,7 +98,7 @@ public class EmailOutboxWorker : BackgroundService
             result = await sender.SendAsync(message, ct);
             if (result.Success)
             {
-                message.Status = "sent"; message.SentAt = clock.UtcNow; message.ProviderMessageId = result.MessageId;
+                message.Status = "sent"; message.SentAt = clock.UtcNow; message.ProviderMessageId = result.MessageId ?? message.ProviderMessageId;
             }
             else if (result.PermanentFailure || message.AttemptCount >= message.MaxAttempts)
                 message.Status = invoice && !result.PermanentFailure ? "verifying" : "failed";

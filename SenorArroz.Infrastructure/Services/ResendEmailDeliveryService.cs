@@ -93,6 +93,7 @@ public class ResendEmailDeliveryService
                     attachments.Add(new { filename = png ? "logo.png" : "logo.jpg", content = Convert.ToBase64String(branding.Logo), content_type = png ? "image/png" : "image/jpeg", content_id = "invoice-logo" });
                 }
                 payload["attachments"] = attachments;
+                payload["tags"] = new[] { new { name = "outbox_id", value = message.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) } };
             }
             using var request = new HttpRequestMessage(HttpMethod.Post, "emails") { Content = JsonContent.Create(payload) };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);

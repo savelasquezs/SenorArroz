@@ -15,6 +15,25 @@ public sealed class InvoiceDeliveryService(ApplicationDbContext db, IClock clock
 {
     public static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
 
+    public async Task RecordDeliveryAsync(int messageId, ResendWebhook.DeliveryEvent result, string eventId, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM email_outbox_message WHERE id = {messageId} AND tenant_id = {db.CurrentTenantIdForFilter} FOR UPDATE", ct);
+        var message = await db.EmailOutboxMessages.SingleOrDefaultAsync(x => x.Id == messageId && x.MessageType == "electronic_invoice", ct);
+        if (message is null) return;
+        await db.Entry(message).ReloadAsync(ct);
+        var recipients = JsonSerializer.Deserialize<string[]>(message.ToEmailsJson) ?? [];
+        if (message.DeliveryEventId == eventId || !ResendWebhook.CanAdvance(message.DeliveryStatus, message.DeliveryEventAt, result)
+            || recipients.Length == 0 || !recipients.Select(x => x.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(result.Recipients)
+            || message.ProviderMessageId is not null && message.ProviderMessageId != result.EmailId
+            || message.ProviderMessageId is null && (result.OutboxId != message.Id || message.FirstAttemptedAt is null)) return;
+        message.ProviderMessageId = result.EmailId;
+        message.DeliveryStatus = result.Status; message.DeliveryEventAt = result.OccurredAt;
+        message.DeliveryEventId = eventId; message.DeliveryError = result.Error;
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+    }
+
     public async Task PreparePdfAsync(int documentId, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -62,6 +81,7 @@ public sealed class InvoiceDeliveryService(ApplicationDbContext db, IClock clock
         {
             if (!resend || previous.Status is "pending" or "processing" or "retry") return;
             if (previous.Status == "verifying") throw new BusinessException("El envío anterior requiere verificar su resultado antes de reenviar para evitar duplicados.");
+            if (previous.DeliveryStatus == "delayed") throw new BusinessException("Resend sigue intentando entregar el correo anterior. Espera su resultado antes de reenviar.");
             if (previous.SentAt > clock.UtcNow.AddMinutes(-1)) return;
         }
         var fiscal = InvoicePdf.Read(document);
