@@ -10,6 +10,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<ElectronicInvoiceIntegration> ElectronicInvoiceIntegrations { get; set; }
         DbSet<ElectronicInvoiceBranding> ElectronicInvoiceBrandings { get; set; }
         DbSet<CustomerBillingRecipient> CustomerBillingRecipients { get; set; }
+        DbSet<BillingRecipientProfile> BillingRecipientProfiles { get; set; }
         DbSet<ElectronicInvoiceDocument> ElectronicInvoiceDocuments { get; set; }
         DbSet<Address> Addresses { get; set; }
         DbSet<AddressBranch> AddressBranches { get; set; }

@@ -9,6 +9,7 @@ using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Infrastructure.Integrations;
 using SenorArroz.Infrastructure.Helpers;
+using SenorArroz.Infrastructure.Common;
 using SenorArroz.Shared.Models;
 
 namespace SenorArroz.API.Controllers;
@@ -167,8 +168,27 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
     public async Task<IActionResult> Recipients(int customerId, CancellationToken ct)
     {
         await Customer(customerId, ct);
-        return Success(await db.CustomerBillingRecipients.AsNoTracking().Where(x => x.CustomerId == customerId)
-            .OrderByDescending(x => x.IsDefault).ThenBy(x => x.Name).Select(x => new { x.Id, x.DocumentType, x.Identification, x.Name, x.Email, x.IsDefault }).ToListAsync(ct));
+        var recipients = await db.CustomerBillingRecipients.AsNoTracking().Where(x => x.CustomerId == customerId)
+            .OrderByDescending(x => x.IsDefault).ThenBy(x => x.Id).Select(BillingRecipientDirectory.CustomerProjection).ToListAsync(ct);
+        return Success(recipients.DistinctBy(x => (x.DocumentType, BillingRecipientDirectory.Normalize(x.DocumentType, x.Identification))));
+    }
+
+    [HttpGet("recipients")]
+    public async Task<IActionResult> SearchRecipients([FromQuery, MaxLength(200)] string search = "", [FromQuery, Range(1, int.MaxValue)] int page = 1, CancellationToken ct = default)
+    {
+        var query = db.BillingRecipientProfiles.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(search)) query = BillingRecipientDirectory.Search(query, search);
+        return Success(await query.OrderBy(x => x.Name).ThenBy(x => x.Id).Select(BillingRecipientDirectory.Projection).ToPagedResultAsync(page, 20, ct));
+    }
+
+    [HttpPost("recipients")]
+    public async Task<IActionResult> SaveDirectoryRecipient(BillingRecipientDto dto, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({user.TenantId}, -784)", ct);
+        var profile = await BillingRecipientDirectory.SaveAsync(db, dto, ct);
+        await tx.CommitAsync(ct);
+        return Success(await db.BillingRecipientProfiles.Where(x => x.Id == profile.Id).Select(BillingRecipientDirectory.Projection).SingleAsync(ct));
     }
 
     [HttpPost("customers/{customerId:int}/recipients")]
@@ -177,10 +197,11 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
         ElectronicInvoiceService.ValidateRecipient(dto);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await Customer(customerId, ct);
-        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({user.TenantId}, {customerId})", ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({user.TenantId}, -784)", ct);
+        var profile = await BillingRecipientDirectory.SaveAsync(db, dto, ct);
         var r = dto.Id.HasValue ? await db.CustomerBillingRecipients.SingleOrDefaultAsync(x => x.Id == dto.Id && x.CustomerId == customerId, ct)
             ?? throw new NotFoundException("Destinatario no encontrado")
-            : await db.CustomerBillingRecipients.SingleOrDefaultAsync(x => x.CustomerId == customerId && x.DocumentType == dto.DocumentType && x.Identification == dto.Identification, ct)
+            : await db.CustomerBillingRecipients.OrderByDescending(x => x.IsDefault).ThenBy(x => x.Id).FirstOrDefaultAsync(x => x.CustomerId == customerId && (x.ProfileId == profile.Id || x.DocumentType == profile.DocumentType && x.Identification == profile.Identification), ct)
                 ?? new CustomerBillingRecipient { CustomerId = customerId };
         var any = await db.CustomerBillingRecipients.AnyAsync(x => x.CustomerId == customerId, ct);
         if (dto.IsDefault || !any)
@@ -189,19 +210,23 @@ public sealed class ElectronicInvoicingController(IApplicationDbContext db, ICur
             foreach (var p in previous) p.IsDefault = false;
             await db.SaveChangesAsync(ct);
         }
-        r.DocumentType = dto.DocumentType; r.Identification = dto.Identification.Trim(); r.Name = dto.Name.Trim();
-        r.Email = string.IsNullOrWhiteSpace(dto.Email) ? null : dto.Email.Trim(); r.IsDefault = dto.IsDefault || !any;
+        r.ProfileId = profile.Id; r.DocumentType = profile.DocumentType; r.Identification = profile.Identification; r.Name = profile.Name;
+        r.Email = profile.Email; r.IsDefault = dto.IsDefault || !any;
         if (r.Id == 0) db.CustomerBillingRecipients.Add(r);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
-        return Success(new { r.Id, r.DocumentType, r.Identification, r.Name, r.Email, r.IsDefault });
+        return Success(await db.CustomerBillingRecipients.Where(x => x.Id == r.Id).Select(BillingRecipientDirectory.CustomerProjection).SingleAsync(ct));
     }
 
     [HttpGet("recipient-lookup")]
     public async Task<IActionResult> Lookup([FromQuery, Range(1, 99)] int type, [FromQuery, Required, MaxLength(32)] string identification, CancellationToken ct)
     {
+        var normalized = BillingRecipientDirectory.Normalize(type, identification);
+        var saved = await db.BillingRecipientProfiles.AsNoTracking().Where(x => x.DocumentType == type && x.Identification == normalized)
+            .Select(BillingRecipientDirectory.Projection).SingleOrDefaultAsync(ct);
+        if (saved is not null) return Success(new { source = "directory", recipient = saved });
         var i = await db.ElectronicInvoiceIntegrations.SingleOrDefaultAsync(x => x.IsActive, ct)
             ?? throw new BusinessException("Activa un proveedor para consultar la DIAN.");
-        return Success(await Provider(i).LookupRecipientAsync(i, type, identification, ct));
+        return Success(new { source = "dian", data = await Provider(i).LookupRecipientAsync(i, type, normalized, ct) });
     }
 
     [HttpGet("orders/{orderId:int}")]

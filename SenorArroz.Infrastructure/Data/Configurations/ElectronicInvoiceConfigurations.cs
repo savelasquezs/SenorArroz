@@ -41,6 +41,17 @@ public sealed class ElectronicInvoiceBrandingConfiguration : IEntityTypeConfigur
     }
 }
 
+public sealed class BillingRecipientProfileConfiguration : IEntityTypeConfiguration<BillingRecipientProfile>
+{
+    public void Configure(EntityTypeBuilder<BillingRecipientProfile> b)
+    {
+        ElectronicInvoiceIntegrationConfiguration.Map(b, "billing_recipient_profile");
+        b.HasIndex(x => new { x.TenantId, x.Id }).IsUnique();
+        b.HasIndex(x => new { x.TenantId, x.DocumentType, x.Identification }).IsUnique();
+        b.Property(x => x.UpdatedAt).IsConcurrencyToken().ValueGeneratedOnAddOrUpdate();
+    }
+}
+
 public sealed class CustomerBillingRecipientConfiguration : IEntityTypeConfiguration<CustomerBillingRecipient>
 {
     public void Configure(EntityTypeBuilder<CustomerBillingRecipient> b)
@@ -48,7 +59,8 @@ public sealed class CustomerBillingRecipientConfiguration : IEntityTypeConfigura
         ElectronicInvoiceIntegrationConfiguration.Map(b, "customer_billing_recipient");
         b.HasIndex(x => new { x.TenantId, x.CustomerId, x.DocumentType, x.Identification }).IsUnique();
         b.HasIndex(x => new { x.TenantId, x.CustomerId }).IsUnique().HasFilter("is_default");
-        b.HasOne<Customer>().WithMany().HasForeignKey(x => new { x.TenantId, x.CustomerId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Customer>().WithMany(x => x.BillingRecipients).HasForeignKey(x => new { x.TenantId, x.CustomerId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.Profile).WithMany().HasForeignKey(x => new { x.TenantId, x.ProfileId }).HasPrincipalKey(x => new { x.TenantId, x.Id }).OnDelete(DeleteBehavior.Restrict);
     }
 }
 

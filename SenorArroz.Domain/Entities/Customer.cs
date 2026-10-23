@@ -19,6 +19,7 @@ public class Customer : TenantOwnedEntity
     public virtual Branch Branch { get; set; } = null!;
     public virtual Tenant Tenant { get; set; } = null!;
     public virtual ICollection<CustomerPhone> Phones { get; set; } = new List<CustomerPhone>();
+    public virtual ICollection<CustomerBillingRecipient> BillingRecipients { get; set; } = new List<CustomerBillingRecipient>();
     public virtual ICollection<Address> Addresses { get; set; } = new List<Address>();
     public virtual ICollection<Order> Orders { get; set; } = new List<Order>();
 }

@@ -12,6 +12,8 @@ public class CustomerMappingProfile : Profile
     {
         // Customer mappings
         CreateMap<Customer, CustomerDto>()
+            .ForMember(dest => dest.BillingCompanies, opt => opt.MapFrom(src => src.BillingRecipients
+                .Where(r => r.Profile != null).Select(r => r.Profile!.TradeName ?? r.Profile.Name).Distinct()))
             .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Branch.Name))
             .ForMember(dest => dest.Addresses, opt => opt.MapFrom(src => src.Addresses))
             .ForMember(dest => dest.TotalOrders, opt => opt.Ignore()) // Will be set manually

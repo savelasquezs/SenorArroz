@@ -16,6 +16,7 @@ namespace SenorArroz.Application.Features.Customers.DTOs
         public bool WasCreated { get; set; }
         public string BranchName { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        public List<string> BillingCompanies { get; set; } = new();
         public string? Phone1 { get; set; }
         public string? Phone2 { get; set; }
         public string? WhatsAppUsername { get; set; }

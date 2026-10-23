@@ -44,6 +44,7 @@ public class CustomerRepository : ICustomerRepository
             .AsSplitQuery() // Avoid Cartesian products across phones/addresses/branch services.
             .Include(c => c.Branch)
             .Include(c => c.Phones)
+            .Include(c => c.BillingRecipients).ThenInclude(r => r.Profile)
             .Include(c => c.Addresses)
             .ThenInclude(a => a.Neighborhood)
             .Include(c => c.Addresses)
@@ -61,9 +62,14 @@ public class CustomerRepository : ICustomerRepository
         if (branchId.HasValue && mobileIdentity is null)
             query = query.Where(c => c.BranchId == branchId.Value);
 
+        var companySearch = string.IsNullOrWhiteSpace(search) ? "" : "%" + search.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+        var companyCustomers = _context.CustomerBillingRecipients.Where(r => r.Profile != null &&
+            (EF.Functions.ILike(r.Profile.Name, companySearch) || r.Profile.TradeName != null && EF.Functions.ILike(r.Profile.TradeName, companySearch)
+                || EF.Functions.ILike(r.Profile.Identification, companySearch))).Select(r => r.CustomerId);
         if (mobileIdentity is not null)
         {
-            query = query.Where(c => c.Phones.Any(p => p.Active && p.PhoneNormalized == mobileIdentity));
+            query = query.Where(c => c.Phones.Any(p => p.Active && p.PhoneNormalized == mobileIdentity)
+                || companySearch != "" && (!branchId.HasValue || c.BranchId == branchId.Value) && companyCustomers.Contains(c.Id));
         }
         else if (!string.IsNullOrWhiteSpace(search))
         {
@@ -75,7 +81,8 @@ public class CustomerRepository : ICustomerRepository
                 EF.Functions.ILike(c.Name, pattern)
                 || (c.Phone1 != null && EF.Functions.ILike(c.Phone1, pattern))
                 || (c.Phone2 != null && EF.Functions.ILike(c.Phone2, pattern))
-                || (c.WhatsAppUsername != null && EF.Functions.ILike(c.WhatsAppUsername, usernamePattern)));
+                || (c.WhatsAppUsername != null && EF.Functions.ILike(c.WhatsAppUsername, usernamePattern))
+                || companyCustomers.Contains(c.Id));
         }
 
         if (!string.IsNullOrWhiteSpace(name))

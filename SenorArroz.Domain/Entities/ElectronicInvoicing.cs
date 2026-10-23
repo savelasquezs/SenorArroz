@@ -31,9 +31,22 @@ public sealed class ElectronicInvoiceIntegration : TenantOwnedEntity
     public string? ResolutionsJson { get; set; }
 }
 
-public sealed class CustomerBillingRecipient : TenantOwnedEntity
+public sealed class BillingRecipientProfile : TenantOwnedEntity
+{
+    public int DocumentType { get; set; } = 3;
+    public string Identification { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string? TradeName { get; set; }
+    public string? Email { get; set; }
+    public string? Address { get; set; }
+    public bool NeedsReview { get; set; }
+}
+
+public class CustomerBillingRecipient : TenantOwnedEntity
 {
     public int CustomerId { get; set; }
+    public int? ProfileId { get; set; }
+    public virtual BillingRecipientProfile? Profile { get; set; }
     public int DocumentType { get; set; } = 3;
     public string Identification { get; set; } = "";
     public string Name { get; set; } = "";

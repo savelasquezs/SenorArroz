@@ -33,6 +33,7 @@ namespace SenorArroz.Infrastructure.Data
         public DbSet<ElectronicInvoiceIntegration> ElectronicInvoiceIntegrations { get; set; }
         public DbSet<ElectronicInvoiceBranding> ElectronicInvoiceBrandings { get; set; }
         public DbSet<CustomerBillingRecipient> CustomerBillingRecipients { get; set; }
+        public DbSet<BillingRecipientProfile> BillingRecipientProfiles { get; set; }
         public DbSet<ElectronicInvoiceDocument> ElectronicInvoiceDocuments { get; set; }
         public virtual DbSet<AddressBranch> AddressBranches { get; set; }
 
@@ -212,6 +213,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new ElectronicInvoiceIntegrationConfiguration());
             modelBuilder.ApplyConfiguration(new ElectronicInvoiceBrandingConfiguration());
             modelBuilder.ApplyConfiguration(new CustomerBillingRecipientConfiguration());
+            modelBuilder.ApplyConfiguration(new BillingRecipientProfileConfiguration());
             modelBuilder.ApplyConfiguration(new ElectronicInvoiceDocumentConfiguration());
             modelBuilder.ApplyConfiguration(new BranchBusinessHourConfiguration());
             modelBuilder.ApplyConfiguration(new BranchAiSettingConfiguration());

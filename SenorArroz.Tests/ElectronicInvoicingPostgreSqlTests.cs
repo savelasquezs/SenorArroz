@@ -33,7 +33,8 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
         {
             var path = Path.Combine(dir.FullName, "SenorArroz.Infrastructure", "Scripts", "add_electronic_invoicing.sql");
             if (File.Exists(path)) return File.ReadAllText(path) + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_invoice_delivery.sql"))
-                + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_invoice_branding.sql"));
+                + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_invoice_branding.sql"))
+                + "\n" + File.ReadAllText(Path.Combine(Path.GetDirectoryName(path)!, "add_billing_recipient_directory.sql"));
         }
         throw new FileNotFoundException("add_electronic_invoicing.sql");
     }
@@ -441,6 +442,114 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
     }
 
     private static BillingRecipientDto Recipient() => new() { DocumentType = 3, Identification = "12345", Name = "Cliente" };
+    private ElectronicInvoicingController DirectoryController(ApplicationDbContext db, IElectronicInvoiceProvider? provider = null)
+    {
+        var user = new Mock<ICurrentUser>(); user.SetupGet(x => x.TenantId).Returns(tenant.TenantId);
+        return new(db, user.Object, Mock.Of<IBranchContext>(), Mock.Of<IIntegrationSecretProtector>(), provider is null ? [] : [provider], Mock.Of<IElectronicInvoiceService>(), Clock(), new ConfigurationBuilder().Build());
+    }
+    private static object ResponseData(Microsoft.AspNetCore.Mvc.IActionResult result) =>
+        Assert.IsType<SenorArroz.Shared.Models.ApiResponse<object>>(Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(result).Value).Data!;
+
+    [InvoicePostgresFact]
+    public async Task First_lookup_uses_Dian_and_saved_profiles_are_reused_for_other_customers_without_a_provider()
+    {
+        await using var db = Db(true);
+        db.Customers.Add(new Customer { Id = 3, BranchId = 1, Name = "Otro empleado" }); await db.SaveChangesAsync();
+        var provider = new Mock<IElectronicInvoiceProvider>(); provider.SetupGet(x => x.Code).Returns("plemsi");
+        provider.Setup(x => x.LookupRecipientAsync(It.IsAny<ElectronicInvoiceIntegration>(), 6, "900507876", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JsonSerializer.SerializeToElement(new { customerName = "METTAGRUP S.A.S.", customerEmail = "factura@example.com" }));
+        var controller = DirectoryController(db, provider.Object);
+        Assert.Equal("dian", JsonSerializer.SerializeToElement(ResponseData(await controller.Lookup(6, "900507876-7", default))).GetProperty("source").GetString());
+        Assert.Empty(await db.BillingRecipientProfiles.ToListAsync());
+        var saved = Assert.IsType<BillingRecipientDto>(ResponseData(await controller.SaveRecipient(1, new BillingRecipientDto
+            { DocumentType = 6, Identification = "900507876-7", Name = "METTAGRUP S.A.S.", TradeName = "Metta", Email = "factura@example.com", Address = "Sede fiscal" }, default)));
+        await controller.SaveRecipient(3, saved with { Id = null, IsDefault = true }, default);
+        var integration = await db.ElectronicInvoiceIntegrations.SingleAsync(); integration.IsActive = false; await db.SaveChangesAsync();
+        var cached = JsonSerializer.SerializeToElement(ResponseData(await controller.Lookup(6, "900507876", default)));
+        Assert.Equal("directory", cached.GetProperty("source").GetString());
+        Assert.Single(await db.BillingRecipientProfiles.ToListAsync());
+        Assert.Equal(2, await db.CustomerBillingRecipients.CountAsync(x => x.ProfileId == saved.ProfileId));
+        Assert.Empty(await db.ElectronicInvoiceDocuments.ToListAsync());
+        provider.Verify(x => x.LookupRecipientAsync(It.IsAny<ElectronicInvoiceIntegration>(), 6, "900507876", It.IsAny<CancellationToken>()), Times.Once);
+        provider.Verify(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [InvoicePostgresFact]
+    public async Task Shared_edits_require_confirmation_and_version_and_preserve_issued_snapshots()
+    {
+        await using var db = Db(true); var controller = DirectoryController(db);
+        var saved = Assert.IsType<BillingRecipientDto>(ResponseData(await controller.SaveRecipient(1, Recipient() with { Email = "original@example.com" }, default)));
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => controller.SaveDirectoryRecipient(Recipient() with { Email = "otro@example.com" }, default));
+        var document = InvoiceDeliveryTests.Document(); document.OrderId = 1; document.IntegrationId = 1; document.RecipientJson = JsonSerializer.Serialize(saved);
+        db.ElectronicInvoiceDocuments.Add(document); await db.SaveChangesAsync(); var original = document.RecipientJson;
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => controller.SaveDirectoryRecipient(saved with { Email = "nuevo@example.com" }, default));
+        var updated = Assert.IsType<BillingRecipientDto>(ResponseData(await controller.SaveDirectoryRecipient(saved with { Email = "nuevo@example.com", ConfirmSharedUpdate = true }, default)));
+        Assert.NotEqual(saved.ProfileVersion, updated.ProfileVersion);
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => controller.SaveDirectoryRecipient(saved with { Email = "obsoleto@example.com", ConfirmSharedUpdate = true }, default));
+        var linked = (IEnumerable<BillingRecipientDto>)ResponseData(await controller.Recipients(1, default));
+        Assert.Equal("nuevo@example.com", Assert.Single(linked).Email);
+        Assert.Equal(original, (await db.ElectronicInvoiceDocuments.SingleAsync()).RecipientJson);
+    }
+
+    [InvoicePostgresFact]
+    public async Task Concurrent_creates_deduplicate_profiles_and_local_search_is_paginated_and_tenant_isolated()
+    {
+        async Task Save() { await using var db = Db(true); await DirectoryController(db).SaveDirectoryRecipient(Recipient() with { TradeName = "Empresa compartida" }, default); }
+        await Task.WhenAll(Save(), Save());
+        await using var db = Db(true);
+        Assert.Single(await db.BillingRecipientProfiles.ToListAsync());
+        using (tenant.BeginTenantScope(2))
+        {
+            db.BillingRecipientProfiles.Add(new BillingRecipientProfile { Id = 90, DocumentType = 3, Identification = "12345", Name = "Ajeno", TradeName = "Empresa compartida" }); await db.SaveChangesAsync();
+        }
+        Assert.DoesNotContain(await db.BillingRecipientProfiles.IgnoreQueryFilters().ToListAsync(), x => x.Id == 90);
+        var result = Assert.IsType<SenorArroz.Shared.Models.PagedResult<BillingRecipientDto>>(ResponseData(await DirectoryController(db).SearchRecipients("compartida", 1, default)));
+        Assert.Equal(1, result.TotalCount); Assert.Equal(20, result.PageSize); Assert.Single(result.Items);
+        var missing = Assert.IsType<SenorArroz.Shared.Models.PagedResult<BillingRecipientDto>>(ResponseData(await DirectoryController(db).SearchRecipients("%", 1, default)));
+        Assert.Empty(missing.Items);
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.NotFoundException>(() => DirectoryController(db).SaveDirectoryRecipient(Recipient() with { ProfileId = 90 }, default));
+        db.ChangeTracker.Clear(); db.CustomerBillingRecipients.Add(new CustomerBillingRecipient { CustomerId = 1, ProfileId = 90, Name = "Cruce", Identification = "111" });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [InvoicePostgresFact]
+    public async Task Customer_search_by_company_alias_and_nit_keeps_customer_and_branch_scope()
+    {
+        await using var db = Db(true);
+        db.Customers.Add(new Customer { Id = 3, BranchId = 1, Name = "Empleado distinto" }); await db.SaveChangesAsync();
+        var controller = DirectoryController(db);
+        var saved = Assert.IsType<BillingRecipientDto>(ResponseData(await controller.SaveRecipient(1, new BillingRecipientDto { DocumentType = 6, Identification = "900507876", Name = "METTAGRUP S.A.S.", TradeName = "Empresa Metta" }, default)));
+        await controller.SaveRecipient(3, saved with { Id = null }, default);
+        var repository = new SenorArroz.Infrastructure.Repositories.CustomerRepository(db, tenant);
+        foreach (var term in new[] { "metta", "900507876", "METTAGRUP" })
+        {
+            var results = await repository.GetPagedAsync(1, search: term);
+            Assert.Equal(new[] { 1, 3 }, results.Items.Select(x => x.Id).Order().ToArray());
+            Assert.All(results.Items, c => Assert.Single(c.BillingRecipients));
+        }
+        Assert.Empty((await repository.GetPagedAsync(2, search: "metta")).Items);
+        Assert.Empty((await repository.GetPagedAsync(1, search: "no existe")).Items);
+    }
+
+    [InvoicePostgresFact]
+    public async Task Directory_migration_keeps_legacy_ids_and_flags_conflicting_contacts_without_rewriting_invoices()
+    {
+        await using var db = Db();
+        db.Customers.Add(new Customer { Id = 3, BranchId = 1, Name = "Otro" }); await db.SaveChangesAsync();
+        var first = new CustomerBillingRecipient { CustomerId = 1, DocumentType = 6, Identification = "900507876", Name = "METTAGRUP S.A.S.", Email = "uno@example.com", IsDefault = true };
+        var second = new CustomerBillingRecipient { CustomerId = 3, DocumentType = 6, Identification = "900507876-7", Name = "METTAGRUP S.A.S.", Email = "dos@example.com", IsDefault = true };
+        db.CustomerBillingRecipients.AddRange(first, second); await db.SaveChangesAsync();
+        using (tenant.BeginSystemScope())
+        {
+            await db.Database.OpenConnectionAsync(); await using var command = db.Database.GetDbConnection().CreateCommand(); command.CommandText = Script();
+            await command.ExecuteNonQueryAsync(); await command.ExecuteNonQueryAsync();
+        }
+        db.ChangeTracker.Clear();
+        var profile = await db.BillingRecipientProfiles.SingleAsync(); Assert.True(profile.NeedsReview); Assert.Null(profile.Email);
+        var links = await db.CustomerBillingRecipients.OrderBy(x => x.Id).ToListAsync();
+        Assert.Equal(new[] { first.Id, second.Id }, links.Select(x => x.Id).ToArray());
+        Assert.All(links, x => Assert.Equal(profile.Id, x.ProfileId)); Assert.Equal("uno@example.com", links[0].Email); Assert.Equal("dos@example.com", links[1].Email);
+    }
     private static IClock Clock() { var clock = new Mock<IClock>(); clock.SetupGet(x => x.UtcNow).Returns(() => DateTime.UtcNow); return clock.Object; }
 }
 

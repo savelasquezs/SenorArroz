@@ -7,9 +7,15 @@ namespace SenorArroz.Application.Common.Interfaces;
 public sealed record BillingRecipientDto
 {
     public int? Id { get; init; }
+    public int? ProfileId { get; init; }
+    public DateTime? ProfileVersion { get; init; }
+    public bool NeedsReview { get; init; }
+    public bool ConfirmSharedUpdate { get; init; }
     [Range(1, 99)] public int DocumentType { get; init; } = 3;
     [Required, MaxLength(32), RegularExpression(@"^[A-Za-z0-9-]+$")] public string Identification { get; init; } = "";
     [Required, MaxLength(200)] public string Name { get; init; } = "";
+    [MaxLength(200)] public string? TradeName { get; init; }
+    [MaxLength(300)] public string? Address { get; init; }
     [EmailAddress, MaxLength(254)] public string? Email { get; init; }
     public bool IsDefault { get; init; }
 }
