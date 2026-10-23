@@ -12,9 +12,10 @@ public static class DeliveryDashboardAggregator
         IReadOnlyList<Order> orders,
         IReadOnlyList<(DateTime UpdatedAt, int Total)> salesTicks,
         DateTime fromUtc,
-        DateTime toUtc)
+        DateTime toUtc,
+        bool excludeWednesdays = false)
     {
-        var (labels, counts, fees, sales) = BuildEvolutionSeries(orders, salesTicks, fromUtc, toUtc);
+        var (labels, counts, fees, sales) = BuildEvolutionSeries(orders, salesTicks, fromUtc, toUtc, excludeWednesdays);
         var totalFees = orders.Sum(o => (long)(o.DeliveryFee ?? 0));
         var totalSales = salesTicks.Sum(t => (long)t.Total);
         var periodPct = totalSales > 0 ? Math.Round(100d * totalFees / totalSales, 2) : 0d;
@@ -156,9 +157,10 @@ public static class DeliveryDashboardAggregator
         IReadOnlyList<Order> orders,
         IReadOnlyList<(DateTime UpdatedAt, int Total)> salesTicks,
         DateTime fromUtc,
-        DateTime toUtc)
+        DateTime toUtc,
+        bool excludeWednesdays)
     {
-        var buckets = DashboardDeliveryTimeBuckets.Create(fromUtc, toUtc);
+        var buckets = DashboardDeliveryTimeBuckets.Create(fromUtc, toUtc, excludeWednesdays);
         var n = buckets.Count;
         var counts = new int[n];
         var fees = new int[n];
@@ -166,7 +168,9 @@ public static class DeliveryDashboardAggregator
 
         foreach (var o in orders)
         {
-            var i = buckets.GetBucketIndex(o.UpdatedAt);
+            var deliveredAt = DeliveryPerformanceAnalytics.StatusTime(o.StatusTimes, "delivered");
+            if (!deliveredAt.HasValue) continue;
+            var i = buckets.GetBucketIndex(deliveredAt.Value);
             if ((uint)i >= (uint)n)
                 continue;
             counts[i]++;

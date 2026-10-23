@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
+using SenorArroz.Application.Features.Dashboard.Services;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 
@@ -24,6 +25,8 @@ public class GetDashboardDeliveryRouteStopsHandler
         CancellationToken cancellationToken)
     {
         var route = await _db.DeliveryRoutes.AsNoTracking()
+            .Include(r => r.Branch)
+            .Include(r => r.Stops).ThenInclude(s => s.Order)
             .FirstOrDefaultAsync(r => r.Id == request.RouteId, cancellationToken);
 
         if (route is null || route.Status != DeliveryRouteStatus.Completed)
@@ -42,12 +45,36 @@ public class GetDashboardDeliveryRouteStopsHandler
                 AddressSnapshotText = s.AddressSnapshotText,
                 CustomerName = s.Order.Customer != null ? s.Order.Customer.Name : null,
                 AddressText = s.Order.Address != null ? s.Order.Address.AddressText : null,
+                Latitude = s.Order.Address != null ? s.Order.Address.Latitude : null,
+                Longitude = s.Order.Address != null ? s.Order.Address.Longitude : null,
             })
             .ToListAsync(cancellationToken);
 
+        var times = route.Stops.ToDictionary(s => s.OrderId, s => s.Order.StatusTimes);
+        foreach (var stop in stops)
+        {
+            stop.DeliveredAtUtc = DeliveryPerformanceAnalytics.StatusTime(times.GetValueOrDefault(stop.OrderId), "delivered");
+            stop.OnTheWayAtUtc = DeliveryPerformanceAnalytics.StatusTime(times.GetValueOrDefault(stop.OrderId), "ontheway");
+        }
+        var points = route.DepartedAtUtc.HasValue && route.CompletedAtUtc.HasValue && route.WorkSessionId.HasValue
+            ? await _db.DeliverymanLocations.AsNoTracking().Where(p => p.DeliveryRouteId == route.Id
+                && p.DeliverymanId == route.DeliverymanId && p.WorkSessionId == route.WorkSessionId
+                && p.RecordedAt >= route.DepartedAtUtc && p.RecordedAt <= route.CompletedAtUtc)
+                .OrderBy(p => p.RecordedAt).ToListAsync(cancellationToken)
+            : new List<SenorArroz.Domain.Entities.DeliverymanLocation>();
+        var track = DeliveryPerformanceAnalytics.AnalyzeTrack(route, points);
+
+        var sessions = await DeliveryPerformanceAnalytics.LoadWorkSessionsAsync(_db, [route], cancellationToken);
         return new DashboardDeliveryRouteStopsResponseDto
         {
             RouteId = request.RouteId,
+            ReturnIsInconsistent = DeliveryPerformanceAnalytics.IsReturnInconsistent(route, sessions),
+            BranchLatitude = route.Branch.Latitude,
+            BranchLongitude = route.Branch.Longitude,
+            DepartedAtUtc = route.DepartedAtUtc,
+            CompletedAtUtc = route.CompletedAtUtc,
+            Segments = track.Segments,
+            GpsCoveragePercent = track.CoveragePercent,
             Stops = stops,
         };
     }

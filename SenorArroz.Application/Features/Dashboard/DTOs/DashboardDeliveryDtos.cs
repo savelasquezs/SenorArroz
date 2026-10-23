@@ -45,6 +45,7 @@ public class DeliverymanEfficiencyApiDto
 /// <summary>Métricas de <c>delivery_route</c> cerradas para el dashboard de domicilios.</summary>
 public class DashboardDeliveryRouteMetricsDto
 {
+    public DashboardDeliveryPerformanceDto? Performance { get; set; }
     public int CompletedRoutesCount { get; set; }
     public int RoutesWithSlaDataCount { get; set; }
     public double PeriodOnTimePercent { get; set; }
@@ -79,15 +80,98 @@ public class DashboardDeliveryRouteHistoryItemDto
 /// <summary>Paradas de una ruta cerrada (detalle para dashboard).</summary>
 public class DashboardDeliveryRouteStopsResponseDto
 {
+    public bool ReturnIsInconsistent { get; set; }
     public int RouteId { get; set; }
+    public decimal? BranchLatitude { get; set; }
+    public decimal? BranchLongitude { get; set; }
+    public List<List<DashboardRoutePointDto>> Segments { get; set; } = new();
+    public double GpsCoveragePercent { get; set; }
+    public DateTime? DepartedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
     public List<DashboardDeliveryRouteStopItemDto> Stops { get; set; } = new();
 }
 
 public class DashboardDeliveryRouteStopItemDto
 {
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
+    public DateTime? DeliveredAtUtc { get; set; }
+    public DateTime? OnTheWayAtUtc { get; set; }
     public int OrderId { get; set; }
     public int StopSequence { get; set; }
     public string? AddressSnapshotText { get; set; }
     public string? CustomerName { get; set; }
     public string? AddressText { get; set; }
+}
+
+public class DashboardRoutePointDto
+{
+    public decimal Latitude { get; set; }
+    public decimal Longitude { get; set; }
+    public DateTime RecordedAt { get; set; }
+}
+
+public class DashboardDeliveryPerformanceSummaryDto
+{
+    public int InconsistentReturnCount { get; set; }
+    public int DeliveredCount { get; set; }
+    public int CompletedRoutesCount { get; set; }
+    public int SlaSampleCount { get; set; }
+    public int RouteSampleCount { get; set; }
+    public int OrderSampleCount { get; set; }
+    public int GpsSampleCount { get; set; }
+    public int DistanceSampleCount { get; set; }
+    public int EstimatedDistanceSampleCount { get; set; }
+    public int StageSampleCount { get; set; }
+    public double? OnTimePercent { get; set; }
+    public double? AvgRouteMinutes { get; set; }
+    public double? AvgMetaMinutes { get; set; }
+    public double? AvgOrderMinutes { get; set; }
+    public double? P90OrderMinutes { get; set; }
+    public double? MinutesPerKm { get; set; }
+    public double? GpsMinutesPerKm { get; set; }
+    public double? EstimatedMinutesPerKm { get; set; }
+    public double? OrdersPerRoute { get; set; }
+    public double? AvgDispatchMinutes { get; set; }
+    public double? AvgDeliveryStageMinutes { get; set; }
+    public double? AvgReturnMinutes { get; set; }
+    public double TotalGpsKm { get; set; }
+}
+
+public class DashboardDeliveryPerformanceRowDto : DashboardDeliveryPerformanceSummaryDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int BranchId { get; set; }
+}
+
+public class DashboardDeliveryPerformanceRouteDto
+{
+    public bool ReturnIsInconsistent { get; set; }
+    public int Id { get; set; }
+    public int DeliverymanId { get; set; }
+    public string DeliverymanName { get; set; } = string.Empty;
+    public string BranchName { get; set; } = string.Empty;
+    public DateTime? DepartedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public int DeliveredCount { get; set; }
+    public double? DurationMinutes { get; set; }
+    public double? MetaMinutes { get; set; }
+    public bool? MetSla { get; set; }
+    public double? GpsDistanceKm { get; set; }
+    public double PlannedDistanceKm { get; set; }
+    public double GpsCoveragePercent { get; set; }
+}
+
+public class DashboardDeliveryPerformanceDto
+{
+    public DashboardDeliveryPerformanceSummaryDto? Team { get; set; }
+    public List<DashboardDeliveryPerformanceSummaryDto> TeamEvolution { get; set; } = new();
+    public DashboardDeliveryPerformanceSummaryDto Current { get; set; } = new();
+    public DashboardDeliveryPerformanceSummaryDto Previous { get; set; } = new();
+    public List<DashboardDeliveryPerformanceRowDto> Drivers { get; set; } = new();
+    public List<DashboardDeliveryPerformanceRowDto> DriverOptions { get; set; } = new();
+    public List<string> Labels { get; set; } = new();
+    public List<DashboardDeliveryPerformanceSummaryDto> Evolution { get; set; } = new();
+    public List<DashboardDeliveryPerformanceRouteDto> RecentRoutes { get; set; } = new();
 }
