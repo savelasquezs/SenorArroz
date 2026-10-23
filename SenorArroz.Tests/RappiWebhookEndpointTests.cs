@@ -9,6 +9,7 @@ using SenorArroz.API.Controllers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
 
 namespace SenorArroz.Tests;
@@ -79,6 +80,100 @@ public sealed class RappiWebhookEndpointTests
         Assert.Equal("t=1792594800000,sign=35df645b382f2b38d85e93c08b2ac77326e5dbe281e738d259a1d22cb6164f1f", Sign(Payload));
     }
 
+    [Theory]
+    [InlineData("{\"store_id\":\"unknown\"}")]
+    [InlineData("{}")]
+    [InlineData("[]")]
+    public async Task Ping_requires_a_store_mapped_to_this_connection(string payload)
+    {
+        await using var fixture = await Fixture.CreateAsync("PING");
+        Assert.IsType<BadRequestObjectResult>(await fixture.SendAsync("PING", payload, Sign(payload)));
+        Assert.Empty(await fixture.Db.IntegrationWebhookEvents.ToListAsync());
+        Assert.Null((await fixture.Db.DeliveryAppStores.SingleAsync()).LastPingAt);
+        fixture.Provider.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Ping_does_not_report_an_inactive_local_business_as_healthy(bool suspendTenant)
+    {
+        await using var fixture = await Fixture.CreateAsync("PING");
+        // Even an identical, previously successful PING must evaluate current health.
+        Assert.IsType<OkObjectResult>(await fixture.SendAsync("PING", Payload, Sign(Payload)));
+        if (suspendTenant)
+            (await fixture.Db.Tenants.SingleAsync()).Status = TenantStatus.Suspended;
+        else
+            (await fixture.Db.Branches.SingleAsync()).IsActive = false;
+        await fixture.Db.SaveChangesAsync();
+        var response = Assert.IsType<ObjectResult>(await fixture.SendAsync("PING", Payload, Sign(Payload)));
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, response.StatusCode);
+        Assert.Single(await fixture.Db.IntegrationWebhookEvents.ToListAsync());
+        fixture.Provider.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Ping_health_is_not_gated_by_provider_connectivity_flag()
+    {
+        await using var fixture = await Fixture.CreateAsync("PING");
+        (await fixture.Db.DeliveryAppStores.SingleAsync()).ConnectivityEnabled = false;
+        await fixture.Db.SaveChangesAsync();
+        Assert.IsType<OkObjectResult>(await fixture.SendAsync("PING", Payload, Sign(Payload)));
+        fixture.Provider.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Ping_rejects_ambiguous_store_identifiers()
+    {
+        await using var fixture = await Fixture.CreateAsync("PING");
+        fixture.Db.DeliveryAppStores.Add(new DeliveryAppStore
+        {
+            Id = 2, ConnectionId = 1, RappiStoreId = "another-store", StoreIntegrationId = "audit-local", Name = "Ambiguous"
+        });
+        await fixture.Db.SaveChangesAsync();
+        Assert.IsType<BadRequestObjectResult>(await fixture.SendAsync("PING", Payload, Sign(Payload)));
+        Assert.Empty(await fixture.Db.IntegrationWebhookEvents.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Multiple_signature_header_values_are_rejected()
+    {
+        await using var fixture = await Fixture.CreateAsync("PING");
+        Assert.IsType<UnauthorizedResult>(await fixture.SendAsync("PING", Payload, Sign(Payload), Sign(Payload)));
+        Assert.Empty(await fixture.Db.IntegrationWebhookEvents.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData("t=unvalidated-key,")]
+    [InlineData("T=unvalidated-key,")]
+    [InlineData("sign=unvalidated-signature,")]
+    [InlineData("t=,")]
+    [InlineData("sign=,")]
+    public async Task Duplicate_signature_fields_cannot_choose_an_unsigned_event_key(string prefix)
+    {
+        await using var fixture = await Fixture.CreateAsync("PING");
+        Assert.IsType<UnauthorizedResult>(await fixture.SendAsync("PING", Payload, prefix + Sign(Payload)));
+        Assert.Empty(await fixture.Db.IntegrationWebhookEvents.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData("production", false)]
+    [InlineData("sandbox", true)]
+    public async Task Canonical_tester_compatibility_is_explicitly_sandbox_only(string environment, bool accepted)
+    {
+        await using var fixture = await Fixture.CreateAsync("NEW_ORDER");
+        (await fixture.Db.DeliveryAppConnections.SingleAsync()).Environment = environment;
+        await fixture.Db.SaveChangesAsync();
+        const string raw = "{\"order_id\":\"synthetic\",\"total\":12,\"online\":true,\"info\":null}";
+        const string canonical = "{\"order_id\":\"synthetic\",\"total\":\"12\",\"online\":\"true\",\"info\":\"null\"}";
+        var result = await fixture.SendAsync("NEW_ORDER", raw, Sign(canonical));
+        if (accepted)
+            Assert.IsType<OkObjectResult>(result);
+        else
+            Assert.IsType<UnauthorizedResult>(result);
+        Assert.Equal(accepted ? 1 : 0, await fixture.Db.IntegrationWebhookEvents.CountAsync());
+    }
+
     private static string Sign(string payload)
     {
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(Secret));
@@ -102,6 +197,8 @@ public sealed class RappiWebhookEndpointTests
                 .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
                 currentTenant: context, tenantExecutionContext: context);
             var id = Guid.NewGuid();
+            db.Tenants.Add(new Tenant { Id = 1, Name = "Synthetic", Slug = "synthetic" });
+            db.Branches.Add(new Branch { Id = 1, Name = "Local only" });
             var connection = new DeliveryAppConnection
             {
                 Id = 1, BranchId = 1, Provider = "rappi", PublicId = id,
@@ -123,11 +220,14 @@ public sealed class RappiWebhookEndpointTests
             return fixture;
         }
 
-        public async Task<IActionResult> SendAsync(string eventType, string payload, string signature)
+        public async Task<IActionResult> SendAsync(string eventType, string payload, string signature,
+            string? additionalSignature = null)
         {
             var http = new DefaultHttpContext();
             http.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(payload));
             http.Request.Headers["Rappi-Signature"] = signature;
+            if (additionalSignature is not null)
+                http.Request.Headers.Append("Rappi-Signature", additionalSignature);
             Controller.ControllerContext = new ControllerContext { HttpContext = http };
             return await Controller.Webhook(PublicId, eventType, CancellationToken.None);
         }

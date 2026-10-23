@@ -382,6 +382,76 @@ public sealed class RappiOrderProcessorTests
         workflow.VerifyNoOtherCalls();
     }
 
+    [Theory]
+    [InlineData("taken_visible_order", true)]
+    [InlineData("taken_visible_order,taken_visible_order", true)]
+    [InlineData("taken_visible_order,replace_storekeeper", true)]
+    [InlineData("replace_storekeeper,taken_visible_order", false)]
+    [InlineData("replace_storekeeper", false)]
+    [InlineData("taken_visible_order,ready_for_pick_up", false)]
+    [InlineData("domiciliary_in_store,taken_visible_order", false)]
+    [InlineData("hand_to_domiciliary,taken_visible_order", false)]
+    [InlineData("arrive,taken_visible_order", false)]
+    [InlineData("close_order,taken_visible_order", false)]
+    [InlineData("taken_visible_order,canceled_with_charge", false)]
+    [InlineData("cancel_by_user,taken_visible_order", false)]
+    [InlineData("future_provider_event,taken_visible_order", false)]
+    [InlineData("taken_visible_order,future_provider_event", false)]
+    [InlineData("taken_visible_order_suffix", false)]
+    public async Task Acceptance_recovery_requires_exact_coherent_taken_history_not_array_order(string names, bool accepted)
+    {
+        var time = DateTimeOffset.Parse("2020-05-28T12:30:12.501Z");
+        var history = names.Split(',').Select((name, index) => new RappiOrderEvent(name, time.AddMinutes(index))).ToArray();
+        foreach (var events in new[] { history, history.Reverse().ToArray() })
+        {
+            var evidence = await EvaluateHistory(new(true, events));
+            Assert.Equal(accepted, EvidenceFlag(evidence, "Accepted"));
+            Assert.False(EvidenceFlag(evidence, "MayAttempt"));
+        }
+    }
+
+    [Theory]
+    [InlineData("2030-05-28T12:30:12.501Z", "taken_visible_order")]
+    [InlineData("2020-05-28T12:30:12.501+01:00", "taken_visible_order")]
+    [InlineData("2020-05-28T12:30:12.501Z", "replace_storekeeper")]
+    public async Task Ambiguous_timestamps_are_not_acceptance_evidence(string timestamp, string name)
+    {
+        var evidence = await EvaluateHistory(new(true, [
+            new("taken_visible_order", DateTimeOffset.Parse("2020-05-28T12:30:12.501Z")),
+            new(name, DateTimeOffset.Parse(timestamp))]));
+        Assert.False(EvidenceFlag(evidence, "Accepted"));
+        Assert.False(EvidenceFlag(evidence, "MayAttempt"));
+    }
+
+    [Fact]
+    public async Task Only_successful_empty_history_can_allow_another_acceptance_attempt()
+    {
+        var empty = await EvaluateHistory(new(true, []));
+        Assert.False(EvidenceFlag(empty, "Accepted"));
+        Assert.True(EvidenceFlag(empty, "MayAttempt"));
+        foreach (var result in new[] { new RappiOrderEventsResult(false, Error: "invalid/unavailable"), new(true) })
+        {
+            var evidence = await EvaluateHistory(result);
+            Assert.False(EvidenceFlag(evidence, "Accepted"));
+            Assert.False(EvidenceFlag(evidence, "MayAttempt"));
+        }
+    }
+
+    private static bool EvidenceFlag(object evidence, string property) =>
+        (bool)evidence.GetType().GetProperty(property)!.GetValue(evidence)!;
+
+    private static async Task<object> EvaluateHistory(RappiOrderEventsResult result)
+    {
+        await using var db = CreateDb();
+        var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
+        provider.Setup(x => x.GetOrderEventsAsync("synthetic", It.IsAny<CancellationToken>())).ReturnsAsync(result);
+        var processor = CreateProcessor(db, provider.Object);
+        var task = (Task)typeof(RappiOrderProcessor).GetMethod("GetAcceptanceEvidenceAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(processor, ["synthetic", CancellationToken.None])!;
+        await task;
+        return task.GetType().GetProperty("Result")!.GetValue(task)!;
+    }
+
     private static async Task InvokeCancellationAsync(RappiOrderProcessor processor, string eventName)
     {
         var method = typeof(RappiOrderProcessor).GetMethod(

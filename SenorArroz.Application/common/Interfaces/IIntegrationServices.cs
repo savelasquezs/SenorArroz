@@ -134,7 +134,8 @@ public record RappiWebhookConfigurationResult(
     string? Error = null);
 public record RappiOperationResult(bool Success, int? StatusCode = null, string? Error = null);
 public record RappiOrdersResult(bool Success, IReadOnlyList<string>? RawOrders = null, string? Error = null);
-public record RappiOrderEventsResult(bool Success, IReadOnlyList<string>? Events = null, string? Error = null);
+public record RappiOrderEvent(string Event, DateTimeOffset EventTime, System.Text.Json.JsonElement? AdditionalInformation = null);
+public record RappiOrderEventsResult(bool Success, IReadOnlyList<RappiOrderEvent>? Events = null, string? Error = null);
 public record RappiOrderProcessingResult(
     bool Success,
     int? ExternalOrderId = null,
