@@ -1,128 +1,70 @@
 using System.Globalization;
+using SenorArroz.Application.Common.Helpers;
 
 namespace SenorArroz.Application.Features.Dashboard.Services;
 
-/// <summary>
-/// Misma granularidad temporal que la evolución de entregas (hora / día / semana / mes).
-/// </summary>
 public sealed class DashboardDeliveryTimeBuckets
 {
     private static readonly CultureInfo EsCo = CultureInfo.GetCultureInfo("es-CO");
-
     private readonly Func<DateTime, int> _indexOf;
+    private readonly DateTime _fromUtc;
+    private readonly DateTime _toUtc;
+    private readonly bool _excludeWednesdays;
 
-    private DashboardDeliveryTimeBuckets(IReadOnlyList<string> labels, Func<DateTime, int> indexOf)
+    private DashboardDeliveryTimeBuckets(IReadOnlyList<string> labels, Func<DateTime, int> indexOf,
+        DateTime fromUtc, DateTime toUtc, bool excludeWednesdays)
     {
         Labels = labels;
         _indexOf = indexOf;
+        _fromUtc = fromUtc;
+        _toUtc = toUtc;
+        _excludeWednesdays = excludeWednesdays;
     }
 
     public IReadOnlyList<string> Labels { get; }
-
     public int Count => Labels.Count;
 
-    /// <summary>Índice en [0, Count) o -1 si no encaja en el rango construido.</summary>
-    public int GetBucketIndex(DateTime utcInstant) => _indexOf(utcInstant);
+    public int GetBucketIndex(DateTime utcInstant) => utcInstant < _fromUtc || utcInstant > _toUtc
+        || !DeliveryPerformanceAnalytics.IncludesDay(utcInstant, _excludeWednesdays)
+            ? -1 : _indexOf(ColombiaTimeHelper.GetNowInColombiaFromUtc(utcInstant));
 
-    public static DashboardDeliveryTimeBuckets Create(DateTime fromUtc, DateTime toUtc)
+    public static DashboardDeliveryTimeBuckets Create(DateTime fromUtc, DateTime toUtc, bool excludeWednesdays = false)
     {
-        var dayCount = InclusiveUtcDayCount(fromUtc, toUtc);
-
-        if (dayCount <= 1)
+        var from = ColombiaTimeHelper.GetNowInColombiaFromUtc(fromUtc).Date;
+        var to = ColombiaTimeHelper.GetNowInColombiaFromUtc(toUtc).Date;
+        var days = (int)(to - from).TotalDays + 1;
+        if (days <= 1)
         {
-            var labels = Enumerable.Range(0, 24).Select(h => $"{h:00}:00").ToList();
-            return new DashboardDeliveryTimeBuckets(labels, dt =>
-            {
-                var h = dt.Hour;
-                return h is >= 0 and < 24 ? h : -1;
-            });
+            var excluded = excludeWednesdays && from.DayOfWeek == DayOfWeek.Wednesday;
+            return new(excluded ? [] : Enumerable.Range(0, 24).Select(h => $"{h:00}:00").ToList(),
+                date => excluded ? -1 : date.Hour, fromUtc, toUtc, excludeWednesdays);
         }
-
-        if (dayCount <= 45)
+        var keys = new List<DateTime>();
+        Func<DateTime, DateTime> keyOf;
+        string format;
+        if (days <= 45)
         {
-            var labels = new List<string>();
-            var dayKeys = new List<DateTime>();
-            for (var d = fromUtc.Date; d <= toUtc.Date; d = d.AddDays(1))
-            {
-                labels.Add(d.ToString("ddd, d MMM", EsCo));
-                dayKeys.Add(d);
-            }
-
-            return new DashboardDeliveryTimeBuckets(labels, dt =>
-            {
-                var dd = dt.Date;
-                for (var i = 0; i < dayKeys.Count; i++)
-                {
-                    if (dayKeys[i] == dd)
-                        return i;
-                }
-
-                return -1;
-            });
+            for (var date = from; date <= to; date = date.AddDays(1))
+                if (!excludeWednesdays || date.DayOfWeek != DayOfWeek.Wednesday) keys.Add(date);
+            keyOf = date => date.Date;
+            format = "ddd, d MMM";
         }
-
-        if (dayCount <= 120)
+        else if (days <= 120)
         {
-            var labels = new List<string>();
-            var weekStarts = new List<DateTime>();
-            var cur = StartOfWeekUtc(fromUtc.Date);
-            var end = toUtc.Date;
-            while (cur <= end)
-            {
-                labels.Add($"Sem. {cur.ToString("dd MMM", EsCo)}");
-                weekStarts.Add(cur);
-                cur = cur.AddDays(7);
-            }
-
-            return new DashboardDeliveryTimeBuckets(labels, dt =>
-            {
-                var ws = StartOfWeekUtc(dt.Date);
-                for (var i = 0; i < weekStarts.Count; i++)
-                {
-                    if (weekStarts[i] == ws)
-                        return i;
-                }
-
-                return -1;
-            });
+            for (var date = StartOfWeek(from); date <= to; date = date.AddDays(7)) keys.Add(date);
+            keyOf = StartOfWeek;
+            format = "'Sem.' dd MMM";
         }
-
+        else
         {
-            var labels = new List<string>();
-            var monthKeys = new List<DateTime>();
-            for (var m = new DateTime(fromUtc.Year, fromUtc.Month, 1);
-                 m <= toUtc.Date;
-                 m = m.AddMonths(1))
-            {
-                labels.Add(m.ToString("MMM yyyy", EsCo));
-                monthKeys.Add(m);
-            }
-
-            return new DashboardDeliveryTimeBuckets(labels, dt =>
-            {
-                var key = new DateTime(dt.Year, dt.Month, 1);
-                for (var i = 0; i < monthKeys.Count; i++)
-                {
-                    if (monthKeys[i] == key)
-                        return i;
-                }
-
-                return -1;
-            });
+            for (var date = new DateTime(from.Year, from.Month, 1); date <= to; date = date.AddMonths(1)) keys.Add(date);
+            keyOf = date => new DateTime(date.Year, date.Month, 1);
+            format = "MMM yyyy";
         }
+        var indexes = keys.Select((date, index) => (date, index)).ToDictionary(x => x.date, x => x.index);
+        return new(keys.Select(date => date.ToString(format, EsCo)).ToList(),
+            date => indexes.GetValueOrDefault(keyOf(date), -1), fromUtc, toUtc, excludeWednesdays);
     }
 
-    private static DateTime StartOfWeekUtc(DateTime date)
-    {
-        var d = date.Date;
-        var diff = ((int)d.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        return d.AddDays(-diff);
-    }
-
-    private static int InclusiveUtcDayCount(DateTime fromUtc, DateTime toUtc)
-    {
-        var f = fromUtc.Date;
-        var t = toUtc.Date;
-        return (int)(t - f).TotalDays + 1;
-    }
+    private static DateTime StartOfWeek(DateTime date) => date.Date.AddDays(-((int)date.DayOfWeek + 6) % 7);
 }

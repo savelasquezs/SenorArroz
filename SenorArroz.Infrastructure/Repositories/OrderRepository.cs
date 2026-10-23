@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Features.Dashboard.Services;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
@@ -1265,14 +1266,16 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
                 o.Type == OrderType.Delivery
                 && o.Status == OrderStatus.Delivered
                 && o.UpdatedAt >= fromUtc
-                && o.UpdatedAt <= toUtc);
+                && o.CreatedAt <= toUtc);
 
         if (branchId.HasValue)
             q = q.Where(o => o.BranchId == branchId.Value);
         if (deliveryManId.HasValue)
             q = q.Where(o => o.DeliveryManId == deliveryManId.Value);
 
-        return await q.ToListAsync(cancellationToken);
+        var candidates = await q.ToListAsync(cancellationToken);
+        return candidates.Where(o => DeliveryPerformanceAnalytics.StatusTime(o.StatusTimes, "delivered") is { } delivered
+            && delivered >= fromUtc && delivered <= toUtc).ToList();
     }
 
     public async Task<List<(DateTime UpdatedAt, int Total)>> GetDeliveredOrdersSalesTicksForDashboardAsync(
@@ -1287,7 +1290,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
             .Where(o =>
                 o.Status == OrderStatus.Delivered
                 && o.UpdatedAt >= fromUtc
-                && o.UpdatedAt <= toUtc);
+                && o.CreatedAt <= toUtc);
 
         if (branchId.HasValue)
             q = q.Where(o => o.BranchId == branchId.Value);
@@ -1298,9 +1301,10 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
                 && o.DeliveryManId == deliveryManId.Value);
         }
 
-        return await q
-            .Select(o => new ValueTuple<DateTime, int>(o.UpdatedAt, o.Total))
-            .ToListAsync(cancellationToken);
+        var candidates = await q.Select(o => new { o.StatusTimes, o.Total }).ToListAsync(cancellationToken);
+        return candidates.Select(o => (Delivered: DeliveryPerformanceAnalytics.StatusTime(o.StatusTimes, "delivered"), o.Total))
+            .Where(o => o.Delivered >= fromUtc && o.Delivered <= toUtc)
+            .Select(o => (o.Delivered!.Value, o.Total)).ToList();
     }
 
     private IQueryable<Order> DashboardNonCancelledOrdersInRange(

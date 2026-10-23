@@ -56,7 +56,13 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
             deliveryManId,
             cancellationToken);
 
-        var agg = DeliveryDashboardAggregator.Build(orders, salesTicks, from, to);
+        if (request.ExcludeWednesdays)
+        {
+            orders = orders.Where(o => DeliveryPerformanceAnalytics.StatusTime(o.StatusTimes, "delivered") is { } delivered
+                && DeliveryPerformanceAnalytics.IncludesDay(delivered, true)).ToList();
+            salesTicks = salesTicks.Where(t => DeliveryPerformanceAnalytics.IncludesDay(t.UpdatedAt, true)).ToList();
+        }
+        var agg = DeliveryDashboardAggregator.Build(orders, salesTicks, from, to, request.ExcludeWednesdays);
 
         var routeBase = _db.DeliveryRoutes.AsNoTracking()
             .Where(r => r.Status == DeliveryRouteStatus.Completed
@@ -82,6 +88,7 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
             .ToListAsync(cancellationToken);
 
         var routeRows = routeRowsRaw
+            .Where(r => DeliveryPerformanceAnalytics.IncludesDay(r.CompletedAtUtc, request.ExcludeWednesdays))
             .Select(r => new DeliveryRouteDashboardAggregator.RouteMetricRow(
                 r.DeliverymanId,
                 r.CompletedAtUtc,
@@ -92,12 +99,11 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
                 r.ReturnToBranchMeters))
             .ToList();
 
-        var buckets = DashboardDeliveryTimeBuckets.Create(from, to);
+        var buckets = DashboardDeliveryTimeBuckets.Create(from, to, request.ExcludeWednesdays);
         var routeAgg = DeliveryRouteDashboardAggregator.Build(routeRows, buckets);
 
         var recentRoutes = await routeBase
             .OrderByDescending(r => r.CompletedAtUtc)
-            .Take(80)
             .Select(r => new DashboardDeliveryRouteHistoryItemDto
             {
                 Id = r.Id,
@@ -116,6 +122,8 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
 
         var routeMetricsDto = new DashboardDeliveryRouteMetricsDto
         {
+            Performance = await DeliveryPerformanceAnalytics.BuildAsync(_db, branchFilter, deliveryManId, from, to,
+                cancellationToken, Roles.IsDeliveryman(_currentUser.Role), request.ExcludeWednesdays),
             CompletedRoutesCount = routeAgg.CompletedRoutesCount,
             RoutesWithSlaDataCount = routeAgg.RoutesWithSlaDataCount,
             PeriodOnTimePercent = routeAgg.PeriodOnTimePercent,
@@ -129,7 +137,8 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
             EvolutionDelayedPercent = routeAgg.EvolutionDelayedPercent,
             EvolutionAvgDelayMinutes = routeAgg.EvolutionAvgDelayMinutes,
             EvolutionAvgActualRouteMinutes = routeAgg.EvolutionAvgActualRouteMinutes,
-            RecentRoutes = recentRoutes,
+            RecentRoutes = recentRoutes.Where(r => r.CompletedAtUtc.HasValue
+                && DeliveryPerformanceAnalytics.IncludesDay(r.CompletedAtUtc.Value, request.ExcludeWednesdays)).Take(80).ToList(),
         };
 
         return new DashboardDeliveryResponseDto
@@ -183,21 +192,26 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
         }
 
         var user = await _userRepository.GetByIdAsync(deliveryManId, cancellationToken);
-        if (user is not { Active: true }
+        if (user is null
             || (!user.CanDeliver && !await _db.Orders.AsNoTracking()
                 .AnyAsync(order => order.DeliveryManId == user.Id, cancellationToken)))
-            throw new UnauthorizedAccessException("Domiciliario no encontrado o inactivo.");
+            throw new UnauthorizedAccessException("Domiciliario no encontrado.");
+
+        var scopeBranch = Roles.IsAdmin(_currentUser.Role) ? _currentUser.BranchId : branchFilter;
+        var belongsToHistory = scopeBranch.HasValue && (
+            await _db.Orders.AsNoTracking().AnyAsync(o => o.DeliveryManId == deliveryManId && o.BranchId == scopeBranch, cancellationToken)
+            || await _db.DeliveryRoutes.AsNoTracking().AnyAsync(r => r.DeliverymanId == deliveryManId && r.BranchId == scopeBranch, cancellationToken));
 
         if (Roles.IsAdmin(_currentUser.Role))
         {
-            if (user.BranchId != _currentUser.BranchId)
+            if (user.BranchId != _currentUser.BranchId && !belongsToHistory)
                 throw new UnauthorizedAccessException("Domiciliario no pertenece a tu sucursal.");
             return;
         }
 
         if (Roles.IsSuperadmin(_currentUser.Role))
         {
-            if (branchFilter.HasValue && user.BranchId != branchFilter.Value)
+            if (branchFilter.HasValue && user.BranchId != branchFilter.Value && !belongsToHistory)
                 throw new UnauthorizedAccessException("Domiciliario no pertenece a la sucursal seleccionada.");
         }
     }

@@ -13,4 +13,5 @@ public class GetDashboardDeliveryQuery : IRequest<DashboardDeliveryResponseDto>
 
     /// <summary>Opcional. Filtra pedidos domicilio entregados y ventas asociadas a ese repartidor.</summary>
     public int? DeliveryManId { get; set; }
+    public bool ExcludeWednesdays { get; set; }
 }
