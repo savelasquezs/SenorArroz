@@ -134,7 +134,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M28-F05 | Conteo y confirmación | Pendiente | — | — | — | — |
 | M28-F06 | Transferencias y recepción | Pendiente | — | — | — | — |
 | M28-F07 | Reportes y desviaciones | Pendiente | — | — | — | — |
-| M29-F01 | Carga general dashboard | Pendiente | — | — | — | — |
+| M29-F01 | Carga general dashboard | Bloqueado | 2026-10-23 | [Informe](reviews/2026-10-23-M29-F01.md) | [Vue #38](https://github.com/savelasquezs/senorArrozFront/pull/38) (borrador) | Carrera de solicitudes Principal y ventas vs gastos; cancelación + versionado y 4 pruebas agregadas. CI en verificación; sin merge, mediciones productivas ni SQL. |
 | M29-F02 | KPIs ventas/gastos | Pendiente | — | — | — | — |
 | M29-F03 | Evolución y comparativos | Pendiente | — | — | — | — |
 | M29-F04 | Ventas por productos/categorías | Pendiente | — | — | — | — |
