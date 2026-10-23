@@ -43,7 +43,7 @@ public sealed class ElectronicInvoicingTests
     }
 
     [Fact]
-    public void Aggregated_discounts_span_products_without_changing_gifts_or_delivery_and_preserve_odd_quantities()
+    public void Aggregated_discounts_omit_zero_lines_without_changing_order_or_delivery_and_preserve_odd_quantities()
     {
         var order = new Order { Total = 6502, DeliveryFee = 500 };
         order.OrderDetails.Add(new OrderDetail { ProductId = 1, Quantity = 3, UnitPrice = 3000, Discount = 2999, Product = new Product { Name = "Principal" } });
@@ -51,10 +51,10 @@ public sealed class ElectronicInvoicingTests
         order.OrderDetails.Add(new OrderDetail { ProductId = 3, Quantity = 1, UnitPrice = 1000, Discount = 1000, Product = new Product { Name = "Regalo" } });
         using var payload = JsonDocument.Parse(Build(order));
         var items = payload.RootElement.GetProperty("items");
-        Assert.Equal(0, items[0].GetProperty("line_extension_amount").GetDecimal());
-        Assert.Equal(6002, items[1].GetProperty("line_extension_amount").GetDecimal());
-        Assert.Equal(0, items[2].GetProperty("line_extension_amount").GetDecimal());
-        Assert.Equal(500, items[3].GetProperty("line_extension_amount").GetDecimal());
+        Assert.Equal(2, items.GetArrayLength());
+        Assert.Equal(6002, items[0].GetProperty("line_extension_amount").GetDecimal());
+        Assert.Equal(500, items[1].GetProperty("line_extension_amount").GetDecimal());
+        Assert.All(items.EnumerateArray(), x => Assert.False(x.GetProperty("free_of_charge_indicator").GetBoolean()));
         Assert.Equal(2999, order.OrderDetails.First().Discount);
         order = new Order { Total = 2999 };
         order.OrderDetails.Add(new OrderDetail { Quantity = 3, UnitPrice = 1000, Discount = 1, Product = new Product { Name = "Impar" } });
@@ -141,14 +141,41 @@ public sealed class ElectronicInvoicingTests
         Assert.Equal(0, p.GetProperty("allowanceTotal").GetDecimal());
         Assert.Equal(21000, p.GetProperty("invoiceBaseTotal").GetDecimal());
         Assert.Equal(0, p.GetProperty("invoiceTaxExclusiveTotal").GetDecimal());
-        Assert.Equal(3, p.GetProperty("items").GetArrayLength());
-        Assert.True(p.GetProperty("items")[1].GetProperty("free_of_charge_indicator").GetBoolean());
+        Assert.Equal(2, p.GetProperty("items").GetArrayLength());
+        Assert.All(p.GetProperty("items").EnumerateArray(), x => Assert.False(x.GetProperty("free_of_charge_indicator").GetBoolean()));
         Assert.Empty(p.GetProperty("allTaxTotals").EnumerateArray());
         Assert.Equal("2026-10-19", p.GetProperty("date").GetString());
         Assert.False(p.GetProperty("send_email").GetBoolean());
         Assert.Empty(p.GetProperty("items")[0].GetProperty("allowance_charges").EnumerateArray());
         Assert.Equal(9000m, p.GetProperty("items")[0].GetProperty("price_amount").GetDecimal());
-        Assert.Equal(100m, p.GetProperty("items")[1].GetProperty("allowance_charges")[0].GetProperty("multiplier_factor_numeric").GetDecimal());
+        Assert.Equal("DELIVERY", p.GetProperty("items")[1].GetProperty("code").GetString());
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(2000, 4000)]
+    public void Gift_is_omitted_from_invoice_and_fiscal_snapshot_but_preserved_in_order_snapshot(int price, int discount)
+    {
+        var order = new Order { Id = 8649, TenantId = 1, Total = 170000, DeliveryFee = 12000 };
+        order.OrderDetails.Add(new OrderDetail { ProductId = 4, Quantity = 2, UnitPrice = 66000, Product = new Product { Name = "Arroz familiar" } });
+        order.OrderDetails.Add(new OrderDetail { ProductId = 49, Quantity = 2, UnitPrice = 12000, Product = new Product { Name = "Gaseosa" } });
+        order.OrderDetails.Add(new OrderDetail { ProductId = 62, Quantity = 10, UnitPrice = 200, Product = new Product { Name = "Platos y cuchara" } });
+        order.OrderDetails.Add(new OrderDetail { ProductId = 60, Quantity = 2, UnitPrice = price, Discount = discount, Product = new Product { Name = "Papas" } });
+        using var payload = JsonDocument.Parse(ElectronicInvoiceService.BuildInvoicePayload(order, Recipient, Integration, "SAV", 2, DateTime.UtcNow));
+        var p = payload.RootElement;
+        var items = p.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(4, items.Length);
+        Assert.DoesNotContain(items, x => x.GetProperty("code").GetString() == "60");
+        Assert.All(items, x => { Assert.True(x.GetProperty("line_extension_amount").GetDecimal() > 0); Assert.False(x.GetProperty("free_of_charge_indicator").GetBoolean()); });
+        Assert.Equal(170000, items.Sum(x => x.GetProperty("line_extension_amount").GetDecimal()));
+        Assert.Equal(170000, p.GetProperty("totalToPay").GetDecimal());
+        Assert.False(p.GetProperty("send_email").GetBoolean());
+        using var snapshot = JsonDocument.Parse(ElectronicInvoiceService.BuildSnapshot(order, Integration));
+        Assert.Equal(3, snapshot.RootElement.GetProperty("fiscalLines").GetArrayLength());
+        var savedGift = snapshot.RootElement.GetProperty("order").GetProperty("lines")[3];
+        Assert.Equal(price, savedGift.GetProperty("UnitPrice").GetInt32());
+        Assert.Equal(discount, savedGift.GetProperty("Discount").GetInt32());
+        Assert.Equal(4, order.OrderDetails.Count);
     }
 
     [Fact]

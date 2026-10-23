@@ -267,6 +267,38 @@ public sealed class ElectronicInvoicingPostgreSqlTests : IAsyncLifetime
     }
 
     [InvoicePostgresFact]
+    public async Task Legacy_FAW03_retry_omits_free_gift_and_keeps_reserved_number_and_order()
+    {
+        await using var db = Db();
+        db.Products.Add(new Product { Id = 60, CategoryId = 1, Name = "Papas", Price = 0 });
+        db.OrderDetails.Add(new OrderDetail { OrderId = 1, ProductId = 60, Quantity = 1, UnitPrice = 0 });
+        await db.SaveChangesAsync();
+        using var rejection = JsonDocument.Parse("""{"IsValid":false,"ErrorMessage":{"string":["Regla: FAW03, Rechazo: Precio referencial no informado."]}}""");
+        var provider = new Mock<IElectronicInvoiceProvider>(); provider.SetupGet(x => x.Code).Returns("plemsi");
+        provider.Setup(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(rejection.RootElement.Clone());
+        var service = new ElectronicInvoiceService(db, [provider.Object], Clock());
+        var document = await service.RequestAsync(await db.Orders.SingleAsync(x => x.Id == 1), Recipient(), 1, default);
+        await service.ProcessAsync(document.Id, default);
+        Assert.Equal("rejected", document.Status);
+        var legacy = System.Text.Json.Nodes.JsonNode.Parse(document.PayloadJson!)!;
+        legacy["items"]!.AsArray().Add(new System.Text.Json.Nodes.JsonObject { ["code"] = "60", ["price_amount"] = 0, ["line_extension_amount"] = 0, ["free_of_charge_indicator"] = true });
+        document.PayloadJson = legacy.ToJsonString();
+        await db.SaveChangesAsync();
+        var user = new Mock<ICurrentUser>(); user.SetupGet(x => x.TenantId).Returns(1);
+        var controller = new ElectronicInvoicingController(db, user.Object, Mock.Of<IBranchContext>(), Mock.Of<IIntegrationSecretProtector>(), [provider.Object], service, Clock(), new ConfigurationBuilder().Build());
+        await controller.Retry(document.Id, null, default);
+        using var payload = JsonDocument.Parse(document.PayloadJson!);
+        Assert.Single(payload.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(10000, payload.RootElement.GetProperty("totalToPay").GetDecimal());
+        Assert.Equal("SETT", document.Prefix); Assert.Equal(1, document.Number);
+        Assert.Equal("pending", document.Status); Assert.Null(document.SubmittedAt); Assert.Null(document.LastError);
+        Assert.Equal(2, await db.OrderDetails.CountAsync(x => x.OrderId == 1));
+        Assert.Single(await db.ElectronicInvoiceDocuments.ToListAsync());
+        Assert.Equal(2, (await db.ElectronicInvoiceIntegrations.SingleAsync()).NextNumber);
+        provider.Verify(x => x.SubmitAsync(It.IsAny<ElectronicInvoiceIntegration>(), "invoice", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [InvoicePostgresFact]
     public async Task Reservation_waits_for_delivery_and_issued_credit_unlocks_corrections()
     {
         var provider = new Mock<IElectronicInvoiceProvider>(); provider.SetupGet(x => x.Code).Returns("plemsi");

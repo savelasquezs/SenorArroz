@@ -5,7 +5,7 @@ namespace SenorArroz.Infrastructure.Helpers;
 
 public static class FiscalInvoiceLines
 {
-    public sealed record Line(OrderDetail Source, decimal Net, bool Gift);
+    public sealed record Line(OrderDetail Source, decimal Net);
 
     public static IReadOnlyList<Line> Build(Order order)
     {
@@ -21,6 +21,6 @@ public static class FiscalInvoiceLines
             discounts -= amount;
         }
         if (discounts != 0) throw new BusinessException("El descuento supera los productos facturables.");
-        return lines.Select(x => new Line(x, amounts[x], x.Discount == (decimal)x.UnitPrice * x.Quantity)).ToArray();
+        return lines.Where(x => amounts[x] > 0).Select(x => new Line(x, amounts[x])).ToArray();
     }
 }

@@ -240,8 +240,8 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
     public static string BuildSnapshot(Order order, ElectronicInvoiceIntegration i) => JsonSerializer.Serialize(new
     {
         fiscalLines = FiscalInvoiceLines.Build(order).Select(x => new { name = x.Source.Product.Name, Quantity = x.Source.Quantity,
-            UnitPrice = x.Net == 0 ? x.Source.UnitPrice : x.Net / x.Source.Quantity, Discount = x.Net == 0 ? (decimal)x.Source.UnitPrice * x.Source.Quantity : 0m, Net = x.Net }),
-        discountPolicy = "net-prices-v1",
+            UnitPrice = x.Net / x.Source.Quantity, Discount = 0m, Net = x.Net }),
+        discountPolicy = "net-prices-v2",
         issuer = new { i.TaxId, i.LegalName, i.BillingEmail, i.Resolution },
         order = new { order.Id, order.CustomerId, order.Total, order.Subtotal, order.DiscountTotal,
             order.DeliveryFee, order.PaidInStoreCashAmount,
@@ -259,19 +259,16 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
         foreach (var fiscal in FiscalInvoiceLines.Build(order))
         {
             var line = fiscal.Source;
-            decimal gross = (decimal)line.UnitPrice * line.Quantity;
             var net = fiscal.Net;
             var unit = net / line.Quantity;
             var exactUnit = decimal.Round(unit, 2) * line.Quantity == net;
-            var fullyDiscounted = net == 0 && gross > 0;
             total += net;
             items.Add(JsonSerializer.SerializeToNode(new
             {
-                unit_measure_id = 70, line_extension_amount = net, free_of_charge_indicator = net == 0,
+                unit_measure_id = 70, line_extension_amount = net, free_of_charge_indicator = false,
                 description = line.Product.Name, code = line.ProductId.ToString(), type_item_identification_id = 1,
-                price_amount = fullyDiscounted ? line.UnitPrice : exactUnit ? unit : net, base_quantity = exactUnit || fullyDiscounted ? 1 : line.Quantity, invoiced_quantity = line.Quantity,
-                allowance_charges = fullyDiscounted ? new[] { new { charge_indicator = false, allowance_charge_reason = fiscal.Gift ? "Obsequio" : "Descuento del pedido",
-                    multiplier_factor_numeric = 100m, amount = gross, base_amount = gross } } : [],
+                price_amount = exactUnit ? unit : net, base_quantity = exactUnit ? 1 : line.Quantity, invoiced_quantity = line.Quantity,
+                allowance_charges = Array.Empty<object>(),
                 tax_totals = Array.Empty<object>()
             }));
         }
