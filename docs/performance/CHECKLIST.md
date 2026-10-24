@@ -176,7 +176,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M37-F02 | Crear/editar/eliminar documentos | Pendiente | — | — | — | — |
 | M37-F03 | Acceso público por enlace | Pendiente | — | — | — | — |
 | M38-F01 | Conexión inicial SignalR | Pendiente | — | — | — | — |
-| M38-F02 | Reconexión y limpieza listeners | Pendiente | — | — | — | — |
+| M38-F02 | Reconexión y limpieza listeners | PR listo para revisión | 2026-10-24 | [Informe](reviews/2026-10-24-M38-F02.md) | [Vue #41](https://github.com/savelasquezs/senorArrozFront/pull/41) | CI 40096940352 SUCCESS: build/typecheck y 792/792 pruebas (127 archivos; 6 nuevas); evita refresh adicional en primera conexión normal de SignalR de permisos; conserva recuperación, eventos y limpieza. Sin SQL, merge, despliegue ni medición productiva. |
 | M38-F03 | Difusión eventos pedidos | Pendiente | — | — | — | — |
 | M38-F04 | Difusión WhatsApp/impresión | Pendiente | — | — | — | — |
 | M38-F05 | Aislamiento grupos por sucursal/tenant | Pendiente | — | — | — | — |
