@@ -1180,14 +1180,19 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         if (branchId.HasValue)
             q = q.Where(o => o.BranchId == branchId.Value);
 
-        var totalAll = await q.CountAsync(cancellationToken);
-        var cancelledCount = await q.CountAsync(o => o.Status == OrderStatus.Cancelled, cancellationToken);
-        var nonCancelled = q.Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.AwaitingPayment);
-
-        var completedCount = await nonCancelled.CountAsync(cancellationToken);
-        var totalSales = completedCount > 0
-            ? await nonCancelled.SumAsync(o => (long)o.Total, cancellationToken)
-            : 0L;
+        // One SQL aggregate per comparison window, preserving all status semantics.
+        var aggregate = await q.GroupBy(_ => 1).Select(g => new
+        {
+            TotalAll = g.Count(),
+            CancelledCount = g.Count(o => o.Status == OrderStatus.Cancelled),
+            CompletedCount = g.Count(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.AwaitingPayment),
+            TotalSales = g.Sum(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.AwaitingPayment
+                ? (long)o.Total : 0L),
+        }).SingleOrDefaultAsync(cancellationToken);
+        var totalAll = aggregate?.TotalAll ?? 0;
+        var cancelledCount = aggregate?.CancelledCount ?? 0;
+        var completedCount = aggregate?.CompletedCount ?? 0;
+        var totalSales = aggregate?.TotalSales ?? 0L;
 
         var avgTicket = completedCount > 0
             ? (int)Math.Round((double)totalSales / completedCount)
@@ -1261,7 +1266,6 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
     {
         var q = _context.Orders
             .AsNoTracking()
-            .Include(o => o.DeliveryMan)
             .Where(o =>
                 o.Type == OrderType.Delivery
                 && o.Status == OrderStatus.Delivered
@@ -1273,7 +1277,20 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         if (deliveryManId.HasValue)
             q = q.Where(o => o.DeliveryManId == deliveryManId.Value);
 
-        var candidates = await q.ToListAsync(cancellationToken);
+        var candidates = await q.Select(o => new Order
+        {
+            Id = o.Id,
+            BranchId = o.BranchId,
+            DeliveryManId = o.DeliveryManId,
+            DeliveryMan = o.DeliveryMan == null ? null : new User
+            {
+                Id = o.DeliveryMan.Id, Name = o.DeliveryMan.Name, BranchId = o.DeliveryMan.BranchId,
+            },
+            StatusTimes = o.StatusTimes,
+            PrepareAt = o.PrepareAt,
+            DeliveryFee = o.DeliveryFee,
+            UpdatedAt = o.UpdatedAt,
+        }).ToListAsync(cancellationToken);
         return candidates.Where(o => DeliveryPerformanceAnalytics.StatusTime(o.StatusTimes, "delivered") is { } delivered
             && delivered >= fromUtc && delivered <= toUtc).ToList();
     }

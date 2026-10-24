@@ -179,6 +179,7 @@ public class DashboardController : ControllerBase
         [FromQuery] int top = 10,
         [FromQuery(Name = "groupBy")] string? groupBy = null,
         [FromQuery] int? dayOfWeek = null,
+        [FromQuery] bool includeWeights = true,
         CancellationToken cancellationToken = default)
     {
         var gb = string.Equals(groupBy, "category", StringComparison.OrdinalIgnoreCase)
@@ -194,6 +195,7 @@ public class DashboardController : ControllerBase
                 Top = top,
                 GroupBy = gb,
                 DayOfWeek = dayOfWeek,
+                IncludeWeights = includeWeights,
             },
             cancellationToken);
 

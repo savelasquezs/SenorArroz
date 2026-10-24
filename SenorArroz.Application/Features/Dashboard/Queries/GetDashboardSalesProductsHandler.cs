@@ -3,6 +3,7 @@ using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
 using SenorArroz.Domain.Interfaces.Repositories;
+using SenorArroz.Domain.Models;
 
 namespace SenorArroz.Application.Features.Dashboard.Queries;
 
@@ -69,12 +70,10 @@ public class GetDashboardSalesProductsHandler
         var totalQty = rows.Sum(r => r.QuantitySold);
 
         // Peso por categoría (productos con weight_grams). Futuro: cruzar con gastos/insumos por categoría — no implementado.
-        var weightRows = await _orderRepository.GetSalesCategoryWeightAggregatesForDashboardAsync(
-            branchFilter,
-            from,
-            to,
-            dayOfWeek,
-            cancellationToken);
+        // Separate weights panel already requests this aggregate. Preserve existing API clients by default.
+        var weightRows = request.IncludeWeights
+            ? await _orderRepository.GetSalesCategoryWeightAggregatesForDashboardAsync(branchFilter, from, to, dayOfWeek, cancellationToken)
+            : new List<SalesCategoryWeightRow>();
 
         var topByQuantity = rows
             .OrderByDescending(r => r.QuantitySold)
@@ -152,7 +151,9 @@ public class GetDashboardSalesProductsHandler
     {
         if (Roles.IsSuperadmin(_currentUser.Role))
             return requestedBranchId;
-        return _currentUser.BranchId > 0 ? _currentUser.BranchId : null;
+        if (_currentUser.BranchId <= 0)
+            throw new UnauthorizedAccessException("Usuario sin sucursal asignada.");
+        return _currentUser.BranchId;
     }
 
     private static int? NormalizeDayOfWeek(int? dayOfWeek)

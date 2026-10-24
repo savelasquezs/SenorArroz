@@ -47,6 +47,7 @@ public class GetDashboardExpenseTimeSeriesHandler
 
         int? categoryId = request.CategoryId;
         int? expenseId = request.ExpenseId;
+        string? expenseLabel = null;
 
         if (expenseId.HasValue)
         {
@@ -55,6 +56,7 @@ public class GetDashboardExpenseTimeSeriesHandler
                 return EmptySeries("Gasto no encontrado", from, to, monthly);
 
             categoryId = null;
+            expenseLabel = $"Gasto · {exp.Name}";
         }
 
         var rows = await _repository.GetTimeSeriesAsync(
@@ -103,7 +105,7 @@ public class GetDashboardExpenseTimeSeriesHandler
             }
         }
 
-        var seriesLabel = await ResolveSeriesLabelAsync(categoryId, expenseId, cancellationToken);
+        var seriesLabel = expenseLabel ?? await ResolveSeriesLabelAsync(categoryId, expenseId, cancellationToken);
 
         return new DashboardExpenseTimeSeriesResponseDto
         {
@@ -181,6 +183,8 @@ public class GetDashboardExpenseTimeSeriesHandler
     {
         if (Roles.IsSuperadmin(_currentUser.Role))
             return requestedBranchId;
-        return _currentUser.BranchId > 0 ? _currentUser.BranchId : null;
+        if (_currentUser.BranchId <= 0)
+            throw new UnauthorizedAccessException("Usuario sin sucursal asignada.");
+        return _currentUser.BranchId;
     }
 }

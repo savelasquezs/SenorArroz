@@ -11,4 +11,5 @@ public class GetDashboardSalesProductsQuery : IRequest<DashboardSalesProductsRes
     public int Top { get; set; } = 10;
     public SalesProductsGroupBy GroupBy { get; set; } = SalesProductsGroupBy.Product;
     public int? DayOfWeek { get; set; }
+    public bool IncludeWeights { get; set; } = true;
 }
