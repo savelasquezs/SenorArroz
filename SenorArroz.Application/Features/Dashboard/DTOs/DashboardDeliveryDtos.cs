@@ -77,9 +77,11 @@ public class DashboardDeliveryRouteHistoryItemDto
     public int TotalDistanceMeters { get; set; }
 }
 
-/// <summary>Paradas de una ruta cerrada (detalle para dashboard).</summary>
+/// <summary>Paradas y recorrido de una ruta del dashboard.</summary>
 public class DashboardDeliveryRouteStopsResponseDto
 {
+    public string Status { get; set; } = "completed";
+    public DateTime? StartedAtUtc { get; set; }
     public bool ReturnIsInconsistent { get; set; }
     public int RouteId { get; set; }
     public decimal? BranchLatitude { get; set; }
@@ -93,6 +95,8 @@ public class DashboardDeliveryRouteStopsResponseDto
 
 public class DashboardDeliveryRouteStopItemDto
 {
+    public bool IsPending { get; set; }
+    public bool IsOnTheWay { get; set; }
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
     public DateTime? DeliveredAtUtc { get; set; }
@@ -113,6 +117,12 @@ public class DashboardRoutePointDto
 
 public class DashboardDeliveryPerformanceSummaryDto
 {
+    public int AssignedCount { get; set; }
+    public int PendingCount { get; set; }
+    public int OnTheWayCount { get; set; }
+    public int RoutesCount { get; set; }
+    public int InProgressRoutesCount { get; set; }
+    public int ReturnPendingRoutesCount { get; set; }
     public int InconsistentReturnCount { get; set; }
     public int DeliveredCount { get; set; }
     public int CompletedRoutesCount { get; set; }
@@ -147,6 +157,9 @@ public class DashboardDeliveryPerformanceRowDto : DashboardDeliveryPerformanceSu
 
 public class DashboardDeliveryPerformanceRouteDto
 {
+    public string Status { get; set; } = "completed";
+    public DateTime? StartedAtUtc { get; set; }
+    public int PendingOrdersCount { get; set; }
     public bool ReturnIsInconsistent { get; set; }
     public int Id { get; set; }
     public int DeliverymanId { get; set; }

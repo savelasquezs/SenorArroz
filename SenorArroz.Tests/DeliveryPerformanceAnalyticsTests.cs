@@ -16,6 +16,129 @@ public class DeliveryPerformanceAnalyticsTests
 {
     private static readonly DateTime Start = new(2026, 10, 22, 17, 0, 0, DateTimeKind.Utc);
 
+    [Fact]
+    public async Task ActivityReconcilesNineAssignedOrdersAndSixRoutesWithoutCountingOpenRoutesInTimeOrSla()
+    {
+        await using var db = TestDatabase();
+        var branch = new Branch { Id = 1, TenantId = 1, Name = "Santander" };
+        var driver = new User { Id = 7, TenantId = 1, BranchId = 1, Branch = branch, Role = UserRole.Deliveryman, Name = "Luis" };
+        var definitions = new[] { (4172, 2), (4176, 1), (4181, 2), (4184, 1), (4179, 2), (4186, 1) };
+        var orderId = 0;
+        for (var index = 0; index < definitions.Length; index++)
+        {
+            var (id, count) = definitions[index];
+            var departure = Start.AddMinutes(index * 5);
+            var closed = index < 4;
+            var route = new DeliveryRoute { Id = id, TenantId = 1, BranchId = 1, Branch = branch,
+                DeliverymanId = 7, Deliveryman = driver, Status = closed ? DeliveryRouteStatus.Completed : DeliveryRouteStatus.InProgress,
+                LastAssignmentAtUtc = departure, RouteStartedAtUtc = departure.AddMinutes(3),
+                DepartedAtUtc = closed ? departure : null, CompletedAtUtc = closed ? departure.AddMinutes(20) : null,
+                MetSla = index % 2 == 0, MetaDurationSeconds = 1200, PlannedDistanceMeters = 1000, ReturnToBranchMeters = 1000 };
+            for (var stop = 0; stop < count; stop++)
+            {
+                var onTheWay = index == 5;
+                var times = new Dictionary<string, DateTime> { ["ready"] = departure.AddMinutes(-5), ["ontheway"] = departure };
+                times["delivered"] = departure.AddMinutes(10);
+                var order = new Order { Id = ++orderId, TenantId = 1, BranchId = 1, Branch = branch, DeliveryManId = 7, DeliveryMan = driver,
+                    DeliveryRouteId = id, Type = OrderType.Delivery, Status = onTheWay ? OrderStatus.OnTheWay : OrderStatus.Delivered,
+                    CreatedAt = departure.AddMinutes(-10), UpdatedAt = Start.AddHours(1), StatusTimes = System.Text.Json.JsonSerializer.Serialize(times) };
+                route.Stops.Add(new DeliveryRouteStop { Id = orderId, TenantId = 1, DeliveryRouteId = id, OrderId = orderId, Order = order, StopSequence = stop + 1 });
+            }
+            db.DeliveryRoutes.Add(route);
+        }
+        await db.SaveChangesAsync();
+        var result = await BuildAsync(db, 1, 7, Start, Start.AddHours(1), CancellationToken.None);
+        Assert.Equal(9, result.Current.AssignedCount);
+        Assert.Equal(8, result.Current.DeliveredCount);
+        Assert.Equal(1, result.Current.OnTheWayCount);
+        Assert.Equal(1, result.Current.PendingCount);
+        Assert.Equal(6, result.Current.RoutesCount);
+        Assert.Equal(4, result.Current.CompletedRoutesCount);
+        Assert.Equal(1, result.Current.ReturnPendingRoutesCount);
+        Assert.Equal(1, result.Current.InProgressRoutesCount);
+        Assert.Equal(4, result.Current.RouteSampleCount);
+        Assert.Equal(4, result.Current.SlaSampleCount);
+        Assert.Equal(50d, result.Current.OnTimePercent);
+        Assert.Equal(20d, result.Current.AvgRouteMinutes);
+        Assert.Equal(10d, result.Current.AvgOrderMinutes);
+        Assert.Equal(1.5d, result.Current.OrdersPerRoute);
+        Assert.Equal(6, result.RecentRoutes.Count);
+        Assert.Equal("returnPending", result.RecentRoutes.Single(r => r.Id == 4179).Status);
+        Assert.Null(result.RecentRoutes.Single(r => r.Id == 4179).DurationMinutes);
+        var active = result.RecentRoutes.Single(r => r.Id == 4186);
+        Assert.Equal("inProgress", active.Status);
+        Assert.Equal(1, active.PendingOrdersCount);
+        Assert.Null(active.MetSla);
+        Assert.Equal(9, result.Evolution.Sum(row => row.AssignedCount));
+        Assert.Equal(6, result.Evolution.Sum(row => row.RoutesCount));
+        Assert.Equal(0, (await BuildAsync(db, 2, 7, Start, Start.AddHours(1), CancellationToken.None)).Current.RoutesCount);
+
+        var currentUser = new Mock<ICurrentUser>();
+        currentUser.SetupGet(user => user.Role).Returns("Admin");
+        currentUser.SetupGet(user => user.BranchId).Returns(1);
+        var handler = new GetDashboardDeliveryRouteStopsHandler(db, currentUser.Object);
+        var pendingDetail = await handler.Handle(new GetDashboardDeliveryRouteStopsQuery { RouteId = 4179 }, CancellationToken.None);
+        Assert.Equal("returnPending", pendingDetail.Status);
+        Assert.Null(pendingDetail.CompletedAtUtc);
+        Assert.All(pendingDetail.Stops, order => Assert.False(order.IsPending));
+        var activeDetail = await handler.Handle(new GetDashboardDeliveryRouteStopsQuery { RouteId = 4186 }, CancellationToken.None);
+        Assert.Equal("inProgress", activeDetail.Status);
+        Assert.True(Assert.Single(activeDetail.Stops).IsPending);
+        Assert.Null(Assert.Single(activeDetail.Stops).DeliveredAtUtc);
+        Assert.Null(activeDetail.CompletedAtUtc);
+        currentUser.SetupGet(user => user.BranchId).Returns(2);
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => handler.Handle(
+            new GetDashboardDeliveryRouteStopsQuery { RouteId = 4186 }, CancellationToken.None));
+    }
+
+    [Fact]
+    public void OpenRouteGpsUsesTheObservationWindowWithoutInventingAReturn()
+    {
+        var route = Route();
+        route.Status = DeliveryRouteStatus.InProgress;
+        route.CompletedAtUtc = null;
+        var track = AnalyzeTrack(route, [Point(0), Point(30, -75.579m)], Start.AddSeconds(30));
+        Assert.NotEmpty(track.Segments);
+        Assert.True(track.Complete);
+        Assert.Null(route.CompletedAtUtc);
+        Assert.Null(Summarize<DashboardDeliveryPerformanceSummaryDto>([], [new(route, track)]).AvgRouteMinutes);
+    }
+
+    [Fact]
+    public async Task AssignedOnsiteOrdersAreIncludedAndPendingActivityRespectsWednesdayAndSelfScope()
+    {
+        await using var db = TestDatabase();
+        var branch = new Branch { Id = 1, TenantId = 1, Name = "Sucursal" };
+        foreach (var id in new[] { 7, 8 })
+        {
+            var driver = new User { Id = id, TenantId = 1, BranchId = 1, Branch = branch, Name = $"D{id}", Role = UserRole.Deliveryman };
+            foreach (var wednesday in new[] { false, true })
+            {
+                var time = wednesday ? Start.AddDays(-1) : Start;
+                db.Orders.Add(new Order { Id = id * 10 + (wednesday ? 1 : 0), TenantId = 1, BranchId = 1, Branch = branch,
+                    DeliveryManId = id, DeliveryMan = driver, Type = OrderType.Onsite, Status = OrderStatus.OnTheWay,
+                    CreatedAt = time.AddMinutes(-10), UpdatedAt = time, StatusTimes = System.Text.Json.JsonSerializer.Serialize(new { ontheway = time }) });
+            }
+        }
+        db.Orders.Add(new Order { Id = 99, TenantId = 1, BranchId = 1, Branch = branch, DeliveryManId = 7,
+            Type = OrderType.Delivery, Status = OrderStatus.InPreparation, CreatedAt = Start.AddMinutes(-10), UpdatedAt = Start,
+            StatusTimes = System.Text.Json.JsonSerializer.Serialize(new { ontheway = Start }) });
+        await db.SaveChangesAsync();
+        var result = await BuildAsync(db, 1, 7, Start.AddDays(-1), Start.AddHours(1), CancellationToken.None, excludeWednesdays: true);
+        Assert.Equal(2, result.Current.AssignedCount);
+        Assert.Equal(2, result.Current.PendingCount);
+        Assert.Equal(1, result.Current.OnTheWayCount);
+        Assert.Equal(0, result.Current.DeliveredCount);
+        Assert.Equal(1, result.Team!.OnTheWayCount);
+        Assert.Null(result.Current.AvgOrderMinutes);
+        Assert.Equal(1, result.Evolution.Sum(bucket => bucket.OnTheWayCount));
+        var own = await BuildAsync(db, 1, 7, Start.AddDays(-1), Start.AddHours(1), CancellationToken.None, ownOnly: true);
+        Assert.Equal(2, own.Current.OnTheWayCount);
+        Assert.Equal(7, Assert.Single(own.DriverOptions).Id);
+        Assert.Null(own.Team);
+        Assert.Equal(0, (await BuildAsync(db, 2, 7, Start.AddDays(-1), Start.AddHours(1), CancellationToken.None)).Current.AssignedCount);
+    }
+
     private static DeliveryRoute Route(int id = 1, int minutes = 20) => new()
     {
         Id = id, DeliverymanId = 7, WorkSessionId = 3, DepartedAtUtc = Start,

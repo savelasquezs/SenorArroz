@@ -29,8 +29,8 @@ public class GetDashboardDeliveryRouteStopsHandler
             .Include(r => r.Stops).ThenInclude(s => s.Order)
             .FirstOrDefaultAsync(r => r.Id == request.RouteId, cancellationToken);
 
-        if (route is null || route.Status != DeliveryRouteStatus.Completed)
-            throw new NotFoundException("Ruta no encontrada o aún no cerrada.");
+        if (route is null || route.Status == DeliveryRouteStatus.Cancelled)
+            throw new NotFoundException("Ruta no encontrada.");
 
         AssertCanViewRoute(route.BranchId, route.DeliverymanId, request.BranchId);
 
@@ -41,6 +41,8 @@ public class GetDashboardDeliveryRouteStopsHandler
             .Select(s => new DashboardDeliveryRouteStopItemDto
             {
                 OrderId = s.OrderId,
+                IsPending = s.Order.Status != OrderStatus.Delivered && s.Order.Status != OrderStatus.Cancelled,
+                IsOnTheWay = s.Order.Status == OrderStatus.OnTheWay,
                 StopSequence = s.StopSequence,
                 AddressSnapshotText = s.AddressSnapshotText,
                 CustomerName = s.Order.Customer != null ? s.Order.Customer.Name : null,
@@ -50,24 +52,29 @@ public class GetDashboardDeliveryRouteStopsHandler
             })
             .ToListAsync(cancellationToken);
 
-        var times = route.Stops.ToDictionary(s => s.OrderId, s => s.Order.StatusTimes);
+        var orders = route.Stops.ToDictionary(s => s.OrderId, s => s.Order);
         foreach (var stop in stops)
         {
-            stop.DeliveredAtUtc = DeliveryPerformanceAnalytics.StatusTime(times.GetValueOrDefault(stop.OrderId), "delivered");
-            stop.OnTheWayAtUtc = DeliveryPerformanceAnalytics.StatusTime(times.GetValueOrDefault(stop.OrderId), "ontheway");
+            var order = orders.GetValueOrDefault(stop.OrderId);
+            stop.DeliveredAtUtc = order?.Status == OrderStatus.Delivered
+                ? DeliveryPerformanceAnalytics.StatusTime(order.StatusTimes, "delivered") : null;
+            stop.OnTheWayAtUtc = DeliveryPerformanceAnalytics.StatusTime(order?.StatusTimes, "ontheway");
         }
-        var points = route.DepartedAtUtc.HasValue && route.CompletedAtUtc.HasValue && route.WorkSessionId.HasValue
+        var observationEnd = route.CompletedAtUtc ?? DateTime.UtcNow;
+        var points = route.DepartedAtUtc.HasValue && route.WorkSessionId.HasValue
             ? await _db.DeliverymanLocations.AsNoTracking().Where(p => p.DeliveryRouteId == route.Id
                 && p.DeliverymanId == route.DeliverymanId && p.WorkSessionId == route.WorkSessionId
-                && p.RecordedAt >= route.DepartedAtUtc && p.RecordedAt <= route.CompletedAtUtc)
+                && p.RecordedAt >= route.DepartedAtUtc && p.RecordedAt <= observationEnd)
                 .OrderBy(p => p.RecordedAt).ToListAsync(cancellationToken)
             : new List<SenorArroz.Domain.Entities.DeliverymanLocation>();
-        var track = DeliveryPerformanceAnalytics.AnalyzeTrack(route, points);
+        var track = DeliveryPerformanceAnalytics.AnalyzeTrack(route, points, observationEnd);
 
         var sessions = await DeliveryPerformanceAnalytics.LoadWorkSessionsAsync(_db, [route], cancellationToken);
         return new DashboardDeliveryRouteStopsResponseDto
         {
             RouteId = request.RouteId,
+            Status = DeliveryPerformanceAnalytics.RouteState(route),
+            StartedAtUtc = DeliveryPerformanceAnalytics.RouteTiming(route).Start,
             ReturnIsInconsistent = DeliveryPerformanceAnalytics.IsReturnInconsistent(route, sessions),
             BranchLatitude = route.Branch.Latitude,
             BranchLongitude = route.Branch.Longitude,
