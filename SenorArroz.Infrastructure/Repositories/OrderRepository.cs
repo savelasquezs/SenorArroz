@@ -1266,7 +1266,6 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
     {
         var q = _context.Orders
             .AsNoTracking()
-            .Include(o => o.DeliveryMan)
             .Where(o =>
                 o.Type == OrderType.Delivery
                 && o.Status == OrderStatus.Delivered
@@ -1278,7 +1277,20 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         if (deliveryManId.HasValue)
             q = q.Where(o => o.DeliveryManId == deliveryManId.Value);
 
-        var candidates = await q.ToListAsync(cancellationToken);
+        var candidates = await q.Select(o => new Order
+        {
+            Id = o.Id,
+            BranchId = o.BranchId,
+            DeliveryManId = o.DeliveryManId,
+            DeliveryMan = o.DeliveryMan == null ? null : new User
+            {
+                Id = o.DeliveryMan.Id, Name = o.DeliveryMan.Name, BranchId = o.DeliveryMan.BranchId,
+            },
+            StatusTimes = o.StatusTimes,
+            PrepareAt = o.PrepareAt,
+            DeliveryFee = o.DeliveryFee,
+            UpdatedAt = o.UpdatedAt,
+        }).ToListAsync(cancellationToken);
         return candidates.Where(o => DeliveryPerformanceAnalytics.StatusTime(o.StatusTimes, "delivered") is { } delivered
             && delivered >= fromUtc && delivered <= toUtc).ToList();
     }

@@ -34,6 +34,7 @@ public static class DeliveryDashboardAggregator
 
         var prepList = new List<double>();
         var delList = new List<double>();
+        var deliveryMinutesByOrder = new Dictionary<Order, double?>();
 
         foreach (var o in orders)
         {
@@ -47,8 +48,11 @@ public static class DeliveryDashboardAggregator
             if (prepMin != null)
                 prepList.Add(prepMin.Value);
 
-            if (delivered.HasValue && ready.HasValue)
-                delList.Add((delivered.Value - ready.Value).TotalMinutes);
+            var deliveryMinutes = delivered.HasValue && ready.HasValue
+                ? (double?)(delivered.Value - ready.Value).TotalMinutes : null;
+            deliveryMinutesByOrder[o] = deliveryMinutes;
+            if (deliveryMinutes.HasValue)
+                delList.Add(deliveryMinutes.Value);
         }
 
         var avgPrep = prepList.Count > 0 ? Math.Round(prepList.Average(), 1) : 0d;
@@ -64,13 +68,8 @@ public static class DeliveryDashboardAggregator
                 var feesDm = g.Sum(x => x.DeliveryFee ?? 0);
                 var dMins = new List<double>();
                 foreach (var o in g)
-                {
-                    var times = ParseStatusTimes(o.StatusTimes);
-                    var ready = GetTime(times, "ready");
-                    var delivered = GetTime(times, "delivered");
-                    if (delivered.HasValue && ready.HasValue)
-                        dMins.Add((delivered.Value - ready.Value).TotalMinutes);
-                }
+                    if (deliveryMinutesByOrder.TryGetValue(o, out var minutes) && minutes.HasValue)
+                        dMins.Add(minutes.Value);
 
                 return new DeliverymanEfficiencyRowDto(
                     dm.Id,
