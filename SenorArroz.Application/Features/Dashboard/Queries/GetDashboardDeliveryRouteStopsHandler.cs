@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Features.Dashboard.DTOs;
 using SenorArroz.Application.Features.Dashboard.Services;
 using SenorArroz.Domain.Enums;
@@ -33,6 +34,7 @@ public class GetDashboardDeliveryRouteStopsHandler
             throw new NotFoundException("Ruta no encontrada.");
 
         AssertCanViewRoute(route.BranchId, route.DeliverymanId, request.BranchId);
+        await DeliveryRouteCompletion.ResolveHistoryAsync(_db, [route], cancellationToken);
 
         var stops = await _db.DeliveryRouteStops
             .AsNoTracking()

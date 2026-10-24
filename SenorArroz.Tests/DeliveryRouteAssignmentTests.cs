@@ -96,7 +96,7 @@ public class DeliveryRouteAssignmentTests
     }
 
     [Fact]
-    public async Task Assignment_ClosesTerminalRouteAdministratively_WithoutInventingReturnTime()
+    public async Task Assignment_CompletesPreviousTerminalRouteAtNextDeparture()
     {
         await using var db = CreateDb();
         SeedTrip(db, OrderStatus.Delivered, Now.AddMinutes(-20));
@@ -108,9 +108,9 @@ public class DeliveryRouteAssignmentTests
         var previous = routes.Single(r => r.Id == 30);
         var next = routes.Single(r => r.Id != 30);
         Assert.Equal(DeliveryRouteStatus.Completed, previous.Status);
-        Assert.Null(previous.CompletedAtUtc);
-        Assert.Null(previous.ActualDurationSeconds);
-        Assert.Null(previous.MetSla);
+        Assert.Equal(Now, previous.CompletedAtUtc);
+        Assert.Equal(1200, previous.ActualDurationSeconds);
+        Assert.False(previous.MetSla);
         Assert.Equal(10, Assert.Single(previous.Stops).OrderId);
         Assert.Equal(DeliveryRouteStatus.Open, next.Status);
         Assert.Equal(11, Assert.Single(next.Stops).OrderId);
