@@ -115,22 +115,26 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
     private async Task CloseTerminalAdministrativelyAsync(DeliveryRoute route, IReadOnlyList<Order> orders,
         string reason, CancellationToken ct)
     {
-        if (orders.Count == 0 || orders.Any(o => !IsTerminal(o.Status))) return;
+        if (route.CompletedAtUtc.HasValue || orders.Count == 0 || orders.Any(o => !IsTerminal(o.Status))) return;
         var now = _clock.UtcNow;
+        var priorStatus = route.Status;
+        var completedByNextRoute = reason == "new_assignment" && DeliveryRouteCompletion.Complete(route, orders, now);
         _db.EntityAuditLogs.Add(new EntityAuditLog
         {
             TenantId = route.TenantId, BranchId = route.BranchId, EntityType = "delivery_route",
             EntityId = route.Id, OperationType = "administrative_closure", ChangedAt = now,
             BusinessDate = now.AddHours(-5).Date,
             SummaryText = $"Ruta #{route.Id} retirada del conjunto activo: {reason}",
-            MetadataJson = JsonSerializer.Serialize(new { reason, priorStatus = route.Status.ToString(),
-                route.CompletedAtUtc, route.ActualDurationSeconds, route.MetSla, physicalReturnKnown = false })
+            MetadataJson = JsonSerializer.Serialize(new { reason, priorStatus = priorStatus.ToString(),
+                route.CompletedAtUtc, route.ActualDurationSeconds, route.MetSla, physicalReturnKnown = false, completedByNextRoute })
         });
-        route.Status = orders.All(o => o.Status == OrderStatus.Cancelled) ? DeliveryRouteStatus.Cancelled : DeliveryRouteStatus.Completed;
-        // This is not evidence that the driver arrived at this instant.
-        route.CompletedAtUtc = null;
-        route.ActualDurationSeconds = null;
-        route.MetSla = null;
+        if (!completedByNextRoute)
+        {
+            route.Status = orders.All(o => o.Status == OrderStatus.Cancelled) ? DeliveryRouteStatus.Cancelled : DeliveryRouteStatus.Completed;
+            route.CompletedAtUtc = null;
+            route.ActualDurationSeconds = null;
+            route.MetSla = null;
+        }
         await _db.SaveChangesAsync(ct);
     }
 

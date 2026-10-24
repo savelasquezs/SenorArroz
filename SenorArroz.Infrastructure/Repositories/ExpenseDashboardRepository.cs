@@ -41,9 +41,16 @@ public class ExpenseDashboardRepository : IExpenseDashboardRepository
     {
         var q = BaseDetailsInRange(branchId, fromUtc, toUtc);
 
-        var totalCop = await q.SumAsync(ed => (long)(ed.Total ?? ed.Quantity * ed.Amount), cancellationToken);
-        var lineCount = await q.CountAsync(cancellationToken);
-        var headerCount = await q.Select(ed => ed.HeaderId).Distinct().CountAsync(cancellationToken);
+        // One SQL statement for totals, line count and distinct header count.
+        var totals = await q.GroupBy(_ => 1).Select(g => new
+        {
+            TotalCop = g.Sum(ed => (long)(ed.Total ?? ed.Quantity * ed.Amount)),
+            LineCount = g.Count(),
+            HeaderCount = g.Select(ed => ed.HeaderId).Distinct().Count(),
+        }).SingleOrDefaultAsync(cancellationToken);
+        var totalCop = totals?.TotalCop ?? 0L;
+        var lineCount = totals?.LineCount ?? 0;
+        var headerCount = totals?.HeaderCount ?? 0;
 
         return new ExpenseDashboardPeriodTotals
         {

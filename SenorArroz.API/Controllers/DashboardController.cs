@@ -83,6 +83,7 @@ public class DashboardController : ControllerBase
         [FromQuery(Name = "to")] DateTime toUtc,
         [FromQuery] int? branchId = null,
         [FromQuery(Name = "deliveryManId")] int? deliveryManId = null,
+        [FromQuery] bool excludeWednesdays = false,
         CancellationToken cancellationToken = default)
     {
         var result = await _mediator.Send(
@@ -92,6 +93,7 @@ public class DashboardController : ControllerBase
                 ToUtc = toUtc,
                 BranchId = branchId,
                 DeliveryManId = deliveryManId,
+                ExcludeWednesdays = excludeWednesdays,
             },
             cancellationToken);
 
