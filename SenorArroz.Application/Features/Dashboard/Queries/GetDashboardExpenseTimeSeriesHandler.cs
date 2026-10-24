@@ -47,6 +47,7 @@ public class GetDashboardExpenseTimeSeriesHandler
 
         int? categoryId = request.CategoryId;
         int? expenseId = request.ExpenseId;
+        string? expenseLabel = null;
 
         if (expenseId.HasValue)
         {
@@ -55,6 +56,7 @@ public class GetDashboardExpenseTimeSeriesHandler
                 return EmptySeries("Gasto no encontrado", from, to, monthly);
 
             categoryId = null;
+            expenseLabel = $"Gasto · {exp.Name}";
         }
 
         var rows = await _repository.GetTimeSeriesAsync(
@@ -103,7 +105,7 @@ public class GetDashboardExpenseTimeSeriesHandler
             }
         }
 
-        var seriesLabel = await ResolveSeriesLabelAsync(categoryId, expenseId, cancellationToken);
+        var seriesLabel = expenseLabel ?? await ResolveSeriesLabelAsync(categoryId, expenseId, cancellationToken);
 
         return new DashboardExpenseTimeSeriesResponseDto
         {

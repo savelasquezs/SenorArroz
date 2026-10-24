@@ -177,4 +177,32 @@ public class SalesEffectiveDateAnalyticsTests
         Assert.Equal(1000, noon.TotalSalesCop);
         Assert.Equal(1000m, noon.MedianDailySalesCop);
     }
+    [Fact]
+    public async Task PrincipalKpis_AggregatePreservesStatusAndEmptyPeriod()
+    {
+        using var ctx = CreateContext(nameof(PrincipalKpis_AggregatePreservesStatusAndEmptyPeriod));
+        var (branch, user) = await SeedBaseAsync(ctx);
+        var when = new DateTime(2026, 10, 20, 15, 0, 0, DateTimeKind.Utc);
+        Order Make(OrderStatus status, int total) => new()
+        {
+            BranchId = branch.Id, TakenById = user.Id, Status = status, Type = OrderType.Onsite,
+            Total = total, Subtotal = total, CreatedAt = when, UpdatedAt = when,
+        };
+        ctx.Orders.AddRange(
+            Make(OrderStatus.Taken, 100), Make(OrderStatus.Delivered, 250),
+            Make(OrderStatus.Cancelled, 500), Make(OrderStatus.AwaitingPayment, 999));
+        await ctx.SaveChangesAsync();
+
+        var repo = new OrderRepository(ctx, new SystemUtcClock());
+        var snapshot = await repo.GetPrincipalKpiSnapshotAsync(branch.Id, when.AddDays(-1), when.AddDays(1));
+        Assert.Equal(350m, snapshot.TotalSalesCop);
+        Assert.Equal(2, snapshot.CompletedOrderCount);
+        Assert.Equal(175, snapshot.AvgTicketCop);
+        Assert.Equal(25d, snapshot.CancellationRatePercent);
+
+        var empty = await repo.GetPrincipalKpiSnapshotAsync(branch.Id, when.AddDays(5), when.AddDays(6));
+        Assert.Equal(0m, empty.TotalSalesCop);
+        Assert.Equal(0, empty.CompletedOrderCount);
+    }
+
 }
