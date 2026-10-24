@@ -1,4 +1,7 @@
 using MediatR;
+using Microsoft.EntityFrameworkCore;
+using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Models;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.DTOs;
@@ -15,15 +18,18 @@ public class GetDashboardSalesEvolutionHandler
     private readonly IOrderRepository _orderRepository;
     private readonly IBranchRepository _branchRepository;
     private readonly ICurrentUser _currentUser;
+    private readonly IApplicationDbContext _db;
 
     public GetDashboardSalesEvolutionHandler(
         IOrderRepository orderRepository,
         IBranchRepository branchRepository,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IApplicationDbContext db)
     {
         _orderRepository = orderRepository;
         _branchRepository = branchRepository;
         _currentUser = currentUser;
+        _db = db;
     }
 
     public async Task<DashboardSalesEvolutionResponseDto> Handle(
@@ -42,27 +48,47 @@ public class GetDashboardSalesEvolutionHandler
             .Select(b => (b.Id, b.Name))
             .ToList();
 
-        // Secuencial: un mismo DbContext (scoped) no admite varias consultas activas en paralelo.
+        // A single ordered-row projection powers all eight bucket families (8 reads -> 1).
+        // Tenant RLS and EF global filters apply to this IQueryable.
         var dayOfWeek = NormalizeDayOfWeek(request.DayOfWeek);
+        var rows = await _db.Orders.AsNoTracking()
+            .Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.AwaitingPayment
+                && (o.PrepareAt ?? o.CreatedAt) >= from
+                && (o.PrepareAt ?? o.CreatedAt) <= to)
+            .Where(o => !branchFilter.HasValue || o.BranchId == branchFilter.Value)
+            .Select(o => new { o.BranchId, o.Total, o.CreatedAt, o.PrepareAt })
+            .ToListAsync(cancellationToken);
 
-        var salesByDay = await _orderRepository.GetDashboardSalesByDayAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
-        var ordersByDay = await _orderRepository.GetDashboardOrdersByDayAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
-        var salesByMonth = await _orderRepository.GetDashboardSalesByMonthAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
-        var ordersByMonth = await _orderRepository.GetDashboardOrdersByMonthAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
-        var salesByYear = await _orderRepository.GetDashboardSalesByYearAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
-        var ordersByYear = await _orderRepository.GetDashboardOrdersByYearAsync(branchFilter, from, to, dayOfWeek, cancellationToken);
-        var salesByHour = await _orderRepository.GetDashboardSalesByHourAsync(
-            branchFilter,
-            hourDayStart,
-            hourDayEnd,
-            dayOfWeek,
-            cancellationToken);
-        var ordersByHour = await _orderRepository.GetDashboardOrdersByHourAsync(
-            branchFilter,
-            hourDayStart,
-            hourDayEnd,
-            dayOfWeek,
-            cancellationToken);
+        var source = rows.Select(o => new
+        {
+            o.BranchId,
+            o.Total,
+            EffectiveAt = o.PrepareAt ?? o.CreatedAt,
+            Day = ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(o.CreatedAt, o.PrepareAt),
+            Hour = ColombiaTimeHelper.OrderSalesEffectiveColombiaHour(o.CreatedAt, o.PrepareAt),
+        }).Where(o => !dayOfWeek.HasValue
+            || (o.Day.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)o.Day.DayOfWeek) == dayOfWeek.Value)
+            .ToList();
+
+        var salesByDay = source.GroupBy(o => new { o.BranchId, o.Day })
+            .Select(g => new SalesDayPoint(g.Key.BranchId, g.Key.Day, g.Sum(o => o.Total))).ToList();
+        var ordersByDay = source.GroupBy(o => o.Day)
+            .Select(g => new OrdersDayPoint(g.Key, g.Count())).ToList();
+        var salesByMonth = source.GroupBy(o => new { o.BranchId, o.Day.Year, o.Day.Month })
+            .Select(g => new SalesMonthPoint(g.Key.BranchId, g.Key.Year, g.Key.Month, g.Sum(o => o.Total))).ToList();
+        var ordersByMonth = source.GroupBy(o => new { o.Day.Year, o.Day.Month })
+            .Select(g => new OrdersMonthPoint(g.Key.Year, g.Key.Month, g.Count())).ToList();
+        var salesByYear = source.GroupBy(o => new { o.BranchId, o.Day.Year })
+            .Select(g => new SalesYearPoint(g.Key.BranchId, g.Key.Year, g.Sum(o => o.Total))).ToList();
+        var ordersByYear = source.GroupBy(o => o.Day.Year)
+            .Select(g => new OrdersYearPoint(g.Key, g.Count())).ToList();
+
+        // Hourly charts cover only the last Colombian calendar day in the requested range.
+        var hours = source.Where(o => o.EffectiveAt >= hourDayStart && o.EffectiveAt <= hourDayEnd).ToList();
+        var salesByHour = hours.GroupBy(o => new { o.BranchId, o.Hour })
+            .Select(g => new SalesHourPoint(g.Key.BranchId, g.Key.Hour, g.Sum(o => o.Total))).ToList();
+        var ordersByHour = hours.GroupBy(o => o.Hour)
+            .Select(g => new OrdersHourPoint(g.Key, g.Count())).ToList();
 
         return SalesDashboardChartBuilder.BuildEvolution(
             from,
