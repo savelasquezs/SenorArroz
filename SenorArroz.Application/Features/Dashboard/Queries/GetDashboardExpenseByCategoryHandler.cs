@@ -47,6 +47,8 @@ public class GetDashboardExpenseByCategoryHandler
     {
         if (Roles.IsSuperadmin(_currentUser.Role))
             return requestedBranchId;
-        return _currentUser.BranchId > 0 ? _currentUser.BranchId : null;
+        if (_currentUser.BranchId <= 0)
+            throw new UnauthorizedAccessException("Usuario sin sucursal asignada.");
+        return _currentUser.BranchId;
     }
 }

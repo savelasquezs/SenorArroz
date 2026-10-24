@@ -176,7 +176,9 @@ public class GetDashboardDeliveryHandler : IRequestHandler<GetDashboardDeliveryQ
             return requestedBranchId;
         if (Roles.IsDeliveryman(_currentUser.Role))
             return requestedBranchId;
-        return _currentUser.BranchId > 0 ? _currentUser.BranchId : null;
+        if (_currentUser.BranchId <= 0)
+            throw new UnauthorizedAccessException("Usuario sin sucursal asignada.");
+        return _currentUser.BranchId;
     }
 
     private async Task AssertDeliveryManInScopeAsync(
