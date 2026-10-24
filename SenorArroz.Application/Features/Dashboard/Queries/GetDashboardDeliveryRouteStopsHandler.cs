@@ -34,7 +34,7 @@ public class GetDashboardDeliveryRouteStopsHandler
             throw new NotFoundException("Ruta no encontrada.");
 
         AssertCanViewRoute(route.BranchId, route.DeliverymanId, request.BranchId);
-        await DeliveryRouteCompletion.ResolveHistoryAsync(_db, [route], cancellationToken);
+        var resolvedReturns = await DeliveryRouteCompletion.ResolveHistoryAsync(_db, [route], cancellationToken);
 
         var stops = await _db.DeliveryRouteStops
             .AsNoTracking()
@@ -77,7 +77,7 @@ public class GetDashboardDeliveryRouteStopsHandler
             RouteId = request.RouteId,
             Status = DeliveryPerformanceAnalytics.RouteState(route),
             StartedAtUtc = DeliveryPerformanceAnalytics.RouteTiming(route).Start,
-            ReturnIsInconsistent = DeliveryPerformanceAnalytics.IsReturnInconsistent(route, sessions),
+            ReturnIsInconsistent = !resolvedReturns.Contains(route.Id) && DeliveryPerformanceAnalytics.IsReturnInconsistent(route, sessions),
             BranchLatitude = route.Branch.Latitude,
             BranchLongitude = route.Branch.Longitude,
             DepartedAtUtc = route.DepartedAtUtc,

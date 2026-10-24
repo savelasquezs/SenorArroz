@@ -28,11 +28,12 @@ public static class DeliveryRouteCompletion
         return true;
     }
 
-    public static async Task ResolveHistoryAsync(IApplicationDbContext db, IReadOnlyCollection<DeliveryRoute> routes,
+    public static async Task<HashSet<int>> ResolveHistoryAsync(IApplicationDbContext db, IReadOnlyCollection<DeliveryRoute> routes,
         CancellationToken ct)
     {
         var missing = routes.Where(r => r.CompletedAtUtc == null && Start(r).HasValue).ToList();
-        if (missing.Count == 0) return;
+        var resolved = new HashSet<int>();
+        if (missing.Count == 0) return resolved;
         var drivers = missing.Select(r => r.DeliverymanId).Distinct().ToArray();
         var from = missing.Min(r => Start(r)!.Value).AddDays(-1);
         var to = missing.Max(r => Start(r)!.Value).AddDays(2);
@@ -47,10 +48,11 @@ public static class DeliveryRouteCompletion
                 .OrderBy(r => Start(r)).ThenBy(r => r.Id).FirstOrDefault();
             if (next is null) continue;
             var end = Start(next)!.Value;
-            if (route.WorkSessionId.HasValue && next.WorkSessionId.HasValue
-                ? route.WorkSessionId != next.WorkSessionId
-                : ColombiaTimeHelper.GetTodayStartInUtcFromUtc(start) != ColombiaTimeHelper.GetTodayStartInUtcFromUtc(end)) continue;
-            Complete(route, route.Stops.Select(s => s.Order).ToList(), end);
+            var sameSession = route.WorkSessionId.HasValue && route.WorkSessionId == next.WorkSessionId;
+            var sameDay = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(start) == ColombiaTimeHelper.GetTodayStartInUtcFromUtc(end);
+            if (!sameSession && !sameDay) continue;
+            if (Complete(route, route.Stops.Select(s => s.Order).ToList(), end)) resolved.Add(route.Id);
         }
+        return resolved;
     }
 }
