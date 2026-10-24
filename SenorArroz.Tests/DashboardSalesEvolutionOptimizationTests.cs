@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using SenorArroz.Application.Common.Helpers;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Dashboard.Queries;
 using SenorArroz.Domain.Entities;
