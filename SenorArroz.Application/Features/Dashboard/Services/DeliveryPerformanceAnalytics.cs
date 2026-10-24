@@ -246,14 +246,15 @@ public static class DeliveryPerformanceAnalytics
         if (ownOnly) routeQuery = routeQuery.Where(r => r.DeliverymanId == driverId);
         var loadedRoutes = await routeQuery.Include(r => r.Deliveryman).Include(r => r.Branch)
             .Include(r => r.Stops).ThenInclude(s => s.Order).AsSplitQuery().ToListAsync(ct);
-        await DeliveryRouteCompletion.ResolveHistoryAsync(db, loadedRoutes, ct);
+        var resolvedReturns = await DeliveryRouteCompletion.ResolveHistoryAsync(db, loadedRoutes, ct);
         loadedRoutes = loadedRoutes.Where(r => RouteActivityTime(r) >= previousFrom && RouteActivityTime(r) <= to).ToList();
         var routeIds = loadedRoutes.Select(r => r.Id).ToArray();
         var locations = await db.DeliverymanLocations.AsNoTracking().Where(p => p.DeliveryRouteId.HasValue
             && routeIds.Contains(p.DeliveryRouteId.Value) && p.RecordedAt >= previousFrom.AddDays(-1) && p.RecordedAt <= to).ToListAsync(ct);
         var pointsByRoute = locations.ToLookup(p => p.DeliveryRouteId!.Value);
         var sessions = await LoadWorkSessionsAsync(db, loadedRoutes, ct);
-        var routes = loadedRoutes.Select(r => new RouteSample(r, AnalyzeTrack(r, pointsByRoute[r.Id]), IsReturnInconsistent(r, sessions))).ToList();
+        var routes = loadedRoutes.Select(r => new RouteSample(r, AnalyzeTrack(r, pointsByRoute[r.Id]),
+            !resolvedReturns.Contains(r.Id) && IsReturnInconsistent(r, sessions))).ToList();
         var scopedOrders = orders.Where(x => (!driverId.HasValue || x.Order.DeliveryManId == driverId) && IncludesDay(x.DeliveredAt, excludeWednesdays)).ToList();
         var scopedPending = pendingOrders.Where(x => (!driverId.HasValue || x.Order.DeliveryManId == driverId) && IncludesDay(x.OnTheWayAt, excludeWednesdays)).ToList();
         var scopedRoutes = routes.Where(x => (!driverId.HasValue || x.Route.DeliverymanId == driverId) && IncludesDay(RouteActivityTime(x.Route), excludeWednesdays)).ToList();

@@ -36,6 +36,11 @@ public class DeliveryPerformanceAnalyticsTests
                 DeliverymanId = 7, Deliveryman = driver, Status = DeliveryRouteStatus.Completed,
                 LastAssignmentAtUtc = start, RouteStartedAtUtc = start, MetaDurationSeconds = 1800,
                 WorkSessionId = differentSessions ? 360 + id : null };
+            if (differentSessions)
+                db.DeliveryWorkSessions.Add(new DeliveryWorkSession { Id = 360 + id, TenantId = 1,
+                    BranchId = 1, Branch = branch, DeliverymanId = 7, Deliveryman = driver,
+                    StartedAt = start.AddMinutes(-5), EndedAt = start.AddMinutes(20),
+                    AutoCloseAt = start.AddHours(3), Status = DeliveryWorkSessionStatus.Closed });
             route.Stops.Add(new DeliveryRouteStop { Id = id, TenantId = 1, OrderId = id, Order = order, StopSequence = 1 });
             db.DeliveryRoutes.Add(route);
         }
@@ -52,6 +57,7 @@ public class DeliveryPerformanceAnalyticsTests
             new GetDashboardDeliveryRouteStopsQuery { RouteId = 1 }, CancellationToken.None);
         Assert.Equal(nextDay ? (DateTime?)null : Start.AddMinutes(30), detail.CompletedAtUtc);
         Assert.Equal(nextDay ? "returnPending" : "completed", detail.Status);
+        Assert.False(detail.ReturnIsInconsistent);
         Assert.All(db.DeliveryRoutes, route => Assert.Null(route.CompletedAtUtc));
     }
 
