@@ -44,13 +44,6 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
         var branchFilter = ResolveBranchFilter(request.BranchId);
         var gran = NormalizeGranularity(request.Granularity);
 
-        var allBranches = (await _branchRepository.GetAllAsync(cancellationToken)).OrderBy(b => b.Name).ToList();
-        var branchesInOrder = (branchFilter.HasValue
-                ? allBranches.Where(b => b.Id == branchFilter.Value)
-                : allBranches)
-            .Select(b => (b.Id, b.Name))
-            .ToList();
-
         var expenseRows = await _expenseDashboardRepository.GetTimeSeriesByCategoryAsync(
             branchFilter,
             from,
@@ -60,14 +53,13 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
 
         return gran switch
         {
-            "month" => await BuildMonthlyAsync(branchesInOrder, branchFilter, from, to, expenseRows, cancellationToken),
-            "year" => await BuildYearlyAsync(branchesInOrder, branchFilter, from, to, expenseRows, cancellationToken),
-            _ => await BuildDailyAsync(branchesInOrder, branchFilter, from, to, expenseRows, cancellationToken),
+            "month" => await BuildMonthlyAsync(branchFilter, from, to, expenseRows, cancellationToken),
+            "year" => await BuildYearlyAsync(branchFilter, from, to, expenseRows, cancellationToken),
+            _ => await BuildDailyAsync(branchFilter, from, to, expenseRows, cancellationToken),
         };
     }
 
     private async Task<DashboardPrincipalSalesVsExpensesResponseDto> BuildDailyAsync(
-        IReadOnlyList<(int Id, string Name)> branchesInOrder,
         int? branchFilter,
         DateTime from,
         DateTime to,
@@ -76,7 +68,7 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
     {
         var salesPoints = await _orderRepository.GetDashboardSalesByDayAsync(branchFilter, from, to, null, cancellationToken);
         var (days, labels) = ColombiaTimeHelper.EnumerateColombiaDashboardDays(from, to, MaxDayBuckets, EsCo);
-        var salesCop = SumSalesByDay(branchesInOrder, salesPoints, days);
+        var salesCop = SumSalesByDay(salesPoints, days);
         var buckets = days;
         var expenseCategories = BuildExpenseCategorySeries(expenseRows, buckets, "day");
         return new DashboardPrincipalSalesVsExpensesResponseDto
@@ -89,7 +81,6 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
     }
 
     private async Task<DashboardPrincipalSalesVsExpensesResponseDto> BuildMonthlyAsync(
-        IReadOnlyList<(int Id, string Name)> branchesInOrder,
         int? branchFilter,
         DateTime from,
         DateTime to,
@@ -98,7 +89,7 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
     {
         var salesPoints = await _orderRepository.GetDashboardSalesByMonthAsync(branchFilter, from, to, null, cancellationToken);
         var (keys, labels) = ColombiaTimeHelper.EnumerateColombiaDashboardMonths(from, to, MaxMonthBuckets, EsCo);
-        var salesCop = SumSalesByMonth(branchesInOrder, salesPoints, keys);
+        var salesCop = SumSalesByMonth(salesPoints, keys);
         var buckets = keys
             .Select(k => new DateTime(k.Year, k.Month, 1, 0, 0, 0, DateTimeKind.Unspecified))
             .ToList();
@@ -113,7 +104,6 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
     }
 
     private async Task<DashboardPrincipalSalesVsExpensesResponseDto> BuildYearlyAsync(
-        IReadOnlyList<(int Id, string Name)> branchesInOrder,
         int? branchFilter,
         DateTime from,
         DateTime to,
@@ -122,7 +112,7 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
     {
         var salesPoints = await _orderRepository.GetDashboardSalesByYearAsync(branchFilter, from, to, null, cancellationToken);
         var (years, labels) = ColombiaTimeHelper.EnumerateColombiaDashboardYears(from, to, MaxYearBuckets);
-        var salesCop = SumSalesByYear(branchesInOrder, salesPoints, years);
+        var salesCop = SumSalesByYear(salesPoints, years);
         var buckets = years.Select(y => new DateTime(y, 1, 1, 0, 0, 0, DateTimeKind.Unspecified)).ToList();
         var expenseCategories = BuildExpenseCategorySeries(expenseRows, buckets, "year");
         return new DashboardPrincipalSalesVsExpensesResponseDto
@@ -207,31 +197,27 @@ public class GetDashboardPrincipalSalesVsExpensesHandler
         };
 
     private static List<long> SumSalesByDay(
-        IReadOnlyList<(int Id, string Name)> branches,
         IReadOnlyList<SalesDayPoint> points,
         List<DateTime> days)
     {
-        var map = points.ToLookup(p => (p.BranchId, p.Day.Date));
-        return days.Select(d => branches.Sum(b => map[(b.Id, d)].Sum(x => (long)x.SalesCop))).ToList();
+        var totals = points.GroupBy(p => p.Day.Date).ToDictionary(g => g.Key, g => g.Sum(x => (long)x.SalesCop));
+        return days.Select(d => totals.GetValueOrDefault(d.Date)).ToList();
     }
 
     private static List<long> SumSalesByMonth(
-        IReadOnlyList<(int Id, string Name)> branches,
         IReadOnlyList<SalesMonthPoint> points,
         List<(int Year, int Month)> keys)
     {
-        var map = points.ToLookup(p => (p.BranchId, p.Year, p.Month));
-        return keys.Select(k => branches.Sum(b => map[(b.Id, k.Year, k.Month)].Sum(x => (long)x.SalesCop)))
-            .ToList();
+        var totals = points.GroupBy(p => (p.Year, p.Month)).ToDictionary(g => g.Key, g => g.Sum(x => (long)x.SalesCop));
+        return keys.Select(k => totals.GetValueOrDefault(k)).ToList();
     }
 
     private static List<long> SumSalesByYear(
-        IReadOnlyList<(int Id, string Name)> branches,
         IReadOnlyList<SalesYearPoint> points,
         List<int> years)
     {
-        var map = points.ToLookup(p => (p.BranchId, p.Year));
-        return years.Select(y => branches.Sum(b => map[(b.Id, y)].Sum(x => (long)x.SalesCop))).ToList();
+        var totals = points.GroupBy(p => p.Year).ToDictionary(g => g.Key, g => g.Sum(x => (long)x.SalesCop));
+        return years.Select(y => totals.GetValueOrDefault(y)).ToList();
     }
 
     private static string NormalizeGranularity(string? g)
