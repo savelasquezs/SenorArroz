@@ -16,38 +16,42 @@ public class DeliveryPerformanceAnalyticsTests
 {
     private static readonly DateTime Start = new(2026, 10, 22, 17, 0, 0, DateTimeKind.Utc);
 
-    [Fact]
-    public async Task MissingReturnUsesNextRouteStartInSummaryAndDetailWithoutUpdatingHistory()
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task MissingReturnUsesNextRouteStartInSummaryAndDetailWithoutUpdatingHistory(bool differentSessions, bool nextDay)
     {
         await using var db = TestDatabase();
         var branch = new Branch { Id = 1, TenantId = 1, Name = "Santander" };
         var driver = new User { Id = 7, TenantId = 1, BranchId = 1, Branch = branch, Name = "Luis" };
         foreach (var id in new[] { 1, 2 })
         {
-            var start = Start.AddMinutes((id - 1) * 30);
+            var start = Start.AddMinutes((id - 1) * 30).AddDays(nextDay ? id - 1 : 0);
             var order = new Order { Id = id, TenantId = 1, BranchId = 1, Branch = branch,
                 DeliveryManId = 7, DeliveryMan = driver, Type = OrderType.Delivery, Status = OrderStatus.Delivered,
                 CreatedAt = start, UpdatedAt = start.AddMinutes(10), DeliveryRouteId = id,
                 StatusTimes = System.Text.Json.JsonSerializer.Serialize(new { ontheway = start, delivered = start.AddMinutes(10) }) };
             var route = new DeliveryRoute { Id = id, TenantId = 1, BranchId = 1, Branch = branch,
                 DeliverymanId = 7, Deliveryman = driver, Status = DeliveryRouteStatus.Completed,
-                LastAssignmentAtUtc = start, RouteStartedAtUtc = start, MetaDurationSeconds = 1800 };
+                LastAssignmentAtUtc = start, RouteStartedAtUtc = start, MetaDurationSeconds = 1800,
+                WorkSessionId = differentSessions ? 360 + id : null };
             route.Stops.Add(new DeliveryRouteStop { Id = id, TenantId = 1, OrderId = id, Order = order, StopSequence = 1 });
             db.DeliveryRoutes.Add(route);
         }
         await db.SaveChangesAsync();
         var result = await BuildAsync(db, 1, 7, Start, Start.AddHours(1), CancellationToken.None);
-        Assert.Equal(1, result.Current.CompletedRoutesCount);
+        Assert.Equal(nextDay ? 0 : 1, result.Current.CompletedRoutesCount);
         Assert.Equal(1, result.Current.ReturnPendingRoutesCount);
-        Assert.Equal(30d, result.Current.AvgRouteMinutes);
-        Assert.Equal(100d, result.Current.OnTimePercent);
+        Assert.Equal(nextDay ? (double?)null : 30d, result.Current.AvgRouteMinutes);
+        Assert.Equal(nextDay ? (double?)null : 100d, result.Current.OnTimePercent);
         var user = new Mock<ICurrentUser>();
         user.SetupGet(u => u.Role).Returns("Admin");
         user.SetupGet(u => u.BranchId).Returns(1);
         var detail = await new GetDashboardDeliveryRouteStopsHandler(db, user.Object).Handle(
             new GetDashboardDeliveryRouteStopsQuery { RouteId = 1 }, CancellationToken.None);
-        Assert.Equal(Start.AddMinutes(30), detail.CompletedAtUtc);
-        Assert.Equal("completed", detail.Status);
+        Assert.Equal(nextDay ? (DateTime?)null : Start.AddMinutes(30), detail.CompletedAtUtc);
+        Assert.Equal(nextDay ? "returnPending" : "completed", detail.Status);
         Assert.All(db.DeliveryRoutes, route => Assert.Null(route.CompletedAtUtc));
     }
 

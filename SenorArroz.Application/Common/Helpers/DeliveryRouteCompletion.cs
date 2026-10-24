@@ -47,9 +47,9 @@ public static class DeliveryRouteCompletion
                 .OrderBy(r => Start(r)).ThenBy(r => r.Id).FirstOrDefault();
             if (next is null) continue;
             var end = Start(next)!.Value;
-            if (route.WorkSessionId.HasValue && next.WorkSessionId.HasValue
-                ? route.WorkSessionId != next.WorkSessionId
-                : ColombiaTimeHelper.GetTodayStartInUtcFromUtc(start) != ColombiaTimeHelper.GetTodayStartInUtcFromUtc(end)) continue;
+            var sameSession = route.WorkSessionId.HasValue && route.WorkSessionId == next.WorkSessionId;
+            var sameDay = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(start) == ColombiaTimeHelper.GetTodayStartInUtcFromUtc(end);
+            if (!sameSession && !sameDay) continue;
             Complete(route, route.Stops.Select(s => s.Order).ToList(), end);
         }
     }
