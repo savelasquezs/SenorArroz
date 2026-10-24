@@ -176,7 +176,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M37-F02 | Crear/editar/eliminar documentos | Pendiente | — | — | — | — |
 | M37-F03 | Acceso público por enlace | Pendiente | — | — | — | — |
 | M38-F01 | Conexión inicial SignalR | Pendiente | — | — | — | — |
-| M38-F02 | Reconexión y limpieza listeners | PR listo para revisión | 2026-10-24 | [Informe](reviews/2026-10-24-M38-F02.md) | [Vue #41](https://github.com/savelasquezs/senorArrozFront/pull/41) | CI 40096940352 SUCCESS: build/typecheck y 792/792 pruebas (127 archivos; 6 nuevas); evita refresh adicional en primera conexión normal de SignalR de permisos; conserva recuperación, eventos y limpieza. Sin SQL, merge, despliegue ni medición productiva. |
+| M38-F02 | Reconexión y limpieza listeners | Mejora aprobada | 2026-10-24 | [Informe](reviews/2026-10-24-M38-F02.md) | [Vue #41](https://github.com/savelasquezs/senorArrozFront/pull/41) fusionado, [Docs #61](https://github.com/savelasquezs/SenorArroz/pull/61) | Merge autorizado `c7eda21`; head `984e219` verificado: [CI](https://github.com/savelasquezs/senorArrozFront/actions/runs/40111026784) 831/831 tests, 45 del cambio; [Chromium](https://github.com/savelasquezs/senorArrozFront/actions/runs/40111026798) OK. Sincronización inicial segura, eventos por ID/versión y recargas seriales. Sin SQL; despliegue y métricas productivas aún no verificados. |
 | M38-F03 | Difusión eventos pedidos | Pendiente | — | — | — | — |
 | M38-F04 | Difusión WhatsApp/impresión | Pendiente | — | — | — | — |
 | M38-F05 | Aislamiento grupos por sucursal/tenant | Pendiente | — | — | — | — |
