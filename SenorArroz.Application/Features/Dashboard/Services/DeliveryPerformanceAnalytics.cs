@@ -246,6 +246,7 @@ public static class DeliveryPerformanceAnalytics
         if (ownOnly) routeQuery = routeQuery.Where(r => r.DeliverymanId == driverId);
         var loadedRoutes = await routeQuery.Include(r => r.Deliveryman).Include(r => r.Branch)
             .Include(r => r.Stops).ThenInclude(s => s.Order).AsSplitQuery().ToListAsync(ct);
+        await DeliveryRouteCompletion.ResolveHistoryAsync(db, loadedRoutes, ct);
         loadedRoutes = loadedRoutes.Where(r => RouteActivityTime(r) >= previousFrom && RouteActivityTime(r) <= to).ToList();
         var routeIds = loadedRoutes.Select(r => r.Id).ToArray();
         var locations = await db.DeliverymanLocations.AsNoTracking().Where(p => p.DeliveryRouteId.HasValue
