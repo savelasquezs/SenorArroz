@@ -13,6 +13,8 @@ using SenorArroz.Infrastructure.Storage;
 using SenorArroz.Infrastructure.WhatsApp;
 using SenorArroz.Infrastructure.Integrations;
 using Microsoft.Extensions.Hosting;
+using MediatR;
+using SenorArroz.Application.Features.Customers.Queries;
 
 namespace SenorArroz.Infrastructure;
 
@@ -139,6 +141,7 @@ public static class DependencyInjection
         services.AddScoped<IPasswordResetRepository, PasswordResetRepository>();
         // Customer Repositories
         services.AddScoped<ICustomerRepository, CustomerRepository>();
+        services.AddScoped<IRequestHandler<GetCustomerSuggestionsQuery, CustomerSuggestionPageDto>, GetCustomerSuggestionsHandler>();
         services.AddScoped<IAddressRepository, AddressRepository>();
         services.AddScoped<INeighborhoodRepository, NeighborhoodRepository>();
 
