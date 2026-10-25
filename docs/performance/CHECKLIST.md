@@ -31,7 +31,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M05-F02 | CRUD productos y categorías | Pendiente | — | — | — | — |
 | M05-F03 | Precios, presentaciones y fotos | Pendiente | — | — | — | — |
 | M05-F04 | Stock y disponibilidad | Pendiente | — | — | — | — |
-| M06-F01 | Búsqueda por teléfono | Pendiente | — | — | — | — |
+| M06-F01 | Búsqueda por teléfono | Bloqueado | 2026-10-25 | [Informe](reviews/2026-10-25-M06-F01.md) | [Vue #43](https://github.com/savelasquezs/senorArrozFront/pull/43) | Corrección de resultados obsoletos en selector de clientes; typecheck/build en CI correcto, suite completa pendiente. Sin SQL, merge ni despliegue. |
 | M06-F02 | Alta/edición cliente | Pendiente | — | — | — | — |
 | M06-F03 | Direcciones y barrio | Pendiente | — | — | — | — |
 | M06-F04 | Dirección-servicio por sucursal | Pendiente | — | — | — | — |
