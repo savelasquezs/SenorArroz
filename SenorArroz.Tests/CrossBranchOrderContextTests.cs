@@ -143,4 +143,53 @@ public sealed class CrossBranchOrderContextTests(ITestOutputHelper output)
         // EnsureCreated does not install production RLS policies. Tenant EF filters are
         // verified here; MultitenantRlsPostgreSqlTests independently cover RLS.
     }
+
+    [Fact]
+    public async Task Controller_routes_order_context_to_safe_handler_without_admin_branch_access()
+    {
+        var mediator = new Moq.Mock<MediatR.IMediator>(Moq.MockBehavior.Strict);
+        mediator.Setup(x => x.Send(
+                Moq.It.Is<GetBranchOrderContextQuery>(q => q.Id == 2),
+                Moq.It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SenorArroz.Application.Features.Branches.DTOs.BranchDto
+            {
+                Id = 2, Name = "Safe", Latitude = 6.25m, Longitude = -75.56m
+            });
+        var access = new Moq.Mock<SenorArroz.Application.Common.Interfaces.IBranchContext>(
+            Moq.MockBehavior.Strict);
+        var controller = new SenorArroz.API.Controllers.BranchesController(
+            mediator.Object, Moq.Mock.Of<AutoMapper.IMapper>(), access.Object);
+
+        var action = await controller.GetBranch(2, forOrderCreation: true);
+        var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+        var response = Assert.IsType<SenorArroz.Shared.Models.ApiResponse<
+            SenorArroz.Application.Features.Branches.DTOs.BranchDto>>(ok.Value);
+        Assert.Equal(2, response.Data?.Id);
+        Assert.Empty(response.Data!.Users);
+        mediator.VerifyAll();
+        access.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Controller_keeps_access_checks_and_full_handler_for_admin_context()
+    {
+        var mediator = new Moq.Mock<MediatR.IMediator>(Moq.MockBehavior.Strict);
+        mediator.Setup(x => x.Send(
+                Moq.It.Is<GetBranchByIdQuery>(q => q.Id == 2),
+                Moq.It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SenorArroz.Application.Features.Branches.DTOs.BranchDto
+            {
+                Id = 2, Name = "Administrative detail"
+            });
+        var access = new Moq.Mock<SenorArroz.Application.Common.Interfaces.IBranchContext>(
+            Moq.MockBehavior.Strict);
+        access.Setup(x => x.EnsureAccess(2));
+        var controller = new SenorArroz.API.Controllers.BranchesController(
+            mediator.Object, Moq.Mock.Of<AutoMapper.IMapper>(), access.Object);
+
+        var action = await controller.GetBranch(2, forOrderCreation: false);
+        Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+        mediator.VerifyAll();
+        access.VerifyAll();
+    }
 }
