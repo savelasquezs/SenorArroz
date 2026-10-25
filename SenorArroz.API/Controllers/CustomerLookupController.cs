@@ -13,7 +13,8 @@ namespace SenorArroz.API.Controllers;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class CustomerLookupController(IMediator mediator, IBranchContext branchContext) : ControllerBase
 {
-    [HttpGet]
+    // An extra static segment avoids the legacy /customers/{id} route during staged rollout.
+    [HttpGet("search")]
     public async Task<ActionResult<ApiResponse<CustomerSuggestionPageDto>>> Search(
         [FromQuery] GetCustomerSuggestionsQuery query, CancellationToken cancellationToken)
     {
