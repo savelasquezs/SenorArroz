@@ -228,6 +228,7 @@ public class OrdersController : ControllerBase
             SortBy = searchDto.SortBy,
             SortOrder = searchDto.SortOrder,
             ExcludeFutureReservations = searchDto.ExcludeFutureReservations,
+            ActiveReservationsOnly = searchDto.ActiveReservationsOnly,
             NeighborhoodId = searchDto.NeighborhoodId,
             IncludeOnsiteActiveInAssignedHistory = searchDto.IncludeOnsiteActiveInAssignedHistory
         };
