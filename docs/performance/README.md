@@ -2,6 +2,8 @@
 
 Fecha inicial: 2026-10-12. Fuente de verdad: esta carpeta del repositorio backend. Alcance inter-repositorio: [API](https://github.com/savelasquezs/SenorArroz), [Vue](https://github.com/savelasquezs/senorArrozFront), [Flutter](https://github.com/savelasquezs/delivery_app), [Next.js](https://github.com/savelasquezs/senor-arroz-web-nextjs), [Print Agent](https://github.com/savelasquezs/senorArrozPrintAgent).
 
+Programa frontend de octubre: [implementación local y evidencia](reviews/2026-10-26-FRONT-PERF-2026-10.md). No representa validación productiva.
+
 ## Objetivo
 Disminuir latencia, llamadas redundantes al backend, consultas y transferencia PostgreSQL, consumo de CPU/RAM, tráfico saliente y costos, **sin deteriorar funcionalidades, permisos, aislamiento entre sucursales/tenants ni exactitud financiera**.
 
