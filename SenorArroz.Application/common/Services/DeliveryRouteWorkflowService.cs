@@ -102,7 +102,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
             route.ConsolidatedAtUtc = null;
             _consolidationSignal?.Pulse();
         }
-        foreach (var id in oldRouteIds.Where(id => id != route.Id)) await PruneEmptyOpenRouteAsync(id, ct);
+        foreach (var id in oldRouteIds.Where(id => id != route.Id)) await RetireEmptyActiveRouteAsync(id, ct);
     }
 
     private async Task CloseTerminalAdministrativelyAsync(DeliveryRoute route, IReadOnlyList<Order> orders,
@@ -145,7 +145,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         if (order is not null) order.DeliveryRouteId = null;
         if (stops.Count == 0 && order is null) return;
         await _db.SaveChangesAsync(ct);
-        foreach (var id in routeIds) await PruneEmptyOpenRouteAsync(id, ct);
+        foreach (var id in routeIds) await RetireEmptyActiveRouteAsync(id, ct);
     }
 
     public async Task OnOrderCancelledWhileRouteOpenAsync(int orderId, CancellationToken ct = default)
@@ -159,7 +159,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         _db.DeliveryRouteStops.Remove(stop);
         order.DeliveryRouteId = null;
         await _db.SaveChangesAsync(ct);
-        await PruneEmptyOpenRouteAsync(routeId, ct);
+        await RetireEmptyActiveRouteAsync(routeId, ct);
     }
 
     public async Task TryCompleteInProgressRouteAsync(int orderId, CancellationToken ct = default)
@@ -342,14 +342,24 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         if (!preserveRouteStartedAt) route.RouteStartedAtUtc = route.LastAssignmentAtUtc.AddSeconds(_opt.ConsolidationDelaySeconds);
     }
 
-    private async Task PruneEmptyOpenRouteAsync(int routeId, CancellationToken ct)
+    private async Task RetireEmptyActiveRouteAsync(int routeId, CancellationToken ct)
     {
         var route = await _db.DeliveryRoutes.Include(r => r.Stops).FirstOrDefaultAsync(r => r.Id == routeId, ct);
-        if (route is null || route.Status != DeliveryRouteStatus.Open || route.Stops.Count > 0) return;
-        // Empty, never-dispatched drafts have no journey to preserve.
+        if (route is null || route.Status is not (DeliveryRouteStatus.Open or DeliveryRouteStatus.InProgress)
+            || route.Stops.Count > 0 || await _db.Orders.AnyAsync(o => o.DeliveryRouteId == routeId, ct)) return;
+        var priorStatus = route.Status;
         route.Status = DeliveryRouteStatus.Cancelled;
         route.CompletedAtUtc = _clock.UtcNow;
         route.ClosureSource = "empty";
+        route.ActualDurationSeconds = null;
+        route.MetSla = null;
+        _db.EntityAuditLogs.Add(new EntityAuditLog
+        {
+            TenantId = route.TenantId, BranchId = route.BranchId, EntityType = "delivery_route",
+            EntityId = route.Id, OperationType = "administrative_closure", ChangedAt = _clock.UtcNow,
+            BusinessDate = _clock.UtcNow.AddHours(-5).Date, SummaryText = "Ruta vacía retirada del conjunto activo",
+            MetadataJson = JsonSerializer.Serialize(new { reason = "empty", priorStatus = priorStatus.ToString(), physicalReturnKnown = false })
+        });
         await _db.SaveChangesAsync(ct);
     }
 

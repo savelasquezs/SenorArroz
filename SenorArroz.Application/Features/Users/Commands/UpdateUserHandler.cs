@@ -17,17 +17,26 @@ namespace SenorArroz.Application.Features.Users.Commands
         private readonly IMapper _mapper;
         private readonly ICurrentUser _currentUser;
         private readonly IApplicationDbContext _context;
+        private readonly IDeliveryAutoCompletionRouteLock _routeLock;
 
         public UpdateUserHandler(IUserRepository userRepository, IMapper mapper,
-            ICurrentUser currentUser, IApplicationDbContext context)
+            ICurrentUser currentUser, IApplicationDbContext context, IDeliveryAutoCompletionRouteLock routeLock)
         {
             _userRepository = userRepository;
             _mapper = mapper;
             _currentUser = currentUser;
             _context = context;
+            _routeLock = routeLock;
         }
 
         public async Task<UserDto> Handle(UpdateUserCommand request, CancellationToken cancellationToken)
+        {
+            UserDto result = null!;
+            await _routeLock.ExecuteDriverAsync(request.UserId, async ct => result = await UpdateAsync(request, ct), cancellationToken);
+            return result;
+        }
+
+        private async Task<UserDto> UpdateAsync(UpdateUserCommand request, CancellationToken cancellationToken)
         {
             var existingUser = await _userRepository.GetByIdAsync(request.UserId, cancellationToken)
                 ?? throw new NotFoundException($"Usuario con ID {request.UserId} no encontrado");
@@ -47,6 +56,12 @@ namespace SenorArroz.Application.Features.Users.Commands
             var previousRole = existingUser.Role;
             var previousDeliveryAppEnabled = existingUser.DeliveryAppEnabled;
             var previousBranchId = existingUser.BranchId;
+            if (request.UserData.BranchId is int targetBranch && targetBranch != previousBranchId
+                && (await _context.DeliveryRoutes.AnyAsync(r => r.DeliverymanId == existingUser.Id
+                    && (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress), cancellationToken)
+                    || await _context.Orders.AnyAsync(o => o.DeliveryManId == existingUser.Id
+                        && o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled, cancellationToken)))
+                throw new BusinessException("Finaliza la ruta activa o desasigna los pedidos antes de cambiar la sucursal del usuario.");
             _mapper.Map(request.UserData, existingUser); // AccountType es inmutable y está excluido del mapping.
             if (request.UserData.DeliveryAppEnabled.HasValue)
                 existingUser.DeliveryAppEnabled = request.UserData.DeliveryAppEnabled.Value;

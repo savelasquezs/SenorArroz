@@ -39,7 +39,7 @@ public sealed class DeliveryOperationsService(IApplicationDbContext db, ICurrent
     private async Task<DeliveryContextDto> ReadContextAsync(CancellationToken ct)
     {
         var owner = await OwnerAsync(ct);
-        var route = await db.DeliveryRoutes.AsNoTracking().Where(r => r.DeliverymanId == actor.Id
+        var route = await db.DeliveryRoutes.AsNoTracking().Where(r => r.DeliverymanId == actor.Id && r.BranchId == actor.BranchId
             && (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress))
             .OrderByDescending(r => r.Id).FirstOrDefaultAsync(ct);
         List<Order> orders = route is null ? [] : await Orders().Where(o => o.DeliveryRouteId == route.Id
@@ -50,7 +50,7 @@ public sealed class DeliveryOperationsService(IApplicationDbContext db, ICurrent
                 .OrderBy(s => s.StopSequence).Select(s => s.OrderId).ToListAsync(ct);
             orders = orders.OrderBy(o => sequence.IndexOf(o.Id)).ToList();
         }
-        var closure = await db.DeliveryRoutes.AsNoTracking().Where(r => r.DeliverymanId == actor.Id
+        var closure = await db.DeliveryRoutes.AsNoTracking().Where(r => r.DeliverymanId == actor.Id && r.BranchId == actor.BranchId
             && (r.ClosureSource == "return" || r.ClosureSource == "next_route"))
             .OrderByDescending(r => r.CompletedAtUtc).FirstOrDefaultAsync(ct);
         return new(owner.DeliveryContextVersion, owner.LastDeliveryTakeId, route?.Id, route?.WorkSessionId,
@@ -104,7 +104,7 @@ public sealed class DeliveryOperationsService(IApplicationDbContext db, ICurrent
                     || context.RouteId != request.RouteId && context.RouteId is not null)
                     throw new OrderConcurrencyException();
                 if (context.RouteId is null && request.RouteId.HasValue
-                    && !await db.DeliveryRoutes.AnyAsync(r => r.Id == request.RouteId && r.DeliverymanId == actor.Id
+                    && !await db.DeliveryRoutes.AnyAsync(r => r.Id == request.RouteId && r.DeliverymanId == actor.Id && r.BranchId == actor.BranchId
                         && r.Status == DeliveryRouteStatus.Completed && r.ClosureSource == "return", token))
                     throw new OrderConcurrencyException();
                 var session = await DeliveryRouteScope.ActiveSessions(db, actor.BranchId, clock.UtcNow)
@@ -212,6 +212,7 @@ public sealed class DeliveryOperationsService(IApplicationDbContext db, ICurrent
     {
         var ownerId = driverId ?? actor.Id;
         var routes = await db.DeliveryRoutes.Where(r => r.DeliverymanId == ownerId
+            && (driverId.HasValue || r.BranchId == actor.BranchId)
             && (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress)
             && (!expectedRouteId.HasValue || r.Id == expectedRouteId)).ToListAsync(ct);
         foreach (var route in routes)

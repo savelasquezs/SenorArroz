@@ -30,15 +30,30 @@ public sealed class PostgreSqlIntegrationFactAttribute : FactAttribute
 
 public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16-alpine").Build();
+    private PostgreSqlContainer? _postgres;
+    private string? _localConnection;
     private DbContextOptions<ApplicationDbContext> _options = null!;
     private readonly DateTime _now = new(2026, 8, 13, 18, 0, 0, DateTimeKind.Utc);
 
     public async Task InitializeAsync()
     {
-        await _postgres.StartAsync();
+        _localConnection = Environment.GetEnvironmentVariable("DELIVERY_ROUTE_TEST_POSTGRES");
+        if (!string.IsNullOrEmpty(_localConnection))
+        {
+            var connection = new Npgsql.NpgsqlConnectionStringBuilder(_localConnection);
+            if (connection.Host is not ("localhost" or "127.0.0.1")
+                || connection.Database?.StartsWith("delivery_route_test_", StringComparison.Ordinal) != true)
+                throw new InvalidOperationException("Use only a dedicated local delivery_route_test_ database.");
+            connection.Database = "delivery_route_test_" + Guid.NewGuid().ToString("N");
+            _localConnection = connection.ConnectionString;
+        }
+        else
+        {
+            _postgres = new PostgreSqlBuilder("postgres:16-alpine").Build();
+            await _postgres.StartAsync();
+        }
         _options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(_postgres.GetConnectionString())
+            .UseNpgsql(_localConnection ?? _postgres!.GetConnectionString())
             .Options;
 
         await using var db = CreateDb();
@@ -46,7 +61,15 @@ public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLif
         await SeedAsync(db);
     }
 
-    public async Task DisposeAsync() => await _postgres.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        if (!string.IsNullOrEmpty(_localConnection))
+        {
+            await using var db = CreateDb();
+            await db.Database.EnsureDeletedAsync();
+        }
+        if (_postgres is not null) await _postgres.DisposeAsync();
+    }
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
@@ -184,7 +207,7 @@ public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLif
         var sql = await File.ReadAllTextAsync(Path.Combine(directory!.FullName,
             "SenorArroz.Infrastructure/Scripts/enforce_delivery_route_uniqueness.sql"));
         async Task Apply() {
-            await using var connection = new Npgsql.NpgsqlConnection(_postgres.GetConnectionString());
+            await using var connection = new Npgsql.NpgsqlConnection(_postgres!.GetConnectionString());
             await connection.OpenAsync();
             await new Npgsql.NpgsqlCommand(sql, connection).ExecuteNonQueryAsync();
         }
@@ -222,6 +245,55 @@ public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLif
         Assert.Equal(OrderStatus.OnTheWay, (await db.Orders.AsNoTracking().SingleAsync()).Status);
     }
 
+    [PostgreSqlIntegrationFact]
+    public Task UnassignLastInProgressOrderRetiresRouteAndAllowsReassignment() => CheckUnassign(DeliveryRouteStatus.InProgress, false);
+
+    [PostgreSqlIntegrationFact]
+    public Task UnassignLastOpenOrderRetiresRouteAndAllowsReassignment() => CheckUnassign(DeliveryRouteStatus.Open, false);
+
+    [PostgreSqlIntegrationFact]
+    public Task UnassignPreservesRouteWithRemainingOrders() => CheckUnassign(DeliveryRouteStatus.InProgress, true);
+
+    private async Task CheckUnassign(DeliveryRouteStatus status, bool keepOrder)
+    {
+        await using var db = CreateDb();
+        var route = await db.DeliveryRoutes.SingleAsync();
+        route.Status = status; route.DepartedAtUtc = _now.AddMinutes(-5); route.DepartureSource = "gps";
+        if (keepOrder) {
+            db.Orders.Add(new Order { Id = 31, BranchId = 7, TakenById = 2, CustomerId = 10,
+                DeliveryManId = 1, DeliveryRouteId = 20, Type = OrderType.Delivery, Status = OrderStatus.OnTheWay });
+            db.DeliveryRouteStops.Add(new DeliveryRouteStop { DeliveryRouteId = 20, OrderId = 31, StopSequence = 2 });
+        }
+        await db.SaveChangesAsync();
+        var workflow = new DeliveryRouteWorkflowService(db, Mock.Of<IGoogleRoutesDrivingMetricsService>(),
+            Microsoft.Extensions.Options.Options.Create(new SenorArroz.Application.Options.DeliveryRouteOptions()),
+            NullLogger<DeliveryRouteWorkflowService>.Instance, new FakeClock(_now));
+        var routeLock = new PostgresDeliveryAutoCompletionRouteLock(db);
+        await routeLock.ExecuteDriverAsync(1, async ct => {
+            await workflow.OnOrderUnassignedAsync(30, ct);
+            var order = await db.Orders.SingleAsync(o => o.Id == 30, ct);
+            order.DeliveryManId = null; order.Status = OrderStatus.Ready;
+            await db.SaveChangesAsync(ct);
+        });
+        Assert.Equal(keepOrder ? status : DeliveryRouteStatus.Cancelled, route.Status);
+        Assert.Equal(_now.AddMinutes(-5), route.DepartedAtUtc);
+        Assert.Null(route.ActualDurationSeconds); Assert.Null(route.MetSla);
+        if (!keepOrder) {
+            Assert.Equal("empty", route.ClosureSource);
+            Assert.Single(await db.EntityAuditLogs.Where(a => a.OperationType == "administrative_closure").ToListAsync());
+        }
+        await routeLock.ExecuteDriverAsync(1, async ct => {
+            var order = await db.Orders.SingleAsync(o => o.Id == 30, ct);
+            order.DeliveryManId = 1; order.Status = OrderStatus.OnTheWay;
+            await db.SaveChangesAsync(ct);
+            await workflow.OnOrderAssignedToDeliverymanAsync(order, ct);
+        });
+        Assert.Equal(1, await db.DeliveryRoutes.CountAsync(r => r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress));
+        Assert.Equal(keepOrder ? 1 : 2, await db.DeliveryRoutes.CountAsync());
+        var assigned = await db.Orders.SingleAsync(o => o.Id == 30);
+        Assert.Equal(keepOrder, assigned.DeliveryRouteId == 20);
+        Assert.Equal(keepOrder ? 2 : 1, await db.DeliveryRouteStops.CountAsync());
+    }
     private DeliveryOperationsService Operations(ApplicationDbContext db, ISender? sender = null)
     {
         var mapper = new Mock<AutoMapper.IMapper>();
