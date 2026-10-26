@@ -793,6 +793,52 @@ public class WhatsAppController : ControllerBase
         return Ok(ApiResponse<IReadOnlyList<WhatsAppMessageDto>>.SuccessResponse(messages, "Mensajes obtenidos."));
     }
 
+    [HttpGet("conversations/{conversationId:int}/messages/page")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppMessagePageDto>>> GetMessagesPage(
+        int conversationId, [FromQuery] int limit = 50, [FromQuery] string? before = null, CancellationToken cancellationToken = default)
+    {
+        var conversation = await _db.WhatsAppConversations.FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
+        if (conversation is null) return NotFound();
+        if (!await CanAccessConversationAsync(conversation, cancellationToken)) return Forbid();
+        if (limit is < 1 or > 100) return BadRequest("El tamaño de página debe estar entre 1 y 100.");
+        var query = _db.WhatsAppMessages.Where(x => x.ConversationId == conversationId);
+        if (!string.IsNullOrWhiteSpace(before))
+        {
+            try
+            {
+                var encoded = before.Replace('-', '+').Replace('_', '/');
+                encoded = encoded.PadRight((encoded.Length + 3) / 4 * 4, '=');
+                var parts = Encoding.UTF8.GetString(Convert.FromBase64String(encoded)).Split(':');
+                if (parts.Length != 3 || !int.TryParse(parts[0], out var owner) || owner != conversationId
+                    || !long.TryParse(parts[1], out var ticks) || !int.TryParse(parts[2], out var id) || id <= 0)
+                    return BadRequest("Cursor inválido.");
+                var timestamp = new DateTime(ticks, DateTimeKind.Utc);
+                query = query.Where(x => x.Timestamp < timestamp || x.Timestamp == timestamp && x.Id < id);
+            }
+            catch (Exception error) when (error is FormatException or ArgumentOutOfRangeException)
+            {
+                return BadRequest("Cursor inválido.");
+            }
+        }
+        else if (conversation.UnreadCount > 0)
+        {
+            conversation.UnreadCount = 0;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        var messages = await query.OrderByDescending(x => x.Timestamp).ThenByDescending(x => x.Id)
+            .Take(limit + 1).ToListAsync(cancellationToken);
+        var hasMore = messages.Count > limit;
+        if (hasMore) messages.RemoveAt(messages.Count - 1);
+        messages.Reverse();
+        await EnsureMediaDownloadUrlsAsync(messages, cancellationToken);
+        var oldest = messages.FirstOrDefault();
+        var cursor = hasMore && oldest is not null
+            ? Convert.ToBase64String(Encoding.UTF8.GetBytes($"{conversationId}:{oldest.Timestamp.Ticks}:{oldest.Id}"))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_') : null;
+        return Ok(ApiResponse<WhatsAppMessagePageDto>.SuccessResponse(new(messages.Select(ToMessageDto).ToList(), cursor, hasMore)));
+    }
+
     [HttpGet("conversations/{conversationId:int}/order-draft")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppOrderDraftDto>>> GetOrderDraft(
