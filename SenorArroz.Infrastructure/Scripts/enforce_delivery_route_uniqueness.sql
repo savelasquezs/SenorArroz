@@ -3,7 +3,7 @@ BEGIN;
 LOCK TABLE public.delivery_route IN SHARE ROW EXCLUSIVE MODE;
 CREATE TEMP TABLE delivery_legacy_closures ON COMMIT DROP AS
  SELECT r.* FROM public.delivery_route r
- WHERE r.status IN ('open','in_progress')
+ WHERE r.status IN ('open','in_progress') AND r.completed_at_utc IS NULL
  AND EXISTS (SELECT 1 FROM public.delivery_route newer
    WHERE newer.tenant_id=r.tenant_id AND newer.deliveryman_id=r.deliveryman_id
      AND newer.status IN ('open','in_progress') AND (newer.created_at,newer.id)>(r.created_at,r.id))

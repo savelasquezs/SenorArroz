@@ -208,8 +208,14 @@ public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLif
         Assert.Equal(OrderStatus.Delivered, (await db.Orders.AsNoTracking().SingleAsync()).Status);
         await db.Database.ExecuteSqlRawAsync("DROP INDEX ux_delivery_route_active_owner");
         db.DeliveryRoutes.Add(new DeliveryRoute { Id = 22, BranchId = 7, DeliverymanId = 1,
-            Status = DeliveryRouteStatus.Open, LastAssignmentAtUtc = _now, CreatedAt = _now });
+            Status = DeliveryRouteStatus.Open, LastAssignmentAtUtc = _now, CreatedAt = _now,
+            CompletedAtUtc = _now.AddMinutes(10), ActualDurationSeconds = 600, MetSla = true });
         await db.SaveChangesAsync();
+        await Assert.ThrowsAsync<Npgsql.PostgresException>(Apply);
+        var preserved = await db.DeliveryRoutes.AsNoTracking().SingleAsync(r => r.Id == 22);
+        Assert.Equal(_now.AddMinutes(10), preserved.CompletedAtUtc);
+        Assert.Equal(600, preserved.ActualDurationSeconds); Assert.True(preserved.MetSla);
+        await db.Database.ExecuteSqlRawAsync("UPDATE delivery_route SET completed_at_utc=null WHERE id=22");
         await db.Database.ExecuteSqlRawAsync("UPDATE \"order\" SET delivery_route_id=22,status='on_the_way'");
         await Assert.ThrowsAsync<Npgsql.PostgresException>(Apply);
         Assert.Equal(2, await db.DeliveryRoutes.CountAsync(r => r.Status == DeliveryRouteStatus.Open));
