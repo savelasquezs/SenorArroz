@@ -79,11 +79,12 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
         if (_db?.Database.IsRelational() == true && _db.Database.CurrentTransaction is null)
             transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
-        if (_db is not null) await SenorArroz.Application.Common.Helpers.DeliveryRouteScope.LockDriversAsync(_db, [_currentUser.Id], cancellationToken);
         DeliveryRoutingPlan? activePlan = null;
         DeliveryRouteProposal? proposal = null;
         try
         {
+            if (_db is not null) await SenorArroz.Application.Common.Helpers.DeliveryRouteScope.LockDriversAsync(_db, [_currentUser.Id], cancellationToken);
+            if (_db is not null) await SenorArroz.Application.Common.Helpers.DeliveryRouteScope.EnsureCurrentSessionAsync(_db, _currentUser, cancellationToken);
             if (_db?.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) == true)
             {
                 var lockIds = request.OrderIds.Concat(await _db.Orders.AsNoTracking()

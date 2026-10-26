@@ -32,6 +32,7 @@ public class CloseMyDeliveryWorkSessionHandler : IRequestHandler<CloseMyDelivery
         await using var transaction = _db.Database.IsRelational() && _db.Database.CurrentTransaction is null
             ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
         await DeliveryRouteScope.LockDriversAsync(_db, [_currentUser.Id], cancellationToken);
+        await DeliveryRouteScope.EnsureCurrentSessionAsync(_db, _currentUser, cancellationToken);
         var query = _db.DeliveryWorkSessions.Where(
             x => x.DeliverymanId == _currentUser.Id
                  && x.Status == DeliveryWorkSessionStatus.Active);

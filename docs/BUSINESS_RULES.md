@@ -657,3 +657,4 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 - La corrección de dirección modifica solo campos explícitos; conserva principal/tarifas. Los conflictos guardan la corrección para revisión y no renuevan versiones ni sobrescriben datos silenciosamente.
 - ACKs y respuestas antiguas no retroceden el contexto. Los recibos sobreviven al cierre de rutas y no caducan automáticamente. No hay toma, pago ni asignación offline.
 - Esquema: add_delivery_operations.sql y enforce_delivery_route_uniqueness.sql. Compatibilidad y build mínimo deben validarse antes de publicación.
+- Cerrar sesión sin conexión finaliza el acceso local y conserva los pendientes del propietario. Las solicitudes de limpieza tienen plazo acotado, no renuevan credenciales y quedan ligadas a la sesión capturada; una respuesta tardía no borra ni cierra la sesión o jornada de un acceso posterior.

@@ -21,6 +21,13 @@ public static class DeliveryRouteScope
             await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM \"user\" WHERE id = {owner.Id} AND tenant_id = {owner.TenantId} FOR UPDATE", ct);
     }
 
+    public static async Task EnsureCurrentSessionAsync(IApplicationDbContext db, ICurrentUser actor, CancellationToken ct)
+    {
+        if (actor.SessionId.HasValue && await db.Users.AsNoTracking().Where(u => u.Id == actor.Id)
+            .Select(u => u.ActiveSessionId).SingleOrDefaultAsync(ct) != actor.SessionId)
+            throw new SenorArroz.Domain.Exceptions.SessionReplacedException();
+    }
+
     public static async Task AdvanceContextAsync(IApplicationDbContext db, IEnumerable<int> ids,
         CancellationToken ct, Guid? takeId = null)
     {

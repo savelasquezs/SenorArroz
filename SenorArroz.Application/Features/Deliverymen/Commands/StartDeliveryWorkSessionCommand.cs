@@ -46,6 +46,7 @@ public class StartDeliveryWorkSessionHandler : IRequestHandler<StartDeliveryWork
         await using var transaction = _db.Database.IsRelational() && _db.Database.CurrentTransaction is null
             ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
         await DeliveryRouteScope.LockDriversAsync(_db, [_currentUser.Id], cancellationToken);
+        await DeliveryRouteScope.EnsureCurrentSessionAsync(_db, _currentUser, cancellationToken);
 
         var branch = await _db.Branches.FirstOrDefaultAsync(x => x.Id == _currentUser.BranchId, cancellationToken)
             ?? throw new BusinessException("La sucursal del domiciliario no existe.");
