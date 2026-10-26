@@ -135,12 +135,7 @@ public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLif
                     await db.SaveChangesAsync(token);
                     return new OrderDto { Id = order.Id, Status = order.Status };
                 });
-            var mapper = new Mock<AutoMapper.IMapper>();
-            mapper.Setup(x => x.Map<List<OrderDto>>(It.IsAny<object>())).Returns(new List<OrderDto>());
-            var actor = new Mock<ICurrentUser>();
-            actor.SetupGet(x => x.Id).Returns(1); actor.SetupGet(x => x.BranchId).Returns(7); actor.SetupGet(x => x.TenantId).Returns(1);
-            return new DeliveryOperationsService(db, actor.Object, new FakeClock(_now), sender.Object,
-                mapper.Object, new PostgresDeliveryAutoCompletionRouteLock(db));
+            return this.Operations(db, sender.Object);
         }
         await using var first = CreateDb(); await using var second = CreateDb();
         var request = new DeliveryOperationRequest(Guid.NewGuid(), "deliver", _now, 30, 20, 77, 1);
@@ -219,6 +214,53 @@ public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLif
         await Assert.ThrowsAsync<Npgsql.PostgresException>(Apply);
         Assert.Equal(2, await db.DeliveryRoutes.CountAsync(r => r.Status == DeliveryRouteStatus.Open));
         Assert.Equal(OrderStatus.OnTheWay, (await db.Orders.AsNoTracking().SingleAsync()).Status);
+    }
+
+    private DeliveryOperationsService Operations(ApplicationDbContext db, ISender? sender = null)
+    {
+        var mapper = new Mock<AutoMapper.IMapper>();
+        mapper.Setup(x => x.Map<List<OrderDto>>(It.IsAny<object>())).Returns(new List<OrderDto>());
+        var actor = new Mock<ICurrentUser>();
+        actor.SetupGet(x => x.Id).Returns(1); actor.SetupGet(x => x.BranchId).Returns(7); actor.SetupGet(x => x.TenantId).Returns(1);
+        return new DeliveryOperationsService(db, actor.Object, new FakeClock(_now), sender ?? Mock.Of<ISender>(),
+            mapper.Object, new PostgresDeliveryAutoCompletionRouteLock(db));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task OfflineConflictsPreserveAddressAndNeverDeliverCancelledReassignedOrDifferentRouteOrders()
+    {
+        async Task<DeliveryOperationResult> Apply(DeliveryOperationRequest operation) {
+            await using var requestDb = CreateDb();
+            return await Operations(requestDb).ExecuteAsync(operation, default);
+        }
+        await using var db = CreateDb();
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession { Id = 77, DeliverymanId = 1, BranchId = 7,
+            DeviceInstallationId = "fixture", StartedAt = _now.AddHours(-1), AutoCloseAt = _now.AddHours(2),
+            Status = DeliveryWorkSessionStatus.Active, LastCommunicationAt = _now });
+        var address = await db.Addresses.SingleAsync();
+        address.IsPrimary = true; address.DeliveryFee = 2400;
+        await db.SaveChangesAsync();
+        var request = new DeliveryOperationRequest(Guid.NewGuid(), "address", _now, 30, 20, 77, 1,
+            address.UpdatedAt.Ticks.ToString(), System.Text.Json.JsonSerializer.SerializeToElement(new { additionalInfo = "Chofer" }));
+        await db.Database.ExecuteSqlRawAsync("UPDATE address SET additional_info='Caja',updated_at=updated_at+interval '1 second'");
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.OrderConcurrencyException>(() => Apply(request));
+        await db.Entry(address).ReloadAsync();
+        Assert.Equal("Caja", address.AdditionalInfo);
+        var corrected = request with { OperationId = Guid.NewGuid(), AddressVersion = address.UpdatedAt.Ticks.ToString() };
+        await Apply(corrected);
+        await db.Entry(address).ReloadAsync();
+        Assert.Equal("Chofer", address.AdditionalInfo); Assert.True(address.IsPrimary); Assert.Equal(2400, address.DeliveryFee);
+        var delivery = new DeliveryOperationRequest(Guid.NewGuid(), "deliver", _now, 30, 20, 77, 1);
+        await db.Database.ExecuteSqlRawAsync("UPDATE \"order\" SET status='cancelled'");
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.OrderConcurrencyException>(() => Apply(delivery));
+        await db.Database.ExecuteSqlRawAsync("UPDATE \"order\" SET status='on_the_way',delivery_man_id=2");
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.OrderConcurrencyException>(() => Apply(delivery));
+        await db.Database.ExecuteSqlRawAsync("UPDATE \"order\" SET delivery_man_id=1,delivery_route_id=null");
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.OrderConcurrencyException>(() => Apply(delivery));
+        await db.Database.ExecuteSqlRawAsync("UPDATE \"order\" SET delivery_route_id=20,status='delivered'");
+        Assert.False((await Apply(delivery)).Replayed);
+        Assert.True((await Apply(delivery)).Replayed);
+        Assert.Equal(2, await db.EntityAuditLogs.CountAsync(a => a.EntityType == "delivery_operation"));
     }
 
     private ApplicationDbContext CreateDb() => new(_options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
