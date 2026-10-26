@@ -82,8 +82,12 @@ public class BranchesController : ControllerBase
     {
         if (!forOrderCreation)
             _branchContext.EnsureAccess(id);
-        var query = new GetBranchByIdQuery { Id = id };
-        var result = await _mediator.Send(query);
+        // La consulta operativa entre sucursales no debe cargar ni entregar usuarios,
+        // datos de nómina, ajustes de impresión ni estadísticas administrativas.
+        // La lectura administrativa conserva el DTO completo y EnsureAccess.
+        var result = forOrderCreation
+            ? await _mediator.Send(new GetBranchOrderContextQuery(id))
+            : await _mediator.Send(new GetBranchByIdQuery { Id = id });
 
         if (result == null)
             return NotFound(ApiResponse<BranchDto>.ErrorResponse("Sucursal no encontrada"));
