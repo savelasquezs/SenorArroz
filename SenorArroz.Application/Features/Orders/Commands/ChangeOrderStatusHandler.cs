@@ -101,7 +101,9 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
         if (existingOrder == null)
             throw new BusinessException("Pedido no encontrado");
 
-        OrderAccessRules.EnsureAccess(existingOrder, _currentUser);
+        if (request.RouteCompletionSource is null || existingOrder.TenantId != _currentUser.TenantId
+            || existingOrder.DeliveryManId != _currentUser.Id)
+            OrderAccessRules.EnsureAccess(existingOrder, _currentUser);
 
         EnsureRappiCancellationOrigin(existingOrder, request.StatusChange.Status);
 
@@ -118,7 +120,7 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
                 };
 
             var transition = (existingOrder.Status, request.StatusChange.Status);
-            if (!allowedTransitions.Contains(transition))
+            if (request.RouteCompletionSource is null && !allowedTransitions.Contains(transition))
                 throw new BusinessException("Los domiciliarios solo pueden cambiar entre estados OnTheWay y Delivered");
         }
         else if (!_businessRules.IsStatusTransitionValid(existingOrder, request.StatusChange.Status, _currentUser.Role))
@@ -215,6 +217,11 @@ public class ChangeOrderStatusHandler : IRequestHandler<ChangeOrderStatusCommand
                 await _loyaltyCycle.OnOrderDeliveredAsync(order.Id, order.BranchId, order.CustomerId, cancellationToken);
             }
 
+            if (request.StatusChange.Status == OrderStatus.Delivered) {
+                var tracked = await _context.Orders.SingleAsync(o => o.Id == order.Id, cancellationToken);
+                tracked.DeliveryCompletionSource = request.RouteCompletionSource ?? (request.IsAutomaticDelivery ? "gps" : "manual");
+                await _context.SaveChangesAsync(cancellationToken);
+            }
             var orderForResponse = await _orderRepository.GetByIdWithFullDetailsAsync(order.Id, cancellationToken) ?? order;
             var orderDto = _mapper.Map<OrderDto>(orderForResponse);
 

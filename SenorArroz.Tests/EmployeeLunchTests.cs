@@ -226,6 +226,7 @@ public sealed class EmployeeLunchTests
     [InlineData("Deliveryman", "RecordLocation", "POST", true)]
     [InlineData("Deliveryman", "RecordDeviceEvent", "POST", true)]
     [InlineData("Deliveryman", "StartWorkSession", "POST", true)]
+    [InlineData("Deliveryman", "ApplyOperation", "POST", true)]
     [InlineData("Orders", "GetOrder", "GET", true)]
     public async Task LunchFilterBlocksWorkButAllowsReturnLogoutAndTracking(string controller, string action, string method, bool allowed) {
         await using var db = Db();

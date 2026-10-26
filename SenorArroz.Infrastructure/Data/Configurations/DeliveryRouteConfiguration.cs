@@ -11,6 +11,9 @@ public class DeliveryRouteConfiguration : IEntityTypeConfiguration<DeliveryRoute
     public void Configure(EntityTypeBuilder<DeliveryRoute> builder)
     {
         builder.ToTable("delivery_route");
+        builder.Property(e => e.ClosureSource).HasColumnName("closure_source").HasMaxLength(24);
+        builder.HasIndex(e => new { e.TenantId, e.DeliverymanId }).IsUnique()
+            .HasFilter("status IN ('open','in_progress')").HasDatabaseName("ux_delivery_route_active_owner");
         builder.HasKey(e => e.Id);
         builder.Property(e => e.Id).HasColumnName("id");
         builder.Property(e => e.DeliverymanId).HasColumnName("deliveryman_id").IsRequired();

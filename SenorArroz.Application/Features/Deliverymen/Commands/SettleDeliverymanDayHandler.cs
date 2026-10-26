@@ -186,9 +186,11 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
             throw new BusinessException("El efectivo contado no puede ser negativo");
 
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+        await DeliveryRouteScope.LockDriversAsync(_context, [request.DeliverymanId], cancellationToken);
 
         var newAdvances = new List<DeliverymanAdvance>();
         var workSessionTokens = new List<string>();
+        int? closedWorkSessionId = null;
 
         decimal cashAdvanceAmount = s.Mode == DeliverymanDayLiquidationMode.FullLiquidation
             ? s.CashAmount
@@ -304,6 +306,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
                     nowUtc,
                     DeliveryWorkSessionEndReason.TotalSettlement));
             }
+            closedWorkSessionId = activeSessions.Select(s => (int?)s.Id).Max();
 
             workSessionTokens = await _context.UserDeviceTokens.AsNoTracking()
                 .Where(x => x.UserId == request.DeliverymanId)
@@ -319,7 +322,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
         await tx.CommitAsync(cancellationToken);
 
         if (closesCurrentWorkSession)
-            await NotifyWorkSessionClosedAsync(request.DeliverymanId, workSessionTokens, cancellationToken);
+            await NotifyWorkSessionClosedAsync(request.DeliverymanId, workSessionTokens, closedWorkSessionId, cancellationToken);
 
         var dtos = new List<DeliverymanAdvanceDto>();
         foreach (var id in createdIds)
@@ -339,6 +342,7 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
     private async Task NotifyWorkSessionClosedAsync(
         int deliverymanId,
         IReadOnlyList<string> tokens,
+        int? workSessionId,
         CancellationToken cancellationToken)
     {
         try
@@ -351,6 +355,9 @@ public class SettleDeliverymanDayHandler : IRequestHandler<SettleDeliverymanDayC
                 {
                     ["type"] = "work_session_closed",
                     ["reason"] = "total_settlement",
+                    ["workSessionId"] = workSessionId?.ToString() ?? "",
+                    ["deliverymanId"] = deliverymanId.ToString(),
+                    ["tenantId"] = _currentUser.TenantId.ToString(),
                 },
                 cancellationToken,
                 $"total_settlement:{deliverymanId}");

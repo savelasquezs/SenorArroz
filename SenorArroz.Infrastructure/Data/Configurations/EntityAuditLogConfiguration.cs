@@ -26,6 +26,8 @@ public class EntityAuditLogConfiguration : IEntityTypeConfiguration<EntityAuditL
         builder.Property(x => x.AfterJson).HasColumnName("after_json").HasColumnType("jsonb");
         builder.Property(x => x.MetadataJson).HasColumnName("metadata_json").HasColumnType("jsonb");
 
+        builder.HasIndex(x => new { x.TenantId, x.EntityType, x.EntityId, x.OperationType })
+            .IsUnique().HasFilter("entity_type = 'delivery_operation'").HasDatabaseName("ux_delivery_operation_receipt");
         builder.HasIndex(x => x.BranchId).HasDatabaseName("ix_entity_audit_log_branch_id");
         builder.HasIndex(x => x.BusinessDate).HasDatabaseName("ix_entity_audit_log_business_date");
         builder.HasIndex(x => x.ChangedAt).HasDatabaseName("ix_entity_audit_log_changed_at");

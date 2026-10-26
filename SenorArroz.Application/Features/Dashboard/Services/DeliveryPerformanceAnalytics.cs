@@ -89,6 +89,7 @@ public static class DeliveryPerformanceAnalytics
 
     public static (DateTime? Start, bool UsesOrderDeparture) RouteTiming(DeliveryRoute route)
     {
+        if (route.ClosureSource is "next_route" or "legacy") return (null, false);
         if (route.DepartedAtUtc.HasValue) return (route.DepartedAtUtc, false);
         var start = route.Stops.Select(stop => new
             {
@@ -153,7 +154,7 @@ public static class DeliveryPerformanceAnalytics
         var durations = routes.Where(sample => !sample.HasInconsistentReturn).Select(sample => (Source: sample, Timing: RouteTiming(sample.Route), End: sample.Route.CompletedAtUtc))
             .Where(sample => sample.Timing.Start.HasValue && sample.End >= sample.Timing.Start)
             .Select(sample => (Minutes: (sample.End!.Value - sample.Timing.Start!.Value).TotalMinutes, sample.Timing.UsesOrderDeparture, sample.Source)).ToList();
-        var orderMinutes = orders.Where(x => x.OnTheWayAt.HasValue && x.DeliveredAt >= x.OnTheWayAt)
+        var orderMinutes = orders.Where(x => x.Order.DeliveryCompletionSource is not ("next_route" or "return" or "legacy" or "offline_confirmation") && x.OnTheWayAt.HasValue && x.DeliveredAt >= x.OnTheWayAt)
             .Select(x => (x.DeliveredAt - x.OnTheWayAt!.Value).TotalMinutes).OrderBy(x => x).ToList();
         var sla = routes.Where(x => x.Route.MetSla.HasValue).ToList();
         var distances = durations.Select(sample =>
@@ -176,7 +177,8 @@ public static class DeliveryPerformanceAnalytics
                 .Select(s => new { Delivered = StatusTime(s.Order.StatusTimes, "delivered"), Ready = StatusTime(s.Order.StatusTimes, "ready") }).ToList();
             deliveredInRoutes += delivered.Count;
             var timing = RouteTiming(route);
-            if (sample.HasInconsistentReturn) continue;
+            if (sample.HasInconsistentReturn || route.ClosureSource is "next_route" or "legacy"
+                || route.Stops.Any(s => s.Order.DeliveryCompletionSource is "next_route" or "return" or "legacy" or "offline_confirmation")) continue;
             if (timing.Start is not { } start || route.CompletedAtUtc is not { } end || delivered.Count == 0
                 || delivered.Any(x => !x.Delivered.HasValue || !x.Ready.HasValue || x.Delivered < start || x.Delivered > end || x.Ready > start)) continue;
             var ready = delivered.Max(x => x.Ready!.Value);

@@ -70,11 +70,11 @@ public class DeliveryRouteAssignmentTests
         db.DeliveryRoutes.Local.Single().LastAssignmentAtUtc = Now;
         db.Orders.Add(DeliveryOrder(11, 7));
         await db.SaveChangesAsync();
-        await CreateService(db).OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 11));
-        var assigned = await db.Orders.SingleAsync(o => o.Id == 11);
-        Assert.NotEqual(30, assigned.DeliveryRouteId);
-        Assert.Equal(2, await db.DeliveryRoutes.CountAsync());
-        Assert.Equal(DeliveryRouteStatus.Open, db.DeliveryRoutes.Single(r => r.Id == assigned.DeliveryRouteId).Status);
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() =>
+            CreateService(db).OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 11)));
+        Assert.Single(await db.DeliveryRoutes.ToListAsync());
+        Assert.Equal(DeliveryRouteStatus.InProgress, db.DeliveryRoutes.Single().Status);
+
     }
 
     [Fact]
@@ -109,8 +109,9 @@ public class DeliveryRouteAssignmentTests
         var next = routes.Single(r => r.Id != 30);
         Assert.Equal(DeliveryRouteStatus.Completed, previous.Status);
         Assert.Equal(Now, previous.CompletedAtUtc);
-        Assert.Equal(1200, previous.ActualDurationSeconds);
-        Assert.False(previous.MetSla);
+        Assert.Null(previous.ActualDurationSeconds);
+        Assert.Null(previous.MetSla);
+        Assert.Equal("next_route", previous.ClosureSource);
         Assert.Equal(10, Assert.Single(previous.Stops).OrderId);
         Assert.Equal(DeliveryRouteStatus.Open, next.Status);
         Assert.Equal(11, Assert.Single(next.Stops).OrderId);

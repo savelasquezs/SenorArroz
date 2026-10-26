@@ -29,6 +29,9 @@ public class CloseMyDeliveryWorkSessionHandler : IRequestHandler<CloseMyDelivery
 
     public async Task Handle(CloseMyDeliveryWorkSessionCommand request, CancellationToken cancellationToken)
     {
+        await using var transaction = _db.Database.IsRelational() && _db.Database.CurrentTransaction is null
+            ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
+        await DeliveryRouteScope.LockDriversAsync(_db, [_currentUser.Id], cancellationToken);
         var query = _db.DeliveryWorkSessions.Where(
             x => x.DeliverymanId == _currentUser.Id
                  && x.Status == DeliveryWorkSessionStatus.Active);
@@ -45,6 +48,7 @@ public class CloseMyDeliveryWorkSessionHandler : IRequestHandler<CloseMyDelivery
             ColombiaTimeHelper.EnsureUtc(_clock.UtcNow),
             DeliveryWorkSessionEndReason.UserChange);
         await _db.SaveChangesAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         _scheduleSignal?.Pulse();
     }
 }

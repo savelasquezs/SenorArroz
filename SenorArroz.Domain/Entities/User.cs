@@ -5,6 +5,8 @@ namespace SenorArroz.Domain.Entities;
 
 public class User : TenantOwnedEntity
 {
+    public long DeliveryContextVersion { get; set; }
+    public Guid? LastDeliveryTakeId { get; set; }
     public int BranchId { get; set; }
     public UserRole? Role { get; set; }
     public EmployeeAccountType AccountType { get; set; } = EmployeeAccountType.Personal;

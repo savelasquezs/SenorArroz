@@ -90,8 +90,13 @@ public class DeliveryWorkSessionAutoCloseService : BackgroundService
         var fcm = services.GetRequiredService<IFcmPushService>();
         var nowUtc = ColombiaTimeHelper.EnsureUtc(clock.UtcNow);
 
-        var sessions = await db.DeliveryWorkSessions
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var driverIds = await db.DeliveryWorkSessions.AsNoTracking()
             .Where(x => x.Status == DeliveryWorkSessionStatus.Active && x.AutoCloseAt <= nowUtc)
+            .Select(x => x.DeliverymanId).Distinct().ToListAsync(cancellationToken);
+        await DeliveryRouteScope.LockDriversAsync(db, driverIds, cancellationToken);
+        var sessions = await db.DeliveryWorkSessions
+            .Where(x => driverIds.Contains(x.DeliverymanId) && x.Status == DeliveryWorkSessionStatus.Active && x.AutoCloseAt <= nowUtc)
             .ToListAsync(cancellationToken);
         if (sessions.Count == 0)
             return;
@@ -121,6 +126,7 @@ public class DeliveryWorkSessionAutoCloseService : BackgroundService
             refreshToken.Revoke("automatic-work-session-closure", nowUtc);
 
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         foreach (var deliverymanId in deliverymanIds)
         {
@@ -134,6 +140,9 @@ public class DeliveryWorkSessionAutoCloseService : BackgroundService
                     {
                         ["type"] = "work_session_closed",
                         ["reason"] = "automatic_closure",
+                        ["workSessionId"] = sessions.Where(s => s.DeliverymanId == deliverymanId).Max(s => s.Id).ToString(),
+                        ["deliverymanId"] = deliverymanId.ToString(),
+                        ["tenantId"] = sessions.First(s => s.DeliverymanId == deliverymanId).TenantId.ToString(),
                     },
                     cancellationToken,
                     $"automatic_work_session_closure:{deliverymanId}");

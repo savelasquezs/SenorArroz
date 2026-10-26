@@ -37,18 +37,23 @@ public sealed class OrderMutationBehavior<TRequest, TResponse>(
         ids = ids.Distinct().OrderBy(id => id).ToList();
         var primaryIds = ids.ToList();
         ids = await AddSettlementParents(request, ids, ct);
-        var before = await LoadAndAuthorize(ids, ct);
+        var before = await LoadAndAuthorize(ids, ct, request is ChangeOrderStatusCommand { RouteCompletionSource: not null });
         var expected = mutation?.Expected;
         ValidateExpected(before, primaryIds, expected);
 
         await using var transaction = db.Database.IsRelational() && db.Database.CurrentTransaction is null
             ? await db.Database.BeginTransactionAsync(ct) : null;
+        var driverIds = before.Where(o => o.DeliveryManId.HasValue).Select(o => o.DeliveryManId!.Value).ToList();
+        if (request is AssignDeliveryManCommand { Assignment: not null } assignment) driverIds.Add(assignment.Assignment.DeliveryManId);
+        await SenorArroz.Application.Common.Helpers.DeliveryRouteScope.LockDriversAsync(db, driverIds, ct);
         // PostgreSQL RLS still applies; explicit tenant predicate provides another boundary.
         if (db.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) == true)
             foreach (var id in ids)
                 await db.Database.ExecuteSqlInterpolatedAsync(
                     $"SELECT id FROM \"order\" WHERE id = {id} AND tenant_id = {user.TenantId} FOR UPDATE", ct);
-        before = await LoadAndAuthorize(ids, ct);
+        before = await LoadAndAuthorize(ids, ct, request is ChangeOrderStatusCommand { RouteCompletionSource: not null });
+        if (before.Any(o => o.DeliveryManId.HasValue && !driverIds.Contains(o.DeliveryManId.Value)))
+            throw new OrderConcurrencyException();
         ValidateExpected(before, primaryIds, expected);
 
         var ownsNotifications = mutation is not null && !mutation.IsDeferringNotifications;
@@ -91,6 +96,9 @@ public sealed class OrderMutationBehavior<TRequest, TResponse>(
                     managementVersion = change.Version
                 })
             });
+        var currentDrivers = await db.Orders.AsNoTracking().Where(o => ids.Contains(o.Id) && o.DeliveryManId.HasValue)
+            .Select(o => o.DeliveryManId!.Value).ToListAsync(ct);
+        await SenorArroz.Application.Common.Helpers.DeliveryRouteScope.AdvanceContextAsync(db, driverIds.Concat(currentDrivers), ct);
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
         foreach (var change in changed)
@@ -130,11 +138,13 @@ public sealed class OrderMutationBehavior<TRequest, TResponse>(
         }
     }
 
-    private async Task<List<Order>> LoadAndAuthorize(List<int> ids, CancellationToken ct)
+    private async Task<List<Order>> LoadAndAuthorize(List<int> ids, CancellationToken ct, bool ownRouteClosure = false)
     {
         var orders = await db.Orders.AsNoTracking().Where(o => ids.Contains(o.Id)).OrderBy(o => o.Id).ToListAsync(ct);
         if (orders.Count != ids.Count) throw new NotFoundException("Pedido no encontrado");
-        foreach (var order in orders) OrderAccessRules.EnsureAccess(order, user, branch);
+        foreach (var order in orders)
+            if (!ownRouteClosure || order.TenantId != user.TenantId || order.DeliveryManId != user.Id)
+                OrderAccessRules.EnsureAccess(order, user, branch);
         return orders;
     }
 

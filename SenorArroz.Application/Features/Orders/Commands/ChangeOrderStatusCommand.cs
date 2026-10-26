@@ -5,6 +5,7 @@ namespace SenorArroz.Application.Features.Orders.Commands;
 
 public class ChangeOrderStatusCommand : IRequest<OrderDto>
 {
+    public string? RouteCompletionSource { get; set; }
     public int Id { get; set; }
     public ChangeOrderStatusDto StatusChange { get; set; } = null!;
     public bool IsAutomaticDelivery { get; set; }

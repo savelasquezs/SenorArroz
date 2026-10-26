@@ -16,6 +16,8 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.Id).HasColumnName("id");
         builder.Property(u => u.TenantId).HasColumnName("tenant_id").IsRequired();
 
+        builder.Property(u => u.DeliveryContextVersion).HasColumnName("delivery_context_version").HasDefaultValue(0L);
+        builder.Property(u => u.LastDeliveryTakeId).HasColumnName("last_delivery_take_id");
         builder.Property(u => u.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(u => u.Role)
             .HasColumnName("role")

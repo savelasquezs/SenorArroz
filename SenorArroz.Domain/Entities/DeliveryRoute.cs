@@ -6,6 +6,7 @@ namespace SenorArroz.Domain.Entities;
 /// <summary>Delivery trip, with assignment, observed departure and return kept distinct.</summary>
 public class DeliveryRoute : TenantOwnedEntity
 {
+    public string? ClosureSource { get; set; }
     public int DeliverymanId { get; set; }
     public int BranchId { get; set; }
     public DeliveryRouteStatus Status { get; set; } = DeliveryRouteStatus.Open;

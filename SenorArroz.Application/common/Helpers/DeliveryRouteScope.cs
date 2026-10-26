@@ -12,6 +12,30 @@ namespace SenorArroz.Application.Common.Helpers;
 /// <summary>One definition of a current trip for tracking, assignment and fleet planning.</summary>
 public static class DeliveryRouteScope
 {
+    public static async Task LockDriversAsync(IApplicationDbContext db, IEnumerable<int> ids, CancellationToken ct)
+    {
+        if (db.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) != true) return;
+        var owners = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id)).OrderBy(u => u.Id)
+            .Select(u => new { u.Id, u.TenantId }).ToListAsync(ct);
+        foreach (var owner in owners)
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM \"user\" WHERE id = {owner.Id} AND tenant_id = {owner.TenantId} FOR UPDATE", ct);
+    }
+
+    public static async Task AdvanceContextAsync(IApplicationDbContext db, IEnumerable<int> ids,
+        CancellationToken ct, Guid? takeId = null)
+    {
+        if (db.Database.IsRelational()) {
+            var query = db.Users.Where(u => ids.Contains(u.Id));
+            if (takeId.HasValue) await query.ExecuteUpdateAsync(set => set
+                .SetProperty(u => u.DeliveryContextVersion, u => u.DeliveryContextVersion + 1)
+                .SetProperty(u => u.LastDeliveryTakeId, takeId), ct);
+            else await query.ExecuteUpdateAsync(set => set.SetProperty(u => u.DeliveryContextVersion, u => u.DeliveryContextVersion + 1), ct);
+        } else foreach (var user in await db.Users.Where(u => ids.Contains(u.Id)).ToListAsync(ct)) {
+            user.DeliveryContextVersion++;
+            if (takeId.HasValue) user.LastDeliveryTakeId = takeId;
+        }
+    }
+
     public static IQueryable<DeliveryWorkSession> ActiveSessions(IApplicationDbContext db, int branchId, DateTime now) =>
         db.DeliveryWorkSessions.Where(s => s.BranchId == branchId
             && s.Status == DeliveryWorkSessionStatus.Active && s.StartedAt <= now && s.AutoCloseAt > now

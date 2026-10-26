@@ -7,6 +7,7 @@ namespace SenorArroz.Application.Features.Orders.DTOs;
 
 public class OrderDto
 {
+    public string? DeliveryCompletionSource { get; set; }
     public int Id { get; set; }
     public int BranchId { get; set; }
     public int? OriginBranchId { get; set; }
@@ -18,6 +19,7 @@ public class OrderDto
     public string? CustomerName { get; set; }
     public string? CustomerPhone { get; set; }
     public int? AddressId { get; set; }
+    public string? AddressVersion { get; set; }
     public string? AddressDescription { get; set; }
     /// <summary>Apartamento, torre, referencia, etc. (Address.AdditionalInfo)</summary>
     public string? AddressAdditionalInfo { get; set; }
