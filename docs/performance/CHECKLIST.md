@@ -121,7 +121,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M25-F03 | Historial y auditoría de cierre | Pendiente | — | — | — | — |
 | M25-F04 | Movimientos de caja fuerte | Pendiente | — | — | — | — |
 | M25-F05 | Préstamos y conciliación | Pendiente | — | — | — | — |
-| M26-F01 | Listado, filtros y resumen gastos | Pendiente | — | — | — | — |
+| M26-F01 | Listado, filtros y resumen gastos | Bloqueado | 2026-10-26 | [Informe](reviews/2026-10-26-M26-F01.md) | [Vue #44](https://github.com/savelasquezs/senorArrozFront/pull/44), [API #70](https://github.com/savelasquezs/SenorArroz/pull/70) | Corrección de carreras/respuestas obsoletas, deduplicación HTTP y token de cancelación hasta EF; PRs en borrador hasta CI final. Sin SQL ni mediciones productivas. |
 | M26-F02 | Crear/editar gasto y conceptos | Pendiente | — | — | — | — |
 | M26-F03 | Categorías y encabezados | Pendiente | — | — | — | — |
 | M26-F04 | Imputación gastos y menú | Pendiente | — | — | — | — |
