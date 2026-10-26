@@ -12,6 +12,11 @@
 
 Este documento resume reglas funcionales que Codex debe respetar antes de modificar pedidos, pagos, cocina, domicilios, impresión, caja o módulos relacionados.
 
+## Opciones del listado de pedidos
+
+- El selector de domiciliarios consulta una proyección completa de ID/nombre de pedidos de domicilio del rango Colombia, sin descargar páginas de pedidos ni limitarse a la página visible. El alcance local/remoto conserva las mismas autorizaciones; remoto exige el origen operativo y destino del mismo tenant.
+- Las cancelaciones de lecturas de pedidos se propagan desde HTTP a MediatR/EF. No alteran las reglas de mutaciones, pagos ni reservas.
+
 Los timestamps de estados con `Z` u offset explícito se normalizan a UTC al leerlos;
 la zona horaria del servidor no modifica los instantes ni los límites de espera.
 
