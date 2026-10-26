@@ -7,6 +7,7 @@ namespace SenorArroz.Application.Common.Interfaces;
 public interface IInventoryService
 {
     Task<IReadOnlyList<ProductAvailabilityDto>> GetAvailabilityAsync(IReadOnlyCollection<int> productIds, int branchId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ProductAvailabilityDto>> GetAvailabilityAsync(IReadOnlyCollection<int> productIds, int branchId, CancellationToken cancellationToken, bool sharedCatalog);
     Task SnapshotAndReserveAsync(Order order, bool deferStrictReservation, string operationKey, CancellationToken cancellationToken);
     Task ConsumeOrderAsync(Order order, string operationKey, CancellationToken cancellationToken);
     Task ReleaseOrderAsync(Order order, string operationKey, CancellationToken cancellationToken);
