@@ -36,18 +36,27 @@ namespace SenorArroz.Application.Features.Customers.Commands
                 throw new NotFoundException($"Cliente con ID {request.Id} no encontrado");
             }
 
-            // Validate phone doesn't exist for other customers
-            if (!string.IsNullOrWhiteSpace(request.Phone1)
-                && ColombianPhoneNormalizer.TryNormalize(request.Phone1, out _)
-                && await _customerRepository.PhoneExistsAsync(request.Phone1, _currentTenant.TenantId, request.Id))
+            // Current mobiles already belong to this customer; rechecking them on
+            // every name/username edit triggers two unnecessary EXISTS queries.
+            // Still check any genuinely new mobile across the current tenant.
+            var ownedMobiles = new HashSet<string>(StringComparer.Ordinal);
+            if (ColombianPhoneNormalizer.TryNormalize(customer.Phone1, out var existingPhone1))
+                ownedMobiles.Add(existingPhone1);
+            if (ColombianPhoneNormalizer.TryNormalize(customer.Phone2, out var existingPhone2))
+                ownedMobiles.Add(existingPhone2);
+
+            if (ColombianPhoneNormalizer.TryNormalize(request.Phone1, out var requestedPhone1)
+                && !ownedMobiles.Contains(requestedPhone1)
+                && await _customerRepository.PhoneExistsAsync(
+                    request.Phone1!, _currentTenant.TenantId, request.Id, cancellationToken))
             {
                 throw new BusinessException($"Ya existe otro cliente con el teléfono {request.Phone1} en este restaurante");
             }
 
-            if (!string.IsNullOrEmpty(request.Phone2)
-                && ColombianPhoneNormalizer.TryNormalize(request.Phone2, out _)
-                &&
-                await _customerRepository.PhoneExistsAsync(request.Phone2, _currentTenant.TenantId, request.Id))
+            if (ColombianPhoneNormalizer.TryNormalize(request.Phone2, out var requestedPhone2)
+                && !ownedMobiles.Contains(requestedPhone2)
+                && await _customerRepository.PhoneExistsAsync(
+                    request.Phone2!, _currentTenant.TenantId, request.Id, cancellationToken))
             {
                 throw new BusinessException($"Ya existe otro cliente con el teléfono {request.Phone2} en este restaurante");
             }
@@ -65,9 +74,9 @@ namespace SenorArroz.Application.Features.Customers.Commands
 
             customer = await _customerRepository.UpdateAsync(customer, cancellationToken);
 
-            // Return complete customer with addresses
-            var updatedCustomer = await _customerRepository.GetByIdWithAddressesAsync(customer.Id, cancellationToken);
-            var customerDto = _mapper.Map<CustomerDto>(updatedCustomer);
+            // UpdateAsync already reloads the full customer with addresses after saving.
+            // Reuse its returned graph instead of running the same split query again.
+            var customerDto = _mapper.Map<CustomerDto>(customer);
 
             var orderStatistics = await _customerRepository.GetOrderStatisticsForCustomersAsync(
                 new[] { customer.Id }, cancellationToken);
