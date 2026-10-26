@@ -17,6 +17,8 @@ public sealed class CustomerUpdateReadTests
         var repo = new Mock<ICustomerRepository>();
         repo.Setup(r => r.GetByIdAsync(original.Id, token)).ReturnsAsync(original);
         repo.Setup(r => r.UpdateAsync(It.IsAny<Customer>(), token)).ReturnsAsync(updated);
+        // A duplicate hydration succeeds too, but the regression must detect the redundant call.
+        repo.Setup(r => r.GetByIdWithAddressesAsync(original.Id, token)).ReturnsAsync(updated);
         repo.Setup(r => r.GetOrderStatisticsForCustomersAsync(
                 It.IsAny<IReadOnlyCollection<int>>(), token))
             .ReturnsAsync((IReadOnlyDictionary<int, CustomerOrderStatistics>)
