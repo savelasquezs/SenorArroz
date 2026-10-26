@@ -42,6 +42,8 @@ public class SearchOrdersQuery : IRequest<PagedResult<OrderDto>>
     public string SortOrder { get; set; } = "asc";
     /// <summary>Si true, excluye reservas cuyo reservedFor es posterior a hoy (fin del día)</summary>
     public bool ExcludeFutureReservations { get; set; } = false;
+    /// <summary>Excluir reservas entregadas/canceladas antes del conteo y la paginación.</summary>
+    public bool ActiveReservationsOnly { get; set; } = false;
 
     /// <summary>
     /// Historial del domiciliario: junto con <see cref="Status"/> = Delivered incluye también pedidos

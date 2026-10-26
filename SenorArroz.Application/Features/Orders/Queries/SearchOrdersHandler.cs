@@ -101,7 +101,8 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
             request.TotalDigitsPrefix,
             request.AppId,
             request.AppPaymentsUnsettledOnly,
-            request.TransferVerificationMode, cancellationToken, originBranchId: originFilter);
+            request.TransferVerificationMode, cancellationToken, originBranchId: originFilter,
+            activeReservationsOnly: request.ActiveReservationsOnly);
 
         var dtos = _mapper.Map<List<OrderDto>>(result.Items);
 
