@@ -141,7 +141,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M29-F05 | Rendimiento de domicilios | Pendiente | — | — | — | — |
 | M29-F06 | Comparación entre sucursales | Pendiente | — | — | — | — |
 | M30-F01 | Listado bandeja y no leídos | Analizado | 2026-10-18 | [Informe](reviews/2026-10-18-M30-F01.md) | [PR API](https://github.com/savelasquezs/SenorArroz/pull/41) | Consulta agrupada y filtros compartidos; CI y frontend pendientes. Sin SQL productivo. |
-| M30-F02 | Carga mensajes y adjuntos | Pendiente | — | — | — | — |
+| M30-F02 | Carga mensajes y adjuntos | Analizado | 2026-10-26 | [Informe](reviews/2026-10-26-M30-F02.md) | [Vue #46](https://github.com/savelasquezs/senorArrozFront/pull/46) | Corrección de carreras y HTTP solapados en PR borrador. Esperando verificación final de CI del head; no se añaden SQL, despliegue ni métricas productivas. |
 | M30-F03 | Enviar texto/medios/menú | Pendiente | — | — | — | — |
 | M30-F04 | Plantillas y respuestas rápidas | Pendiente | — | — | — | — |
 | M30-F05 | Tomar/transferir/cerrar conversación | Pendiente | — | — | — | — |
