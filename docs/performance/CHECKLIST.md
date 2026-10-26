@@ -32,7 +32,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M05-F03 | Precios, presentaciones y fotos | Pendiente | — | — | — | — |
 | M05-F04 | Stock y disponibilidad | Pendiente | — | — | — | — |
 | M06-F01 | Búsqueda por teléfono | Mejora aprobada | 2026-10-25 | [Informe](reviews/2026-10-25-M06-F01.md) | [Vue #43](https://github.com/savelasquezs/senorArrozFront/pull/43), [API #66](https://github.com/savelasquezs/SenorArroz/pull/66) | Ampliación autorizada: estados de búsqueda, contexto efectivo, abort y sugerencias de 10 con selección completa. CI de implementación: Vue 855/855; API 1363/1363 y PostgreSQL (2 SELECT por página con resultados). Ver informe y revisión final de los PR para SHA/checks/merge posteriores. Sin migración ni métricas/despliegue productivos verificados. |
-| M06-F02 | Alta/edición cliente | Pendiente | — | — | — | — |
+| M06-F02 | Alta/edición cliente | Analizado | 2026-10-26 | [Informe](reviews/2026-10-26-M06-F02.md) | [API #68](https://github.com/savelasquezs/SenorArroz/pull/68) | Corrección en rama: reusar el cliente completo devuelto por UpdateAsync; no repetir validaciones de teléfonos propios; propagar cancelación. CI final pendiente de verificar, sin migración ni métricas productivas. |
 | M06-F03 | Direcciones y barrio | Pendiente | — | — | — | — |
 | M06-F04 | Dirección-servicio por sucursal | Pendiente | — | — | — | — |
 | M06-F05 | Historial y estadísticas cliente | PR listo para revisión | 2026-10-19 | [Informe](reviews/2026-10-19-M06-F05.md) | [PR backend #44](https://github.com/savelasquezs/SenorArroz/pull/44) | CI verde; p50/p95 y SQL por medir antes de merge |
