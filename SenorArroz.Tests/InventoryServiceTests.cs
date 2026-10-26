@@ -12,6 +12,21 @@ namespace SenorArroz.Tests;
 
 public sealed class InventoryServiceTests
 {
+    [Fact]
+    public async Task Shared_catalog_availability_uses_operational_branch_balances()
+    {
+        await using var db = Context(nameof(Shared_catalog_availability_uses_operational_branch_balances));
+        var category = new ProductCategory { Id = 1, BranchId = 1, Name = "Bebidas" };
+        var expense = new Expense { Id = 1, Name = "Unidad", TracksInventory = true, InventoryActive = true };
+        var product = new Product { Id = 1, CategoryId = 1, Category = category, Name = "Bebida", Active = true,
+            InventoryEnabled = true, InventoryControlMode = InventoryControlMode.Strict };
+        db.AddRange(category, expense, product, new ProductExpenseRequirement { ProductId = 1, ExpenseId = 1, BaseQuantity = 1 },
+            new InventoryBalance { BranchId = 1, ExpenseId = 1, QuantityOnHand = 1 },
+            new InventoryBalance { BranchId = 2, ExpenseId = 1, QuantityOnHand = 9 });
+        await db.SaveChangesAsync();
+        var result = await Service(db).GetAvailabilityAsync([1], 2, default, true);
+        Assert.Equal(9, Assert.Single(result).MaximumQuantity);
+    }
     private sealed class CurrentUser(string role = "Admin") : ICurrentUser
     {
         public int Id => 99;

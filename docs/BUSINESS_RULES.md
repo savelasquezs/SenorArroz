@@ -671,3 +671,5 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 
 ## Consultas del mapa de gestión
 GET /api/deliverymen/map devuelve pedidos de domicilio en camino/entregados del día Colombia, paginados hasta 200 por página, y las últimas ubicaciones de ese día en la primera página. Usa la sucursal autorizada y el tenant del servidor. No carga líneas ni pagos. El endpoint individual de ubicación sigue disponible.
+
+La disponibilidad del POS usa la sucursal operativa del borrador. La consulta forOrderCreation exige rol de gestión y sucursal activa del mismo tenant; el catálogo de productos compartido conserva sus recetas y se cruza con los saldos de esa sede. Las consultas administrativas conservan su alcance anterior.

@@ -15,10 +15,13 @@ public sealed class InventoryService(
     IClock clock,
     IBranchContext branchContext) : IInventoryService
 {
-    public async Task<IReadOnlyList<ProductAvailabilityDto>> GetAvailabilityAsync(IReadOnlyCollection<int> productIds, int branchId, CancellationToken ct)
+    public Task<IReadOnlyList<ProductAvailabilityDto>> GetAvailabilityAsync(IReadOnlyCollection<int> productIds, int branchId, CancellationToken ct)
+        => GetAvailabilityAsync(productIds, branchId, ct, false);
+
+    public async Task<IReadOnlyList<ProductAvailabilityDto>> GetAvailabilityAsync(IReadOnlyCollection<int> productIds, int branchId, CancellationToken ct, bool sharedCatalog)
     {
         var products = await db.Products.AsNoTracking().Include(x => x.Category)
-            .Where(x => productIds.Contains(x.Id) && x.Category.BranchId == branchId).ToListAsync(ct);
+            .Where(x => productIds.Contains(x.Id) && (sharedCatalog || x.Category.BranchId == branchId)).ToListAsync(ct);
         var scopedProductIds = products.Select(x => x.Id).ToArray();
         var requirements = await db.ProductExpenseRequirements.AsNoTracking().Include(x => x.Expense)
             .Where(x => scopedProductIds.Contains(x.ProductId)).ToListAsync(ct);
