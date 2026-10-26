@@ -43,6 +43,11 @@ public class StartDeliveryWorkSessionHandler : IRequestHandler<StartDeliveryWork
         if (string.IsNullOrWhiteSpace(request.DeviceInstallationId))
             throw new BusinessException("El identificador del dispositivo es obligatorio.");
 
+        await using var transaction = _db.Database.IsRelational() && _db.Database.CurrentTransaction is null
+            ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
+        await DeliveryRouteScope.LockDriversAsync(_db, [_currentUser.Id], cancellationToken);
+        await DeliveryRouteScope.EnsureCurrentSessionAsync(_db, _currentUser, cancellationToken);
+
         var branch = await _db.Branches.FirstOrDefaultAsync(x => x.Id == _currentUser.BranchId, cancellationToken)
             ?? throw new BusinessException("La sucursal del domiciliario no existe.");
         var nowUtc = ColombiaTimeHelper.EnsureUtc(_clock.UtcNow);
@@ -94,6 +99,7 @@ public class StartDeliveryWorkSessionHandler : IRequestHandler<StartDeliveryWork
             {
                 UpdateDevice(active, request, nowUtc);
                 await _db.SaveChangesAsync(cancellationToken);
+                if (transaction is not null) await transaction.CommitAsync(cancellationToken);
                 return DeliveryWorkSessionDtoMapper.Map(active, branch);
             }
 
@@ -116,6 +122,7 @@ public class StartDeliveryWorkSessionHandler : IRequestHandler<StartDeliveryWork
         };
         _db.DeliveryWorkSessions.Add(session);
         await _db.SaveChangesAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         _scheduleSignal?.Pulse();
 
         return DeliveryWorkSessionDtoMapper.Map(session, branch);

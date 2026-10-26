@@ -13,7 +13,7 @@ public static class DeliveryRouteCompletion
 
     public static bool Complete(DeliveryRoute route, IReadOnlyCollection<Order> orders, DateTime end)
     {
-        if (route.CompletedAtUtc.HasValue || route.Status == DeliveryRouteStatus.Cancelled
+        if (route.ClosureSource == "legacy" || route.CompletedAtUtc.HasValue || route.Status == DeliveryRouteStatus.Cancelled
             || orders.Count == 0 || !orders.Any(o => o.Status == OrderStatus.Delivered)
             || orders.Any(o => o.Status is not (OrderStatus.Delivered or OrderStatus.Cancelled))) return false;
         var start = route.DepartedAtUtc ?? orders.Select(o => o.GetStatusTimes().TryGetValue("ontheway", out var time)
@@ -31,7 +31,7 @@ public static class DeliveryRouteCompletion
     public static async Task<HashSet<int>> ResolveHistoryAsync(IApplicationDbContext db, IReadOnlyCollection<DeliveryRoute> routes,
         CancellationToken ct)
     {
-        var missing = routes.Where(r => r.CompletedAtUtc == null && Start(r).HasValue).ToList();
+        var missing = routes.Where(r => r.ClosureSource != "legacy" && r.CompletedAtUtc == null && Start(r).HasValue).ToList();
         var resolved = new HashSet<int>();
         if (missing.Count == 0) return resolved;
         var drivers = missing.Select(r => r.DeliverymanId).Distinct().ToArray();

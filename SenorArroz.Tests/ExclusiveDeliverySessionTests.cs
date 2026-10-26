@@ -393,8 +393,10 @@ public class ExclusiveDeliverySessionTests
         Assert.Null((await db.Users.SingleAsync()).ActiveSessionId);
     }
 
-    [Fact]
-    public async Task CloseWorkSession_OldDeviceCannotCloseCurrentDeviceSession()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CloseWorkSession_OldDeviceOrAuthSessionCannotCloseCurrentSession(bool sameDevice)
     {
         await using var db = CreateDb();
         var now = new DateTime(2026, 7, 23, 15, 0, 0, DateTimeKind.Utc);
@@ -410,16 +412,20 @@ public class ExclusiveDeliverySessionTests
             LastCommunicationAt = now,
             Status = DeliveryWorkSessionStatus.Active,
         });
+        if (sameDevice) db.Users.Add(new User { Id = 1, BranchId = 7, Name = "Driver", Email = "driver@local.test",
+            ActiveSessionId = Guid.NewGuid() });
         await db.SaveChangesAsync();
         var currentUser = new Mock<ICurrentUser>();
         currentUser.SetupGet(x => x.Id).Returns(1);
-        currentUser.SetupGet(x => x.DeviceInstallationId).Returns("device-a");
+        currentUser.SetupGet(x => x.DeviceInstallationId).Returns(sameDevice ? "device-b" : "device-a");
+        if (sameDevice) currentUser.SetupGet(x => x.SessionId).Returns(Guid.NewGuid());
         var handler = new CloseMyDeliveryWorkSessionHandler(
             db,
             currentUser.Object,
             new FakeClock(now));
 
-        await handler.Handle(new CloseMyDeliveryWorkSessionCommand(), default);
+        if (sameDevice) await Assert.ThrowsAsync<SessionReplacedException>(() => handler.Handle(new CloseMyDeliveryWorkSessionCommand(), default));
+        else await handler.Handle(new CloseMyDeliveryWorkSessionCommand(), default);
 
         Assert.Equal(
             DeliveryWorkSessionStatus.Active,

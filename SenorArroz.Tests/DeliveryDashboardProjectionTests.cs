@@ -10,11 +10,16 @@ namespace SenorArroz.Tests;
 
 public class DeliveryDashboardProjectionTests
 {
-    [Fact]
-    public async Task DeliveredOrders_LoadOnlyAnalyticsFieldsAndDriverName()
+    [Theory]
+    [InlineData(null, 15d)]
+    [InlineData("next_route", 0d)]
+    [InlineData("return", 0d)]
+    [InlineData("legacy", 0d)]
+    [InlineData("offline_confirmation", 0d)]
+    public async Task DeliveredOrders_LoadOnlyAnalyticsFieldsAndDriverName(string? source, double expectedMinutes)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(nameof(DeliveredOrders_LoadOnlyAnalyticsFieldsAndDriverName)).Options;
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
         await using var db = new ApplicationDbContext(options, currentTenant: TestTenantContext.Default,
             tenantExecutionContext: TestTenantContext.Default);
         var branch = new Branch { Name = "S", Address = "A", Phone1 = "1", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
@@ -31,7 +36,7 @@ public class DeliveryDashboardProjectionTests
             StatusTimes = JsonSerializer.Serialize(new Dictionary<string, DateTime>
             { ["ready"] = delivered.AddMinutes(-15), ["delivered"] = delivered }),
             Total = 20000, Subtotal = 20000, GuestName = "Do not return this field",
-            DeliveryFee = 3000,
+            DeliveryFee = 3000, DeliveryCompletionSource = source,
         };
         db.Orders.Add(order);
         await db.SaveChangesAsync();
@@ -45,5 +50,10 @@ public class DeliveryDashboardProjectionTests
         Assert.Null(item.GuestName);
         Assert.Equal(3000, item.DeliveryFee);
         Assert.Contains("delivered", item.StatusTimes);
+        Assert.Equal(source, item.DeliveryCompletionSource);
+        var summary = SenorArroz.Application.Features.Dashboard.Services.DeliveryDashboardAggregator.Build(
+            items, [], delivered.AddDays(-1), delivered.AddDays(1));
+        Assert.Equal(expectedMinutes, summary.AvgDeliveryMinutes);
+        Assert.Equal(3000, Assert.Single(summary.Deliverymen).DeliveryFeeTotal);
     }
 }

@@ -18,6 +18,8 @@ namespace SenorArroz.Application.Mappings
 
             // CreateUserDto -> User (para crear)
             CreateMap<CreateUserDto, User>()
+                .ForMember(dest => dest.DeliveryContextVersion, opt => opt.Ignore())
+                .ForMember(dest => dest.LastDeliveryTakeId, opt => opt.Ignore())
                 .ForMember(dest => dest.Id, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())
@@ -42,6 +44,8 @@ namespace SenorArroz.Application.Mappings
 
             // UpdateUserDto -> User (para actualizar)
             CreateMap<UpdateUserDto, User>()
+                .ForMember(dest => dest.DeliveryContextVersion, opt => opt.Ignore())
+                .ForMember(dest => dest.LastDeliveryTakeId, opt => opt.Ignore())
                 .ForMember(dest => dest.Id, opt => opt.Ignore())
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.UpdatedAt, opt => opt.Ignore())

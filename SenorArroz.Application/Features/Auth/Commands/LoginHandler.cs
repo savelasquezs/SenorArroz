@@ -2,6 +2,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Auth.DTOs;
 using SenorArroz.Domain.Entities;
@@ -66,6 +67,9 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 ? NormalizeDeviceId(request.DeviceInstallationId)
                 : null;
 
+            await using var transaction = _db.Database.IsRelational() && _db.Database.CurrentTransaction is null
+                ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
+            await DeliveryRouteScope.LockDriversAsync(_db, [user.Id], cancellationToken);
             var trackedUser = await _db.Users.FirstAsync(
                     candidate => candidate.Id == user.Id && candidate.Active,
                     cancellationToken);
@@ -106,6 +110,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             };
 
             await _refreshTokenRepository.AddAsync(refreshTokenEntity, cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
 
             // Mapear respuesta
             var userInfo = _mapper.Map<UserInfoDto>(user);

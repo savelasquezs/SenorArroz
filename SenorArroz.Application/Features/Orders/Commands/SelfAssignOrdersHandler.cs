@@ -29,6 +29,8 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
     private readonly IApplicationDbContext? _db;
     private readonly IDeliveryRoutingPlanService? _routingPlans;
     private readonly IClock? _clock;
+    private readonly SenorArroz.Application.Common.Services.DeliveryOperationsService? _operations;
+    private readonly IOrderMutationContext? _mutation;
     private readonly DeliveryRoutingOptions _routingOptions;
 
     public SelfAssignOrdersHandler(
@@ -41,7 +43,8 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
         ILogger<SelfAssignOrdersHandler> logger,
         IApplicationDbContext? db = null,
         IDeliveryRoutingPlanService? routingPlans = null, IClock? clock = null,
-        IOptions<DeliveryRoutingOptions>? routingOptions = null)
+        IOptions<DeliveryRoutingOptions>? routingOptions = null,
+        SenorArroz.Application.Common.Services.DeliveryOperationsService? operations = null, IOrderMutationContext? mutation = null)
     {
         _orderRepository = orderRepository;
         _mapper = mapper;
@@ -53,6 +56,8 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
         _db = db;
         _routingPlans = routingPlans;
         _clock = clock;
+        _operations = operations;
+        _mutation = mutation;
         _routingOptions = routingOptions?.Value ?? new DeliveryRoutingOptions();
     }
 
@@ -71,13 +76,26 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             throw new RoutingPlanStaleException("Actualiza la vista previa antes de aceptar la selección.");
 
         IDbContextTransaction? transaction = null;
-        if (_db?.Database.IsRelational() == true)
+        if (_db?.Database.IsRelational() == true && _db.Database.CurrentTransaction is null)
             transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
         DeliveryRoutingPlan? activePlan = null;
         DeliveryRouteProposal? proposal = null;
         try
         {
+            if (_db is not null) await SenorArroz.Application.Common.Helpers.DeliveryRouteScope.LockDriversAsync(_db, [_currentUser.Id], cancellationToken);
+            if (_db is not null) await SenorArroz.Application.Common.Helpers.DeliveryRouteScope.EnsureCurrentSessionAsync(_db, _currentUser, cancellationToken);
+            if (_db?.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) == true)
+            {
+                var lockIds = request.OrderIds.Concat(await _db.Orders.AsNoTracking()
+                    .Where(o => o.DeliveryManId == _currentUser.Id && o.DeliveryRouteId.HasValue
+                        && _db.DeliveryRoutes.Any(r => r.Id == o.DeliveryRouteId
+                            && (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress)))
+                    .Select(o => o.Id).ToListAsync(cancellationToken)).Distinct().OrderBy(id => id);
+                foreach (var id in lockIds)
+                    await _db.Database.ExecuteSqlInterpolatedAsync(
+                        $"SELECT id FROM \"order\" WHERE id = {id} AND tenant_id = {_currentUser.TenantId} FOR UPDATE", cancellationToken);
+            }
             if (request.ProposalId.HasValue || request.ExpectedPlanVersion.HasValue)
             {
                 if (_db is null || !request.ExpectedPlanVersion.HasValue)
@@ -137,7 +155,9 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             if (request.ModifiedProposal && DeliveryRoutingPolicy.SelectionFingerprint(selectedOrders) != request.SelectionFingerprint)
                 throw new RoutingPlanStaleException("La selección cambió después de calcularla. Actualiza la vista previa.");
 
-            if (await _deliveryRouteWorkflow.DeliverymanHasPendingOrdersOnActiveRouteAsync(
+            if (request.ReplaceActiveRoute && _operations is not null)
+                await _operations.CompleteActiveAsync("next_route", null, cancellationToken);
+            else if (await _deliveryRouteWorkflow.DeliverymanHasPendingOrdersOnActiveRouteAsync(
                     _currentUser.Id,
                     _currentUser.BranchId,
                     cancellationToken,
@@ -223,7 +243,7 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             {
                 try
                 {
-                    await _notificationService.NotifyOrderAssignedToDelivery(order);
+                    await OrderPostCommitNotifications.Publish(_mutation, () => _notificationService.NotifyOrderAssignedToDelivery(order));
                 }
                 catch (Exception ex)
                 {
@@ -235,7 +255,7 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             {
                 try
                 {
-                    await _notificationService.NotifyRouteProposalClaimed(_currentUser.BranchId, proposal.Id, _currentUser.Id);
+                    await OrderPostCommitNotifications.Publish(_mutation, () => _notificationService.NotifyRouteProposalClaimed(_currentUser.BranchId, proposal.Id, _currentUser.Id));
                 }
                 catch (Exception ex)
                 {
@@ -263,7 +283,7 @@ public class SelfAssignOrdersHandler : IRequestHandler<SelfAssignOrdersCommand, 
             {
                 try
                 {
-                    await _routingPlans.RecalculateAsync(_currentUser.BranchId, cancellationToken);
+                    await OrderPostCommitNotifications.Publish(_mutation, async () => { await _routingPlans.RecalculateAsync(_currentUser.BranchId, CancellationToken.None); });
                 }
                 catch (Exception ex)
                 {

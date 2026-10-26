@@ -57,6 +57,18 @@ public class DeliverymanController : ControllerBase
         return Ok();
     }
 
+    [HttpGet("me/active-route")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<IActionResult> ActiveRoute([FromServices] SenorArroz.Application.Common.Services.DeliveryOperationsService operations,
+        CancellationToken ct) => Ok(await operations.ContextAsync(ct));
+
+    [RequestSizeLimit(32768)]
+    [HttpPost("me/operations")]
+    [Authorize(Roles = "Deliveryman")]
+    public async Task<IActionResult> ApplyOperation([FromBody] SenorArroz.Application.Common.Services.DeliveryOperationRequest request,
+        [FromServices] SenorArroz.Application.Common.Services.DeliveryOperationsService operations, CancellationToken ct) =>
+        Ok(await operations.ExecuteAsync(request, ct));
+
     [HttpGet("me/day-state")]
     [Authorize(Roles = "Deliveryman")]
     public async Task<ActionResult<MyDeliverymanDayStateDto>> GetMyDayState([FromQuery] string? date = null)

@@ -1287,6 +1287,7 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
                 Id = o.DeliveryMan.Id, Name = o.DeliveryMan.Name, BranchId = o.DeliveryMan.BranchId,
             },
             StatusTimes = o.StatusTimes,
+            DeliveryCompletionSource = o.DeliveryCompletionSource,
             PrepareAt = o.PrepareAt,
             DeliveryFee = o.DeliveryFee,
             UpdatedAt = o.UpdatedAt,

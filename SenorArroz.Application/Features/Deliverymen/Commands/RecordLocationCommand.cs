@@ -12,7 +12,7 @@ using SenorArroz.Application.Options;
 namespace SenorArroz.Application.Features.Deliverymen.Commands;
 
 public sealed record RecordLocationResult(bool ContinueActiveTracking, int? DeliveryRouteId,
-    DeliveryReturnReview? ReturnReview = null);
+    DeliveryReturnReview? ReturnReview = null, long ContextRevision = 0);
 
 public class RecordLocationCommand : IRequest<RecordLocationResult>
 {
@@ -96,11 +96,11 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
         if (routeId.HasValue && !await _db.DeliveryRoutes.AsNoTracking().AnyAsync(r =>
             r.Id == routeId && r.DeliverymanId == deliverymanId && r.BranchId == branchId, ct))
             throw new BusinessException("La ruta indicada no pertenece al domiciliario.");
-        if (live)
+        if (live && !routeId.HasValue)
         {
-            // The client may still carry a previous trip ID. The server owns the live association.
             routeId = await DeliveryRouteScope.Current(_db, branchId, deliverymanId, now)
-                .AsNoTracking().Select(r => (int?)r.Id).FirstOrDefaultAsync(ct);
+                .AsNoTracking().Where(r => r.CreatedAt <= recorded)
+                .Select(r => (int?)r.Id).FirstOrDefaultAsync(ct);
         }
         else if (routeId.HasValue)
         {
@@ -158,7 +158,9 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
         var routeId = await DeliveryRouteScope.Current(_db, _currentUser.BranchId, deliverymanId,
                 ColombiaTimeHelper.EnsureUtc(_clock.UtcNow)).AsNoTracking()
             .Select(r => (int?)r.Id).FirstOrDefaultAsync(ct);
-        return new RecordLocationResult(routeId.HasValue, routeId);
+        var revision = await _db.Users.AsNoTracking().Where(u => u.Id == deliverymanId)
+            .Select(u => u.DeliveryContextVersion).SingleOrDefaultAsync(ct);
+        return new RecordLocationResult(routeId.HasValue, routeId, ContextRevision: revision);
     }
 
     private static void Validate(RecordLocationCommand request)

@@ -13,7 +13,17 @@ public sealed class PostgresDeliveryAutoCompletionRouteLock(
 {
     private const int AdvisoryLockNamespace = 1_397_905_218;
 
-    public async Task ExecuteAsync(int routeId, Func<CancellationToken, Task> action,
+    public Task ExecuteDriverAsync(int driverId, Func<CancellationToken, Task> action, CancellationToken ct = default) =>
+        ExecuteCoreAsync(null, driverId, action, ct);
+
+    public async Task ExecuteAsync(int routeId, Func<CancellationToken, Task> action, CancellationToken cancellationToken = default)
+    {
+        var driverId = await db.DeliveryRoutes.AsNoTracking().Where(r => r.Id == routeId)
+            .Select(r => (int?)r.DeliverymanId).SingleOrDefaultAsync(cancellationToken);
+        if (driverId.HasValue) await ExecuteCoreAsync(routeId, driverId.Value, action, cancellationToken);
+    }
+
+    private async Task ExecuteCoreAsync(int? routeId, int driverId, Func<CancellationToken, Task> action,
         CancellationToken cancellationToken = default)
     {
         var ownsTransaction = db.Database.CurrentTransaction is null;
@@ -24,9 +34,10 @@ public sealed class PostgresDeliveryAutoCompletionRouteLock(
 
         try
         {
-            if (db.Database.IsNpgsql())
+            await SenorArroz.Application.Common.Helpers.DeliveryRouteScope.LockDriversAsync(db, [driverId], cancellationToken);
+            if (db.Database.IsNpgsql() && routeId.HasValue)
                 await db.Database.ExecuteSqlInterpolatedAsync(
-                    $"SELECT pg_advisory_xact_lock({AdvisoryLockNamespace}, {routeId})",
+                    $"SELECT pg_advisory_xact_lock({AdvisoryLockNamespace}, {routeId.Value})",
                     cancellationToken);
             await action(cancellationToken);
             if (transaction is not null) await transaction.CommitAsync(cancellationToken);

@@ -16,42 +16,38 @@ namespace SenorArroz.Tests;
 public sealed class DeliveryReturnRecoveryTests
 {
     [Fact]
-    public async Task ReturnRecoversVisitedStopsAndKeepsUnvisitedOrderPending()
+    public async Task ReturnCompletesPendingOrdersWithoutHumanConfirmation()
     {
         await using var f = await Fixture.Create();
-        var review = await f.Service.ReconcileReturnAsync(f.Latest);
-        Assert.NotNull(review);
-        Assert.Equal(new[] { 3 }, review.PendingOrderIds);
-        Assert.Equal(new[] { 1, 2 }, f.Commands.Select(c => c.Id));
-        Assert.All(f.Commands, c => Assert.True(c.IsAutomaticDelivery));
-        Assert.Equal(OrderStatus.OnTheWay, f.Db.Orders.Single(x => x.Id == 3).Status);
-        Assert.Equal(DeliveryRouteStatus.InProgress, f.Db.DeliveryRoutes.Single().Status);
-    }
-
-    [Fact]
-    public async Task HumanConfirmationUsesNormalDeliveryAndCompletesRoute()
-    {
-        await using var f = await Fixture.Create();
-        var review = await f.Service.ReconcileReturnAsync(f.Latest);
-        await f.Service.ConfirmReturnedOrdersAsync(8, 7, 1, review!.ReturnLocationId, [3]);
-        Assert.Equal(3, f.Commands.Count);
-        Assert.False(f.Commands.Last().IsAutomaticDelivery);
+        Assert.Null(await f.Service.ReconcileReturnAsync(f.Latest));
+        Assert.Equal(new[] { 1, 2, 3 }, f.Commands.Select(c => c.Id));
+        Assert.All(f.Commands, c => Assert.Equal("return", c.RouteCompletionSource));
+        Assert.All(f.Commands, c => Assert.False(c.IsAutomaticDelivery));
         Assert.Equal(DeliveryRouteStatus.Completed, f.Db.DeliveryRoutes.Single().Status);
-        await f.Service.ConfirmReturnedOrdersAsync(8, 7, 1, review.ReturnLocationId, [3]);
-        Assert.Equal(3, f.Commands.Count);
     }
 
     [Fact]
-    public async Task ReturnReviewCannotDeliverReassignedOrderOrAnotherDriver()
+    public async Task RepeatedReturnAndLegacyConfirmationHaveNoDuplicateEffects()
     {
         await using var f = await Fixture.Create();
-        var review = await f.Service.ReconcileReturnAsync(f.Latest);
-        await Assert.ThrowsAsync<BusinessException>(() =>
-            f.Service.ConfirmReturnedOrdersAsync(8, 100, 1, review!.ReturnLocationId, [3]));
+        await f.Service.ReconcileReturnAsync(f.Latest);
+        await f.Service.ReconcileReturnAsync(f.Latest);
+        await f.Service.ConfirmReturnedOrdersAsync(8, 7, 1, f.Latest.Id, [3]);
+        Assert.Equal(3, f.Commands.Count);
+        Assert.Equal("return", f.Db.DeliveryRoutes.Single().ClosureSource);
+    }
+
+    [Fact]
+    public async Task ReturnPreservesReassignedOrdersAndRejectsAnotherDriver()
+    {
+        await using var f = await Fixture.Create();
         f.Db.Orders.Single(x => x.Id == 3).DeliveryManId = 100;
         await f.Db.SaveChangesAsync();
+        await f.Service.ReconcileReturnAsync(f.Latest);
+        Assert.Equal(OrderStatus.OnTheWay, f.Db.Orders.Single(x => x.Id == 3).Status);
+        Assert.DoesNotContain(f.Commands, c => c.Id == 3);
         await Assert.ThrowsAsync<BusinessException>(() =>
-            f.Service.ConfirmReturnedOrdersAsync(8, 7, 1, review!.ReturnLocationId, [3]));
+            f.Service.ConfirmReturnedOrdersAsync(8, 100, 1, f.Latest.Id, [3]));
     }
 
     private sealed class Fixture : IAsyncDisposable
@@ -70,6 +66,7 @@ public sealed class DeliveryReturnRecoveryTests
                 currentTenant: TestTenantContext.Default,
                 tenantExecutionContext: TestTenantContext.Default);
             var f = new Fixture { Db = db };
+            db.Users.Add(new User { Id = 7, BranchId = 1, Role = UserRole.Deliveryman });
             db.Branches.Add(new Branch
             {
                 Id = 1, Name = "Origin", Address = "A", Phone1 = "3000000000",
@@ -143,10 +140,16 @@ public sealed class DeliveryReturnRecoveryTests
                     await db.SaveChangesAsync(ct);
                     return new OrderDto { Id = order.Id, Status = order.Status };
                 });
+            var actor = new Mock<ICurrentUser>();
+            actor.SetupGet(x => x.Id).Returns(7);
+            actor.SetupGet(x => x.TenantId).Returns(1);
+            actor.SetupGet(x => x.BranchId).Returns(1);
+            var operations = new DeliveryOperationsService(db, actor.Object, new Clock(start.AddSeconds(270)),
+                sender.Object, Mock.Of<AutoMapper.IMapper>(), new InlineRouteLock());
             f.Service = new DeliveryAutoCompletionService(db, sender.Object,
                 new Clock(start.AddSeconds(270)),
                 NullLogger<DeliveryAutoCompletionService>.Instance,
-                new InlineRouteLock());
+                new InlineRouteLock(), operations: operations);
             return f;
         }
 

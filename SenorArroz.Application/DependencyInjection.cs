@@ -57,6 +57,7 @@ namespace SenorArroz.Application
             services.AddSingleton<WhatsAppAwayMessageService>();
             services.AddScoped<IDeliveryStayDetectionService, DeliveryStayDetectionService>();
             services.AddScoped<IDeliveryAutoCompletionService, DeliveryAutoCompletionService>();
+            services.AddScoped<DeliveryOperationsService>();
             services.AddScoped<IDeliveryStayClassificationService, DeliveryStayClassificationService>();
             services.AddScoped<IDeliveryIncidentEvidenceService, DeliveryIncidentEvidenceService>();
             services.AddScoped<IDeliveryTrackingAlertService, DeliveryTrackingAlertService>();

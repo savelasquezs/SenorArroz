@@ -15,6 +15,7 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.TakenByName, opt => opt.MapFrom(src => src.TakenBy.Name))
             .ForMember(dest => dest.CustomerName, opt => opt.MapFrom(src => src.Customer != null ? src.Customer.Name : null))
             .ForMember(dest => dest.CustomerPhone, opt => opt.MapFrom(src => src.Customer != null ? src.Customer.Phone1 : null))
+            .ForMember(dest => dest.AddressVersion, opt => opt.MapFrom(src => src.Address != null ? src.Address.UpdatedAt.Ticks.ToString() : null))
             .ForMember(dest => dest.AddressDescription, opt => opt.MapFrom(src => src.Address != null ? src.Address.AddressText : null))
             .ForMember(dest => dest.AddressAdditionalInfo, opt => opt.MapFrom(src => src.Address != null ? src.Address.AdditionalInfo : null))
             .ForMember(dest => dest.NeighborhoodId, opt => opt.MapFrom(src => src.Address != null && src.Address.Neighborhood != null ? src.Address.Neighborhood.Id : (int?)null))
@@ -85,6 +86,7 @@ public class OrderMappingProfile : Profile
 
         // CreateOrderDto -> Order
         CreateMap<CreateOrderDto, Order>()
+            .ForMember(dest => dest.DeliveryCompletionSource, opt => opt.Ignore())
             .ForMember(dest => dest.OriginBranchId, opt => opt.Ignore())
             .ForMember(dest => dest.ManagementVersion, opt => opt.Ignore())
             .ForMember(dest => dest.TenantId, opt => opt.Ignore())
@@ -151,6 +153,7 @@ public class OrderMappingProfile : Profile
 
         // UpdateOrderDto -> Order (para actualizaciones)
         CreateMap<UpdateOrderDto, Order>()
+            .ForMember(dest => dest.DeliveryCompletionSource, opt => opt.Ignore())
             .ForMember(dest => dest.OriginBranchId, opt => opt.Ignore())
             .ForMember(dest => dest.ManagementVersion, opt => opt.Ignore())
             .ForMember(dest => dest.TenantId, opt => opt.Ignore())

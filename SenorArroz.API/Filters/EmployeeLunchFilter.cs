@@ -27,7 +27,7 @@ public sealed class EmployeeLunchFilter(IApplicationDbContext db, ICurrentUser a
             || action.ControllerName == "EmployeeLunch" && action.ActionName is "Me" or "Branch" or "Start" or "Finish"
             || action.ControllerName == "Auth" && action.ActionName is "RefreshToken" or "Logout"
             || action.ControllerName == "Deliveryman" && action.ActionName is "RecordLocation" or "RecordDeviceEvent"
-                or "StartWorkSession" or "RegisterDeviceToken" or "RemoveDeviceToken" or "CloseWorkSession";
+                or "StartWorkSession" or "RegisterDeviceToken" or "RemoveDeviceToken" or "CloseWorkSession" or "ApplyOperation";
         if (actor.IsAuthenticated && !read && !allowed && !terminal
             && await db.EmployeeLunches.AnyAsync(x => x.UserId == actor.Id && x.EndedAt == null, context.HttpContext.RequestAborted))
         {

@@ -48,7 +48,7 @@ public static class DeliveryDashboardAggregator
             if (prepMin != null)
                 prepList.Add(prepMin.Value);
 
-            var deliveryMinutes = delivered.HasValue && ready.HasValue
+            var deliveryMinutes = o.DeliveryCompletionSource is not ("next_route" or "return" or "legacy" or "offline_confirmation") && delivered.HasValue && ready.HasValue
                 ? (double?)(delivered.Value - ready.Value).TotalMinutes : null;
             deliveryMinutesByOrder[o] = deliveryMinutes;
             if (deliveryMinutes.HasValue)

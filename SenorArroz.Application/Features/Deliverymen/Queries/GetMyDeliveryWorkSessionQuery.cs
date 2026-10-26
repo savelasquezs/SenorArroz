@@ -26,6 +26,10 @@ public class GetMyDeliveryWorkSessionHandler : IRequestHandler<GetMyDeliveryWork
 
     public async Task<DeliveryWorkSessionDto?> Handle(GetMyDeliveryWorkSessionQuery request, CancellationToken cancellationToken)
     {
+        await using var transaction = _db.Database.IsRelational() && _db.Database.CurrentTransaction is null
+            ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
+        await DeliveryRouteScope.LockDriversAsync(_db, [_currentUser.Id], cancellationToken);
+        await DeliveryRouteScope.EnsureCurrentSessionAsync(_db, _currentUser, cancellationToken);
         var session = await _db.DeliveryWorkSessions
             .FirstOrDefaultAsync(x => x.DeliverymanId == _currentUser.Id && x.Status == DeliveryWorkSessionStatus.Active,
                 cancellationToken);
@@ -40,12 +44,14 @@ public class GetMyDeliveryWorkSessionHandler : IRequestHandler<GetMyDeliveryWork
                 nowUtc,
                 DeliveryWorkSessionEndReason.AutomaticClosure));
             await _db.SaveChangesAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
             return null;
         }
 
         session.LastCommunicationAt = nowUtc;
         var branch = await _db.Branches.FirstAsync(x => x.Id == session.BranchId, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         return DeliveryWorkSessionDtoMapper.Map(session, branch);
     }
 }

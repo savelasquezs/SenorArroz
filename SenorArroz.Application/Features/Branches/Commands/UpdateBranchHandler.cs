@@ -237,6 +237,8 @@ public class UpdateBranchHandler : IRequestHandler<UpdateBranchCommand, BranchDt
                     {
                         ["type"] = wasClosed ? "work_session_closed" : "work_session_updated",
                         ["workSessionId"] = session.Id.ToString(),
+                        ["deliverymanId"] = session.DeliverymanId.ToString(),
+                        ["tenantId"] = session.TenantId.ToString(),
                         ["autoCloseAt"] = session.AutoCloseAt.ToString("O"),
                     },
                     cancellationToken,

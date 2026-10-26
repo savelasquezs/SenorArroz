@@ -9,6 +9,7 @@ public class Order : TenantOwnedEntity
     /// <summary>Clave en <see cref="StatusTimes"/> para el instante UTC en que se asignó o reasignó el domiciliario.</summary>
     public const string DeliveryManAssignedStatusTimeKey = "delivery_man_assigned";
 
+    public string? DeliveryCompletionSource { get; set; }
     public int BranchId { get; set; }
     /// <summary>Immutable server-side snapshot of the workspace that took the order. Null for unknown legacy provenance.</summary>
     public int? OriginBranchId { get; set; }

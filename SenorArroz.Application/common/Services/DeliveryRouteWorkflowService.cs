@@ -17,18 +17,20 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
     private readonly DeliveryRouteOptions _opt;
     private readonly ILogger<DeliveryRouteWorkflowService> _logger;
     private readonly IClock _clock;
+    private readonly IDeliveryAutoCompletionRouteLock? _routeLock;
     private readonly IBackgroundWorkSignal<DeliveryRouteConsolidationWork>? _consolidationSignal;
 
     public DeliveryRouteWorkflowService(IApplicationDbContext db,
         IGoogleRoutesDrivingMetricsService routesMetrics, IOptions<DeliveryRouteOptions> options,
         ILogger<DeliveryRouteWorkflowService> logger, IClock clock,
-        IBackgroundWorkSignal<DeliveryRouteConsolidationWork>? consolidationSignal = null)
+        IBackgroundWorkSignal<DeliveryRouteConsolidationWork>? consolidationSignal = null, IDeliveryAutoCompletionRouteLock? routeLock = null)
     {
         _db = db;
         _routesMetrics = routesMetrics;
         _opt = options.Value;
         _logger = logger;
         _clock = clock;
+        _routeLock = routeLock;
         _consolidationSignal = consolidationSignal;
     }
 
@@ -46,18 +48,16 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         _db.DeliveryRouteStops.RemoveRange(oldStops);
         tracked.DeliveryRouteId = null;
 
-        // Manual cashier assignments before a courier logs in remain supported.
-        // Unbound trips can only be grouped within the same business day; GPS does
-        // not bind a trip from a previous workday or rewrite its operational clock.
-        var todayStart = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(now);
-        var candidates = session is not null
-            ? DeliveryRouteScope.Current(_db, tracked.BranchId, deliverymanId, now)
-            : _db.DeliveryRoutes.Where(r => r.DeliverymanId == deliverymanId && r.BranchId == tracked.BranchId
-                && r.WorkSessionId == null && r.LastAssignmentAtUtc >= todayStart && r.LastAssignmentAtUtc <= now
-                && ((r.Status == DeliveryRouteStatus.InProgress && r.RouteStartedAtUtc >= todayStart)
-                    || r.Status == DeliveryRouteStatus.Open));
+        var candidates = _db.DeliveryRoutes.Where(r => r.DeliverymanId == deliverymanId
+            && (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress));
         var activeRoutes = await candidates.Include(r => r.Stops)
             .OrderByDescending(r => r.LastAssignmentAtUtc).ThenByDescending(r => r.Id).ToListAsync(ct);
+        if (activeRoutes.Any(r => r.BranchId != tracked.BranchId))
+            throw new SenorArroz.Domain.Exceptions.BusinessException("El domiciliario tiene una ruta activa en otra sucursal.");
+        var todayStart = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(now);
+        if (activeRoutes.Any(r => (r.RouteStartedAtUtc ?? r.LastAssignmentAtUtc) < todayStart
+            && !r.CompletedAtUtc.HasValue))
+            throw new SenorArroz.Domain.Exceptions.BusinessException("Toma una nueva ruta desde la app para cerrar la ruta anterior.");
         var activeIds = activeRoutes.Select(r => r.Id).ToArray();
         var routeOrders = await _db.Orders.AsNoTracking()
             .Where(o => o.DeliveryRouteId.HasValue && activeIds.Contains(o.DeliveryRouteId.Value) && o.Id != tracked.Id)
@@ -79,6 +79,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
                 PerOrderBufferSeconds = _opt.PerOrderBufferSeconds,
                 ComplexAccessBufferSeconds = _opt.ComplexAccessBufferSeconds
             };
+            await DeliveryRouteScope.AdvanceContextAsync(_db, [deliverymanId], ct, Guid.NewGuid());
             _db.DeliveryRoutes.Add(route);
             await _db.SaveChangesAsync(ct);
         }
@@ -91,23 +92,15 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
             AddressSnapshotText = BuildAddressSnapshot(tracked)
         });
         tracked.DeliveryRouteId = route.Id;
+        route.StopCount = maxSequence + 1;
         route.LastAssignmentAtUtc = now;
         route.PerOrderBufferSeconds = _opt.PerOrderBufferSeconds;
         route.ComplexAccessBufferSeconds = _opt.ComplexAccessBufferSeconds;
         await _db.SaveChangesAsync(ct);
         if (route.Status == DeliveryRouteStatus.Open) _consolidationSignal?.Pulse();
-        if (route.Status == DeliveryRouteStatus.InProgress)
-        {
-            try
-            {
-                var stops = await _db.DeliveryRouteStops.Where(s => s.DeliveryRouteId == route.Id)
-                    .OrderBy(s => s.StopSequence).ToListAsync(ct);
-                var orders = await LoadOrdersAsync(stops, ct);
-                await ApplyRoutePlanningCoreAsync(route, stops, orders, ct, preserveRouteStartedAt: true);
-                await _db.SaveChangesAsync(ct);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            { _logger.LogWarning(ex, "Pedido {OrderId} asignado; no se pudieron recalcular métricas de ruta {RouteId}", tracked.Id, route.Id); }
+        if (route.Status == DeliveryRouteStatus.InProgress) {
+            route.ConsolidatedAtUtc = null;
+            _consolidationSignal?.Pulse();
         }
         foreach (var id in oldRouteIds.Where(id => id != route.Id)) await PruneEmptyOpenRouteAsync(id, ct);
     }
@@ -119,6 +112,9 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         var now = _clock.UtcNow;
         var priorStatus = route.Status;
         var completedByNextRoute = reason == "new_assignment" && DeliveryRouteCompletion.Complete(route, orders, now);
+        route.ClosureSource = completedByNextRoute ? "next_route" : "legacy";
+        route.ActualDurationSeconds = null;
+        route.MetSla = null;
         _db.EntityAuditLogs.Add(new EntityAuditLog
         {
             TenantId = route.TenantId, BranchId = route.BranchId, EntityType = "delivery_route",
@@ -208,8 +204,11 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         if (route is null || route.Status is DeliveryRouteStatus.Completed or DeliveryRouteStatus.Cancelled || route.Stops.Count == 0) return;
         var orders = (await LoadOrdersAsync(route.Stops, cancellationToken)).Values.ToList();
         if (orders.Count != route.Stops.Count || orders.Any(o => !IsTerminal(o.Status))) return;
-        if (route.Status == DeliveryRouteStatus.Open)
-            await CompleteOpenRouteWithFullMetaAsync(route, orders, cancellationToken);
+        if (route.Status == DeliveryRouteStatus.Open) {
+            if (orders.All(o => o.Status == OrderStatus.Cancelled))
+                await CloseTerminalAdministrativelyAsync(route, orders, "all_cancelled", cancellationToken);
+            else _consolidationSignal?.Pulse();
+        }
         else await TryCompleteInProgressRouteAsync(orderId, cancellationToken);
     }
 
@@ -223,7 +222,7 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
     {
         var now = _clock.UtcNow;
         var start = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(now);
-        return _db.DeliveryRoutes.Where(r => r.Status == DeliveryRouteStatus.Open && r.Stops.Any()
+        return _db.DeliveryRoutes.Where(r => (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress && r.ConsolidatedAtUtc == null) && r.Stops.Any()
             && (r.WorkSessionId == null && r.LastAssignmentAtUtc >= start && r.LastAssignmentAtUtc <= now
                 || r.WorkSessionId.HasValue && _db.DeliveryWorkSessions.Any(s => s.Id == r.WorkSessionId
                     && s.DeliverymanId == r.DeliverymanId && s.BranchId == r.BranchId
@@ -233,23 +232,49 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
     public async Task<int> ConsolidatePendingRoutesAsync(CancellationToken ct = default)
     {
         var cutoff = _clock.UtcNow.AddSeconds(-Math.Max(0, _opt.ConsolidationDelaySeconds));
-        var routes = await ConsolidatableRoutes().Include(r => r.Stops).Where(r => r.LastAssignmentAtUtc <= cutoff).ToListAsync(ct);
+        var routes = await ConsolidatableRoutes().AsNoTracking().Include(r => r.Stops)
+            .Where(r => r.LastAssignmentAtUtc <= cutoff).ToListAsync(ct);
         var count = 0;
-        foreach (var route in routes)
+        foreach (var calculated in routes)
         {
-            var orders = await LoadOrdersAsync(route.Stops, ct);
-            if (orders.Count != route.Stops.Count) continue;
-            if (orders.Values.All(o => IsTerminal(o.Status)))
-                await CompleteOpenRouteWithFullMetaAsync(route, orders.Values.ToList(), ct);
-            else
+            var revision = await _db.Users.AsNoTracking().Where(u => u.Id == calculated.DeliverymanId)
+                .Select(u => u.DeliveryContextVersion).SingleOrDefaultAsync(ct);
+            var ids = calculated.Stops.Select(s => s.OrderId).ToArray();
+            var orders = await _db.Orders.AsNoTracking().Include(o => o.Address).Where(o => ids.Contains(o.Id))
+                .ToDictionaryAsync(o => o.Id, ct);
+            if (orders.Count != ids.Length) continue;
+            await ApplyRoutePlanningCoreAsync(calculated, calculated.Stops.OrderBy(s => s.StopSequence).ToList(), orders,
+                ct, preserveRouteStartedAt: calculated.RouteStartedAtUtc.HasValue);
+            async Task Publish(CancellationToken token)
             {
-                // Delivered members remain part of history; never unlink them just to plan remaining work.
-                await ApplyRoutePlanningCoreAsync(route, route.Stops.OrderBy(s => s.StopSequence).ToList(), orders, ct);
+                if (revision != await _db.Users.AsNoTracking().Where(u => u.Id == calculated.DeliverymanId)
+                    .Select(u => u.DeliveryContextVersion).SingleOrDefaultAsync(token)) return;
+                var route = await _db.DeliveryRoutes.Include(r => r.Stops).SingleOrDefaultAsync(r => r.Id == calculated.Id, token);
+                if (route is null || route.Status is DeliveryRouteStatus.Completed or DeliveryRouteStatus.Cancelled
+                    || route.LastAssignmentAtUtc != calculated.LastAssignmentAtUtc
+                    || !route.Stops.OrderBy(s => s.StopSequence).Select(s => s.OrderId).SequenceEqual(calculated.Stops.OrderBy(s => s.StopSequence).Select(s => s.OrderId))) return;
+                route.PlannedDistanceMeters = calculated.PlannedDistanceMeters;
+                route.PlannedDrivingDurationSeconds = calculated.PlannedDrivingDurationSeconds;
+                route.ReturnToBranchMeters = calculated.ReturnToBranchMeters;
+                route.StopCount = calculated.StopCount;
+                route.ComplexAccessStopCount = calculated.ComplexAccessStopCount;
+                route.MetaDurationSeconds = calculated.MetaDurationSeconds;
+                route.PlanningWarnings = calculated.PlanningWarnings;
+                route.RouteStartedAtUtc ??= calculated.RouteStartedAtUtc;
                 route.ConsolidatedAtUtc = _clock.UtcNow;
                 route.Status = DeliveryRouteStatus.InProgress;
-                await _db.SaveChangesAsync(ct);
+                foreach (var stop in route.Stops) {
+                    var result = calculated.Stops.Single(s => s.Id == stop.Id);
+                    stop.RequiresComplexAccessBuffer = result.RequiresComplexAccessBuffer;
+                    stop.ComplexAccessMatchTerm = result.ComplexAccessMatchTerm;
+                    stop.ComplexAccessBonusSeconds = result.ComplexAccessBonusSeconds;
+                }
+                await DeliveryRouteScope.AdvanceContextAsync(_db, [route.DeliverymanId], token);
+                await _db.SaveChangesAsync(token);
+                count++;
             }
-            count++;
+            if (_routeLock is not null) await _routeLock.ExecuteAsync(calculated.Id, Publish, ct);
+            else await Publish(ct);
         }
         return count;
     }
@@ -317,28 +342,14 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         if (!preserveRouteStartedAt) route.RouteStartedAtUtc = route.LastAssignmentAtUtc.AddSeconds(_opt.ConsolidationDelaySeconds);
     }
 
-    private async Task CompleteOpenRouteWithFullMetaAsync(DeliveryRoute route, List<Order> orders, CancellationToken ct)
-    {
-        if (route.Stops.Count == 0 || orders.Count != route.Stops.Count || orders.Any(o => !IsTerminal(o.Status))) return;
-        await ApplyRoutePlanningCoreAsync(route, route.Stops.OrderBy(s => s.StopSequence).ToList(), orders.ToDictionary(o => o.Id), ct);
-        route.ConsolidatedAtUtc = _clock.UtcNow;
-        if (orders.All(o => o.Status == OrderStatus.Cancelled))
-            await CloseTerminalAdministrativelyAsync(route, orders, "all_cancelled", ct);
-        else
-        {
-            route.Status = DeliveryRouteStatus.InProgress;
-            await TrySetReturnToBranchMetersAsync(route, orders, ct);
-            await _db.SaveChangesAsync(ct);
-        }
-    }
-
     private async Task PruneEmptyOpenRouteAsync(int routeId, CancellationToken ct)
     {
         var route = await _db.DeliveryRoutes.Include(r => r.Stops).FirstOrDefaultAsync(r => r.Id == routeId, ct);
         if (route is null || route.Status != DeliveryRouteStatus.Open || route.Stops.Count > 0) return;
         // Empty, never-dispatched drafts have no journey to preserve.
-        if (route.DepartedAtUtc is null) _db.DeliveryRoutes.Remove(route);
-        else route.Status = DeliveryRouteStatus.Cancelled;
+        route.Status = DeliveryRouteStatus.Cancelled;
+        route.CompletedAtUtc = _clock.UtcNow;
+        route.ClosureSource = "empty";
         await _db.SaveChangesAsync(ct);
     }
 
