@@ -36,7 +36,8 @@ public class ExpenseHeadersController : ControllerBase
         [FromQuery] List<int>? supplierIds = null,
         [FromQuery] List<string>? bankNames = null,
         [FromQuery] List<string>? categoryNames = null,
-        [FromQuery] string? expenseName = null)
+        [FromQuery] string? expenseName = null,
+        CancellationToken cancellationToken = default)
     {
         var query = new GetExpenseHeadersQuery
         {
@@ -53,7 +54,7 @@ public class ExpenseHeadersController : ControllerBase
             ExpenseName = expenseName
         };
 
-        var result = await _mediator.Send(query);
+        var result = await _mediator.Send(query, cancellationToken);
         return Ok(result);
     }
 
