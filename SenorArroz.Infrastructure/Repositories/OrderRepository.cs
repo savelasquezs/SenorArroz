@@ -805,7 +805,8 @@ public class OrderRepository : IOrderRepository
         int? appId = null,
         bool appPaymentsUnsettledOnly = false,
         bool transferVerificationMode = false,
-        CancellationToken cancellationToken = default, int? originBranchId = null)
+        CancellationToken cancellationToken = default, int? originBranchId = null,
+        bool activeReservationsOnly = false)
     {
         // PostgreSQL timestamp with time zone requiere UTC
         if (fromDate.HasValue && fromDate.Value.Kind != DateTimeKind.Utc)
@@ -817,6 +818,12 @@ public class OrderRepository : IOrderRepository
         var query = _context.Orders.AsNoTracking().AsQueryable();
         if (originBranchId.HasValue)
             query = query.Where(o => o.OriginBranchId == originBranchId.Value && o.BranchId != originBranchId.Value);
+
+        // El filtro de la bandeja de reservas debe aplicarse ANTES de Skip/Take y COUNT:
+        // filtrar las filas después de paginar produce páginas vacías y totales incorrectos.
+        if (activeReservationsOnly)
+            query = query.Where(o => o.Type == OrderType.Reservation
+                && o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled);
 
 
         query = query.ApplyOrderSearchTermFilter(_context, searchTerm);

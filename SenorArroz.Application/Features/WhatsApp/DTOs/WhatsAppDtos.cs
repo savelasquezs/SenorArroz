@@ -1,5 +1,7 @@
 namespace SenorArroz.Application.Features.WhatsApp.DTOs;
 
+public sealed record WhatsAppMessagePageDto(IReadOnlyList<WhatsAppMessageDto> Items, string? NextCursor, bool HasMore);
+
 public class WhatsAppBranchSettingDto
 {
     public int? Id { get; set; }

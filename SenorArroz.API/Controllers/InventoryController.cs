@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SenorArroz.API.Filters;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Inventory.DTOs;
 using SenorArroz.Domain.Enums;
@@ -23,8 +26,26 @@ public sealed class InventoryController(IInventoryService inventory, IInventoryN
         => Ok(await inventory.GetMovementsAsync(branchContext.RequireBranch(branchId), take, ct));
 
     [HttpGet("availability")]
-    public async Task<ActionResult<IReadOnlyList<ProductAvailabilityDto>>> GetAvailability([FromQuery] int[] productIds, [FromQuery] int? branchId, CancellationToken ct)
-        => Ok(await inventory.GetAvailabilityAsync(productIds, branchContext.RequireBranch(branchId), ct));
+    [AllowCrossBranchOrderContext]
+    public async Task<ActionResult<IReadOnlyList<ProductAvailabilityDto>>> GetAvailability(
+        [FromQuery] int[] productIds, [FromQuery] int? branchId, CancellationToken ct,
+        [FromServices] ICurrentUser user, [FromServices] IApplicationDbContext db,
+        [FromQuery] bool forOrderCreation = false)
+    {
+        if (productIds.Length > 200) return BadRequest("Consulta hasta 200 productos por solicitud.");
+        var targetBranch = branchId ?? branchContext.RequireBranch();
+        if (forOrderCreation)
+        {
+            if (!OrderAccessRules.IsManagementRole(user.Role) || user.TenantId <= 0) return Forbid();
+            if (!await db.Branches.AsNoTracking().AnyAsync(b => b.Id == targetBranch && b.TenantId == user.TenantId && b.IsActive, ct))
+                return NotFound();
+        }
+        else targetBranch = branchContext.RequireBranch(branchId);
+        var ids = productIds.Distinct().ToArray();
+        return Ok(forOrderCreation
+            ? await inventory.GetAvailabilityAsync(ids, targetBranch, ct, true)
+            : await inventory.GetAvailabilityAsync(ids, targetBranch, ct));
+    }
 
     [HttpGet("products/{productId:int}/recipe")]
     [Authorize(Roles = "Admin,Superadmin")]

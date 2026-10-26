@@ -201,7 +201,7 @@ public class OrdersController : ControllerBase
     [HttpPost("search")]
     [AllowCrossBranchOrderContext]
     [Authorize(Roles = "Admin,Superadmin,Cashier,Kitchen")]
-    public async Task<ActionResult<PagedResult<OrderDto>>> SearchOrders([FromBody] OrderSearchDto searchDto)
+    public async Task<ActionResult<PagedResult<OrderDto>>> SearchOrders([FromBody] OrderSearchDto searchDto, CancellationToken cancellationToken = default)
     {
         var query = new SearchOrdersQuery
         {
@@ -228,12 +228,25 @@ public class OrdersController : ControllerBase
             SortBy = searchDto.SortBy,
             SortOrder = searchDto.SortOrder,
             ExcludeFutureReservations = searchDto.ExcludeFutureReservations,
+            ActiveReservationsOnly = searchDto.ActiveReservationsOnly,
             NeighborhoodId = searchDto.NeighborhoodId,
             IncludeOnsiteActiveInAssignedHistory = searchDto.IncludeOnsiteActiveInAssignedHistory
         };
 
-        var result = await _mediator.Send(query);
+        var result = await _mediator.Send(query, cancellationToken);
         return Ok(result);
+    }
+
+    [HttpGet("deliveryman-options")]
+    [AllowCrossBranchOrderContext]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
+    public async Task<ActionResult<List<OrderDeliverymanOptionDto>>> GetDeliverymanOptions(
+        [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate,
+        [FromQuery] int? branchId, [FromQuery] bool remoteOnly, CancellationToken cancellationToken)
+    {
+        var query = new GetOrderDeliverymanOptionsQuery(fromDate, toDate,
+            remoteOnly ? branchId : _branchContext.ResolveOptional(branchId), remoteOnly);
+        return Ok(await _mediator.Send(query, cancellationToken));
     }
 
     /// <summary>

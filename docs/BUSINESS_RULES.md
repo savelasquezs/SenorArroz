@@ -12,6 +12,16 @@
 
 Este documento resume reglas funcionales que Codex debe respetar antes de modificar pedidos, pagos, cocina, domicilios, impresión, caja o módulos relacionados.
 
+## Opciones del listado de pedidos
+
+- El selector de domiciliarios consulta una proyección completa de ID/nombre de pedidos de domicilio del rango Colombia, sin descargar páginas de pedidos ni limitarse a la página visible. El alcance local/remoto conserva las mismas autorizaciones; remoto exige el origen operativo y destino del mismo tenant.
+- Las cancelaciones de lecturas de pedidos se propagan desde HTTP a MediatR/EF. No alteran las reglas de mutaciones, pagos ni reservas.
+
+## Historial paginado de WhatsApp
+
+- La nueva lectura por cursor entrega los 50 mensajes más recientes inicialmente y admite de 1 a 100 por página. El orden estable combina fecha UTC e ID, con presentación ascendente y cursor anterior limitado a la misma conversación autorizada.
+- Consultar mensajes anteriores no marca como leídos mensajes nuevos llegados después de abrir el chat. El endpoint de historial anterior conserva su contrato para clientes existentes. La reparación de medios se limita a la página consultada.
+
 Los timestamps de estados con `Z` u offset explícito se normalizan a UTC al leerlos;
 la zona horaria del servidor no modifica los instantes ni los límites de espera.
 
@@ -661,3 +671,9 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 
 - El contexto móvil de rutas y su último cierre se limitan a la sucursal autenticada, también tras un nuevo login. El traslado de un usuario exige resolver antes sus rutas activas y pedidos pendientes mediante los flujos existentes; la validación y el cambio se serializan por usuario. No se infieren entregas ni retornos por cambiar de sucursal. OriginBranchId y la gestión autorizada desde origen conservan su semántica.
 - Desasignar la última parada retira administrativamente una ruta Open o InProgress vacía como Cancelled, con ClosureSource=empty y auditoría; conserva la ruta y su evidencia, sin duración física ni SLA. La comprobación incluye paradas y pedidos vinculados, dentro de la transacción de la mutación existente.
+
+## Consultas del mapa de gestión
+GET /api/deliverymen/map devuelve pedidos de domicilio en camino/entregados del día Colombia, paginados hasta 200 por página, y las últimas ubicaciones de ese día en la primera página. Usa la sucursal autorizada y el tenant del servidor. No carga líneas ni pagos. El endpoint individual de ubicación sigue disponible.
+
+La disponibilidad del POS usa la sucursal operativa del borrador. La consulta forOrderCreation exige rol de gestión y sucursal activa del mismo tenant; el catálogo de productos compartido conserva sus recetas y se cruza con los saldos de esa sede. Las consultas administrativas conservan su alcance anterior.
+

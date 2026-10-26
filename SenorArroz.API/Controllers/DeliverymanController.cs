@@ -437,6 +437,15 @@ public class DeliverymanController : ControllerBase
     /// Retorna la última ubicación registrada de un domiciliario (para fallback de polling).
     /// 200 con cuerpo <c>null</c> si aún no hay puntos GPS guardados (no usar 404 para ese caso).
     /// </summary>
+    [HttpGet("map")]
+    [Authorize(Roles = "Admin,Superadmin,Cashier")]
+    public async Task<ActionResult<DeliveryMapPageDto>> GetMap([FromQuery] int? branchId,
+        [FromQuery] DateTime? date, CancellationToken cancellationToken, [FromQuery] int page = 1, [FromQuery] int pageSize = 200)
+    {
+        var result = await _mediator.Send(new GetDeliveryMapQuery(branchId, date, page, pageSize), cancellationToken);
+        return Ok(result);
+    }
+
     [HttpGet("{id}/last-location")]
     [Authorize(Roles = "Admin,Superadmin,Cashier")]
     [ProducesResponseType(typeof(DeliverymanLastLocationDto), StatusCodes.Status200OK)]

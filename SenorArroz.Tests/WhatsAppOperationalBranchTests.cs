@@ -25,6 +25,43 @@ namespace SenorArroz.Tests;
 public sealed class WhatsAppOperationalBranchTests
 {
     [Fact]
+    public async Task Message_cursor_handles_equal_timestamps_and_preserves_new_unread_while_loading_older_messages()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, operationalBranchId: 1, assignedUserId: 7, unreadCount: 2);
+        var timestamp = new DateTime(2026, 10, 26, 15, 0, 0, DateTimeKind.Utc);
+        for (var id = 1; id <= 60; id++) db.WhatsAppMessages.Add(new WhatsAppMessage {
+            Id = id, ConversationId = 11, Timestamp = timestamp, TextBody = $"Message {id}" });
+        await db.SaveChangesAsync();
+        var controller = CreateController(db);
+        var first = await controller.GetMessagesPage(11, cancellationToken: default);
+        var page = Assert.IsType<ApiResponse<WhatsAppMessagePageDto>>(Assert.IsType<OkObjectResult>(first.Result).Value).Data!;
+        Assert.Equal(50, page.Items.Count);
+        Assert.Equal(11, page.Items[0].Id);
+        Assert.True(page.HasMore);
+        var conversation = await db.WhatsAppConversations.SingleAsync();
+        conversation.UnreadCount = 1;
+        db.WhatsAppMessages.Add(new WhatsAppMessage { Id = 61, ConversationId = 11, Timestamp = timestamp, TextBody = "New" });
+        await db.SaveChangesAsync();
+        var older = await controller.GetMessagesPage(11, before: page.NextCursor);
+        var olderPage = Assert.IsType<ApiResponse<WhatsAppMessagePageDto>>(Assert.IsType<OkObjectResult>(older.Result).Value).Data!;
+        Assert.Equal(Enumerable.Range(1, 10), olderPage.Items.Select(item => item.Id));
+        Assert.False(olderPage.HasMore);
+        Assert.Equal(1, conversation.UnreadCount);
+    }
+
+    [Fact]
+    public async Task Message_pages_preserve_authorization_and_reject_invalid_bounds()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, operationalBranchId: 2, assignedUserId: 7);
+        Assert.IsType<ForbidResult>((await CreateController(db, userId: 8).GetMessagesPage(11)).Result);
+        var controller = CreateController(db);
+        Assert.IsType<BadRequestObjectResult>((await controller.GetMessagesPage(11, limit: 101)).Result);
+        Assert.IsType<BadRequestObjectResult>((await controller.GetMessagesPage(11, before: "invalid!")).Result);
+    }
+
+    [Fact]
     public async Task Cashier_can_list_and_take_unassigned_central_conversation_without_assigning_branch()
     {
         await using var db = CreateDb();

@@ -46,4 +46,6 @@ public class OrderSearchDto
     public string SortOrder { get; set; } = "desc";
     /// <summary>Si true, excluye reservas cuyo reservedFor es posterior a hoy (fin del día)</summary>
     public bool ExcludeFutureReservations { get; set; } = false;
+    /// <summary>Solo reservas todavía activas: excluye las entregadas/canceladas ANTES de paginar.</summary>
+    public bool ActiveReservationsOnly { get; set; } = false;
 }
