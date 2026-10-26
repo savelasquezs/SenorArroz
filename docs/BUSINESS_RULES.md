@@ -668,3 +668,6 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 - ACKs y respuestas antiguas no retroceden el contexto. Los recibos sobreviven al cierre de rutas y no caducan automáticamente. No hay toma, pago ni asignación offline.
 - Esquema: add_delivery_operations.sql y enforce_delivery_route_uniqueness.sql. Compatibilidad y build mínimo deben validarse antes de publicación.
 - Cerrar sesión sin conexión finaliza el acceso local y conserva los pendientes del propietario. Las solicitudes de limpieza tienen plazo acotado, no renuevan credenciales y quedan ligadas a la sesión capturada; una respuesta tardía no borra ni cierra la sesión o jornada de un acceso posterior.
+
+## Consultas del mapa de gestión
+GET /api/deliverymen/map devuelve pedidos de domicilio en camino/entregados del día Colombia, paginados hasta 200 por página, y las últimas ubicaciones de ese día en la primera página. Usa la sucursal autorizada y el tenant del servidor. No carga líneas ni pagos. El endpoint individual de ubicación sigue disponible.
