@@ -1,12 +1,13 @@
 # DELIVERY-2026-10 — API
 
 ## Revisions
-Flutter base 92ed306; API base 3fa9b06. Branch refactor/delivery-performance-offline in separate worktrees. Original dirty API Program.cs preserved. Prepublication qualification; no merge or production publication completed.
+Flutter base 92ed306; API base 3fa9b06. Branch refactor/delivery-performance-offline in separate worktrees. Original dirty API Program.cs preserved. Draft PRs: delivery_app #16 (49850d3) and SenorArroz #67 (7b97995, followed by e177b2d). Initial API CI passed; all three initial Flutter checks (unit, build/distribution, Android SQLite) passed. These earlier checks do not qualify the subsequent concurrency fix. Follow-up corrections pending new CI. No merge or production publication completed.
 
 ## Tests
-- Flutter: 215 tests passed; latest startup/version/route/shared-action checks: 20 passed. Analyzer: 59 infos, no errors/warnings.
+- Flutter: 216 full tests passed after compact UI/shared-address ordering and serialized outbox reads; latest atomic encrypted-pair read checks separate. Analyzer: 59 infos, no errors/warnings before the latest atomic-read follow-up.
 - Android Xiaomi: native independent SQLite connections/capture/ACK/read probe passed. The previous-process recovery probe also passed on the physical device.
 - API: 1260 passed, 98 skipped in the full local suite. Latest real PostgreSQL checks: 5 passed, including receipt replay while at lunch and legacy repair twice/rollback. Additional work-session/return checks: 17 passed after serializing session reads with existing driver locks.
+- Real PostgreSQL conflict follow-up: address-version rejection preserves cashier data and fees/primary; cancelled/reassigned/different-route delivery rejected; already-delivered replay reconciles without another transition. Five concurrency/legacy/conflict tests passed in the repeated class run. Dashboard repository projection/source exclusion: 53 tests passed.
 - Real local HTTP: atomic take A→B, rollback of invalid B, replay of A with current context, concurrent B/C from one lineage (one acceptance, one conflict), address token and delivery passed. This is development PostgreSQL, not production.
 
 ## Device evidence
@@ -20,19 +21,23 @@ POCO X7 Pro SC99BEFUGAR4CIHM, Android 15, profile builds, explicit localhost API
 - Empty HTTP 204 work-session responses now clear stale session cache instead of exposing a String-to-Map cast. Version checks run independently of preparation; HTTP 426 still enforces updates.
 - Second physical offline acceptance #45: address aa7c7122-66c1-4f5c-ba34-a53c9dd3972c and delivery fad12b7f-115f-467b-ad35-e5bd8bbeedd2 survived cold reopen. An ordinary adb install -r of the same profile APK retained them. Reconnection produced one receipt each, delivered status, Casa-offline-45, total 23500, order/address fee 2500, primary=true. This proves same-build reinstall retention; a Play-version migration remains separate.
 - Screen-off test: capture continued at the configured active interval (30 s) and background reconnection accepted both operations even while Android was locked. Longer standby/cadence qualification remains pending.
+- A later physical reinstall/cold start reproduced native SQLite contention despite previous successful opens. Root follow-up: Android sqflite 2.4.2+3 uses one worker by default; an uncoordinated connection read/open can occupy it while another connection owns a transaction. All outbox opening/reads now use the existing lease, with lease I/O outside the transaction. Deterministic native probe now schedules raw UI reads and a third connection during a held transaction; emulator CI and repeated physical cold starts pending.
+- Atomic encrypted auth_session_v2 reads no longer wait behind refresh HTTP; legacy migration/refresh/write/logout still use the same lease. Regression covers reading a complete prior pair during held refresh, complete next pair after commit, concurrent legacy migration and logout.
+- Physical address conflict #20: UUID 35dd70c3-4256-43f1-b1ba-17ccf2973f0d kept Borrador-offline-20 while server kept Caja-version-20. Dialog displayed both; Conservar retained it, explicit Descartar cleared only the local action; server remained unchanged.
+- Compact route UI installed on phone: direct delivery/call/WhatsApp/map/reprint icons, no Ver, card tap opens detail; tested narrow/large text and action tap isolation. Final serialization build retest pending.
 - Disk exhaustion interrupted a Flutter run and Docker. Only task-generated builds were cleaned using flutter clean. Docker was restarted with explicit user approval; full Flutter tests and the PostgreSQL preflight were repeated successfully afterward.
 
 ## Production read-only preflight
 95 active routes; 9 owners with duplicates (94 rows), no pending orders in the duplicate set at inspection. New columns absent. The script audits and closes only superseded terminal routes, clears inferred physical durations, and rolls back if unresolved duplicates remain. Production has not been modified.
 
 ## Code balance
-Handwritten changes excluding docs, both repositories: approximately +682 lines (Flutter +230, API +452; pending final recount). Includes tests, SQL and the local HTTP acceptance script. Negative total target is not achieved. Removed manual return UI/flow, legacy test-only loading, duplicate contact/actions, duplicated address patch/payload and obsolete full-address client update. No second database or synchronization framework.
+Last measured handwritten delta excluding docs: +709 lines across repositories (production/scripts +382, tests +272, SQL/config +55); latest compact UI and additional regressions require final recount. Includes tests, SQL and the local HTTP acceptance script. The user explicitly accepted the bounded positive delta after reviewing its production/test/SQL breakdown; negative balance is no longer a publication prerequisite. Removed manual return UI/flow, legacy test-only loading, duplicate contact/actions, duplicated address patch/payload and obsolete full-address client update. No second database or synchronization framework.
 
 
 ## Pending
 - Account/session/conflict/storage physical qualification, longer screen-off GPS/backlog qualification and Play upgrade retention. Restart/offline pending UI, #45 reconnect exact-once and ordinary same-build reinstall retention passed on device.
 - Complete comparable profile measurements, zero history/metrics requests before visit, and F01–F48 regression qualification.
-- Reduce the remaining code delta without removing useful coverage; finalize native/analyzer/backend/PostgreSQL checks.
+- Preserve the accepted bounded code delta; finalize native/analyzer/backend/PostgreSQL qualification. Compact route cards/icons requested by the user: no Ver, direct call/WhatsApp, tappable card detail, confirm-before-deliver retained.
 - Reviewable commits/PRs, remote CI, production schema/backend compatibility checks, then coordinated Play release and installed-build/cold-start validation. No publication is complete.
 
 ## F01–F48 regression qualification
@@ -58,7 +63,7 @@ Evidence is scoped to the layer named. A source-preserved path or passing unit t
 | F16 | Entrega manual: mejorar | Confirmation/storage-failure test; physical offline delivery #45 | Ambiguous response loss physical test |
 | F17 | Autoentrega GPS en destino: conservar | PostgreSQL concurrent GPS exactly-once test with stubbed status transition | Full GPS visit/departure field qualification |
 | F18 | Regreso y pendientes: sustituir regla previa | Return recovery tests and common batch implementation; manual UI removed | Full physical observed return scenario |
-| F19 | Detalle/productos/notas: mejorar | Physical known-data detail works in airplane mode | Large notes/products overflow smoke |
+| F19 | Detalle/productos/notas: mejorar | Physical known-data detail works in airplane mode | Large notes/products overflow smoke; compact card separately passed 320/390 px and 140% text with 48 px targets |
 | F20 | Pagos/saldo/Ya pagó: mejorar | Physical #42/#45 totals/fees/primary unchanged; original payment paths retained | Mixed/partial payment end-to-end regression |
 | F21 | Maps destino: conservar | Destination maps helper tests retained | External app/open failure smoke |
 | F22 | Maps varias paradas: mejorar | Route destination order/link implementation retained | Multi-stop exclusion/limit visual smoke |
@@ -79,7 +84,7 @@ Evidence is scoped to the layer named. A source-preserved path or passing unit t
 | F37 | Push/alertas: mejorar | Notification dedup/review tests; owner/session hints scoped | Real FCM stale-session delivery smoke |
 | F38 | Historial/paginación: mejorar | Physical history loads 7 fixture deliveries only on visit; request generations | Rapid filters/pagination response race smoke |
 | F39 | Ganancias por sucursal: conservar y aclarar | Physical history fee share and metrics totals; existing payroll contracts retained | Cross-branch period reconciliation smoke |
-| F40 | Métricas/gráficas/rutas: simplificar | Inferred-source duration exclusion; repository projection regression test | Recheck corrected projection on physical metrics |
+| F40 | Métricas/gráficas/rutas: simplificar | Inferred-source duration exclusion; repository projection regression test | Recheck corrected projection on physical metrics; missing source projection fixed and covered across 5 origins |
 | F41 | Nómina/préstamos/abonos: conservar y aclarar | Existing payroll/advances/backend tests retained; metric period visible | Loan/advance settlement visual smoke |
 | F42 | Almuerzo: conservar y mejorar | Lunch tests and real PostgreSQL serialization; receipt replay during lunch | Physical password/restriction/error flows |
 | F43 | Tipos de permisos: conservar | Employee leave tests and catalog/authorization paths retained | Paid/unpaid type form smoke |

@@ -102,12 +102,12 @@ public static class DeliveryPerformanceAnalytics
     }
 
     public static string RouteState(DeliveryRoute route) => route.Status == DeliveryRouteStatus.Cancelled ? "cancelled"
-        : route.Status == DeliveryRouteStatus.Completed && route.CompletedAtUtc.HasValue ? "completed"
+        : route.Status == DeliveryRouteStatus.Completed && (route.CompletedAtUtc.HasValue || route.ClosureSource == "legacy") ? "completed"
         : route.Stops.Any(s => s.Order.Status == OrderStatus.Delivered)
             && route.Stops.All(s => s.Order.Status is OrderStatus.Delivered or OrderStatus.Cancelled) ? "returnPending" : "inProgress";
 
     public static DateTime RouteActivityTime(DeliveryRoute route) =>
-        RouteState(route) == "completed" ? route.CompletedAtUtc!.Value
+        RouteState(route) == "completed" ? route.CompletedAtUtc ?? route.RouteStartedAtUtc ?? route.LastAssignmentAtUtc
             : RouteTiming(route).Start ?? route.RouteStartedAtUtc ?? route.LastAssignmentAtUtc;
 
     public static bool IsReturnInconsistent(DeliveryRoute route, IReadOnlyList<DeliveryWorkSession> sessions)

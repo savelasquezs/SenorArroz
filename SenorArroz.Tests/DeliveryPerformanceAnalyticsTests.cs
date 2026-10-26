@@ -16,6 +16,24 @@ public class DeliveryPerformanceAnalyticsTests
 {
     private static readonly DateTime Start = new(2026, 10, 22, 17, 0, 0, DateTimeKind.Utc);
 
+    [Fact]
+    public async Task LegacyClosureRemainsCompletedWithoutCreatingPhysicalReturn()
+    {
+        await using var db = TestDatabase();
+        var route = Route();
+        route.ClosureSource = "legacy"; route.CompletedAtUtc = null;
+        route.ActualDurationSeconds = null; route.MetSla = null; route.RouteStartedAtUtc = Start;
+        var order = new Order { Status = OrderStatus.Delivered,
+            StatusTimes = System.Text.Json.JsonSerializer.Serialize(new { ontheway = Start, delivered = Start.AddMinutes(10) }) };
+        route.Stops.Add(new DeliveryRouteStop { Order = order });
+        Assert.Empty(await SenorArroz.Application.Common.Helpers.DeliveryRouteCompletion.ResolveHistoryAsync(db, [route], default));
+        Assert.False(SenorArroz.Application.Common.Helpers.DeliveryRouteCompletion.Complete(route, [order], Start.AddMinutes(30)));
+        Assert.Equal("completed", RouteState(route));
+        Assert.Equal(Start, RouteActivityTime(route));
+        Assert.Null(RouteTiming(route).Start);
+        Assert.Null(route.CompletedAtUtc); Assert.Null(route.MetSla); Assert.Null(route.ActualDurationSeconds);
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
