@@ -82,7 +82,8 @@ public interface IOrderRepository
         int? appId = null,
         bool appPaymentsUnsettledOnly = false,
         bool transferVerificationMode = false,
-        CancellationToken cancellationToken = default, int? originBranchId = null
+        CancellationToken cancellationToken = default, int? originBranchId = null,
+        bool activeReservationsOnly = false
     );
 
     /// <summary>
