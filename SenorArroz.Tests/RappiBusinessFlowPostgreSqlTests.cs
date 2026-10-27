@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using AutoMapper;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Authentication;
@@ -468,6 +469,58 @@ public sealed class RappiBusinessFlowPostgreSqlTests
                 new Claim("branch_id", "12"), new Claim("tenant_id", "1")], Scheme.Name);
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name)));
         }
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Production_totals_triggers_preserve_growth_payment_balance_through_ready_and_keep_manual_calculation()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using var db = fixture.Db();
+        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Scripts", "fix_rappi_authoritative_totals.sql"));
+        await db.Database.ExecuteSqlRawAsync(sql);
+        await db.Database.ExecuteSqlRawAsync(sql);
+        var flow = new Flow(db, 1, 11);
+        flow.Accept("growth-real-triggers");
+        var payload = JsonNode.Parse(Payload(11, "growth-real-triggers"))!;
+        payload["order_detail"]!["totals"]!["total_order"] = 17000;
+        var accepted = await flow.Processor.IngestNewOrderAsync(11, payload.ToJsonString(), default);
+        Assert.True(accepted.Success, accepted.Error);
+        db.ChangeTracker.Clear();
+        var order = await db.Orders.Include(x => x.OrderDetails).SingleAsync();
+        Assert.Equal(18000, order.Subtotal);
+        Assert.Equal(1000, order.DiscountTotal);
+        Assert.Equal(17000, order.Total);
+        Assert.Equal(18000, order.OrderDetails.Single().Subtotal);
+        order.OrderDetails.Single().Notes = "Synthetic note update";
+        await db.SaveChangesAsync();
+        await flow.MarkReady(order.Id);
+        db.ChangeTracker.Clear();
+        order = await db.Orders.SingleAsync();
+        var payment = await db.AppPayments.SingleAsync();
+        Assert.Equal(OrderStatus.Ready, order.Status);
+        Assert.Equal(18000, order.Subtotal);
+        Assert.Equal(1000, order.DiscountTotal);
+        Assert.Equal(17000, order.Total);
+        Assert.Equal(order.Total, payment.Amount);
+        Assert.Equal(12750m, payment.ExpectedNetAmount);
+        var manual = new Order
+        {
+            BranchId = 11, TakenById = 11, Type = OrderType.Delivery, Status = OrderStatus.Taken,
+            OrderSource = "manual", DeliveryFee = 2000,
+            OrderDetails = [new OrderDetail { ProductId = 11, Quantity = 2, UnitPrice = 18000, Discount = 1000 }]
+        };
+        db.Orders.Add(manual);
+        await db.SaveChangesAsync();
+        var manualId = manual.Id;
+        db.ChangeTracker.Clear();
+        manual = await db.Orders.SingleAsync(x => x.Id == manualId);
+        Assert.Equal(35000, manual.Subtotal);
+        Assert.Equal(1000, manual.DiscountTotal);
+        Assert.Equal(37000, manual.Total);
+        manual.DeliveryFee = 3000;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        Assert.Equal(38000, (await db.Orders.SingleAsync(x => x.Id == manualId)).Total);
     }
 
     [PostgreSqlIntegrationFact]

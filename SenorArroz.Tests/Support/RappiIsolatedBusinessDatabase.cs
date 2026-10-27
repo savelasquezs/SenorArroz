@@ -61,6 +61,25 @@ internal sealed class RappiIsolatedBusinessDatabase : IAsyncDisposable
             fixture.options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options;
             await using var db = fixture.Db();
             await db.Database.EnsureCreatedAsync();
+            var totalsSql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Scripts", "fix_rappi_authoritative_totals.sql"));
+            await db.Database.ExecuteSqlRawAsync(totalsSql);
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE OR REPLACE FUNCTION public.calculate_order_detail_subtotal() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    NEW.subtotal = (NEW.quantity * NEW.unit_price) - COALESCE(NEW.discount, 0);
+                    RETURN NEW;
+                END; $$;
+                CREATE TRIGGER calculate_order_detail_subtotal_trigger BEFORE INSERT OR UPDATE ON public.order_detail
+                    FOR EACH ROW EXECUTE FUNCTION public.calculate_order_detail_subtotal();
+                CREATE TRIGGER update_order_totals_on_detail_insert AFTER INSERT ON public.order_detail
+                    FOR EACH ROW EXECUTE FUNCTION public.update_order_totals();
+                CREATE TRIGGER update_order_totals_on_detail_update AFTER UPDATE ON public.order_detail
+                    FOR EACH ROW EXECUTE FUNCTION public.update_order_totals();
+                CREATE TRIGGER update_order_totals_on_detail_delete AFTER DELETE ON public.order_detail
+                    FOR EACH ROW EXECUTE FUNCTION public.update_order_totals();
+                CREATE TRIGGER update_order_total_on_delivery_fee_change_trigger BEFORE UPDATE ON public."order"
+                    FOR EACH ROW EXECUTE FUNCTION public.update_order_total_on_delivery_fee_change();
+                """);
             db.Tenants.AddRange(new Tenant { Id = 1, Name = "Synthetic A", Slug = "rappi-test-a" },
                 new Tenant { Id = 2, Name = "Synthetic B", Slug = "rappi-test-b" });
             await db.SaveChangesAsync();
