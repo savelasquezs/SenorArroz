@@ -91,7 +91,7 @@ public sealed class RappiCancellationLifecycleTests : RappiReadyRecoveryDatabase
             .Returns(Task.CompletedTask);
         notifications.Setup(x => x.NotifyOrderModifiedToDelivery(It.Is<OrderDto>(o => o.Status == OrderStatus.Delivered), "status", null))
             .Returns(Task.CompletedTask);
-        notifications.Setup(x => x.NotifyOrderManagementChanged(1, 1, null, It.IsAny<long>()))
+        notifications.Setup(x => x.NotifyOrderManagementChanged(1, 1, 1, It.IsAny<long>()))
             .Returns(Task.CompletedTask);
         var processor = Processor(db, Inventory(db), notifications.Object, repository: repository.Object, mapper: mapper.Object);
         await Invoke(processor, "ApplyOrderEventAsync", """{"order_id":"ready-test-order","event":"close_order"}""");
@@ -113,7 +113,7 @@ public sealed class RappiCancellationLifecycleTests : RappiReadyRecoveryDatabase
         Assert.False((await check.AppPayments.SingleAsync()).IsReversed);
         notifications.Verify(x => x.NotifyOrderModifiedToKitchen(It.IsAny<OrderDto>(), "status", null), Times.Exactly(3));
         notifications.Verify(x => x.NotifyOrderModifiedToDelivery(It.IsAny<OrderDto>(), "status", null), Times.Exactly(3));
-        notifications.Verify(x => x.NotifyOrderManagementChanged(1, 1, null, It.IsAny<long>()), Times.Exactly(3));
+        notifications.Verify(x => x.NotifyOrderManagementChanged(1, 1, 1, It.IsAny<long>()), Times.Exactly(3));
         notifications.VerifyNoOtherCalls();
     }
 
