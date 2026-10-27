@@ -555,6 +555,7 @@ public sealed class RappiIntegrationsController(
                 && x.Provider == "rappi"
                 && x.EventType == RappiReadyOutboxPolicy.EventType
                 && (x.Status == RappiReadyOutboxPolicy.Failed
+                    || x.Status == RappiReadyOutboxPolicy.ReviewRequired
                     || x.Status == RappiReadyOutboxPolicy.Pending
                         && x.AttemptCount >= RappiReadyOutboxPolicy.MaxAttempts), ct);
         // Legacy workers did not timestamp their processing claim. Report these
@@ -747,10 +748,10 @@ public sealed class RappiIntegrationsController(
             return NotFound(ApiResponse<object>.ErrorResponse("No existe un envío READY_FOR_PICKUP para reintentar."));
         if (row.Status == "processed")
             return Ok(ApiResponse<object>.SuccessResponse(new { queued = false, alreadyProcessed = true }));
-        if (row.Status == RappiReadyOutboxPolicy.Pending && row.AttemptCount < RappiReadyOutboxPolicy.MaxAttempts)
+        if (RappiReadyOutboxPolicy.IsQueued(row))
             return Ok(ApiResponse<object>.SuccessResponse(new { queued = true, alreadyQueued = true }));
         if (!RappiReadyOutboxPolicy.CanRequeue(row))
-            return Conflict(ApiResponse<object>.ErrorResponse("El envío no admite reintento en su estado actual."));
+            return Conflict(ApiResponse<object>.ErrorResponse("El envío requiere revisión en Rappi o alcanzó el límite de tres solicitudes; no admite reintento."));
 
         var now = clock.UtcNow;
         // Compare-and-set: repeated/concurrent clicks cannot reset an active retry.
@@ -771,16 +772,16 @@ public sealed class RappiIntegrationsController(
                     && order.Store != null && order.Store.ManualReadyForPickupEnabled
                     && order.InternalOrder != null && order.InternalOrder.Status == OrderStatus.Ready))
             .ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.Status, RappiReadyOutboxPolicy.Pending)
-                .SetProperty(x => x.AttemptCount, 0)
+                .SetProperty(x => x.Status, RappiReadyOutboxPolicy.ManualRetryPending)
                 .SetProperty(x => x.LastError, (string?)null)
                 .SetProperty(x => x.ProcessedAt, (DateTime?)null)
                 .SetProperty(x => x.UpdatedAt, now), ct);
         if (changed == 0)
         {
             var alreadyQueued = await db.IntegrationWebhookEvents.AsNoTracking()
-                .AnyAsync(x => x.Id == row.Id && x.Status == RappiReadyOutboxPolicy.Pending
-                    && x.AttemptCount < RappiReadyOutboxPolicy.MaxAttempts, ct);
+                .AnyAsync(x => x.Id == row.Id && (x.Status == RappiReadyOutboxPolicy.Pending && x.AttemptCount == 0
+                    || x.Status == RappiReadyOutboxPolicy.ManualRetryPending
+                        && x.AttemptCount < RappiReadyOutboxPolicy.MaxAttempts), ct);
             if (alreadyQueued)
                 return Ok(ApiResponse<object>.SuccessResponse(new { queued = true, alreadyQueued = true }));
             return Conflict(ApiResponse<object>.ErrorResponse("La orden o el envío cambió; recarga antes de reintentar."));

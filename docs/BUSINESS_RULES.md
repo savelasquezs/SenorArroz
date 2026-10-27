@@ -587,6 +587,7 @@ Reglas:
 - Una cancelación Rappi de una orden entregada o con pago ya liquidado crea una incidencia financiera y no altera silenciosamente los movimientos conciliados.
 - La consignación real de un lote se prorratea por neto esperado; el residuo monetario se asigna a la última orden.
 - `READY_FOR_PICKUP` está habilitado exclusivamente en las tiendas sandbox `900173116` y `900173117` para homologación. En producción permanece deshabilitado hasta confirmación expresa de Rappi. Cambiar el pedido a `Ready` crea automáticamente el envío idempotente y el worker recupera envíos faltantes tras reinicios.
+- READY usa el recurso moderno `/restaurants/orders/v1/stores/{storeId}/orders/{orderId}/ready-for-pickup`, en el host de autenticación del ambiente. Cada solicitud puede volver a notificar al courier: el límite de tres intentos nunca se reinicia. Un resultado incierto (timeout, 424, 5xx o lease abandonada) exige revisión en Rappi y no se reenvía automáticamente. Solo un rechazo confirmado admite reintento manual con presupuesto restante y contador monotónico.
 - La información personal y el payload crudo se anonimizan después de 90 días.
 - Deshabilitar la integración conserva configuración, eventos, pedidos e historial financiero.
 - El intento de aceptación se confirma antes del PUT remoto. Un bloqueo PostgreSQL de sesión, compatible con los bloqueos transaccionales de cancelación, serializa ambas fases. Una recuperación consulta el historial antes de repetir aceptación. Las escrituras remotas inciertas no se reenvían automáticamente en el cliente HTTP.

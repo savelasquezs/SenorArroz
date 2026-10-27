@@ -95,7 +95,7 @@ public interface IRappiDeliveryProvider
     Task<RappiOrdersResult> GetSentOrdersAsync(CancellationToken cancellationToken);
     Task<RappiOperationResult> AcceptOrderAsync(string orderId, int cookingTimeMinutes, CancellationToken cancellationToken);
     Task<RappiOperationResult> RejectOrderAsync(string orderId, string reason, CancellationToken cancellationToken);
-    Task<RappiOperationResult> ReadyForPickupAsync(string orderId, CancellationToken cancellationToken);
+    Task<RappiOperationResult> ReadyForPickupAsync(string storeId, string orderId, CancellationToken cancellationToken);
     Task<RappiOrderEventsResult> GetOrderEventsAsync(string orderId, CancellationToken cancellationToken);
 }
 

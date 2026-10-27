@@ -24,13 +24,13 @@ namespace SenorArroz.Tests;
 public sealed class RappiReadyRecoveryTests : RappiReadyRecoveryDatabase
 {
     [PostgreSqlIntegrationFact]
-    public async Task Complete_send_has_bounded_cancellation_and_attempt_timeout_remains_retryable()
+    public async Task Complete_send_has_bounded_cancellation_and_timeout_requires_remote_review()
     {
         await using var db = Db();
         await RappiReadyTestData.SeedAsync(db);
         var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
-        provider.Setup(x => x.ReadyForPickupAsync("ready-test-order", It.IsAny<CancellationToken>()))
-            .Returns((string _, CancellationToken token) =>
+        provider.Setup(x => x.ReadyForPickupAsync("local-test-store", "ready-test-order", It.IsAny<CancellationToken>()))
+            .Returns((string _, string _, CancellationToken token) =>
             {
                 Assert.True(token.CanBeCanceled); // The worker itself was called with CancellationToken.None.
                 throw new OperationCanceledException("simulated response-body timeout", token);
@@ -39,30 +39,54 @@ public sealed class RappiReadyRecoveryTests : RappiReadyRecoveryDatabase
         Assert.True(RappiReadyOutboxPolicy.AttemptTimeout < RappiReadyOutboxPolicy.ProcessingLease);
         await RappiReadyTestData.ProcessAsync(db, provider.Object);
         var row = await db.IntegrationWebhookEvents.SingleAsync();
-        Assert.Equal(RappiReadyOutboxPolicy.Pending, row.Status);
+        Assert.Equal(RappiReadyOutboxPolicy.ReviewRequired, row.Status);
         Assert.Equal(1, row.AttemptCount);
         Assert.DoesNotContain("response-body", row.LastError);
     }
 
     [PostgreSqlIntegrationFact]
-    public async Task Tenth_failure_becomes_visible_and_cannot_send_again_automatically()
+    public async Task Third_definitive_failure_exhausts_the_budget_without_automatic_or_manual_reset()
     {
         await using var db = Db();
-        await RappiReadyTestData.SeedAsync(db, attempts: 9);
+        await RappiReadyTestData.SeedAsync(db, attempts: 2, eventStatus: RappiReadyOutboxPolicy.ManualRetryPending);
         var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
-        provider.Setup(x => x.ReadyForPickupAsync("ready-test-order", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new RappiOperationResult(false, 424, "sensitive-provider-body"));
+        provider.Setup(x => x.ReadyForPickupAsync("local-test-store", "ready-test-order", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(false, 400, "sensitive-provider-body"));
 
         await RappiReadyTestData.ProcessAsync(db, provider.Object);
         await RappiReadyTestData.ProcessAsync(db, provider.Object);
 
         var row = await db.IntegrationWebhookEvents.SingleAsync();
         Assert.Equal(RappiReadyOutboxPolicy.Failed, row.Status);
-        Assert.Equal(10, row.AttemptCount);
-        Assert.Contains("424", row.LastError);
+        Assert.Equal(3, row.AttemptCount);
+        Assert.Contains("400", row.LastError);
         Assert.DoesNotContain("sensitive-provider-body", row.LastError);
-        Assert.True(RappiReadyOutboxPolicy.CanRequeue(row));
-        provider.Verify(x => x.ReadyForPickupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.False(RappiReadyOutboxPolicy.CanRequeue(row));
+        Assert.IsType<ConflictObjectResult>((await RappiReadyTestData.Controller(db).RetryReadyForPickup(1, default)).Result);
+        provider.Verify(x => x.ReadyForPickupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [RappiPostgreSqlIntegrationTheory]
+    [InlineData(null)]
+    [InlineData(408)]
+    [InlineData(424)]
+    [InlineData(503)]
+    public async Task Uncertain_response_never_replays_the_non_idempotent_ready_notification(int? statusCode)
+    {
+        await using var db = Db();
+        await RappiReadyTestData.SeedAsync(db);
+        var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
+        provider.Setup(x => x.ReadyForPickupAsync("local-test-store", "ready-test-order", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(false, statusCode));
+        await RappiReadyTestData.ProcessAsync(db, provider.Object);
+        await RappiReadyTestData.ProcessAsync(db, provider.Object);
+        var row = await db.IntegrationWebhookEvents.SingleAsync();
+        Assert.Equal(RappiReadyOutboxPolicy.ReviewRequired, row.Status);
+        Assert.Equal(1, row.AttemptCount);
+        Assert.IsType<ConflictObjectResult>((await RappiReadyTestData.Controller(db).RetryReadyForPickup(1, default)).Result);
+        var diagnostics = Assert.IsType<OkObjectResult>((await RappiReadyTestData.Controller(db).OperationalStatus(1, default)).Result);
+        Assert.Contains("\"readySyncFailed\":1", JsonSerializer.Serialize(diagnostics.Value));
+        provider.Verify(x => x.ReadyForPickupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [PostgreSqlIntegrationFact]
@@ -96,7 +120,7 @@ public sealed class RappiReadyRecoveryTests : RappiReadyRecoveryDatabase
         await using var db = Db();
         await RappiReadyTestData.SeedAsync(db);
         var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
-        provider.Setup(x => x.ReadyForPickupAsync("ready-test-order", It.IsAny<CancellationToken>()))
+        provider.Setup(x => x.ReadyForPickupAsync("local-test-store", "ready-test-order", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RappiOperationResult(true, 200));
         await RappiReadyTestData.ProcessAsync(db, provider.Object);
         await RappiReadyTestData.ProcessAsync(db, provider.Object);
@@ -104,21 +128,21 @@ public sealed class RappiReadyRecoveryTests : RappiReadyRecoveryDatabase
         Assert.Equal("processed", row.Status);
         Assert.Equal(1, row.AttemptCount);
         Assert.NotNull(row.ProcessedAt);
-        provider.Verify(x => x.ReadyForPickupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        provider.Verify(x => x.ReadyForPickupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [PostgreSqlIntegrationFact]
     public async Task Invalid_payload_shape_is_failed_without_repeated_attempts_or_raw_error()
     {
         await using var db = Db();
-        await RappiReadyTestData.SeedAsync(db, attempts: 3);
+        await RappiReadyTestData.SeedAsync(db);
         var row = await db.IntegrationWebhookEvents.SingleAsync();
         row.PayloadJson = """{"private":"private-data"}""";
         await db.SaveChangesAsync();
         await RappiReadyTestData.ProcessAsync(db, Mock.Of<IRappiDeliveryProvider>(MockBehavior.Strict));
         row = await db.IntegrationWebhookEvents.SingleAsync();
         Assert.Equal(RappiReadyOutboxPolicy.Failed, row.Status);
-        Assert.Equal(3, row.AttemptCount);
+        Assert.Equal(0, row.AttemptCount);
         Assert.DoesNotContain("private-data", row.LastError);
     }
 
@@ -136,16 +160,16 @@ public sealed class RappiReadyRecoveryTests : RappiReadyRecoveryDatabase
     public async Task Pending_or_processed_retry_is_idempotent_and_does_not_reset_attempt_count()
     {
         await using var db = Db();
-        await RappiReadyTestData.SeedAsync(db, attempts: 4);
+        await RappiReadyTestData.SeedAsync(db);
         var controller = RappiReadyTestData.Controller(db);
         Assert.IsType<OkObjectResult>((await controller.RetryReadyForPickup(1, default)).Result);
         var row = await db.IntegrationWebhookEvents.SingleAsync();
-        Assert.Equal(4, row.AttemptCount);
+        Assert.Equal(0, row.AttemptCount);
         row.Status = "processed";
         await db.SaveChangesAsync();
         Assert.IsType<OkObjectResult>((await controller.RetryReadyForPickup(1, default)).Result);
         Assert.Equal("processed", row.Status);
-        Assert.Equal(4, row.AttemptCount);
+        Assert.Equal(0, row.AttemptCount);
     }
 
     [PostgreSqlIntegrationFact]
@@ -335,8 +359,8 @@ public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDataba
         using var shutdown = new CancellationTokenSource();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
-        provider.Setup(x => x.ReadyForPickupAsync("ready-test-order", It.IsAny<CancellationToken>()))
-            .Returns(async (string _, CancellationToken token) =>
+        provider.Setup(x => x.ReadyForPickupAsync("local-test-store", "ready-test-order", It.IsAny<CancellationToken>()))
+            .Returns(async (string _, string _, CancellationToken token) =>
             {
                 Assert.True(token.CanBeCanceled);
                 entered.TrySetResult();
@@ -352,7 +376,7 @@ public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDataba
         var row = await second.IntegrationWebhookEvents.SingleAsync();
         Assert.Equal(RappiReadyOutboxPolicy.Processing, row.Status);
         Assert.Equal(1, row.AttemptCount);
-        provider.Verify(x => x.ReadyForPickupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        provider.Verify(x => x.ReadyForPickupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [PostgreSqlIntegrationFact]
@@ -361,7 +385,7 @@ public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDataba
         await using var db = Db();
         await RappiReadyTestData.SeedAsync(db);
         var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
-        provider.Setup(x => x.ReadyForPickupAsync("ready-test-order", It.IsAny<CancellationToken>()))
+        provider.Setup(x => x.ReadyForPickupAsync("local-test-store", "ready-test-order", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RappiOperationResult(true, 200));
         var highPrecisionNow = new DateTime(2026, 10, 21, 15, 0, 0, DateTimeKind.Utc).AddTicks(1234567);
         await RappiReadyTestData.ProcessAsync(db, provider.Object, highPrecisionNow);
@@ -371,7 +395,7 @@ public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDataba
     }
 
     [PostgreSqlIntegrationFact]
-    public async Task Legacy_terminalization_cannot_overwrite_concurrent_manual_requeue()
+    public async Task Exhausted_budget_cannot_be_reset_while_worker_terminalizes_a_legacy_row()
     {
         await using var setup = Db();
         await RappiReadyTestData.SeedAsync(setup, attempts: 10);
@@ -382,14 +406,14 @@ public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDataba
         await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
         try
         {
-            Assert.IsType<OkObjectResult>((await RappiReadyTestData.Controller(retryDb).RetryReadyForPickup(1, default)).Result);
+            Assert.IsType<ConflictObjectResult>((await RappiReadyTestData.Controller(retryDb).RetryReadyForPickup(1, default)).Result);
         }
         finally { gate.Release.TrySetResult(); }
         await processing;
         await using var check = Db();
         var row = await check.IntegrationWebhookEvents.SingleAsync();
-        Assert.Equal(RappiReadyOutboxPolicy.Pending, row.Status);
-        Assert.Equal(0, row.AttemptCount);
+        Assert.Equal(RappiReadyOutboxPolicy.Failed, row.Status);
+        Assert.Equal(10, row.AttemptCount);
     }
 
     [PostgreSqlIntegrationFact]
@@ -400,7 +424,7 @@ public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDataba
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
-        provider.Setup(x => x.ReadyForPickupAsync("ready-test-order", It.IsAny<CancellationToken>()))
+        provider.Setup(x => x.ReadyForPickupAsync("local-test-store", "ready-test-order", It.IsAny<CancellationToken>()))
             .Returns(async () => { entered.TrySetResult(); await release.Task; return new RappiOperationResult(true, 200); });
         await using var first = Db();
         await using var second = Db();
@@ -414,14 +438,14 @@ public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDataba
         }
         finally { release.TrySetResult(); }
         await processing;
-        provider.Verify(x => x.ReadyForPickupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        provider.Verify(x => x.ReadyForPickupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [RappiPostgreSqlIntegrationTheory]
-    [InlineData(4, 16, "processed", 5)]
-    [InlineData(4, 1, RappiReadyOutboxPolicy.Processing, 4)]
-    [InlineData(10, 16, RappiReadyOutboxPolicy.Failed, 10)]
-    public async Task Only_abandoned_claims_with_attempts_remaining_are_recovered(int attempts, int ageMinutes, string expectedStatus, int expectedAttempts)
+    [InlineData(1, 16, RappiReadyOutboxPolicy.ReviewRequired, 1)]
+    [InlineData(1, 1, RappiReadyOutboxPolicy.Processing, 1)]
+    [InlineData(10, 16, RappiReadyOutboxPolicy.ReviewRequired, 10)]
+    public async Task Abandoned_claims_require_review_without_sending_again(int attempts, int ageMinutes, string expectedStatus, int expectedAttempts)
     {
         await using var db = Db();
         await RappiReadyTestData.SeedAsync(db, attempts: attempts, eventStatus: RappiReadyOutboxPolicy.Processing);
@@ -429,13 +453,11 @@ public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDataba
         row.UpdatedAt = new DateTime(2026, 10, 21, 15, 0, 0, DateTimeKind.Utc).AddMinutes(-ageMinutes);
         await db.SaveChangesAsync();
         var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
-        if (expectedStatus == "processed")
-            provider.Setup(x => x.ReadyForPickupAsync("ready-test-order", It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new RappiOperationResult(true, 200));
         await RappiReadyTestData.ProcessAsync(db, provider.Object);
         row = await db.IntegrationWebhookEvents.SingleAsync();
         Assert.Equal(expectedStatus, row.Status);
         Assert.Equal(expectedAttempts, row.AttemptCount);
+        provider.VerifyNoOtherCalls();
     }
 
     [PostgreSqlIntegrationFact]
@@ -443,7 +465,7 @@ public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDataba
     public async Task Concurrent_requeue_reuses_one_event_and_pulses_once()
     {
         await using var firstDb = Db();
-        await RappiReadyTestData.SeedAsync(firstDb, eventStatus: RappiReadyOutboxPolicy.Failed, attempts: 10);
+        await RappiReadyTestData.SeedAsync(firstDb, eventStatus: RappiReadyOutboxPolicy.Failed, attempts: 1);
         await using var secondDb = Db();
         var signal = new Mock<IBackgroundWorkSignal<RappiWork>>();
         var responses = await Task.WhenAll(
@@ -452,30 +474,28 @@ public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDataba
         Assert.All(responses, x => Assert.IsType<OkObjectResult>(x.Result));
         await using var check = Db();
         var row = await check.IntegrationWebhookEvents.SingleAsync();
-        Assert.Equal(RappiReadyOutboxPolicy.Pending, row.Status);
-        Assert.Equal(0, row.AttemptCount);
+        Assert.Equal(RappiReadyOutboxPolicy.ManualRetryPending, row.Status);
+        Assert.Equal(1, row.AttemptCount);
         Assert.Null(row.LastError);
         signal.Verify(x => x.Pulse(), Times.Once);
     }
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
-    public async Task Legacy_exhausted_pending_can_be_requeued_then_processed_once()
+    public async Task Manual_retry_with_remaining_budget_preserves_counter_and_sends_once()
     {
         await using var db = Db();
-        await RappiReadyTestData.SeedAsync(db, eventStatus: RappiReadyOutboxPolicy.Failed, attempts: 10);
-        var row = await db.IntegrationWebhookEvents.SingleAsync();
-        row.Status = RappiReadyOutboxPolicy.Pending;
-        await db.SaveChangesAsync();
+        await RappiReadyTestData.SeedAsync(db, eventStatus: RappiReadyOutboxPolicy.Failed, attempts: 1);
         Assert.IsType<OkObjectResult>((await RappiReadyTestData.Controller(db).RetryReadyForPickup(1, default)).Result);
         db.ChangeTracker.Clear();
         var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
-        provider.Setup(x => x.ReadyForPickupAsync("ready-test-order", It.IsAny<CancellationToken>()))
+        provider.Setup(x => x.ReadyForPickupAsync("local-test-store", "ready-test-order", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RappiOperationResult(true, 200));
         await RappiReadyTestData.ProcessAsync(db, provider.Object);
         await RappiReadyTestData.ProcessAsync(db, provider.Object);
         Assert.Equal("processed", (await db.IntegrationWebhookEvents.SingleAsync()).Status);
-        provider.Verify(x => x.ReadyForPickupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal(2, (await db.IntegrationWebhookEvents.SingleAsync()).AttemptCount);
+        provider.Verify(x => x.ReadyForPickupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [PostgreSqlIntegrationFact]

@@ -48,3 +48,11 @@ En servidor: `Rappi__Environment=production`, `Rappi__ProductionEnabled=true`, c
 ## Mejora posterior sugerida
 
 La sincronización actual reafirma periódicamente el estado integrado. Antes de reducir esas llamadas, confirmar con Rappi el contrato y los permisos de consulta de estado: `GET stores-pa` no devuelve ese flag y no permite inferirlo. Mantener esta optimización fuera del cierre del Sprint 1 hasta acordarla.
+
+## Corrección detectada en la prueba real
+
+Pedido DEV `1348715163`, interno `8954`: recibido y aceptado en aproximadamente 540 ms, una sola creación y efectos duraderos procesados. Productos y total del restaurante: 18.000; cargos del cliente: 8.900, conservados separados. El menú nuevo fue aprobado el 27 de octubre a las 15:12 UTC. Frontend y backend principales desplegados; CI del backend: 1.554 aprobadas y una prueba de mapa omitida; frontend: 960 aprobadas.
+
+El endpoint heredado READY devolvió HTTP 424, mientras el portal DEV sí pasó el pedido a READY FOR PICKUP. La documentación actual del sandbox remite al recurso moderno de pedidos, que incluye la tienda en la URL. Se corrige ese contrato y el presupuesto: Rappi advierte que más de tres solicitudes constituye uso indebido y que repetir READY puede volver a notificar al courier. La cola anterior permitía diez y reiniciaba el contador manualmente. Se pausó expresamente la fila de esta prueba, que alcanzó cuatro intentos, y no se reenviará ese ID. La validación del contrato corregido se hará con un pedido DEV nuevo.
+
+Fuentes: [Order Sandbox](https://dev-portal.rappi.com/en/api-reference/sandbox/), [Orders moderno](https://dev-portal.rappi.com/en/api-reference/rests-api-orders/), [Orders v2](https://dev-portal.rappi.com/en/api-reference/orders/).

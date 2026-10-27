@@ -153,22 +153,27 @@ public sealed class RappiIntegrationWorker(
             .OrderBy(x => x.UpdatedAt).Take(50).ToListAsync(ct);
         foreach (var row in abandoned)
             await TransitionAsync(row,
-                row.AttemptCount >= RappiReadyOutboxPolicy.MaxAttempts
-                    ? RappiReadyOutboxPolicy.Failed : RappiReadyOutboxPolicy.Pending,
-                row.AttemptCount, "El envío READY_FOR_PICKUP fue interrumpido; se recuperó su intento pendiente.", null);
+                RappiReadyOutboxPolicy.ReviewRequired,
+                row.AttemptCount, "READY_FOR_PICKUP fue interrumpido; verificar su resultado en Rappi antes de cualquier nuevo envío.", null);
 
         var rows = await db.IntegrationWebhookEvents
             .Where(x => environment == null || db.DeliveryAppConnections.Any(c => c.Id == x.ConnectionId && c.Environment == environment)).AsNoTracking()
             .Where(x => x.Provider == "rappi"
                 && x.EventType == RappiReadyOutboxPolicy.EventType
-                && x.Status == RappiReadyOutboxPolicy.Pending)
+                && (x.Status == RappiReadyOutboxPolicy.Pending || x.Status == RappiReadyOutboxPolicy.ManualRetryPending))
             .OrderBy(x => x.CreatedAt).Take(20).ToListAsync(ct);
         foreach (var row in rows)
         {
             if (row.AttemptCount >= RappiReadyOutboxPolicy.MaxAttempts)
             {
                 await TransitionAsync(row, RappiReadyOutboxPolicy.Failed, row.AttemptCount,
-                    "READY_FOR_PICKUP agotó sus 10 intentos. Requiere reintento manual.", null);
+                    "READY_FOR_PICKUP alcanzó el límite de tres solicitudes; requiere revisión con Rappi.", null);
+                continue;
+            }
+            if (row.Status == RappiReadyOutboxPolicy.Pending && row.AttemptCount > 0)
+            {
+                await TransitionAsync(row, RappiReadyOutboxPolicy.ReviewRequired, row.AttemptCount,
+                    "El envío anterior no fue confirmado; verificar el estado en Rappi sin reenviarlo automáticamente.", null);
                 continue;
             }
             var claimed = false;
@@ -223,11 +228,11 @@ public sealed class RappiIntegrationWorker(
                 row.UpdatedAt = claimedAt;
                 using var attemptTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 attemptTimeout.CancelAfter(RappiReadyOutboxPolicy.AttemptTimeout);
-                var result = await rappi.ReadyForPickupAsync(externalOrderId, attemptTimeout.Token);
+                var result = await rappi.ReadyForPickupAsync(external.Store!.RappiStoreId, externalOrderId, attemptTimeout.Token);
                 await TransitionAsync(row,
                     result.Success ? "processed"
-                        : nextAttempt >= RappiReadyOutboxPolicy.MaxAttempts
-                            ? RappiReadyOutboxPolicy.Failed : RappiReadyOutboxPolicy.Pending,
+                        : RappiReadyOutboxPolicy.IsUncertain(result.StatusCode)
+                            ? RappiReadyOutboxPolicy.ReviewRequired : RappiReadyOutboxPolicy.Failed,
                     nextAttempt,
                     result.Success ? null : RappiReadyOutboxPolicy.FailureMessage(result.StatusCode),
                     result.Success ? clock.UtcNow : null);
@@ -240,8 +245,7 @@ public sealed class RappiIntegrationWorker(
             catch (Exception)
             {
                 await TransitionAsync(row,
-                    !claimed || row.AttemptCount >= RappiReadyOutboxPolicy.MaxAttempts
-                        ? RappiReadyOutboxPolicy.Failed : RappiReadyOutboxPolicy.Pending,
+                    claimed ? RappiReadyOutboxPolicy.ReviewRequired : RappiReadyOutboxPolicy.Failed,
                     row.AttemptCount, RappiReadyOutboxPolicy.FailureMessage(null), null);
             }
         }

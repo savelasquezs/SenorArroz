@@ -9,9 +9,11 @@ public static class RappiReadyOutboxPolicy
     public const string EventType = "READY_FOR_PICKUP_OUTBOX";
     public const string Pending = "outbox_pending";
     public const string Processing = "outbox_processing";
+    public const string ManualRetryPending = "outbox_retry_approved";
+    public const string ReviewRequired = "outbox_review_required";
     public const string Failed = "outbox_failed";
     public const string Skipped = "outbox_skipped";
-    public const int MaxAttempts = 10;
+    public const int MaxAttempts = 3;
     public static readonly TimeSpan AttemptTimeout = TimeSpan.FromMinutes(5);
     public static readonly TimeSpan ProcessingLease = TimeSpan.FromMinutes(15);
 
@@ -27,8 +29,13 @@ public static class RappiReadyOutboxPolicy
         && order.InternalOrder?.Status == OrderStatus.Ready;
 
     public static bool CanRequeue(IntegrationWebhookEvent row) =>
-        row.Status == Failed
-        || row.Status == Pending && row.AttemptCount >= MaxAttempts;
+        row.Status == Failed && row.AttemptCount < MaxAttempts;
+
+    public static bool IsQueued(IntegrationWebhookEvent row) =>
+        row.Status == Pending && row.AttemptCount == 0
+        || row.Status == ManualRetryPending && row.AttemptCount < MaxAttempts;
+
+    public static bool IsUncertain(int? statusCode) => statusCode is null or 408 or 424 or >= 500;
 
     // Provider messages and exception text can contain request data. Diagnostics
     // expose only a stable explanation and HTTP status, never a remote body.
