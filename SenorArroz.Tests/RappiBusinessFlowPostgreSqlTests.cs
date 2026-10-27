@@ -41,6 +41,208 @@ namespace SenorArroz.Tests;
 public sealed class RappiBusinessFlowPostgreSqlTests
 {
     [PostgreSqlIntegrationFact]
+    public async Task Environment_schema_upgrade_is_idempotent_and_preserves_existing_connections()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using var db = fixture.Db();
+        await db.Database.ExecuteSqlRawAsync("CREATE UNIQUE INDEX ux_delivery_app_connection_branch_provider ON delivery_app_connection(branch_id, provider)");
+        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Scripts", "rappi_connections_by_environment.sql"));
+        await db.Database.ExecuteSqlRawAsync(sql);
+        await db.Database.ExecuteSqlRawAsync(sql);
+        db.DeliveryAppConnections.Add(new DeliveryAppConnection
+        {
+            Id = 99, BranchId = 11, Provider = "rappi", Environment = "production", FinancialAppId = 11,
+            CustomerId = 11, TechnicalUserId = 11
+        });
+        await db.SaveChangesAsync();
+        Assert.Equal(2, await db.DeliveryAppConnections.CountAsync(x => x.BranchId == 11));
+        Assert.True(await db.DeliveryAppConnections.AnyAsync(x => x.Id == 11 && x.Environment == "isolated-test"));
+        db.DeliveryAppConnections.Add(new DeliveryAppConnection
+        {
+            Id = 100, BranchId = 11, Provider = "rappi", Environment = "production", FinancialAppId = 11
+        });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Cleanup_restores_only_manifest_inventory_and_preserves_a_terminal_marker_against_replay()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using var db = fixture.Db();
+        var flow = new Flow(db, 1, 11);
+        flow.Accept("cleanup-target");
+        flow.Accept("keep-other-order");
+        var target = await flow.Processor.IngestNewOrderAsync(11, Payload(11, "cleanup-target"), default);
+        var kept = await flow.Processor.IngestNewOrderAsync(11, Payload(11, "keep-other-order"), default);
+        await (Task)typeof(RappiOrderProcessor).GetMethod("ApplyOrderEventAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(flow.Processor, [11, """{"order_id":"cleanup-target","event":"close_order"}""", CancellationToken.None])!;
+        await db.Database.OpenConnectionAsync();
+        await db.Database.ExecuteSqlRawAsync("""
+            SELECT set_config('app.rappi_test_tenant_id', '1', false),
+                set_config('app.rappi_test_connection_id', '11', false),
+                set_config('app.rappi_test_started_at', '2026-10-21T16:59:00Z', false),
+                set_config('app.rappi_test_finished_at', '2026-10-21T17:01:00Z', false),
+                set_config('app.rappi_test_external_ids', 'cleanup-target', false),
+                set_config('app.rappi_test_cleanup_approved', 'NOT_APPROVED', false);
+            UPDATE delivery_app_connection SET environment = 'sandbox' WHERE id = 11;
+            """);
+        var sql = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Scripts", "cleanup_rappi_test_orders.sql"));
+        async Task Cleanup()
+        {
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = sql;
+            await command.ExecuteNonQueryAsync();
+        }
+        await Assert.ThrowsAsync<Npgsql.PostgresException>(Cleanup);
+        await db.Database.ExecuteSqlRawAsync("ROLLBACK");
+        Assert.Equal(2, await db.Orders.CountAsync());
+        await db.Database.ExecuteSqlRawAsync("SELECT set_config('app.rappi_test_cleanup_approved', 'RAPPI_TEST_CLEANUP', false)");
+        await Cleanup();
+        db.ChangeTracker.Clear();
+        Assert.Equal(kept.InternalOrderId, (await db.Orders.SingleAsync()).Id);
+        Assert.Single(await db.AppPayments.ToListAsync());
+        Assert.Single(await db.PrintJobs.ToListAsync());
+        Assert.Empty(await db.InventoryMovements.Where(x => x.OrderId == target.InternalOrderId).ToListAsync());
+        var balance = await db.InventoryBalances.SingleAsync(x => x.BranchId == 11);
+        Assert.Equal(5, balance.QuantityOnHand);
+        Assert.Equal(1, balance.QuantityReserved);
+        var marker = await db.ExternalDeliveryOrders.SingleAsync(x => x.ExternalOrderId == "cleanup-target");
+        Assert.Equal(ExternalOrderStatus.Cancelled, marker.Status);
+        Assert.Equal("{}", marker.RawPayloadJson);
+        Assert.Null(marker.InternalOrderId);
+        Assert.False((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "cleanup-target"), default)).Success);
+        flow.Provider.Verify(x => x.AcceptOrderAsync("cleanup-target", 25, It.IsAny<CancellationToken>()), Times.Once);
+        flow.Provider.Verify(x => x.AcceptOrderAsync("keep-other-order", 25, It.IsAny<CancellationToken>()), Times.Once);
+        flow.Provider.VerifyNoOtherCalls();
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Host_shutdown_after_remote_acceptance_preserves_checkpoint_and_recovers_without_second_put()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        using var shutdown = new CancellationTokenSource();
+        await using (var db = fixture.Db())
+        {
+            var interrupted = new Flow(db, 1, 11);
+            interrupted.Provider.Setup(x => x.AcceptOrderAsync("crash-after-take", 25, It.IsAny<CancellationToken>()))
+                .Returns(() =>
+                {
+                    shutdown.Cancel();
+                    throw new OperationCanceledException(shutdown.Token);
+                });
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => interrupted.Processor.IngestNewOrderAsync(
+                11, Payload(11, "crash-after-take"), shutdown.Token));
+        }
+        await using var recoveryDb = fixture.Db();
+        var checkpoint = await recoveryDb.ExternalDeliveryOrders.SingleAsync();
+        Assert.Equal(ExternalOrderStatus.Processing, checkpoint.Status);
+        Assert.NotNull(checkpoint.LastAttemptAt);
+        Assert.Empty(await recoveryDb.Orders.ToListAsync());
+        Assert.Equal(0, (await recoveryDb.InventoryBalances.SingleAsync(x => x.BranchId == 11)).QuantityReserved);
+        var recovery = new Flow(recoveryDb, 1, 11);
+        recovery.Provider.Setup(x => x.GetOrderEventsAsync("crash-after-take", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOrderEventsResult(true,
+                [new("taken_visible_order", new DateTimeOffset(2026, 10, 21, 16, 59, 0, TimeSpan.Zero))]));
+        var result = await recovery.Processor.RevalidateAndAcceptAsync(checkpoint.Id, null, default);
+        Assert.True(result.Success, result.Error);
+        Assert.Single(await recoveryDb.Orders.ToListAsync());
+        Assert.Single(await recoveryDb.AppPayments.ToListAsync());
+        Assert.Single(await recoveryDb.PrintJobs.ToListAsync());
+        recovery.Provider.Verify(x => x.GetOrderEventsAsync("crash-after-take", It.IsAny<CancellationToken>()), Times.Once);
+        recovery.Provider.VerifyNoOtherCalls();
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Failed_kitchen_notification_is_recovered_after_acceptance_was_committed()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using (var db = fixture.Db())
+        {
+            var flow = new Flow(db, 1, 11);
+            flow.Accept("pending-kitchen");
+            flow.Notifications.Setup(x => x.NotifyNewOrderToKitchen(It.IsAny<OrderDto>()))
+                .ThrowsAsync(new IOException("Synthetic transport outage"));
+            Assert.True((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "pending-kitchen"), default)).Success);
+        }
+        await using var recoveryDb = fixture.Db();
+        Assert.Equal("accept_effects_pending", (await recoveryDb.IntegrationWebhookEvents.SingleAsync()).Status);
+        var recovery = new Flow(recoveryDb, 1, 11);
+        await recovery.Processor.ProcessPendingWebhookEventsAsync(default);
+        await recovery.Processor.ProcessPendingWebhookEventsAsync(default);
+        Assert.Equal("processed", (await recoveryDb.IntegrationWebhookEvents.AsNoTracking().SingleAsync()).Status);
+        Assert.Single(await recoveryDb.Orders.ToListAsync());
+        Assert.Single(await recoveryDb.AppPayments.ToListAsync());
+        Assert.Single(await recoveryDb.PrintJobs.ToListAsync());
+        recovery.Notifications.Verify(x => x.NotifyNewOrderToKitchen(It.IsAny<OrderDto>()), Times.Once);
+        recovery.Provider.VerifyNoOtherCalls();
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Close_received_before_new_order_waits_then_consumes_inventory_once()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using var db = fixture.Db();
+        var now = new DateTime(2026, 10, 21, 17, 0, 0, DateTimeKind.Utc);
+        db.IntegrationWebhookEvents.Add(new IntegrationWebhookEvent
+        {
+            ConnectionId = 11, Provider = "rappi", EventKey = "early-close", EventType = "ORDER_OTHER_EVENT",
+            PayloadJson = """{"order_id":"early-close-order","event":"close_order"}""",
+            PayloadHash = "synthetic", Status = "received", CreatedAt = now, UpdatedAt = now
+        });
+        await db.SaveChangesAsync();
+        var flow = new Flow(db, 1, 11);
+        await flow.Processor.ProcessPendingWebhookEventsAsync(default);
+        Assert.Equal("awaiting_order", (await db.IntegrationWebhookEvents.AsNoTracking().SingleAsync()).Status);
+        flow.Accept("early-close-order");
+        Assert.True((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "early-close-order"), default)).Success);
+        await db.IntegrationWebhookEvents.Where(x => x.EventKey == "early-close")
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.UpdatedAt, now.AddSeconds(-31)));
+        await flow.Processor.ProcessPendingWebhookEventsAsync(default);
+        await flow.Processor.ProcessPendingWebhookEventsAsync(default);
+        db.ChangeTracker.Clear();
+        Assert.Equal(OrderStatus.Delivered, (await db.Orders.SingleAsync()).Status);
+        var balance = await db.InventoryBalances.SingleAsync(x => x.BranchId == 11);
+        Assert.Equal(4, balance.QuantityOnHand);
+        Assert.Equal(0, balance.QuantityReserved);
+        Assert.All(await db.IntegrationWebhookEvents.ToListAsync(), x => Assert.Equal("processed", x.Status));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Status_notification_failure_replays_current_state_without_consuming_inventory_twice()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using var db = fixture.Db();
+        var flow = new Flow(db, 1, 11);
+        flow.Accept("close-notify-retry");
+        Assert.True((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "close-notify-retry"), default)).Success);
+        flow.Notifications.SetupSequence(x => x.NotifyOrderModifiedToKitchen(It.IsAny<OrderDto>(), "status", null))
+            .ThrowsAsync(new HttpRequestException("Synthetic notification outage"))
+            .Returns(Task.CompletedTask);
+        var now = new DateTime(2026, 10, 21, 17, 0, 0, DateTimeKind.Utc);
+        db.IntegrationWebhookEvents.Add(new IntegrationWebhookEvent
+        {
+            ConnectionId = 11, Provider = "rappi", EventKey = "close-notify-retry", EventType = "ORDER_OTHER_EVENT",
+            PayloadJson = """{"order_id":"close-notify-retry","event":"close_order"}""",
+            PayloadHash = "synthetic", Status = "received", CreatedAt = now, UpdatedAt = now
+        });
+        await db.SaveChangesAsync();
+        await flow.Processor.ProcessPendingWebhookEventsAsync(default);
+        db.ChangeTracker.Clear();
+        Assert.Equal(OrderStatus.Delivered, (await db.Orders.SingleAsync()).Status);
+        Assert.Equal("received", (await db.IntegrationWebhookEvents.SingleAsync(x => x.EventKey == "close-notify-retry")).Status);
+        await flow.Processor.ProcessPendingWebhookEventsAsync(default);
+        await flow.Processor.ProcessPendingWebhookEventsAsync(default);
+        db.ChangeTracker.Clear();
+        Assert.Equal("processed", (await db.IntegrationWebhookEvents.SingleAsync(x => x.EventKey == "close-notify-retry")).Status);
+        Assert.Equal(4, (await db.InventoryBalances.SingleAsync(x => x.BranchId == 11)).QuantityOnHand);
+        Assert.Equal(1, await db.InventoryMovements.CountAsync(x => x.OnHandDelta < 0));
+        flow.Notifications.Verify(x => x.NotifyOrderModifiedToKitchen(
+            It.Is<OrderDto>(o => o.Status == OrderStatus.Delivered), "status", null), Times.Exactly(2));
+        flow.Notifications.Verify(x => x.NotifyOrderModifiedToDelivery(
+            It.Is<OrderDto>(o => o.Status == OrderStatus.Delivered), "status", null), Times.Once);
+    }
+
+    [PostgreSqlIntegrationFact]
     public async Task Accept_winning_external_order_lock_is_then_cancelled_without_open_reservation()
     {
         await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
@@ -193,6 +395,7 @@ public sealed class RappiBusinessFlowPostgreSqlTests
                 services.AddSingleton(protector.Object);
                 services.AddSingleton(signal.Object);
                 services.Configure<ApiPublicOptions>(_ => { });
+                services.Configure<RappiOptions>(options => options.Environment = "isolated-test");
                 services.AddScoped(sp => new Flow(sp.GetRequiredService<ApplicationDbContext>(), 1, 11, provider,
                     sp.GetRequiredService<IServiceScopeFactory>()));
                 services.AddScoped<IRappiOrderProcessor>(sp => sp.GetRequiredService<Flow>().Processor);
@@ -242,7 +445,7 @@ public sealed class RappiBusinessFlowPostgreSqlTests
         await using (var scope = server.Services.CreateAsyncScope())
             await scope.ServiceProvider.GetRequiredService<IRappiOrderProcessor>().ProcessPendingWebhookEventsAsync(default);
         await using var persisted = fixture.Db();
-        Assert.Equal("processed", (await persisted.IntegrationWebhookEvents.SingleAsync()).Status);
+        Assert.All(await persisted.IntegrationWebhookEvents.ToListAsync(), x => Assert.Equal("processed", x.Status));
         Assert.Equal(OrderStatus.Taken, (await persisted.Orders.SingleAsync()).Status);
         Assert.Equal(16000, (await persisted.AppPayments.SingleAsync()).Amount);
         Assert.Equal(1, (await persisted.InventoryBalances.SingleAsync(x => x.BranchId == 11)).QuantityReserved);
@@ -339,7 +542,7 @@ public sealed class RappiBusinessFlowPostgreSqlTests
         Assert.Equal(1, (await db.OrderInventoryAllocations.SingleAsync()).ConsumedQuantity);
         Assert.Single(await db.InventoryMovements.Where(x => x.Type == InventoryMovementType.StrictConsumption).ToListAsync());
         Assert.Single(await db.PrintJobs.ToListAsync());
-        var outbox = await db.IntegrationWebhookEvents.SingleAsync();
+        var outbox = await db.IntegrationWebhookEvents.SingleAsync(x => x.EventType == "READY_FOR_PICKUP_OUTBOX");
         Assert.Equal("processed", outbox.Status);
         Assert.Equal(1, outbox.AttemptCount);
         flow.Provider.Verify(x => x.AcceptOrderAsync("ready-flow", 25, It.IsAny<CancellationToken>()), Times.Once);
@@ -492,9 +695,9 @@ public sealed class RappiBusinessFlowPostgreSqlTests
         var external = await db.ExternalDeliveryOrders.SingleAsync();
         Assert.Equal(ExternalOrderStatus.SyncError, external.Status);
         Assert.NotNull(external.LastAttemptAt);
-        Assert.Equal(3, transport.AcceptanceRequests);
+        Assert.Equal(1, transport.AcceptanceRequests);
         Assert.False((await flow.Processor.IngestNewOrderAsync(11, Payload(11, "transport-failure"), default)).Success);
-        Assert.Equal(3, transport.AcceptanceRequests);
+        Assert.Equal(1, transport.AcceptanceRequests);
         flow.Provider.Verify(x => x.GetOrderEventsAsync("transport-failure", It.IsAny<CancellationToken>()), Times.Once);
         Assert.Empty(await db.Orders.ToListAsync());
         Assert.Empty(await db.InventoryMovements.ToListAsync());
@@ -718,6 +921,6 @@ public sealed class RappiBusinessFlowPostgreSqlTests
             { Id = orderId, StatusChange = new ChangeOrderStatusDto { Status = OrderStatus.Ready } }, default);
         public Task SendReadyOutbox() => (Task)typeof(RappiIntegrationWorker)
             .GetMethod("ProcessReadyOutboxAsync", BindingFlags.Static | BindingFlags.NonPublic)!
-            .Invoke(null, [db, Provider.Object, clock, CancellationToken.None])!;
+            .Invoke(null, [db, Provider.Object, clock, CancellationToken.None, null])!;
     }
 }

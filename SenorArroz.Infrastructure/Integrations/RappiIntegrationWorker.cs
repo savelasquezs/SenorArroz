@@ -46,16 +46,17 @@ public sealed class RappiIntegrationWorker(
                         var inventory = services.GetRequiredService<IInventoryService>();
 
                         await processor.ProcessPendingWebhookEventsAsync(stoppingToken);
-                        await ProcessReadyOutboxAsync(db, rappi, clock, stoppingToken);
-                        await ReconcileAvailabilityStateAsync(db, inventory, clock, stoppingToken);
-                        await ProcessAvailabilityAsync(db, rappi, clock, stoppingToken);
+                        if (options.Environment == "sandbox" || options.ProductionReadyForPickupApproved)
+                            await ProcessReadyOutboxAsync(db, rappi, clock, stoppingToken, options.Environment);
+                        await ReconcileAvailabilityStateAsync(db, inventory, clock, stoppingToken, options.Environment);
+                        await ProcessAvailabilityAsync(db, rappi, clock, stoppingToken, options.Environment);
                         if (syncCapabilities)
                             await SyncCapabilitiesAsync(db, rappi, stoppingToken);
                         if (runRecovery)
                         {
-                            await RecoverSentOrdersAsync(db, rappi, processor, stoppingToken);
-                            await RecoverAcceptedOrdersAsync(db, processor, stoppingToken);
-                            await RecoverMenuApprovalsAsync(db, rappi, clock, stoppingToken);
+                            await RecoverSentOrdersAsync(db, rappi, processor, stoppingToken, options.Environment);
+                            await RecoverAcceptedOrdersAsync(db, processor, stoppingToken, options.Environment);
+                            await RecoverMenuApprovalsAsync(db, rappi, clock, stoppingToken, options.Environment);
                         }
                         if (runCleanup)
                             await PurgePiiAsync(db, clock, stoppingToken);
@@ -85,9 +86,10 @@ public sealed class RappiIntegrationWorker(
         ApplicationDbContext db,
         IRappiDeliveryProvider rappi,
         IClock clock,
-        CancellationToken ct)
+        CancellationToken ct, string? environment = null)
     {
         var candidates = await db.ExternalDeliveryOrders
+            .Where(x => environment == null || x.Connection.Environment == environment)
             .AsNoTracking()
             .Where(x =>
                 x.Connection.Provider == "rappi"
@@ -108,6 +110,7 @@ public sealed class RappiIntegrationWorker(
                 .Select(x => $"READY_FOR_PICKUP:{x.ConnectionId}:{x.ExternalOrderId}")
                 .ToList();
             var existingKeys = await db.IntegrationWebhookEvents
+            .Where(x => environment == null || db.DeliveryAppConnections.Any(c => c.Id == x.ConnectionId && c.Environment == environment))
                 .AsNoTracking()
                 .Where(x => candidateKeys.Contains(x.EventKey))
                 .Select(x => x.EventKey)
@@ -141,7 +144,8 @@ public sealed class RappiIntegrationWorker(
         // including OAuth, retries and response-body reads (ResponseHeadersRead).
         // Recover only abandoned claims; current sends remain exclusive.
         var expiredBefore = clock.UtcNow - RappiReadyOutboxPolicy.ProcessingLease;
-        var abandoned = await db.IntegrationWebhookEvents.AsNoTracking()
+        var abandoned = await db.IntegrationWebhookEvents
+            .Where(x => environment == null || db.DeliveryAppConnections.Any(c => c.Id == x.ConnectionId && c.Environment == environment)).AsNoTracking()
             .Where(x => x.Provider == "rappi"
                 && x.EventType == RappiReadyOutboxPolicy.EventType
                 && x.Status == RappiReadyOutboxPolicy.Processing
@@ -153,7 +157,8 @@ public sealed class RappiIntegrationWorker(
                     ? RappiReadyOutboxPolicy.Failed : RappiReadyOutboxPolicy.Pending,
                 row.AttemptCount, "El envío READY_FOR_PICKUP fue interrumpido; se recuperó su intento pendiente.", null);
 
-        var rows = await db.IntegrationWebhookEvents.AsNoTracking()
+        var rows = await db.IntegrationWebhookEvents
+            .Where(x => environment == null || db.DeliveryAppConnections.Any(c => c.Id == x.ConnectionId && c.Environment == environment)).AsNoTracking()
             .Where(x => x.Provider == "rappi"
                 && x.EventType == RappiReadyOutboxPolicy.EventType
                 && x.Status == RappiReadyOutboxPolicy.Pending)
@@ -173,7 +178,8 @@ public sealed class RappiIntegrationWorker(
                 var externalOrderId = document.RootElement.GetProperty("externalOrderId").GetString();
                 if (string.IsNullOrWhiteSpace(externalOrderId))
                     throw new InvalidOperationException("Orden externa ausente en outbox.");
-                var external = await db.ExternalDeliveryOrders.AsNoTracking()
+                var external = await db.ExternalDeliveryOrders
+            .Where(x => environment == null || x.Connection.Environment == environment).AsNoTracking()
                     .Include(x => x.Connection).Include(x => x.Store).Include(x => x.InternalOrder)
                     .FirstOrDefaultAsync(x => x.ConnectionId == row.ConnectionId
                         && x.ExternalOrderId == externalOrderId, ct);
@@ -241,7 +247,8 @@ public sealed class RappiIntegrationWorker(
         }
 
         IQueryable<IntegrationWebhookEvent> ExpectedRow(IntegrationWebhookEvent snapshot) =>
-            db.IntegrationWebhookEvents.Where(x => x.Id == snapshot.Id
+            db.IntegrationWebhookEvents
+            .Where(x => environment == null || db.DeliveryAppConnections.Any(c => c.Id == x.ConnectionId && c.Environment == environment)).Where(x => x.Id == snapshot.Id
                 && x.ConnectionId == snapshot.ConnectionId
                 && x.Provider == "rappi" && x.EventType == RappiReadyOutboxPolicy.EventType
                 && x.Status == snapshot.Status && x.AttemptCount == snapshot.AttemptCount
@@ -265,7 +272,7 @@ public sealed class RappiIntegrationWorker(
         var connections = await db.DeliveryAppConnections
             .AsNoTracking()
             .Include(x => x.Stores)
-            .Where(x => x.Provider == "rappi" && x.IsActive && x.IsVerified)
+            .Where(x => x.Provider == "rappi" && x.Environment == options.Environment && x.IsActive && x.IsVerified)
             .ToListAsync(ct);
         if (connections.Count == 0)
             return;
@@ -305,9 +312,10 @@ public sealed class RappiIntegrationWorker(
         ApplicationDbContext db,
         IInventoryService inventory,
         IClock clock,
-        CancellationToken ct)
+        CancellationToken ct, string? environment = null)
     {
         var connections = await db.DeliveryAppConnections
+            .Where(x => environment == null || x.Environment == environment)
             .Include(x => x.Stores)
             .Include(x => x.ProductMappings)
                 .ThenInclude(x => x.Product)
@@ -319,6 +327,7 @@ public sealed class RappiIntegrationWorker(
 
         var connectionIds = connections.Select(x => x.Id).ToList();
         var existing = await db.RappiAvailabilityStates
+            .Where(x => environment == null || x.Connection.Environment == environment)
             .Where(x => connectionIds.Contains(x.ConnectionId))
             .ToDictionaryAsync(x => (x.StoreId, x.ProductMappingId), ct);
         var changed = false;
@@ -331,35 +340,35 @@ public sealed class RappiIntegrationWorker(
                 ct);
             var availabilityByProduct = availability.ToDictionary(x => x.ProductId);
             foreach (var store in connection.Stores.Where(x => !string.IsNullOrWhiteSpace(x.StoreIntegrationId)))
-            foreach (var mapping in selectedMappings)
-            {
-                var desired = availabilityByProduct.TryGetValue(mapping.ProductId, out var productAvailability)
-                    && productAvailability.Available;
-                if (!existing.TryGetValue((store.Id, mapping.Id), out var state))
+                foreach (var mapping in selectedMappings)
                 {
-                    state = new RappiAvailabilityState
+                    var desired = availabilityByProduct.TryGetValue(mapping.ProductId, out var productAvailability)
+                        && productAvailability.Available;
+                    if (!existing.TryGetValue((store.Id, mapping.Id), out var state))
                     {
-                        ConnectionId = connection.Id,
-                        StoreId = store.Id,
-                        ProductMappingId = mapping.Id,
-                        DesiredAvailable = desired,
-                        Status = "pending",
-                        CreatedAt = clock.UtcNow,
-                        UpdatedAt = clock.UtcNow
-                    };
-                    db.RappiAvailabilityStates.Add(state);
-                    existing[(store.Id, mapping.Id)] = state;
-                    changed = true;
+                        state = new RappiAvailabilityState
+                        {
+                            ConnectionId = connection.Id,
+                            StoreId = store.Id,
+                            ProductMappingId = mapping.Id,
+                            DesiredAvailable = desired,
+                            Status = "pending",
+                            CreatedAt = clock.UtcNow,
+                            UpdatedAt = clock.UtcNow
+                        };
+                        db.RappiAvailabilityStates.Add(state);
+                        existing[(store.Id, mapping.Id)] = state;
+                        changed = true;
+                    }
+                    else if (state.DesiredAvailable != desired)
+                    {
+                        state.DesiredAvailable = desired;
+                        state.Status = "pending";
+                        state.NextAttemptAt = null;
+                        state.UpdatedAt = clock.UtcNow;
+                        changed = true;
+                    }
                 }
-                else if (state.DesiredAvailable != desired)
-                {
-                    state.DesiredAvailable = desired;
-                    state.Status = "pending";
-                    state.NextAttemptAt = null;
-                    state.UpdatedAt = clock.UtcNow;
-                    changed = true;
-                }
-            }
         }
         if (changed)
             await db.SaveChangesAsync(ct);
@@ -369,10 +378,11 @@ public sealed class RappiIntegrationWorker(
         ApplicationDbContext db,
         IRappiDeliveryProvider rappi,
         IClock clock,
-        CancellationToken ct)
+        CancellationToken ct, string? environment = null)
     {
         var now = clock.UtcNow;
         var states = await db.RappiAvailabilityStates
+            .Where(x => environment == null || x.Connection.Environment == environment)
             .Include(x => x.Store)
             .Include(x => x.ProductMapping)
             .Where(x =>
@@ -432,6 +442,7 @@ public sealed class RappiIntegrationWorker(
         {
             var connectionIds = states.Select(x => x.ConnectionId).Distinct().ToList();
             await db.DeliveryAppConnections
+            .Where(x => environment == null || x.Environment == environment)
                 .Where(x => connectionIds.Contains(x.Id))
                 .ExecuteUpdateAsync(setters =>
                     setters.SetProperty(x => x.LastAvailabilitySyncAt, now), ct);
@@ -443,9 +454,10 @@ public sealed class RappiIntegrationWorker(
         ApplicationDbContext db,
         IRappiDeliveryProvider rappi,
         IRappiOrderProcessor processor,
-        CancellationToken ct)
+        CancellationToken ct, string? environment = null)
     {
         var connections = await db.DeliveryAppConnections
+            .Where(x => environment == null || x.Environment == environment)
             .AsNoTracking()
             .Include(x => x.Stores)
             .Where(x => x.Provider == "rappi" && x.IsActive && x.IsVerified)
@@ -470,9 +482,10 @@ public sealed class RappiIntegrationWorker(
     private static async Task RecoverAcceptedOrdersAsync(
         ApplicationDbContext db,
         IRappiOrderProcessor processor,
-        CancellationToken ct)
+        CancellationToken ct, string? environment = null)
     {
         var pendingIds = await db.ExternalDeliveryOrders
+            .Where(x => environment == null || x.Connection.Environment == environment)
             .AsNoTracking()
             .Where(x =>
                 !x.InternalOrderId.HasValue
@@ -490,9 +503,10 @@ public sealed class RappiIntegrationWorker(
         ApplicationDbContext db,
         IRappiDeliveryProvider rappi,
         IClock clock,
-        CancellationToken ct)
+        CancellationToken ct, string? environment = null)
     {
         var publications = await db.RappiMenuPublications
+            .Where(x => environment == null || x.Connection.Environment == environment)
             .Where(x => x.Status == "submitted")
             .OrderBy(x => x.CreatedAt)
             .Take(20)

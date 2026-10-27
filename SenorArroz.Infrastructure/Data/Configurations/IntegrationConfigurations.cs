@@ -33,7 +33,8 @@ public class DeliveryAppConnectionConfiguration : IEntityTypeConfiguration<Deliv
         Timestamps(builder);
 
         builder.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ux_delivery_app_connection_public_id");
-        builder.HasIndex(x => new { x.BranchId, x.Provider }).IsUnique().HasDatabaseName("ux_delivery_app_connection_branch_provider");
+        builder.HasIndex(x => new { x.BranchId, x.Provider, x.Environment }).IsUnique()
+            .HasDatabaseName("ux_delivery_app_connection_branch_provider_environment");
         builder.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.FinancialApp).WithMany().HasForeignKey(x => x.FinancialAppId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);

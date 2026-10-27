@@ -75,7 +75,7 @@ public sealed class RappiDeliveryProvider(
                 });
                 return request;
             },
-            ct);
+            ct, retryTransientErrors: false);
 
         if (!response.Success)
             return new(false, Error: response.Error);
@@ -126,7 +126,7 @@ public sealed class RappiDeliveryProvider(
             () => new HttpRequestMessage(
                 HttpMethod.Put,
                 BuildUrl($"webhook/{Uri.EscapeDataString(eventType)}/reset-secret")),
-            ct);
+            ct, retryTransientErrors: false);
         if (!response.Success)
             return new(false, Error: response.Error);
 
@@ -153,7 +153,7 @@ public sealed class RappiDeliveryProvider(
                 request.Content = JsonContent.Create(menu);
                 return request;
             },
-            ct);
+            ct, retryTransientErrors: false);
         return ToOperation(response);
     }
 
@@ -227,7 +227,7 @@ public sealed class RappiDeliveryProvider(
         var path = $"orders/{Uri.EscapeDataString(orderId)}/take/{cookingTimeMinutes}";
         var response = await SendAuthorizedAsync(
             () => new HttpRequestMessage(HttpMethod.Put, BuildUrl(path)),
-            ct);
+            ct, retryTransientErrors: false);
         return ToOperation(response);
     }
 
@@ -245,7 +245,7 @@ public sealed class RappiDeliveryProvider(
                 request.Content = JsonContent.Create(new { reason });
                 return request;
             },
-            ct);
+            ct, retryTransientErrors: false);
         return ToOperation(response);
     }
 
@@ -255,7 +255,7 @@ public sealed class RappiDeliveryProvider(
             () => new HttpRequestMessage(
                 HttpMethod.Post,
                 BuildUrl($"orders/{Uri.EscapeDataString(orderId)}/ready-for-pickup")),
-            ct);
+            ct, retryTransientErrors: false);
         return ToOperation(response);
     }
 
@@ -307,7 +307,8 @@ public sealed class RappiDeliveryProvider(
 
     private async Task<RappiHttpResult> SendAuthorizedAsync(
         Func<HttpRequestMessage> requestFactory,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool retryTransientErrors = true)
     {
         var tokenResult = await GetTokenAsync(ct);
         if (!tokenResult.Success)
@@ -334,7 +335,7 @@ public sealed class RappiDeliveryProvider(
                     continue;
                 }
 
-                if (IsTransient(response.StatusCode) && attempt < 2)
+                if (retryTransientErrors && IsTransient(response.StatusCode) && attempt < 2)
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(250 * Math.Pow(2, attempt)), ct);
                     continue;
@@ -346,11 +347,11 @@ public sealed class RappiDeliveryProvider(
                     null,
                     $"Rappi respondió {(int)response.StatusCode}: {ReadSafeMessage(body)}");
             }
-            catch (HttpRequestException) when (attempt < 2)
+            catch (HttpRequestException) when (retryTransientErrors && attempt < 2)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * Math.Pow(2, attempt)), ct);
             }
-            catch (TaskCanceledException) when (!ct.IsCancellationRequested && attempt < 2)
+            catch (TaskCanceledException) when (retryTransientErrors && !ct.IsCancellationRequested && attempt < 2)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * Math.Pow(2, attempt)), ct);
             }

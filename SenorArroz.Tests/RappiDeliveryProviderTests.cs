@@ -11,6 +11,45 @@ namespace SenorArroz.Tests;
 [Collection("Rappi provider token cache")]
 public sealed class RappiDeliveryProviderTests
 {
+    [Theory]
+    [InlineData("take")]
+    [InlineData("menu")]
+    [InlineData("ready")]
+    public async Task Transient_write_failure_is_returned_without_resending_uncertain_operation(string operation)
+    {
+        typeof(RappiDeliveryProvider).GetMethod("ClearToken", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, null);
+        var transport = new TransientWriteHandler();
+        var provider = new RappiDeliveryProvider(new HttpClient(transport), Options.Create(new RappiOptions
+        {
+            ClientId = "synthetic", ClientSecret = "synthetic",
+            AuthUrl = "https://synthetic.invalid/token", ApiBaseUrl = "https://synthetic.invalid/api"
+        }));
+        var result = await (operation switch
+        {
+            "take" => provider.AcceptOrderAsync("synthetic", 20, default),
+            "ready" => provider.ReadyForPickupAsync("synthetic", default),
+            _ => provider.PublishMenuAsync(new RappiMenuRequest("synthetic", []), default)
+        });
+        Assert.False(result.Success);
+        Assert.Equal(503, result.StatusCode);
+        Assert.Equal(1, transport.Writes);
+    }
+
+    private sealed class TransientWriteHandler : HttpMessageHandler
+    {
+        public int Writes { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/token"))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                    { Content = new StringContent("""{"access_token":"synthetic-token","expires_in":3600}""") });
+            Writes++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                { Content = new StringContent("""{"message":"synthetic uncertain result"}""") });
+        }
+    }
+
     [Fact]
     public async Task Provider_UsesValidatedSandboxContracts()
     {

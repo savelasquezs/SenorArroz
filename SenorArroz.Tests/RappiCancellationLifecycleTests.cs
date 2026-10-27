@@ -80,7 +80,20 @@ public sealed class RappiCancellationLifecycleTests : RappiReadyRecoveryDatabase
     {
         await using var db = Db();
         await SeedAsync(db);
-        var processor = Processor(db, Inventory(db));
+        var repository = new Mock<IOrderRepository>(MockBehavior.Strict);
+        repository.Setup(x => x.GetByIdWithFullDetailsAsync(1, It.IsAny<CancellationToken>()))
+            .Returns(async () => await db.Orders.SingleAsync());
+        var mapper = new Mock<IMapper>(MockBehavior.Strict);
+        mapper.Setup(x => x.Map<OrderDto>(It.IsAny<object>()))
+            .Returns((object input) => new OrderDto { Id = 1, BranchId = 1, Status = ((Order)input).Status });
+        var notifications = new Mock<IOrderNotificationService>(MockBehavior.Strict);
+        notifications.Setup(x => x.NotifyOrderModifiedToKitchen(It.Is<OrderDto>(o => o.Status == OrderStatus.Delivered), "status", null))
+            .Returns(Task.CompletedTask);
+        notifications.Setup(x => x.NotifyOrderModifiedToDelivery(It.Is<OrderDto>(o => o.Status == OrderStatus.Delivered), "status", null))
+            .Returns(Task.CompletedTask);
+        notifications.Setup(x => x.NotifyOrderManagementChanged(1, 1, 1, It.IsAny<long>()))
+            .Returns(Task.CompletedTask);
+        var processor = Processor(db, Inventory(db), notifications.Object, repository: repository.Object, mapper: mapper.Object);
         await Invoke(processor, "ApplyOrderEventAsync", """{"order_id":"ready-test-order","event":"close_order"}""");
         await db.SaveChangesAsync();
         var closedAt = JsonDocument.Parse((await db.Orders.SingleAsync()).StatusTimes)
@@ -98,6 +111,10 @@ public sealed class RappiCancellationLifecycleTests : RappiReadyRecoveryDatabase
         Assert.Equal(8, (await check.InventoryBalances.SingleAsync()).QuantityOnHand);
         Assert.Single(await check.InventoryMovements.ToListAsync());
         Assert.False((await check.AppPayments.SingleAsync()).IsReversed);
+        notifications.Verify(x => x.NotifyOrderModifiedToKitchen(It.IsAny<OrderDto>(), "status", null), Times.Exactly(3));
+        notifications.Verify(x => x.NotifyOrderModifiedToDelivery(It.IsAny<OrderDto>(), "status", null), Times.Exactly(3));
+        notifications.Verify(x => x.NotifyOrderManagementChanged(1, 1, 1, It.IsAny<long>()), Times.Exactly(3));
+        notifications.VerifyNoOtherCalls();
     }
 
     [PostgreSqlIntegrationFact]

@@ -562,7 +562,7 @@ Cuando una tarea toque una regla funcional:
 
 Reglas:
 
-- La integración Rappi pertenece a Santander, usa credenciales globales del ambiente y nunca persiste `client_id` ni `client_secret`.
+- La conexión sandbox actual pertenece a Santander. Cada conexión Rappi pertenece a tenant, sucursal y ambiente; usa las credenciales del ambiente configurado en el servidor y nunca persiste `client_id` ni `client_secret`. DEV y producción conservan conexiones e historiales separados.
 - La tienda `900173116` es padre y la `900173117` hereda su menú. Solo se publica el menú al padre.
 - En sandbox `store_integration_id` es `900173116` para la tienda padre y `900173117` para la hija; en POS Tester se selecciona `POS=SeñorArrozDevV2` e `INTEGRACIÓN=SENORARROZDEVV2`.
 - Cada webhook tiene un secreto distinto, cifrado en base de datos. La firma usa HMAC-SHA256 sobre `timestamp.rawPayload` y comparación en tiempo constante.
@@ -575,7 +575,7 @@ Reglas:
 - La disponibilidad deriva del producto seleccionado, activo y disponible según las reglas internas, y se sincroniza en ambas tiendas.
 - Solo se admiten órdenes `delivery` con courier Rappi.
 - Una orden válida se toma automáticamente y se crea en estado `Taken`. SKU, precio, stock, modificadores o totales inconsistentes la dejan retenida.
-- La impresión Rappi respeta la configuración de cocina de la sucursal: `KitchenAutoPrintTrigger=whenOrderCreated` puede encolar comanda al aceptar/crear; la configuración de impresión al quedar `Ready` sigue el flujo normal e idempotente. Sandbox no desactiva inventario, pagos, cocina ni impresión.
+- La impresión Rappi respeta la configuración de cocina de la sucursal: `KitchenAutoPrintTrigger=whenOrderCreated` puede encolar comanda al aceptar/crear; la configuración de impresión al quedar `Ready` sigue el flujo normal e idempotente. Avisos e impresión de aceptación quedan en una outbox duradera junto al pedido; SignalR admite repetición y la comanda se deduplica. Los estados remotos refrescan cocina y gestión sin anunciar una modificación de productos. Sandbox no desactiva inventario, pagos, cocina ni impresión.
 - Las órdenes retenidas solo permiten revalidar y aceptar o rechazar; no se permiten sustituciones particulares.
 - La recuperación de `SENT` consulta la ventana oficial de 10 minutos y deduplica por conexión y `order_id`.
 - `total_order` es el total autoritativo. Descuentos Rappi, descuentos del aliado, cargos, comisión estimada, neto esperado, consignación real y diferencia se conservan por separado.
@@ -589,6 +589,11 @@ Reglas:
 - `READY_FOR_PICKUP` está habilitado exclusivamente en las tiendas sandbox `900173116` y `900173117` para homologación. En producción permanece deshabilitado hasta confirmación expresa de Rappi. Cambiar el pedido a `Ready` crea automáticamente el envío idempotente y el worker recupera envíos faltantes tras reinicios.
 - La información personal y el payload crudo se anonimizan después de 90 días.
 - Deshabilitar la integración conserva configuración, eventos, pedidos e historial financiero.
+- El intento de aceptación se confirma antes del PUT remoto. Un bloqueo PostgreSQL de sesión, compatible con los bloqueos transaccionales de cancelación, serializa ambas fases. Una recuperación consulta el historial antes de repetir aceptación. Las escrituras remotas inciertas no se reenvían automáticamente en el cliente HTTP.
+- Handoff/cierre anteriores a NEW_ORDER esperan hasta 15 minutos con diagnóstico, sin descartarse ni provocar consumo doble. Después requieren revisión explícita.
+- El reintento manual de eventos fallidos conserva contador monotónico y la misma fila. Solo permite cancelación, otros estados y efectos internos idempotentes; excluye aceptación, menú, conectividad y reclamos legados ambiguos.
+- Producción exige `Rappi__Environment=production`, habilitación explícita y endpoints HTTPS de Colombia. El servidor rechaza webhooks y trabajos de otro ambiente. READY productivo exige además `ProductionReadyForPickupApproved`, sin que el frontend pueda autorizarlo.
+- Los pedidos DEV de homologación solo se eliminan mediante un manifiesto de IDs, tenant, conexión sandbox y ventana temporal. Se restauran únicamente sus deltas de inventario; pagos liquidados, bancos y rutas internas bloquean la limpieza. Se conserva un marcador externo terminal anonimizado para impedir recreaciones por replays.
 
 ## Gestión de pedidos originados para otra sucursal
 
