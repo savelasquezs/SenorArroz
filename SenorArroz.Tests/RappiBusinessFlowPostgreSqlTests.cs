@@ -523,7 +523,7 @@ public sealed class RappiBusinessFlowPostgreSqlTests
         await using var db = fixture.Db();
         var flow = new Flow(db, 1, 12);
         flow.Accept("ready-flow");
-        flow.Provider.Setup(x => x.ReadyForPickupAsync("ready-flow", It.IsAny<CancellationToken>()))
+        flow.Provider.Setup(x => x.ReadyForPickupAsync("isolated-store-12", "ready-flow", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RappiOperationResult(true, 200));
         var accepted = await flow.Processor.IngestNewOrderAsync(12, Payload(12, "ready-flow"), default);
         Assert.True(accepted.Success, accepted.Error);
@@ -546,7 +546,7 @@ public sealed class RappiBusinessFlowPostgreSqlTests
         Assert.Equal("processed", outbox.Status);
         Assert.Equal(1, outbox.AttemptCount);
         flow.Provider.Verify(x => x.AcceptOrderAsync("ready-flow", 25, It.IsAny<CancellationToken>()), Times.Once);
-        flow.Provider.Verify(x => x.ReadyForPickupAsync("ready-flow", It.IsAny<CancellationToken>()), Times.Once);
+        flow.Provider.Verify(x => x.ReadyForPickupAsync("isolated-store-12", "ready-flow", It.IsAny<CancellationToken>()), Times.Once);
         flow.Provider.VerifyNoOtherCalls();
         flow.PrintTransport.Verify(x => x.NotifyJobsAvailableAsync(12, It.IsAny<long>(), PrintJobKind.Kitchen,
             It.IsAny<CancellationToken>()), Times.Once);

@@ -28,7 +28,7 @@ public sealed class RappiDeliveryProviderTests
         var result = await (operation switch
         {
             "take" => provider.AcceptOrderAsync("synthetic", 20, default),
-            "ready" => provider.ReadyForPickupAsync("synthetic", default),
+            "ready" => provider.ReadyForPickupAsync("synthetic-store", "synthetic", default),
             _ => provider.PublishMenuAsync(new RappiMenuRequest("synthetic", []), default)
         });
         Assert.False(result.Success);
@@ -36,15 +36,37 @@ public sealed class RappiDeliveryProviderTests
         Assert.Equal(1, transport.Writes);
     }
 
+    [Theory]
+    [InlineData("https://api.dev.rappi.com", "https://microservices.dev.rappi.com/api/v2/restaurants-integrations-public-api")]
+    [InlineData("https://api.rappi.com.co", "https://services.rappi.com/api/v2/restaurants-integrations-public-api")]
+    public async Task Ready_uses_the_documented_store_scoped_orders_resource_and_json_header(string authority, string legacyBase)
+    {
+        typeof(RappiDeliveryProvider).GetMethod("ClearToken", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, null);
+        var transport = new TransientWriteHandler();
+        var provider = new RappiDeliveryProvider(new HttpClient(transport), Options.Create(new RappiOptions
+        {
+            ClientId = "synthetic", ClientSecret = "synthetic", AuthUrl = authority + "/token", ApiBaseUrl = legacyBase
+        }));
+        await provider.ReadyForPickupAsync("store/parent", "order/id", default);
+        Assert.Equal(authority + "/restaurants/orders/v1/stores/store%2Fparent/orders/order%2Fid/ready-for-pickup", transport.WriteUri);
+        Assert.Equal("application/json", transport.WriteContentType);
+        Assert.Equal(1, transport.Writes);
+    }
+
     private sealed class TransientWriteHandler : HttpMessageHandler
     {
         public int Writes { get; private set; }
+        public string? WriteUri { get; private set; }
+        public string? WriteContentType { get; private set; }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.RequestUri!.AbsolutePath.EndsWith("/token"))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                     { Content = new StringContent("""{"access_token":"synthetic-token","expires_in":3600}""") });
             Writes++;
+            WriteUri = request.RequestUri.AbsoluteUri;
+            WriteContentType = request.Content?.Headers.ContentType?.MediaType;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
                 { Content = new StringContent("""{"message":"synthetic uncertain result"}""") });
         }

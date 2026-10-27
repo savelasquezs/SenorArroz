@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using SenorArroz.Application.Common.Interfaces;
@@ -249,12 +250,15 @@ public sealed class RappiDeliveryProvider(
         return ToOperation(response);
     }
 
-    public async Task<RappiOperationResult> ReadyForPickupAsync(string orderId, CancellationToken ct)
+    public async Task<RappiOperationResult> ReadyForPickupAsync(string storeId, string orderId, CancellationToken ct)
     {
         var response = await SendAuthorizedAsync(
             () => new HttpRequestMessage(
                 HttpMethod.Post,
-                BuildUrl($"orders/{Uri.EscapeDataString(orderId)}/ready-for-pickup")),
+                $"{new Uri(options.AuthUrl).GetLeftPart(UriPartial.Authority)}/restaurants/orders/v1/stores/{Uri.EscapeDataString(storeId)}/orders/{Uri.EscapeDataString(orderId)}/ready-for-pickup")
+            {
+                Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+            },
             ct, retryTransientErrors: false);
         return ToOperation(response);
     }
