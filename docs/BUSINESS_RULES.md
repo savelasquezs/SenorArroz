@@ -579,6 +579,7 @@ Reglas:
 - Las órdenes retenidas solo permiten revalidar y aceptar o rechazar; no se permiten sustituciones particulares.
 - La recuperación de `SENT` consulta la ventana oficial de 10 minutos y deduplica por conexión y `order_id`.
 - `total_order` es el total autoritativo. Descuentos Rappi, descuentos del aliado, cargos, comisión estimada, neto esperado, consignación real y diferencia se conservan por separado.
+- Los triggers locales de totales no recalculan pedidos vinculados a Rappi: preservan el subtotal, descuento del aliado y total enviados por el proveedor. Las líneas conservan precios originales y el pago por app debe cubrir ese total autoritativo. Los pedidos locales mantienen el cálculo normal por líneas y domicilio.
 - Los importes monetarios de Rappi se aceptan como enteros JSON o como decimales sin fracción (`31000` y `31000.00`); nunca se redondean valores fraccionarios.
 - En POS Tester, una orden `delivery` gestionada por courier Rappi puede traer `delivery_information=null`. La ausencia de dirección no bloquea la orden; si Rappi envía dirección, se conserva en el snapshot externo.
 - Revalidar una incidencia vuelve a interpretar el payload crudo y refresca líneas, descuentos y totales antes de crear el pedido interno.

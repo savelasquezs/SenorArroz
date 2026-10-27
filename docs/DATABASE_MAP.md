@@ -509,6 +509,7 @@ Tablas:
 - `delivery_app_webhook_subscription`: secreto cifrado y estado por tipo de evento.
 - `delivery_app_product_mapping`: selección uno a uno de `product`, overrides y último snapshot publicado.
 - `external_delivery_order`: inbox funcional de órdenes, validación, totales, descuentos, PII y vínculo con el pedido interno.
+- `fix_rappi_authoritative_totals.sql` conserva los importes de pedidos vinculados a Rappi en los triggers `update_order_totals` y `update_order_total_on_delivery_fee_change`. No cambia el cálculo de pedidos locales ni aplica backfill monetario. Las pruebas de negocio instalan los triggers de líneas y totales además del esquema EF.
 - `integration_webhook_event`: inbox idempotente y outbox de estados externos.
 - `rappi_menu_publication`: payload, hash y estado de cada publicación al padre.
 - `rappi_availability_state`: estado deseado y último estado sincronizado por tienda y producto.
