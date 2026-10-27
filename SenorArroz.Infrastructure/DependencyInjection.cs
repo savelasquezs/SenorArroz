@@ -35,7 +35,10 @@ public static class DependencyInjection
                 options.RoutesApiKey);
         });
         services.Configure<ApiPublicOptions>(configuration.GetSection(ApiPublicOptions.SectionName));
-        services.Configure<RappiOptions>(configuration.GetSection(RappiOptions.SectionName));
+        services.AddOptions<RappiOptions>().Bind(configuration.GetSection(RappiOptions.SectionName))
+            .Validate(options => options.HasValidEnvironmentConfiguration(),
+                "Configura un ambiente Rappi válido con URLs de Colombia y habilitación productiva explícita.")
+            .ValidateOnStart();
         services.Configure<BrandingOptions>(configuration.GetSection(BrandingOptions.SectionName));
         services.Configure<DeliveryPayrollOptions>(configuration.GetSection(DeliveryPayrollOptions.SectionName));
         services.Configure<FirebaseStorageOptions>(configuration.GetSection(FirebaseStorageOptions.SectionName));

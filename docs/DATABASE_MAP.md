@@ -517,7 +517,7 @@ Tablas:
 
 Unicidades:
 
-- conexión: `(branch_id, provider)` y `public_id`;
+- conexión: `(branch_id, provider, environment)` y `public_id`;
 - tienda: `(connection_id, rappi_store_id)`;
 - webhook: `(connection_id, event_type)`;
 - producto: `(connection_id, product_id)` y `(connection_id, sku)`;
@@ -525,7 +525,7 @@ Unicidades:
 - evento: `(connection_id, event_key)`;
 - disponibilidad: `(store_id, product_mapping_id)`.
 
-El esquema se aplica con `SenorArroz.Infrastructure/Scripts/upgrade_rappi_v2_sandbox.sql`; no se usan migraciones EF para esta integración.
+El esquema inicial se aplica con `SenorArroz.Infrastructure/Scripts/upgrade_rappi_v2_sandbox.sql`; la separación por ambiente usa `rappi_connections_by_environment.sql`, antes de desplegar el código correspondiente. No se usan migraciones EF. `cleanup_rappi_test_orders.sql` es una operación acotada para datos DEV explícitamente identificados, no una migración ni un borrado global.
 
 Preparación interna 2026-10-21: `rappi_menu_publication.status` es token de
 concurrencia EF para no sobrescribir una revisión de aprobación con una respuesta

@@ -18,6 +18,62 @@ namespace SenorArroz.Tests;
 public sealed class RappiCatalogReadinessTests
 {
     [Theory]
+    [InlineData("sandbox", false, "https://api.dev.rappi.com", "https://api.dev.rappi.com", true)]
+    [InlineData("production", true, "https://api.rappi.com.co", "https://services.rappi.com", true)]
+    [InlineData("production", false, "https://api.rappi.com.co", "https://services.rappi.com", false)]
+    [InlineData("production", true, "https://api.dev.rappi.com", "https://services.rappi.com", false)]
+    [InlineData("sandbox", false, "https://api.dev.rappi.com", "https://services.rappi.com", false)]
+    public void Environment_configuration_rejects_mixed_or_unapproved_production(
+        string environment, bool enabled, string auth, string api, bool expected)
+    {
+        Assert.Equal(expected, new RappiOptions
+        {
+            Environment = environment, ProductionEnabled = enabled,
+            AuthUrl = auth + "/restaurants/auth/v1/token/login/integrations",
+            ApiBaseUrl = api + "/api/v2/restaurants-integrations-public-api"
+        }.HasValidEnvironmentConfiguration());
+    }
+
+    [Fact]
+    public async Task Production_configuration_cannot_expose_sandbox_or_enable_unapproved_ready()
+    {
+        await using var db = RappiCatalogTestData.NewDb();
+        await RappiCatalogTestData.SeedAsync(db);
+        var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
+        var actor = Mock.Of<ICurrentUser>(x => x.Role == "Admin" && x.BranchId == 1);
+        var controller = new RappiIntegrationsController(db, actor, new FakeClock(RappiCatalogTestData.Now),
+            Mock.Of<IIntegrationSecretProtector>(), provider.Object, Mock.Of<IRappiOrderProcessor>(),
+            Options.Create(new ApiPublicOptions()), Mock.Of<IBackgroundWorkSignal<RappiWork>>(), new TestTenantContext(),
+            Options.Create(new RappiOptions { Environment = "production" }));
+        var apps = Assert.IsType<OkObjectResult>((await controller.GetApps(1, default)).Result);
+        var json = JsonSerializer.Serialize(apps.Value);
+        Assert.Contains("production", json);
+        Assert.DoesNotContain("900173116", json);
+        var dto = RappiCatalogTestData.ConnectionDto();
+        dto.Stores[0].ManualReadyForPickupEnabled = true;
+        Assert.IsType<BadRequestObjectResult>((await controller.Upsert(1, dto, default)).Result);
+        Assert.IsType<NotFoundResult>(await controller.Webhook((await db.DeliveryAppConnections.SingleAsync()).PublicId,
+            "PING", default));
+        provider.VerifyNoOtherCalls();
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Worker_does_not_send_sandbox_availability_with_production_environment()
+    {
+        await using var fixture = await RappiIsolatedBusinessDatabase.CreateAsync();
+        await using var db = fixture.Db();
+        db.RappiAvailabilityStates.Add(new RappiAvailabilityState
+        {
+            ConnectionId = 11, StoreId = 11, ProductMappingId = 11, DesiredAvailable = true,
+            Status = "pending", CreatedAt = RappiCatalogTestData.Now, UpdatedAt = RappiCatalogTestData.Now
+        });
+        await db.SaveChangesAsync();
+        var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
+        await RappiCatalogTestData.WorkerAsync("ProcessAvailabilityAsync", db, provider.Object, "production");
+        Assert.Equal("pending", (await db.RappiAvailabilityStates.SingleAsync()).Status);
+        provider.VerifyNoOtherCalls();
+    }
+    [Theory]
     [InlineData("disabled")]
     [InlineData("unverified")]
     [InlineData("deselected")]
@@ -709,8 +765,8 @@ internal static class RappiCatalogTestData
     }
     internal static RappiOrderProcessor Processor(ApplicationDbContext db, IRappiDeliveryProvider provider) =>
         (RappiOrderProcessor)typeof(RappiOrderProcessorTests).GetMethod("CreateProcessor", PrivateStatic)!.Invoke(null, [db, provider, null, null, null, null, null])!;
-    internal static Task WorkerAsync(string method, ApplicationDbContext db, IRappiDeliveryProvider provider) =>
-        (Task)typeof(RappiIntegrationWorker).GetMethod(method, PrivateStatic)!.Invoke(null, [db, provider, new FakeClock(Now), CancellationToken.None])!;
+    internal static Task WorkerAsync(string method, ApplicationDbContext db, IRappiDeliveryProvider provider, string? environment = null) =>
+        (Task)typeof(RappiIntegrationWorker).GetMethod(method, PrivateStatic)!.Invoke(null, [db, provider, new FakeClock(Now), CancellationToken.None, environment])!;
     internal static async Task ApplyMenuAsync(ApplicationDbContext db, string eventType, string eventKey, bool save = true)
     {
         var method = typeof(RappiOrderProcessor).GetMethod("ApplyMenuStatusAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;

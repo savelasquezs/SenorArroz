@@ -163,6 +163,7 @@ public sealed class RappiWebhookEndpointTests
     {
         await using var fixture = await Fixture.CreateAsync("NEW_ORDER");
         (await fixture.Db.DeliveryAppConnections.SingleAsync()).Environment = environment;
+          fixture.RuntimeOptions.Environment = environment;
         await fixture.Db.SaveChangesAsync();
         const string raw = "{\"order_id\":\"synthetic\",\"total\":12,\"online\":true,\"info\":null}";
         const string canonical = "{\"order_id\":\"synthetic\",\"total\":\"12\",\"online\":\"true\",\"info\":\"null\"}";
@@ -183,6 +184,7 @@ public sealed class RappiWebhookEndpointTests
 
     private sealed class Fixture : IAsyncDisposable
     {
+        public RappiOptions RuntimeOptions { get; } = new();
         public required ApplicationDbContext Db { get; init; }
         public RappiIntegrationsController Controller { get; private set; } = null!;
         public required Guid PublicId { get; init; }
@@ -216,7 +218,7 @@ public sealed class RappiWebhookEndpointTests
             var fixture = new Fixture { Db = db, PublicId = id };
             fixture.Controller = new RappiIntegrationsController(db, Mock.Of<ICurrentUser>(), new FakeClock(Now),
                 protector.Object, fixture.Provider.Object, fixture.Processor.Object,
-                Options.Create(new ApiPublicOptions()), fixture.Signal.Object, context);
+                Options.Create(new ApiPublicOptions()), fixture.Signal.Object, context, Options.Create(fixture.RuntimeOptions));
             return fixture;
         }
 

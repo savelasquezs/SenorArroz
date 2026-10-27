@@ -16,6 +16,7 @@ using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Integrations;
+using SenorArroz.Shared.Models;
 using Testcontainers.PostgreSql;
 
 namespace SenorArroz.Tests;
@@ -283,6 +284,50 @@ public abstract class RappiReadyRecoveryDatabase : IAsyncLifetime
 public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDatabase
 {
     [PostgreSqlIntegrationFact]
+    public async Task Manual_webhook_retry_keeps_attempt_fencing_monotonic_and_rejects_foreign_branch()
+    {
+        await using var db = Db();
+        await RappiReadyTestData.SeedAsync(db);
+        db.IntegrationWebhookEvents.Add(new IntegrationWebhookEvent
+        {
+            Id = 2, ConnectionId = 1, Provider = "rappi", EventKey = "manual-cancel", EventType = "ORDER_EVENT_CANCEL",
+            Status = "failed", AttemptCount = 8, PayloadJson = "{}", LastError = "private-provider-response",
+            CreatedAt = RappiReadyTestData.Now, UpdatedAt = RappiReadyTestData.Now
+        });
+        await db.SaveChangesAsync();
+        Assert.IsType<ForbidResult>((await RappiReadyTestData.Controller(db, branchId: 2).RetryWebhook(2, default)).Result);
+        Assert.IsType<OkObjectResult>((await RappiReadyTestData.Controller(db).RetryWebhook(2, default)).Result);
+        var row = await db.IntegrationWebhookEvents.AsNoTracking().SingleAsync(x => x.Id == 2);
+        Assert.Equal("manual_retry_received", row.Status);
+        Assert.Equal(8, row.AttemptCount);
+        Assert.Null(row.LastError);
+        Assert.IsType<BadRequestObjectResult>((await RappiReadyTestData.Controller(db).RetryWebhook(2, default)).Result);
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Diagnostics_are_paged_scoped_and_do_not_return_raw_payload_or_provider_errors()
+    {
+        await using var db = Db();
+        await RappiReadyTestData.SeedAsync(db);
+        db.IntegrationWebhookEvents.Add(new IntegrationWebhookEvent
+        {
+            Id = 2, ConnectionId = 1, Provider = "rappi", EventKey = "failed-menu", EventType = "MENU_REJECTED",
+            Status = "failed", AttemptCount = 5, PayloadJson = "{\"private\":\"secret-test-payload\"}",
+            LastError = "secret-provider-response", CreatedAt = RappiReadyTestData.Now, UpdatedAt = RappiReadyTestData.Now
+        });
+        await db.SaveChangesAsync();
+        var result = Assert.IsType<OkObjectResult>((await RappiReadyTestData.Controller(db).GetEvents(1, default, 1, 1)).Result);
+        var response = Assert.IsType<ApiResponse<object>>(result.Value);
+        var page = Assert.IsType<PagedResult<object>>(response.Data);
+        Assert.Equal(1, page.TotalCount);
+        Assert.Single(page.Items);
+        var json = JsonSerializer.Serialize(response);
+        Assert.DoesNotContain("secret-test-payload", json);
+        Assert.DoesNotContain("secret-provider-response", json);
+        Assert.IsType<BadRequestObjectResult>((await RappiReadyTestData.Controller(db).RetryWebhook(2, default)).Result);
+    }
+
+    [PostgreSqlIntegrationFact]
     public async Task Shutdown_cancels_full_send_and_retains_active_lease_without_resend()
     {
         await using var first = Db();
@@ -468,7 +513,7 @@ public sealed class RappiReadyRecoveryPostgreSqlTests : RappiReadyRecoveryDataba
 
 internal static class RappiReadyTestData
 {
-    private static readonly DateTime Now = new(2026, 10, 21, 15, 0, 0, DateTimeKind.Utc);
+    internal static readonly DateTime Now = new(2026, 10, 21, 15, 0, 0, DateTimeKind.Utc);
     public static async Task SeedAsync(ApplicationDbContext db, int attempts = 0,
         string eventStatus = RappiReadyOutboxPolicy.Pending, OrderStatus orderStatus = OrderStatus.Ready,
         bool active = true, bool enabled = true)
@@ -513,7 +558,7 @@ internal static class RappiReadyTestData
     {
         db.ChangeTracker.Clear();
         var method = typeof(RappiIntegrationWorker).GetMethod("ProcessReadyOutboxAsync", BindingFlags.NonPublic | BindingFlags.Static)!;
-        await (Task)method.Invoke(null, [db, provider, new FakeClock(now ?? Now), cancellationToken])!;
+        await (Task)method.Invoke(null, [db, provider, new FakeClock(now ?? Now), cancellationToken, null])!;
         db.ChangeTracker.Clear();
     }
 }

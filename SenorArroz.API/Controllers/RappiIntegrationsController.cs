@@ -25,8 +25,10 @@ public sealed class RappiIntegrationsController(
     IRappiOrderProcessor orderProcessor,
     IOptions<ApiPublicOptions> apiPublicOptions,
     IBackgroundWorkSignal<RappiWork> workSignal,
-    ITenantExecutionContext tenantExecutionContext) : ControllerBase
+    ITenantExecutionContext tenantExecutionContext,
+    IOptions<RappiOptions>? rappiOptions = null) : ControllerBase
 {
+    private readonly RappiOptions options = rappiOptions?.Value ?? new();
     private static readonly string[] WebhookEvents =
     [
         "NEW_ORDER",
@@ -45,7 +47,7 @@ public sealed class RappiIntegrationsController(
         if (!CanAdminister(branchId))
             return Forbid();
         var connection = await ConnectionQuery()
-            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi" && x.Environment == options.Environment, ct);
         return Ok(ApiResponse<object>.SuccessResponse(new
         {
             providers = new object[]
@@ -54,6 +56,8 @@ public sealed class RappiIntegrationsController(
                 {
                     key = "rappi",
                     name = "Rappi",
+                    environment = options.Environment,
+                    readyForPickupAllowed = options.Environment == "sandbox" || options.ProductionReadyForPickupApproved,
                     available = true,
                     connection = connection is null ? null : ToDto(connection)
                 },
@@ -71,6 +75,9 @@ public sealed class RappiIntegrationsController(
     {
         if (!CanAdminister(branchId))
             return Forbid();
+        if (options.Environment == "production" && !options.ProductionReadyForPickupApproved
+            && dto.Stores.Any(x => x.ManualReadyForPickupEnabled))
+            return BadRequest(ApiResponse<object>.ErrorResponse("Rappi aún no ha autorizado READY_FOR_PICKUP en producción."));
         var branchTenantId = await db.Branches.Where(x => x.Id == branchId)
             .Select(x => (int?)x.TenantId).FirstOrDefaultAsync(ct);
         if (!branchTenantId.HasValue)
@@ -116,19 +123,19 @@ public sealed class RappiIntegrationsController(
                 $"SELECT pg_advisory_xact_lock(1380012113, {branchTenantId.Value})", ct);
         if (transaction is not null)
             await db.DeliveryAppConnections
-                .Where(x => x.BranchId == branchId && x.Provider == "rappi")
+                .Where(x => x.BranchId == branchId && x.Provider == "rappi" && x.Environment == options.Environment)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.UpdatedAt, x => x.UpdatedAt), ct);
 
         var connection = await db.DeliveryAppConnections
             .Include(x => x.Stores)
-            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi" && x.Environment == options.Environment, ct);
         if (connection is null)
         {
             connection = new DeliveryAppConnection
             {
                 BranchId = branchId,
                 Provider = "rappi",
-                Environment = "sandbox",
+                Environment = options.Environment,
                 PublicId = Guid.NewGuid(),
                 CreatedAt = clock.UtcNow
             };
@@ -138,6 +145,7 @@ public sealed class RappiIntegrationsController(
         // Validate the complete proposed store set without changing historical tracked rows.
         var proposed = new DeliveryAppConnection
         {
+            Environment = options.Environment,
             Stores = connection.Stores.Select(x => new DeliveryAppStore
             {
                 RappiStoreId = x.RappiStoreId,
@@ -154,7 +162,7 @@ public sealed class RappiIntegrationsController(
         var proposedIntegrationIds = proposed.Stores.Where(x => !string.IsNullOrWhiteSpace(x.StoreIntegrationId))
             .Select(x => x.StoreIntegrationId!.Trim()).ToList();
         if (await db.DeliveryAppStores.AnyAsync(x => x.ConnectionId != connection.Id
-                && x.Connection.Provider == "rappi"
+                && x.Connection.Provider == "rappi" && x.Connection.Environment == options.Environment
                 && (proposedIds.Contains(x.RappiStoreId.Trim())
                     || proposedIntegrationIds.Contains(x.RappiStoreId.Trim())
                     || (x.StoreIntegrationId != null && (proposedIntegrationIds.Contains(x.StoreIntegrationId.Trim())
@@ -199,7 +207,7 @@ public sealed class RappiIntegrationsController(
             return Forbid();
         var connection = await db.DeliveryAppConnections
             .Include(x => x.Stores)
-            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi" && x.Environment == options.Environment, ct);
         if (connection is null)
             return NotFound();
         foreach (var store in connection.Stores)
@@ -224,7 +232,7 @@ public sealed class RappiIntegrationsController(
             return Forbid();
         var connection = await db.DeliveryAppConnections
             .Include(x => x.Stores)
-            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi" && x.Environment == options.Environment, ct);
         if (connection is null)
             return NotFound();
 
@@ -268,7 +276,7 @@ public sealed class RappiIntegrationsController(
         var connection = await db.DeliveryAppConnections
             .Include(x => x.Stores)
             .Include(x => x.WebhookSubscriptions)
-            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi" && x.Environment == options.Environment, ct);
         if (connection is null)
             return NotFound();
         if (!connection.IsVerified || !connection.IsActive)
@@ -351,7 +359,7 @@ public sealed class RappiIntegrationsController(
             return Forbid();
         var connection = await db.DeliveryAppConnections
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi" && x.Environment == options.Environment, ct);
         if (connection is null)
             return NotFound();
         return Ok(ApiResponse<object>.SuccessResponse(await CatalogResponse(connection.Id, branchId, ct)));
@@ -368,7 +376,7 @@ public sealed class RappiIntegrationsController(
         if (!CanAdminister(branchId))
             return Forbid();
         var connection = await db.DeliveryAppConnections
-            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi" && x.Environment == options.Environment, ct);
         var product = await db.Products
             .Include(x => x.Category)
             .FirstOrDefaultAsync(x => x.Id == productId && x.Category.BranchId == branchId, ct);
@@ -428,7 +436,7 @@ public sealed class RappiIntegrationsController(
             : null;
         if (transaction is not null)
             await db.DeliveryAppConnections
-                .Where(x => x.BranchId == branchId && x.Provider == "rappi")
+                .Where(x => x.BranchId == branchId && x.Provider == "rappi" && x.Environment == options.Environment)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.UpdatedAt, x => x.UpdatedAt), ct);
 
         var build = await BuildMenuAsync(branchId, ct);
@@ -500,7 +508,7 @@ public sealed class RappiIntegrationsController(
             return Forbid();
         var connection = await db.DeliveryAppConnections
             .Include(x => x.Stores)
-            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi", ct);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.Provider == "rappi" && x.Environment == options.Environment, ct);
         if (connection is null)
             return NotFound();
         var missingIds = connection.Stores
@@ -531,7 +539,7 @@ public sealed class RappiIntegrationsController(
         if (!resolved.HasValue)
             return Forbid();
         var connection = await ConnectionQuery()
-            .FirstOrDefaultAsync(x => x.BranchId == resolved && x.Provider == "rappi", ct);
+            .FirstOrDefaultAsync(x => x.BranchId == resolved && x.Provider == "rappi" && x.Environment == options.Environment, ct);
         var pending = connection is null
             ? 0
             : await db.ExternalDeliveryOrders.CountAsync(x =>
@@ -569,19 +577,27 @@ public sealed class RappiIntegrationsController(
     [HttpGet("api/integrations/apps/rappi/orders")]
     public async Task<ActionResult<ApiResponse<object>>> GetOrders(
         [FromQuery] int? branchId,
-        CancellationToken ct)
+        CancellationToken ct,
+        [FromQuery] int? page = null,
+        [FromQuery] int pageSize = 25)
     {
         var resolved = ResolveBranch(branchId);
         if (!resolved.HasValue)
             return Forbid();
-        var rows = await db.ExternalDeliveryOrders
+        var pageNumber = Math.Max(1, page ?? 1);
+        pageSize = page.HasValue ? Math.Clamp(pageSize, 1, 100) : 100;
+        var query = db.ExternalDeliveryOrders
             .AsNoTracking()
             .Include(x => x.Store)
             .Include(x => x.Connection)
             .Include(x => x.InternalOrder)
-            .Where(x => x.BranchId == resolved)
+            .Where(x => x.BranchId == resolved && x.Connection.Environment == options.Environment);
+        var total = await query.CountAsync(ct);
+        var rows = await query
             .OrderByDescending(x => x.CreatedAt)
-            .Take(100)
+            .ThenByDescending(x => x.Id)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(ct);
         var readyKeys = rows.Select(x => RappiReadyOutboxPolicy.EventKey(x.ConnectionId, x.ExternalOrderId))
             .ToList();
@@ -590,7 +606,7 @@ public sealed class RappiIntegrationsController(
                 && x.EventType == RappiReadyOutboxPolicy.EventType
                 && readyKeys.Contains(x.EventKey))
             .ToDictionaryAsync(x => x.EventKey, ct);
-        return Ok(ApiResponse<object>.SuccessResponse(rows.Select(x => new
+        var items = rows.Select(x => new
         {
             x.Id,
             x.ExternalOrderId,
@@ -628,20 +644,91 @@ public sealed class RappiIntegrationsController(
                     error = string.IsNullOrWhiteSpace(ready.LastError) ? null
                         : "READY_FOR_PICKUP requiere revisión; consulta el estado y los intentos.",
                     retryable = RappiReadyOutboxPolicy.CanRequeue(ready) && RappiReadyOutboxPolicy.CanSend(x)
+                        && (options.Environment == "sandbox" || options.ProductionReadyForPickupApproved)
                 }
                 : null
-        })));
+        });
+        if (!page.HasValue)
+            return Ok(ApiResponse<object>.SuccessResponse(items));
+        return Ok(ApiResponse<object>.SuccessResponse(new PagedResult<object>
+        {
+            Items = items, TotalCount = total, Page = pageNumber, PageSize = pageSize,
+            TotalPages = (int)Math.Ceiling(total / (double)pageSize)
+        }));
     }
+
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    [HttpGet("api/integrations/apps/rappi/events")]
+    public async Task<ActionResult<ApiResponse<object>>> GetEvents(
+        [FromQuery] int? branchId, CancellationToken ct, [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
+    {
+        var resolved = ResolveBranch(branchId);
+        if (!resolved.HasValue) return Forbid();
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var connections = db.DeliveryAppConnections.Where(x => x.BranchId == resolved
+            && x.Provider == "rappi" && x.Environment == options.Environment);
+        var query = db.IntegrationWebhookEvents.AsNoTracking().Where(x =>
+            connections.Any(c => c.Id == x.ConnectionId) && x.Provider == "rappi"
+            && (x.Status == "failed" || x.Status == "processing" || x.Status == "awaiting_order"
+                || x.Status == "accept_effects_pending" || x.Status == "cancel_effects_pending"
+                || x.Status == "manual_retry_received"));
+        var total = await query.CountAsync(ct);
+        var rows = await query.OrderByDescending(x => x.UpdatedAt).ThenByDescending(x => x.Id)
+            .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        var retryableConnections = await connections.Where(x => x.IsActive && x.IsVerified)
+            .Select(x => x.Id).ToHashSetAsync(ct);
+        return Ok(ApiResponse<object>.SuccessResponse(new PagedResult<object>
+        {
+            TotalCount = total, Page = page, PageSize = pageSize,
+            TotalPages = (int)Math.Ceiling(total / (double)pageSize),
+            Items = rows.Select(x => new
+            {
+                x.Id, x.EventType, x.Status, x.AttemptCount, x.CreatedAt, x.UpdatedAt,
+                error = string.IsNullOrWhiteSpace(x.LastError) ? null : "El evento requiere revisión de su resultado.",
+                retryable = x.Status == "failed" && CanRetryWebhook(x.EventType)
+                    && retryableConnections.Contains(x.ConnectionId)
+            })
+        }));
+    }
+
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    [HttpPost("api/integrations/apps/rappi/events/{id:int}/retry")]
+    public async Task<ActionResult<ApiResponse<object>>> RetryWebhook(int id, CancellationToken ct)
+    {
+        var row = await db.IntegrationWebhookEvents.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.Provider == "rappi", ct);
+        if (row?.ConnectionId is not int connectionId) return NotFound();
+        var connection = await db.DeliveryAppConnections.AsNoTracking().FirstOrDefaultAsync(x =>
+            x.Id == connectionId && x.Provider == "rappi" && x.Environment == options.Environment, ct);
+        if (connection is null) return NotFound();
+        if (!CanOperate(connection.BranchId)) return Forbid();
+        if (!connection.IsActive || !connection.IsVerified || row.Status != "failed" || !CanRetryWebhook(row.EventType))
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Solo se reintentan efectos y estados fallidos de una integración activa y verificada. Menú, aceptación incierta y reclamos legados requieren revisión específica."));
+        var updated = await db.IntegrationWebhookEvents.Where(x => x.Id == id && x.ConnectionId == connectionId
+                && x.Status == "failed" && x.AttemptCount == row.AttemptCount && x.UpdatedAt == row.UpdatedAt)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, "manual_retry_received")
+                .SetProperty(x => x.LastError, (string?)null).SetProperty(x => x.ProcessedAt, (DateTime?)null)
+                .SetProperty(x => x.UpdatedAt, clock.UtcNow), ct);
+        if (updated == 0) return Conflict(ApiResponse<object>.ErrorResponse("El evento cambió; actualiza antes de reintentar."));
+        workSignal.Pulse();
+        return Ok(ApiResponse<object>.SuccessResponse(new { queued = true }));
+    }
+
+    private static bool CanRetryWebhook(string eventType) => eventType is
+        "ORDER_EVENT_CANCEL" or "ORDER_OTHER_EVENT" or "LOCAL_RAPPI_CANCEL_EFFECTS" or "LOCAL_RAPPI_ACCEPT_EFFECTS";
 
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     [HttpPost("api/integrations/apps/rappi/orders/{id:int}/retry-ready-for-pickup")]
     public async Task<ActionResult<ApiResponse<object>>> RetryReadyForPickup(int id, CancellationToken ct)
     {
+        if (options.Environment == "production" && !options.ProductionReadyForPickupApproved)
+            return BadRequest(ApiResponse<object>.ErrorResponse("Rappi aún no ha autorizado READY_FOR_PICKUP en producción."));
         var external = await db.ExternalDeliveryOrders.AsNoTracking()
             .Include(x => x.Connection)
             .Include(x => x.Store)
             .Include(x => x.InternalOrder)
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+            .FirstOrDefaultAsync(x => x.Id == id && x.Connection.Environment == options.Environment, ct);
         if (external is null)
             return NotFound();
         if (!CanOperate(external.BranchId))
@@ -710,7 +797,7 @@ public sealed class RappiIntegrationsController(
         CancellationToken ct)
     {
         var external = await db.ExternalDeliveryOrders.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+            .FirstOrDefaultAsync(x => x.Id == id && x.Connection.Environment == options.Environment, ct);
         if (external is null)
             return NotFound();
         if (!CanOperate(external.BranchId))
@@ -734,7 +821,7 @@ public sealed class RappiIntegrationsController(
         CancellationToken ct)
     {
         var external = await db.ExternalDeliveryOrders.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+            .FirstOrDefaultAsync(x => x.Id == id && x.Connection.Environment == options.Environment, ct);
         if (external is null)
             return NotFound();
         if (!CanOperate(external.BranchId))
@@ -768,7 +855,7 @@ public sealed class RappiIntegrationsController(
                 .Include(x => x.WebhookSubscriptions)
                 .FirstOrDefaultAsync(x =>
                     x.PublicId == publicId
-                    && x.Provider == "rappi"
+                    && x.Provider == "rappi" && x.Environment == options.Environment
                     && x.IsActive, ct);
         }
         var subscription = connection?.WebhookSubscriptions
@@ -876,6 +963,7 @@ public sealed class RappiIntegrationsController(
 
     private IQueryable<DeliveryAppConnection> ConnectionQuery() =>
         db.DeliveryAppConnections
+            .Where(x => x.Environment == options.Environment)
             .AsNoTracking()
             .Include(x => x.FinancialApp)
             .Include(x => x.Customer)
@@ -1036,7 +1124,7 @@ public sealed class RappiIntegrationsController(
                     .ThenInclude(x => x.CommercialProfile)
             .FirstOrDefaultAsync(x =>
                 x.BranchId == branchId
-                && x.Provider == "rappi", ct);
+                && x.Provider == "rappi" && x.Environment == options.Environment, ct);
         if (connection is null)
             return new(null, null, "La integración Rappi no existe.");
         if (!connection.IsVerified || !connection.IsActive)
@@ -1110,6 +1198,8 @@ public sealed class RappiIntegrationsController(
         // Omitted configuration keeps persisted stores; never replace historical FK targets
         // or silently append the sandbox defaults to a previously configured connection.
         var existing = connection.Stores.ToList();
+        if (connection.Environment != "sandbox" && existing.Count == 0 && input is not { Count: > 0 })
+            return "Configura las tiendas reales entregadas por Rappi para este ambiente.";
         if (existing.Any(x => string.IsNullOrWhiteSpace(x.RappiStoreId) || x.RappiStoreId.Trim().Length > 120)
             || existing.Select(x => x.RappiStoreId.Trim()).Distinct(StringComparer.Ordinal).Count() != existing.Count)
             return "La configuración contiene identificadores de tienda inválidos o duplicados; requiere revisión antes de editar.";
