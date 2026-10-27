@@ -572,6 +572,7 @@ Reglas:
 - Todo webhook aceptado se persiste antes de procesarse y es idempotente por integración y evento. `PING` solo devuelve `status=OK` para una tienda configurada en la conexión y un tenant/sucursal locales activos; no depende del flag remoto `ConnectivityEnabled`, para no impedir la reconexión del POS. Un PING duplicado vuelve a evaluar esa salud local.
 - El catálogo Rappi es una selección uno a uno de productos internos. Los SKU `product-{ProductId}` y categorías `category-{ProductCategoryId}` son inmutables.
 - El Sprint 1 publica únicamente productos simples, sin toppings ni modificadores.
+- Un callback de aprobación tardío no vuelve a dejar pendiente un menú ya confirmado por consulta. Sin publicaciones pendientes, solo puede limpiar su propia advertencia de aprobación; conserva otros errores y no modifica snapshots aprobados.
 - La disponibilidad deriva del producto seleccionado, activo y disponible según las reglas internas, y se sincroniza en ambas tiendas.
 - Solo se admiten órdenes `delivery` con courier Rappi.
 - Una orden válida se toma automáticamente y se crea en estado `Taken`. SKU, precio, stock, modificadores o totales inconsistentes la dejan retenida.

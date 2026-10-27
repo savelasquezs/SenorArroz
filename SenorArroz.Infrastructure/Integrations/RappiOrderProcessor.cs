@@ -1053,6 +1053,7 @@ public sealed class RappiOrderProcessor(
         string? eventKey = null)
     {
         const string pollPrefix = "MENU_APPROVED_POLL:";
+        const string approvalPendingError = "Rappi notificó aprobación de menú sin identificador de publicación; pendiente de confirmación mediante consulta a Rappi.";
         // Only locally generated poll keys carry a trusted publication identity.
         // Provider callbacks have no documented correlator; a delayed callback must
         // not approve/reject the next menu merely because it is currently pending.
@@ -1060,6 +1061,16 @@ public sealed class RappiOrderProcessor(
             || !eventKey.StartsWith(pollPrefix, StringComparison.Ordinal)
             || !int.TryParse(eventKey[pollPrefix.Length..], out var publicationId))
         {
+            if (eventType == "MENU_APPROVED"
+                && !await db.RappiMenuPublications.AnyAsync(x => x.ConnectionId == connectionId
+                    && (x.Status == "submitting" || x.Status == "submitted" || x.Status == "approval_review_required"), ct)
+                && await db.RappiMenuPublications.AnyAsync(x => x.ConnectionId == connectionId && x.Status == "approved", ct))
+            {
+                var confirmedConnection = await db.DeliveryAppConnections.FirstOrDefaultAsync(x => x.Id == connectionId, ct);
+                if (confirmedConnection?.LastError == approvalPendingError)
+                    confirmedConnection.LastError = null;
+                return;
+            }
             if (eventType == "MENU_REJECTED")
             {
                 // No publication correlator is documented. Hold all potentially affected
@@ -1078,7 +1089,7 @@ public sealed class RappiOrderProcessor(
             if (connection is not null)
                 connection.LastError = eventType == "MENU_REJECTED"
                     ? "Rappi notificó rechazo de menú sin identificador de publicación; revisa el motivo y el menú pendiente en Rappi antes de volver a publicar."
-                    : "Rappi notificó aprobación de menú sin identificador de publicación; pendiente de confirmación mediante consulta a Rappi.";
+                    : approvalPendingError;
             return;
         }
         var publication = await db.RappiMenuPublications
