@@ -273,11 +273,30 @@ public sealed class RappiDeliveryProvider(
         {
             using var document = JsonDocument.Parse(response.Body!);
             var root = document.RootElement;
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("events", out var events))
-                root = events;
-            var values = root.ValueKind == JsonValueKind.Array
-                ? root.EnumerateArray().Select(x => x.GetRawText()).ToList()
-                : [root.GetRawText()];
+            // PAv2 documents a root array, not an events/data wrapper. Do not treat
+            // arbitrary JSON or incidental text as evidence of an accepted order.
+            if (root.ValueKind != JsonValueKind.Array)
+                throw new JsonException();
+            var values = new List<RappiOrderEvent>();
+            foreach (var item in root.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object
+                    || item.EnumerateObject().Count(x => x.NameEquals("event")) != 1
+                    || item.EnumerateObject().Count(x => x.NameEquals("event_time")) != 1
+                    || !item.TryGetProperty("event", out var name)
+                    || name.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(name.GetString())
+                    || !item.TryGetProperty("event_time", out var time)
+                    || time.ValueKind != JsonValueKind.String
+                    || !time.GetString()!.EndsWith('Z')
+                    || !time.TryGetDateTimeOffset(out var timestamp)
+                    || timestamp.Offset != TimeSpan.Zero)
+                    throw new JsonException();
+                // The reference calls this both object and array; preserve it, never
+                // use it for the acceptance decision, and detach from the document.
+                values.Add(new(name.GetString()!, timestamp,
+                    item.TryGetProperty("additional_information", out var info) ? info.Clone() : null));
+            }
             return new(true, values);
         }
         catch (JsonException)

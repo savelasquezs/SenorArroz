@@ -1,5 +1,8 @@
 # Rappi: preparación y pruebas aisladas — 2026-10-21
 
+> Registro histórico de PR #52. La revisión y las correcciones posteriores se
+> documentan en [RAPPI_INTERNAL_READINESS_2026-10-21.md](RAPPI_INTERNAL_READINESS_2026-10-21.md).
+
 ## Alcance y límites
 
 Revisión sobre backend `main` `925db805526a91a73722f660455d19e33c30ae6e`.

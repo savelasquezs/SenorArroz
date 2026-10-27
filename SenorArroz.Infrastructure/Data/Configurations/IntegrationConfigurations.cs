@@ -195,7 +195,7 @@ public class RappiMenuPublicationConfiguration : IEntityTypeConfiguration<RappiM
         builder.Property(x => x.StoreId).HasColumnName("store_id").HasMaxLength(120);
         builder.Property(x => x.PayloadHash).HasColumnName("payload_hash").HasMaxLength(64);
         builder.Property(x => x.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
-        builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(40);
+        builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(40).IsConcurrencyToken();
         builder.Property(x => x.Error).HasColumnName("error").HasMaxLength(1000);
         builder.Property(x => x.CompletedAt).HasColumnName("completed_at");
         DeliveryAppConnectionConfiguration.Timestamps(builder);

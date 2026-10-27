@@ -30,6 +30,12 @@ public sealed class RappiOrderProcessor(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const int WebhookMaxAttempts = 5;
+    // Not accepted by the public webhook allowlist; only the core cancellation
+    // transaction can create this trusted second phase in the existing inbox.
+    private const string CancellationEffectsEventType = "LOCAL_RAPPI_CANCEL_EFFECTS";
+    // Older workers claim every `received` row and do not understand internal phases.
+    private const string CancellationEffectsPending = "cancel_effects_pending";
+    private const string CancellationEffectsLeased = "cancel_effects_leased";
     // A distinct status makes rollout safe: legacy workers never stamped a lease on
     // `processing`, so even a very old UpdatedAt cannot prove that claim is abandoned.
     private const string LeasedWebhookStatus = "processing_leased";
@@ -64,45 +70,57 @@ public sealed class RappiOrderProcessor(
             x.RappiStoreId == parsed.StoreInternalId
             || (!string.IsNullOrWhiteSpace(x.StoreIntegrationId)
                 && x.StoreIntegrationId == parsed.StoreExternalId));
-        var existing = await db.ExternalDeliveryOrders
-            .FirstOrDefaultAsync(x =>
-                x.ConnectionId == connectionId
-                && x.ExternalOrderId == parsed.OrderId, ct);
-        if (existing?.InternalOrderId is int internalOrderId)
-            return new(true, existing.Id, internalOrderId);
-        if (TerminalOrderResult(existing) is { } terminalResult)
-            return terminalResult;
-
-        var external = existing ?? new ExternalDeliveryOrder
+        int externalOrderId;
+        await using (var transaction = db.Database.IsRelational() && db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(ct) : null)
         {
-            ConnectionId = connectionId,
-            BranchId = connection.BranchId,
-            ExternalOrderId = parsed.OrderId,
-            CreatedAt = clock.UtcNow
-        };
-        if (existing is null)
-            db.ExternalDeliveryOrders.Add(external);
+            await LockExternalOrderAsync(connection.TenantId, connectionId, parsed.OrderId, ct);
+            var existing = await db.ExternalDeliveryOrders
+                .FirstOrDefaultAsync(x =>
+                    x.ConnectionId == connectionId
+                    && x.ExternalOrderId == parsed.OrderId, ct);
+            if (existing is not null) await ReloadTrackedAsync(existing, ct);
+            if (existing?.InternalOrderId is int internalOrderId)
+                return new(true, existing.Id, internalOrderId);
+            if (TerminalOrderResult(existing) is { } terminalResult)
+                return terminalResult;
 
-        external.RawPayloadJson = rawOrderJson;
-        ApplyParsedOrder(external, connection, store, parsed);
+            var external = existing ?? new ExternalDeliveryOrder
+            {
+                ConnectionId = connectionId,
+                BranchId = connection.BranchId,
+                ExternalOrderId = parsed.OrderId,
+                CreatedAt = clock.UtcNow
+            };
+            if (existing is null)
+                db.ExternalDeliveryOrders.Add(external);
 
-        var validationErrors = Validate(connection, store, parsed);
-        await AppendInventoryValidationErrorsAsync(validationErrors, connection, parsed, ct);
-        external.ValidationErrorsJson = validationErrors.Count == 0
-            ? null
-            : JsonSerializer.Serialize(validationErrors, JsonOptions);
-        external.Status = validationErrors.Count == 0
-            ? ExternalOrderStatus.PendingAcceptance
-            : ExternalOrderStatus.BlockedMapping;
-        external.LastError = validationErrors.Count == 0
-            ? null
-            : Limit(string.Join(" ", validationErrors), 1000);
-        await db.SaveChangesAsync(ct);
+            // Legacy SyncError rows may predate the durable attempt marker.
+            if (existing?.Status == ExternalOrderStatus.SyncError && !external.LastAttemptAt.HasValue)
+                external.LastAttemptAt = clock.UtcNow;
+            external.RawPayloadJson = rawOrderJson;
+            ApplyParsedOrder(external, connection, store, parsed);
 
-        if (validationErrors.Count > 0)
-            return new(false, external.Id, Held: true, Error: external.LastError);
+            var validationErrors = Validate(connection, store, parsed);
+            await AppendInventoryValidationErrorsAsync(validationErrors, connection, parsed, ct);
+            external.ValidationErrorsJson = validationErrors.Count == 0
+                ? null
+                : JsonSerializer.Serialize(validationErrors, JsonOptions);
+            external.Status = validationErrors.Count == 0
+                ? ExternalOrderStatus.PendingAcceptance
+                : ExternalOrderStatus.BlockedMapping;
+            external.LastError = validationErrors.Count == 0
+                ? null
+                : Limit(string.Join(" ", validationErrors), 1000);
+            await db.SaveChangesAsync(ct);
+            if (transaction is not null) await transaction.CommitAsync(ct);
 
-        return await RevalidateAndAcceptAsync(external.Id, connection.TechnicalUserId, ct);
+            if (validationErrors.Count > 0)
+                return new(false, external.Id, Held: true, Error: external.LastError);
+
+            externalOrderId = external.Id;
+        }
+        return await RevalidateAndAcceptAsync(externalOrderId, connection.TechnicalUserId, ct);
     }
 
     public async Task<RappiOrderProcessingResult> RevalidateAndAcceptAsync(
@@ -119,34 +137,61 @@ public sealed class RappiOrderProcessor(
             .FirstOrDefaultAsync(x => x.Id == externalOrderId, ct);
         if (external is null)
             return new(false, Error: "La orden Rappi no existe.");
-        if (external.InternalOrderId.HasValue)
-            return new(true, external.Id, external.InternalOrderId);
-        if (TerminalOrderResult(external) is { } terminalResult)
-            return terminalResult;
-
-        var parsed = ParseOrder(external.RawPayloadJson);
-        ApplyParsedOrder(external, external.Connection, external.Store, parsed);
-        var errors = Validate(external.Connection, external.Store, parsed);
-        await AppendInventoryValidationErrorsAsync(errors, external.Connection, parsed, ct);
-        external.ValidationErrorsJson = errors.Count == 0
-            ? null
-            : JsonSerializer.Serialize(errors, JsonOptions);
-        if (errors.Count > 0)
-        {
-            external.Status = ExternalOrderStatus.BlockedMapping;
-            external.LastError = Limit(string.Join(" ", errors), 1000);
-            await db.SaveChangesAsync(ct);
-            return new(false, external.Id, Held: true, Error: external.LastError);
-        }
-
-        external.Status = ExternalOrderStatus.Processing;
-        external.LastAttemptAt = clock.UtcNow;
-        external.LastError = null;
-        await db.SaveChangesAsync(ct);
-
         try
         {
-            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            await using var transaction = db.Database.IsRelational() && db.Database.CurrentTransaction is null
+                ? await db.Database.BeginTransactionAsync(ct) : null;
+            await LockExternalOrderAsync(external.TenantId, external.ConnectionId, external.ExternalOrderId, ct);
+            await ReloadTrackedAsync(external, ct);
+            if (external.InternalOrderId.HasValue)
+                return new(true, external.Id, external.InternalOrderId);
+            if (TerminalOrderResult(external) is { } terminalResult)
+                return terminalResult;
+            // Preserve the retry guard even if local validation moves a legacy
+            // SyncError without a timestamp into BlockedMapping.
+            if (external.Status == ExternalOrderStatus.SyncError && !external.LastAttemptAt.HasValue)
+                external.LastAttemptAt = clock.UtcNow;
+
+            var parsed = ParseOrder(external.RawPayloadJson);
+            ApplyParsedOrder(external, external.Connection, external.Store, parsed);
+            var errors = Validate(external.Connection, external.Store, parsed);
+            await AppendInventoryValidationErrorsAsync(errors, external.Connection, parsed, ct);
+            external.ValidationErrorsJson = errors.Count == 0
+                ? null
+                : JsonSerializer.Serialize(errors, JsonOptions);
+            if (errors.Count > 0)
+            {
+                external.Status = ExternalOrderStatus.BlockedMapping;
+                external.LastError = Limit(string.Join(" ", errors), 1000);
+                await db.SaveChangesAsync(ct);
+                if (transaction is not null) await transaction.CommitAsync(ct);
+                return new(false, external.Id, Held: true, Error: external.LastError);
+            }
+
+            // LastAttemptAt survives duplicate NEW_ORDER ingestion and validation
+            // changes. Every retry first checks history before reserving stock or
+            // repeating the remote PUT, not only after another failed acceptance.
+            var alreadyTaken = false;
+            if (external.LastAttemptAt.HasValue || external.Status == ExternalOrderStatus.SyncError)
+            {
+                var evidence = await GetAcceptanceEvidenceAsync(external.ExternalOrderId, ct);
+                alreadyTaken = evidence.Accepted;
+                if (!alreadyTaken && !evidence.MayAttempt)
+                {
+                    external.Status = ExternalOrderStatus.SyncError;
+                    external.LastAttemptAt = clock.UtcNow;
+                    external.LastError = evidence.Error;
+                    await db.SaveChangesAsync(ct);
+                    if (transaction is not null) await transaction.CommitAsync(ct);
+                    return new(false, external.Id, Held: true, Error: external.LastError);
+                }
+            }
+
+            external.Status = ExternalOrderStatus.Processing;
+            external.LastAttemptAt = clock.UtcNow;
+            external.LastError = null;
+            await db.SaveChangesAsync(ct);
+
             var duplicateOrder = await db.Orders
                 .FirstOrDefaultAsync(x =>
                     x.DeliveryAppConnectionId == external.ConnectionId
@@ -157,7 +202,7 @@ public sealed class RappiOrderProcessor(
                 external.Status = ExternalOrderStatus.Accepted;
                 external.AcceptedAt ??= clock.UtcNow;
                 await db.SaveChangesAsync(ct);
-                await transaction.CommitAsync(ct);
+                if (transaction is not null) await transaction.CommitAsync(ct);
                 return new(true, external.Id, duplicateOrder.Id);
             }
 
@@ -222,19 +267,23 @@ public sealed class RappiOrderProcessor(
             await db.SaveChangesAsync(ct);
             if (inventory is not null)
                 await inventory.SnapshotAndReserveAsync(order, false, $"order:{order.Id}:rappi-taken", ct);
-            var taken = await rappi.AcceptOrderAsync(
-                external.ExternalOrderId,
-                external.CookingTimeMinutes,
-                ct);
-            if (!taken.Success && !await IsAlreadyTakenAsync(external.ExternalOrderId, ct))
+            if (!alreadyTaken)
             {
-                await transaction.RollbackAsync(ct);
-                ClearTracking();
-                var failed = await db.ExternalDeliveryOrders.SingleAsync(x => x.Id == externalOrderId, ct);
-                failed.Status = taken.StatusCode == 400 ? ExternalOrderStatus.Expired : ExternalOrderStatus.SyncError;
-                failed.LastError = Limit(taken.Error, 1000);
-                await db.SaveChangesAsync(ct);
-                return new(false, failed.Id, Held: taken.StatusCode == 400, Error: failed.LastError);
+                var taken = await rappi.AcceptOrderAsync(
+                    external.ExternalOrderId,
+                    external.CookingTimeMinutes,
+                    ct);
+                if (!taken.Success)
+                {
+                    var evidence = await GetAcceptanceEvidenceAsync(external.ExternalOrderId, ct);
+                    if (!evidence.Accepted)
+                    {
+                        if (transaction is not null) await transaction.RollbackAsync(ct);
+                        // 400 means invalid state transition, not proof of expiry.
+                        return await RecordAcceptanceFailureAsync(externalOrderId,
+                            ExternalOrderStatus.SyncError, evidence.Error, true, ct);
+                    }
+                }
             }
             var commission = decimal.Round(
                 external.Total * external.Connection.EstimatedCommissionRate,
@@ -257,7 +306,7 @@ public sealed class RappiOrderProcessor(
             external.ValidationErrorsJson = null;
             external.LastError = null;
             await db.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
+            if (transaction is not null) await transaction.CommitAsync(ct);
 
             var fullOrder = await orders.GetByIdWithFullDetailsAsync(order.Id, ct);
             if (fullOrder is not null)
@@ -266,6 +315,15 @@ public sealed class RappiOrderProcessor(
                 await TryEnqueueKitchenPrintWhenOrderCreatedAsync(fullOrder, ct);
             }
             return new(true, external.Id, order.Id);
+        }
+        catch (Exception ex) when (ex is HttpRequestException
+            || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            // The provider can throw after its last transport retry, including
+            // OAuth or the history read. The transaction has disposed/rolled back;
+            // preserve an ordinary failure marker, never swallow host shutdown.
+            return await RecordAcceptanceFailureAsync(externalOrderId, ExternalOrderStatus.SyncError,
+                "La comunicación con Rappi quedó incierta; se consultará el historial antes de reintentar aceptación.", true, ct);
         }
         catch (DbUpdateException ex)
         {
@@ -276,32 +334,42 @@ public sealed class RappiOrderProcessor(
                     && x.ExternalOrderId == external.ExternalOrderId, ct);
             if (duplicate is not null)
                 return new(true, external.Id, duplicate.Id);
-            ClearTracking();
-            var failed = await db.ExternalDeliveryOrders.SingleAsync(x => x.Id == externalOrderId, ct);
-            failed.Status = ExternalOrderStatus.SyncError;
-            failed.LastError = "No fue posible crear y reservar la orden local antes de aceptarla en Rappi. Se reintentará.";
-            await db.SaveChangesAsync(ct);
-            return new(false, failed.Id, Error: failed.LastError);
+            return await RecordAcceptanceFailureAsync(externalOrderId, ExternalOrderStatus.SyncError,
+                "No fue posible crear y reservar la orden local antes de aceptarla en Rappi. Se reintentará.", false, ct);
         }
         catch (SenorArroz.Domain.Exceptions.BusinessException ex)
         {
-            ClearTracking();
-            var failed = await db.ExternalDeliveryOrders.SingleAsync(x => x.Id == externalOrderId, ct);
-            failed.Status = ExternalOrderStatus.BlockedMapping;
-            failed.ValidationErrorsJson = JsonSerializer.Serialize(new[] { ex.Message }, JsonOptions);
-            failed.LastError = Limit(ex.Message, 1000);
-            await db.SaveChangesAsync(ct);
-            return new(false, failed.Id, Held: true, Error: failed.LastError);
+            return await RecordAcceptanceFailureAsync(externalOrderId, ExternalOrderStatus.BlockedMapping,
+                ex.Message, true, ct);
         }
         catch (InvalidOperationException ex)
         {
-            ClearTracking();
-            var failed = await db.ExternalDeliveryOrders.SingleAsync(x => x.Id == externalOrderId, ct);
-            failed.Status = ExternalOrderStatus.SyncError;
-            failed.LastError = Limit(ex.Message, 1000);
-            await db.SaveChangesAsync(ct);
-            return new(false, failed.Id, Error: failed.LastError);
+            return await RecordAcceptanceFailureAsync(externalOrderId, ExternalOrderStatus.SyncError,
+                ex.Message, false, ct);
         }
+    }
+
+    private async Task<RappiOrderProcessingResult> RecordAcceptanceFailureAsync(
+        int externalOrderId, ExternalOrderStatus status, string? error, bool held, CancellationToken ct)
+    {
+        ClearTracking();
+        var failed = await db.ExternalDeliveryOrders.SingleAsync(x => x.Id == externalOrderId, ct);
+        await using var transaction = db.Database.IsRelational() && db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(ct) : null;
+        await LockExternalOrderAsync(failed.TenantId, failed.ConnectionId, failed.ExternalOrderId, ct);
+        await ReloadTrackedAsync(failed, ct);
+        if (failed.InternalOrderId.HasValue) return new(true, failed.Id, failed.InternalOrderId);
+        if (TerminalOrderResult(failed) is { } terminal) return terminal;
+        var needsRetryGuard = status == ExternalOrderStatus.SyncError || failed.Status == ExternalOrderStatus.SyncError;
+        failed.Status = status;
+        if (needsRetryGuard)
+            failed.LastAttemptAt = clock.UtcNow;
+        failed.LastError = Limit(error, 1000);
+        if (status == ExternalOrderStatus.BlockedMapping)
+            failed.ValidationErrorsJson = JsonSerializer.Serialize(new[] { error }, JsonOptions);
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
+        return new(false, failed.Id, Held: held, Error: failed.LastError);
     }
 
     private async Task TryEnqueueKitchenPrintWhenOrderCreatedAsync(Order order, CancellationToken ct)
@@ -336,14 +404,27 @@ public sealed class RappiOrderProcessor(
         string reason,
         CancellationToken ct)
     {
-        var external = await db.ExternalDeliveryOrders.FirstOrDefaultAsync(x => x.Id == externalOrderId, ct);
+        var external = await db.ExternalDeliveryOrders.AsNoTracking().FirstOrDefaultAsync(x => x.Id == externalOrderId, ct);
         if (external is null)
             return new(false, Error: "La orden Rappi no existe.");
         if (external.InternalOrderId.HasValue)
             return new(false, Error: "No se puede rechazar una orden que ya fue aceptada.");
+        if (TerminalOrderResult(external) is { } terminal)
+            return new(false, Error: terminal.Error);
 
-        external.LastAttemptAt = clock.UtcNow;
         var result = await rappi.RejectOrderAsync(external.ExternalOrderId, reason, ct);
+        // The remote request stays outside the lock. Its delayed outcome must not
+        // overwrite a cancellation/acceptance committed while it was in flight.
+        await using var transaction = db.Database.IsRelational() && db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(ct) : null;
+        await LockExternalOrderAsync(external.TenantId, external.ConnectionId, external.ExternalOrderId, ct);
+        external = await db.ExternalDeliveryOrders.SingleAsync(x => x.Id == externalOrderId, ct);
+        await ReloadTrackedAsync(external, ct);
+        if (external.InternalOrderId.HasValue)
+            return new(false, Error: "La orden fue aceptada mientras se procesaba el rechazo.");
+        if (TerminalOrderResult(external) is { } completed)
+            return new(false, Error: completed.Error);
+        external.LastAttemptAt = clock.UtcNow;
         external.Status = result.Success
             ? ExternalOrderStatus.Rejected
             : result.StatusCode == 400
@@ -351,6 +432,7 @@ public sealed class RappiOrderProcessor(
                 : ExternalOrderStatus.SyncError;
         external.LastError = result.Success ? null : Limit(result.Error, 1000);
         await db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
         return result;
     }
 
@@ -388,7 +470,8 @@ public sealed class RappiOrderProcessor(
                 .Where(x => x.Id == id && x.AttemptCount == candidate.AttemptCount)
                 .ExecuteUpdateAsync(
                     setters => setters
-                        .SetProperty(x => x.Status, LeasedWebhookStatus)
+                        .SetProperty(x => x.Status, x => x.EventType == CancellationEffectsEventType
+                            ? CancellationEffectsLeased : LeasedWebhookStatus)
                         .SetProperty(x => x.AttemptCount, x => x.AttemptCount + 1)
                         .SetProperty(x => x.UpdatedAt, claimedAt),
                     ct);
@@ -469,7 +552,8 @@ public sealed class RappiOrderProcessor(
             // newer claim after lease recovery. The event is deliberately not tracked.
             await OwnedWebhookClaim(db.IntegrationWebhookEvents, id, attemptCount)
                 .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(x => x.Status, status)
+                    .SetProperty(x => x.Status, x => status == "received" && x.EventType == CancellationEffectsEventType
+                        ? CancellationEffectsPending : status)
                     .SetProperty(x => x.ProcessedAt, processedAt)
                     .SetProperty(x => x.LastError, error)
                     .SetProperty(x => x.UpdatedAt, completedAt), ct);
@@ -535,10 +619,13 @@ public sealed class RappiOrderProcessor(
         var expiredBefore = now - WebhookProcessingLease;
         return events.Where(x => x.Provider == "rappi"
             && x.AttemptCount < WebhookMaxAttempts
-            && (x.Status == "received"
+            && ((x.Status == "received" && x.EventType != CancellationEffectsEventType)
                 || (x.Status == LeasedWebhookStatus && x.UpdatedAt <= expiredBefore
                     && (x.EventType == "NEW_ORDER" || x.EventType == "ORDER_EVENT_CANCEL"
-                        || x.EventType == "ORDER_OTHER_EVENT"))));
+                        || x.EventType == "ORDER_OTHER_EVENT"))
+                || (x.EventType == CancellationEffectsEventType
+                    && (x.Status == CancellationEffectsPending
+                        || x.Status == CancellationEffectsLeased && x.UpdatedAt <= expiredBefore))));
     }
 
     private static IQueryable<IntegrationWebhookEvent> UncertainWebhookEvents(
@@ -560,7 +647,10 @@ public sealed class RappiOrderProcessor(
         return events.Where(x => x.Provider == "rappi"
             && x.AttemptCount >= WebhookMaxAttempts
             && (x.Status == "received"
-                || (x.Status == LeasedWebhookStatus && x.UpdatedAt <= expiredBefore)));
+                || (x.Status == LeasedWebhookStatus && x.UpdatedAt <= expiredBefore)
+                || x.EventType == CancellationEffectsEventType
+                    && (x.Status == CancellationEffectsPending
+                        || x.Status == CancellationEffectsLeased && x.UpdatedAt <= expiredBefore)));
     }
 
     private static IQueryable<IntegrationWebhookEvent> OwnedWebhookClaim(
@@ -568,7 +658,9 @@ public sealed class RappiOrderProcessor(
         int id,
         int attemptCount) =>
         events.Where(x => x.Id == id && x.Provider == "rappi"
-            && x.Status == LeasedWebhookStatus && x.AttemptCount == attemptCount);
+            && x.AttemptCount == attemptCount
+            && (x.Status == LeasedWebhookStatus && x.EventType != CancellationEffectsEventType
+                || x.Status == CancellationEffectsLeased && x.EventType == CancellationEffectsEventType));
 
     private static RappiOrderProcessingResult? TerminalOrderResult(ExternalDeliveryOrder? external) =>
         external is { Status: ExternalOrderStatus.Cancelled or ExternalOrderStatus.Rejected
@@ -592,14 +684,17 @@ public sealed class RappiOrderProcessor(
                     await IngestNewOrderAsync(connection.Id, rawOrder, ct);
                 break;
             case "ORDER_EVENT_CANCEL":
-                await ApplyCancellationAsync(connection.Id, webhookEvent.PayloadJson, ct);
+                await ApplyCancellationCoreAsync(connection.Id, webhookEvent.PayloadJson, webhookEvent, ct);
+                break;
+            case CancellationEffectsEventType:
+                await ResumeCancellationEffectsAsync(webhookEvent, ct);
                 break;
             case "ORDER_OTHER_EVENT":
                 await ApplyOrderEventAsync(connection.Id, webhookEvent.PayloadJson, ct);
                 break;
             case "MENU_APPROVED":
             case "MENU_REJECTED":
-                await ApplyMenuStatusAsync(connection.Id, webhookEvent.EventType, webhookEvent.PayloadJson, ct);
+                await ApplyMenuStatusAsync(connection.Id, webhookEvent.EventType, webhookEvent.PayloadJson, ct, webhookEvent.EventKey);
                 break;
             case "STORE_CONNECTIVITY":
                 ApplyConnectivity(connection, webhookEvent.PayloadJson);
@@ -607,137 +702,257 @@ public sealed class RappiOrderProcessor(
         }
     }
 
-    private async Task ApplyCancellationAsync(int connectionId, string payload, CancellationToken ct)
+    // Retained as a narrow private test seam. Real webhook processing always supplies
+    // its leased inbox row, so the post-commit phase is durable.
+    private Task ApplyCancellationAsync(int connectionId, string payload, CancellationToken ct) =>
+        ApplyCancellationCoreAsync(connectionId, payload, null, ct);
+
+    private async Task ApplyCancellationCoreAsync(
+        int connectionId, string payload, IntegrationWebhookEvent? webhookEvent, CancellationToken ct)
     {
         using var document = JsonDocument.Parse(payload);
         var orderId = FindString(document.RootElement, "order_id")
             ?? throw new InvalidOperationException("El webhook de cancelación no contiene order_id.");
-        var cancellationReason = BuildCancellationReason(document.RootElement);
-        var external = await db.ExternalDeliveryOrders
-            .Include(x => x.InternalOrder)
-            .FirstOrDefaultAsync(x =>
-                x.ConnectionId == connectionId
-                && x.ExternalOrderId == orderId, ct);
-        if (external is null)
-            return;
-
-        if (external.InternalOrder is null)
+        var reason = BuildCancellationReason(document.RootElement);
+        var connection = await db.DeliveryAppConnections.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == connectionId && x.Provider == "rappi", ct)
+            ?? throw new InvalidOperationException("La conexión del webhook no existe.");
+        CancellationEffects? effects = null;
+        string? checkpointEnvelope = null;
+        await using (var transaction = db.Database.IsRelational() && db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(ct) : null)
         {
-            external.Status = ExternalOrderStatus.Cancelled;
-            external.LastError = null;
-            return;
-        }
-
-        if (external.InternalOrder.Status == OrderStatus.Cancelled)
-        {
-            external.Status = ExternalOrderStatus.Cancelled;
-            external.LastError = null;
-            return;
-        }
-
-        var appPayments = await db.AppPayments
-            .Where(x => x.OrderId == external.InternalOrder.Id)
-            .ToListAsync(ct);
-        if (external.InternalOrder.Status == OrderStatus.Delivered || appPayments.Any(x => x.IsSetted))
-        {
-            external.Status = ExternalOrderStatus.ReconciliationRequired;
-            external.LastError = "Rappi canceló una orden entregada o liquidada; requiere conciliación manual.";
-            return;
-        }
-
-        var previousStatus = external.InternalOrder.Status;
-        var routeIdSnapshot = external.InternalOrder.DeliveryRouteId;
-        var notifyKitchen = KitchenOrderNotificationEligibility.IsVisibleToActiveKitchen(
-            external.InternalOrder,
-            clock.UtcNow);
-
-        foreach (var appPayment in appPayments)
-        {
-            if (appPayment.IsReversed)
-                continue;
-
-            appPayment.IsReversed = true;
-            appPayment.ReversedAt = clock.UtcNow;
-            appPayment.ReversalReason = cancellationReason;
-        }
-        if (inventory is not null && external.InternalOrder.Status == OrderStatus.Taken)
-            await inventory.ReleaseOrderAsync(external.InternalOrder, $"order:{external.InternalOrder.Id}:rappi-cancel", ct);
-        external.InternalOrder.Status = OrderStatus.Cancelled;
-        external.InternalOrder.CancelledReason = cancellationReason;
-        external.InternalOrder.AddStatusTime(OrderStatus.Cancelled, clock.UtcNow);
-        external.Status = ExternalOrderStatus.Cancelled;
-        external.LastError = null;
-        await db.SaveChangesAsync(ct);
-
-        if (notifyKitchen)
-        {
-            await notifications.NotifyOrderCancelledToKitchen(
-                external.InternalOrder.BranchId,
-                external.InternalOrder.Id,
-                cancellationReason);
-        }
-
-        await deliveryRouteWorkflow.OnOrderCancelledWhileRouteOpenAsync(
-            external.InternalOrder.Id,
-            ct);
-        await deliveryRouteWorkflow.TryFinalizeRouteWhenAllTerminalAsync(
-            external.InternalOrder.Id,
-            routeIdSnapshot,
-            ct);
-
-        if (previousStatus == OrderStatus.OnTheWay)
-        {
-            var fullOrder = await orders.GetByIdWithFullDetailsAsync(external.InternalOrder.Id, ct);
-            if (fullOrder is not null)
+            await LockExternalOrderAsync(connection.TenantId, connectionId, orderId, ct);
+            var external = await db.ExternalDeliveryOrders.FirstOrDefaultAsync(x =>
+                x.ConnectionId == connectionId && x.ExternalOrderId == orderId, ct);
+            if (external is null)
             {
-                await notifications.NotifyOrderModifiedToDelivery(
-                    mapper.Map<OrderDto>(fullOrder),
-                    "status");
+                // A cancellation may arrive before NEW_ORDER. Reuse the existing terminal
+                // entity as a veto; no order, financial payment or inventory is created.
+                db.ExternalDeliveryOrders.Add(new ExternalDeliveryOrder
+                {
+                    TenantId = connection.TenantId, ConnectionId = connectionId,
+                    BranchId = connection.BranchId, ExternalOrderId = orderId,
+                    Status = ExternalOrderStatus.Cancelled, RawPayloadJson = payload,
+                    CreatedAt = clock.UtcNow, UpdatedAt = clock.UtcNow
+                });
             }
+            else
+            {
+                await ReloadTrackedAsync(external, ct);
+                if (external.InternalOrderId is not int internalOrderId)
+                {
+                    external.Status = ExternalOrderStatus.Cancelled;
+                    external.LastError = null;
+                }
+                else
+                {
+                    // Match OrderMutationBehavior's parent lock. Re-read *after* waiting,
+                    // including already-tracked payments, before checking settlement.
+                    await LockOrderAsync(connection.TenantId, internalOrderId, ct);
+                    var order = await db.ReloadOrderForManagementAsync(internalOrderId, ct)
+                        ?? throw new InvalidOperationException("El pedido interno Rappi no existe.");
+                    var payments = await db.AppPayments.Where(x => x.OrderId == internalOrderId).ToListAsync(ct);
+                    foreach (var payment in payments) await ReloadTrackedAsync(payment, ct);
+                    if (order.Status == OrderStatus.Cancelled)
+                    {
+                        external.Status = ExternalOrderStatus.Cancelled;
+                        external.LastError = null;
+                    }
+                    else if (order.Status == OrderStatus.Delivered || payments.Any(x => x.IsSetted))
+                    {
+                        external.Status = ExternalOrderStatus.ReconciliationRequired;
+                        external.LastError = "Rappi canceló una orden entregada o liquidada; requiere conciliación manual.";
+                    }
+                    else
+                    {
+                        effects = new(connection.TenantId, connectionId, external.Id, internalOrderId,
+                            order.BranchId, order.Status, order.DeliveryRouteId,
+                            KitchenOrderNotificationEligibility.IsVisibleToActiveKitchen(order, clock.UtcNow), reason);
+                        foreach (var payment in payments.Where(x => !x.IsReversed))
+                        {
+                            payment.IsReversed = true;
+                            payment.ReversedAt = clock.UtcNow;
+                            payment.ReversalReason = reason;
+                        }
+                        if (inventory is not null && order.Status == OrderStatus.Taken)
+                            await inventory.ReleaseOrderAsync(order, $"order:{order.Id}:rappi-cancel", ct);
+                        order.Status = OrderStatus.Cancelled;
+                        order.CancelledReason = reason;
+                        order.AddStatusTime(OrderStatus.Cancelled, clock.UtcNow);
+                        external.Status = ExternalOrderStatus.Cancelled;
+                        external.LastError = null;
+                    }
+                }
+            }
+            await db.SaveChangesAsync(ct);
+            if (effects is not null && webhookEvent is not null)
+            {
+                var envelope = JsonSerializer.Serialize(new CancellationEffectsEnvelope(payload, effects), JsonOptions);
+                var checkpointed = await OwnedWebhookClaim(db.IntegrationWebhookEvents,
+                        webhookEvent.Id, webhookEvent.AttemptCount)
+                    .Where(x => x.TenantId == connection.TenantId && x.ConnectionId == connectionId)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(x => x.EventType, CancellationEffectsEventType)
+                        .SetProperty(x => x.Status, CancellationEffectsLeased)
+                        .SetProperty(x => x.PayloadJson, envelope)
+                        .SetProperty(x => x.UpdatedAt, clock.UtcNow), ct);
+                if (checkpointed != 1)
+                    throw new InvalidOperationException("Se perdió el reclamo del webhook antes de confirmar la cancelación.");
+                // EventKey/PayloadHash remain those of the original provider delivery.
+                // Only this server-side transition admits the trusted effects envelope.
+                checkpointEnvelope = envelope;
+            }
+            if (transaction is not null) await transaction.CommitAsync(ct);
+        }
+        if (checkpointEnvelope is not null && webhookEvent is not null)
+        {
+            webhookEvent.EventType = CancellationEffectsEventType;
+            webhookEvent.PayloadJson = checkpointEnvelope;
+            webhookEvent.Status = CancellationEffectsLeased;
+        }
+        if (effects is not null)
+            await ApplyCancellationEffectsAsync(effects, ct);
+    }
+
+    private async Task ResumeCancellationEffectsAsync(IntegrationWebhookEvent webhookEvent, CancellationToken ct)
+    {
+        var envelope = JsonSerializer.Deserialize<CancellationEffectsEnvelope>(webhookEvent.PayloadJson, JsonOptions)
+            ?? throw new InvalidOperationException("Falta el contexto de efectos de la cancelación.");
+        if (envelope.Snapshot.TenantId != webhookEvent.TenantId
+            || envelope.Snapshot.ConnectionId != webhookEvent.ConnectionId)
+            throw new InvalidOperationException("El contexto de cancelación no pertenece al webhook.");
+        await ApplyCancellationEffectsAsync(envelope.Snapshot, ct);
+    }
+
+    private async Task ApplyCancellationEffectsAsync(CancellationEffects effects, CancellationToken ct)
+    {
+        if (db.Database.CurrentTransaction is not null)
+            throw new InvalidOperationException("Los efectos de cancelación requieren una transacción ya confirmada.");
+        var validOrder = await db.ExternalDeliveryOrders.AsNoTracking().AnyAsync(x =>
+            x.Id == effects.ExternalOrderId && x.TenantId == effects.TenantId
+            && x.ConnectionId == effects.ConnectionId && x.InternalOrderId == effects.OrderId
+            && x.InternalOrder != null && x.InternalOrder.BranchId == effects.BranchId
+            && x.InternalOrder.Status == OrderStatus.Cancelled, ct);
+        if (!validOrder)
+            throw new InvalidOperationException("El pedido de los efectos de cancelación ya no coincide con su contexto.");
+
+        // Routes are idempotent and run first. Finalization may call Google: neither
+        // it nor realtime notifications belongs inside the core database transaction.
+        await deliveryRouteWorkflow.OnOrderCancelledWhileRouteOpenAsync(effects.OrderId, ct);
+        await deliveryRouteWorkflow.TryFinalizeRouteWhenAllTerminalAsync(effects.OrderId, effects.RouteId, ct);
+        if (effects.NotifyKitchen)
+            await notifications.NotifyOrderCancelledToKitchen(effects.BranchId, effects.OrderId, effects.Reason);
+        if (effects.PreviousStatus == OrderStatus.OnTheWay)
+        {
+            var fullOrder = await orders.GetByIdWithFullDetailsAsync(effects.OrderId, ct);
+            if (fullOrder is not null)
+                await notifications.NotifyOrderModifiedToDelivery(mapper.Map<OrderDto>(fullOrder), "status");
         }
     }
+
+    private sealed record CancellationEffectsEnvelope(string OriginalPayload, CancellationEffects Snapshot);
+    private sealed record CancellationEffects(int TenantId, int ConnectionId, int ExternalOrderId,
+        int OrderId, int BranchId, OrderStatus PreviousStatus, int? RouteId, bool NotifyKitchen, string Reason);
 
     private async Task ApplyOrderEventAsync(int connectionId, string payload, CancellationToken ct)
     {
         using var document = JsonDocument.Parse(payload);
         var orderId = FindString(document.RootElement, "order_id");
-        if (string.IsNullOrWhiteSpace(orderId))
-            return;
+        if (string.IsNullOrWhiteSpace(orderId)) return;
         var eventName = FindEventName(document.RootElement);
-        var external = await db.ExternalDeliveryOrders
-            .Include(x => x.InternalOrder)
-            .FirstOrDefaultAsync(x =>
-                x.ConnectionId == connectionId
-                && x.ExternalOrderId == orderId, ct);
-        if (external?.InternalOrder is null)
-            return;
-
+        var connection = await db.DeliveryAppConnections.AsNoTracking().FirstOrDefaultAsync(x => x.Id == connectionId, ct);
+        if (connection is null) return;
+        await using var transaction = db.Database.IsRelational() && db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(ct) : null;
+        await LockExternalOrderAsync(connection.TenantId, connectionId, orderId, ct);
+        var external = await db.ExternalDeliveryOrders.FirstOrDefaultAsync(x =>
+            x.ConnectionId == connectionId && x.ExternalOrderId == orderId, ct);
+        if (external is null) return;
+        await ReloadTrackedAsync(external, ct);
+        if (external.InternalOrderId is not int internalOrderId) return;
+        await LockOrderAsync(connection.TenantId, internalOrderId, ct);
+        var order = await db.ReloadOrderForManagementAsync(internalOrderId, ct);
+        if (order is null) return;
         if (eventName.Equals("hand_to_domiciliary", StringComparison.OrdinalIgnoreCase)
-            && external.InternalOrder.Status is not (OrderStatus.OnTheWay or OrderStatus.Delivered or OrderStatus.Cancelled))
+            && order.Status is not (OrderStatus.OnTheWay or OrderStatus.Delivered or OrderStatus.Cancelled))
         {
             if (inventory is not null)
-                await inventory.ConsumeOrderAsync(external.InternalOrder, $"order:{external.InternalOrder.Id}:rappi-consume", ct);
-            external.InternalOrder.Status = OrderStatus.OnTheWay;
-            external.InternalOrder.AddStatusTime(OrderStatus.OnTheWay, clock.UtcNow);
+                await inventory.ConsumeOrderAsync(order, $"order:{order.Id}:rappi-consume", ct);
+            order.Status = OrderStatus.OnTheWay;
+            order.AddStatusTime(OrderStatus.OnTheWay, clock.UtcNow);
         }
         else if (eventName.Equals("close_order", StringComparison.OrdinalIgnoreCase)
-                 && external.InternalOrder.Status is not (OrderStatus.Delivered or OrderStatus.Cancelled))
+                 && order.Status is not (OrderStatus.Delivered or OrderStatus.Cancelled))
         {
-            external.InternalOrder.Status = OrderStatus.Delivered;
-            external.InternalOrder.AddStatusTime(OrderStatus.Delivered, clock.UtcNow);
+            if (inventory is not null)
+                await inventory.ConsumeOrderAsync(order, $"order:{order.Id}:rappi-consume", ct);
+            order.Status = OrderStatus.Delivered;
+            order.AddStatusTime(OrderStatus.Delivered, clock.UtcNow);
+        }
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
+    }
+
+    private async Task LockExternalOrderAsync(int tenantId, int connectionId, string orderId, CancellationToken ct)
+    {
+        if (db.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) == true)
+        {
+            var key = $"{tenantId}:{connectionId}:{orderId}";
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(1380012112, hashtext({key}))", ct);
         }
     }
+
+    private async Task LockOrderAsync(int tenantId, int orderId, CancellationToken ct)
+    {
+        if (db.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) == true)
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT id FROM \"order\" WHERE id = {orderId} AND tenant_id = {tenantId} FOR UPDATE", ct);
+    }
+
+    private Task ReloadTrackedAsync(object entity, CancellationToken ct) =>
+        db is DbContext context ? context.Entry(entity).ReloadAsync(ct) : Task.CompletedTask;
 
     private async Task ApplyMenuStatusAsync(
         int connectionId,
         string eventType,
         string payload,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? eventKey = null)
     {
+        const string pollPrefix = "MENU_APPROVED_POLL:";
+        // Only locally generated poll keys carry a trusted publication identity.
+        // Provider callbacks have no documented correlator; a delayed callback must
+        // not approve/reject the next menu merely because it is currently pending.
+        if (eventType != "MENU_APPROVED" || eventKey is null
+            || !eventKey.StartsWith(pollPrefix, StringComparison.Ordinal)
+            || !int.TryParse(eventKey[pollPrefix.Length..], out var publicationId))
+        {
+            if (eventType == "MENU_REJECTED")
+            {
+                // No publication correlator is documented. Hold all potentially affected
+                // pending submissions without falsely labelling any one as rejected.
+                // A delayed rejection can cause a conservative hold; manual review is required.
+                var pending = await db.RappiMenuPublications.Where(x => x.ConnectionId == connectionId
+                    && (x.Status == "submitting" || x.Status == "submitted")).ToListAsync(ct);
+                foreach (var item in pending)
+                {
+                    item.Status = "approval_review_required";
+                    item.Error = "Rappi notificó rechazo sin identificador de publicación; aprobación automática suspendida hasta revisión manual.";
+                    item.UpdatedAt = clock.UtcNow;
+                }
+            }
+            var connection = await db.DeliveryAppConnections.FirstOrDefaultAsync(x => x.Id == connectionId, ct);
+            if (connection is not null)
+                connection.LastError = eventType == "MENU_REJECTED"
+                    ? "Rappi notificó rechazo de menú sin identificador de publicación; revisa el motivo y el menú pendiente en Rappi antes de volver a publicar."
+                    : "Rappi notificó aprobación de menú sin identificador de publicación; pendiente de confirmación mediante consulta a Rappi.";
+            return;
+        }
         var publication = await db.RappiMenuPublications
-            .Where(x => x.ConnectionId == connectionId && x.Status == "submitted")
-            .OrderByDescending(x => x.CreatedAt)
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefaultAsync(x => x.Id == publicationId
+                && x.ConnectionId == connectionId && x.Status == "submitted", ct);
         if (publication is null)
             return;
         publication.Status = eventType == "MENU_APPROVED" ? "approved" : "rejected";
@@ -798,17 +1013,32 @@ public sealed class RappiOrderProcessor(
         store.LastError = FindString(document.RootElement, "message");
     }
 
-    private async Task<bool> IsAlreadyTakenAsync(string orderId, CancellationToken ct)
+    private async Task<AcceptanceEvidence> GetAcceptanceEvidenceAsync(string orderId, CancellationToken ct)
     {
-        var events = await rappi.GetOrderEventsAsync(orderId, ct);
-        if (!events.Success || events.Events is null)
-            return false;
-        return events.Events.Any(x =>
-            x.Contains("taken_visible_order", StringComparison.OrdinalIgnoreCase)
-            || x.Contains("ready_for_pick", StringComparison.OrdinalIgnoreCase)
-            || x.Contains("hand_to_domiciliary", StringComparison.OrdinalIgnoreCase)
-            || x.Contains("close_order", StringComparison.OrdinalIgnoreCase));
+        var result = await rappi.GetOrderEventsAsync(orderId, ct);
+        if (!result.Success || result.Events is null)
+            return new(false, false, "No se pudo confirmar el estado Rappi; se consultará de nuevo antes de reintentar. "
+                + Limit(result.Error, 500));
+        if (result.Events.Count == 0)
+            return new(false, true, "Rappi no devolvió eventos que confirmen aceptación; no se presume expiración.");
+
+        // Do not assume array order or ignore an unknown/newer event. A repeated
+        // taken can also mean courier assignment, so it cannot undo any advanced
+        // or terminal event. This is acceptance recovery, not state reconciliation.
+        if (result.Events.Any(x => x.EventTime.Offset != TimeSpan.Zero || x.EventTime > clock.UtcNow))
+            return new(false, false, "El historial Rappi contiene fechas ambiguas o futuras; requiere revisión antes de aceptar.");
+        if (result.Events.Any(x => x.Event is not ("taken_visible_order" or "replace_storekeeper")))
+            return new(false, false, "El historial Rappi contiene cancelación, avance o eventos no reconocidos; requiere revisión y no se reabre como Taken.");
+        if (result.Events.GroupBy(x => x.EventTime).Any(group => group.Select(x => x.Event).Distinct().Count() > 1))
+            return new(false, false, "El historial Rappi contiene eventos distintos con la misma fecha; requiere revisión.");
+        var takenEvents = result.Events.Where(x => x.Event == "taken_visible_order").ToList();
+        if (takenEvents.Count == 0
+            || result.Events.Any(x => x.Event == "replace_storekeeper" && x.EventTime < takenEvents.Min(t => t.EventTime)))
+            return new(false, false, "El historial Rappi no confirma una aceptación coherente; requiere revisión.");
+        return new(true, false, null);
     }
+
+    private sealed record AcceptanceEvidence(bool Accepted, bool MayAttempt, string? Error);
 
     private static List<string> Validate(
         DeliveryAppConnection connection,
