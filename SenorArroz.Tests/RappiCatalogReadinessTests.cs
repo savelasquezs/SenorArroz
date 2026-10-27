@@ -175,6 +175,27 @@ public sealed class RappiCatalogReadinessTests
         Assert.NotNull((await db.DeliveryAppConnections.SingleAsync()).LastError);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Rappi notificó aprobación de menú sin identificador de publicación; pendiente de confirmación mediante consulta a Rappi.")]
+    [InlineData("Error de conectividad independiente")]
+    public async Task Late_approval_of_confirmed_menu_only_clears_its_own_stale_warning(string? previousError)
+    {
+        await using var db = RappiCatalogTestData.NewDb();
+        await RappiCatalogTestData.SeedAsync(db);
+        var connection = await db.DeliveryAppConnections.SingleAsync();
+        connection.LastError = previousError;
+        var publication = RappiCatalogTestData.Publication(1, RappiCatalogTestData.Now);
+        publication.Status = "approved";
+        db.RappiMenuPublications.Add(publication);
+        await db.SaveChangesAsync();
+
+        await RappiCatalogTestData.ApplyMenuAsync(db, "MENU_APPROVED", "MENU_APPROVED:late:hash");
+
+        Assert.Equal("approved", publication.Status);
+        Assert.Equal(previousError == "Error de conectividad independiente" ? previousError : null, connection.LastError);
+    }
+
     [Fact]
     public async Task Rejection_without_correlation_holds_approval_even_if_poll_success_was_already_queued()
     {
