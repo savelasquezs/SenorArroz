@@ -18,8 +18,8 @@ public sealed class ReadyOrderCancellationTests
     public void Ready_endpoint_accepts_the_http_request_cancellation_token()
     {
         var method = typeof(OrdersController).GetMethod(nameof(OrdersController.GetReadyOrders))!;
-        var token = Assert.Single(method.GetParameters()
-            .Where(parameter => parameter.ParameterType == typeof(CancellationToken)));
+        var token = Assert.Single(method.GetParameters(),
+            parameter => parameter.ParameterType == typeof(CancellationToken));
         Assert.Equal("cancellationToken", token.Name);
         Assert.Equal(typeof(CancellationToken), token.ParameterType);
     }
