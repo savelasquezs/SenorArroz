@@ -76,7 +76,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M14-F03 | Notificaciones SignalR del agente | Pendiente | — | — | — | — |
 | M14-F04 | Confirmar, fallar y reintentar impresión | Pendiente | — | — | — | — |
 | M14-F05 | Configuración y reimpresión | Pendiente | — | — | — | — |
-| M15-F01 | Pedidos disponibles para despacho | Pendiente | — | — | — | — |
+| M15-F01 | Pedidos disponibles para despacho | Analizado | 2026-10-29 | [Informe](reviews/2026-10-29-M15-F01.md) | [Vue #55](https://github.com/savelasquezs/senorArrozFront/pull/55), [API #80](https://github.com/savelasquezs/SenorArroz/pull/80) | Corrección de recargas ocultas al recibir SignalR + cancelación ASP.NET→MediatR→EF. PRs en borrador; CI nueva pendiente (no se reporta como éxito). Sin SQL, merge ni despliegue. |
 | M15-F02 | Asignar y desasignar domiciliario | Pendiente | — | — | — | — |
 | M15-F03 | Tablero y filtro de asignados | Pendiente | — | — | — | — |
 | M15-F04 | Seguimiento de entrega | Pendiente | — | — | — | — |
