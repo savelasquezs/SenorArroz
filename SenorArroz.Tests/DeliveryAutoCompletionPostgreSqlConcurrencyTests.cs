@@ -11,6 +11,7 @@ using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Services;
 using SenorArroz.Infrastructure.Repositories;
+using SenorArroz.Domain.Interfaces.Services;
 using SenorArroz.Application.Common.Behaviors;
 using Testcontainers.PostgreSql;
 
