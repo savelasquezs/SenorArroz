@@ -45,9 +45,6 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
             .FirstOrDefaultAsync(s => s.DeliverymanId == deliverymanId, ct);
         var oldStops = await _db.DeliveryRouteStops.Where(s => s.OrderId == tracked.Id).ToListAsync(ct);
         var oldRouteIds = oldStops.Select(s => s.DeliveryRouteId).Distinct().ToArray();
-        _db.DeliveryRouteStops.RemoveRange(oldStops);
-        tracked.DeliveryRouteId = null;
-
         var candidates = _db.DeliveryRoutes.Where(r => r.DeliverymanId == deliverymanId
             && (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress));
         var activeRoutes = await candidates.Include(r => r.Stops)
@@ -55,21 +52,38 @@ public class DeliveryRouteWorkflowService : IDeliveryRouteWorkflowService
         if (activeRoutes.Any(r => r.BranchId != tracked.BranchId))
             throw new SenorArroz.Domain.Exceptions.BusinessException("El domiciliario tiene una ruta activa en otra sucursal.");
         var todayStart = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(now);
-        if (activeRoutes.Any(r => (r.RouteStartedAtUtc ?? r.LastAssignmentAtUtc) < todayStart
-            && !r.CompletedAtUtc.HasValue))
-            throw new SenorArroz.Domain.Exceptions.BusinessException("Toma una nueva ruta desde la app para cerrar la ruta anterior.");
+        bool IsPreviousDay(DeliveryRoute r) => (r.RouteStartedAtUtc ?? r.LastAssignmentAtUtc) < todayStart
+            && (session is null || r.WorkSessionId != session.Id);
         var activeIds = activeRoutes.Select(r => r.Id).ToArray();
         var routeOrders = await _db.Orders.AsNoTracking()
             .Where(o => o.DeliveryRouteId.HasValue && activeIds.Contains(o.DeliveryRouteId.Value) && o.Id != tracked.Id)
             .ToListAsync(ct);
+        if (activeRoutes.Any(r => IsPreviousDay(r)
+            && routeOrders.Any(o => o.DeliveryRouteId == r.Id && !IsTerminal(o.Status))))
+            throw new SenorArroz.Domain.Exceptions.BusinessException(
+                "El domiciliario tiene pedidos pendientes en una ruta anterior. Reasigna o resuelve esos pedidos desde Pedidos antes de iniciar otra ruta.");
+
+        _db.DeliveryRouteStops.RemoveRange(oldStops);
+        tracked.DeliveryRouteId = null;
+        await _db.SaveChangesAsync(ct);
+        // Free the old owner's active-route slot before creating the replacement route.
+        foreach (var id in oldRouteIds.Where(id => !activeIds.Contains(id)))
+            await RetireEmptyActiveRouteAsync(id, ct);
         foreach (var previous in activeRoutes)
         {
             var members = routeOrders.Where(o => o.DeliveryRouteId == previous.Id).ToList();
             if (members.Count > 0 && members.All(o => IsTerminal(o.Status)))
-                await CloseTerminalAdministrativelyAsync(previous, members, "new_assignment", ct);
+                await CloseTerminalAdministrativelyAsync(previous, members,
+                    IsPreviousDay(previous) ? "stale_assignment" : "new_assignment", ct);
+            else if (members.Count == 0 && IsPreviousDay(previous))
+                await RetireEmptyActiveRouteAsync(previous.Id, ct);
         }
+        if (activeRoutes.Any(r => r.Status is DeliveryRouteStatus.Open or DeliveryRouteStatus.InProgress && IsPreviousDay(r)))
+            throw new SenorArroz.Domain.Exceptions.BusinessException(
+                "La ruta anterior contiene paradas inconsistentes. Revisa sus pedidos antes de iniciar otra ruta.");
         var route = activeRoutes.FirstOrDefault(r => (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress)
-            && routeOrders.Any(o => o.DeliveryRouteId == r.Id && o.Status == OrderStatus.OnTheWay));
+            && (routeOrders.Any(o => o.DeliveryRouteId == r.Id && !IsTerminal(o.Status))
+                || !routeOrders.Any(o => o.DeliveryRouteId == r.Id)));
         if (route is null)
         {
             route = new DeliveryRoute

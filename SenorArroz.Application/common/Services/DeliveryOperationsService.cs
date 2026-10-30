@@ -211,6 +211,13 @@ public sealed class DeliveryOperationsService(IApplicationDbContext db, ICurrent
         int? driverId = null, int? expectedRouteId = null)
     {
         var ownerId = driverId ?? actor.Id;
+        if (source is "next_route" or "logout" && await db.Orders.AsNoTracking().AnyAsync(o =>
+                o.DeliveryManId == ownerId && (driverId.HasValue || o.BranchId == actor.BranchId)
+                && (o.Type == OrderType.Delivery || o.Type == OrderType.Reservation && o.AddressId.HasValue)
+                && o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled, ct))
+            throw new BusinessException(source == "logout"
+                ? "Entrega o reasigna todos tus pedidos pendientes antes de cerrar sesión."
+                : "Entrega o reasigna todos tus pedidos pendientes antes de iniciar una nueva ruta.");
         var routes = await db.DeliveryRoutes.Where(r => r.DeliverymanId == ownerId
             && (driverId.HasValue || r.BranchId == actor.BranchId)
             && (r.Status == DeliveryRouteStatus.Open || r.Status == DeliveryRouteStatus.InProgress)
@@ -221,9 +228,8 @@ public sealed class DeliveryOperationsService(IApplicationDbContext db, ICurrent
                 && o.DeliveryManId == ownerId && o.BranchId == route.BranchId
                 && (o.Type == OrderType.Delivery || o.Type == OrderType.Reservation && o.AddressId.HasValue))
                 .OrderBy(o => o.Id).ToListAsync(ct);
-            foreach (var order in orders.Where(o => o.Status is not (OrderStatus.Delivered or OrderStatus.Cancelled)))
-                await sender.Send(new ChangeOrderStatusCommand { Id = order.Id, RouteCompletionSource = source,
-                    StatusChange = new() { Status = OrderStatus.Delivered, Reason = $"Cierre operativo de ruta: {source}" } }, ct);
+            // A return to the branch does not prove delivery to every customer.
+            if (orders.Any(o => o.Status is not (OrderStatus.Delivered or OrderStatus.Cancelled))) continue;
             route.ClosureSource = source;
             route.CompletedAtUtc = observedAt ?? clock.UtcNow;
             route.Status = orders.Count > 0 && orders.All(o => o.Status == OrderStatus.Cancelled)

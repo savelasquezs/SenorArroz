@@ -422,7 +422,9 @@ public class ExclusiveDeliverySessionTests
         var handler = new CloseMyDeliveryWorkSessionHandler(
             db,
             currentUser.Object,
-            new FakeClock(now));
+            new FakeClock(now), new SenorArroz.Application.Common.Services.DeliveryOperationsService(db,
+                currentUser.Object, new FakeClock(now), Mock.Of<MediatR.ISender>(), Mock.Of<IMapper>(),
+                new SenorArroz.Infrastructure.Services.PostgresDeliveryAutoCompletionRouteLock(db)));
 
         if (sameDevice) await Assert.ThrowsAsync<SessionReplacedException>(() => handler.Handle(new CloseMyDeliveryWorkSessionCommand(), default));
         else await handler.Handle(new CloseMyDeliveryWorkSessionCommand(), default);

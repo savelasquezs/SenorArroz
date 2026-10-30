@@ -10,31 +10,35 @@ using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Infrastructure.Data;
+using SenorArroz.Application.Features.Auth.Commands;
+using SenorArroz.Application.Features.Deliverymen.Commands;
+using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Tests;
 
 public sealed class DeliveryReturnRecoveryTests
 {
     [Fact]
-    public async Task ReturnCompletesPendingOrdersWithoutHumanConfirmation()
+    public async Task ReturnKeepsPendingOrdersAndRouteOpen()
     {
         await using var f = await Fixture.Create();
         Assert.Null(await f.Service.ReconcileReturnAsync(f.Latest));
-        Assert.Equal(new[] { 1, 2, 3 }, f.Commands.Select(c => c.Id));
-        Assert.All(f.Commands, c => Assert.Equal("return", c.RouteCompletionSource));
-        Assert.All(f.Commands, c => Assert.False(c.IsAutomaticDelivery));
-        Assert.Equal(DeliveryRouteStatus.Completed, f.Db.DeliveryRoutes.Single().Status);
+        Assert.Empty(f.Commands);
+        Assert.All(f.Db.Orders, o => Assert.Equal(OrderStatus.OnTheWay, o.Status));
+        Assert.Equal(DeliveryRouteStatus.InProgress, f.Db.DeliveryRoutes.Single().Status);
     }
 
     [Fact]
     public async Task RepeatedReturnAndLegacyConfirmationHaveNoDuplicateEffects()
     {
         await using var f = await Fixture.Create();
+        await f.DeliverAll();
         await f.Service.ReconcileReturnAsync(f.Latest);
         await f.Service.ReconcileReturnAsync(f.Latest);
         await f.Service.ConfirmReturnedOrdersAsync(8, 7, 1, f.Latest.Id, [3]);
-        Assert.Equal(3, f.Commands.Count);
+        Assert.Empty(f.Commands);
         Assert.Equal("return", f.Db.DeliveryRoutes.Single().ClosureSource);
+        Assert.Single(f.Db.EntityAuditLogs);
     }
 
     [Fact]
@@ -50,12 +54,118 @@ public sealed class DeliveryReturnRecoveryTests
             f.Service.ConfirmReturnedOrdersAsync(8, 100, 1, f.Latest.Id, [3]));
     }
 
+    [Fact]
+    public async Task PresenceAtBranchWithoutPriorDepartureCannotCloseRoute()
+    {
+        await using var f = await Fixture.Create();
+        await f.DeliverAll();
+        var branch = await f.Db.Branches.SingleAsync();
+        f.Db.DeliverymanLocations.RemoveRange(f.Db.DeliverymanLocations.Where(p => p.Latitude != branch.Latitude));
+        await f.Db.SaveChangesAsync();
+        await f.Service.ReconcileReturnAsync(f.Latest);
+        Assert.Equal(DeliveryRouteStatus.InProgress, f.Db.DeliveryRoutes.Single().Status);
+        Assert.Empty(f.Db.EntityAuditLogs);
+    }
+
+    [Theory]
+    [InlineData("next_route")]
+    [InlineData("logout")]
+    public async Task OperationalClosureRequiresDeliveredOrdersAndDoesNotInventGps(string source)
+    {
+        await using var f = await Fixture.Create();
+        await Assert.ThrowsAsync<BusinessException>(() => f.Operations.CompleteActiveAsync(source, null, default));
+        Assert.All(f.Db.Orders, o => Assert.Equal(OrderStatus.OnTheWay, o.Status));
+        Assert.Equal(DeliveryRouteStatus.InProgress, f.Db.DeliveryRoutes.Single().Status);
+        Assert.Empty(f.Db.EntityAuditLogs);
+        await f.DeliverAll();
+        await f.Operations.CompleteActiveAsync(source, null, default);
+        await f.Operations.CompleteActiveAsync(source, null, default);
+        var route = f.Db.DeliveryRoutes.Single();
+        Assert.Equal(DeliveryRouteStatus.Completed, route.Status);
+        Assert.Equal(source, route.ClosureSource);
+        Assert.Null(route.ActualDurationSeconds);
+        Assert.Null(route.MetSla);
+        Assert.Null(SenorArroz.Application.Features.Dashboard.Services.DeliveryPerformanceAnalytics.RouteTiming(route).Start);
+        Assert.Empty(f.Commands);
+        Assert.Single(f.Db.EntityAuditLogs);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LogoutChecksDeliveriesBeforeRevokingTokenOrClosingWorkSession(bool delivered)
+    {
+        await using var f = await Fixture.Create();
+        if (delivered) await f.DeliverAll();
+        var owner = f.Db.Users.Single();
+        owner.ActiveSessionId = Guid.NewGuid();
+        await f.Db.SaveChangesAsync();
+        var token = new RefreshToken { UserId = 7, TenantId = 1, SessionId = owner.ActiveSessionId,
+            Token = "test", ExpiresAt = f.Latest.RecordedAt.AddDays(1) };
+        var refresh = new Mock<IRefreshTokenRepository>();
+        refresh.Setup(x => x.GetByTokenAsync("test", It.IsAny<CancellationToken>())).ReturnsAsync(token);
+        var auth = new Mock<IAuthRepository>();
+        var handler = new LogoutHandler(refresh.Object, auth.Object, new FakeClock(f.Latest.RecordedAt),
+            f.Db, f.Operations, f.Actor);
+        var command = new LogoutCommand { RefreshToken = "test" };
+        if (delivered) Assert.True(await handler.Handle(command, default));
+        else await Assert.ThrowsAsync<BusinessException>(() => handler.Handle(command, default));
+        Assert.Equal(delivered, token.IsRevoked);
+        Assert.Equal(delivered ? DeliveryWorkSessionStatus.Closed : DeliveryWorkSessionStatus.Active,
+            f.Db.DeliveryWorkSessions.Single().Status);
+        Assert.Equal(delivered ? DeliveryRouteStatus.Completed : DeliveryRouteStatus.InProgress,
+            f.Db.DeliveryRoutes.Single().Status);
+        auth.Verify(x => x.EndSessionIfCurrentAsync(7, owner.ActiveSessionId!.Value, It.IsAny<CancellationToken>()),
+            delivered ? Times.Once() : Times.Never());
+        Assert.Empty(f.Commands);
+    }
+
+    [Fact]
+    public async Task ClosingWorkSessionCannotBypassPendingDeliveries()
+    {
+        await using var f = await Fixture.Create();
+        var handler = new CloseMyDeliveryWorkSessionHandler(f.Db, f.Actor, new FakeClock(f.Latest.RecordedAt),
+            operations: f.Operations);
+        await Assert.ThrowsAsync<BusinessException>(() => handler.Handle(new(), default));
+        Assert.Equal(DeliveryWorkSessionStatus.Active, f.Db.DeliveryWorkSessions.Single().Status);
+        await f.DeliverAll();
+        await handler.Handle(new(), default);
+        Assert.Equal(DeliveryWorkSessionStatus.Closed, f.Db.DeliveryWorkSessions.Single().Status);
+        Assert.Equal("logout", f.Db.DeliveryRoutes.Single().ClosureSource);
+    }
+
+    [Fact]
+    public async Task LogoutFromReplacedSessionCannotCloseCurrentRouteOrWorkSession()
+    {
+        await using var f = await Fixture.Create();
+        await f.DeliverAll();
+        f.Db.Users.Single().ActiveSessionId = Guid.NewGuid();
+        await f.Db.SaveChangesAsync();
+        var token = new RefreshToken { UserId = 7, TenantId = 1, SessionId = Guid.NewGuid(),
+            ExpiresAt = f.Latest.RecordedAt.AddDays(1), Token = "old" };
+        var refresh = new Mock<IRefreshTokenRepository>();
+        refresh.Setup(x => x.GetByTokenAsync("old", It.IsAny<CancellationToken>())).ReturnsAsync(token);
+        var handler = new LogoutHandler(refresh.Object, Mock.Of<IAuthRepository>(), new FakeClock(f.Latest.RecordedAt),
+            f.Db, f.Operations, f.Actor);
+        Assert.True(await handler.Handle(new() { RefreshToken = "old" }, default));
+        Assert.Equal(DeliveryRouteStatus.InProgress, f.Db.DeliveryRoutes.Single().Status);
+        Assert.Equal(DeliveryWorkSessionStatus.Active, f.Db.DeliveryWorkSessions.Single().Status);
+        Assert.Empty(f.Db.EntityAuditLogs);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         public ApplicationDbContext Db { get; private init; } = null!;
         public DeliveryAutoCompletionService Service { get; private set; } = null!;
         public DeliverymanLocation Latest { get; private set; } = null!;
         public List<ChangeOrderStatusCommand> Commands { get; } = [];
+        public DeliveryOperationsService Operations { get; private set; } = null!;
+        public ICurrentUser Actor { get; private set; } = null!;
+        public async Task DeliverAll()
+        {
+            foreach (var order in Db.Orders) order.Status = OrderStatus.Delivered;
+            await Db.SaveChangesAsync();
+        }
 
         public static async Task<Fixture> Create()
         {
@@ -146,6 +256,8 @@ public sealed class DeliveryReturnRecoveryTests
             actor.SetupGet(x => x.BranchId).Returns(1);
             var operations = new DeliveryOperationsService(db, actor.Object, new Clock(start.AddSeconds(270)),
                 sender.Object, Mock.Of<AutoMapper.IMapper>(), new InlineRouteLock());
+            f.Operations = operations;
+            f.Actor = actor.Object;
             f.Service = new DeliveryAutoCompletionService(db, sender.Object,
                 new Clock(start.AddSeconds(270)),
                 NullLogger<DeliveryAutoCompletionService>.Instance,
