@@ -79,7 +79,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M15-F01 | Pedidos disponibles para despacho | Pendiente | — | — | — | — |
 | M15-F02 | Asignar y desasignar domiciliario | Pendiente | — | — | — | — |
 | M15-F03 | Tablero y filtro de asignados | Pendiente | — | — | — | — |
-| M15-F04 | Seguimiento de entrega | Analizado | 2026-10-30 | [Informe](reviews/2026-10-30-M15-F04.md) | [Vue #58](https://github.com/savelasquezs/senorArrozFront/pull/58), [Docs (en preparación)] | En PR borrador: abortar seguimiento GPS tras cerrar/cambiar sesión/pedido/sucursal y reconsultar un evento SignalR recibido durante HTTP ocupado. CI final pendiente. Sin SQL, merges, despliegues ni métricas productivas. |
+| M15-F04 | Seguimiento de entrega | PR listo para revisión | 2026-10-30 | [Informe](reviews/2026-10-30-M15-F04.md) | [Vue #58](https://github.com/savelasquezs/senorArrozFront/pull/58), [Docs #86](https://github.com/savelasquezs/SenorArroz/pull/86) | [Vue CI #41074190474](https://github.com/savelasquezs/senorArrozFront/actions/runs/41074190474) SUCCESS: typecheck/build y 977/977 pruebas (8 nuevas). Cancela GET obsoletos y reconsulta tras evento SignalR recibido mientras GET está ocupado. [Backend CI anterior #41073472350](https://github.com/savelasquezs/SenorArroz/actions/runs/41073472350) 1564 aprobadas/1 omitida y [Remote #41073472346](https://github.com/savelasquezs/SenorArroz/actions/runs/41073472346) SUCCESS; nuevas comprobaciones documentales pendientes. Sin SQL, merge, despliegue ni métricas productivas. |
 | M16-F01 | Solicitar plan de rutas | Pendiente | — | — | — | — |
 | M16-F02 | Previsualizar propuestas | Pendiente | — | — | — | — |
 | M16-F03 | Recalcular y reclamar rutas | Pendiente | — | — | — | — |
