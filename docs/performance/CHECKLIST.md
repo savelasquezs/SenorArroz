@@ -84,7 +84,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M16-F02 | Previsualizar propuestas | Pendiente | — | — | — | — |
 | M16-F03 | Recalcular y reclamar rutas | Pendiente | — | — | — | — |
 | M16-F04 | Google Routes y OR-Tools | Pendiente | — | — | — | — |
-| M17-F01 | Cargar disponibles Flutter | Pendiente | — | — | — | — |
+| M17-F01 | Cargar disponibles Flutter | Analizado | 2026-10-30 | [Informe](reviews/2026-10-30-M17-F01.md) | [Flutter #17](https://github.com/savelasquezs/delivery_app/pull/17), [API #83](https://github.com/savelasquezs/SenorArroz/pull/83) | Abort de GET obsoleto en cliente y token RequestAborted a EF Core; PRs de código en borrador hasta CI final. Sin SQL, despliegue ni métricas productivas. |
 | M17-F02 | Cargar sugerencias y próximos | Pendiente | — | — | — | — |
 | M17-F03 | Autoasignación y bloqueo concurrente | Pendiente | — | — | — | — |
 | M18-F01 | Cargar y refrescar ruta activa | Pendiente | — | — | — | — |
