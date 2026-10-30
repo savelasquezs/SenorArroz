@@ -14,17 +14,20 @@ public class CloseMyDeliveryWorkSessionHandler : IRequestHandler<CloseMyDelivery
     private readonly ICurrentUser _currentUser;
     private readonly IClock _clock;
     private readonly IBackgroundWorkSignal<DeliveryWorkSessionScheduleWork>? _scheduleSignal;
+    private readonly SenorArroz.Application.Common.Services.DeliveryOperationsService _operations;
 
     public CloseMyDeliveryWorkSessionHandler(
         IApplicationDbContext db,
         ICurrentUser currentUser,
         IClock clock,
+        SenorArroz.Application.Common.Services.DeliveryOperationsService operations,
         IBackgroundWorkSignal<DeliveryWorkSessionScheduleWork>? scheduleSignal = null)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _scheduleSignal = scheduleSignal;
+        _operations = operations;
     }
 
     public async Task Handle(CloseMyDeliveryWorkSessionCommand request, CancellationToken cancellationToken)
@@ -44,6 +47,8 @@ public class CloseMyDeliveryWorkSessionHandler : IRequestHandler<CloseMyDelivery
 
         var session = await query.FirstOrDefaultAsync(cancellationToken);
         if (session is null) return;
+
+        await _operations.CompleteActiveAsync("logout", null, cancellationToken);
 
         session.Close(
             ColombiaTimeHelper.EnsureUtc(_clock.UtcNow),

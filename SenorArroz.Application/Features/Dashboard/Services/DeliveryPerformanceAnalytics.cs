@@ -89,7 +89,7 @@ public static class DeliveryPerformanceAnalytics
 
     public static (DateTime? Start, bool UsesOrderDeparture) RouteTiming(DeliveryRoute route)
     {
-        if (route.ClosureSource is "next_route" or "legacy") return (null, false);
+        if (route.ClosureSource is "next_route" or "legacy" or "logout") return (null, false);
         if (route.DepartedAtUtc.HasValue) return (route.DepartedAtUtc, false);
         var start = route.Stops.Select(stop => new
             {
@@ -177,7 +177,7 @@ public static class DeliveryPerformanceAnalytics
                 .Select(s => new { Delivered = StatusTime(s.Order.StatusTimes, "delivered"), Ready = StatusTime(s.Order.StatusTimes, "ready") }).ToList();
             deliveredInRoutes += delivered.Count;
             var timing = RouteTiming(route);
-            if (sample.HasInconsistentReturn || route.ClosureSource is "next_route" or "legacy"
+            if (sample.HasInconsistentReturn || route.ClosureSource is "next_route" or "legacy" or "logout"
                 || route.Stops.Any(s => s.Order.DeliveryCompletionSource is "next_route" or "return" or "legacy" or "offline_confirmation")) continue;
             if (timing.Start is not { } start || route.CompletedAtUtc is not { } end || delivered.Count == 0
                 || delivered.Any(x => !x.Delivered.HasValue || !x.Ready.HasValue || x.Delivered < start || x.Delivered > end || x.Ready > start)) continue;

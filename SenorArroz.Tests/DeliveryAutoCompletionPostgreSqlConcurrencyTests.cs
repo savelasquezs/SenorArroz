@@ -10,6 +10,8 @@ using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Services;
+using SenorArroz.Infrastructure.Repositories;
+using SenorArroz.Application.Common.Behaviors;
 using Testcontainers.PostgreSql;
 
 namespace SenorArroz.Tests;
@@ -207,7 +209,7 @@ public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLif
         var sql = await File.ReadAllTextAsync(Path.Combine(directory!.FullName,
             "SenorArroz.Infrastructure/Scripts/enforce_delivery_route_uniqueness.sql"));
         async Task Apply() {
-            await using var connection = new Npgsql.NpgsqlConnection(_postgres!.GetConnectionString());
+            await using var connection = new Npgsql.NpgsqlConnection(_localConnection ?? _postgres!.GetConnectionString());
             await connection.OpenAsync();
             await new Npgsql.NpgsqlCommand(sql, connection).ExecuteNonQueryAsync();
         }
@@ -253,6 +255,121 @@ public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLif
 
     [PostgreSqlIntegrationFact]
     public Task UnassignPreservesRouteWithRemainingOrders() => CheckUnassign(DeliveryRouteStatus.InProgress, true);
+
+    [PostgreSqlIntegrationFact]
+    public Task CashierCanAssignAfterPreviousDayRouteIsDelivered() => CheckAdministrativeAssignment("Cashier", false);
+
+    [PostgreSqlIntegrationFact]
+    public Task AdminCanAssignAfterPreviousDayRouteIsDelivered() => CheckAdministrativeAssignment("Admin", false);
+
+    [PostgreSqlIntegrationFact]
+    public Task SuperadminCanAssignAfterPreviousDayRouteIsDelivered() => CheckAdministrativeAssignment("Superadmin", false);
+
+    [PostgreSqlIntegrationFact]
+    public Task CashierCanReassignAndRetireTheOldRoute() => CheckAdministrativeAssignment("Cashier", true);
+
+    [PostgreSqlIntegrationFact]
+    public Task AdminCanReassignAndRetireTheOldRoute() => CheckAdministrativeAssignment("Admin", true);
+
+    [PostgreSqlIntegrationFact]
+    public Task SuperadminCanReassignAndRetireTheOldRoute() => CheckAdministrativeAssignment("Superadmin", true);
+
+    private async Task CheckAdministrativeAssignment(string role, bool reassign)
+    {
+        await using var db = CreateDb();
+        var previous = await db.DeliveryRoutes.SingleAsync();
+        previous.RouteStartedAtUtc = _now.AddDays(-1);
+        previous.LastAssignmentAtUtc = _now.AddDays(-1);
+        var original = await db.Orders.SingleAsync();
+        original.Status = reassign ? OrderStatus.OnTheWay : OrderStatus.Delivered;
+        if (reassign)
+        {
+            db.Users.Add(new User { Id = 3, BranchId = 7, Role = UserRole.Deliveryman,
+                Name = "Replacement", Email = "replacement@test.local", PasswordHash = "test", Active = true });
+            db.DeliveryRoutes.Add(new DeliveryRoute { Id = 21, BranchId = 7, DeliverymanId = 3,
+                Status = DeliveryRouteStatus.InProgress, LastAssignmentAtUtc = _now.AddDays(-1),
+                RouteStartedAtUtc = _now.AddDays(-1) });
+        }
+        db.Orders.Add(new Order { Id = 31, BranchId = 7, TakenById = 2, CustomerId = 10, AddressId = 30,
+            Type = OrderType.Delivery, Status = reassign ? OrderStatus.Delivered : OrderStatus.Ready,
+            DeliveryManId = reassign ? 3 : null, DeliveryRouteId = reassign ? 21 : null });
+        if (reassign) db.DeliveryRouteStops.Add(new DeliveryRouteStop { DeliveryRouteId = 21, OrderId = 31, StopSequence = 1 });
+        await db.SaveChangesAsync();
+        await db.Database.ExecuteSqlRawAsync("CREATE UNIQUE INDEX IF NOT EXISTS ux_delivery_route_active_owner ON delivery_route(tenant_id,deliveryman_id) WHERE status IN ('open','in_progress')");
+        var actor = new Mock<ICurrentUser>();
+        actor.SetupGet(x => x.Id).Returns(2); actor.SetupGet(x => x.TenantId).Returns(1);
+        actor.SetupGet(x => x.BranchId).Returns(7); actor.SetupGet(x => x.Role).Returns(role);
+        actor.SetupGet(x => x.IsAuthenticated).Returns(true);
+        var branch = new Mock<IBranchContext>(); branch.SetupGet(x => x.EffectiveBranchId).Returns(7);
+        var repository = new OrderRepository(db, new FakeClock(_now));
+        var notifications = Mock.Of<IOrderNotificationService>();
+        var workflow = new DeliveryRouteWorkflowService(db, Mock.Of<IGoogleRoutesDrivingMetricsService>(),
+            Microsoft.Extensions.Options.Options.Create(new SenorArroz.Application.Options.DeliveryRouteOptions()),
+            NullLogger<DeliveryRouteWorkflowService>.Instance, new FakeClock(_now));
+        var mapper = new Mock<AutoMapper.IMapper>();
+        mapper.Setup(x => x.Map<OrderDto>(It.IsAny<object>())).Returns<object>(o => new OrderDto { Id = ((Order)o).Id });
+        var handler = new AssignDeliveryManHandler(repository, mapper.Object, actor.Object, workflow, notifications);
+        var pipeline = new OrderMutationBehavior<AssignDeliveryManCommand, OrderDto>(db, actor.Object, branch.Object,
+            notifications, NullLogger<OrderMutationBehavior<AssignDeliveryManCommand, OrderDto>>.Instance, clock: new FakeClock(_now));
+        var command = new AssignDeliveryManCommand { Id = reassign ? 30 : 31,
+            Assignment = new() { DeliveryManId = reassign ? 3 : 1 } };
+        await pipeline.Handle(command, ct => handler.Handle(command, ct), default);
+        var assigned = await db.Orders.AsNoTracking().SingleAsync(o => o.Id == command.Id);
+        Assert.Equal(OrderStatus.OnTheWay, assigned.Status);
+        Assert.Equal(command.Assignment.DeliveryManId, assigned.DeliveryManId);
+        var active = await db.DeliveryRoutes.AsNoTracking().SingleAsync(r => r.Status == DeliveryRouteStatus.Open);
+        Assert.Equal(active.Id, assigned.DeliveryRouteId);
+        var closed = await db.DeliveryRoutes.AsNoTracking().SingleAsync(r => r.Id == (reassign ? 21 : 20));
+        Assert.Equal(DeliveryRouteStatus.Completed, closed.Status);
+        Assert.Equal("legacy", closed.ClosureSource);
+        Assert.Null(closed.ActualDurationSeconds); Assert.Null(closed.CompletedAtUtc);
+        if (reassign) Assert.Equal(DeliveryRouteStatus.Cancelled,
+            (await db.DeliveryRoutes.AsNoTracking().SingleAsync(r => r.Id == 20)).Status);
+    }
+
+    [PostgreSqlIntegrationFact]
+    public Task LogoutWithPendingDeliveriesPreservesCredentialsAndRouteAtomically() => CheckLogout(false);
+
+    [PostgreSqlIntegrationFact]
+    public Task LogoutAfterDeliveriesClosesRouteAndWorkSessionAtomically() => CheckLogout(true);
+
+    private async Task CheckLogout(bool delivered)
+    {
+        await using (var seed = CreateDb())
+        {
+            var owner = await seed.Users.SingleAsync(u => u.Id == 1);
+            owner.ActiveSessionId = Guid.NewGuid();
+            if (delivered) (await seed.Orders.SingleAsync()).Status = OrderStatus.Delivered;
+            seed.RefreshTokens.Add(new RefreshToken { UserId = 1, SessionId = owner.ActiveSessionId,
+                Token = "logout-test", ExpiresAt = _now.AddDays(1) });
+            seed.DeliveryWorkSessions.Add(new DeliveryWorkSession { Id = 77, DeliverymanId = 1, BranchId = 7,
+                DeviceInstallationId = "fixture", DevicePlatform = "android", StartedAt = _now.AddHours(-1),
+                AutoCloseAt = _now.AddHours(2), Status = DeliveryWorkSessionStatus.Active });
+            await seed.SaveChangesAsync();
+        }
+        await using (var db = CreateDb())
+        {
+            var clock = new FakeClock(_now);
+            var actor = new Mock<ICurrentUser>();
+            actor.SetupGet(a => a.Id).Returns(1); actor.SetupGet(a => a.TenantId).Returns(1);
+            actor.SetupGet(a => a.BranchId).Returns(7);
+            var handler = new SenorArroz.Application.Features.Auth.Commands.LogoutHandler(
+                new RefreshTokenRepository(db, clock), new AuthRepository(db, Mock.Of<IPasswordService>()),
+                clock, db, Operations(db), actor.Object);
+            var command = new SenorArroz.Application.Features.Auth.Commands.LogoutCommand { RefreshToken = "logout-test" };
+            if (delivered) Assert.True(await handler.Handle(command, default));
+            else await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => handler.Handle(command, default));
+        }
+        await using var verify = CreateDb();
+        Assert.Equal(delivered, (await verify.RefreshTokens.SingleAsync()).IsRevoked);
+        Assert.Equal(delivered, (await verify.Users.SingleAsync(u => u.Id == 1)).ActiveSessionId is null);
+        Assert.Equal(delivered ? DeliveryWorkSessionStatus.Closed : DeliveryWorkSessionStatus.Active,
+            (await verify.DeliveryWorkSessions.SingleAsync()).Status);
+        Assert.Equal(delivered ? DeliveryRouteStatus.Completed : DeliveryRouteStatus.InProgress,
+            (await verify.DeliveryRoutes.SingleAsync()).Status);
+        Assert.Equal(delivered ? OrderStatus.Delivered : OrderStatus.OnTheWay,
+            (await verify.Orders.SingleAsync()).Status);
+    }
 
     private async Task CheckUnassign(DeliveryRouteStatus status, bool keepOrder)
     {

@@ -95,6 +95,84 @@ public class DeliveryRouteAssignmentTests
         Assert.Null(route.DepartedAtUtc);
     }
 
+    [Theory]
+    [InlineData(OrderStatus.Delivered, DeliveryRouteStatus.Completed)]
+    [InlineData(OrderStatus.Cancelled, DeliveryRouteStatus.Cancelled)]
+    public async Task Assignment_ClosesPreviousDayTerminalRouteWithoutInventingReturn(
+        OrderStatus status, DeliveryRouteStatus closedStatus)
+    {
+        await using var db = CreateDb();
+        SeedTrip(db, status, Now.AddDays(-1));
+        db.Orders.Add(DeliveryOrder(11, 7));
+        await db.SaveChangesAsync();
+
+        await CreateService(db).OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 11));
+
+        var previous = await db.DeliveryRoutes.SingleAsync(r => r.Id == 30);
+        Assert.Equal(closedStatus, previous.Status);
+        Assert.Equal("legacy", previous.ClosureSource);
+        Assert.Null(previous.CompletedAtUtc);
+        Assert.Null(previous.ActualDurationSeconds);
+        Assert.Null(previous.MetSla);
+        Assert.Equal(status, db.Orders.Single(o => o.Id == 10).Status);
+        var active = await db.DeliveryRoutes.SingleAsync(r => r.Status == DeliveryRouteStatus.Open);
+        Assert.Equal(active.Id, db.Orders.Single(o => o.Id == 11).DeliveryRouteId);
+        Assert.Single(db.EntityAuditLogs);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Assignment_RetiresPreviousDayEmptyRouteIncludingTheOrderBeingReassigned(bool reassign)
+    {
+        await using var db = CreateDb();
+        SeedTrip(db, OrderStatus.OnTheWay, Now.AddDays(-1));
+        if (!reassign)
+        {
+            db.DeliveryRouteStops.Remove(db.DeliveryRouteStops.Local.Single());
+            db.Orders.Local.Single().DeliveryRouteId = null;
+            db.Orders.Add(DeliveryOrder(11, 7));
+        }
+        await db.SaveChangesAsync();
+        var orderId = reassign ? 10 : 11;
+
+        await CreateService(db).OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == orderId));
+
+        var previous = await db.DeliveryRoutes.SingleAsync(r => r.Id == 30);
+        Assert.Equal(DeliveryRouteStatus.Cancelled, previous.Status);
+        Assert.Equal("empty", previous.ClosureSource);
+        Assert.Null(previous.ActualDurationSeconds);
+        Assert.Null(previous.MetSla);
+        var active = await db.DeliveryRoutes.SingleAsync(r => r.Status == DeliveryRouteStatus.Open);
+        Assert.Equal(active.Id, db.Orders.Single(o => o.Id == orderId).DeliveryRouteId);
+        Assert.Equal(OrderStatus.OnTheWay, db.Orders.Single(o => o.Id == orderId).Status);
+        Assert.Single(db.EntityAuditLogs);
+    }
+
+    [Fact]
+    public async Task Assignment_ReusesRouteAcrossMidnightWithinTheSameActiveSession()
+    {
+        await using var db = CreateDb();
+        var start = Now.AddHours(-14);
+        SeedTrip(db, OrderStatus.OnTheWay, start);
+        db.DeliveryRoutes.Local.Single().WorkSessionId = 20;
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 20, DeliverymanId = 7, BranchId = 1, Status = DeliveryWorkSessionStatus.Active,
+            StartedAt = start.AddMinutes(-10), AutoCloseAt = Now.AddHours(1),
+            DeviceInstallationId = "test", DevicePlatform = "android"
+        });
+        db.Orders.Add(DeliveryOrder(11, 7));
+        await db.SaveChangesAsync();
+
+        await CreateService(db).OnOrderAssignedToDeliverymanAsync(db.Orders.Single(o => o.Id == 11));
+
+        Assert.Equal(30, db.Orders.Single(o => o.Id == 11).DeliveryRouteId);
+        Assert.Equal(start, db.DeliveryRoutes.Single().RouteStartedAtUtc);
+        Assert.Equal(2, await db.DeliveryRouteStops.CountAsync());
+        Assert.Empty(db.EntityAuditLogs);
+    }
+
     [Fact]
     public async Task Assignment_CompletesPreviousTerminalRouteAtNextDeparture()
     {
