@@ -657,14 +657,15 @@ public class OrdersController : ControllerBase
     [HttpGet("delivery/available")]
     [Authorize(Roles = "Deliveryman")]
     public async Task<ActionResult<List<OrderDto>>> GetAvailableOrdersForDelivery(
-        [FromQuery] int? branchId = null)
+        [FromQuery] int? branchId = null,
+        CancellationToken cancellationToken = default)
     {
         var query = new GetAvailableOrdersForDeliveryQuery
         {
             BranchId = branchId
         };
 
-        var result = await _mediator.Send(query);
+        var result = await _mediator.Send(query, cancellationToken);
         return Ok(result);
     }
 
