@@ -77,7 +77,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M14-F04 | Confirmar, fallar y reintentar impresión | Pendiente | — | — | — | — |
 | M14-F05 | Configuración y reimpresión | Pendiente | — | — | — | — |
 | M15-F01 | Pedidos disponibles para despacho | Pendiente | — | — | — | — |
-| M15-F02 | Asignar y desasignar domiciliario | Analizado | 2026-10-30 | [Informe](reviews/2026-10-30-M15-F02.md) | [Vue #56](https://github.com/savelasquezs/senorArrozFront/pull/56), [Docs #82](https://github.com/savelasquezs/SenorArroz/pull/82) | Corregir carreras de carga al cerrar/reabrir/cambiar pedido: AbortSignal, versión de solicitud, invalidación por contexto y guardado. PRs en borrador, CI final pendiente. Sin SQL, merge, despliegue ni métricas productivas. |
+| M15-F02 | Asignar y desasignar domiciliario | PR listo para revisión | 2026-10-30 | [Informe](reviews/2026-10-30-M15-F02.md) | [Vue #56](https://github.com/savelasquezs/senorArrozFront/pull/56), [Docs #82](https://github.com/savelasquezs/SenorArroz/pull/82) | Evita resultados obsoletos al cambiar/abrir pedido y doble PUT Ready→OnTheWay desde detalle. [Vue CI](https://github.com/savelasquezs/senorArrozFront/actions/runs/41061654185) SUCCESS: 981/981 tests, 12 de regresión del alcance, typecheck/build. Confirmar CI documental final. Sin SQL, merge, deploy ni métricas productivas. |
 | M15-F03 | Tablero y filtro de asignados | Pendiente | — | — | — | — |
 | M15-F04 | Seguimiento de entrega | Pendiente | — | — | — | — |
 | M16-F01 | Solicitar plan de rutas | Pendiente | — | — | — | — |
