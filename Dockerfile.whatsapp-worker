@@ -1,0 +1,14 @@
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+COPY . .
+RUN dotnet publish SenorArroz.WhatsApp.Worker/SenorArroz.WhatsApp.Worker.csproj -c Release -o /app/publish /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:9.0
+WORKDIR /app
+COPY --from=build /app/publish .
+USER $APP_UID
+ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV WhatsAppProcessing__Mode=External
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "SenorArroz.WhatsApp.Worker.dll"]

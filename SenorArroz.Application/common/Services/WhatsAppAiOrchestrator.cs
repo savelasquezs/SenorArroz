@@ -33,6 +33,7 @@ public class WhatsAppAiOrchestrator(
 {
     private readonly WhatsAppAiOrchestratorOptions _options = options.Value;
     private readonly WhatsAppAiPricingOptions _pricing = pricing?.Value ?? new();
+    private DateTime? _attentionVersion;
 
     public async Task<WhatsAppAiProcessingResult> ProcessIncomingMessageAsync(
         int conversationId,
@@ -67,6 +68,7 @@ public class WhatsAppAiOrchestrator(
 
             if (conversation is null)
                 return await Ignore(message, "Conversación inexistente.", ct);
+            _attentionVersion = conversation.AttentionModeUpdatedAt;
             var effectiveBranchId = conversation.OperationalBranchId ?? conversation.BranchId;
 
             await NotifyCurrentStatusAsync(message.Id, conversation.BranchId, ct);
@@ -317,7 +319,7 @@ public class WhatsAppAiOrchestrator(
                             null,
                             conversation.AttentionMode.ToString(),
                             message.AiResponseAttemptId ??= $"ai-{incomingMessageId}",
-                            "whatsapp_ai"),
+                            "whatsapp_ai", AttentionVersion: _attentionVersion),
                         call.Arguments,
                         ct);
                     totalTools++;
@@ -492,7 +494,8 @@ public class WhatsAppAiOrchestrator(
     private Task<bool> StillAi(int conversationId, CancellationToken cancellationToken) =>
         db.WhatsAppConversations
             .AsNoTracking()
-            .AnyAsync(x => x.Id == conversationId && x.AttentionMode == WhatsAppAttentionMode.Ai, cancellationToken);
+            .AnyAsync(x => x.Id == conversationId && x.AttentionMode == WhatsAppAttentionMode.Ai
+                && (!_attentionVersion.HasValue || x.AttentionModeUpdatedAt == _attentionVersion.Value), cancellationToken);
 
     private static string NormalizeFinalResponse(string value)
     {

@@ -64,6 +64,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<WhatsAppTemplate> WhatsAppTemplates { get; set; }
 
         DbSet<WhatsAppWebhookEvent> WhatsAppWebhookEvents { get; set; }
+        DbSet<WhatsAppRealtimeEvent> WhatsAppRealtimeEvents { get; set; }
         DbSet<DeliveryAppConnection> DeliveryAppConnections { get; set; }
         DbSet<DeliveryAppStore> DeliveryAppStores { get; set; }
         DbSet<DeliveryAppWebhookSubscription> DeliveryAppWebhookSubscriptions { get; set; }

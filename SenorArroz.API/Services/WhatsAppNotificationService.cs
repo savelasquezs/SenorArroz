@@ -1,6 +1,10 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Text.Json;
+using SenorArroz.Application.Options;
+using SenorArroz.Domain.Entities;
 using SenorArroz.API.Hubs;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
@@ -13,17 +17,20 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
     private readonly ILogger<WhatsAppNotificationService> _logger;
     private readonly IApplicationDbContext _db;
     private readonly ICurrentTenant _tenant;
+    private readonly WhatsAppProcessingOptions _processing;
 
     public WhatsAppNotificationService(
         IHubContext<WhatsAppHub> hubContext,
         IApplicationDbContext db,
         ICurrentTenant tenant,
-        ILogger<WhatsAppNotificationService> logger)
+        ILogger<WhatsAppNotificationService> logger,
+        IOptions<WhatsAppProcessingOptions>? processing = null)
     {
         _hubContext = hubContext;
         _db = db;
         _tenant = tenant;
         _logger = logger;
+        _processing = processing?.Value ?? new();
     }
 
     public async Task NotifyMessageCreatedAsync(
@@ -40,9 +47,8 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
             message
         };
 
-        await _hubContext.Clients
-            .Groups(WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, conversation))
-            .SendAsync("WhatsAppMessageCreated", payload, cancellationToken);
+        await PublishAsync("WhatsAppMessageCreated", conversation.Id, payload,
+            WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, conversation), cancellationToken);
 
         _logger.LogInformation(
             "WhatsApp SignalR message emitted. BranchId={BranchId} ConversationId={ConversationId} MessageId={MessageId}",
@@ -55,7 +61,8 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
     {
         await ResolveCentralRoutingAsync(conversation, cancellationToken);
         var payload = new { branchId = conversation.OperationalBranchId ?? branchId, conversation };
-        await _hubContext.Clients.Groups(WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, conversation)).SendAsync("WhatsAppAttentionChanged", payload, cancellationToken);
+        await PublishAsync("WhatsAppAttentionChanged", conversation.Id, payload,
+            WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, conversation), cancellationToken);
     }
 
     public async Task NotifyConversationRoutingChangedAsync(
@@ -83,8 +90,7 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
             conversation
         };
 
-        await _hubContext.Clients.Groups(groups)
-            .SendAsync("WhatsAppConversationRoutingChanged", payload, cancellationToken);
+        await PublishAsync("WhatsAppConversationRoutingChanged", conversation.Id, payload, groups, cancellationToken);
     }
 
     public async Task NotifyAiProcessingChangedAsync(
@@ -116,9 +122,8 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
         var conversation = new WhatsAppConversationDto { Id = processing.ConversationId };
         await ResolveCentralRoutingAsync(conversation, cancellationToken);
         var payload = new { branchId = conversation.OperationalBranchId ?? branchId, processing = realtimeProcessing };
-        await _hubContext.Clients
-            .Groups(WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, conversation))
-            .SendAsync("WhatsAppAiProcessingChanged", payload, cancellationToken);
+        await PublishAsync("WhatsAppAiProcessingChanged", conversation.Id, payload,
+            WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, conversation), cancellationToken);
         _logger.LogInformation(
             "WhatsApp AI processing update emitted. BranchId={BranchId} ConversationId={ConversationId} IncomingMessageId={IncomingMessageId} Status={Status} Attempts={Attempts}",
             branchId,
@@ -126,6 +131,24 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
             processing.MessageId,
             processing.Status,
             processing.Attempts);
+    }
+
+    private async Task PublishAsync(string name, int conversationId, object payload,
+        IReadOnlyList<string> groups, CancellationToken ct)
+    {
+        if (!_processing.External)
+        {
+            await _hubContext.Clients.Groups(groups).SendAsync(name, payload, ct);
+            return;
+        }
+        _db.WhatsAppRealtimeEvents.Add(new WhatsAppRealtimeEvent
+        {
+            TenantId = _tenant.TenantId, ConversationId = conversationId, EventName = name,
+            Payload = JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            Groups = groups.ToArray()
+        });
+        await _db.SaveChangesAsync(ct);
+        await WhatsAppDatabaseSignal.NotifyAsync(_db.Database, _logger, ct);
     }
 
     private async Task ResolveCentralRoutingAsync(WhatsAppConversationDto conversation, CancellationToken cancellationToken)

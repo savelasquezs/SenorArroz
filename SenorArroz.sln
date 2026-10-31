@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SenorArroz.Shared", "SenorA
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SenorArroz.Tests", "SenorArroz.Tests\SenorArroz.Tests.csproj", "{38C3A9F8-E650-4644-B822-D01CDC9F566B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SenorArroz.WhatsApp.Worker", "SenorArroz.WhatsApp.Worker\SenorArroz.WhatsApp.Worker.csproj", "{351107EC-B450-4A97-B7A9-774DDB955635}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -97,6 +99,18 @@ Global
 		{38C3A9F8-E650-4644-B822-D01CDC9F566B}.Release|x64.Build.0 = Release|Any CPU
 		{38C3A9F8-E650-4644-B822-D01CDC9F566B}.Release|x86.ActiveCfg = Release|Any CPU
 		{38C3A9F8-E650-4644-B822-D01CDC9F566B}.Release|x86.Build.0 = Release|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Debug|x64.Build.0 = Debug|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Debug|x86.Build.0 = Debug|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Release|Any CPU.Build.0 = Release|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Release|x64.ActiveCfg = Release|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Release|x64.Build.0 = Release|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Release|x86.ActiveCfg = Release|Any CPU
+		{351107EC-B450-4A97-B7A9-774DDB955635}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

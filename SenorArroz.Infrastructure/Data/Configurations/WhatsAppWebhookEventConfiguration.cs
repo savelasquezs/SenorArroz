@@ -17,6 +17,19 @@ public class WhatsAppWebhookEventConfiguration : IEntityTypeConfiguration<WhatsA
         builder.Property(x => x.WhatsAppMessageId).HasColumnName("whatsapp_message_id").HasMaxLength(128);
         builder.Property(x => x.RawPayload).HasColumnName("raw_payload").HasColumnType("jsonb").IsRequired();
         builder.Property(x => x.Processed).HasColumnName("processed").HasDefaultValue(false);
+        builder.Property(x => x.ProcessingState).HasColumnName("processing_state").HasMaxLength(20).HasDefaultValue("legacy");
+        builder.Property(x => x.DeduplicationKey).HasColumnName("deduplication_key").HasMaxLength(64);
+        builder.Property(x => x.PartitionKey).HasColumnName("partition_key").HasMaxLength(64);
+        builder.Property(x => x.ProtectedPayload).HasColumnName("protected_payload");
+        builder.Property(x => x.ProcessingAttempts).HasColumnName("processing_attempts").HasDefaultValue(0);
+        builder.Property(x => x.LeaseToken).HasColumnName("lease_token");
+        builder.Property(x => x.LeaseUntil).HasColumnName("lease_until");
+        builder.Property(x => x.NextAttemptAt).HasColumnName("next_attempt_at");
+        builder.Property(x => x.ProcessingError).HasColumnName("processing_error").HasMaxLength(100);
+        builder.HasIndex(x => new { x.TenantId, x.DeduplicationKey }).IsUnique()
+            .HasFilter("deduplication_key IS NOT NULL").HasDatabaseName("ux_whatsapp_webhook_deduplication");
+        builder.HasIndex(x => new { x.ProcessingState, x.NextAttemptAt, x.Id }).HasDatabaseName("ix_whatsapp_webhook_queue");
+        builder.HasIndex(x => new { x.TenantId, x.PartitionKey, x.Id }).HasDatabaseName("ix_whatsapp_webhook_partition");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

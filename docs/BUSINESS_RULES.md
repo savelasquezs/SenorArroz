@@ -687,3 +687,14 @@ GET /api/deliverymen/map devuelve pedidos de domicilio en camino/entregados del 
 
 La disponibilidad del POS usa la sucursal operativa del borrador. La consulta forOrderCreation exige rol de gestión y sucursal activa del mismo tenant; el catálogo de productos compartido conserva sus recetas y se cruza con los saldos de esa sede. Las consultas administrativas conservan su alcance anterior.
 
+
+
+## WhatsApp: procesamiento separado (etapas 0 y 1)
+
+- Embedded mantiene la ejecución existente; External habilita aceptación durable del webhook y un worker separado. Su activación requiere esquema previo y corte coordinado de consumidores.
+- La API valida firma y canal/tenant antes de persistir. El payload de procesamiento se cifra y se elimina después del éxito; la auditoría conserva la versión saneada.
+- Las concesiones y claves únicas son PostgreSQL; las señales solo despiertan trabajo. Resultados externos inciertos requieren conciliación y no se reenvían ciegamente.
+- El worker no reemplaza el motor comercial. Las herramientas que modifican negocio y el reintento comercial de pago utilizan un contrato interno autenticado de la API, con tenant derivado del mensaje persistido.
+- Cada réplica de API entrega sus eventos SignalR y revalida los destinatarios actuales. Una transferencia invalida acceso anterior sin reenviar contenido a grupos revocados.
+- La sucursal del cajero o de la línea no constituye el destino permanente del pedido. Se conserva OriginBranchId/BranchId y la operación entre sucursales. El contrato de destino del borrador es independiente de transferir el chat; su nueva implementación pertenece a la etapa 4.
+- Contratos, pendientes, configuración y mediciones: docs/WHATSAPP_PROCESSING_STAGE01.md.

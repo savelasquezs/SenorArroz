@@ -222,6 +222,8 @@ public class WhatsAppAiRecoveryService(
             .Where(message =>
                 message.Direction == WhatsAppMessageDirection.Inbound &&
                 message.AiProcessingStatus == WhatsAppAiProcessingStatus.Pending &&
+                !db.WhatsAppWebhookEvents.Any(e => e.WhatsAppMessageId == message.WhatsAppMessageId
+                    && e.ProcessingState != "legacy" && e.ProcessingState != "completed") &&
                 (message.AiNextRetryAt == null || message.AiNextRetryAt <= now))
             .OrderBy(message => message.Id)
             .Take(Math.Max(1, configuration.RecoveryBatchSize))

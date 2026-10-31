@@ -358,3 +358,12 @@ Admin, Cashier y Superadmin del origen pueden gestionar únicamente esos pedidos
 Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Version` del formulario. Son obligatorios al gestionar desde origen. `409 ORDER_VERSION_CONFLICT` exige cerrar y recargar; nunca reintentar con una versión nueva silenciosamente. Transacción y bloqueo ordenado del pedido en PostgreSQL protegen cambios y pagos; ManagementVersion aumenta también en cambios a hijos. La respuesta expone cabeceras de versión. Se registra actor/comando/sucursal de trabajo/destino/versión en entity_audit_log, además de la auditoría monetaria existente. SignalR invalida únicamente grupos administrativos de origen y destino, aislados por tenant. El frontend refresca la lista visible y conserva el filtro/pestaña; no carga GPS hasta abrir seguimiento.
 
 **Despliegue manual posterior a revisión:** aplicar primero `SenorArroz.Infrastructure/Scripts/add_remote_order_management.sql` con cuenta de mantenimiento; después backend y frontend. SQL aditivo/idempotente, sin backfill, sin migraciones EF. No se ejecuta desde CI ni se modifica producción en esta rama. Cobrar desde origen no traslada dinero entre cajas: el registro pertenece al destino; transferencias físicas entre sedes continúan por los procesos existentes.
+
+
+## WhatsApp: etapas 0/1 y worker separado
+
+- Arranque compartido API/worker: SenorArroz.API/Hosting/ApiHost.cs y WhatsAppProcessingRegistration.cs. Program.cs mantiene el punto de entrada de la API.
+- Ejecutable independiente: SenorArroz.WhatsApp.Worker; imagen: Dockerfile.whatsapp-worker. El worker solo expone salud y no registra endpoints de negocio.
+- Entrada HTTP valida y persiste: WhatsAppController. Procesamiento extraído: WhatsAppWebhookProcessor. Cola/consumidor: WhatsAppProcessingStore y WhatsAppWebhookWorker.
+- Señales durables-first: WhatsAppDatabaseSignal. Eventos hacia la API: WhatsAppNotificationService y WhatsAppRealtimeRelay. Herramientas comerciales internas: WhatsAppBusinessGateway.
+- Contratos, matriz, configuración y límites de la entrega: docs/WHATSAPP_PROCESSING_STAGE01.md. Plan transversal: tasks/WHATSAPP-CHAT-ORDERS-WORKER.md en la rama homónima del frontend.

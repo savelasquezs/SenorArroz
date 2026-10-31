@@ -4,7 +4,7 @@ Este mapa existe para que Codex ubique rápido las entidades y entienda cómo pr
 
 ## Estado de aislamiento v2
 
-- Inventario EF: 109 entidades; `Tenant` global y 108 tenant-owned.
+- Inventario EF: 115 entidades; `Tenant` global y 114 tenant-owned, incluido `WhatsAppRealtimeEvent`.
 - Contrato común: `ITenantOwned` y `TenantOwnedEntity`.
 - EF aplica centralmente `tenant_id` obligatorio, índice, concurrency token y query filter.
 - `SaveChanges` asigna el tenant actual en altas sin tenant y rechaza altas, cambios o borrados cross-tenant.
@@ -613,3 +613,11 @@ add_email_delivery_tracking.sql incorpora delivery_status, delivery_event_at, de
 
 ## DELIVERY-2026-10
 User.delivery_context_version/last_delivery_take_id ordenan el contexto. DeliveryRoute.closure_source distingue cierre operativo. Order.delivery_completion_source distingue entregas observadas/inferidas. Los recibos viven en entity_audit_log (delivery_operation, usuario, UUID) bajo índice único tenant-owned, sin caducidad automática. Scripts add_delivery_operations.sql y enforce_delivery_route_uniqueness.sql; preflight obligatorio, sin borrado de historia.
+
+
+## WhatsApp: cola durable y eventos entre procesos
+
+- add_whatsapp_processing_worker.sql amplía whatsapp_webhook_event con estado, clave de deduplicación por tenant, partición, payload protegido, intentos, próximo intento, token y vencimiento de concesión. Los eventos históricos conservan estado legacy y no se reprocesan automáticamente.
+- WhatsAppRealtimeEvent / whatsapp_realtime_event conserva payload, conversación, grupos y confirmaciones por consumidor. Es tenant-owned, tiene filtro EF y RLS forzado en el SQL puntual.
+- Aplicar el SQL antes del backend que consulta las nuevas columnas. No se ejecuta automáticamente al arrancar.
+- La copia aislada de ../local-init-completo.sql incorpora esta ampliación; el inicializador compartido del laboratorio no se modificó. Ver docs/WHATSAPP_PROCESSING_STAGE01.md para ubicación y hash de origen.
