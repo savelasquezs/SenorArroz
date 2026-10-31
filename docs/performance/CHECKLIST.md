@@ -153,7 +153,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M32-F01 | Carga catálogo público y medios | Pendiente | — | — | — | — |
 | M32-F02 | Carrito y estado local | Pendiente | — | — | — | — |
 | M32-F03 | OTP y sesión cliente | Pendiente | — | — | — | — |
-| M32-F04 | Geocobertura, direcciones y cotización | Pendiente | — | — | — | — |
+| M32-F04 | Geocobertura, direcciones y cotización | Bloqueado (CI pendiente) | 2026-10-31 | [Informe](reviews/2026-10-31-M32-F04.md) | [Next.js #15](https://github.com/savelasquezs/senor-arroz-web-nextjs/pull/15) | Implementación en rama: cancelar cotizaciones obsoletas navegador → proxy Next.js → API. CI inicial no ejecutó pasos; nuevo intento pendiente. Sin SQL, merge, despliegue ni mediciones productivas. |
 | M32-F05 | Checkout y creación del pedido | Pendiente | — | — | — | — |
 | M32-F06 | Estado del pago y reintentos | Pendiente | — | — | — | — |
 | M33-F01 | Configuración Wompi sucursal | Pendiente | — | — | — | — |
