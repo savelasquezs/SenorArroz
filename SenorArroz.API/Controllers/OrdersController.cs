@@ -439,7 +439,8 @@ public class OrdersController : ControllerBase
     public async Task<ActionResult<PagedResult<OrderDto>>> GetReadyOrders(
         [FromQuery] int? branchId = null,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 10)
+        [FromQuery] int pageSize = 10,
+        CancellationToken cancellationToken = default)
     {
         var query = new GetOrdersByStatusQuery
         {
@@ -450,7 +451,7 @@ public class OrdersController : ControllerBase
             PageSize = pageSize
         };
 
-        var result = await _mediator.Send(query);
+        var result = await _mediator.Send(query, cancellationToken);
         return Ok(result);
     }
 

@@ -41,7 +41,8 @@ public class GetOrdersByStatusHandler : IRequestHandler<GetOrdersByStatusQuery, 
             request.Page,
             request.PageSize,
             request.SortBy,
-            request.SortOrder);
+            request.SortOrder,
+            cancellationToken);
 
         return new PagedResult<OrderDto>
         {
