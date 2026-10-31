@@ -153,7 +153,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M32-F01 | Carga catálogo público y medios | Pendiente | — | — | — | — |
 | M32-F02 | Carrito y estado local | Pendiente | — | — | — | — |
 | M32-F03 | OTP y sesión cliente | Pendiente | — | — | — | — |
-| M32-F04 | Geocobertura, direcciones y cotización | Pendiente | — | — | — | — |
+| M32-F04 | Geocobertura, direcciones y cotización | Bloqueado (CI sin ejecutar) | 2026-10-31 | [Informe](reviews/2026-10-31-M32-F04.md) | [Web #15](https://github.com/savelasquezs/senor-arroz-web-nextjs/pull/15), [Docs #88](https://github.com/savelasquezs/SenorArroz/pull/88) | Implementación en rama; [CI web #41204258806](https://github.com/savelasquezs/senor-arroz-web-nextjs/actions/runs/41204258806) falló 2 veces antes de ejecutar pasos, igual que main #41179592887. 7 aserciones locales del helper; build/Vitest pendiente. Ambos PR en borrador. Sin SQL, merge, despliegue ni métricas productivas. |
 | M32-F05 | Checkout y creación del pedido | Pendiente | — | — | — | — |
 | M32-F06 | Estado del pago y reintentos | Pendiente | — | — | — | — |
 | M33-F01 | Configuración Wompi sucursal | Pendiente | — | — | — | — |
