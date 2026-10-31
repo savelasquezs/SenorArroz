@@ -23,7 +23,7 @@ public class WhatsAppAiWorkQueue : IWhatsAppAiWorkQueue
         new BoundedChannelOptions(Capacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
-            SingleReader = true,
+            SingleReader = false,
             SingleWriter = false
         });
 
@@ -54,9 +54,17 @@ public class WhatsAppAiWorkQueue : IWhatsAppAiWorkQueue
 public class WhatsAppAiBackgroundService(
     WhatsAppAiWorkQueue queue,
     IServiceScopeFactory scopes,
-    ILogger<WhatsAppAiBackgroundService> logger) : BackgroundService
+    ILogger<WhatsAppAiBackgroundService> logger,
+    IOptions<WhatsAppAiOrchestratorOptions>? options = null,
+    IOptions<WhatsAppProcessingOptions>? processing = null) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    private readonly int _maxAttempts = options?.Value.MaxPersistentAttempts ?? new WhatsAppAiOrchestratorOptions().MaxPersistentAttempts;
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.WhenAll(
+        Enumerable.Range(0, processing?.Value.External == true ? processing.Value.AiConcurrency : 1)
+            .Select(_ => ConsumeAsync(stoppingToken)));
+
+    private async Task ConsumeAsync(CancellationToken stoppingToken)
     {
         await foreach (var item in queue.ReadAllAsync(stoppingToken))
         {
@@ -94,17 +102,49 @@ public class WhatsAppAiBackgroundService(
             catch (Exception ex)
             {
                 logger.LogError(
-                    ex,
-                    "WhatsApp AI background item failed ConversationId={ConversationId} MessageId={MessageId}",
+                    "WhatsApp AI background item failed ConversationId={ConversationId} MessageId={MessageId} Category={Category}",
                     item.ConversationId,
-                    item.MessageId);
+                    item.MessageId, ex.GetType().Name);
             }
             finally
             {
                 // Keep the reservation during execution so recovery cycles cannot enqueue the item twice.
                 queue.MarkCompleted(item);
+                if (!stoppingToken.IsCancellationRequested)
+                {
+                    try { await ScheduleNextAsync(item, stoppingToken); }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+                    catch (Exception ex) { logger.LogWarning("WhatsApp AI continuation requires recovery. Category={Category}", ex.GetType().Name); }
+                }
             }
         }
+    }
+
+    private async Task ScheduleNextAsync(WhatsAppAiWorkItem item, CancellationToken ct)
+    {
+        using var scope = scopes.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var execution = scope.ServiceProvider.GetRequiredService<ITenantExecutionContext>();
+        int tenantId;
+        using (execution.BeginSystemScope())
+            tenantId = await db.WhatsAppMessages.AsNoTracking().Where(x => x.Id == item.MessageId
+                && x.ConversationId == item.ConversationId).Select(x => x.TenantId).SingleOrDefaultAsync(ct);
+        if (tenantId <= 0) return;
+        using var tenant = execution.BeginTenantScope(tenantId);
+        var next = await db.WhatsAppMessages.AsNoTracking().Where(x => x.ConversationId == item.ConversationId
+            && x.Direction == WhatsAppMessageDirection.Inbound
+            && (x.AiProcessingStatus == WhatsAppAiProcessingStatus.Pending || x.AiProcessingStatus == WhatsAppAiProcessingStatus.Processing
+                || x.AiProcessingStatus == WhatsAppAiProcessingStatus.ResponseGenerated || x.AiProcessingStatus == WhatsAppAiProcessingStatus.Sending))
+            .OrderBy(x => x.Id).Select(x => new
+            {
+                x.Id, x.AiProcessingStatus, x.AiNextRetryAt, x.AiProcessingAttempts,
+                Ready = !db.WhatsAppWebhookEvents.Any(e => e.WhatsAppMessageId == x.WhatsAppMessageId
+                    && e.ProcessingState != "legacy" && e.ProcessingState != "completed")
+            }).FirstOrDefaultAsync(ct);
+        if (next is not null && next.AiProcessingStatus == WhatsAppAiProcessingStatus.Pending && next.Ready
+            && next.AiProcessingAttempts < _maxAttempts
+            && (next.AiNextRetryAt is null || next.AiNextRetryAt <= DateTime.UtcNow))
+            queue.TryEnqueue(item.ConversationId, next.Id);
     }
 }
 

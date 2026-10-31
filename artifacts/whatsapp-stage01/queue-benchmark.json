@@ -1,0 +1,40 @@
+{
+  "capturedAtUtc": "2026-10-31T06:09:31.8987446Z",
+  "profile": "Disposable PostgreSQL 16, durable queue only; no Meta/LLM, no production traffic, simulated handler 10 ms",
+  "framework": ".NET 9.0.8",
+  "operatingSystem": "Microsoft Windows 10.0.26200",
+  "messages": 240,
+  "producers": 8,
+  "consumers": 4,
+  "conversations": 32,
+  "tenants": 2,
+  "payloadBytes": 266,
+  "ingress": {
+    "p50Ms": 156.09,
+    "p95Ms": 301.43,
+    "seconds": 5.1809663,
+    "perSecond": 46.32340496019054
+  },
+  "processing": {
+    "p50Ms": 34.53,
+    "p95Ms": 67.37,
+    "drainSeconds": 6.6101391
+  },
+  "relay": {
+    "events": 32,
+    "p50Ms": 806.25,
+    "p95Ms": 1287.27,
+    "transport": "mock SignalR proxy; client network excluded"
+  },
+  "peakQueuedAtDrain": 240,
+  "postgresConnectionsAfterIngress": 8,
+  "sqlCommandCount": 2484,
+  "testProcessCpuMs": 7687.5,
+  "testProcessWorkingSetBytes": 262295552,
+  "budgets": {
+    "ingressP95Ms": 500,
+    "metIngressBudget": true,
+    "relayP95Ms": 1500,
+    "metRelayBudget": true
+  }
+}

@@ -40,6 +40,7 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
         builder.Property(x => x.AiProcessingStartedAt).HasColumnName("ai_processing_started_at");
         builder.Property(x => x.AiNextRetryAt).HasColumnName("ai_next_retry_at");
         builder.Property(x => x.AiGeneratedResponse).HasColumnName("ai_generated_response").HasMaxLength(4096);
+        builder.Property(x => x.AiResponseAttentionVersion).HasColumnName("ai_response_attention_version");
         builder.Property(x => x.AiResponseAttemptId).HasColumnName("ai_response_attempt_id").HasMaxLength(64);
         builder.Property(x => x.AiResponseWhatsAppMessageId).HasColumnName("ai_response_whatsapp_message_id").HasMaxLength(128);
         builder.Property(x => x.AgentDispatchKey).HasColumnName("agent_dispatch_key").HasMaxLength(180);

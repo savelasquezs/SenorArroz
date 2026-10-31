@@ -28,6 +28,7 @@ public class WhatsAppMessage : TenantOwnedEntity
     public DateTime? AiProcessingStartedAt { get; set; }
     public DateTime? AiNextRetryAt { get; set; }
     public string? AiGeneratedResponse { get; set; }
+    public DateTime? AiResponseAttentionVersion { get; set; }
     public string? AiResponseAttemptId { get; set; }
     public string? AiResponseWhatsAppMessageId { get; set; }
     public string? AgentDispatchKey { get; set; }

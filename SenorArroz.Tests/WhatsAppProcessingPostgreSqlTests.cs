@@ -25,7 +25,7 @@ using System.Text.Json;
 
 namespace SenorArroz.Tests;
 
-public sealed class WhatsAppProcessingPostgreSqlTests(Xunit.Abstractions.ITestOutputHelper output) : IAsyncLifetime
+public sealed partial class WhatsAppProcessingPostgreSqlTests(Xunit.Abstractions.ITestOutputHelper output) : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16-alpine").Build();
     private DbContextOptions<ApplicationDbContext> _dbOptions = null!;
@@ -273,6 +273,9 @@ public sealed class WhatsAppProcessingPostgreSqlTests(Xunit.Abstractions.ITestOu
                 {
                     await using var active = Db();
                     Assert.NotNull(await active.WhatsAppConversations.Select(x => x.AiOrderState).SingleAsync());
+                    await active.WhatsAppMessages.Where(x => x.Id == sourceId).ExecuteUpdateAsync(s => s
+                        .SetProperty(x => x.AiProcessingStatus, SenorArroz.Domain.Enums.WhatsAppAiProcessingStatus.Completed)
+                        .SetProperty(x => x.AiProcessingStartedAt, (DateTime?)null));
                 }
                 using (var tenant = _tenant.BeginTenantScope(2))
                 {
@@ -284,6 +287,23 @@ public sealed class WhatsAppProcessingPostgreSqlTests(Xunit.Abstractions.ITestOu
             }
             finally { Stop(worker); }
             Assert.False(api.HasExited);
+            var pendingBody = WhatsAppProcessingTests.Payload("wamid.before-handoff");
+            using (var pendingRequest = new HttpRequestMessage(HttpMethod.Post, apiUrl + "/api/whatsapp/webhook")
+            { Content = new StringContent(pendingBody, Encoding.UTF8, "application/json") })
+            {
+                pendingRequest.Headers.Add("X-Hub-Signature-256", "sha256=" + Convert.ToHexString(HMACSHA256.HashData(
+                    Encoding.UTF8.GetBytes(new string('a', 32)), Encoding.UTF8.GetBytes(pendingBody))).ToLowerInvariant());
+                Assert.Equal(HttpStatusCode.OK, (await http.SendAsync(pendingRequest)).StatusCode);
+            }
+            using (_tenant.BeginTenantScope(1))
+            {
+                await using var handoff = Db();
+                var pending = await handoff.WhatsAppWebhookEvents.AsNoTracking().SingleAsync(x => x.ProcessingState == "pending");
+                Assert.NotNull(pending.AttentionVersion);
+                Assert.NotNull(pending.ConversationId);
+                await handoff.WhatsAppConversations.ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.AttentionModeUpdatedAt, DateTime.UtcNow.AddSeconds(1)));
+            }
             using var restarted = Start("SenorArroz.WhatsApp.Worker", workerUrl);
             try
             {
@@ -291,6 +311,14 @@ public sealed class WhatsAppProcessingPostgreSqlTests(Xunit.Abstractions.ITestOu
                 {
                     try { return (await http.GetAsync(workerUrl + "/health/ready")).IsSuccessStatusCode; }
                     catch (HttpRequestException) { return false; }
+                });
+                await WaitUntil(async () =>
+                {
+                    using var tenant = _tenant.BeginTenantScope(1);
+                    await using var verify = Db();
+                    return await verify.WhatsAppMessages.AnyAsync(x => x.WhatsAppMessageId == "wamid.before-handoff"
+                        && x.AiProcessingStatus == SenorArroz.Domain.Enums.WhatsAppAiProcessingStatus.Ignored
+                        && x.AiProcessingError!.Contains("atención anterior"));
                 });
                 using var tenant = _tenant.BeginTenantScope(1);
                 await using var after = Db();
@@ -358,9 +386,11 @@ public sealed class WhatsAppProcessingPostgreSqlTests(Xunit.Abstractions.ITestOu
             DROP TABLE whatsapp_realtime_event;
             ALTER TABLE whatsapp_webhook_event
                 DROP COLUMN processing_state, DROP COLUMN deduplication_key, DROP COLUMN partition_key,
-                DROP COLUMN protected_payload, DROP COLUMN processing_attempts, DROP COLUMN lease_token,
+                DROP COLUMN protected_payload, DROP COLUMN protected_result, DROP COLUMN requested_by_user_id,
+                DROP COLUMN conversation_id, DROP COLUMN attention_version, DROP COLUMN partition_aliases, DROP COLUMN processing_attempts, DROP COLUMN lease_token,
                 DROP COLUMN lease_until, DROP COLUMN next_attempt_at, DROP COLUMN processing_error;
             """);
+        await db.Database.ExecuteSqlRawAsync("ALTER TABLE whatsapp_message DROP COLUMN ai_response_attention_version");
         await db.Database.ExecuteSqlRawAsync(script);
         await db.Database.ExecuteSqlRawAsync(script);
         await db.Database.ExecuteSqlRawAsync("""

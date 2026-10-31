@@ -1,5 +1,6 @@
 using System.Text.Json;
 using static SenorArroz.API.Services.WhatsAppWebhookProcessor;
+using static SenorArroz.API.Services.WhatsAppManualOperations;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
@@ -45,6 +46,8 @@ public class WhatsAppController : ControllerBase
     private int TenantId => _currentTenant?.TenantId ?? _commerceFlow.TenantId;
     private readonly int _aiMaxPersistentAttempts;
 
+    private readonly WhatsAppManualOperations _manualOperations;
+    private readonly WhatsAppManualWorkQueue? _manualQueue;
     private readonly WhatsAppWebhookProcessor _webhookProcessor;
     private readonly WhatsAppProcessingStore? _processingStore;
     private readonly WhatsAppProcessingOptions _processingOptions;
@@ -72,7 +75,9 @@ public class WhatsAppController : ControllerBase
         IInventoryService? inventory = null,
         WhatsAppWebhookProcessor? webhookProcessor = null,
         WhatsAppProcessingStore? processingStore = null,
-        IOptions<WhatsAppProcessingOptions>? processingOptions = null)
+        IOptions<WhatsAppProcessingOptions>? processingOptions = null,
+        WhatsAppManualOperations? manualOperations = null,
+        WhatsAppManualWorkQueue? manualQueue = null)
     {
         _db = db;
         _currentUser = currentUser;
@@ -100,7 +105,16 @@ public class WhatsAppController : ControllerBase
             aiOptions, Microsoft.Extensions.Logging.Abstractions.NullLogger<WhatsAppWebhookProcessor>.Instance,
             attentionService, aiWorkQueue, automaticMessageSender, businessHoursService, awayMessageService,
             commerceFlow, currentTenant, inventory);
+        _manualOperations = manualOperations ?? new WhatsAppManualOperations(db, currentUser, branchContext, clock,
+            whatsAppCloudClient, whatsAppNotificationService, whatsAppOptions, logger, attentionService,
+            commerceFlow, _webhookProcessor, currentTenant, inventory, processingOptions);
+        _manualQueue = manualQueue;
     }
+
+    [HttpGet("operations/{operationId:int}")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<IActionResult> GetManualOperation(int operationId, CancellationToken ct) =>
+        _manualQueue is null ? NotFound() : await _manualQueue.GetResultAsync(operationId, ct);
 
     [HttpGet("status")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
@@ -189,72 +203,17 @@ public class WhatsAppController : ControllerBase
     }
 
     [HttpPost("templates/sync")]
+    [RequestSizeLimit(32768)]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppTemplateSyncResultDto>>> SyncTemplates(
         [FromBody] SyncWhatsAppTemplatesDto? dto,
         CancellationToken cancellationToken)
     {
-        var credentials = await ResolveTemplateCredentialsAsync(dto?.BranchId, requireBusinessAccount: true, cancellationToken);
-        if (credentials.Forbidden)
-            return Forbid();
-        if (credentials.ErrorMessage is not null)
-            return BadRequest(ApiResponse<WhatsAppTemplateSyncResultDto>.ErrorResponse(credentials.ErrorMessage));
 
-        var result = await _whatsAppCloudClient.GetMessageTemplatesAsync(
-            credentials.BusinessAccountId!,
-            credentials.AccessToken,
-            cancellationToken);
-
-        if (!result.Success)
-        {
-            _logger.LogWarning("WhatsApp template sync failed for business account {BusinessAccountId}: {Error}", credentials.BusinessAccountId, result.ErrorMessage);
-            return BadRequest(ApiResponse<WhatsAppTemplateSyncResultDto>.ErrorResponse(result.ErrorMessage ?? "No se pudieron sincronizar las plantillas."));
-        }
-
-        var created = 0;
-        var updated = 0;
-        foreach (var metaTemplate in result.Templates)
-        {
-            var template = await _db.WhatsAppTemplates
-                .FirstOrDefaultAsync(x => x.MetaTemplateId == metaTemplate.MetaTemplateId, cancellationToken);
-
-            if (template is null)
-            {
-                template = new WhatsAppTemplate { MetaTemplateId = metaTemplate.MetaTemplateId };
-                _db.WhatsAppTemplates.Add(template);
-                created++;
-            }
-            else
-            {
-                updated++;
-            }
-
-            template.BranchId = credentials.BranchId;
-            template.BusinessAccountId = credentials.BusinessAccountId;
-            template.Name = metaTemplate.Name;
-            template.Language = metaTemplate.Language;
-            template.Category = metaTemplate.Category;
-            template.Status = metaTemplate.Status;
-            template.Components = metaTemplate.ComponentsJson;
-        }
-
-        await _db.SaveChangesAsync(cancellationToken);
-
-        var response = new WhatsAppTemplateSyncResultDto
-        {
-            Synced = result.Templates.Count,
-            Created = created,
-            Updated = updated
-        };
-
-        _logger.LogInformation(
-            "WhatsApp templates synced. BusinessAccountId={BusinessAccountId} Synced={Synced} Created={Created} Updated={Updated}",
-            credentials.BusinessAccountId,
-            response.Synced,
-            response.Created,
-            response.Updated);
-
-        return Ok(ApiResponse<WhatsAppTemplateSyncResultDto>.SuccessResponse(response, "Plantillas sincronizadas."));
+        if (_manualQueue is not null)
+            return await _manualQueue.EnqueueAsync<WhatsAppTemplateSyncResultDto>("sync-templates", null, JsonSerializer.SerializeToElement(dto ?? new SyncWhatsAppTemplatesDto()), Request, cancellationToken);
+        _manualOperations.ControllerContext = ControllerContext;
+        return await _manualOperations.SyncTemplates(dto, cancellationToken);
     }
 
     [HttpGet("templates")]
@@ -297,82 +256,17 @@ public class WhatsAppController : ControllerBase
     }
 
     [HttpPost("send-template")]
+    [RequestSizeLimit(32768)]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppTemplateSendResultDto>>> SendTemplate(
         [FromBody] SendWhatsAppTemplateDto dto,
         CancellationToken cancellationToken)
     {
-        var normalizedLanguage = (dto.Language ?? string.Empty).Trim();
-        var templateName = (dto.TemplateName ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(templateName))
-            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Debe seleccionar una plantilla."));
-        if (string.IsNullOrWhiteSpace(normalizedLanguage))
-            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Debe indicar el idioma de la plantilla."));
 
-        var template = await _db.WhatsAppTemplates
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Name == templateName && x.Language == normalizedLanguage, cancellationToken);
-        if (template is null)
-            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("La plantilla no existe localmente. Sincronice plantillas primero."));
-        if (!string.Equals(template.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
-            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("La plantilla no está aprobada en Meta."));
-
-        var expectedParameters = CountBodyTemplateParameters(template.Components);
-        var parameters = dto.Parameters?.Select(x => x ?? string.Empty).ToList() ?? [];
-        if (expectedParameters != parameters.Count)
-            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse($"La plantilla requiere {expectedParameters} parámetro(s) y se recibieron {parameters.Count}."));
-
-        var branchId = dto.BranchId ?? template.BranchId;
-        var credentials = await ResolveTemplateCredentialsAsync(branchId, requireBusinessAccount: false, cancellationToken);
-        if (credentials.Forbidden)
-            return Forbid();
-        if (credentials.ErrorMessage is not null)
-            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse(credentials.ErrorMessage));
-
-        var requiresPhone = string.Equals(template.Category, "AUTHENTICATION", StringComparison.OrdinalIgnoreCase);
-        var recipients = await ResolveTemplateRecipientsAsync(dto, credentials.BranchId, requiresPhone, cancellationToken);
-        if (recipients.Forbidden)
-            return Forbid();
-        if (recipients.ErrorMessage is not null)
-            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse(recipients.ErrorMessage));
-
-        var response = new WhatsAppTemplateSendResultDto();
-        foreach (var recipient in recipients.Recipients)
-        {
-            var result = await _whatsAppCloudClient.SendTemplateMessageAsync(
-                credentials.PhoneNumberId!,
-                credentials.AccessToken,
-                recipient.Recipient,
-                template.Name,
-                template.Language,
-                parameters,
-                cancellationToken);
-
-            if (result.Success)
-            {
-                response.SentCount++;
-                if (!string.IsNullOrWhiteSpace(result.WhatsAppMessageId))
-                    response.MessageIds.Add(result.WhatsAppMessageId);
-
-                if (credentials.BranchId.HasValue)
-                    await PersistOutboundTemplateMessageAsync(credentials.BranchId.Value, recipient.Recipient, recipient.Customer, template, parameters, result.WhatsAppMessageId, cancellationToken);
-            }
-            else
-            {
-                response.FailedCount++;
-                response.Errors.Add($"{FormatRecipientForError(recipient.Recipient)}: {result.ErrorMessage ?? "Meta rechazó el envío."}");
-                _logger.LogWarning("WhatsApp template send failed. Template={Template} To={To} Error={Error}", template.Name, recipient.Recipient, result.ErrorMessage);
-            }
-        }
-
-        response.Success = response.SentCount > 0 && response.FailedCount == 0;
-        var message = response.FailedCount == 0
-            ? "Plantilla enviada."
-            : $"Plantillas enviadas con errores. Enviadas: {response.SentCount}, fallidas: {response.FailedCount}.";
-
-        return response.SentCount > 0
-            ? Ok(ApiResponse<WhatsAppTemplateSendResultDto>.SuccessResponse(response, message))
-            : BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse(response.Errors.FirstOrDefault() ?? "No se pudo enviar la plantilla."));
+        if (_manualQueue is not null)
+            return await _manualQueue.EnqueueAsync<WhatsAppTemplateSendResultDto>("send-template", null, JsonSerializer.SerializeToElement(dto), Request, cancellationToken);
+        _manualOperations.ControllerContext = ControllerContext;
+        return await _manualOperations.SendTemplate(dto, cancellationToken);
     }
 
     [HttpGet("quick-replies/{id:int}")]
@@ -1063,239 +957,57 @@ public class WhatsAppController : ControllerBase
     }
 
     [HttpPost("conversations/{conversationId:int}/messages")]
+    [RequestSizeLimit(32768)]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendMessage(
         int conversationId,
         [FromBody] SendWhatsAppMessageDto dto,
         CancellationToken cancellationToken)
     {
-        var text = (dto.Text ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(text))
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("El mensaje no puede estar vacío."));
-        if (text.Length > 4096)
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("El mensaje no puede superar 4096 caracteres."));
 
-        var conversation = await _db.WhatsAppConversations
-            .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
-        if (conversation is null)
-            return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
-        if (!await CanAccessConversationAsync(conversation, cancellationToken))
-            return Forbid();
-        if (conversation.AttentionMode == WhatsAppAttentionMode.Closed)
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación está cerrada. Debes reabrirla antes de enviar mensajes."));
-
-        var setting = await ResolveConversationChannelAsync(conversation, cancellationToken);
-        if (setting is null)
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("WhatsApp no está activo y verificado para esta sucursal."));
-        var recipient = WhatsAppRecipientResolver.Resolve(conversation);
-        if (recipient is null)
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación no tiene teléfono ni identidad de WhatsApp para responder."));
-
-        if (conversation.AttentionMode != WhatsAppAttentionMode.Human || conversation.AssignedUserId != _currentUser.Id)
-        {
-            var attentionChanged = _attentionService.Take(conversation, _currentUser.Id, _clock.UtcNow);
-            if (attentionChanged)
-            {
-                await _db.SaveChangesAsync(cancellationToken);
-                var attention = await ToAttentionDtoAsync(conversation, cancellationToken);
-                await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId, ToConversationDto(conversation, attention.AssignedUserName, attention.AttentionReason), cancellationToken);
-            }
-        }
-
-        // La toma se persiste antes de llamar a Meta. Si Meta falla, la conversación permanece
-        // asignada al empleado para que pueda revisar y reintentar de forma explícita.
-        var timestamp = _clock.UtcNow;
-        var result = await _whatsAppCloudClient.SendTextMessageAsync(
-            setting.PhoneNumberId,
-            setting.AccessToken,
-            recipient,
-            text,
-            cancellationToken);
-
-        var message = new WhatsAppMessage
-        {
-            ConversationId = conversation.Id,
-            WhatsAppMessageId = result.WhatsAppMessageId,
-            Direction = WhatsAppMessageDirection.Outbound,
-            Type = WhatsAppMessageType.Text,
-            TextBody = text,
-            Status = result.Success ? WhatsAppMessageStatus.Sent : WhatsAppMessageStatus.Failed,
-            SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null,
-            Timestamp = timestamp,
-            RawPayload = JsonSerializer.Serialize(new
-            {
-                to = recipient,
-                text,
-                result.Success,
-                result.WhatsAppMessageId,
-                result.ErrorMessage
-            })
-        };
-        _db.WhatsAppMessages.Add(message);
-
-        conversation.LastMessageAt = timestamp;
-        conversation.LastMessagePreview = text;
-        await _db.SaveChangesAsync(cancellationToken);
-
-        if (!result.Success)
-        {
-            _logger.LogWarning("WhatsApp outbound message failed for conversation {ConversationId}: {Error}", conversationId, result.ErrorMessage);
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(result.ErrorMessage ?? "No se pudo enviar el mensaje."));
-        }
-
-        _logger.LogInformation("WhatsApp outbound message sent for conversation {ConversationId}", conversationId);
-        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
-        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Mensaje enviado."));
+        if (_manualQueue is not null)
+            return await _manualQueue.EnqueueAsync<WhatsAppMessageDto>("send-message", conversationId, JsonSerializer.SerializeToElement(dto), Request, cancellationToken);
+        _manualOperations.ControllerContext = ControllerContext;
+        return await _manualOperations.SendMessage(conversationId, dto, cancellationToken);
     }
 
     [HttpPost("conversations/{conversationId:int}/messages/products/{productId:int}")]
+    [RequestSizeLimit(32768)]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendProductDetails(int conversationId, int productId, CancellationToken cancellationToken)
     {
-        var conversation = await _db.WhatsAppConversations.FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
-        if (conversation is null) return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
-        if (!await CanAccessConversationAsync(conversation, cancellationToken)) return Forbid();
-        var product = await _db.Products.AsNoTracking().Include(x => x.Category).Include(x => x.CommercialProfile).FirstOrDefaultAsync(x => x.Id == productId && x.Category.BranchId == conversation.BranchId, cancellationToken);
-        if (product is null) return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Producto no encontrado."));
-        var recipient = WhatsAppRecipientResolver.Resolve(conversation);
-        if (recipient is null) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación no tiene un destinatario de WhatsApp válido."));
-        var setting = await ResolveConversationChannelAsync(conversation, cancellationToken)
-            ?? throw new InvalidOperationException("WhatsApp no está activo y verificado.");
-        var serves = product.ServesPeopleMin == product.ServesPeopleMax && product.ServesPeopleMin.HasValue ? $"{product.ServesPeopleMin} {(product.ServesPeopleMin == 1 ? "persona" : "personas")}" : product.ServesPeopleMin.HasValue ? $"{product.ServesPeopleMin}-{product.ServesPeopleMax} personas" : null;
-        var inventoryAvailability = _inventory is null ? null : (await _inventory.GetAvailabilityAsync([product.Id], conversation.BranchId, cancellationToken)).SingleOrDefault();
-        var available = _inventory is null ? product.Active : inventoryAvailability?.Available == true;
-        var text = string.Join("\n", new[] { product.Name, product.CommercialProfile?.Description, string.IsNullOrWhiteSpace(product.CommercialProfile?.Ingredients) ? null : $"Ingredientes: {product.CommercialProfile.Ingredients}", serves is null ? null : $"Rinde para {serves}", $"Precio: ${product.Price:N0}", available ? "Disponible" : "No disponible" }.Where(x => !string.IsNullOrWhiteSpace(x)));
-        var result = !string.IsNullOrWhiteSpace(product.CommercialProfile?.PhotoUrl)
-            ? await _whatsAppCloudClient.SendImageLinkMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, product.CommercialProfile.PhotoUrl, text, cancellationToken)
-            : await _whatsAppCloudClient.SendTextMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, cancellationToken);
-        var now = _clock.UtcNow; var message = new WhatsAppMessage { ConversationId = conversation.Id, WhatsAppMessageId = result.WhatsAppMessageId, Direction = WhatsAppMessageDirection.Outbound, Type = string.IsNullOrWhiteSpace(product.CommercialProfile?.PhotoUrl) ? WhatsAppMessageType.Text : WhatsAppMessageType.Image, TextBody = text, MediaUrl = product.CommercialProfile?.PhotoUrl, Status = result.Success ? WhatsAppMessageStatus.Sent : WhatsAppMessageStatus.Failed, Timestamp = now, SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null, RawPayload = JsonSerializer.Serialize(new { action = "send_product_details", productId, result.Success, result.ErrorMessage }) };
-        _db.WhatsAppMessages.Add(message); conversation.LastMessageAt = now; conversation.LastMessagePreview = text; await _db.SaveChangesAsync(cancellationToken);
-        if (!result.Success) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(result.ErrorMessage ?? "No se pudo enviar el producto.")); await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
-        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Detalle de producto enviado."));
+
+        if (_manualQueue is not null)
+            return await _manualQueue.EnqueueAsync<WhatsAppMessageDto>("send-product", conversationId, JsonSerializer.SerializeToElement(new { productId }), Request, cancellationToken);
+        _manualOperations.ControllerContext = ControllerContext;
+        return await _manualOperations.SendProductDetails(conversationId, productId, cancellationToken);
     }
 
     [HttpPost("conversations/{conversationId:int}/messages/menu")]
+    [RequestSizeLimit(32768)]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendMenu(int conversationId, CancellationToken cancellationToken)
     {
-        var conversation = await _db.WhatsAppConversations.FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
-        if (conversation is null) return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
-        if (!await CanAccessConversationAsync(conversation, cancellationToken)) return Forbid();
-        var branch = await _db.Branches.AsNoTracking().FirstAsync(x => x.Id == conversation.BranchId, cancellationToken);
-        if (string.IsNullOrWhiteSpace(branch.MenuImageUrl1) && string.IsNullOrWhiteSpace(branch.MenuImageUrl2))
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Esta sucursal todavía no tiene una carta configurada."));
-        var setting = await ResolveConversationChannelAsync(conversation, cancellationToken);
-        if (setting is null) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("WhatsApp no está activo y verificado para esta sucursal."));
-        var recipient = WhatsAppRecipientResolver.Resolve(conversation);
-        if (recipient is null) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación no tiene un destinatario de WhatsApp válido."));
-        var url = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/api/public/menu?branchId={conversation.BranchId}";
-        var text = $"Consulta nuestra carta aquí: {url}";
-        var menuImages = new[] { branch.MenuImageUrl1, branch.MenuImageUrl2 }.Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>().ToList();
-        var sentMessages = new List<WhatsAppMessage>();
-        string? lastError = null;
-        for (var index = 0; index < menuImages.Count; index++)
-        {
-            var caption = index == 0 ? "Nuestra carta actual" : "Carta (continuación)";
-            var result = await _whatsAppCloudClient.SendImageLinkMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, menuImages[index], caption, cancellationToken);
-            if (!result.Success) { lastError = result.ErrorMessage; break; }
-            var timestamp = _clock.UtcNow;
-            var message = new WhatsAppMessage { ConversationId = conversation.Id, WhatsAppMessageId = result.WhatsAppMessageId, Direction = WhatsAppMessageDirection.Outbound, Type = WhatsAppMessageType.Image, TextBody = caption, MediaUrl = menuImages[index], Status = WhatsAppMessageStatus.Sent, SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null, Timestamp = timestamp, RawPayload = JsonSerializer.Serialize(new { action = "send_menu", mode = "image", slot = index + 1, result.Success }) };
-            _db.WhatsAppMessages.Add(message); sentMessages.Add(message);
-        }
-        var usedFallback = sentMessages.Count != menuImages.Count;
-        if (usedFallback)
-        {
-            var fallback = await _whatsAppCloudClient.SendTextMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, cancellationToken);
-            if (fallback.Success)
-            {
-                var fallbackMessage = new WhatsAppMessage { ConversationId = conversation.Id, WhatsAppMessageId = fallback.WhatsAppMessageId, Direction = WhatsAppMessageDirection.Outbound, Type = WhatsAppMessageType.Text, TextBody = text, Status = WhatsAppMessageStatus.Sent, SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null, Timestamp = _clock.UtcNow, RawPayload = JsonSerializer.Serialize(new { action = "send_menu", mode = "url_fallback", imageError = lastError }) };
-                _db.WhatsAppMessages.Add(fallbackMessage); sentMessages.Add(fallbackMessage);
-            }
-            else if (sentMessages.Count == 0) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(fallback.ErrorMessage ?? lastError ?? "No se pudo enviar la carta."));
-        }
-        var lastMessage = sentMessages[^1]; conversation.LastMessageAt = lastMessage.Timestamp; conversation.LastMessagePreview = "Carta enviada"; await _db.SaveChangesAsync(cancellationToken);
-        foreach (var sentMessage in sentMessages) await NotifyWhatsAppMessageCreatedAsync(sentMessage.Id, cancellationToken);
-        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(lastMessage), usedFallback ? "Carta enviada; se usó el enlace como respaldo." : "Carta enviada como imagen."));
+
+        if (_manualQueue is not null)
+            return await _manualQueue.EnqueueAsync<WhatsAppMessageDto>("send-menu", conversationId, JsonSerializer.SerializeToElement(new { }), Request, cancellationToken);
+        _manualOperations.ControllerContext = ControllerContext;
+        return await _manualOperations.SendMenu(conversationId, cancellationToken);
     }
 
     [HttpPost("conversations/{conversationId:int}/messages/quick-reply")]
+    [RequestSizeLimit(32768)]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendQuickReply(
         int conversationId,
         [FromBody] SendWhatsAppQuickReplyDto dto,
         CancellationToken cancellationToken)
     {
-        var conversation = await _db.WhatsAppConversations
-            .Include(x => x.Customer)
-            .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
-        if (conversation is null)
-            return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
-        if (!await CanAccessConversationAsync(conversation, cancellationToken))
-            return Forbid();
 
-        var quickReply = await _db.WhatsAppQuickReplies
-            .FirstOrDefaultAsync(x => x.Id == dto.QuickReplyId && x.BranchId == conversation.BranchId && x.IsActive, cancellationToken);
-        if (quickReply is null)
-            return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Respuesta rápida no encontrada o inactiva para esta sucursal."));
-
-        var text = RenderQuickReplyTemplate(quickReply.MessageTemplate, conversation).Trim();
-        if (string.IsNullOrWhiteSpace(text))
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La respuesta rápida no tiene contenido para enviar."));
-        if (text.Length > 4096)
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La respuesta rápida renderizada supera 4096 caracteres."));
-
-        var setting = await ResolveConversationChannelAsync(conversation, cancellationToken);
-        if (setting is null)
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("WhatsApp no está activo y verificado para esta sucursal."));
-        var recipient = WhatsAppRecipientResolver.Resolve(conversation);
-        if (recipient is null)
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación no tiene un destinatario de WhatsApp válido."));
-
-        var timestamp = _clock.UtcNow;
-        var result = await _whatsAppCloudClient.SendTextMessageAsync(
-            setting.PhoneNumberId,
-            setting.AccessToken,
-            recipient,
-            text,
-            cancellationToken);
-
-        var message = new WhatsAppMessage
-        {
-            ConversationId = conversation.Id,
-            WhatsAppMessageId = result.WhatsAppMessageId,
-            Direction = WhatsAppMessageDirection.Outbound,
-            Type = WhatsAppMessageType.Text,
-            TextBody = text,
-            Status = result.Success ? WhatsAppMessageStatus.Sent : WhatsAppMessageStatus.Failed,
-            SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null,
-            Timestamp = timestamp,
-            RawPayload = JsonSerializer.Serialize(new
-            {
-                to = recipient,
-                text,
-                quickReplyId = quickReply.Id,
-                result.Success,
-                result.WhatsAppMessageId,
-                result.ErrorMessage
-            })
-        };
-        _db.WhatsAppMessages.Add(message);
-
-        conversation.LastMessageAt = timestamp;
-        conversation.LastMessagePreview = text;
-        quickReply.UsageCount += 1;
-        quickReply.LastUsedAt = timestamp;
-        await _db.SaveChangesAsync(cancellationToken);
-
-        if (!result.Success)
-        {
-            _logger.LogWarning("WhatsApp quick reply failed for conversation {ConversationId}: {Error}", conversationId, result.ErrorMessage);
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(result.ErrorMessage ?? "No se pudo enviar la respuesta rápida."));
-        }
-
-        _logger.LogInformation("WhatsApp quick reply sent for conversation {ConversationId}", conversationId);
-        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
-        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Respuesta rápida enviada."));
+        if (_manualQueue is not null)
+            return await _manualQueue.EnqueueAsync<WhatsAppMessageDto>("send-quick-reply", conversationId, JsonSerializer.SerializeToElement(dto), Request, cancellationToken);
+        _manualOperations.ControllerContext = ControllerContext;
+        return await _manualOperations.SendQuickReply(conversationId, dto, cancellationToken);
     }
 
     [HttpPost("conversations/{conversationId:int}/messages/media")]
@@ -1308,117 +1020,11 @@ public class WhatsAppController : ControllerBase
         [FromForm] string? caption,
         CancellationToken cancellationToken)
     {
-        if (file is null || file.Length == 0)
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Seleccione un archivo."));
 
-        var conversation = await _db.WhatsAppConversations
-            .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
-        if (conversation is null)
-            return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
-        if (!await CanAccessConversationAsync(conversation, cancellationToken))
-            return Forbid();
-
-        var setting = await ResolveConversationChannelAsync(conversation, cancellationToken);
-        if (setting is null)
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("WhatsApp no está activo y verificado para esta sucursal."));
-        var recipient = WhatsAppRecipientResolver.Resolve(conversation);
-        if (recipient is null)
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación no tiene un destinatario de WhatsApp válido."));
-
-        var mediaType = MediaTypeFromContentType(file.ContentType, file.FileName);
-        var fileName = SanitizeFileName(file.FileName);
-        var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
-        await using var ms = new MemoryStream();
-        await file.CopyToAsync(ms, cancellationToken);
-        var bytes = ms.ToArray();
-        var timestamp = _clock.UtcNow;
-        var trimmedCaption = string.IsNullOrWhiteSpace(caption) ? null : caption.Trim();
-        if (trimmedCaption?.Length > 4096)
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("El texto del archivo no puede superar 4096 caracteres."));
-
-        var text = trimmedCaption ?? fileName;
-
-        string? storageUrl = null;
-        try
-        {
-            storageUrl = await SaveWhatsAppMediaToFirebaseAsync(
-                conversation.BranchId,
-                conversation.Id,
-                bytes,
-                fileName,
-                contentType,
-                cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Could not upload outbound WhatsApp media to Firebase for conversation {ConversationId}", conversationId);
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("No se pudo guardar el archivo en Firebase Storage."));
-        }
-
-        var uploadResult = await _whatsAppCloudClient.UploadMediaAsync(
-            setting.PhoneNumberId,
-            setting.AccessToken,
-            bytes,
-            fileName,
-            contentType,
-            cancellationToken);
-
-        WhatsAppCloudSendResult sendResult = new(false, null, uploadResult.ErrorMessage);
-        if (uploadResult.Success && !string.IsNullOrWhiteSpace(uploadResult.MediaId))
-        {
-            sendResult = await _whatsAppCloudClient.SendMediaMessageAsync(
-                setting.PhoneNumberId,
-                setting.AccessToken,
-                recipient,
-                MediaTypeToApi(mediaType),
-                uploadResult.MediaId,
-                trimmedCaption,
-                fileName,
-                cancellationToken);
-        }
-
-        var message = new WhatsAppMessage
-        {
-            ConversationId = conversation.Id,
-            WhatsAppMessageId = sendResult.WhatsAppMessageId,
-            Direction = WhatsAppMessageDirection.Outbound,
-            Type = mediaType,
-            TextBody = text,
-            MediaId = uploadResult.MediaId,
-            MediaUrl = storageUrl,
-            MediaMimeType = contentType,
-            MediaFileName = fileName,
-            MediaFileSize = bytes.LongLength,
-            Status = sendResult.Success ? WhatsAppMessageStatus.Sent : WhatsAppMessageStatus.Failed,
-            SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null,
-            Timestamp = timestamp,
-            RawPayload = JsonSerializer.Serialize(new
-            {
-                to = recipient,
-                mediaType = MediaTypeToApi(mediaType),
-                mediaId = uploadResult.MediaId,
-                fileName,
-                caption = trimmedCaption,
-                storageUrl,
-                sendResult.Success,
-                sendResult.WhatsAppMessageId,
-                error = sendResult.ErrorMessage ?? uploadResult.ErrorMessage
-            })
-        };
-        _db.WhatsAppMessages.Add(message);
-
-        conversation.LastMessageAt = timestamp;
-        conversation.LastMessagePreview = PreviewForMedia(mediaType, text);
-        await _db.SaveChangesAsync(cancellationToken);
-
-        if (!sendResult.Success)
-        {
-            _logger.LogWarning("WhatsApp outbound media failed for conversation {ConversationId}: {Error}", conversationId, sendResult.ErrorMessage ?? uploadResult.ErrorMessage);
-            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(sendResult.ErrorMessage ?? uploadResult.ErrorMessage ?? "No se pudo enviar el archivo."));
-        }
-
-        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
-        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Archivo enviado."));
+        if (_manualQueue is not null)
+            return await _manualQueue.EnqueueMediaAsync(conversationId, file, caption, Request, cancellationToken);
+        _manualOperations.ControllerContext = ControllerContext;
+        return await _manualOperations.SendMediaMessage(conversationId, file, caption, cancellationToken);
     }
 
     private async Task EnsureMediaDownloadUrlsAsync(IReadOnlyList<WhatsAppMessage> messages, CancellationToken cancellationToken)
@@ -1480,281 +1086,45 @@ public class WhatsAppController : ControllerBase
         return query.Select(x => x.BranchId).Distinct();
     }
 
-    private async Task<bool> CanAccessVerifiedBranchAsync(int branchId, CancellationToken cancellationToken)
-    {
-        _branchContext.EnsureAccess(branchId);
+    private Task<bool> CanAccessVerifiedBranchAsync(int branchId, CancellationToken cancellationToken) => _manualOperations.CanAccessVerifiedBranchAsync(branchId, cancellationToken);
 
-        return await _db.WhatsAppBranchSettings
-            .AsNoTracking()
-            .AnyAsync(x => x.BranchId == branchId && x.IsActive && x.IsVerified, cancellationToken);
-    }
+    private Task<bool> CanAccessConversationAsync(WhatsAppConversation conversation, CancellationToken cancellationToken) => _manualOperations.CanAccessConversationAsync(conversation, cancellationToken);
 
-    private async Task<bool> CanAccessConversationAsync(WhatsAppConversation conversation, CancellationToken cancellationToken)
-    {
-        if (!conversation.ChannelSettingId.HasValue)
-            return await CanAccessVerifiedBranchAsync(conversation.BranchId, cancellationToken);
-        var channelReady = await _db.WhatsAppChannelSettings.AsNoTracking().AnyAsync(
-            x => x.Id == conversation.ChannelSettingId.Value && x.TenantId == TenantId && x.IsActive && x.IsVerified,
-            cancellationToken);
-        if (!channelReady) return false;
-        if (Roles.IsSuperadmin(_currentUser.Role)) return true;
-        if (!conversation.OperationalBranchId.HasValue)
-            return Roles.IsAdminOrCashier(_currentUser.Role);
-        return conversation.OperationalBranchId == _currentUser.BranchId
-            || Roles.IsAdminOrCashier(_currentUser.Role) && conversation.AssignedUserId == _currentUser.Id;
-    }
-
-    private async Task<ConversationChannelCredentials?> ResolveConversationChannelAsync(
+    private Task<ConversationChannelCredentials?> ResolveConversationChannelAsync(
         WhatsAppConversation conversation,
-        CancellationToken cancellationToken)
-    {
-        if (conversation.ChannelSettingId.HasValue)
-        {
-            return await _db.WhatsAppChannelSettings.AsNoTracking()
-                .Where(x => x.Id == conversation.ChannelSettingId.Value && x.TenantId == TenantId && x.IsActive && x.IsVerified)
-                .Select(x => new ConversationChannelCredentials(x.PhoneNumberId, x.AccessToken))
-                .FirstOrDefaultAsync(cancellationToken);
-        }
-        return await _db.WhatsAppBranchSettings.AsNoTracking()
-            .Where(x => x.BranchId == conversation.BranchId && x.IsActive && x.IsVerified)
-            .Select(x => new ConversationChannelCredentials(x.PhoneNumberId, x.AccessToken))
-            .FirstOrDefaultAsync(cancellationToken);
-    }
+        CancellationToken cancellationToken) => _manualOperations.ResolveConversationChannelAsync(conversation, cancellationToken);
 
-    private sealed record ConversationChannelCredentials(string PhoneNumberId, string AccessToken);
-
-    private async Task<TemplateCredentialsResolution> ResolveTemplateCredentialsAsync(
+    private Task<TemplateCredentialsResolution> ResolveTemplateCredentialsAsync(
         int? branchId,
         bool requireBusinessAccount,
-        CancellationToken cancellationToken)
-    {
-        branchId = _branchContext.RequireBranch(branchId);
+        CancellationToken cancellationToken) => _manualOperations.ResolveTemplateCredentialsAsync(branchId, requireBusinessAccount, cancellationToken);
 
-        if (branchId.HasValue || !Roles.IsSuperadmin(_currentUser.Role))
-        {
-            var resolvedBranchId = branchId ?? _currentUser.BranchId;
-            if (!CanAccessBranch(resolvedBranchId))
-                return TemplateCredentialsResolution.Denied();
-
-            var setting = await _db.WhatsAppBranchSettings
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.BranchId == resolvedBranchId && x.IsActive && x.IsVerified, cancellationToken);
-
-            if (setting is null)
-                return TemplateCredentialsResolution.Failed("WhatsApp no está activo y verificado para esta sucursal.");
-
-            return new TemplateCredentialsResolution(
-                false,
-                null,
-                resolvedBranchId,
-                setting.AccessToken,
-                setting.BusinessAccountId,
-                setting.PhoneNumberId);
-        }
-
-        if (string.IsNullOrWhiteSpace(_whatsAppOptions.AccessToken))
-            return TemplateCredentialsResolution.Failed("Falta configurar WHATSAPP_TOKEN o WhatsAppCloud:AccessToken.");
-        if (string.IsNullOrWhiteSpace(_whatsAppOptions.PhoneNumberId))
-            return TemplateCredentialsResolution.Failed("Falta configurar WHATSAPP_PHONE_NUMBER_ID o WhatsAppCloud:PhoneNumberId.");
-        if (requireBusinessAccount && string.IsNullOrWhiteSpace(_whatsAppOptions.BusinessAccountId))
-            return TemplateCredentialsResolution.Failed("Falta configurar WHATSAPP_BUSINESS_ACCOUNT_ID o WhatsAppCloud:BusinessAccountId.");
-
-        return new TemplateCredentialsResolution(
-            false,
-            null,
-            null,
-            _whatsAppOptions.AccessToken!,
-            _whatsAppOptions.BusinessAccountId,
-            _whatsAppOptions.PhoneNumberId!);
-    }
-
-    private async Task<TemplateRecipientsResolution> ResolveTemplateRecipientsAsync(
+    private Task<TemplateRecipientsResolution> ResolveTemplateRecipientsAsync(
         SendWhatsAppTemplateDto dto,
         int? branchId,
         bool requiresPhone,
-        CancellationToken cancellationToken)
-    {
-        var recipients = new List<TemplateRecipient>();
+        CancellationToken cancellationToken) => _manualOperations.ResolveTemplateRecipientsAsync(dto, branchId, requiresPhone, cancellationToken);
 
-        if (!string.IsNullOrWhiteSpace(dto.To))
-        {
-            var phone = NormalizeWhatsAppPhone(dto.To);
-            if (!IsInternationalWhatsAppPhone(phone))
-                return TemplateRecipientsResolution.Failed("El número destino debe venir en formato internacional sin +. Ejemplo: 573001234567.");
-
-            recipients.Add(new TemplateRecipient(phone, null));
-        }
-
-        if (dto.CustomerIds is { Count: > 0 })
-        {
-            if (!branchId.HasValue)
-                return TemplateRecipientsResolution.Failed("Debe seleccionar una sucursal para enviar plantillas a clientes.");
-            if (!CanAccessBranch(branchId.Value))
-                return TemplateRecipientsResolution.Denied();
-
-            var uniqueCustomerIds = dto.CustomerIds.Distinct().ToList();
-            var customers = await _db.Customers
-                .AsNoTracking()
-                .Where(x => x.BranchId == branchId.Value && uniqueCustomerIds.Contains(x.Id) && x.Active)
-                .ToListAsync(cancellationToken);
-
-            foreach (var customer in customers)
-            {
-                var phone = NormalizeWhatsAppPhone(customer.Phone1);
-                if (!IsInternationalWhatsAppPhone(phone))
-                    phone = NormalizeWhatsAppPhone(customer.Phone2);
-                if (IsInternationalWhatsAppPhone(phone))
-                {
-                    recipients.Add(new TemplateRecipient(phone, customer));
-                    continue;
-                }
-
-                if (!requiresPhone && !string.IsNullOrWhiteSpace(customer.WhatsAppUserId))
-                    recipients.Add(new TemplateRecipient(customer.WhatsAppUserId, customer));
-            }
-        }
-
-        var unique = recipients
-            .GroupBy(x => x.Recipient)
-            .Select(x => x.First())
-            .ToList();
-
-        if (unique.Count == 0)
-            return TemplateRecipientsResolution.Failed(requiresPhone
-                ? "Las plantillas de autenticación requieren un teléfono internacional válido."
-                : "Debe indicar al menos un número válido o seleccionar clientes con identidad de WhatsApp.");
-
-        return new TemplateRecipientsResolution(false, null, unique);
-    }
-
-    private async Task PersistOutboundTemplateMessageAsync(
+    private Task PersistOutboundTemplateMessageAsync(
         int branchId,
         string recipient,
         Customer? customer,
         WhatsAppTemplate template,
         IReadOnlyList<string> parameters,
         string? whatsAppMessageId,
-        CancellationToken cancellationToken)
-    {
-        var timestamp = _clock.UtcNow;
-        var userId = string.Equals(customer?.WhatsAppUserId, recipient, StringComparison.Ordinal)
-            ? recipient
-            : null;
-        var phoneNumber = userId is null ? recipient : null;
-        var conversation = await _db.WhatsAppConversations
-            .FirstOrDefaultAsync(x => x.BranchId == branchId
-                && (userId != null ? x.WhatsAppUserId == userId : x.PhoneNumber == phoneNumber),
-                cancellationToken);
+        CancellationToken cancellationToken) => _manualOperations.PersistOutboundTemplateMessageAsync(branchId, recipient, customer, template, parameters, whatsAppMessageId, cancellationToken);
 
-        if (conversation is null)
-        {
-            var aiActive = await IsBranchAiActiveAsync(branchId, cancellationToken);
-            conversation = new WhatsAppConversation
-            {
-                BranchId = branchId,
-                PhoneNumber = phoneNumber,
-                WhatsAppUserId = userId,
-                WhatsAppUsername = customer?.WhatsAppUsername,
-                CustomerId = customer?.Id,
-                ContactName = customer?.Name,
-                Status = WhatsAppConversationStatus.Open,
-                AttentionMode = _attentionService.InitialMode(aiActive),
-                AttentionModeUpdatedAt = timestamp
-            };
-            _db.WhatsAppConversations.Add(conversation);
-        }
+    private static string BuildTemplateMessagePreview(WhatsAppTemplate template, IReadOnlyList<string> parameters) => WhatsAppManualOperations.BuildTemplateMessagePreview(template, parameters);
 
-        conversation.CustomerId = customer?.Id ?? conversation.CustomerId;
-        conversation.ContactName = customer?.Name ?? conversation.ContactName;
-        conversation.WhatsAppUsername = customer?.WhatsAppUsername ?? conversation.WhatsAppUsername;
-        conversation.LastMessageAt = timestamp;
-        conversation.LastMessagePreview = $"Plantilla: {template.Name}";
+    private static int CountBodyTemplateParameters(string componentsJson) => WhatsAppManualOperations.CountBodyTemplateParameters(componentsJson);
 
-        var message = new WhatsAppMessage
-        {
-            Conversation = conversation,
-            WhatsAppMessageId = whatsAppMessageId,
-            Direction = WhatsAppMessageDirection.Outbound,
-            Type = WhatsAppMessageType.Text,
-            TextBody = BuildTemplateMessagePreview(template, parameters),
-            Status = WhatsAppMessageStatus.Sent,
-            SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null,
-            Timestamp = timestamp,
-            RawPayload = JsonSerializer.Serialize(new
-            {
-                template = template.Name,
-                template.Language,
-                parameters,
-                whatsAppMessageId
-            })
-        };
-        _db.WhatsAppMessages.Add(message);
+    private static string? ExtractBodyText(string componentsJson) => WhatsAppManualOperations.ExtractBodyText(componentsJson);
 
-        await _db.SaveChangesAsync(cancellationToken);
-        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
-    }
+    private static bool IsInternationalWhatsAppPhone(string value) => WhatsAppManualOperations.IsInternationalWhatsAppPhone(value);
 
-    private static string BuildTemplateMessagePreview(WhatsAppTemplate template, IReadOnlyList<string> parameters)
-    {
-        var body = ExtractBodyText(template.Components);
-        if (string.IsNullOrWhiteSpace(body))
-            return $"Plantilla: {template.Name}";
+    private static string FormatRecipientForError(string recipient) => WhatsAppManualOperations.FormatRecipientForError(recipient);
 
-        for (var i = 0; i < parameters.Count; i++)
-            body = body.Replace($"{{{{{i + 1}}}}}", parameters[i] ?? string.Empty, StringComparison.Ordinal);
-
-        return body;
-    }
-
-    private static int CountBodyTemplateParameters(string componentsJson)
-    {
-        var body = ExtractBodyText(componentsJson);
-        if (string.IsNullOrWhiteSpace(body))
-            return 0;
-
-        var matches = Regex.Matches(body, @"{{\s*(\d+)\s*}}");
-        return matches
-            .Select(x => int.TryParse(x.Groups[1].Value, out var n) ? n : 0)
-            .DefaultIfEmpty(0)
-            .Max();
-    }
-
-    private static string? ExtractBodyText(string componentsJson)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(componentsJson) ? "[]" : componentsJson);
-            if (document.RootElement.ValueKind != JsonValueKind.Array)
-                return null;
-
-            foreach (var component in document.RootElement.EnumerateArray())
-            {
-                var type = TryGetString(component, "type");
-                if (string.Equals(type, "BODY", StringComparison.OrdinalIgnoreCase))
-                    return TryGetString(component, "text");
-            }
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-
-        return null;
-    }
-
-    private static bool IsInternationalWhatsAppPhone(string value)
-    {
-        return Regex.IsMatch(value, @"^[1-9]\d{7,14}$");
-    }
-
-    private static string FormatRecipientForError(string recipient) =>
-        IsInternationalWhatsAppPhone(recipient) ? $"+{recipient}" : "usuario de WhatsApp";
-
-    private bool CanAccessBranch(int branchId)
-    {
-        _branchContext.EnsureAccess(branchId);
-        return true;
-    }
+    private bool CanAccessBranch(int branchId) => _manualOperations.CanAccessBranch(branchId);
 
     private async Task<(ActionResult<ApiResponse<WhatsAppQuickReplyDto>>? Error, int BranchId, string Shortcut)> ValidateQuickReplyPayloadAsync(
         UpsertWhatsAppQuickReplyDto dto,
@@ -1814,30 +1184,7 @@ public class WhatsAppController : ControllerBase
         return true;
     }
 
-    private static string RenderQuickReplyTemplate(string template, WhatsAppConversation conversation)
-    {
-        var customerName = conversation.Customer?.Name?.Trim();
-        if (string.IsNullOrWhiteSpace(customerName))
-            customerName = conversation.ContactName?.Trim();
-        if (string.IsNullOrWhiteSpace(customerName))
-            customerName = "cliente";
-
-        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["nombre_cliente"] = customerName,
-            ["cliente"] = customerName,
-            ["customerName"] = customerName,
-            ["guestName"] = customerName,
-            ["telefono"] = conversation.PhoneNumber ?? string.Empty,
-            ["usuario_whatsapp"] = conversation.WhatsAppUsername ?? string.Empty,
-        };
-
-        return Regex.Replace(template, @"{{\s*([a-zA-Z0-9_]+)\s*}}", match =>
-        {
-            var key = match.Groups[1].Value;
-            return values.TryGetValue(key, out var replacement) ? replacement : match.Value;
-        });
-    }
+    private static string RenderQuickReplyTemplate(string template, WhatsAppConversation conversation) => WhatsAppManualOperations.RenderQuickReplyTemplate(template, conversation);
 
     private async Task<bool> ValidateWebhookSignatureAsync(JsonElement payload, string rawPayload, CancellationToken cancellationToken)
     {
@@ -1887,7 +1234,7 @@ public class WhatsAppController : ControllerBase
         return tenantIds.Count == 1 ? tenantIds[0] : null;
     }
 
-    private static string NormalizeWhatsAppPhone(string? value) => OnlyDigits(value);
+    private static string NormalizeWhatsAppPhone(string? value) => WhatsAppManualOperations.NormalizeWhatsAppPhone(value);
 
     private static bool TryParseConversationStatus(string value, out WhatsAppConversationStatus status)
     {
@@ -1942,55 +1289,12 @@ public class WhatsAppController : ControllerBase
         UpdatedAt = reply.UpdatedAt
     };
 
-    private async Task<WhatsAppAttentionDto> ToAttentionDtoAsync(WhatsAppConversation conversation, CancellationToken ct)
-    {
-        var name = conversation.AssignedUserId.HasValue ? await _db.Users.AsNoTracking().Where(x => x.Id == conversation.AssignedUserId).Select(x => x.Name).FirstOrDefaultAsync(ct) : null;
-        var reason = conversation.AttentionMode == WhatsAppAttentionMode.WaitingForHuman
-            ? await _db.WhatsAppMessages.AsNoTracking()
-                .Where(x => x.ConversationId == conversation.Id
-                    && x.AiProcessingStatus == WhatsAppAiProcessingStatus.TransferredToHuman
-                    && x.AiProcessingError != null)
-                .OrderByDescending(x => x.Timestamp)
-                .ThenByDescending(x => x.Id)
-                .Select(x => x.AiProcessingError)
-                .FirstOrDefaultAsync(ct)
-            : null;
-        return new WhatsAppAttentionDto { ConversationId = conversation.Id, AttentionMode = AttentionModeToApi(conversation.AttentionMode), AttentionReason = WhatsAppAiDiagnosticsMapper.SanitizeTechnicalDetail(reason), AssignedUserId = conversation.AssignedUserId, AssignedUserName = name, AiPausedAt = AsUtc(conversation.AiPausedAt), HumanAssignedAt = AsUtc(conversation.HumanAssignedAt), ClosedAt = AsUtc(conversation.ClosedAt), AttentionModeUpdatedAt = AsUtc(conversation.AttentionModeUpdatedAt), AttentionModeUpdatedByUserId = conversation.AttentionModeUpdatedByUserId };
-    }
+    private Task<WhatsAppAttentionDto> ToAttentionDtoAsync(WhatsAppConversation conversation, CancellationToken ct) => _manualOperations.ToAttentionDtoAsync(conversation, ct);
 
-    private static string AttentionModeToApi(WhatsAppAttentionMode mode) => mode switch { WhatsAppAttentionMode.Ai => "ai", WhatsAppAttentionMode.Human => "human", WhatsAppAttentionMode.WaitingForHuman => "waitingForHuman", WhatsAppAttentionMode.Paused => "paused", WhatsAppAttentionMode.Closed => "closed", _ => "human" };
+    private static string AttentionModeToApi(WhatsAppAttentionMode mode) => WhatsAppManualOperations.AttentionModeToApi(mode);
 
-    private static string ConversationStatusToApi(WhatsAppConversationStatus status) => status switch
-    {
-        WhatsAppConversationStatus.Open => "open",
-        WhatsAppConversationStatus.Pending => "pending",
-        WhatsAppConversationStatus.Closed => "closed",
-        WhatsAppConversationStatus.Archived => "archived",
-        _ => "open"
-    };
+    private static string ConversationStatusToApi(WhatsAppConversationStatus status) => WhatsAppManualOperations.ConversationStatusToApi(status);
 
-    private sealed record TemplateCredentialsResolution(
-        bool Forbidden,
-        string? ErrorMessage,
-        int? BranchId,
-        string AccessToken,
-        string? BusinessAccountId,
-        string? PhoneNumberId)
-    {
-        public static TemplateCredentialsResolution Denied() => new(true, null, null, string.Empty, null, null);
-        public static TemplateCredentialsResolution Failed(string errorMessage) => new(false, errorMessage, null, string.Empty, null, null);
-    }
-
-    private sealed record TemplateRecipient(string Recipient, Customer? Customer);
-
-    private sealed record TemplateRecipientsResolution(
-        bool Forbidden,
-        string? ErrorMessage,
-        IReadOnlyList<TemplateRecipient> Recipients)
-    {
-        public static TemplateRecipientsResolution Denied() => new(true, null, []);
-        public static TemplateRecipientsResolution Failed(string errorMessage) => new(false, errorMessage, []);
-    }
     private Task NotifyWhatsAppMessageCreatedAsync(int messageId, CancellationToken cancellationToken) => _webhookProcessor.NotifyWhatsAppMessageCreatedAsync(messageId, cancellationToken);
 
     private static string? TryGetPhoneNumberId(JsonElement value) => WhatsAppWebhookProcessor.TryGetPhoneNumberId(value);

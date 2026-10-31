@@ -78,5 +78,6 @@ public sealed class WhatsAppProcessingTests
     {
         Assert.False(new WhatsAppProcessingOptions { LeaseSeconds = 60, WorkTimeoutSeconds = 120 }.IsValid());
         Assert.True(new WhatsAppProcessingOptions().IsValid());
+        Assert.False(new WhatsAppProcessingOptions { AiConcurrency = 0 }.IsValid());
     }
 }

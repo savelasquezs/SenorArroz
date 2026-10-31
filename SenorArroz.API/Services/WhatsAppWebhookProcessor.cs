@@ -334,8 +334,7 @@ public sealed class WhatsAppWebhookProcessor
             if (phoneIdentityMismatch)
             {
                 _logger.LogWarning(
-                    "WhatsApp phone {PhoneNumber} in branch {BranchId} was received with a different BSUID. A separate history will be created without reusing the phone.",
-                    identity.PhoneNumber,
+                    "WhatsApp identity changed in branch {BranchId}. A separate history is required.",
                     setting.BranchId);
             }
             var hasIdentityConflict = conversationByUserId is not null
@@ -466,6 +465,19 @@ public sealed class WhatsAppWebhookProcessor
             var aiProcessingStatus = WhatsAppAiProcessingStatus.Pending;
             DateTime? aiProcessedAt = null;
             string? aiProcessingError = null;
+            if (!webhookEvent.AttentionVersion.HasValue && webhookEvent.ProcessingState != "legacy"
+                && conversation.AttentionModeUpdatedAt > webhookEvent.CreatedAt)
+            {
+                aiProcessingStatus = WhatsAppAiProcessingStatus.Ignored;
+                aiProcessedAt = _clock.UtcNow;
+                aiProcessingError = "attention_changed_before_ingress_processing";
+            }
+            if (webhookEvent.ConversationId.HasValue && webhookEvent.ConversationId != conversation.Id)
+            {
+                aiProcessingStatus = WhatsAppAiProcessingStatus.Ignored;
+                aiProcessedAt = _clock.UtcNow;
+                aiProcessingError = "identity_changed_after_ingress";
+            }
             if (completedFlowToken is not null)
             {
                 aiProcessingStatus = WhatsAppAiProcessingStatus.Ignored;
@@ -534,6 +546,7 @@ public sealed class WhatsAppWebhookProcessor
                 Timestamp = timestamp,
                 RawPayload = SenorArroz.Application.Common.Helpers.WhatsAppFlowPayload.WithoutTokens(messageElement.GetRawText()),
                 AiProcessingStatus = aiProcessingStatus,
+                AiResponseAttentionVersion = webhookEvent.AttentionVersion ?? conversation.AttentionModeUpdatedAt,
                 AiProcessedAt = aiProcessedAt,
                 AiProcessingError = aiProcessingError
             };

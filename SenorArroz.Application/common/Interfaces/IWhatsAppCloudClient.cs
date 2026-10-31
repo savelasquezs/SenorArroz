@@ -3,7 +3,13 @@ namespace SenorArroz.Application.Common.Interfaces;
 
 public record WhatsAppCloudTestResult(bool Success, string? DisplayPhoneNumber, string? ErrorMessage);
 
-public record WhatsAppCloudSendResult(bool Success, string? WhatsAppMessageId, string? ErrorMessage);
+public record WhatsAppCloudSendResult(bool Success, string? WhatsAppMessageId, string? ErrorMessage)
+{
+    public bool OutcomeUncertain => Success && string.IsNullOrWhiteSpace(WhatsAppMessageId)
+        || !Success && (ErrorMessage?.StartsWith("Meta WhatsApp timeout:", StringComparison.OrdinalIgnoreCase) == true
+            || ErrorMessage?.StartsWith("Meta WhatsApp network_error:", StringComparison.OrdinalIgnoreCase) == true
+            || ErrorMessage?.StartsWith("Meta WhatsApp invalid_response:", StringComparison.OrdinalIgnoreCase) == true);
+}
 
 public record WhatsAppCloudTemplate(
     string MetaTemplateId,

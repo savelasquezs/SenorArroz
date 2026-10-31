@@ -21,11 +21,13 @@ public static class WhatsAppProcessingRegistration
             || uri.Scheme != "https" && !(uri.Scheme == "http" && (uri.IsLoopback || uri.Host.EndsWith(".railway.internal", StringComparison.Ordinal)))))
             throw new InvalidOperationException("Configure the business API using HTTPS, loopback or the private Railway network.");
         services.AddScoped<WhatsAppWebhookProcessor>();
+        services.AddScoped<WhatsAppManualOperations>();
         services.AddScoped(sp => new Lazy<IAgentToolExecutor>(() => sp.GetRequiredService<IAgentToolExecutor>()));
         services.AddScoped<WhatsAppProcessingStore>();
         if (options.External)
         {
             services.AddSingleton<WhatsAppDatabaseSignal>();
+            services.AddScoped<WhatsAppManualWorkQueue>();
         }
         var consumers = new HashSet<Type>
         {
@@ -41,6 +43,7 @@ public static class WhatsAppProcessingRegistration
         if (worker)
         {
             services.AddHostedService<WhatsAppWebhookWorker>();
+            services.AddHostedService<WhatsAppProcessingMaintenance>();
             services.AddHostedService<WhatsAppAiBackgroundService>();
             services.AddHostedService<WhatsAppAiRecoveryService>();
             services.AddHostedService<WhatsAppAiTelemetryWorker>();

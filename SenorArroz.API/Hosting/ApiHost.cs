@@ -629,8 +629,9 @@ public static class ApiHost
         {
             using var schema = app.Services.CreateScope();
             var db = schema.ServiceProvider.GetRequiredService<SenorArroz.Infrastructure.Data.ApplicationDbContext>();
-            await db.Database.ExecuteSqlRawAsync("SELECT processing_state, protected_payload FROM whatsapp_webhook_event LIMIT 0");
+            await db.Database.ExecuteSqlRawAsync("SELECT processing_state, protected_payload, protected_result, requested_by_user_id, conversation_id, attention_version, partition_aliases FROM whatsapp_webhook_event LIMIT 0");
             await db.Database.ExecuteSqlRawAsync("SELECT delivered_to FROM whatsapp_realtime_event LIMIT 0");
+            await db.Database.ExecuteSqlRawAsync("SELECT ai_response_attention_version FROM whatsapp_message LIMIT 0");
             schema.ServiceProvider.GetRequiredService<IIntegrationSecretProtector>().Protect("startup-probe");
         }
 

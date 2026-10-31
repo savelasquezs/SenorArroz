@@ -18,6 +18,9 @@ public sealed class WhatsAppRealtimeRelay(IServiceScopeFactory scopes, IHubConte
 {
     private readonly string _consumer = Guid.NewGuid().ToString("N");
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly System.Diagnostics.Metrics.Histogram<double> DeliveryAge =
+        new System.Diagnostics.Metrics.Meter("SenorArroz.WhatsApp.Realtime")
+            .CreateHistogram<double>("whatsapp.realtime.delivery_age", "ms");
 
     public override async Task StartAsync(CancellationToken ct)
     {
@@ -105,9 +108,10 @@ public sealed class WhatsAppRealtimeRelay(IServiceScopeFactory scopes, IHubConte
                 }
             }
             await db.Database.ExecuteSqlInterpolatedAsync($"""
-                UPDATE whatsapp_realtime_event SET delivered_to = array_append(delivered_to, {_consumer})
+                UPDATE whatsapp_realtime_event SET delivered_to = array_append(delivered_to, {_consumer}), updated_at = clock_timestamp()
                 WHERE id = {item.Id} AND tenant_id = {item.TenantId} AND NOT ({_consumer} = ANY(delivered_to))
                 """, ct);
+            DeliveryAge.Record(Math.Max(0, (DateTime.UtcNow - item.CreatedAt).TotalMilliseconds));
         }
         return events.Count;
     }

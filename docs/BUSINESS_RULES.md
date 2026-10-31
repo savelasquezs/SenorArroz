@@ -698,3 +698,5 @@ La disponibilidad del POS usa la sucursal operativa del borrador. La consulta fo
 - Cada réplica de API entrega sus eventos SignalR y revalida los destinatarios actuales. Una transferencia invalida acceso anterior sin reenviar contenido a grupos revocados.
 - La sucursal del cajero o de la línea no constituye el destino permanente del pedido. Se conserva OriginBranchId/BranchId y la operación entre sucursales. El contrato de destino del borrador es independiente de transferir el chat; su nueva implementación pertenece a la etapa 4.
 - Contratos, pendientes, configuración y mediciones: docs/WHATSAPP_PROCESSING_STAGE01.md.
+
+- En procesamiento WhatsApp External, aceptar un envío manual devuelve un trabajo pendiente; no significa que Meta lo recibió ni que se confirmó un pedido. El worker valida nuevamente actor, sede de trabajo y versión de atención, conserva resultados y evita reintentar envíos inciertos automáticamente. El transporte no cambia el destino comercial, la procedencia ni la sucursal global del cajero.

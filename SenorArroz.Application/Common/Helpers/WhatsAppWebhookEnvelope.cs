@@ -1,10 +1,12 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using SenorArroz.Application.Common.Services;
 
 namespace SenorArroz.Application.Common.Helpers;
 
-public sealed record WhatsAppWebhookEnvelope(string Key, string Partition, string Payload)
+public sealed record WhatsAppWebhookEnvelope(string Key, string Partition, string Payload,
+    string PhoneNumberId, string? PhoneNumber, string? UserId, string[] Aliases)
 {
     public static IReadOnlyList<WhatsAppWebhookEnvelope> Split(string rawPayload)
     {
@@ -35,15 +37,26 @@ public sealed record WhatsAppWebhookEnvelope(string Key, string Partition, strin
                             entry = new[] { new { id = Read(entry, "id"), changes = new[] {
                                 new { field = Read(change, "field"), value = payloadValue } } } }
                         });
-                        var identity = Read(item, property == "messages" ? "from" : "recipient_id")
-                            ?? Read(item, "from_user_id") ?? Read(item, "recipient_user_id") ?? phoneId;
-                        result.Add(new(Hash(payload), Hash($"{phoneId}:{identity}"), payload));
+                        var identity = property == "messages" ? WhatsAppWebhookIdentityReader.Read(value, item)
+                            : new WhatsAppInboundIdentity(Read(item, "recipient_id"), Read(item, "recipient_user_id"), null, null);
+                        var aliases = AliasesFor(phoneId, identity.PhoneNumber, identity.UserId);
+                        var id = Read(item, "id");
+                        var key = string.IsNullOrWhiteSpace(id) ? Hash(payload)
+                            : Hash($"{phoneId}:{property}:{id}:{Read(item, "status")}:{Read(item, "timestamp")}");
+                        result.Add(new(key, aliases.FirstOrDefault() ?? Hash($"{phoneId}:unknown"), payload,
+                            phoneId, identity.PhoneNumber, identity.UserId, aliases));
                     }
                 }
             }
         }
         return result;
     }
+
+    public static string[] AliasesFor(string phoneId, string? phone, string? userId) => new[]
+        {
+            string.IsNullOrWhiteSpace(phone) ? null : Hash($"{phoneId}:phone:{phone}"),
+            string.IsNullOrWhiteSpace(userId) ? null : Hash($"{phoneId}:user:{userId}")
+        }.OfType<string>().Distinct().ToArray();
 
     private static string? Read(JsonElement element, string name) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value)

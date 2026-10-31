@@ -621,3 +621,8 @@ User.delivery_context_version/last_delivery_take_id ordenan el contexto. Deliver
 - WhatsAppRealtimeEvent / whatsapp_realtime_event conserva payload, conversación, grupos y confirmaciones por consumidor. Es tenant-owned, tiene filtro EF y RLS forzado en el SQL puntual.
 - Aplicar el SQL antes del backend que consulta las nuevas columnas. No se ejecuta automáticamente al arrancar.
 - La copia aislada de ../local-init-completo.sql incorpora esta ampliación; el inicializador compartido del laboratorio no se modificó. Ver docs/WHATSAPP_PROCESSING_STAGE01.md para ubicación y hash de origen.
+
+- Ampliación de etapa 1: `whatsapp_message.ai_response_attention_version` conserva la atención de la generación al recuperar IA. `whatsapp_webhook_event` incorpora `partition_aliases` (text[] + GIN), `protected_result`, `requested_by_user_id` y `conversation_id` para resultados manuales cifrados y autorización. No crea otro motor de pedidos ni cambia `OriginBranchId`/`BranchId`. Requiere reaplicar el SQL aditivo `add_whatsapp_processing_worker.sql` antes de la nueva versión.
+- Retención acotada: eventos realtime 2 días y saneamiento de payloads/resultados terminales a 7 días, conservando las claves de deduplicación; pendientes y trabajos en proceso no se eliminan por antigüedad.
+
+- `whatsapp_webhook_event.attention_version` congela la atención conocida al aceptar el ingreso; los trabajos manuales y entrantes comparten partición. Índice adicional `(tenant_id, conversation_id, id)` para esa resolución.

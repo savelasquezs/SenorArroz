@@ -20,7 +20,13 @@ public class WhatsAppWebhookEventConfiguration : IEntityTypeConfiguration<WhatsA
         builder.Property(x => x.ProcessingState).HasColumnName("processing_state").HasMaxLength(20).HasDefaultValue("legacy");
         builder.Property(x => x.DeduplicationKey).HasColumnName("deduplication_key").HasMaxLength(64);
         builder.Property(x => x.PartitionKey).HasColumnName("partition_key").HasMaxLength(64);
+        builder.Property(x => x.PartitionAliases).HasColumnName("partition_aliases").HasColumnType("text[]")
+            .HasDefaultValueSql("ARRAY[]::text[]");
         builder.Property(x => x.ProtectedPayload).HasColumnName("protected_payload");
+        builder.Property(x => x.ProtectedResult).HasColumnName("protected_result");
+        builder.Property(x => x.RequestedByUserId).HasColumnName("requested_by_user_id");
+        builder.Property(x => x.ConversationId).HasColumnName("conversation_id");
+        builder.Property(x => x.AttentionVersion).HasColumnName("attention_version");
         builder.Property(x => x.ProcessingAttempts).HasColumnName("processing_attempts").HasDefaultValue(0);
         builder.Property(x => x.LeaseToken).HasColumnName("lease_token");
         builder.Property(x => x.LeaseUntil).HasColumnName("lease_until");
@@ -30,6 +36,9 @@ public class WhatsAppWebhookEventConfiguration : IEntityTypeConfiguration<WhatsA
             .HasFilter("deduplication_key IS NOT NULL").HasDatabaseName("ux_whatsapp_webhook_deduplication");
         builder.HasIndex(x => new { x.ProcessingState, x.NextAttemptAt, x.Id }).HasDatabaseName("ix_whatsapp_webhook_queue");
         builder.HasIndex(x => new { x.TenantId, x.PartitionKey, x.Id }).HasDatabaseName("ix_whatsapp_webhook_partition");
+        builder.HasIndex(x => x.PartitionAliases).HasMethod("gin").HasDatabaseName("ix_whatsapp_webhook_aliases");
+        builder.HasIndex(x => new { x.TenantId, x.ConversationId, x.Id }).HasFilter("conversation_id IS NOT NULL")
+            .HasDatabaseName("ix_whatsapp_webhook_conversation_queue");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);

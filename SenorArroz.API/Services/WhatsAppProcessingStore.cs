@@ -16,23 +16,62 @@ public sealed class WhatsAppProcessingStore(ApplicationDbContext db, ITenantExec
     {
         using var tenant = execution.BeginTenantScope(tenantId);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        foreach (var envelope in WhatsAppWebhookEnvelope.Split(payload))
+        foreach (var envelope in WhatsAppWebhookEnvelope.Split(payload).OrderBy(x => x.PhoneNumberId, StringComparer.Ordinal))
         {
+            var known = await db.WhatsAppConversations.AsNoTracking()
+                .Where(x => (envelope.PhoneNumber != null && x.PhoneNumber == envelope.PhoneNumber
+                    || envelope.UserId != null && x.WhatsAppUserId == envelope.UserId)
+                    && (x.ChannelSettingId != null && db.WhatsAppChannelSettings.Any(c => c.Id == x.ChannelSettingId && c.PhoneNumberId == envelope.PhoneNumberId)
+                        || x.ChannelSettingId == null && db.WhatsAppBranchSettings.Any(c => c.BranchId == x.BranchId && c.PhoneNumberId == envelope.PhoneNumberId)))
+                .OrderBy(x => x.Id).Select(x => new { x.Id, x.PhoneNumber, x.WhatsAppUserId, x.AttentionModeUpdatedAt }).Take(2).ToListAsync(ct);
+            var established = known.FirstOrDefault(x => envelope.UserId != null && x.WhatsAppUserId == envelope.UserId)
+                ?? known.FirstOrDefault(x => x.PhoneNumber == envelope.PhoneNumber
+                    && (envelope.UserId == null || string.IsNullOrEmpty(x.WhatsAppUserId) || x.WhatsAppUserId == envelope.UserId));
+            int? conversationId = established?.Id;
+            DateTime? attentionVersion = established?.AttentionModeUpdatedAt;
+            var aliases = envelope.Aliases.Concat(known.SelectMany(x =>
+                WhatsAppWebhookEnvelope.AliasesFor(envelope.PhoneNumberId, x.PhoneNumber, x.WhatsAppUserId))).Distinct().ToArray();
+            var resolved = await ResolvePartitionAsync(tenantId, envelope.PhoneNumberId, aliases, conversationId, envelope.Partition, ct);
+            var partition = resolved.Key;
+            aliases = resolved.Aliases;
             var encrypted = protector.Protect(envelope.Payload);
             var safePayload = WhatsAppFlowPayload.WithoutTokens(envelope.Payload);
             await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO whatsapp_webhook_event
                     (tenant_id, event_type, raw_payload, processed, processing_state, deduplication_key,
-                     partition_key, protected_payload, next_attempt_at, created_at, updated_at)
+                     partition_key, partition_aliases, protected_payload, conversation_id, attention_version, next_attempt_at, created_at, updated_at)
                 VALUES ({tenantId}, 'webhook', {safePayload}::jsonb, false, 'pending', {envelope.Key},
-                    {envelope.Partition}, {encrypted}, {clock.UtcNow}, {clock.UtcNow}, {clock.UtcNow})
-                ON CONFLICT (tenant_id, deduplication_key) WHERE deduplication_key IS NOT NULL DO NOTHING
+                    {partition}, {aliases}, {encrypted}, {conversationId}, {attentionVersion}, {clock.UtcNow}, {clock.UtcNow}, {clock.UtcNow})
+                ON CONFLICT (tenant_id, deduplication_key) WHERE deduplication_key IS NOT NULL DO UPDATE
+                SET partition_key = EXCLUDED.partition_key,
+                    partition_aliases = ARRAY(SELECT DISTINCT unnest(whatsapp_webhook_event.partition_aliases || EXCLUDED.partition_aliases))
                 """, ct);
         }
         await transaction.CommitAsync(ct);
         await transaction.DisposeAsync();
         await WhatsAppDatabaseSignal.NotifyAsync(db.Database,
             logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<WhatsAppProcessingStore>.Instance, ct);
+    }
+
+    public async Task<(string Key, string[] Aliases)> ResolvePartitionAsync(int tenantId, string? phoneNumberId,
+        string[] aliases, int? conversationId, string fallback, CancellationToken ct)
+    {
+        if (db.Database.CurrentTransaction is null)
+            throw new InvalidOperationException("Partition resolution requires an ingress transaction.");
+        using var tenant = execution.BeginTenantScope(tenantId);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({tenantId}, hashtext({phoneNumberId ?? fallback}))", ct);
+        var earlier = await db.WhatsAppWebhookEvents.AsNoTracking()
+            .Where(x => x.TenantId == tenantId && (conversationId.HasValue && x.ConversationId == conversationId
+                || x.PartitionAliases.Any(a => aliases.Contains(a))))
+            .OrderBy(x => x.Id).Select(x => new { x.PartitionKey, x.PartitionAliases }).Take(200).ToListAsync(ct);
+        var partition = earlier.FirstOrDefault()?.PartitionKey ?? fallback;
+        aliases = aliases.Concat(earlier.SelectMany(x => x.PartitionAliases)).Distinct().ToArray();
+        var oldPartitions = earlier.Select(x => x.PartitionKey).Distinct().Where(x => x != partition).ToArray();
+        if (oldPartitions.Length > 0)
+            await db.WhatsAppWebhookEvents.Where(x => x.TenantId == tenantId && oldPartitions.Contains(x.PartitionKey)
+                && (x.ProcessingState == "pending" || x.ProcessingState == "processing"))
+                .ExecuteUpdateAsync(x => x.SetProperty(e => e.PartitionKey, partition), ct);
+        return (partition, aliases);
     }
 
     public async Task<WhatsAppWebhookEvent?> ClaimAsync(CancellationToken ct)
@@ -42,10 +81,16 @@ public sealed class WhatsAppProcessingStore(ApplicationDbContext db, ITenantExec
         var now = clock.UtcNow;
         var leaseUntil = now.AddSeconds(options.Value.LeaseSeconds);
         await db.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE whatsapp_webhook_event SET processing_state = 'completed', protected_payload = NULL,
+                lease_token = NULL, lease_until = NULL, processing_error = NULL, updated_at = {now}
+            WHERE event_type = 'manual_operation' AND processing_state = 'processing' AND processed = true
+                AND protected_result IS NOT NULL AND lease_until < {now}
+            """, ct);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
             UPDATE whatsapp_webhook_event SET processing_state = 'review', lease_token = NULL,
                 lease_until = NULL, processing_error = 'attempts_exhausted', updated_at = {now}
             WHERE processing_state IN ('pending', 'processing') AND (processing_attempts >= {options.Value.MaxAttempts}
-                OR processed = true)
+                OR processed = true OR event_type = 'manual_operation' AND processing_state = 'processing')
                 AND (lease_until IS NULL OR lease_until < {now});
             """, ct);
         var count = await db.Database.ExecuteSqlInterpolatedAsync($"""
@@ -77,7 +122,7 @@ public sealed class WhatsAppProcessingStore(ApplicationDbContext db, ITenantExec
         return await db.WhatsAppWebhookEvents.Where(x => x.Id == job.Id && x.LeaseToken == job.LeaseToken
                 && x.ProcessingState == "processing" && x.LeaseUntil > clock.UtcNow)
             .ExecuteUpdateAsync(set => set
-                .SetProperty(x => x.ProcessingState, x => succeeded ? "completed" : x.Processed
+                .SetProperty(x => x.ProcessingState, x => succeeded ? "completed" : x.EventType == "manual_operation" || x.Processed
                     || job.ProcessingAttempts >= options.Value.MaxAttempts ? "review" : "pending")
                 .SetProperty(x => x.ProcessingError, succeeded ? null : "processing_failed_requires_review_if_committed")
                 .SetProperty(x => x.ProtectedPayload, x => succeeded ? null : x.ProtectedPayload)

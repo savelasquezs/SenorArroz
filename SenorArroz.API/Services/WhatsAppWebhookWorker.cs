@@ -55,10 +55,16 @@ public sealed class WhatsAppWebhookWorker(IServiceScopeFactory scopes,
         try
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var tracked = await db.WhatsAppWebhookEvents.SingleAsync(x => x.Id == job.Id, timeout.Token);
-            await scope.ServiceProvider.GetRequiredService<WhatsAppWebhookProcessor>()
-                .ProcessAsync(tracked, store.ReadPayload(job), timeout.Token);
-            job.WhatsAppMessageId = tracked.WhatsAppMessageId;
+            if (job.EventType == "manual_operation")
+                await scope.ServiceProvider.GetRequiredService<WhatsAppManualWorkQueue>()
+                    .ExecuteAsync(job, store.ReadPayload(job), timeout.Token);
+            else
+            {
+                var tracked = await db.WhatsAppWebhookEvents.SingleAsync(x => x.Id == job.Id, timeout.Token);
+                await scope.ServiceProvider.GetRequiredService<WhatsAppWebhookProcessor>()
+                    .ProcessAsync(tracked, store.ReadPayload(job), timeout.Token);
+                job.WhatsAppMessageId = tracked.WhatsAppMessageId;
+            }
             succeeded = true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

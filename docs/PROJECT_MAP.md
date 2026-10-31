@@ -367,3 +367,6 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 - Entrada HTTP valida y persiste: WhatsAppController. Procesamiento extraído: WhatsAppWebhookProcessor. Cola/consumidor: WhatsAppProcessingStore y WhatsAppWebhookWorker.
 - Señales durables-first: WhatsAppDatabaseSignal. Eventos hacia la API: WhatsAppNotificationService y WhatsAppRealtimeRelay. Herramientas comerciales internas: WhatsAppBusinessGateway.
 - Contratos, matriz, configuración y límites de la entrega: docs/WHATSAPP_PROCESSING_STAGE01.md. Plan transversal: tasks/WHATSAPP-CHAT-ORDERS-WORKER.md en la rama homónima del frontend.
+
+- Operaciones manuales compartidas y transporte durable: `WhatsAppManualOperations` / `WhatsAppManualWorkQueue`. `GET /api/whatsapp/operations/{id}` entrega el resultado al actor autorizado. El frontend resuelve aceptación 202 y resultado con `src/helpers/whatsappOperation.ts`. Métricas/retención: `WhatsAppProcessingMaintenance`.
+- Línea base repetible en solo lectura: `SenorArroz.Infrastructure/Scripts/inspect_whatsapp_processing_baseline.sql`, mediante la conexión interactiva habitual desde Bash con `railway connect MainDatabase`. Evidencia agregada en `artifacts/whatsapp-stage01/`.
