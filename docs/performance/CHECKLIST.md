@@ -76,7 +76,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M14-F03 | Notificaciones SignalR del agente | Pendiente | — | — | — | — |
 | M14-F04 | Confirmar, fallar y reintentar impresión | Pendiente | — | — | — | — |
 | M14-F05 | Configuración y reimpresión | Pendiente | — | — | — | — |
-| M15-F01 | Pedidos disponibles para despacho | Pendiente | — | — | — | — |
+| M15-F01 | Pedidos disponibles para despacho | PR listo para revisión | 2026-10-29 | [Informe](reviews/2026-10-29-M15-F01.md) | [Vue #55](https://github.com/savelasquezs/senorArrozFront/pull/55), [API #80](https://github.com/savelasquezs/SenorArroz/pull/80), [Docs #81](https://github.com/savelasquezs/SenorArroz/pull/81) | Se omiten recargas de lista oculta en SignalR (7/7 nuevos tests) y se propaga cancelación HTTP→MediatR→EF (2/2 nuevos tests). [Vue CI](https://github.com/savelasquezs/senorArrozFront/actions/runs/40878613485) 976/976 SUCCESS; [Backend CI](https://github.com/savelasquezs/SenorArroz/actions/runs/40879671399) 1566 aprobadas, 1 omitida, SUCCESS; [Remote](https://github.com/savelasquezs/SenorArroz/actions/runs/40879671364) SUCCESS. Sin SQL, merge, despliegue ni métricas productivas. |
 | M15-F02 | Asignar y desasignar domiciliario | Pendiente | — | — | — | — |
 | M15-F03 | Tablero y filtro de asignados | Pendiente | — | — | — | — |
 | M15-F04 | Seguimiento de entrega | Pendiente | — | — | — | — |
