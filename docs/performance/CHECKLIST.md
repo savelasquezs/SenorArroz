@@ -51,7 +51,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M09-F06 | Selección de pagos y total | Pendiente | — | — | — | — |
 | M09-F07 | Guardar pedido y notificaciones | Pendiente | — | — | — | — |
 | M10-F01 | Cargar listado del día | Implementado | 2026-10-13 | [Informe 2026-10-13](reviews/2026-10-13-M10-F01.md) | [API #23](https://github.com/savelasquezs/SenorArroz/pull/23) (`e681ae5`), [Vue #17](https://github.com/savelasquezs/senorArrozFront/pull/17) (`1fb28cf`) | CI: 869/869 backend; PostgreSQL COUNT verificado; 854/15 omitidas y 3/3 remoto; Vue 487/487. Railway API y Vue SUCCESS. Sin migración. Pendiente prueba funcional y medición real antes de Validado. |
-| M10-F02 | Búsquedas, filtros y paginación | Pendiente | — | — | — | — |
+| M10-F02 | Búsquedas, filtros y paginación | Bloqueado (CI pendiente) | 2026-11-01 | [Informe](reviews/2026-11-01-M10-F02.md) | [Vue #61](https://github.com/savelasquezs/senorArrozFront/pull/61) | A→B→A reutilizaba HTTP abortado; PR en borrador, [CI frontend #41309221938](https://github.com/savelasquezs/senorArrozFront/actions/runs/41309221938) pendiente. Sin SQL ni cambios en producción. |
 | M10-F03 | Detalle e historial de pedido | Pendiente | — | — | — | — |
 | M10-F04 | Editar datos, productos y precios | Pendiente | — | — | — | — |
 | M10-F05 | Modificar estados | Pendiente | — | — | — | — |
