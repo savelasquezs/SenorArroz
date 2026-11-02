@@ -27,6 +27,8 @@ public class DeliveryRoutingOptions
     public double MaximumRouteDirectionSpreadDegrees { get; set; } = 60;
     public int DroppedOrderBasePenaltySeconds { get; set; } = 3600;
     public int MaximumFinalistsToValidate { get; set; } = 12;
+    // Opt-in: Pro únicamente para validar propuestas de rutas con tráfico real.
+    public bool UseTrafficAwareGoogleValidation { get; set; } = false;
     public int ServiceSecondsPerOrder { get; set; } = 240;
     public int RouteDispatchCostSeconds { get; set; } = 120;
     public int PreparationLookaheadSeconds { get; set; } = 900;
