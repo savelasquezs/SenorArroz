@@ -63,10 +63,10 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
         // Dividir evita que Google cobre Pro automáticamente por una ruta larga.
         if (!trafficAware && orderedWaypoints.Count > 12)
         {
-            long distance = 0;
-            long duration = 0;
-            var returnDistance = 0;
-            var returnDuration = 0;
+            long totalDistance = 0;
+            long totalDuration = 0;
+            var lastLegDistance = 0;
+            var lastLegDuration = 0;
             for (var start = 0; start < orderedWaypoints.Count - 1; start += 11)
             {
                 var segment = orderedWaypoints.Skip(start).Take(12).ToArray();
@@ -74,15 +74,15 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
                 if (metrics.DistanceMeters <= 0 || metrics.DurationSeconds <= 0)
                     return default;
 
-                distance += metrics.DistanceMeters;
-                duration += metrics.DurationSeconds;
-                returnDistance = metrics.ReturnDistanceMeters;
-                returnDuration = metrics.ReturnDurationSeconds;
+                totalDistance += metrics.DistanceMeters;
+                totalDuration += metrics.DurationSeconds;
+                lastLegDistance = metrics.ReturnDistanceMeters;
+                lastLegDuration = metrics.ReturnDurationSeconds;
             }
 
             _logger.LogDebug("Routes Essentials: trayecto dividido en segmentos por límite de puntos; polilínea completa no disponible.");
-            return new DrivingRouteMetrics((int)Math.Min(distance, int.MaxValue),
-                (int)Math.Min(duration, int.MaxValue), returnDistance, returnDuration);
+            return new DrivingRouteMetrics((int)Math.Min(totalDistance, int.MaxValue),
+                (int)Math.Min(totalDuration, int.MaxValue), lastLegDistance, lastLegDuration);
         }
 
         var origin = orderedWaypoints[0];
