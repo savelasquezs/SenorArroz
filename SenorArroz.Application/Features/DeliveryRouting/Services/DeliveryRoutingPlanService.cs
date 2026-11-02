@@ -314,7 +314,9 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         measurement.GoogleCalls++;
         try
         {
-            var metrics = await _googleRoutes.ComputeRouteAsync(points, ct);
+            var metrics = _options.UseTrafficAwareGoogleValidation
+                ? await _googleRoutes.ComputeTrafficAwareRouteAsync(points, ct)
+                : await _googleRoutes.ComputeRouteAsync(points, ct);
             timer.Stop();
             if (metrics.DurationSeconds > 0 && metrics.DistanceMeters > 0)
             {
