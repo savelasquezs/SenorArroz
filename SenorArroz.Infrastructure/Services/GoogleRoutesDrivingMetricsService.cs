@@ -35,9 +35,20 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
             _http.BaseAddress = new Uri("https://routes.googleapis.com/");
     }
 
-    public async Task<DrivingRouteMetrics> ComputeRouteAsync(
+    public Task<DrivingRouteMetrics> ComputeRouteAsync(
         IReadOnlyList<(double Latitude, double Longitude)> orderedWaypoints,
         CancellationToken cancellationToken = default)
+        => ComputeRouteInternalAsync(orderedWaypoints, trafficAware: false, cancellationToken);
+
+    public Task<DrivingRouteMetrics> ComputeTrafficAwareRouteAsync(
+        IReadOnlyList<(double Latitude, double Longitude)> orderedWaypoints,
+        CancellationToken cancellationToken = default)
+        => ComputeRouteInternalAsync(orderedWaypoints, trafficAware: true, cancellationToken);
+
+    private async Task<DrivingRouteMetrics> ComputeRouteInternalAsync(
+        IReadOnlyList<(double Latitude, double Longitude)> orderedWaypoints,
+        bool trafficAware,
+        CancellationToken cancellationToken)
     {
         if (orderedWaypoints.Count < 2)
             return default;
@@ -46,6 +57,32 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
         {
             _logger.LogDebug("GoogleMaps:RoutesApiKey vacío; métricas de manejo en 0.");
             return default;
+        }
+
+        // Essentials admite como máximo 10 paradas intermedias (12 puntos en total).
+        // Dividir evita que Google cobre Pro automáticamente por una ruta larga.
+        if (!trafficAware && orderedWaypoints.Count > 12)
+        {
+            long distance = 0;
+            long duration = 0;
+            var returnDistance = 0;
+            var returnDuration = 0;
+            for (var start = 0; start < orderedWaypoints.Count - 1; start += 11)
+            {
+                var segment = orderedWaypoints.Skip(start).Take(12).ToArray();
+                var metrics = await ComputeRouteInternalAsync(segment, trafficAware: false, cancellationToken);
+                if (metrics.DistanceMeters <= 0 || metrics.DurationSeconds <= 0)
+                    return default;
+
+                distance += metrics.DistanceMeters;
+                duration += metrics.DurationSeconds;
+                returnDistance = metrics.ReturnDistanceMeters;
+                returnDuration = metrics.ReturnDurationSeconds;
+            }
+
+            _logger.LogDebug("Routes Essentials: trayecto dividido en segmentos por límite de puntos; polilínea completa no disponible.");
+            return new DrivingRouteMetrics((int)Math.Min(distance, int.MaxValue),
+                (int)Math.Min(duration, int.MaxValue), returnDistance, returnDuration);
         }
 
         var origin = orderedWaypoints[0];
@@ -84,7 +121,7 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
             },
             Intermediates = intermediates,
             TravelMode = "DRIVE",
-            RoutingPreference = "TRAFFIC_AWARE_OPTIMAL",
+            RoutingPreference = trafficAware ? "TRAFFIC_AWARE_OPTIMAL" : "TRAFFIC_UNAWARE",
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "directions/v2:computeRoutes");
