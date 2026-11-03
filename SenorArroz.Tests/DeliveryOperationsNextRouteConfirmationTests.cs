@@ -50,6 +50,32 @@ public sealed class DeliveryOperationsNextRouteConfirmationTests
     }
 
     [Fact]
+    public async Task PreviousWorkSessionRouteRemainsConfirmableButIsNotTheCurrentRoute()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var priorRoute = await f.Db.DeliveryRoutes.SingleAsync();
+        priorRoute.WorkSessionId = 9;
+        priorRoute.LastAssignmentAtUtc = Now.AddDays(-1);
+        await f.Db.SaveChangesAsync();
+
+        var context = await f.Service.ContextAsync(default);
+        Assert.Equal("previous_session", context.Phase);
+        Assert.Equal(20, context.RouteId); // needed by the explicit next-route confirmation
+        Assert.Contains(context.Orders, order => order.Id == 30);
+        Assert.Equal(OrderStatus.OnTheWay,
+            (await f.Db.Orders.SingleAsync(order => order.Id == 30)).Status);
+    }
+
+    [Fact]
+    public async Task CurrentWorkSessionRouteStillReportsDelivering()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var context = await f.Service.ContextAsync(default);
+        Assert.Equal("delivering", context.Phase);
+        Assert.Equal(20, context.RouteId);
+    }
+
+    [Fact]
     public async Task ChangedVersionCannotConfirmOrTake()
     {
         await using var f = await Fixture.CreateAsync();
