@@ -501,6 +501,12 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
                 throw new BusinessException("El domicilio gratis solo aplica a domicilios o reservas con direccion");
             return;
         }
+        if (dto.AppliedBenefitRewardType == LoyaltyRewardType.PercentageDiscount)
+        {
+            if (dto.AppliedBenefitAmount is null or <= 0 or > 100 || dto.ManualBenefitGiftProductId.HasValue)
+                throw new BusinessException("Indica un porcentaje de descuento valido entre 1 y 100");
+            return;
+        }
         if (dto.AppliedBenefitRewardType != LoyaltyRewardType.GiftProduct || !dto.ManualBenefitGiftProductId.HasValue)
             throw new BusinessException("Selecciona un producto regalo valido");
         var validGift = await _db.Products.AsNoTracking().Include(x => x.Category).AnyAsync(x =>
