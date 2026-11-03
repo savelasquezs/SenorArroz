@@ -64,6 +64,17 @@ public sealed class DeliveryRoutingPlanService : IDeliveryRoutingPlanService
         measurement.LockWaitMs = waiting.ElapsedMilliseconds;
         try { return await RecalculateCoreAsync(branchId, force, measurement, ct); }
         catch (OperationCanceledException) { measurement.Write(branchId, "cancelled"); throw; }
+        catch (Exception ex) when (DeliveryWriteReliability.IsPostgresConcurrencyFailure(ex))
+        {
+            // A SERIALIZABLE publication can race with a live order update (SQLSTATE 40001).
+            // The Flutter route view already retries 409 with a fresh candidate snapshot;
+            // never turn this expected, rolled-back conflict into an HTTP 500.
+            _logger.LogWarning(ex,
+                "DeliveryRoutingPublicationConflict BranchId={BranchId} SqlState=40001_or_40P01",
+                branchId);
+            measurement.Write(branchId, "conflict");
+            throw new RoutingPlanStaleException("Los pedidos cambiaron durante el cálculo. Actualiza las rutas.");
+        }
         catch { measurement.Write(branchId, "failed"); throw; }
         finally { branchLock.Release(); }
     }
