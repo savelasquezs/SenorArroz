@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
@@ -29,15 +30,18 @@ public class RecordDeliveryDeviceEventHandler : IRequestHandler<RecordDeliveryDe
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly IClock _clock;
+    private readonly ILogger<RecordDeliveryDeviceEventHandler>? _logger;
 
     public RecordDeliveryDeviceEventHandler(
         IApplicationDbContext db,
         ICurrentUser currentUser,
-        IClock clock)
+        IClock clock,
+        ILogger<RecordDeliveryDeviceEventHandler>? logger = null)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _logger = logger;
     }
 
     public async Task Handle(RecordDeliveryDeviceEventCommand request, CancellationToken cancellationToken)
@@ -103,8 +107,21 @@ public class RecordDeliveryDeviceEventHandler : IRequestHandler<RecordDeliveryDe
             RecordedAt = ColombiaTimeHelper.EnsureUtc(request.RecordedAt),
             SyncedAt = nowUtc,
         });
-        workSession.LastCommunicationAt = nowUtc;
-        await _db.SaveChangesAsync(cancellationToken);
+        // Persist the event first to avoid the GPS/user FK versus work-session lock inversion.
+        try
+        {
+            await DeliveryWriteReliability.SaveWithTransientRetryAsync(
+                _db, _logger, deliverymanId, workSession.Id, "device_event", cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogError(ex,
+                "DeliveryDeviceEventSaveFailed DeliverymanId={DeliverymanId} BranchId={BranchId} WorkSessionId={WorkSessionId} ClientEventId={ClientEventId}",
+                deliverymanId, _currentUser.BranchId, workSession.Id, request.ClientEventId);
+            throw;
+        }
+        await DeliveryWriteReliability.TryAdvanceHeartbeatAsync(
+            _db, workSession, nowUtc, _logger, cancellationToken);
     }
 
     private static string? NormalizeDetails(string? details)
