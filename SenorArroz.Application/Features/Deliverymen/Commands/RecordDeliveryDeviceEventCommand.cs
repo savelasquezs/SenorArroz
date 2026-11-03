@@ -108,8 +108,18 @@ public class RecordDeliveryDeviceEventHandler : IRequestHandler<RecordDeliveryDe
             SyncedAt = nowUtc,
         });
         // Persist the event first to avoid the GPS/user FK versus work-session lock inversion.
-        await DeliveryWriteReliability.SaveWithTransientRetryAsync(
-            _db, _logger, deliverymanId, workSession.Id, "device_event", cancellationToken);
+        try
+        {
+            await DeliveryWriteReliability.SaveWithTransientRetryAsync(
+                _db, _logger, deliverymanId, workSession.Id, "device_event", cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogError(ex,
+                "DeliveryDeviceEventSaveFailed DeliverymanId={DeliverymanId} BranchId={BranchId} WorkSessionId={WorkSessionId} ClientEventId={ClientEventId}",
+                deliverymanId, _currentUser.BranchId, workSession.Id, request.ClientEventId);
+            throw;
+        }
         await DeliveryWriteReliability.TryAdvanceHeartbeatAsync(
             _db, workSession, nowUtc, _logger, cancellationToken);
     }
