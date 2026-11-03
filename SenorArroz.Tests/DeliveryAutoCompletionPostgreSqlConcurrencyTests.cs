@@ -459,6 +459,52 @@ public sealed class DeliveryAutoCompletionPostgreSqlConcurrencyTests : IAsyncLif
         Assert.Equal(2, await db.EntityAuditLogs.CountAsync(a => a.EntityType == "delivery_operation"));
     }
 
+    [PostgreSqlIntegrationFact]
+    public async Task ConfirmedPreviousDeliveryRollsBackIfNewRouteCannotBeAssigned()
+    {
+        await using var db = CreateDb();
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 77, BranchId = 7, DeliverymanId = 1,
+            DeviceInstallationId = "fixture", DevicePlatform = "android",
+            StartedAt = _now.AddHours(-1), AutoCloseAt = _now.AddHours(2),
+            LastCommunicationAt = _now, Status = DeliveryWorkSessionStatus.Active
+        });
+        db.Orders.Add(new Order
+        {
+            Id = 31, BranchId = 7, TakenById = 2, CustomerId = 10,
+            AddressId = 30, Type = OrderType.Delivery, Status = OrderStatus.Ready
+        });
+        await db.SaveChangesAsync();
+        var version = (await db.Orders.AsNoTracking().SingleAsync(o => o.Id == 30)).ManagementVersion;
+        var sender = new Mock<ISender>();
+        sender.Setup(x => x.Send(It.IsAny<ChangeOrderStatusCommand>(), It.IsAny<CancellationToken>()))
+            .Returns<ChangeOrderStatusCommand, CancellationToken>(async (command, ct) =>
+            {
+                var order = await db.Orders.SingleAsync(o => o.Id == command.Id, ct);
+                order.Status = command.StatusChange.Status;
+                order.DeliveryCompletionSource = command.RouteCompletionSource;
+                await db.SaveChangesAsync(ct);
+                return new OrderDto { Id = order.Id, Status = order.Status };
+            });
+        sender.Setup(x => x.Send(It.IsAny<SelfAssignOrdersCommand>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new SenorArroz.Domain.Exceptions.BusinessException("No se pudo aceptar la ruta nueva."));
+        var request = new DeliveryOperationRequest(Guid.NewGuid(), "take", _now, RouteId: 20,
+            WorkSessionId: 77, Selection: new SelfAssignOrdersDto { OrderIds = [31] },
+            ConfirmedPreviousDeliveries: [new ConfirmedPreviousDelivery(30, version)]);
+
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() =>
+            Operations(db, sender.Object).ExecuteAsync(request, default));
+
+        // The old delivery and the take receipt must both be absent after rollback.
+        await using var verify = CreateDb();
+        Assert.Equal(OrderStatus.OnTheWay,
+            (await verify.Orders.AsNoTracking().SingleAsync(o => o.Id == 30)).Status);
+        Assert.Equal(DeliveryRouteStatus.InProgress,
+            (await verify.DeliveryRoutes.AsNoTracking().SingleAsync(r => r.Id == 20)).Status);
+        Assert.Empty(await verify.EntityAuditLogs.Where(a => a.EntityType == "delivery_operation").ToListAsync());
+    }
+
     private ApplicationDbContext CreateDb() => new(_options, currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
 
     private DeliverymanLocation DepartureLocation(long id) => new()
