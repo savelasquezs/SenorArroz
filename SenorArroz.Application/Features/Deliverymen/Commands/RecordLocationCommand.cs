@@ -120,8 +120,21 @@ public class RecordLocationHandler : IRequestHandler<RecordLocationCommand, Reco
             RecordedAt = recorded, SyncedAt = now
         };
         _db.DeliverymanLocations.Add(location);
-        session.LastCommunicationAt = now;
-        await _db.SaveChangesAsync(ct);
+        // The point and the session heartbeat must not be in the same transaction:
+        // a concurrent route operation locks the user before updating this session.
+        try
+        {
+            await DeliveryWriteReliability.SaveWithTransientRetryAsync(
+                _db, _logger, deliverymanId, session.Id, "location", ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogError(ex,
+                "DeliveryLocationSaveFailed DeliverymanId={DeliverymanId} BranchId={BranchId} WorkSessionId={WorkSessionId} ClientPointId={ClientPointId}",
+                deliverymanId, branchId, session.Id, location.ClientPointId);
+            throw;
+        }
+        await DeliveryWriteReliability.TryAdvanceHeartbeatAsync(_db, session, now, _logger, ct);
         DeliveryReturnReview? review = null;
         if (live && routeId.HasValue)
         {
