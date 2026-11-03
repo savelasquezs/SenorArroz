@@ -47,6 +47,17 @@ public sealed class DeliveryOperationsService(IApplicationDbContext db, ICurrent
         List<Order> orders = route is null ? [] : await Orders().Where(o => o.DeliveryRouteId == route.Id
             && o.DeliveryManId == actor.Id && o.BranchId == route.BranchId)
             .OrderBy(o => o.Id).ToListAsync(ct);
+        // An unclosed route may belong to a previous work session. Keep its
+        // orders in the context for explicit confirmation, but do not describe
+        // it as an active delivery of the new workday.
+        var activeSession = route is null ? null : await DeliveryRouteScope.ActiveSessions(
+                db, actor.BranchId, clock.UtcNow).AsNoTracking()
+            .FirstOrDefaultAsync(s => s.DeliverymanId == actor.Id, ct);
+        var previousSessionRoute = route is not null &&
+            (activeSession is not null
+                ? !DeliveryRouteScope.BelongsToSession(route, activeSession, clock.UtcNow)
+                : (route.RouteStartedAtUtc ?? route.LastAssignmentAtUtc)
+                    < ColombiaTimeHelper.GetTodayStartInUtcFromUtc(clock.UtcNow));
         if (route is not null) {
             var sequence = await db.DeliveryRouteStops.AsNoTracking().Where(s => s.DeliveryRouteId == route.Id)
                 .OrderBy(s => s.StopSequence).Select(s => s.OrderId).ToListAsync(ct);
@@ -56,8 +67,9 @@ public sealed class DeliveryOperationsService(IApplicationDbContext db, ICurrent
             && (r.ClosureSource == "return" || r.ClosureSource == "next_route"))
             .OrderByDescending(r => r.CompletedAtUtc).FirstOrDefaultAsync(ct);
         return new(owner.DeliveryContextVersion, owner.LastDeliveryTakeId, route?.Id, route?.WorkSessionId,
-            route is null ? "idle" : orders.All(o => o.Status is OrderStatus.Delivered or OrderStatus.Cancelled)
-                ? "returning" : "delivering", mapper.Map<List<OrderDto>>(orders),
+            route is null ? "idle" : previousSessionRoute ? "previous_session"
+                : orders.All(o => o.Status is OrderStatus.Delivered or OrderStatus.Cancelled)
+                    ? "returning" : "delivering", mapper.Map<List<OrderDto>>(orders),
             await db.Neighborhoods.AsNoTracking().Where(n => n.BranchId == actor.BranchId)
                 .Select(n => new DeliveryNeighborhoodDto(n.Id, n.BranchId, n.Name, n.DeliveryFee)).ToListAsync(ct),
             closure is null ? null : new(closure.Id, closure.ClosureSource!, closure.CompletedAtUtc,
