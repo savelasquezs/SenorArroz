@@ -19,10 +19,12 @@ public sealed record DeliveryClosureDto(int RouteId, string Source, DateTime? At
 public sealed record DeliveryContextDto(long Revision, Guid? LastTakeId, int? RouteId,
     int? WorkSessionId, string Phase, List<OrderDto> Orders, List<DeliveryNeighborhoodDto> Neighborhoods,
     DeliveryClosureDto? LastClosure = null);
+public sealed record ConfirmedPreviousDelivery(int OrderId, long ExpectedVersion);
 public sealed record DeliveryOperationRequest(Guid OperationId, string Kind, DateTime RecordedAt,
     int? OrderId = null, int? RouteId = null, int? WorkSessionId = null, long ExpectedVersion = 0,
     string? AddressVersion = null, JsonElement? Changes = null,
-    SelfAssignOrdersDto? Selection = null, Guid? ExpectedLastTakeId = null);
+    SelfAssignOrdersDto? Selection = null, Guid? ExpectedLastTakeId = null,
+    IReadOnlyList<ConfirmedPreviousDelivery>? ConfirmedPreviousDeliveries = null);
 public sealed record DeliveryOperationResult(Guid OperationId, bool Replayed, DeliveryContextDto Context,
     OrderDto? Order = null);
 
@@ -111,6 +113,7 @@ public sealed class DeliveryOperationsService(IApplicationDbContext db, ICurrent
                     .SingleOrDefaultAsync(s => s.DeliverymanId == actor.Id, token);
                 if (session is null || session.Id != request.WorkSessionId) throw new OrderConcurrencyException();
                 var selection = request.Selection ?? throw new BusinessException("Selecciona los pedidos.");
+                await ConfirmPreviousRouteDeliveriesAsync(request, context, token);
                 await sender.Send(new SelfAssignOrdersCommand
                 {
                     OrderIds = selection.OrderIds, ProposalId = selection.ProposalId,
@@ -157,13 +160,62 @@ public sealed class DeliveryOperationsService(IApplicationDbContext db, ICurrent
                 BusinessDate = clock.UtcNow.AddHours(-5).Date, ChangedByUserId = actor.Id,
                 SummaryText = request.Kind, MetadataJson = JsonSerializer.Serialize(hash),
                 AfterJson = JsonSerializer.Serialize(new { request.Kind, request.OrderId, request.RouteId,
-                    request.RecordedAt, acceptedAt = clock.UtcNow })
+                    request.RecordedAt, confirmedPreviousOrderIds = request.ConfirmedPreviousDeliveries?.Select(x => x.OrderId),
+                    acceptedAt = clock.UtcNow })
             });
             await db.SaveChangesAsync(token);
         }, ct);
         var updated = request.OrderId.HasValue ? await Orders().SingleOrDefaultAsync(o => o.Id == request.OrderId
             && o.DeliveryManId == actor.Id && o.BranchId == actor.BranchId, ct) : null;
         return new(request.OperationId, replayed, await ContextAsync(ct), updated is null ? null : mapper.Map<OrderDto>(updated));
+    }
+
+    /// <summary>
+    /// Confirmation and route replacement share the driver's transaction. A stale or partial
+    /// confirmation cannot silently mark an order delivered, nor can a failed new assignment
+    /// leave earlier orders completed. All candidates are checked against current DB state.
+    /// </summary>
+    private async Task ConfirmPreviousRouteDeliveriesAsync(
+        DeliveryOperationRequest request, DeliveryContextDto context, CancellationToken ct)
+    {
+        var confirmed = request.ConfirmedPreviousDeliveries ?? [];
+        if (confirmed.Count > 20 || confirmed.Any(x => x.OrderId <= 0 || x.ExpectedVersion <= 0)
+            || confirmed.Select(x => x.OrderId).Distinct().Count() != confirmed.Count)
+            throw new OrderConcurrencyException();
+
+        var pending = await db.Orders.AsNoTracking().Where(o =>
+            o.DeliveryManId == actor.Id && o.BranchId == actor.BranchId
+            && (o.Type == OrderType.Delivery || o.Type == OrderType.Reservation && o.AddressId.HasValue)
+            && o.Status != OrderStatus.Delivered && o.Status != OrderStatus.Cancelled)
+            .OrderBy(o => o.Id).ToListAsync(ct);
+
+        // No extra, missing, other-driver, old-route or changed-version confirmations.
+        // The courier must see and explicitly confirm every pending order in the current route.
+        if (pending.Count == 0)
+        {
+            if (confirmed.Count != 0) throw new OrderConcurrencyException();
+            return;
+        }
+        if (!request.RouteId.HasValue || context.RouteId != request.RouteId
+            || pending.Count != confirmed.Count
+            || pending.Any(o => o.Status != OrderStatus.OnTheWay
+                || o.DeliveryRouteId != context.RouteId
+                || !confirmed.Any(c => c.OrderId == o.Id && c.ExpectedVersion == o.ManagementVersion)))
+            throw new OrderConcurrencyException();
+
+        foreach (var order in pending)
+        {
+            await sender.Send(new ChangeOrderStatusCommand
+            {
+                Id = order.Id,
+                RouteCompletionSource = "next_route",
+                StatusChange = new()
+                {
+                    Status = OrderStatus.Delivered,
+                    Reason = "Entrega confirmada expresamente al tomar una nueva ruta"
+                }
+            }, ct);
+        }
     }
 
     private async Task CorrectAddressAsync(Order order, DeliveryOperationRequest request, CancellationToken ct)
