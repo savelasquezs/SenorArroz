@@ -96,7 +96,7 @@ public sealed class DeliveryOperationsNextRouteConfirmationTests
     private sealed class Fixture : IAsyncDisposable
     {
         public ApplicationDbContext Db { get; private init; } = null!;
-        public DeliveryOperationsService Service { get; private init; } = null!;
+        public DeliveryOperationsService Service { get; private set; } = null!;
         public List<int> DeliveredIds { get; } = [];
         public int NewRouteAttempts { get; private set; }
 
