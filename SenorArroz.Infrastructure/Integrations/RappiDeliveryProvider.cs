@@ -49,6 +49,8 @@ public sealed class RappiDeliveryProvider(
         bool integrated,
         CancellationToken ct)
     {
+        if (integrated && options.Environment == "production" && !options.ProductionStoreActivationApproved)
+            return new(false, Error: "La activación de la tienda productiva debe coordinarse con Rappi.");
         var path = $"stores-pa/{Uri.EscapeDataString(storeId)}/status?integrated={integrated.ToString().ToLowerInvariant()}";
         var response = await SendAuthorizedAsync(
             () => new HttpRequestMessage(HttpMethod.Put, BuildUrl(path)),

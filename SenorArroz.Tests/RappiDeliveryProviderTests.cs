@@ -11,6 +11,47 @@ namespace SenorArroz.Tests;
 [Collection("Rappi provider token cache")]
 public sealed class RappiDeliveryProviderTests
 {
+    [Fact]
+    public async Task Production_store_activation_requires_coordinated_approval_before_any_request()
+    {
+        var transport = new TransientWriteHandler();
+        var provider = new RappiDeliveryProvider(new HttpClient(transport), Options.Create(new RappiOptions
+        {
+            Environment = "production", ProductionEnabled = true,
+            ClientId = "synthetic", ClientSecret = "synthetic",
+            AuthUrl = "https://synthetic.invalid/token", ApiBaseUrl = "https://synthetic.invalid/api"
+        }));
+
+        var result = await provider.SetStoreIntegratedAsync("production-store", true, default);
+
+        Assert.False(result.Success);
+        Assert.Contains("coordinarse", result.Error);
+        Assert.Equal(0, transport.Requests);
+    }
+
+    [Theory]
+    [InlineData("sandbox", false, true)]
+    [InlineData("production", true, true)]
+    [InlineData("production", false, false)]
+    public async Task Approved_activation_and_deactivation_preserve_the_provider_contract(
+        string environment, bool approved, bool integrated)
+    {
+        typeof(RappiDeliveryProvider).GetMethod("ClearToken", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, null);
+        var transport = new TransientWriteHandler(HttpStatusCode.OK);
+        var provider = new RappiDeliveryProvider(new HttpClient(transport), Options.Create(new RappiOptions
+        {
+            Environment = environment, ProductionStoreActivationApproved = approved,
+            ClientId = "synthetic", ClientSecret = "synthetic",
+            AuthUrl = "https://synthetic.invalid/token", ApiBaseUrl = "https://synthetic.invalid/api"
+        }));
+
+        await provider.SetStoreIntegratedAsync("store-id", integrated, default);
+
+        Assert.Equal(1, transport.Writes);
+        Assert.Equal($"https://synthetic.invalid/api/stores-pa/store-id/status?integrated={integrated.ToString().ToLowerInvariant()}", transport.WriteUri);
+    }
+
     [Theory]
     [InlineData("take")]
     [InlineData("menu")]
@@ -54,20 +95,22 @@ public sealed class RappiDeliveryProviderTests
         Assert.Equal(1, transport.Writes);
     }
 
-    private sealed class TransientWriteHandler : HttpMessageHandler
+    private sealed class TransientWriteHandler(HttpStatusCode writeStatus = HttpStatusCode.ServiceUnavailable) : HttpMessageHandler
     {
+        public int Requests { get; private set; }
         public int Writes { get; private set; }
         public string? WriteUri { get; private set; }
         public string? WriteContentType { get; private set; }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Requests++;
             if (request.RequestUri!.AbsolutePath.EndsWith("/token"))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                     { Content = new StringContent("""{"access_token":"synthetic-token","expires_in":3600}""") });
             Writes++;
             WriteUri = request.RequestUri.AbsoluteUri;
             WriteContentType = request.Content?.Headers.ContentType?.MediaType;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            return Task.FromResult(new HttpResponseMessage(writeStatus)
                 { Content = new StringContent("""{"message":"synthetic uncertain result"}""") });
         }
     }

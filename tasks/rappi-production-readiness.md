@@ -37,6 +37,16 @@ La limpieza exige las variables de sesión `app.rappi_test_tenant_id`, `app.rapp
 
 ## Activación productiva pendiente de Rappi
 
+### Preparación productiva — 4 de noviembre de 2026
+
+Nicolás entregó las credenciales COL y confirmó la tienda Santander `900403973` por correo del 3 de noviembre, 23:30 UTC. Solicitó webhooks y menú antes de coordinar la activación. Las credenciales respondieron HTTP 200 y `stores-pa` devolvió exclusivamente `rappiId=900403973`, `integrationId=900403973`. `GET menu/rappi/900403973` respondió HTTP 200 con `items=[]`; esto describe la respuesta del recurso de integración, sin afirmar ausencia de un catálogo comercial en la app.
+
+- La preparación mantiene `Rappi__ProductionStoreActivationApproved=false`. Este permiso es independiente de `Rappi__ProductionEnabled`, que permite autenticar y configurar producción. El worker consulta tiendas/menú pero no escribe `integrated=true` sin aprobación; el proveedor también bloquea ese intento antes de cualquier solicitud HTTP.
+- `Rappi__ProductionReadyForPickupApproved=false` hasta autorización y validación específicas de READY.
+- La conexión sandbox y sus historiales se conservan. La conexión productiva debe crearse separada para tenant 1, Santander, sucursal 1, y únicamente la tienda confirmada.
+- El catálogo sandbox solo contiene cinco tamaños de Paisa con precios internos. No copiarlo ni publicarlo automáticamente como menú productivo completo; confirmar selección y precios de Rappi.
+- Pendientes de esta sesión: configuración productiva y webhooks, selección/publicación de menú, aprobación de Rappi y activación coordinada. No se envían mensajes a Nicolás sin instrucción explícita del usuario.
+
 - Confirmar lista de capacidades obligatorias del Sprint 1 y criterio del homologador; horarios y self-onboarding no se añadieron al alcance acordado.
 - Entregar integración, tiendas padre/hijas, identificadores y credenciales productivas y confirmar permisos de token.
 - Aprobar READY_FOR_PICKUP y revisar el HTTP 424 histórico si continúa en la matriz real.

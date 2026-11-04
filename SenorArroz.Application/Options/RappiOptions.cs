@@ -6,6 +6,7 @@ public sealed class RappiOptions
 
     public string Environment { get; set; } = "sandbox";
     public bool ProductionEnabled { get; set; }
+    public bool ProductionStoreActivationApproved { get; set; }
     public bool ProductionReadyForPickupApproved { get; set; }
     public string ClientId { get; set; } = string.Empty;
     public string ClientSecret { get; set; } = string.Empty;
