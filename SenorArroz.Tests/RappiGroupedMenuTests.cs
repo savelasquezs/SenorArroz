@@ -13,6 +13,30 @@ namespace SenorArroz.Tests;
 
 public sealed class RappiGroupedMenuTests
 {
+    [Fact]
+    public void Provider_menu_accepts_integral_decimal_prices_without_changing_values_or_choices()
+    {
+        var json = JsonSerializer.Serialize(Menu(), new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            .Replace("\"price\":18000", "\"price\":18000.0")
+            .Replace("\"price\":13000", "\"price\":13000.00")
+            .Replace("\"price\":12000", "\"price\":12000.000");
+        var parsed = RappiCatalogMenu.Read(json);
+        Assert.NotNull(parsed);
+        Assert.True(RappiCatalogMenu.Matches(Menu(), parsed));
+        Assert.Equal(18000, parsed.Items[0].Price);
+        Assert.Equal(13000, parsed.Items[0].Children[1].Price);
+    }
+
+    [Theory]
+    [InlineData("18000.5")]
+    [InlineData("2147483648.0")]
+    public void Provider_menu_rejects_fractional_or_out_of_range_prices(string price)
+    {
+        var json = JsonSerializer.Serialize(Menu(), new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            .Replace("\"price\":18000", "\"price\":" + price);
+        Assert.Throws<JsonException>(() => RappiCatalogMenu.Read(json));
+    }
+
     internal static RappiMenuRequest Menu() => new("900173116",
     [
         new(new("rice", 0, 0, "Especialidades", 0),

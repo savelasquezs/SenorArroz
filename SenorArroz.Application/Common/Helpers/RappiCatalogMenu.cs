@@ -15,10 +15,35 @@ public static class RappiCatalogMenu
 
     public static RappiMenuRequest? Read(string payload)
     {
-        var menu = JsonSerializer.Deserialize<RappiMenuRequest>(payload, JsonOptions);
+        var menu = IntegralNumbers(JsonNode.Parse(payload))?.Deserialize<RappiMenuRequest>(JsonOptions);
         if (menu?.Items is null) return null;
         if (menu.Items.Any(x => x is null)) throw new JsonException("Producto de menú inválido.");
         return menu with { Items = menu.Items.Select(x => x with { Children = x.Children ?? [] }).ToList() };
+    }
+
+    private static JsonNode? IntegralNumbers(JsonNode? node)
+    {
+        if (node is JsonObject obj)
+        {
+            foreach (var (key, value) in obj.ToList())
+            {
+                var normalized = IntegralNumbers(value);
+                if (!ReferenceEquals(normalized, value)) obj[key] = normalized;
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            for (var index = 0; index < array.Count; index++)
+            {
+                var normalized = IntegralNumbers(array[index]);
+                if (!ReferenceEquals(normalized, array[index])) array[index] = normalized;
+            }
+        }
+        else if (node is JsonValue jsonValue && jsonValue.TryGetValue<JsonElement>(out var element)
+            && element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out var number)
+            && number == decimal.Truncate(number) && number is >= int.MinValue and <= int.MaxValue)
+            return JsonValue.Create((int)number);
+        return node;
     }
 
     public static string Snapshot(RappiMenuRequest menu, IEnumerable<DeliveryAppProductMapping> mappings)
