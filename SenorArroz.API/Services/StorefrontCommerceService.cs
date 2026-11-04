@@ -86,7 +86,7 @@ public sealed class StorefrontCommerceService(
             var productIds = products.Select(x => x.Id).ToList();
             var availabilityByBranch = new List<IReadOnlyList<ProductAvailabilityDto>>(branchIds.Count);
             foreach (var branchId in branchIds)
-                availabilityByBranch.Add(await inventory.GetAvailabilityAsync(productIds, branchId, cancellationToken));
+                availabilityByBranch.Add(await inventory.GetAvailabilityAsync(productIds, branchId, cancellationToken, sharedCatalog: true));
 
             inventoryAvailability = availabilityByBranch
                 .SelectMany(x => x)
@@ -501,7 +501,8 @@ public sealed class StorefrontCommerceService(
 
         if (inventory is not null)
         {
-            var availability = (await inventory.GetAvailabilityAsync(productIds, checkoutBranch.Id, cancellationToken))
+            // Products are shared across the tenant; only inventory balances belong to the checkout branch.
+            var availability = (await inventory.GetAvailabilityAsync(productIds, checkoutBranch.Id, cancellationToken, sharedCatalog: true))
                 .ToDictionary(x => x.ProductId);
             foreach (var item in request.Items)
             {

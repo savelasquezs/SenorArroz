@@ -18,6 +18,7 @@ using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Inventory.DTOs;
+using SenorArroz.Application.Features.Inventory.Services;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
@@ -99,8 +100,8 @@ public class PublicStorefrontControllerTests
         inventory.Setup(x => x.GetAvailabilityAsync(
                 It.IsAny<IReadOnlyCollection<int>>(),
                 It.IsAny<int>(),
-                It.IsAny<CancellationToken>()))
-            .Returns(async (IReadOnlyCollection<int> productIds, int _, CancellationToken ct) =>
+                It.IsAny<CancellationToken>(), true))
+            .Returns(async (IReadOnlyCollection<int> productIds, int _, CancellationToken ct, bool _) =>
             {
                 var concurrent = Interlocked.Increment(ref activeCalls);
                 maxConcurrentCalls = Math.Max(maxConcurrentCalls, concurrent);
@@ -129,7 +130,80 @@ public class PublicStorefrontControllerTests
         inventory.Verify(x => x.GetAvailabilityAsync(
             It.IsAny<IReadOnlyCollection<int>>(),
             It.IsAny<int>(),
-            It.IsAny<CancellationToken>()), Times.Exactly(2));
+            It.IsAny<CancellationToken>(), true), Times.Exactly(2));
+    }
+
+    [Theory]
+    [InlineData("rice", 10)]
+    [InlineData("rice", 15)]
+    [InlineData("combo", 10)]
+    [InlineData("combo", 15)]
+    [InlineData("beverage", 10)]
+    [InlineData("beverage", 15)]
+    [InlineData("addition", 10)]
+    [InlineData("addition", 15)]
+    public async Task Unlimited_products_remain_available_in_catalog_and_quote(string role, int categoryBranchId)
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        var category = new ProductCategory { Id = 22, BranchId = categoryBranchId, Name = "Categoría compartida", StorefrontRole = role };
+        db.AddRange(category, new Product
+        {
+            Id = 21, Category = category, CategoryId = category.Id,
+            Name = "Producto ilimitado", Price = 5_000, Stock = null, Active = true,
+        });
+        await db.SaveChangesAsync();
+        var inventory = new InventoryService(db, Mock.Of<ICurrentUser>(), TestTenantContext.Default,
+            new FakeClock(Now), new TestBranchContext());
+        var controller = Controller(db, 720, inventory: inventory);
+
+        var catalogAction = await controller.GetCatalog(default);
+        var catalog = Assert.IsType<ApiResponse<PublicCatalogDto>>(Assert.IsType<OkObjectResult>(catalogAction.Result).Value).Data!;
+        var option = Assert.Single(catalog.RiceGroups.Concat(catalog.ComboGroups)
+            .Concat(catalog.BeverageGroups).Concat(catalog.AdditionGroups)
+            .SelectMany(group => group.Options), product => product.ProductId == 21);
+        Assert.Equal("available", option.AvailabilityStatus);
+
+        var request = Request();
+        request.SelectedBranchId = 10;
+        request.Items.Add(new() { ProductId = 21, Quantity = 50 });
+        var quoteAction = await controller.Quote(request, default);
+        var quote = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<OkObjectResult>(quoteAction.Result).Value);
+        Assert.Equal(50, Assert.Single(quote.Data!.Items, item => item.ProductId == 21).Quantity);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(2, true)]
+    public async Task Shared_catalog_quote_respects_strict_stock_at_checkout_branch(int availableUnits, bool expectedSuccess)
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        var category = new ProductCategory { Id = 22, BranchId = 15, Name = "Bebidas", StorefrontRole = "beverage" };
+        var expense = new Expense { Id = 23, Name = "Bebida", TracksInventory = true, InventoryActive = true };
+        db.AddRange(category, expense, new Product
+        {
+            Id = 21, Category = category, CategoryId = category.Id, Name = "Bebida", Price = 5_000,
+            InventoryEnabled = true, InventoryControlMode = InventoryControlMode.Strict,
+        }, new ProductExpenseRequirement { ProductId = 21, ExpenseId = 23, BaseQuantity = 1 },
+            new InventoryBalance { BranchId = 10, ExpenseId = 23, QuantityOnHand = availableUnits },
+            new InventoryBalance { BranchId = 15, ExpenseId = 23, QuantityOnHand = 100 });
+        await db.SaveChangesAsync();
+        var inventory = new InventoryService(db, Mock.Of<ICurrentUser>(), TestTenantContext.Default,
+            new FakeClock(Now), new TestBranchContext());
+        var request = Request();
+        request.SelectedBranchId = 10;
+        request.Items.Add(new() { ProductId = 21, Quantity = 2 });
+
+        var action = await Controller(db, 720, inventory: inventory).Quote(request, default);
+
+        if (expectedSuccess)
+            Assert.IsType<OkObjectResult>(action.Result);
+        else
+        {
+            var response = Assert.IsType<ApiResponse<PublicDeliveryQuoteDto>>(Assert.IsType<BadRequestObjectResult>(action.Result).Value);
+            Assert.Equal("No hay stock suficiente de Bebida.", response.Message);
+        }
     }
 
     [Fact]
@@ -1449,8 +1523,8 @@ public class PublicStorefrontControllerTests
     private static Mock<IInventoryService> InventoryMock()
     {
         var inventory = new Mock<IInventoryService>();
-        inventory.Setup(x => x.GetAvailabilityAsync(It.IsAny<IReadOnlyCollection<int>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyCollection<int> productIds, int _, CancellationToken _) =>
+        inventory.Setup(x => x.GetAvailabilityAsync(It.IsAny<IReadOnlyCollection<int>>(), It.IsAny<int>(), It.IsAny<CancellationToken>(), true))
+            .ReturnsAsync((IReadOnlyCollection<int> productIds, int _, CancellationToken _, bool _) =>
                 productIds.Select(id => new ProductAvailabilityDto(id, true, null, null, true, [])).ToArray());
         inventory.Setup(x => x.SnapshotAndReserveAsync(It.IsAny<Order>(), false, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
