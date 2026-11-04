@@ -91,10 +91,10 @@ public class OrdersController : ControllerBase
     /// Obtiene un pedido por ID
     /// </summary>
     [HttpGet("{id}")]
-    public async Task<ActionResult<OrderDto>> GetOrder(int id)
+    public async Task<ActionResult<OrderDto>> GetOrder(int id, CancellationToken cancellationToken = default)
     {
         var query = new GetOrderByIdQuery { Id = id };
-        var result = await _mediator.Send(query);
+        var result = await _mediator.Send(query, cancellationToken);
         
         if (result == null)
             return NotFound();
@@ -106,10 +106,10 @@ public class OrdersController : ControllerBase
     /// Obtiene un pedido con todos los detalles (productos, pagos, etc.)
     /// </summary>
     [HttpGet("{id}/details")]
-    public async Task<ActionResult<OrderWithDetailsDto>> GetOrderWithDetails(int id)
+    public async Task<ActionResult<OrderWithDetailsDto>> GetOrderWithDetails(int id, CancellationToken cancellationToken = default)
     {
         var query = new GetOrderWithDetailsQuery { Id = id };
-        var result = await _mediator.Send(query);
+        var result = await _mediator.Send(query, cancellationToken);
         
         if (result == null)
             return NotFound();
