@@ -1,5 +1,15 @@
 # Integración Rappi API v2
 
+## Carta agrupada y borradores
+
+`PUT /api/branches/{branchId}/integrations/apps/rappi/menu/draft` guarda una carta sin enviarla a Rappi. Conserva categorías, nombres, imágenes, posiciones y grupos de opciones. El borrador usa las publicaciones existentes con estado `draft`, sin tablas nuevas. La vista previa y la publicación validan que todos los SKU seleccionados estén representados y que los tamaños sumen el precio del producto real correspondiente.
+
+Las opciones `size-{sku}` pertenecen a un grupo obligatorio de selección única y reemplazan el producto base por su variante real al recibir el pedido. Las opciones `addon-{sku}` agregan productos reales, conservando el precio contextual y multiplicando su cantidad por la del producto padre. Un mismo chicharrón puede valer 15.000 como producto y 12.000 dentro de un combo. Opciones, precios, límites, totales e inventario se validan antes de aceptar; opciones desconocidas o anidadas se retienen.
+
+La publicación conserva snapshots internos en `posMappings`, separados del cuerpo que recibe Rappi. Solo un menú aprobado puede resolver opciones entrantes. La disponibilidad sincroniza productos y opciones y mantiene visible el arroz si al menos un tamaño está disponible. El catálogo simple anterior conserva su contrato.
+
+Preparación Santander del 4 de noviembre: mantener Especialidades, Combos y Acompanamientos como en Partners, con siete arroces y sus tamaños, dos combos con adiciones opcionales, chicharrón independiente y yuca corregida a doce unidades. Agregar únicamente las siete gaseosas autorizadas. El aumento del 20 % y redondeo al siguiente múltiplo de mil aplica a esas gaseosas como precio del canal; no modifica precios internos.
+
 ## Estado
 
 La implementación usa el ambiente sandbox y no contiene credenciales. Los secretos de OAuth se leen exclusivamente desde variables de entorno. Los secretos entregados al registrar webhooks se cifran antes de persistirse.

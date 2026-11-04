@@ -76,6 +76,8 @@ public sealed class RappiOrderProcessor(
         if (connection is null)
             return new(false, Error: "La integración Rappi no existe.");
 
+        parsed = await NormalizeMenuOrderAsync(connection.Id, parsed, ct);
+
         var store = connection.Stores.FirstOrDefault(x =>
             x.RappiStoreId == parsed.StoreInternalId
             || (!string.IsNullOrWhiteSpace(x.StoreIntegrationId)
@@ -168,6 +170,7 @@ public sealed class RappiOrderProcessor(
                     external.LastAttemptAt = clock.UtcNow;
 
                 var parsed = ParseOrder(external.RawPayloadJson);
+                parsed = await NormalizeMenuOrderAsync(external.ConnectionId, parsed, ct);
                 ApplyParsedOrder(external, external.Connection, external.Store, parsed);
                 var errors = Validate(external.Connection, external.Store, parsed);
                 await AppendInventoryValidationErrorsAsync(errors, external.Connection, parsed, ct);
@@ -1105,7 +1108,8 @@ public sealed class RappiOrderProcessor(
         if (eventType == "MENU_APPROVED")
         {
             using var document = JsonDocument.Parse(publication.PayloadJson);
-            if (document.RootElement.TryGetProperty("items", out var items)
+            if ((document.RootElement.TryGetProperty("posMappings", out var items)
+                    || document.RootElement.TryGetProperty("items", out items))
                 && items.ValueKind == JsonValueKind.Array)
             {
                 var approved = items.EnumerateArray()
@@ -1188,6 +1192,7 @@ public sealed class RappiOrderProcessor(
         ParsedRappiOrder order)
     {
         var errors = new List<string>();
+        if (order.MenuErrors is not null) errors.AddRange(order.MenuErrors);
         if (!connection.IsActive)
             errors.Add("La integración está desactivada.");
         if (store is null)
@@ -1229,7 +1234,7 @@ public sealed class RappiOrderProcessor(
             }
             if (!mapping.PublishedPrice.HasValue)
                 errors.Add($"{line.Name}: no pertenece al último menú publicado.");
-            else if (mapping.PublishedPrice.Value != line.UnitPrice)
+            else if ((line.ApprovedUnitPrice ?? mapping.PublishedPrice.Value) != line.UnitPrice)
                 errors.Add($"{line.Name}: precio distinto al último menú publicado.");
             if (!mapping.Product.Active)
                 errors.Add($"{line.Name}: producto inactivo o agotado.");
@@ -1285,6 +1290,26 @@ public sealed class RappiOrderProcessor(
         external.LinesJson = JsonSerializer.Serialize(parsed.Lines, JsonOptions);
         external.DiscountsJson = JsonSerializer.Serialize(parsed.Discounts, JsonOptions);
         external.UpdatedAt = clock.UtcNow;
+    }
+
+    private async Task<ParsedRappiOrder> NormalizeMenuOrderAsync(int connectionId, ParsedRappiOrder order, CancellationToken ct)
+    {
+        var payload = await db.RappiMenuPublications.AsNoTracking()
+            .Where(x => x.ConnectionId == connectionId && x.Status == "approved")
+            .OrderByDescending(x => x.CompletedAt).ThenByDescending(x => x.Id)
+            .Select(x => x.PayloadJson).FirstOrDefaultAsync(ct);
+        if (payload is null) return order;
+        try
+        {
+            var menu = RappiCatalogMenu.Read(payload);
+            if (menu is null || !menu.Items.Any(x => x.Children.Count > 0)) return order;
+            var normalized = RappiCatalogMenu.Normalize(menu, order.Lines);
+            return order with { Lines = normalized.Lines, MenuErrors = normalized.Errors };
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentException)
+        {
+            return order with { MenuErrors = ["El menú aprobado no permite resolver las opciones de este pedido; requiere revisión."] };
+        }
     }
 
     private static ParsedRappiOrder ParseOrder(string rawJson)
@@ -1566,5 +1591,6 @@ public sealed class RappiOrderProcessor(
         int CookingTimeMinutes,
         IReadOnlyList<ExternalDeliveryOrderLine> Lines,
         IReadOnlyList<ExternalDeliveryDiscount> Discounts,
-        bool HasRequiredTotals);
+        bool HasRequiredTotals,
+        IReadOnlyList<string>? MenuErrors = null);
 }

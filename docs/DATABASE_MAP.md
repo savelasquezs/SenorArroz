@@ -1,5 +1,7 @@
 # Señor Arroz Backend - Database Map
 
+Los borradores de carta Rappi se guardan en `rappi_menu_publication` con estado `draft`; los anteriores pasan a `draft_replaced`. Las publicaciones agrupadas conservan `posMappings` en `payload_json` para mantener el snapshot de cada producto interno aunque en Rappi se vea como opción de tamaño o adición. Ese metadato no se envía al proveedor. Las líneas normalizadas de `external_delivery_order.lines_json` pueden incluir `approvedUnitPrice`, calculado exclusivamente desde la publicación aprobada; el parser público ignora cualquier valor enviado por el cliente para ese campo. No hay cambios de esquema.
+
 Este mapa existe para que Codex ubique rápido las entidades y entienda cómo prepararlas para SaaS multitenant.
 
 ## Estado de aislamiento v2
