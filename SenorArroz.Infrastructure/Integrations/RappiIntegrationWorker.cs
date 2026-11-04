@@ -290,6 +290,7 @@ public sealed class RappiIntegrationWorker(
 
         var remoteStoreIds = storeResult.Stores.Select(x => x.StoreId).ToHashSet();
         foreach (var storeId in connections
+                     .Where(_ => options.Environment != "production" || options.ProductionStoreActivationApproved)
                      .SelectMany(x => x.Stores)
                      .Select(x => x.RappiStoreId)
                      .Where(remoteStoreIds.Contains)

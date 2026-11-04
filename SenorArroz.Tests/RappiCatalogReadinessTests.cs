@@ -4,6 +4,8 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Moq;
 using SenorArroz.API.Controllers;
 using SenorArroz.Application.Common.Interfaces;
@@ -17,6 +19,39 @@ namespace SenorArroz.Tests;
 
 public sealed class RappiCatalogReadinessTests
 {
+    [Theory]
+    [InlineData("sandbox", false, 1)]
+    [InlineData("production", false, 0)]
+    [InlineData("production", true, 1)]
+    public async Task Capability_sync_preserves_menu_checks_without_activating_unapproved_production(
+        string environment, bool approved, int activationCount)
+    {
+        await using var db = RappiCatalogTestData.NewDb();
+        await RappiCatalogTestData.SeedAsync(db);
+        (await db.DeliveryAppConnections.SingleAsync()).Environment = environment;
+        await db.SaveChangesAsync();
+        var provider = new Mock<IRappiDeliveryProvider>(MockBehavior.Strict);
+        provider.Setup(x => x.TestConnectionAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiConnectionResult(true, [new RappiStoreInfo("900173116", "900173116", "Synthetic store")]));
+        provider.Setup(x => x.SetStoreIntegratedAsync("900173116", true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(true, 200));
+        provider.Setup(x => x.GetMenuApprovalAsync("900173116", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RappiOperationResult(true, 200));
+        var worker = new RappiIntegrationWorker(Mock.Of<IServiceScopeFactory>(), Options.Create(new RappiOptions
+        {
+            Environment = environment, ProductionStoreActivationApproved = approved
+        }), Mock.Of<IBackgroundWorkSignal<RappiWork>>(), Mock.Of<ILogger<RappiIntegrationWorker>>());
+
+        await (Task)typeof(RappiIntegrationWorker)
+            .GetMethod("SyncCapabilitiesAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(worker, [db, provider.Object, CancellationToken.None])!;
+
+        provider.Verify(x => x.SetStoreIntegratedAsync("900173116", true, It.IsAny<CancellationToken>()), Times.Exactly(activationCount));
+        provider.Verify(x => x.TestConnectionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        provider.Verify(x => x.GetMenuApprovalAsync("900173116", It.IsAny<CancellationToken>()), Times.Once);
+        provider.VerifyNoOtherCalls();
+    }
+
     [Theory]
     [InlineData("sandbox", false, "https://api.dev.rappi.com", "https://api.dev.rappi.com", true)]
     [InlineData("production", true, "https://api.rappi.com.co", "https://services.rappi.com", true)]
