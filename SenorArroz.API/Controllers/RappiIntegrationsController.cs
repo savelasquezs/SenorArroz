@@ -423,6 +423,40 @@ public sealed class RappiIntegrationsController(
     }
 
     [Authorize(Roles = "Superadmin, Admin")]
+    [HttpPut("api/branches/{branchId:int}/integrations/apps/rappi/menu/draft")]
+    public async Task<ActionResult<ApiResponse<object>>> SaveMenuDraft(
+        int branchId, [FromBody] RappiMenuRequest menu, CancellationToken ct)
+    {
+        if (!CanAdminister(branchId)) return Forbid();
+        await using var transaction = db.Database.IsRelational()
+            ? await db.Database.BeginTransactionAsync(ct) : null;
+        if (transaction is not null)
+            await db.DeliveryAppConnections.Where(x => x.BranchId == branchId
+                    && x.Provider == "rappi" && x.Environment == options.Environment)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.UpdatedAt, x => x.UpdatedAt), ct);
+        var connection = await ConnectionQuery().FirstOrDefaultAsync(x => x.BranchId == branchId
+            && x.Provider == "rappi" && x.Environment == options.Environment, ct);
+        if (connection is null) return NotFound();
+        if (!connection.Stores.Any(x => x.IsParent && x.RappiStoreId == menu.StoreId))
+            return BadRequest(ApiResponse<object>.ErrorResponse("El menú debe pertenecer a la tienda padre configurada."));
+        var errors = RappiCatalogMenu.Validate(menu, connection.ProductMappings);
+        if (errors.Count > 0) return BadRequest(ApiResponse<object>.ErrorResponse(string.Join(" ", errors)));
+        var drafts = await db.RappiMenuPublications.Where(x => x.ConnectionId == connection.Id && x.Status == "draft").ToListAsync(ct);
+        foreach (var previous in drafts) previous.Status = "draft_replaced";
+        var payload = RappiCatalogMenu.Snapshot(menu, connection.ProductMappings);
+        var draft = new RappiMenuPublication
+        {
+            ConnectionId = connection.Id, StoreId = menu.StoreId, Status = "draft",
+            PayloadJson = payload, PayloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant(),
+            CreatedAt = clock.UtcNow, UpdatedAt = clock.UtcNow
+        };
+        db.RappiMenuPublications.Add(draft);
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
+        return Ok(ApiResponse<object>.SuccessResponse(new { draft.Id, draft.Status, draft.PayloadHash }));
+    }
+
+    [Authorize(Roles = "Superadmin, Admin")]
     [HttpPost("api/branches/{branchId:int}/integrations/apps/rappi/menu/publish")]
     public async Task<ActionResult<ApiResponse<object>>> PublishMenu(int branchId, CancellationToken ct)
     {
@@ -449,7 +483,7 @@ public sealed class RappiIntegrationsController(
             return Conflict(ApiResponse<object>.ErrorResponse(
                 "Ya hay un menú pendiente para esta tienda. Espera su aprobación o revisa el envío incierto antes de publicar otro."));
 
-        var serialized = JsonSerializer.Serialize(build.Menu, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var serialized = RappiCatalogMenu.Snapshot(build.Menu!, build.Connection!.ProductMappings);
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(serialized))).ToLowerInvariant();
         var publication = new RappiMenuPublication
         {
@@ -1141,6 +1175,21 @@ public sealed class RappiIntegrationsController(
             .ToList();
         if (selected.Count == 0)
             return new(connection, null, "Selecciona al menos un producto para Rappi.");
+
+        var draft = await db.RappiMenuPublications.AsNoTracking()
+            .Where(x => x.ConnectionId == connection.Id && x.Status == "draft")
+            .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+        if (draft is not null)
+        {
+            RappiMenuRequest? menu;
+            try { menu = RappiCatalogMenu.Read(draft.PayloadJson); }
+            catch (JsonException) { return new(connection, null, "El borrador del menú es inválido."); }
+            if (menu is null || menu.StoreId != parent.RappiStoreId)
+                return new(connection, null, "El borrador no pertenece a la tienda padre configurada.");
+            var errors = RappiCatalogMenu.Validate(menu, selected);
+            return errors.Count > 0 ? new(connection, null, string.Join(" ", errors)) : new(connection, menu, null);
+        }
 
         var categoryPositions = selected
             .Select(x => x.Product.Category)

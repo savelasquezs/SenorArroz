@@ -39,6 +39,14 @@ La limpieza exige las variables de sesión `app.rappi_test_tenant_id`, `app.rapp
 
 ### Preparación productiva — 4 de noviembre de 2026
 
+La conexión productiva creada es `2`, tenant `1`, Santander `1`, tienda `900403973`. Las ocho variables productivas se guardaron en Railway y la barrera de activación coordinada quedó desplegada mediante PR #99. Los siete webhooks respondieron HTTP 201, se confirmaron `ENABLE` con la URL de producción y sus secretos quedaron cifrados en la conexión nueva. El receptor local sigue inactivo hasta completar la carta agrupada.
+
+El usuario pidió conservar la presentación de Partners: Especialidades con siete arroces y cinco tamaños obligatorios por arroz; Combos con dos productos y siete adiciones opcionales (máximo quince en total y cinco por opción); Acompanamientos con chicharrón y yuca corregida a doce unidades. Agregó siete gaseosas: Coca-Cola 1,5 L 10.000; Quatro 1,5 L 9.000; Premio, Manzana, Colombiana y Uva 1,5 L 8.000 cada una; Coca-Cola 3 L 15.000. Los precios son overrides del canal; los precios internos se conservan. Ranchero Familiar conserva 55.000 y el chicharrón 15.000 independiente/12.000 en combos.
+
+El catálogo simple de cincuenta y un productos internos no se envió. Se preparó un borrador agrupado con dieciocho productos visibles y cincuenta y un productos internos referenciados, preservando nombres, descripciones, fotos y posiciones de la carta. El borrador `3` quedó persistido sin publicar. La validación del helper sobre el manifiesto real devolvió cero errores.
+
+Antes de publicar se amplía la resolución de tamaños/adiciones y disponibilidad; la aprobación de la carta agrupada requiere además que `menu/rappi/{storeId}` coincida con el snapshot. El estado general `AVAILABLE` observado antes del primer envío no demuestra aprobación de una publicación nueva.
+
 Nicolás entregó las credenciales COL y confirmó la tienda Santander `900403973` por correo del 3 de noviembre, 23:30 UTC. Solicitó webhooks y menú antes de coordinar la activación. Las credenciales respondieron HTTP 200 y `stores-pa` devolvió exclusivamente `rappiId=900403973`, `integrationId=900403973`. `GET menu/rappi/900403973` respondió HTTP 200 con `items=[]`; esto describe la respuesta del recurso de integración, sin afirmar ausencia de un catálogo comercial en la app.
 
 - La preparación mantiene `Rappi__ProductionStoreActivationApproved=false`. Este permiso es independiente de `Rappi__ProductionEnabled`, que permite autenticar y configurar producción. El worker consulta tiendas/menú pero no escribe `integrated=true` sin aprobación; el proveedor también bloquea ese intento antes de cualquier solicitud HTTP.

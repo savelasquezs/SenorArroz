@@ -406,6 +406,7 @@ public sealed class RappiIntegrationWorker(
                 && x.Store.ConnectionId == x.ConnectionId
                 && x.ProductMapping.ConnectionId == x.ConnectionId
                 && x.ProductMapping.IsSelected
+                && x.ProductMapping.PublishedAt.HasValue
                 && x.Store.StoreIntegrationId != null
                 && x.Store.StoreIntegrationId.Trim() != "")
             .OrderBy(x => x.Id)
@@ -427,6 +428,29 @@ public sealed class RappiIntegrationWorker(
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList()))
             .ToList();
+        var connectionIdsForMenus = states.Select(x => x.ConnectionId).Distinct().ToList();
+        var approved = await db.RappiMenuPublications.AsNoTracking()
+            .Where(x => connectionIdsForMenus.Contains(x.ConnectionId) && x.Status == "approved")
+            .OrderByDescending(x => x.CompletedAt).ThenByDescending(x => x.Id)
+            .Select(x => new { x.ConnectionId, x.PayloadJson }).ToListAsync(ct);
+        var menus = approved.GroupBy(x => x.ConnectionId)
+            .ToDictionary(x => x.Key, x => RappiCatalogMenu.Read(x.First().PayloadJson));
+        foreach (var group in states.GroupBy(x => x.StoreId))
+        {
+            var first = group.First();
+            if (!menus.TryGetValue(first.ConnectionId, out var menu)
+                || menu is null || !menu.Items.Any(x => x.Children.Count > 0)) continue;
+            var desired = await db.RappiAvailabilityStates.AsNoTracking()
+                .Where(x => x.StoreId == first.StoreId && x.ConnectionId == first.ConnectionId
+                    && x.ProductMapping.ConnectionId == x.ConnectionId && x.ProductMapping.TenantId == x.TenantId
+                    && x.ProductMapping.IsSelected && x.ProductMapping.PublishedAt.HasValue)
+                .Select(x => new { x.ProductMapping.Sku, x.DesiredAvailable }).ToListAsync(ct);
+            var targets = RappiCatalogMenu.Availability(menu,
+                desired.ToDictionary(x => x.Sku, x => x.DesiredAvailable, StringComparer.OrdinalIgnoreCase),
+                group.Select(x => x.ProductMapping.Sku).ToHashSet(StringComparer.OrdinalIgnoreCase));
+            requests.RemoveAll(x => x.StoreIntegrationId == first.Store.StoreIntegrationId);
+            requests.Add(new RappiAvailabilityRequest(first.Store.StoreIntegrationId!, targets.TurnOn, targets.TurnOff));
+        }
         var result = await rappi.SetAvailabilityAsync(requests, ct);
         foreach (var state in states)
         {
@@ -532,6 +556,16 @@ public sealed class RappiIntegrationWorker(
             var result = await rappi.GetMenuApprovalAsync(publication.StoreId, ct);
             if (!result.Success)
                 continue;
+            using (var snapshot = JsonDocument.Parse(publication.PayloadJson))
+            {
+                if (snapshot.RootElement.TryGetProperty("posMappings", out _))
+                {
+                    var expected = RappiCatalogMenu.Read(publication.PayloadJson);
+                    var remote = await rappi.GetMenuAsync(publication.StoreId, ct);
+                    if (expected is null || !remote.Success || remote.Menu is null
+                        || !RappiCatalogMenu.Matches(expected, remote.Menu)) continue;
+                }
+            }
             var eventKey = $"MENU_APPROVED_POLL:{publication.Id}";
             if (await db.IntegrationWebhookEvents.AnyAsync(x =>
                     x.ConnectionId == publication.ConnectionId

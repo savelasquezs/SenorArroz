@@ -89,6 +89,7 @@ public interface IRappiDeliveryProvider
         CancellationToken cancellationToken);
     Task<RappiOperationResult> PublishMenuAsync(RappiMenuRequest menu, CancellationToken cancellationToken);
     Task<RappiOperationResult> GetMenuApprovalAsync(string storeId, CancellationToken cancellationToken);
+    Task<RappiMenuResult> GetMenuAsync(string storeId, CancellationToken cancellationToken);
     Task<RappiOperationResult> SetAvailabilityAsync(
         IReadOnlyCollection<RappiAvailabilityRequest> stores,
         CancellationToken cancellationToken);
@@ -133,6 +134,7 @@ public record RappiWebhookConfigurationResult(
     IReadOnlyList<string>? EnabledStoreIds = null,
     string? Error = null);
 public record RappiOperationResult(bool Success, int? StatusCode = null, string? Error = null);
+public record RappiMenuResult(bool Success, RappiMenuRequest? Menu = null, string? Error = null);
 public record RappiOrdersResult(bool Success, IReadOnlyList<string>? RawOrders = null, string? Error = null);
 public record RappiOrderEvent(string Event, DateTimeOffset EventTime, System.Text.Json.JsonElement? AdditionalInformation = null);
 public record RappiOrderEventsResult(bool Success, IReadOnlyList<RappiOrderEvent>? Events = null, string? Error = null);
@@ -147,14 +149,16 @@ public record RappiMenuRequest(string StoreId, IReadOnlyList<RappiMenuItem> Item
 
 public record RappiMenuItem(
     RappiMenuCategory Category,
-    IReadOnlyList<object> Children,
+    IReadOnlyList<RappiMenuItem> Children,
     string Name,
     string? Description,
     int Price,
     string Sku,
     int SortingPosition,
     string Type,
-    string? ImageUrl);
+    string? ImageUrl,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    int? MaxLimit = null);
 
 public record RappiMenuCategory(
     string Id,

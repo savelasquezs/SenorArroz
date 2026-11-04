@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
 
@@ -170,6 +171,22 @@ public sealed class RappiDeliveryProvider(
                 BuildUrl($"menu/approved/{Uri.EscapeDataString(storeId)}")),
             ct);
         return ToOperation(response);
+    }
+
+    public async Task<RappiMenuResult> GetMenuAsync(string storeId, CancellationToken ct)
+    {
+        var response = await SendAuthorizedAsync(() => new HttpRequestMessage(HttpMethod.Get,
+            BuildUrl($"menu/rappi/{Uri.EscapeDataString(storeId)}")), ct);
+        if (!response.Success) return new(false, Error: response.Error);
+        try
+        {
+            var menu = RappiCatalogMenu.Read(response.Body!);
+            return menu is null ? new(false, Error: "Rappi devolvió un menú inválido.") : new(true, menu);
+        }
+        catch (JsonException)
+        {
+            return new(false, Error: "Rappi devolvió un menú inválido.");
+        }
     }
 
     public async Task<RappiOperationResult> SetAvailabilityAsync(

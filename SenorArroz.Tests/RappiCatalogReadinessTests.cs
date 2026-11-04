@@ -635,6 +635,14 @@ public sealed class RappiCatalogReadinessTests
 public sealed class RappiCatalogReadinessPostgreSqlTests : RappiReadyRecoveryDatabase
 {
     [PostgreSqlIntegrationFact]
+    public async Task Grouped_sizes_and_addons_preserve_real_product_totals_and_payment_in_postgres()
+    {
+        await using var db = Db();
+        await RappiCatalogTestData.SeedRelationalAsync(db);
+        await RappiGroupedMenuTests.VerifyBusinessFlowAsync(db);
+    }
+
+    [PostgreSqlIntegrationFact]
     public async Task Availability_SQL_sends_both_stores_once_and_rechecks_disable_before_queued_retry()
     {
         await using var db = Db();

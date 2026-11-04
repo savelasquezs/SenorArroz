@@ -173,7 +173,8 @@ public record ExternalDeliveryOrderLine(
     int Quantity,
     int UnitPrice,
     string? Notes,
-    IReadOnlyList<ExternalDeliveryOrderLine>? Subitems = null);
+    IReadOnlyList<ExternalDeliveryOrderLine>? Subitems = null,
+    int? ApprovedUnitPrice = null);
 
 public record ExternalDeliveryDiscount(
     string? Title,
