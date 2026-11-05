@@ -44,7 +44,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M08-F02 | Aplicar beneficio al pedido | Pendiente | — | — | — | — |
 | M08-F03 | Configuración ciclo y niveles | Pendiente | — | — | — | — |
 | M09-F01 | Inicialización de pantalla POS | PR listo para revisión | 2026-10-21 | [Informe 2026-10-20 y seguimiento](reviews/2026-10-20-M09-F01.md) | [Vue #33](https://github.com/savelasquezs/senorArrozFront/pull/33) | Build OK; Vitest 582/582, incluidas 20 regresiones POS. Solicitud compartida por sucursal/modo, invalidación de sesión y errores reintentables. Sin merge ni despliegue; medición productiva pendiente. |
-| M09-F02 | Búsqueda y selección de productos | Pendiente | — | — | — | — |
+| M09-F02 | Búsqueda y selección de productos | PR listo para revisión | 2026-10-27 | [Informe](reviews/2026-10-27-M09-F02.md) | [Vue #51](https://github.com/savelasquezs/senorArrozFront/pull/51), [Docs #74](https://github.com/savelasquezs/SenorArroz/pull/74) | [CI frontend #40509912832](https://github.com/savelasquezs/senorArrozFront/actions/runs/40509912832) SUCCESS: build/typecheck y 963/963 pruebas (5 nuevas). Búsqueda multitérmino con un texto normalizado por candidato y selección/exclusión con Set reactivos. Sin SQL, merge, deploy ni mediciones productivas. |
 | M09-F03 | Borradores y cambio de pestañas | Pendiente | — | — | — | — |
 | M09-F04 | Cliente/dirección y cotización | Pendiente | — | — | — | — |
 | M09-F05 | Cálculo de descuentos/promociones | Pendiente | — | — | — | — |
