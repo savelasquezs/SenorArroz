@@ -21,7 +21,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M02-F05 | Estadísticas de nómina | Pendiente | — | — | — | — |
 | M03-F01 | Carga y selección de sucursales | Pendiente | — | — | — | — |
 | M03-F02 | CRUD y estadísticas sucursales | PR listo para revisión | 2026-10-21 | [Informe](reviews/2026-10-21-M03-F02.md) | [API #50](https://github.com/savelasquezs/SenorArroz/pull/50) | CI: 1142 aprobadas/1 omitida; 5/5 regresiones nuevas. PostgreSQL aislado: estadísticas de 10 sucursales, 50 COUNT → 3 SELECT agrupados; vacío → 0. Sin migración, merge ni despliegue; métricas productivas pendientes. |
-| M03-F03 | Contexto y permisos cross-branch | Pendiente | — | — | — | — |
+| M03-F03 | Contexto y permisos cross-branch | PR listo para revisión | 2026-10-25 | [Informe](reviews/2026-10-25-M03-F03.md) | [API #62](https://github.com/savelasquezs/SenorArroz/pull/62), [Docs #63](https://github.com/savelasquezs/SenorArroz/pull/63) | [Backend CI](https://github.com/savelasquezs/SenorArroz/actions/runs/40197088237) **1361/1361** y **6/6 nuevas** (PostgreSQL: un SELECT sin joins a personal); [Remote CI](https://github.com/savelasquezs/SenorArroz/actions/runs/40197088106) SUCCESS. Proyección operativa segura; aislamiento tenant y vía administrativa comprobados. Sin SQL, merge, deploy ni medición productiva. |
 | M03-F04 | Tenant RLS y contexto PostgreSQL | Pendiente | — | — | — | — |
 | M04-F01 | Horarios de atención | Pendiente | — | — | — | — |
 | M04-F02 | Barrios, zonas y cobertura | Pendiente | — | — | — | — |
