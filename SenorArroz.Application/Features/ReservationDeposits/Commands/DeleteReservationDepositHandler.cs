@@ -49,13 +49,7 @@ public class DeleteReservationDepositHandler : IRequestHandler<DeleteReservation
             if (order.Status == OrderStatus.Delivered || order.Status == OrderStatus.Cancelled)
                 throw new BusinessException("No se puede eliminar abonos de un pedido ya finalizado");
 
-            var linkedBankPayment = await _context.BankPayments
-                .FirstOrDefaultAsync(bp => bp.SourceReservationDepositId == deposit.Id, cancellationToken);
-            if (linkedBankPayment != null)
-                _context.BankPayments.Remove(linkedBankPayment);
-
-            _context.ReservationDeposits.Remove(deposit);
-            await _context.SaveChangesAsync(cancellationToken);
+            await ReservationReceiptHelper.DeleteAsync(_context, deposit, cancellationToken);
             if (tx is not null) await tx.CommitAsync(cancellationToken);
             return Unit.Value;
         }

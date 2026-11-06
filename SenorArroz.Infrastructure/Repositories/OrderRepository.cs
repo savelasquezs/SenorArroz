@@ -93,6 +93,10 @@ public class OrderRepository : IOrderRepository
                 .ThenInclude(ap => ap.App)
                     .ThenInclude(a => a.Bank)
                         .ThenInclude(b => b.Branch)
+            .Include(o => o.Deposits).ThenInclude(d => d.Bank)
+            .Include(o => o.Deposits).ThenInclude(d => d.App)
+            .Include(o => o.Deposits).ThenInclude(d => d.ReceivedBy)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
     }
 

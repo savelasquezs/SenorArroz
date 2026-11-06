@@ -18,6 +18,7 @@ public class ReservationDepositConfiguration : IEntityTypeConfiguration<Reservat
         builder.Property(d => d.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(d => d.Amount).HasColumnName("amount").HasColumnType("numeric(18,2)").IsRequired();
         builder.Property(d => d.IsEffective).HasColumnName("is_effective").IsRequired();
+        builder.Property(d => d.CashAppliedToOrder).HasColumnName("cash_applied_to_order").HasDefaultValue(false);
         builder.Property(d => d.BankId).HasColumnName("bank_id");
         builder.Property(d => d.AppId).HasColumnName("app_id");
         builder.Property(d => d.ReceivedAt).HasColumnName("received_at").IsRequired();

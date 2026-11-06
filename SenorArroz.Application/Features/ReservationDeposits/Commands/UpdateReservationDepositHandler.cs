@@ -60,24 +60,7 @@ public class UpdateReservationDepositHandler : IRequestHandler<UpdateReservation
             if (order.Status == OrderStatus.Delivered || order.Status == OrderStatus.Cancelled)
                 throw new BusinessException("No se puede modificar abonos de un pedido ya finalizado");
 
-            var totalDeposited = await _depositRepository.GetTotalDepositedByOrderAsync(order.Id, cancellationToken);
-            var totalWithoutThis = totalDeposited - deposit.Amount;
-            if (totalWithoutThis + request.Amount > order.Total)
-                throw new BusinessException(
-                    $"El total abonado ({totalWithoutThis + request.Amount:C}) supera el valor del pedido ({order.Total:C})");
-
-            deposit.Amount = request.Amount;
-
-            if (deposit.BankId.HasValue && !deposit.IsEffective && !deposit.AppId.HasValue)
-            {
-                var linkedBankPayment = await _context.BankPayments
-                    .FirstOrDefaultAsync(bp => bp.SourceReservationDepositId == deposit.Id, cancellationToken);
-
-                if (linkedBankPayment != null)
-                    linkedBankPayment.Amount = request.Amount;
-            }
-
-            await _context.SaveChangesAsync(cancellationToken);
+            await ReservationReceiptHelper.UpdateAsync(_context, deposit, request.Amount, cancellationToken);
             if (tx is not null) await tx.CommitAsync(cancellationToken);
 
             var refreshed = await _depositRepository.GetByIdAsync(deposit.Id, cancellationToken);
@@ -91,6 +74,7 @@ public class UpdateReservationDepositHandler : IRequestHandler<UpdateReservation
                 BranchId = refreshed.BranchId,
                 Amount = refreshed.Amount,
                 IsEffective = refreshed.IsEffective,
+                CashAppliedToOrder = refreshed.CashAppliedToOrder,
                 BankId = refreshed.BankId,
                 BankName = refreshed.Bank?.Name,
                 AppId = refreshed.AppId,

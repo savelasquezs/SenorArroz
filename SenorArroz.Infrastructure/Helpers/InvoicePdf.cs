@@ -142,11 +142,14 @@ public static class InvoicePdf
         bool Present(JsonElement row, string key) => row.TryGetProperty(key, out var value) && value.ValueKind != JsonValueKind.Null;
         if (order.TryGetProperty("bankPayments", out var bank))
             payments.AddRange(bank.EnumerateArray().Where(x => !Present(x, "SourceReservationDepositId")).Select(x => ("Transferencia bancaria", Number(x, "Amount"))));
-        if (order.TryGetProperty("appPayments", out var app)) payments.AddRange(app.EnumerateArray().Select(x => ("Aplicación", Number(x, "Amount"))));
+        if (order.TryGetProperty("appPayments", out var app)) payments.AddRange(app.EnumerateArray().Where(x => !Present(x, "SourceReservationDepositId")).Select(x => ("Aplicación", Number(x, "Amount"))));
         if (order.TryGetProperty("deposits", out var deposits))
             payments.AddRange(deposits.EnumerateArray().Select(x => (x.TryGetProperty("IsEffective", out var cash) && cash.ValueKind == JsonValueKind.True
                 ? "Anticipo en efectivo" : Present(x, "BankId") ? "Anticipo por transferencia" : Present(x, "AppId") ? "Anticipo por aplicación" : "Anticipo registrado", Number(x, "Amount"))));
-        payments.Add(("Efectivo en caja", Number(order, "PaidInStoreCashAmount")));
+        var appliedCash = deposits.ValueKind == JsonValueKind.Array
+            ? deposits.EnumerateArray().Where(x => x.TryGetProperty("CashAppliedToOrder", out var applied)
+                && applied.ValueKind == JsonValueKind.True).Sum(x => Number(x, "Amount")) : 0m;
+        payments.Add(("Efectivo en caja", Math.Max(0m, Number(order, "PaidInStoreCashAmount") - appliedCash)));
         return payments.Where(x => x.Amount > 0).GroupBy(x => x.Label).Select(x => (x.Key, x.Sum(v => v.Amount))).ToArray();
     }
 

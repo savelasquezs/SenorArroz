@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SenorArroz.Domain.Entities;
@@ -17,6 +17,13 @@ public class AppPaymentConfiguration : IEntityTypeConfiguration<AppPayment>
         builder.Property(ap => ap.OrderId).HasColumnName("order_id").IsRequired();
         builder.Property(ap => ap.AppId).HasColumnName("app_id").IsRequired();
         builder.Property(ap => ap.Amount).HasColumnName("amount").IsRequired();
+        builder.Property(ap => ap.SourceReservationDepositId).HasColumnName("source_reservation_deposit_id");
+        builder.HasOne<ReservationDeposit>().WithMany()
+            .HasForeignKey(ap => new { ap.TenantId, ap.SourceReservationDepositId })
+            .HasPrincipalKey(d => new { d.TenantId, d.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(ap => new { ap.TenantId, ap.SourceReservationDepositId })
+            .IsUnique().HasFilter("source_reservation_deposit_id IS NOT NULL");
         builder.Property(ap => ap.EstimatedCommissionRate).HasColumnName("estimated_commission_rate").HasPrecision(8, 6);
         builder.Property(ap => ap.EstimatedCommissionAmount).HasColumnName("estimated_commission_amount").HasPrecision(12, 2);
         builder.Property(ap => ap.ExpectedNetAmount).HasColumnName("expected_net_amount").HasPrecision(12, 2);

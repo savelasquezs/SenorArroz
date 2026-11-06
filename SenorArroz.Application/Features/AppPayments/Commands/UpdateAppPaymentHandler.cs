@@ -54,6 +54,9 @@ public class UpdateAppPaymentHandler : IRequestHandler<UpdateAppPaymentCommand, 
 
         // Validar acceso a sucursal
 
+        if (appPayment.SourceReservationDepositId.HasValue)
+            throw new BusinessException("Este pago proviene de un abono. Modifica o elimina el abono de la reserva.");
+
         // Actualizar el monto
         appPayment.Amount = request.Amount;
         

@@ -41,6 +41,7 @@ public class SetOrderPaidInStoreCashHandler : IRequestHandler<SetOrderPaidInStor
         var order = await _context.Orders
             .Include(o => o.BankPayments)
             .Include(o => o.AppPayments)
+            .Include(o => o.Deposits)
             .FirstOrDefaultAsync(o => o.Id == request.OrderId, cancellationToken);
 
         if (order == null)

@@ -106,9 +106,8 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
 
         var dtos = _mapper.Map<List<OrderDto>>(result.Items);
 
-        // Enriquecer con total abonado para pedidos de tipo reserva
+        // Conservar anticipos incluso después de convertir la reserva a domicilio/recogida.
         var reservationIds = dtos
-            .Where(d => d.Type == OrderType.Reservation)
             .Select(d => d.Id)
             .ToList();
 
@@ -127,7 +126,7 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
                 .GroupBy(d => d.OrderId)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            foreach (var dto in dtos.Where(d => d.Type == OrderType.Reservation))
+            foreach (var dto in dtos)
             {
                 if (!byOrder.TryGetValue(dto.Id, out var list))
                 {
@@ -158,6 +157,7 @@ public class SearchOrdersHandler : IRequestHandler<SearchOrdersQuery, PagedResul
         BranchId = d.BranchId,
         Amount = d.Amount,
         IsEffective = d.IsEffective,
+        CashAppliedToOrder = d.CashAppliedToOrder,
         BankId = d.BankId,
         BankName = d.Bank?.Name,
         AppId = d.AppId,

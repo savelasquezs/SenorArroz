@@ -1,4 +1,6 @@
 using AutoMapper;
+using SenorArroz.Application.Common.Helpers;
+using SenorArroz.Application.Features.CashRegister.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -28,6 +30,7 @@ public sealed class PosAtomicCreationPostgreSqlTests : IAsyncLifetime
     private int productId;
     private int giftId;
     private int bankId;
+    private int appId;
 
     private sealed record Actor(int Id, int BranchId) : ICurrentUser
     {
@@ -69,6 +72,14 @@ public sealed class PosAtomicCreationPostgreSqlTests : IAsyncLifetime
         await db.Database.ExecuteSqlRawAsync(idempotencyScript);
         await db.Database.ExecuteSqlRawAsync(
             await File.ReadAllTextAsync(FindScript("add_remote_order_management.sql")));
+
+        var receiptsScript = await File.ReadAllTextAsync(FindScript("add_reservation_receipt_payment_links.sql"));
+        await using (var migrationTx = await db.Database.BeginTransactionAsync())
+        {
+            await db.Database.ExecuteSqlRawAsync(receiptsScript);
+            await db.Database.ExecuteSqlRawAsync(receiptsScript);
+            await migrationTx.CommitAsync();
+        }
 
         // Production order_detail triggers update the order totals; this triggers
         // management_version again. Replicate this interaction in isolated tests.
@@ -118,6 +129,10 @@ public sealed class PosAtomicCreationPostgreSqlTests : IAsyncLifetime
         await db.SaveChangesAsync();
         actorId = user.Id;
         bankId = bank.Id;
+        var app = new App { BankId = bank.Id, Name = "App de prueba", Active = true };
+        db.Apps.Add(app);
+        await db.SaveChangesAsync();
+        appId = app.Id;
         var rice = new Product { CategoryId = category.Id, Name = "Arroz Paisa", Price = 35000 };
         var gift = new Product { CategoryId = category.Id, Name = "Yucas gratis", Price = 0 };
         db.Products.AddRange(rice, gift);
@@ -279,4 +294,143 @@ public sealed class PosAtomicCreationPostgreSqlTests : IAsyncLifetime
         await using var verify = Db();
         Assert.Single(await verify.Orders.Where(o => o.PosCreationKey == key).ToListAsync());
     }
+    private CreateOrderDto ReservationRequest(string key, int? cash = 5000)
+    {
+        var request = Request(key, cash: cash ?? 0);
+        request.Type = OrderType.Reservation;
+        request.ReservedFor = new Clock().UtcNow.AddDays(1);
+        request.PrepareAt = request.ReservedFor.Value.AddHours(-1);
+        request.PaidInStoreCash = cash.HasValue;
+        request.PaidInStoreCashAmount = cash;
+        request.AppPayments = [new CreateOrderAppPaymentDto { AppId = appId, Amount = 5000 }];
+        return request;
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Reservation_mixed_receipts_commit_once_and_replay_includes_deposits()
+    {
+        var key = Guid.NewGuid().ToString("D");
+        int id;
+        await using (var db = Db())
+        {
+            var dto = await Handler(db).Handle(new CreateOrderCommand { Order = ReservationRequest(key) }, default);
+            id = dto.Id;
+            Assert.Equal(OrderType.Reservation, dto.Type);
+            Assert.Equal(20000m, dto.TotalDeposited);
+            Assert.Equal(3, dto.ReservationDeposits.Count);
+            Assert.All(dto.ReservationDeposits, d => Assert.Equal(new Clock().UtcNow, d.ReceivedAt));
+            Assert.Equal(5000, dto.PaidInStoreCashAmount);
+            Assert.True(dto.ReservationDeposits.Single(d => d.IsEffective).CashAppliedToOrder);
+        }
+        await using (var db = Db())
+        {
+            var replay = await Handler(db).Handle(new CreateOrderCommand { Order = ReservationRequest(key) }, default);
+            Assert.Equal(id, replay.Id);
+            Assert.Equal(20000m, replay.TotalDeposited);
+            Assert.Equal(3, replay.ReservationDeposits.Count);
+        }
+        await using var verify = Db();
+        var order = await ReservationReceiptHelper.LoadPaymentsAsync(verify, id, default);
+        Assert.Equal(3, order.Deposits.Count);
+        Assert.NotNull(Assert.Single(order.BankPayments).SourceReservationDepositId);
+        Assert.NotNull(Assert.Single(order.AppPayments).SourceReservationDepositId);
+        Assert.Equal(15000m, OrderCashPortionHelper.GetCashPortion(order));
+        var retained = await CashRegisterUnsettledAppsHelper.LoadUnsettledForBranchAsync(verify, branchId, default);
+        Assert.Equal(5000m, retained.Total); // received now, not only after tomorrow's delivery
+        Assert.Single(await verify.Orders.Where(o => o.PosCreationKey == key).ToListAsync());
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Reservation_without_explicit_cash_never_assumes_pending_balance_received()
+    {
+        await using var db = Db();
+        var dto = await Handler(db).Handle(new CreateOrderCommand { Order = ReservationRequest(Guid.NewGuid().ToString("D"), null) }, default);
+        Assert.False(dto.PaidInStoreCash);
+        Assert.Equal(15000m, dto.TotalDeposited);
+        Assert.Equal(2, dto.ReservationDeposits.Count);
+        var order = await ReservationReceiptHelper.LoadPaymentsAsync(db, dto.Id, default);
+        Assert.Equal(20000m, OrderCashPortionHelper.GetCashPortion(order));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Invalid_reservation_coverage_rolls_back_order_lines_and_every_receipt()
+    {
+        var key = Guid.NewGuid().ToString("D");
+        await using (var db = Db())
+            await Assert.ThrowsAsync<BusinessException>(() => Handler(db).Handle(
+                new CreateOrderCommand { Order = ReservationRequest(key, 30000) }, default));
+        await using var verify = Db();
+        Assert.Empty(await verify.Orders.ToListAsync());
+        Assert.Empty(await verify.OrderDetails.ToListAsync());
+        Assert.Empty(await verify.ReservationDeposits.ToListAsync());
+        Assert.Empty(await verify.BankPayments.ToListAsync());
+        Assert.Empty(await verify.AppPayments.ToListAsync());
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Concurrent_reservation_retry_never_duplicates_receipts()
+    {
+        var key = Guid.NewGuid().ToString("D");
+        await using var first = Db();
+        await using var second = Db();
+        var results = await Task.WhenAll(
+            Handler(first).Handle(new CreateOrderCommand { Order = ReservationRequest(key) }, default),
+            Handler(second).Handle(new CreateOrderCommand { Order = ReservationRequest(key) }, default));
+        Assert.Equal(results[0].Id, results[1].Id);
+        await using var verify = Db();
+        Assert.Equal(3, await verify.ReservationDeposits.CountAsync());
+        Assert.Single(await verify.BankPayments.ToListAsync());
+        Assert.Single(await verify.AppPayments.ToListAsync());
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Editing_and_deleting_receipts_synchronizes_operational_cash_and_apps()
+    {
+        int id;
+        await using (var db = Db())
+            id = (await Handler(db).Handle(new CreateOrderCommand { Order = ReservationRequest(Guid.NewGuid().ToString("D")) }, default)).Id;
+        await using (var db = Db())
+        {
+            await using var tx = await db.Database.BeginTransactionAsync();
+            var deposits = await db.ReservationDeposits.Where(d => d.OrderId == id).ToListAsync();
+            await ReservationReceiptHelper.UpdateAsync(db, deposits.Single(d => d.IsEffective), 7000m, default);
+            await ReservationReceiptHelper.UpdateAsync(db, deposits.Single(d => d.AppId.HasValue), 6000m, default);
+            await tx.CommitAsync();
+        }
+        await using (var db = Db())
+        {
+            var order = await ReservationReceiptHelper.LoadPaymentsAsync(db, id, default);
+            Assert.Equal(7000, order.PaidInStoreCashAmount);
+            Assert.Equal(6000m, Assert.Single(order.AppPayments).Amount);
+            Assert.Equal(12000m, OrderCashPortionHelper.GetCashPortion(order));
+            await using var tx = await db.Database.BeginTransactionAsync();
+            await ReservationReceiptHelper.DeleteAsync(db, order.Deposits.Single(d => d.AppId.HasValue), default);
+            await ReservationReceiptHelper.DeleteAsync(db, order.Deposits.Single(d => d.IsEffective), default);
+            await tx.CommitAsync();
+        }
+        await using var verify = Db();
+        var saved = await ReservationReceiptHelper.LoadPaymentsAsync(verify, id, default);
+        Assert.False(saved.PaidInStoreCash);
+        Assert.Null(saved.PaidInStoreCashAmount);
+        Assert.Empty(saved.AppPayments);
+        Assert.Single(saved.Deposits);
+        Assert.Equal(25000m, OrderCashPortionHelper.GetCashPortion(saved));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task Fully_paid_cash_reservation_and_deletion_keep_zero_or_full_balance()
+    {
+        var request = ReservationRequest(Guid.NewGuid().ToString("D"), 35000);
+        request.BankPayments.Clear(); request.AppPayments.Clear();
+        await using var db = Db();
+        var dto = await Handler(db).Handle(new CreateOrderCommand { Order = request }, default);
+        Assert.Equal(35000m, dto.TotalDeposited);
+        var order = await ReservationReceiptHelper.LoadPaymentsAsync(db, dto.Id, default);
+        Assert.Equal(0m, OrderCashPortionHelper.GetCashPortion(order));
+        await using var tx = await db.Database.BeginTransactionAsync();
+        await ReservationReceiptHelper.DeleteAsync(db, Assert.Single(order.Deposits), default);
+        await tx.CommitAsync();
+        Assert.Equal(35000m, OrderCashPortionHelper.GetCashPortion(order));
+    }
+
 }

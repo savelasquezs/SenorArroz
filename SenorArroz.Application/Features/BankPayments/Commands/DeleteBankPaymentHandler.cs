@@ -48,6 +48,9 @@ public class DeleteBankPaymentHandler : IRequestHandler<DeleteBankPaymentCommand
         if (bankPayment.Bank.BranchId != order.BranchId)
             throw new BusinessException("Inconsistencia entre pedido y banco");
 
+        if (bankPayment.SourceReservationDepositId.HasValue)
+            throw new BusinessException("Este pago proviene de un abono. Elimina el abono de la reserva.");
+
         return await _bankPaymentRepository.DeleteAsync(request.Id, cancellationToken);
     }
 }

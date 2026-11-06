@@ -27,7 +27,8 @@ public static class CashRegisterUnsettledAppsHelper
             .Where(ap => !ap.IsSetted
                          && !ap.IsReversed
                          && ap.Order.BranchId == branchId
-                         && ap.Order.Status == OrderStatus.Delivered)
+                         && ap.Order.Status != OrderStatus.Cancelled
+                         && (ap.Order.Status == OrderStatus.Delivered || ap.SourceReservationDepositId.HasValue))
             .Select(ap => new
             {
                 ap.AppId,

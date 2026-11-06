@@ -1,5 +1,6 @@
 using AutoMapper;
 using SenorArroz.Application.Common.Printing;
+using SenorArroz.Application.Features.ReservationDeposits.DTOs;
 using SenorArroz.Application.Features.Orders.DTOs;
 using SenorArroz.Domain.Entities;
 
@@ -9,6 +10,11 @@ public class OrderMappingProfile : Profile
 {
     public OrderMappingProfile()
     {
+        CreateMap<ReservationDeposit, ReservationDepositDto>()
+            .ForMember(d => d.BankName, o => o.MapFrom(s => s.Bank != null ? s.Bank.Name : null))
+            .ForMember(d => d.AppName, o => o.MapFrom(s => s.App != null ? s.App.Name : null))
+            .ForMember(d => d.ReceivedByName, o => o.MapFrom(s => s.ReceivedBy != null ? s.ReceivedBy.Name : string.Empty));
+
         // Order -> OrderDto
         CreateMap<Order, OrderDto>()
             .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Branch.Name))
@@ -50,8 +56,8 @@ public class OrderMappingProfile : Profile
                 src.DeliveryRouteStop != null && src.DeliveryRouteStop.AutoDeliveredAtUtc.HasValue))
             .ForMember(dest => dest.BankPayments, opt => opt.MapFrom(src => src.BankPayments))
             .ForMember(dest => dest.AppPayments, opt => opt.MapFrom(src => src.AppPayments))
-            .ForMember(dest => dest.TotalDeposited, opt => opt.Ignore())
-            .ForMember(dest => dest.ReservationDeposits, opt => opt.Ignore())
+            .ForMember(dest => dest.TotalDeposited, opt => opt.MapFrom(src => src.Deposits.Sum(d => d.Amount)))
+            .ForMember(dest => dest.ReservationDeposits, opt => opt.MapFrom(src => src.Deposits))
             // Populated exclusively by the kitchen list handler after a scoped paged read.
             .ForMember(dest => dest.KitchenDetails, opt => opt.Ignore())
             .ForMember(dest => dest.SummaryLines, opt => opt.MapFrom(src =>

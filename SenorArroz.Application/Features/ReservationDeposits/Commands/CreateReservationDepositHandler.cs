@@ -40,6 +40,9 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
         if (!request.IsEffective && request.BankId == null && request.AppId == null)
             throw new BusinessException("Debe especificar banco o app para un abono no efectivo");
 
+        await using var tx = _context.Database.IsRelational() && _context.Database.CurrentTransaction is null
+            ? await _context.Database.BeginTransactionAsync(cancellationToken) : null;
+
         var order = await _context.Orders
             .FirstOrDefaultAsync(o => o.Id == request.OrderId, cancellationToken);
 
@@ -50,7 +53,7 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
         if (request.BankId.HasValue)
         {
             var bankBranchId = await _context.Banks
-                .Where(x => x.Id == request.BankId.Value)
+                .Where(x => x.Id == request.BankId.Value && x.Active && x.Type == BankType.Normal)
                 .Select(x => (int?)x.BranchId)
                 .FirstOrDefaultAsync(cancellationToken);
             if (bankBranchId != order.BranchId)
@@ -60,7 +63,7 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
         if (request.AppId.HasValue)
         {
             var appBranchId = await _context.Apps
-                .Where(x => x.Id == request.AppId.Value)
+                .Where(x => x.Id == request.AppId.Value && x.Active && x.Bank.Active)
                 .Select(x => (int?)x.Bank.BranchId)
                 .FirstOrDefaultAsync(cancellationToken);
             if (appBranchId != order.BranchId)
@@ -73,14 +76,13 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
         if (order.Status == OrderStatus.Delivered || order.Status == OrderStatus.Cancelled)
             throw new BusinessException("No se puede abonar a un pedido ya finalizado");
 
-        var totalDeposited = await _depositRepository.GetTotalDepositedByOrderAsync(request.OrderId, cancellationToken);
-        if (totalDeposited + request.Amount > order.Total)
-            throw new BusinessException($"El total abonado ({totalDeposited + request.Amount:C}) supera el valor del pedido ({order.Total:C})");
+        order = await ReservationReceiptHelper.LoadPaymentsAsync(_context, order.Id, cancellationToken);
 
         var deposit = new ReservationDeposit
         {
             OrderId = request.OrderId,
             BranchId = order.BranchId,
+            TenantId = order.TenantId,
             Amount = request.Amount,
             IsEffective = request.IsEffective,
             BankId = request.BankId,
@@ -90,7 +92,10 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
             Notes = request.Notes
         };
 
-        var created = await _depositRepository.CreateAsync(deposit, cancellationToken);
+        await ReservationReceiptHelper.CreateAsync(_context, order, new[] { deposit }, cancellationToken);
+        var created = await _depositRepository.GetByIdAsync(deposit.Id, cancellationToken)
+            ?? throw new BusinessException("No se pudo leer el abono registrado");
+        if (tx is not null) await tx.CommitAsync(cancellationToken);
 
         return new ReservationDepositDto
         {
@@ -99,6 +104,7 @@ public class CreateReservationDepositHandler : IRequestHandler<CreateReservation
             BranchId = created.BranchId,
             Amount = created.Amount,
             IsEffective = created.IsEffective,
+            CashAppliedToOrder = created.CashAppliedToOrder,
             BankId = created.BankId,
             BankName = created.Bank?.Name,
             AppId = created.AppId,
