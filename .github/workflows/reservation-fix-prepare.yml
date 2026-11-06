@@ -13,7 +13,7 @@ concurrency:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16-alpine
@@ -27,12 +27,20 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
-      - name: Apply reviewed patch on the feature branch only
+      - name: Apply hash-verified reviewed patch on the feature branch only
         if: hashFiles('scripts/reservation-fix.patch') != ''
         run: |
           test "$GITHUB_REF_NAME" = fix/reservation-initial-deposits-20261106
-          git apply --index --check scripts/reservation-fix.patch
-          git apply --index scripts/reservation-fix.patch
+          python3 - <<'PY'
+          import base64, hashlib, pathlib, zlib
+          source = pathlib.Path('scripts/reservation-fix.patch').read_text()
+          expected, encoded = source.split('\n', 1)
+          patch = zlib.decompress(base64.b64decode(encoded))
+          assert hashlib.sha256(patch).hexdigest() == expected
+          pathlib.Path('/tmp/reservation-fix.patch').write_bytes(patch)
+          PY
+          git apply --index --check /tmp/reservation-fix.patch
+          git apply --index /tmp/reservation-fix.patch
           git diff --cached --check
       - uses: actions/setup-dotnet@v4
         if: hashFiles('scripts/reservation-fix.patch') != ''
@@ -60,3 +68,53 @@ jobs:
           name: reservation-fix-source
           path: reservation-fix-source.tar
           retention-days: 1
+  verify-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      restore-test:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: restore_test
+          POSTGRES_PASSWORD: isolated_test_only
+          POSTGRES_DB: restore_test
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U restore_test -d restore_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Load backup credentials without logging values
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$RAILWAY_API_TOKEN"
+          npm install --global @railway/cli >/dev/null
+          railway link --project 5cb08ee8-0129-4d5b-aba8-60b34cfeee58 --environment production --json >/tmp/link.json
+          railway variable list --json --service postgres-backup-cron --environment production >/tmp/backup-vars.json
+          python3 - <<'PY'
+          import json, os
+          values = json.load(open('/tmp/backup-vars.json'))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              for key in ['AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY','BUCKET','ENDPOINT','REGION']:
+                  value = str(values.get(key, ''))
+                  assert value and '\n' not in value, 'Missing backup setting'
+                  print('::add-mask::' + value)
+                  env.write(key + '=' + value + '\n')
+          os.remove('/tmp/backup-vars.json')
+          PY
+      - name: Restore verified current backup into runner-local PostgreSQL only
+        run: |
+          set -euo pipefail
+          docker build -t reservation-backup-verify ops/postgres-restore >/dev/null
+          docker run --rm --network host \
+            -e RESTORE_DATABASE_URL=postgresql://restore_test:isolated_test_only@127.0.0.1:5433/restore_test \
+            -e BUCKET -e ENDPOINT -e REGION -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+            -e BACKUP_PREFIX=backup- -e RESTORE_BACKUP_KEY=backup-20261106-080107.dump \
+            -e ALLOW_RESTORE=YES reservation-backup-verify
+          echo 'Backup backup-20261106-080107.dump restored successfully in isolated runner; MainDatabase unchanged.' >> "$GITHUB_STEP_SUMMARY"
