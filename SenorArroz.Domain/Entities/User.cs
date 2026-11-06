@@ -20,15 +20,11 @@ public class User : TenantOwnedEntity
     // Permiso para operar como domiciliario sin modificar el rol principal.
     public bool DeliveryAppEnabled { get; set; }
     public bool CanDeliver => !IsTerminal && (Role == UserRole.Deliveryman
-        || (DeliveryAppEnabled && (Role == UserRole.Admin || Role == UserRole.Cashier)));
+        || (DeliveryAppEnabled && (Role == UserRole.Admin || Role == UserRole.Superadmin || Role == UserRole.Cashier)));
     public string? ProfileImageUrl { get; set; }
 
-    /// <summary>
-    /// Sesión exclusiva vigente para la app de domiciliarios. Los tokens sin
-    /// este identificador solo se aceptan mientras el usuario no haya iniciado
-    /// una sesión exclusiva después del despliegue de esta funcionalidad.
-    /// </summary>
     public Guid? ActiveSessionId { get; set; }
+    public Guid? ActiveDeliverySessionId { get; set; }
 
     /// <summary>Ítem de catálogo <c>expense</c> usado solo para préstamos/gastos de quincena de esta persona.</summary>
     public int? PayrollExpenseId { get; set; }

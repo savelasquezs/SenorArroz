@@ -368,9 +368,11 @@ Reglas:
 - Una ubicacion offline antigua se conserva en el recorrido, pero nunca cambia automaticamente el estado de un pedido.
 - La hora de cierre del seguimiento es una hora local de Colombia; los instantes de ubicación y sesión se persisten en UTC.
 - Un domiciliario solo puede tener una sesión laboral activa; un cambio de dispositivo cierra la anterior.
-- Un domiciliario solo puede tener una sesión autenticada vigente. Cada login nuevo reemplaza la anterior, invalida inmediatamente sus JWT/refresh tokens por `session_id` y cierra cualquier jornada laboral que estuviera activa.
-- Los usuarios distintos de domiciliario conservan el comportamiento de autenticación existente; la exclusividad por dispositivo aplica a la app de domiciliarios.
-- Un token previo al despliegue, sin `session_id`, se acepta únicamente mientras el domiciliario no haya realizado su primer login con el nuevo esquema. Esto permite desplegar el cambio sin cerrar todas las sesiones a la vez.
+- Admin y Superadmin pueden mantener una sesión del panel y una de delivery simultáneamente. Cada login reemplaza únicamente la sesión anterior de su aplicación y sus JWT/refresh dejan de ser válidos. La app conserva el rol efectivo Deliveryman y exige DeliveryAppEnabled; no obtiene permisos administrativos.
+- Entrar o salir del panel de Admin/Superadmin no cierra la jornada, la ruta ni elimina los tokens de dispositivo de delivery. Reemplazar o cerrar la sesión móvil conserva las validaciones operativas de pendientes y dispositivo existentes.
+- Los demás roles mantienen una única sesión global. Un nuevo login reemplaza el acceso anterior y cierra la jornada activa según el comportamiento existente.
+- Todo JWT debe incluir un `session_id` vigente. Los accesos móviles previos de Admin/Superadmin deben iniciar sesión otra vez después de instalar la separación; no se duplican ni reinterpretan sus credenciales anteriores.
+- Cambiar rol, permiso adicional de delivery o sucursal, o desactivar la cuenta, invalida ambas sesiones.
 - El cierre de sesión solo puede limpiar la sesión autenticada y la jornada pertenecientes al dispositivo que hace la solicitud; una sesión reemplazada no puede cerrar la jornada del dispositivo vigente.
 - Cuando el API responde `SESSION_REPLACED`, la app anterior debe detener el servicio GPS, descartar las colas locales de esa jornada y volver al login mostrando el motivo.
 - No se abre una nueva sesión laboral después de la hora de cierre configurada para la sucursal.

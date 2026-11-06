@@ -51,8 +51,8 @@ public class CreateUserHandler(IUserRepository userRepository, IPasswordService 
             finally { input.ConfirmationPassword = null; }
         }
         await UserPayrollExpenseRules.ValidatePayrollExpenseAssignmentAsync(input.PayrollExpenseId, null, db, ct);
-        if (input.DeliveryAppEnabled && input.Role is not (UserRole.Admin or UserRole.Cashier))
-            throw new BusinessException("El acceso adicional a domicilios solo aplica a administradores y cajeros.");
+        if (input.DeliveryAppEnabled && input.Role is not (UserRole.Admin or UserRole.Superadmin or UserRole.Cashier))
+            throw new BusinessException("El acceso adicional a domicilios solo aplica a administradores, superadministradores y cajeros.");
         var user = mapper.Map<User>(input);
         user.TenantId = branch.TenantId;
         user.AccountType = input.AccountType;

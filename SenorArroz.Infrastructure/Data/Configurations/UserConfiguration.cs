@@ -39,6 +39,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.DeliveryAppEnabled).HasColumnName("delivery_app_enabled").HasDefaultValue(false);
         builder.Property(u => u.ProfileImageUrl).HasColumnName("profile_image_url").HasMaxLength(2000);
         builder.Property(u => u.ActiveSessionId).HasColumnName("active_session_id");
+        builder.Property(u => u.ActiveDeliverySessionId).HasColumnName("active_delivery_session_id");
         builder.Property(u => u.PayrollExpenseId).HasColumnName("payroll_expense_id");
 
         builder.Property(u => u.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()").ValueGeneratedOnAdd()

@@ -26,6 +26,7 @@
     <None Include="../SenorArroz.Infrastructure/Scripts/rappi_connections_by_environment.sql" Link="Scripts/rappi_connections_by_environment.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../SenorArroz.Infrastructure/Scripts/cleanup_rappi_test_orders.sql" Link="Scripts/cleanup_rappi_test_orders.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../SenorArroz.Infrastructure/Scripts/fix_rappi_authoritative_totals.sql" Link="Scripts/fix_rappi_authoritative_totals.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../SenorArroz.Infrastructure/Scripts/add_admin_delivery_sessions.sql" Link="Scripts/add_admin_delivery_sessions.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

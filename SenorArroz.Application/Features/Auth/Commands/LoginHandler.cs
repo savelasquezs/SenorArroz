@@ -7,6 +7,7 @@ using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Auth.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Helpers;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Domain.Interfaces.Services;
@@ -61,7 +62,6 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 _deliveryAppVersionPolicy.EnsureCompatible(request.DeliveryAppVersion);
             }
 
-            // La sesión es global, no por aplicación.
             var sessionId = Guid.NewGuid();
             var deviceInstallationId = isDeliveryAppLogin
                 ? NormalizeDeviceId(request.DeviceInstallationId)
@@ -73,9 +73,22 @@ namespace SenorArroz.Application.Features.Auth.Commands
             var trackedUser = await _db.Users.FirstAsync(
                     candidate => candidate.Id == user.Id && candidate.Active,
                     cancellationToken);
+            var separateDeliverySession = UserSessionRules.HasSeparateDeliverySession(trackedUser);
+            if (isDeliveryAppLogin && separateDeliverySession)
+            {
+                trackedUser.ActiveDeliverySessionId = sessionId;
+                user.ActiveDeliverySessionId = sessionId;
+            }
+            else
+            {
                 trackedUser.ActiveSessionId = sessionId;
                 user.ActiveSessionId = sessionId;
+                if (!separateDeliverySession)
+                    trackedUser.ActiveDeliverySessionId = user.ActiveDeliverySessionId = null;
+            }
 
+            if (isDeliveryAppLogin || !separateDeliverySession)
+            {
                 var activeWorkSessions = await _db.DeliveryWorkSessions
                     .Where(candidate => candidate.DeliverymanId == user.Id
                                         && candidate.Status == DeliveryWorkSessionStatus.Active)
@@ -87,12 +100,8 @@ namespace SenorArroz.Application.Features.Auth.Commands
                     .Where(candidate => candidate.UserId == user.Id)
                     .ToListAsync(cancellationToken);
                 _db.UserDeviceTokens.RemoveRange(previousDeviceTokens);
-
-                // session_id reemplaza cualquier JWT anterior (incluidos los web).
-                await _db.SaveChangesAsync(cancellationToken);
-
-            // session_id invalida JWT y refresh anteriores sin revocaciones
-            // masivas que puedan interferir con un login simultáneo.
+            }
+            await _db.SaveChangesAsync(cancellationToken);
 
             var accessToken = isDeliveryAppLogin && !isDeliveryman
                 ? _jwtService.GenerateAccessToken(user, sessionId, deviceInstallationId, "Deliveryman")

@@ -4,6 +4,7 @@ using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Helpers;
 using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Application.Features.Auth.Commands
@@ -37,12 +38,17 @@ namespace SenorArroz.Application.Features.Auth.Commands
                 return false;
             if (refreshToken.UserId != _actor.Id || refreshToken.TenantId != _actor.TenantId)
                 throw new UnauthorizedAccessException();
+            if (_actor.SessionId.HasValue && refreshToken.SessionId != _actor.SessionId)
+                throw new UnauthorizedAccessException();
 
             await using var transaction = _db.Database.IsRelational() && _db.Database.CurrentTransaction is null
                 ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
             await DeliveryRouteScope.LockDriversAsync(_db, [refreshToken.UserId], cancellationToken);
             var owner = await _db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == refreshToken.UserId, cancellationToken);
-            if (owner is not null && owner.ActiveSessionId == refreshToken.SessionId)
+            var isDeliverySession = owner is not null && (!UserSessionRules.HasSeparateDeliverySession(owner)
+                || owner.ActiveDeliverySessionId == refreshToken.SessionId);
+            if (owner is not null && refreshToken.SessionId.HasValue && isDeliverySession
+                && UserSessionRules.GetSessionId(owner, true) == refreshToken.SessionId)
             {
                 await _operations.CompleteActiveAsync("logout", null, cancellationToken);
                 var sessions = await _db.DeliveryWorkSessions.Where(s => s.DeliverymanId == owner.Id

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Helpers;
 using Microsoft.Extensions.Logging;
 using SenorArroz.Application.Options;
 using SenorArroz.Application.Features.DeliveryRouting.Services;
@@ -23,8 +24,9 @@ public static class DeliveryRouteScope
 
     public static async Task EnsureCurrentSessionAsync(IApplicationDbContext db, ICurrentUser actor, CancellationToken ct)
     {
-        if (actor.SessionId.HasValue && await db.Users.AsNoTracking().Where(u => u.Id == actor.Id)
-            .Select(u => u.ActiveSessionId).SingleOrDefaultAsync(ct) != actor.SessionId)
+        if (actor.SessionId.HasValue && !await db.Users.AsNoTracking().Where(u => u.Id == actor.Id)
+            .AnyAsync(UserSessionRules.CurrentSession(actor.SessionId,
+                string.Equals(actor.Role, "Deliveryman", StringComparison.OrdinalIgnoreCase)), ct))
             throw new SenorArroz.Domain.Exceptions.SessionReplacedException();
     }
 

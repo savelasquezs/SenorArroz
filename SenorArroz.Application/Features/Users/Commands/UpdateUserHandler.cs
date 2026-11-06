@@ -7,6 +7,7 @@ using SenorArroz.Application.Features.Users;
 using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Helpers;
 using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Application.Features.Users.Commands
@@ -65,10 +66,10 @@ namespace SenorArroz.Application.Features.Users.Commands
             _mapper.Map(request.UserData, existingUser); // AccountType es inmutable y está excluido del mapping.
             if (request.UserData.DeliveryAppEnabled.HasValue)
                 existingUser.DeliveryAppEnabled = request.UserData.DeliveryAppEnabled.Value;
-            if (existingUser.Role is not (UserRole.Admin or UserRole.Cashier))
+            if (existingUser.Role is not (UserRole.Admin or UserRole.Superadmin or UserRole.Cashier))
             {
                 if (request.UserData.DeliveryAppEnabled == true)
-                    throw new BusinessException("Solo administradores y cajeros pueden usar la app de domicilios como rol adicional.");
+                    throw new BusinessException("Solo administradores, superadministradores y cajeros pueden usar la app de domicilios como rol adicional.");
                 existingUser.DeliveryAppEnabled = false;
             }
             if (existingUser.Role == UserRole.Kitchen)
@@ -92,7 +93,8 @@ namespace SenorArroz.Application.Features.Users.Commands
                 existingUser.BranchId = newBranchId;
             }
             if (previousRole != existingUser.Role || previousDeliveryAppEnabled != existingUser.DeliveryAppEnabled
-                || previousBranchId != existingUser.BranchId) existingUser.ActiveSessionId = null;
+                || previousBranchId != existingUser.BranchId || !existingUser.Active)
+                UserSessionRules.Invalidate(existingUser);
             await _userRepository.UpdateAsync(existingUser, cancellationToken);
             return _mapper.Map<UserDto>((await _userRepository.GetByIdAsync(request.UserId, cancellationToken))!);
         }

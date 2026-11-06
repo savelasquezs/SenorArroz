@@ -4,6 +4,7 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Auth.DTOs;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Helpers;
 using SenorArroz.Domain.Exceptions;
 using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Domain.Interfaces.Services;
@@ -74,7 +75,7 @@ namespace SenorArroz.Application.Features.Auth.Commands
             }
 
             if (!sessionId.HasValue
-                || user.ActiveSessionId != sessionId
+                || UserSessionRules.GetSessionId(user, isDeliveryAppClient) != sessionId
                 || refreshToken.SessionId != sessionId)
                 throw new SessionReplacedException();
 

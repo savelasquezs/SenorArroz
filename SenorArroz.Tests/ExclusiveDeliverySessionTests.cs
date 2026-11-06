@@ -437,6 +437,7 @@ public class ExclusiveDeliverySessionTests
 
     [Theory]
     [InlineData(UserRole.Admin)]
+    [InlineData(UserRole.Superadmin)]
     [InlineData(UserRole.Cashier)]
     public async Task Login_DeliveryEnabledStaff_UsesDeliveryRoleWithoutMutatingPrimaryRole(UserRole role)
     {
@@ -493,7 +494,7 @@ public class ExclusiveDeliverySessionTests
         Assert.Equal(role, (await db.Users.SingleAsync()).Role);
         Assert.True((await db.Users.SingleAsync()).DeliveryAppEnabled);
         Assert.NotNull(created?.SessionId);
-        Assert.Equal((await db.Users.SingleAsync()).ActiveSessionId, created!.SessionId);
+        Assert.Equal(SenorArroz.Domain.Helpers.UserSessionRules.GetSessionId(await db.Users.SingleAsync(), true), created!.SessionId);
         refresh.Verify(x => x.RevokeAllByUserIdAsync(
             31, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         policy.Verify(x => x.EnsureCompatible(It.IsAny<DeliveryAppClientVersion?>()), Times.Once);

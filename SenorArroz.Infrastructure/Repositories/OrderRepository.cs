@@ -752,7 +752,7 @@ public class OrderRepository : IOrderRepository
             throw new BusinessException($"El pedido debe estar en estado 'Ready', 'OnTheWay' o 'Delivered' para asignar/cambiar domiciliario. Estado actual: {order.Status}");
 
         if (!await _context.Users.AsNoTracking().AnyAsync(u => u.Id == deliveryManId
-                && u.Active && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier)))
+                && u.Active && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled && (u.Role == UserRole.Admin || u.Role == UserRole.Superadmin || u.Role == UserRole.Cashier)))
                 && u.BranchId == order.BranchId && u.TenantId == order.TenantId, cancellationToken))
             throw new BusinessException("El domiciliario debe estar activo y pertenecer a la sucursal que despacha el pedido.");
         if (order.Status != OrderStatus.Delivered && await _context.EmployeeLunches.AsNoTracking()

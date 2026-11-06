@@ -159,9 +159,10 @@ Notas:
 - `BranchInformalLoan.bank_id` es opcional y referencia un banco del mismo tenant; `null` significa efectivo. `CashClosureBankReconciliation.informal_loan_deduction` conserva la deducción acumulada absorbida por cada cierre.
 - `Branch` contiene la configuración operativa del seguimiento de domiciliarios: hora local de cierre, frecuencias, permanencias, tolerancia geográfica y retenciones.
 - `User` debe quedar asociado a tenant aunque sea superadmin. Si hay superadmin global, documentar excepción.
-- `User.ActiveSessionId` contiene la sesión exclusiva vigente de un domiciliario.
+- `User.ActiveSessionId` contiene la sesión del panel para Admin/Superadmin y la sesión global para los demás roles. `User.ActiveDeliverySessionId` (`user.active_delivery_session_id`) conserva la sesión móvil independiente únicamente para Admin/Superadmin.
 - `User.WebAccessEnabled` (`user.web_access_enabled`) permite excepcionalmente a un domiciliario usar el portal web. Los domiciliarios quedan deshabilitados al crearse o al cambiar a ese rol; los demás roles conservan el valor activo.
-- `RefreshToken.SessionId` vincula cada refresh token con la sesión que lo creó. Un token anterior puede conservarse para auditoría, pero deja de ser válido cuando no coincide con `User.ActiveSessionId`.
+- `RefreshToken.SessionId` vincula cada refresh token con la sesión que lo creó. La validación elige el identificador vigente según rol persistido y rol efectivo firmado; cambiar headers no convierte una sesión móvil en administrativa.
+- Ejecutar `SenorArroz.Infrastructure/Scripts/add_admin_delivery_sessions.sql` antes de desplegar esta separación. Es aditivo e idempotente, sin backfill de sesiones ni cambios de permisos. Los Admin/Superadmin con sesión móvil previa deben autenticarse nuevamente; el panel existente conserva su identificador.
 - El esquema de sesión exclusiva se instala con el script idempotente `SenorArroz.Infrastructure/Scripts/add_exclusive_delivery_sessions.sql`, que debe ejecutarse antes de desplegar el backend que usa estas columnas.
 - En Railway, abrir Bash desde la raíz del backend, ejecutar `railway connect MainDatabase` y, dentro de `psql`, ejecutar `\i SenorArroz.Infrastructure/Scripts/add_exclusive_delivery_sessions.sql`.
 

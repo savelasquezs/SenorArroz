@@ -44,11 +44,11 @@ public sealed class DeliverymanAvailabilityService : IDeliverymanAvailabilitySer
         var sessions = await DeliveryRouteScope.ActiveSessions(_db, branchId, nowUtc).AsNoTracking()
             .Where(s => _db.Users.Any(u => u.Id == s.DeliverymanId && u.BranchId == branchId && u.Active
                 && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled
-                    && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier)))))
+                    && (u.Role == UserRole.Admin || u.Role == UserRole.Superadmin || u.Role == UserRole.Cashier)))))
             .ToListAsync(ct);
         var couriers = await _db.Users.AsNoTracking().Where(u => u.BranchId == branchId && u.Active
             && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled
-                && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier))))
+                && (u.Role == UserRole.Admin || u.Role == UserRole.Superadmin || u.Role == UserRole.Cashier))))
             .Select(u => new { u.Id, u.Name }).ToListAsync(ct);
         var offDuty = couriers.Where(u => sessions.All(s => s.DeliverymanId != u.Id))
             .Select(u => new DeliveryCourierAvailability(u.Id, u.Name, 0, "offDuty", null, [], null, null,
