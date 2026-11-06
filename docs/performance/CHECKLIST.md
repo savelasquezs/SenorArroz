@@ -47,7 +47,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M09-F02 | Búsqueda y selección de productos | Pendiente | — | — | — | — |
 | M09-F03 | Borradores y cambio de pestañas | Pendiente | — | — | — | — |
 | M09-F04 | Cliente/dirección y cotización | Pendiente | — | — | — | — |
-| M09-F05 | Cálculo de descuentos/promociones | Pendiente | — | — | — | — |
+| M09-F05 | Cálculo de descuentos/promociones | Analizado (PR borrador: CI pendiente) | 2026-11-05 | [Informe](reviews/2026-11-05-M09-F05.md) | [Vue #67](https://github.com/savelasquezs/senorArrozFront/pull/67) | Caché de fallo HTTP en ciclo de fidelización se confundía con lista vacía válida; corrección y regresión en rama; verificar CI frontend y QA antes de declarar listo. Sin SQL, merge, deploy ni métricas productivas. |
 | M09-F06 | Selección de pagos y total | Pendiente | — | — | — | — |
 | M09-F07 | Guardar pedido y notificaciones | Pendiente | — | — | — | — |
 | M10-F01 | Cargar listado del día | Implementado | 2026-10-13 | [Informe 2026-10-13](reviews/2026-10-13-M10-F01.md) | [API #23](https://github.com/savelasquezs/SenorArroz/pull/23) (`e681ae5`), [Vue #17](https://github.com/savelasquezs/senorArrozFront/pull/17) (`1fb28cf`) | CI: 869/869 backend; PostgreSQL COUNT verificado; 854/15 omitidas y 3/3 remoto; Vue 487/487. Railway API y Vue SUCCESS. Sin migración. Pendiente prueba funcional y medición real antes de Validado. |
