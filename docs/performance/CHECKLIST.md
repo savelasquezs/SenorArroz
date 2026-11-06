@@ -54,7 +54,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M10-F02 | Búsquedas, filtros y paginación | Pendiente | — | — | — | — |
 | M10-F03 | Detalle e historial de pedido | Pendiente | — | — | — | — |
 | M10-F04 | Editar datos, productos y precios | Pendiente | — | — | — | — |
-| M10-F05 | Modificar estados | Pendiente | — | — | — | — |
+| M10-F05 | Modificar estados de pedido | PR listo para revisión | 2026-11-04 | [Informe](reviews/2026-11-04-M10-F05.md) | [Vue #66](https://github.com/savelasquezs/senorArrozFront/pull/66), [Docs #98](https://github.com/savelasquezs/SenorArroz/pull/98) | Bloquea PUT superpuestos por pedido en el detalle/modal. [Vue CI #41835037435](https://github.com/savelasquezs/senorArrozFront/actions/runs/41835037435) SUCCESS: build y 1.028/1.028 pruebas (4 nuevas). CI documental final por verificar; sin SQL, merge, despliegue ni métricas productivas. |
 | M10-F06 | Cancelar/descancelar | Pendiente | — | — | — | — |
 | M10-F07 | Cambiar asignación domiciliario | Pendiente | — | — | — | — |
 | M10-F08 | Pagos y reimpresión | Pendiente | — | — | — | — |
