@@ -53,10 +53,15 @@ public class GetBanksHandler : IRequestHandler<GetBanksQuery, PagedResult<BankDt
         {
             var bankDto = _mapper.Map<BankDto>(bank);
 
-            // Add additional data
-            bankDto.TotalApps = await _bankRepository.GetTotalAppsAsync(bank.Id, cancellationToken);
-            bankDto.ActiveApps = await _bankRepository.GetActiveAppsAsync(bank.Id, cancellationToken);
-            bankDto.CurrentBalance = await _bankRepository.GetCurrentBalanceAsync(bank.Id, cancellationToken);
+            // The POS only needs bank identity/availability. Avoid the per-bank
+            // statistics and balance queries for the order-creation picker.
+            // Administrative lists retain their complete statistics.
+            if (!request.ForOrderCreation)
+            {
+                bankDto.TotalApps = await _bankRepository.GetTotalAppsAsync(bank.Id, cancellationToken);
+                bankDto.ActiveApps = await _bankRepository.GetActiveAppsAsync(bank.Id, cancellationToken);
+                bankDto.CurrentBalance = await _bankRepository.GetCurrentBalanceAsync(bank.Id, cancellationToken);
+            }
 
             bankDtos.Add(bankDto);
         }
