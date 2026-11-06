@@ -224,6 +224,13 @@ public class OrderRepository : IOrderRepository
             // Save the parent and surviving lines before deleting removed lines.
             // Deleting order_detail fires a trigger that updates order.management_version;
             // doing it first invalidates the parent's EF concurrency token in this same request.
+            // Receipt updates can leave another instance of this parent tracked. The
+            // aggregate passed here comes from AsNoTrackingWithIdentityResolution;
+            // detach the stale tracked parent before attaching this edited graph.
+            var trackedOrder = _context.Orders.Local.FirstOrDefault(x => x.Id == order.Id);
+            if (trackedOrder is not null && !ReferenceEquals(trackedOrder, order))
+                _context.Entry(trackedOrder).State = EntityState.Detached;
+
             _context.Orders.Update(order);
             await _context.SaveChangesAsync(cancellationToken);
 
