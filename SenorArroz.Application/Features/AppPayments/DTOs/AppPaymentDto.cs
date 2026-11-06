@@ -12,6 +12,7 @@ public class AppPaymentDto
     public int BranchId { get; set; }
     public string BranchName { get; set; } = string.Empty;
     public decimal Amount { get; set; }
+    public int? SourceReservationDepositId { get; set; }
     public decimal? EstimatedCommissionRate { get; set; }
     public decimal? EstimatedCommissionAmount { get; set; }
     public decimal? ExpectedNetAmount { get; set; }

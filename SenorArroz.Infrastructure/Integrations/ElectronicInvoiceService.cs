@@ -246,9 +246,9 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
         order = new { order.Id, order.CustomerId, order.Total, order.Subtotal, order.DiscountTotal,
             order.DeliveryFee, order.PaidInStoreCashAmount,
             lines = order.OrderDetails.Select(x => new { x.ProductId, name = x.Product.Name, x.Quantity, x.UnitPrice, x.Discount }),
-            bankPayments = order.BankPayments.Select(x => new { x.BankId, x.Amount, x.SourceReservationDepositId }),
-            appPayments = order.AppPayments.Select(x => new { x.AppId, x.Amount }),
-            deposits = order.Deposits.Select(x => new { x.Amount, x.IsEffective, x.BankId, x.AppId }) }
+            bankPayments = order.BankPayments.Where(x => !x.IsAppSettlement).Select(x => new { x.BankId, x.Amount, x.SourceReservationDepositId }),
+            appPayments = order.AppPayments.Where(x => !x.IsReversed).Select(x => new { x.AppId, x.Amount, x.SourceReservationDepositId }),
+            deposits = order.Deposits.Select(x => new { x.Amount, x.IsEffective, x.BankId, x.AppId, x.CashAppliedToOrder }) }
     });
 
     public static string BuildInvoicePayload(Order order, BillingRecipientDto recipient, ElectronicInvoiceIntegration integration, string prefix, long number, DateTime now)
@@ -289,12 +289,13 @@ public sealed class ElectronicInvoiceService(ApplicationDbContext db, IEnumerabl
             customer["identification_number"] = nit.Number;
             customer["dv"] = nit.VerificationDigit;
         }
-        var bankPaid = order.BankPayments.Where(x => x.SourceReservationDepositId is null).Sum(x => x.Amount)
+        var bankPaid = order.BankPayments.Where(x => x.SourceReservationDepositId is null && !x.IsAppSettlement).Sum(x => x.Amount)
             + order.Deposits.Where(x => !x.IsEffective && x.BankId.HasValue).Sum(x => x.Amount);
-        var cashPaid = (order.PaidInStoreCashAmount ?? 0) + order.Deposits.Where(x => x.IsEffective).Sum(x => x.Amount);
-        var appPaid = order.AppPayments.Sum(x => x.Amount) + order.Deposits.Where(x => !x.IsEffective && x.AppId.HasValue).Sum(x => x.Amount);
-        var registeredPaid = (order.PaidInStoreCashAmount ?? 0) + order.BankPayments.Where(x => x.SourceReservationDepositId is null).Sum(x => x.Amount)
-            + order.AppPayments.Sum(x => x.Amount) + order.Deposits.Sum(x => x.Amount);
+        var cashPaid = (order.PaidInStoreCashAmount ?? 0)
+            + order.Deposits.Where(x => x.IsEffective && !x.CashAppliedToOrder).Sum(x => x.Amount);
+        var appPaid = order.AppPayments.Where(x => x.SourceReservationDepositId is null && !x.IsReversed).Sum(x => x.Amount)
+            + order.Deposits.Where(x => !x.IsEffective && x.AppId.HasValue).Sum(x => x.Amount);
+        var registeredPaid = bankPaid + cashPaid + appPaid;
         var payload = new JsonObject
         {
             ["prefix"] = prefix, ["number"] = number, ["resolution"] = integration.Resolution,

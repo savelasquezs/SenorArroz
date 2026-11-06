@@ -10,8 +10,8 @@ public static class OrderPaidInStoreCashHelper
     /// </summary>
     public static int ComputePaidInStoreCashCap(Order order)
     {
-        var bank = order.BankPayments?.Sum(bp => bp.Amount) ?? 0m;
-        var app = order.AppPayments?.Sum(ap => ap.Amount) ?? 0m;
+        var bank = order.BankPayments?.Where(bp => !bp.IsAppSettlement).Sum(bp => bp.Amount) ?? 0m;
+        var app = order.AppPayments?.Where(ap => !ap.IsReversed).Sum(ap => ap.Amount) ?? 0m;
         var raw = (decimal)order.Total - bank - app;
         return (int)Math.Round(Math.Max(0m, raw), MidpointRounding.AwayFromZero);
     }
@@ -29,6 +29,10 @@ public static class OrderPaidInStoreCashHelper
         DateTime utcNow,
         int? explicitPaidInStoreCashAmount = null)
     {
+        var receiptCash = order.Deposits.Where(d => d.IsEffective && d.CashAppliedToOrder).Sum(d => d.Amount);
+        if (receiptCash > 0 && (!paidInStoreCash || explicitPaidInStoreCashAmount < receiptCash))
+            throw new BusinessException("El efectivo incluye abonos de reserva. Modifica o elimina primero el abono correspondiente.");
+
         if (!paidInStoreCash)
         {
             order.PaidInStoreCash = false;

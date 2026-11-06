@@ -7,6 +7,7 @@ public class ReservationDepositDto
     public int BranchId { get; set; }
     public decimal Amount { get; set; }
     public bool IsEffective { get; set; }
+    public bool CashAppliedToOrder { get; set; }
     public int? BankId { get; set; }
     public string? BankName { get; set; }
     public int? AppId { get; set; }

@@ -616,3 +616,7 @@ add_email_delivery_tracking.sql incorpora delivery_status, delivery_event_at, de
 
 ## DELIVERY-2026-10
 User.delivery_context_version/last_delivery_take_id ordenan el contexto. DeliveryRoute.closure_source distingue cierre operativo. Order.delivery_completion_source distingue entregas observadas/inferidas. Los recibos viven en entity_audit_log (delivery_operation, usuario, UUID) bajo índice único tenant-owned, sin caducidad automática. Scripts add_delivery_operations.sql y enforce_delivery_route_uniqueness.sql; preflight obligatorio, sin borrado de historia.
+
+## Abonos iniciales de reservas (2026-11-06)
+
+`add_reservation_receipt_payment_links.sql` es aditivo y debe aplicarse antes del backend. `app_payment.source_reservation_deposit_id` vincula un pago operativo con su abono del mismo tenant; es único cuando no es NULL. `reservation_deposit.cash_applied_to_order` distingue el efectivo ya incorporado al snapshot del pedido. Sus valores legacy son NULL/false: no se reconstruyen ni reclasifican movimientos históricos.

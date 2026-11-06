@@ -690,3 +690,7 @@ GET /api/deliverymen/map devuelve pedidos de domicilio en camino/entregados del 
 
 La disponibilidad del POS usa la sucursal operativa del borrador. La consulta forOrderCreation exige rol de gestión y sucursal activa del mismo tenant; el catálogo de productos compartido conserva sus recetas y se cruza con los saldos de esa sede. Las consultas administrativas conservan su alcance anterior.
 
+
+## Abonos iniciales del POS
+
+Al crear una reserva, los medios recibidos del sidebar se guardan como `ReservationDeposit` dentro de la misma transacción e idempotencia del pedido. La fecha/usuario/tenant/sucursal se resuelven en servidor. No se presume recibido el saldo pendiente sin marcar efectivo. Los pagos operativos enlazados no son ingresos nuevos: bancos/apps y efectivo conservan compatibilidad con entrega y liquidación. Al editar/eliminar un abono se sincroniza su representación; un abono de app liquidado no se elimina ni modifica. El cobro es total menos cobertura única, incluyendo efectivo parcial y excluyendo movimientos de liquidación. La contabilidad conserva `ReceivedAt`, también al preparar/entregar. No hay backfill de pagos anteriores.

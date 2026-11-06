@@ -1,4 +1,4 @@
-﻿using SenorArroz.Domain.Entities.Common;
+using SenorArroz.Domain.Entities.Common;
 
 namespace SenorArroz.Domain.Entities;
 
@@ -7,6 +7,8 @@ public class AppPayment : TenantOwnedEntity
     public int OrderId { get; set; }
     public int AppId { get; set; }
     public decimal Amount { get; set; }
+    /// <summary>Abono de reserva que originó este pago; no es un segundo ingreso.</summary>
+    public int? SourceReservationDepositId { get; set; }
     public decimal? EstimatedCommissionRate { get; set; }
     public decimal? EstimatedCommissionAmount { get; set; }
     public decimal? ExpectedNetAmount { get; set; }

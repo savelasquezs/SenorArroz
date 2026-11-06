@@ -16,6 +16,9 @@ public class ReservationDeposit : TenantOwnedEntity
     /// <summary>true = efectivo, false = banco o app</summary>
     public bool IsEffective { get; set; }
 
+    /// <summary>Este abono ya está incluido en PaidInStoreCashAmount del pedido.</summary>
+    public bool CashAppliedToOrder { get; set; }
+
     /// <summary>Banco que recibió el pago (si IsEffective = false y no es app)</summary>
     public int? BankId { get; set; }
 

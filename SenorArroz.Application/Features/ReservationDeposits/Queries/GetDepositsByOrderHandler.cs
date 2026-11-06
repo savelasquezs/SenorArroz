@@ -41,6 +41,7 @@ public class GetDepositsByOrderHandler : IRequestHandler<GetDepositsByOrderQuery
             BranchId = d.BranchId,
             Amount = d.Amount,
             IsEffective = d.IsEffective,
+            CashAppliedToOrder = d.CashAppliedToOrder,
             BankId = d.BankId,
             BankName = d.Bank?.Name,
             AppId = d.AppId,

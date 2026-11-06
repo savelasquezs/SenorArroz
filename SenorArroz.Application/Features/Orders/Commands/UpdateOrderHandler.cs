@@ -80,7 +80,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
             throw new BusinessException("No tienes permisos para modificar los productos de este pedido");
 
         if (request.Order.DeleteReservationAssociatedPayments && existingOrder.Type == OrderType.Reservation)
-            await DeleteReservationAssociatedPaymentsAsync(existingOrder.Id, cancellationToken);
+            await DeleteReservationAssociatedPaymentsAsync(existingOrder, cancellationToken);
 
         var beforeReservedFor = existingOrder.ReservedFor;
         var beforePrepareAt = existingOrder.PrepareAt;
@@ -392,8 +392,25 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         return ScheduleKindUpdated;
     }
 
-    private async Task DeleteReservationAssociatedPaymentsAsync(int orderId, CancellationToken cancellationToken)
+    private async Task DeleteReservationAssociatedPaymentsAsync(Order order, CancellationToken cancellationToken)
     {
+        var orderId = order.Id;
+        var appliedReceipts = await _db.ReservationDeposits
+            .Where(d => d.OrderId == orderId && (d.CashAppliedToOrder || d.AppId.HasValue))
+            .ToListAsync(cancellationToken);
+        foreach (var receipt in appliedReceipts)
+            await ReservationReceiptHelper.DeleteAsync(_db, receipt, cancellationToken);
+        if (appliedReceipts.Any(d => d.CashAppliedToOrder))
+        {
+            var refreshed = await _db.ReloadOrderForManagementAsync(orderId, cancellationToken);
+            if (refreshed is not null)
+            {
+                order.PaidInStoreCash = refreshed.PaidInStoreCash;
+                order.PaidInStoreCashAmount = refreshed.PaidInStoreCashAmount;
+                order.PaidInStoreCashAt = refreshed.PaidInStoreCashAt;
+                order.ManagementVersion = refreshed.ManagementVersion;
+            }
+        }
         var bankPayments = await _bankPaymentRepository.GetByOrderIdAsync(orderId, cancellationToken);
         foreach (var bankPayment in bankPayments)
             await _bankPaymentRepository.DeleteAsync(bankPayment.Id, cancellationToken);

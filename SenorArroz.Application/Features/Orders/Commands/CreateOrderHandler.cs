@@ -249,48 +249,57 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
                     createdOrder, deferReservation, $"order:{createdOrder.Id}:taken", cancellationToken);
             }
 
-            // Batch insert de pagos: un único SaveChangesAsync en lugar de N roundtrips.
-            var bankPayments = request.Order.BankPayments?
-                .Select(bp => new Domain.Entities.BankPayment
-                {
-                    OrderId = createdOrder.Id,
-                    BankId = bp.BankId,
-                    Amount = bp.Amount,
-                    IsVerified = false
-                }).ToList() ?? [];
-
-            var appPayments = request.Order.AppPayments?
-                .Select(ap => new Domain.Entities.AppPayment
-                {
-                    OrderId = createdOrder.Id,
-                    AppId = ap.AppId,
-                    Amount = ap.Amount,
-                    IsSetted = false
-                }).ToList() ?? [];
-
-            if (bankPayments.Count > 0) _db.BankPayments.AddRange(bankPayments);
-            if (appPayments.Count > 0) _db.AppPayments.AddRange(appPayments);
-            if (bankPayments.Count > 0 || appPayments.Count > 0)
-                await _db.SaveChangesAsync(cancellationToken);
-
-            if (request.Order.PaidInStoreCash)
+            if (createdOrder.Type == OrderType.Reservation)
             {
-                // order_detail triggers update totals AND bump management_version.
-                // EF's tracked creation snapshot is now stale. Refresh original
-                // concurrency values after the triggers, before updating cash.
-                var refreshed = await _db.ReloadOrderForManagementAsync(createdOrder.Id, cancellationToken);
-                if (refreshed is null)
-                    throw new BusinessException("Pedido no encontrado tras crear");
+                await ReservationReceiptHelper.CreateInitialAsync(
+                    _db, createdOrder.Id, request.Order, _currentUser.Id, _clock.UtcNow, cancellationToken);
+            }
+            else
+            {
+                // Batch insert de pagos: un único SaveChangesAsync en lugar de N roundtrips.
+                var bankPayments = request.Order.BankPayments?
+                    .Select(bp => new Domain.Entities.BankPayment
+                    {
+                        OrderId = createdOrder.Id,
+                        BankId = bp.BankId,
+                        Amount = bp.Amount,
+                        IsVerified = false
+                    }).ToList() ?? [];
 
-                var tracked = await _db.Orders
-                    .Include(o => o.BankPayments)
-                    .Include(o => o.AppPayments)
-                    .FirstOrDefaultAsync(o => o.Id == createdOrder.Id, cancellationToken)
-                    ?? throw new BusinessException("Pedido no encontrado tras crear");
+                var appPayments = request.Order.AppPayments?
+                    .Select(ap => new Domain.Entities.AppPayment
+                    {
+                        OrderId = createdOrder.Id,
+                        AppId = ap.AppId,
+                        Amount = ap.Amount,
+                        IsSetted = false
+                    }).ToList() ?? [];
 
-                OrderPaidInStoreCashHelper.Apply(
-                    tracked, true, _clock.UtcNow, request.Order.PaidInStoreCashAmount);
-                await _db.SaveChangesAsync(cancellationToken);
+                if (bankPayments.Count > 0) _db.BankPayments.AddRange(bankPayments);
+                if (appPayments.Count > 0) _db.AppPayments.AddRange(appPayments);
+                if (bankPayments.Count > 0 || appPayments.Count > 0)
+                    await _db.SaveChangesAsync(cancellationToken);
+
+                if (request.Order.PaidInStoreCash)
+                {
+                    // order_detail triggers update totals AND bump management_version.
+                    // EF's tracked creation snapshot is now stale. Refresh original
+                    // concurrency values after the triggers, before updating cash.
+                    var refreshed = await _db.ReloadOrderForManagementAsync(createdOrder.Id, cancellationToken);
+                    if (refreshed is null)
+                        throw new BusinessException("Pedido no encontrado tras crear");
+
+                    var tracked = await _db.Orders
+                        .Include(o => o.BankPayments)
+                        .Include(o => o.AppPayments)
+                        .FirstOrDefaultAsync(o => o.Id == createdOrder.Id, cancellationToken)
+                        ?? throw new BusinessException("Pedido no encontrado tras crear");
+
+                    OrderPaidInStoreCashHelper.Apply(
+                        tracked, true, _clock.UtcNow, request.Order.PaidInStoreCashAmount);
+                    await _db.SaveChangesAsync(cancellationToken);
+                }
+
             }
 
             fullOrder = await _orderRepository.GetByIdWithFullDetailsAsync(createdOrder.Id, cancellationToken)
