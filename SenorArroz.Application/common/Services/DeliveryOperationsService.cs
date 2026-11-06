@@ -86,7 +86,8 @@ public sealed class DeliveryOperationsService(IApplicationDbContext db, ICurrent
         var owner = await db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == actor.Id, ct);
         if (owner is null || !owner.Active || !owner.CanDeliver || owner.TenantId != actor.TenantId
             || owner.BranchId != actor.BranchId) throw new UnauthorizedAccessException();
-        if (actor.SessionId.HasValue && owner.ActiveSessionId != actor.SessionId) throw new SessionReplacedException();
+        if (actor.SessionId.HasValue && !SenorArroz.Domain.Helpers.UserSessionRules.IsCurrent(owner, actor.SessionId, actor.Role))
+            throw new SessionReplacedException();
         return owner;
     }
 

@@ -2,6 +2,7 @@
 using MediatR;
 using SenorArroz.Application.Features.Users.DTOs;
 using SenorArroz.Domain.Exceptions;
+using SenorArroz.Domain.Helpers;
 using SenorArroz.Domain.Interfaces.Repositories;
 
 namespace SenorArroz.Application.Features.Users.Commands;
@@ -25,6 +26,7 @@ public class ToggleStatusHandler : IRequestHandler<ToggleStatusCommand, UserDto>
 
         // Invertir estado
         existingUser.Active = !existingUser.Active;
+        if (!existingUser.Active) UserSessionRules.Invalidate(existingUser);
 
         var updatedUser = await _userRepository.UpdateAsync(existingUser, cancellationToken);
 

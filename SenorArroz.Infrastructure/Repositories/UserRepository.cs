@@ -86,6 +86,7 @@ public class UserRepository : IUserRepository
         existing.DeliveryAppEnabled = user.DeliveryAppEnabled;
         existing.ProfileImageUrl = user.ProfileImageUrl;
         existing.ActiveSessionId = user.ActiveSessionId;
+        existing.ActiveDeliverySessionId = user.ActiveDeliverySessionId;
         existing.PayrollExpenseId = user.PayrollExpenseId;
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -107,6 +108,7 @@ public class UserRepository : IUserRepository
 
        
         user.Active = false;
+        SenorArroz.Domain.Helpers.UserSessionRules.Invalidate(user);
 
         await _context.SaveChangesAsync(cancellationToken);
         return true;

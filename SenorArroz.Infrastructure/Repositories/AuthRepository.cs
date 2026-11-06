@@ -5,6 +5,7 @@ using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Domain.Interfaces.Services;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Helpers;
 
 namespace SenorArroz.Infrastructure.Repositories;
 
@@ -50,26 +51,29 @@ public class AuthRepository : IAuthRepository
         CancellationToken cancellationToken = default) =>
         sessionId.HasValue
             ? _context.Users.AsNoTracking().AnyAsync(
-                user => user.Id == userId && user.Active && user.ActiveSessionId == sessionId,
+                user => user.Id == userId && user.Active && (user.ActiveSessionId == sessionId
+                    || ((user.Role == UserRole.Admin || user.Role == UserRole.Superadmin)
+                        && user.AccountType != EmployeeAccountType.Terminal && user.DeliveryAppEnabled && user.ActiveDeliverySessionId == sessionId)),
                 cancellationToken)
             : Task.FromResult(false);
 
-    // Comprueba tanto la generación de sesión como el rol real autorizado hoy.
     public Task<bool> IsSessionCurrentAsync(
         int userId,
         Guid? sessionId,
         string effectiveRole,
         CancellationToken cancellationToken = default)
     {
-        if (!sessionId.HasValue || !Enum.TryParse<UserRole>(effectiveRole, true, out var role))
+        if (!sessionId.HasValue || !Enum.TryParse<UserRole>(effectiveRole, true, out var role) || !Enum.IsDefined(role))
             return Task.FromResult(false);
 
         var activeSession = _context.Users.AsNoTracking()
-            .Where(user => user.Id == userId && user.Active && user.ActiveSessionId == sessionId);
+            .Where(user => user.Id == userId)
+            .Where(UserSessionRules.CurrentSession(sessionId, role == UserRole.Deliveryman));
 
         return role == UserRole.Deliveryman
-            ? activeSession.AnyAsync(user => user.Role == UserRole.Deliveryman
-                || (user.DeliveryAppEnabled && (user.Role == UserRole.Admin || user.Role == UserRole.Cashier)),
+            ? activeSession.AnyAsync(user => user.AccountType != EmployeeAccountType.Terminal
+                && (user.Role == UserRole.Deliveryman
+                    || (user.DeliveryAppEnabled && (user.Role == UserRole.Admin || user.Role == UserRole.Superadmin || user.Role == UserRole.Cashier))),
                 cancellationToken)
             : activeSession.AnyAsync(user => user.Role == role && (user.Role != UserRole.Kitchen || user.WebAccessEnabled), cancellationToken);
     }
@@ -109,11 +113,12 @@ public class AuthRepository : IAuthRepository
     {
         var user = await _context.Users.FirstOrDefaultAsync(
             candidate => candidate.Id == userId
-                         && candidate.ActiveSessionId == sessionId,
+                         && (candidate.ActiveSessionId == sessionId || candidate.ActiveDeliverySessionId == sessionId),
             cancellationToken);
         if (user is null) return;
 
-        user.ActiveSessionId = null;
+        if (user.ActiveSessionId == sessionId) user.ActiveSessionId = null;
+        if (user.ActiveDeliverySessionId == sessionId) user.ActiveDeliverySessionId = null;
         await _context.SaveChangesAsync(cancellationToken);
     }
 

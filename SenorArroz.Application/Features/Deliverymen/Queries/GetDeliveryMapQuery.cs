@@ -45,7 +45,7 @@ public sealed class GetDeliveryMapHandler(IApplicationDbContext db, ICurrentUser
         var locations = request.Page == 1
             ? await db.Users.AsNoTracking().Where(u => u.TenantId == user.TenantId && u.BranchId == branchId
                 && u.AccountType != EmployeeAccountType.Terminal
-                && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled && (u.Role == UserRole.Admin || u.Role == UserRole.Cashier))))
+                && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled && (u.Role == UserRole.Admin || u.Role == UserRole.Superadmin || u.Role == UserRole.Cashier))))
                 .SelectMany(u => db.DeliverymanLocations.Where(l => l.TenantId == user.TenantId && l.DeliverymanId == u.Id && l.RecordedAt >= fromUtc && l.RecordedAt <= toUtc)
                     .OrderByDescending(l => l.RecordedAt).ThenByDescending(l => l.Id).Take(1))
                 .Select(l => new DeliverymanLastLocationDto { DeliverymanId = l.DeliverymanId, DeliveryRouteId = l.DeliveryRouteId,
