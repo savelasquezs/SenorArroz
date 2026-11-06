@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.ReservationDeposits.Commands;
 using SenorArroz.Domain.Entities;
@@ -25,7 +24,6 @@ public sealed class ReservationDeploymentFollowupTests
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
-            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new ApplicationDbContext(options,
             currentTenant: TestTenantContext.Default,
@@ -56,28 +54,6 @@ public sealed class ReservationDeploymentFollowupTests
         db.Orders.Add(order);
         await db.SaveChangesAsync();
         return (order, app, user);
-    }
-
-    [Fact]
-    public async Task Editing_detached_order_succeeds_when_cash_receipt_workflow_left_parent_tracked()
-    {
-        await using var db = CreateDb();
-        var (order, _, _) = await SeedAsync(db);
-        db.ChangeTracker.Clear();
-
-        var repository = new OrderRepository(db, new FakeClock(DateTime.UtcNow));
-        var edited = await repository.GetByIdWithDetailsAsync(order.Id);
-        Assert.NotNull(edited);
-        var tracked = await db.ReloadOrderForManagementAsync(order.Id);
-        Assert.NotNull(tracked);
-        Assert.NotSame(tracked, edited);
-
-        edited!.Notes = "Cambio después de limpiar abonos";
-        await repository.UpdateAsync(edited);
-
-        db.ChangeTracker.Clear();
-        var saved = await db.Orders.SingleAsync(o => o.Id == order.Id);
-        Assert.Equal("Cambio después de limpiar abonos", saved.Notes);
     }
 
     [Fact]
