@@ -117,6 +117,25 @@ public sealed class RemoteOrderManagementPostgreSqlTests : IAsyncLifetime
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Editing_detached_reservation_order_after_a_cash_receipt_parent_is_tracked_succeeds()
+    {
+        await using var db = Db();
+        var repository = new OrderRepository(db, new Clock());
+        var detached = await repository.GetByIdWithDetailsAsync(10);
+        Assert.NotNull(detached);
+        var tracked = await db.ReloadOrderForManagementAsync(10);
+        Assert.NotNull(tracked);
+        Assert.NotSame(tracked, detached);
+
+        detached!.Notes = "Ajuste tras limpiar abonos";
+        await repository.UpdateAsync(detached);
+
+        var saved = await db.Orders.AsNoTracking().SingleAsync(o => o.Id == 10);
+        Assert.Equal("Ajuste tras limpiar abonos", saved.Notes);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
     public async Task Concurrent_source_edits_have_one_winner_and_one_conflict()
     {
         await using var firstDb = Db();

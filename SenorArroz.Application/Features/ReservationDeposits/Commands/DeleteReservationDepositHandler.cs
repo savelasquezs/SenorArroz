@@ -43,7 +43,9 @@ public class DeleteReservationDepositHandler : IRequestHandler<DeleteReservation
             else
                 _branchContext?.EnsureAccess(order.BranchId);
 
-            if (order.Type != OrderType.Reservation)
+            // Ready converts a reservation to Delivery/Onsite; the original
+            // receipt remains the financial source and must still be removable.
+            if (order.Type != OrderType.Reservation && !order.ReservedFor.HasValue)
                 throw new BusinessException("Solo aplican abonos de reserva");
 
             if (order.Status == OrderStatus.Delivered || order.Status == OrderStatus.Cancelled)
