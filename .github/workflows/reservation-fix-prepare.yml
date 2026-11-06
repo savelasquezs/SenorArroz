@@ -1,0 +1,62 @@
+name: Reservation fix isolated preparation
+on:
+  push:
+    branches: [fix/reservation-initial-deposits-20261106]
+    paths:
+      - .github/workflows/reservation-fix-prepare.yml
+      - scripts/reservation-fix.patch
+permissions:
+  contents: write
+concurrency:
+  group: reservation-fix-preparation
+  cancel-in-progress: true
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: flow_test
+          POSTGRES_PASSWORD: flow_test
+          POSTGRES_DB: flow_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U flow_test -d flow_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply reviewed patch on the feature branch only
+        if: hashFiles('scripts/reservation-fix.patch') != ''
+        run: |
+          test "$GITHUB_REF_NAME" = fix/reservation-initial-deposits-20261106
+          git apply --index --check scripts/reservation-fix.patch
+          git apply --index scripts/reservation-fix.patch
+          git diff --cached --check
+      - uses: actions/setup-dotnet@v4
+        if: hashFiles('scripts/reservation-fix.patch') != ''
+        with:
+          dotnet-version: 9.0.x
+      - name: Run isolated regression suite
+        if: hashFiles('scripts/reservation-fix.patch') != ''
+        env:
+          RUN_POSTGRES_INTEGRATION_TESTS: 'true'
+          FLOW_POSTGRES_TEST_CONNECTION: 'Host=localhost;Port=5432;Database=flow_test;Username=flow_test;Password=flow_test'
+          INVOICE_TEST_POSTGRES: 'Host=localhost;Port=5432;Database=flow_test;Username=flow_test;Password=flow_test'
+        run: dotnet test SenorArroz.Tests/SenorArroz.Tests.csproj --configuration Release --logger 'console;verbosity=normal'
+      - name: Commit tested source changes to feature branch
+        if: hashFiles('scripts/reservation-fix.patch') != ''
+        run: |
+          test "$GITHUB_REF_NAME" = fix/reservation-initial-deposits-20261106
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: persist reservation receipts atomically and preserve payment coverage'
+          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
+      - name: Archive source for review
+        run: git archive --format=tar --output=reservation-fix-source.tar HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reservation-fix-source
+          path: reservation-fix-source.tar
+          retention-days: 1
