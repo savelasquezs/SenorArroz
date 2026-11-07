@@ -49,7 +49,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M09-F04 | Cliente/dirección y cotización | Pendiente | — | — | — | — |
 | M09-F05 | Cálculo de descuentos/promociones | Pendiente | — | — | — | — |
 | M09-F06 | Selección de pagos y total | Pendiente | — | — | — | — |
-| M09-F07 | Guardar pedido y notificaciones | Pendiente | — | — | — | — |
+| M09-F07 | Guardar pedido y notificaciones | Analizado | 2026-11-07 | [Informe](reviews/2026-11-07-M09-F07.md) | [Vue #71](https://github.com/savelasquezs/senorArrozFront/pull/71) | Borrador; validación CI frontend [#42375022611](https://github.com/savelasquezs/senorArrozFront/actions/runs/42375022611) en curso en el momento de documentar. Se acota consulta pre-envío de duplicados por día Colombia solo para comparación CreatedAt; reservas/PrepareAt intactos. Sin métricas ni migración productivas; pendiente QA y aprobación del propietario. |
 | M10-F01 | Cargar listado del día | Implementado | 2026-10-13 | [Informe 2026-10-13](reviews/2026-10-13-M10-F01.md) | [API #23](https://github.com/savelasquezs/SenorArroz/pull/23) (`e681ae5`), [Vue #17](https://github.com/savelasquezs/senorArrozFront/pull/17) (`1fb28cf`) | CI: 869/869 backend; PostgreSQL COUNT verificado; 854/15 omitidas y 3/3 remoto; Vue 487/487. Railway API y Vue SUCCESS. Sin migración. Pendiente prueba funcional y medición real antes de Validado. |
 | M10-F02 | Búsquedas, filtros y paginación | Pendiente | — | — | — | — |
 | M10-F03 | Detalle e historial de pedido | Pendiente | — | — | — | — |
