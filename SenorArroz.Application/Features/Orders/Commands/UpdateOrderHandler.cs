@@ -84,6 +84,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
                 && (request.Order.AddressId ?? existingOrder.AddressId).HasValue))
                 throw new BusinessException("La tarifa solo aplica a pedidos con domicilio");
             if (Roles.IsCashier(_currentUser.Role)
+                && request.Order.DeliveryFee != existingOrder.DeliveryFee
                 && existingOrder.Status is OrderStatus.Delivered or OrderStatus.Cancelled or OrderStatus.AwaitingPayment)
                 throw new BusinessException("El cajero solo puede cambiar el domicilio antes de entregar el pedido");
         }

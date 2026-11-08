@@ -162,6 +162,27 @@ public class UpdateOrderHandlerSchedulePreserveTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Cashier_corrects_delivered_order_with_unchanged_delivery_fee(bool changeProducts)
+    {
+        var utc = new DateTime(2026, 11, 8, 15, 0, 0, DateTimeKind.Utc);
+        var order = FeeOrder(utc, OrderStatus.Delivered);
+        var repo = OrderRepository(order);
+        var handler = BuildHandler(repo.Object, Mock.Of<IAddressRepository>(), utc);
+        var update = new UpdateOrderDto { DeliveryFee = 5000, Notes = "Correccion del pedido" };
+        if (changeProducts)
+            update.OrderDetails = [new() { Id = 1, ProductId = 10, Quantity = 2, UnitPrice = 10000 }];
+
+        await handler.Handle(new UpdateOrderCommand { Id = order.Id, Order = update }, default);
+
+        Assert.Equal(5000, order.DeliveryFee);
+        Assert.Equal("Correccion del pedido", order.Notes);
+        Assert.Equal(changeProducts ? 25000 : 15000, order.Total);
+        repo.Verify(x => x.UpdateAsync(order, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
     [InlineData(Roles.Admin, true, OrderStatus.Taken)]
     [InlineData(Roles.Superadmin, true, OrderStatus.Taken)]
     [InlineData(Roles.Admin, true, OrderStatus.Delivered)]
