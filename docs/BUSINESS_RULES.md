@@ -698,6 +698,6 @@ Al crear una reserva, los medios recibidos del sidebar se guardan como `Reservat
 ## Edición de domicilio y regalos desde el chat
 
 - El cajero puede modificar `Order.DeliveryFee` antes de entregar, incluso en camino. El servidor rechaza importes negativos y cambios del cajero después de entrega, cancelación o mientras espera pago en línea; recalcula el total desde los detalles.
-- Los regalos manuales conservan autorización Admin/Superadmin, motivo y auditoría. La elegibilidad usa productos activos de Regalos del catálogo compartido del tenant, independientemente de la sucursal histórica de la categoría.
+- Los productos de regalo manuales admiten Admin/Superadmin/Cajero, con motivo y auditoría. Los demás beneficios manuales conservan autorización administrativa. La elegibilidad usa productos activos de Regalos del catálogo compartido del tenant, independientemente de la sucursal histórica de la categoría.
 - En pedidos de WhatsApp, la autorización se resuelve por acceso a la conversación; el destino explícito del pedido se valida como sucursal activa del mismo tenant. Un cajero asignado puede escoger ese destino sin transferir la conversación ni modificar la sucursal de su sesión.
 - El editor embebido utiliza los endpoints e idempotencia del POS existentes; no requiere SQL ni activa cambios experimentales del motor de IA.

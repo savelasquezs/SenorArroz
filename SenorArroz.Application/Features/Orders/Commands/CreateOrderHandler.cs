@@ -460,8 +460,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
     private async Task ValidateAndStampManualBenefitAsync(CreateOrderDto dto, int branchId, CancellationToken ct)
     {
         if (dto.AppliedBenefitType != OrderBenefitType.Manual) return;
-        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role))
-            throw new BusinessException("Solo administradores pueden conceder beneficios manuales");
+        if (!OrderGiftEligibility.CanGrantManualBenefit(_currentUser.Role, dto.AppliedBenefitRewardType))
+            throw new BusinessException("No tienes permisos para conceder este beneficio manual");
         if (string.IsNullOrWhiteSpace(dto.ManualBenefitReason))
             throw new BusinessException("El motivo del beneficio manual es obligatorio");
         if (dto.AppliedBenefitRewardType == LoyaltyRewardType.FreeDelivery)

@@ -225,6 +225,54 @@ public sealed class CreateOrderCrossBranchTests
         Assert.Contains("no tiene servicio", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(Roles.Admin)]
+    [InlineData(Roles.Cashier)]
+    public async Task Can_create_an_order_with_an_audited_shared_catalog_gift(string role)
+    {
+        await using var db = CreateDb();
+        await SeedTenantOneAsync(db);
+        db.Products.Add(new Product { Id = 90, Name = "Papas", Active = true, Price = 2000,
+            Category = new ProductCategory { Id = 80, BranchId = 2, Name = "Regalos" } });
+        await db.SaveChangesAsync();
+        var (handler, getCreatedOrder) = BuildHandler(db, role, 1);
+        var dto = OnsiteOrder(1);
+        dto.AppliedBenefitType = OrderBenefitType.Manual;
+        dto.AppliedBenefitRewardType = LoyaltyRewardType.GiftProduct;
+        dto.ManualBenefitGiftProductId = 90;
+        dto.ManualBenefitReason = "Cortesia";
+        dto.OrderDetails.Add(new() { ProductId = 90, Quantity = 1, UnitPrice = 0 });
+
+        await handler.Handle(new CreateOrderCommand { Order = dto }, default);
+
+        var order = Assert.IsType<Order>(getCreatedOrder());
+        Assert.Equal(10000, order.Total);
+        Assert.Equal(0, Assert.Single(order.OrderDetails, line => line.ProductId == 90).UnitPrice);
+        Assert.Equal(90, order.ManualBenefitGiftProductId);
+        Assert.Equal(99, order.ManualBenefitGrantedByUserId);
+        Assert.Equal("Cortesia", order.ManualBenefitReason);
+        Assert.NotNull(order.ManualBenefitGrantedAt);
+    }
+
+    [Theory]
+    [InlineData(LoyaltyRewardType.FreeDelivery, "Cortesia")]
+    [InlineData(LoyaltyRewardType.GiftProduct, "")]
+    public async Task Cashier_cannot_create_an_unauthorized_or_unjustified_manual_benefit(LoyaltyRewardType rewardType, string reason)
+    {
+        await using var db = CreateDb();
+        await SeedTenantOneAsync(db);
+        var (handler, getCreatedOrder) = BuildHandler(db, Roles.Cashier, 1);
+        var dto = OnsiteOrder(1);
+        dto.AppliedBenefitType = OrderBenefitType.Manual;
+        dto.AppliedBenefitRewardType = rewardType;
+        dto.ManualBenefitReason = reason;
+        dto.ManualBenefitGiftProductId = 90;
+
+        await Assert.ThrowsAsync<BusinessException>(() => handler.Handle(new CreateOrderCommand { Order = dto }, default));
+
+        Assert.Null(getCreatedOrder());
+    }
+
     private static ApplicationDbContext CreateDb(string? name = null, int tenantId = 1)
     {
         var tenantContext = new TestTenantContext(tenantId);

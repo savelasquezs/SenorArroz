@@ -522,7 +522,8 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
     private async Task ValidateManualBenefitAsync(UpdateOrderDto dto, Order order, CancellationToken ct)
     {
         if (dto.AppliedBenefitType != OrderBenefitType.Manual) return;
-        if (!Roles.IsAdminOrSuperadmin(_currentUser.Role)) throw new BusinessException("Solo administradores pueden conceder beneficios manuales");
+        if (!OrderGiftEligibility.CanGrantManualBenefit(_currentUser.Role, dto.AppliedBenefitRewardType))
+            throw new BusinessException("No tienes permisos para conceder este beneficio manual");
         if (string.IsNullOrWhiteSpace(dto.ManualBenefitReason)) throw new BusinessException("El motivo del beneficio manual es obligatorio");
         var type = dto.Type ?? order.Type;
         var addressId = dto.AddressId ?? order.AddressId;
