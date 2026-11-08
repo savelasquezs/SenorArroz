@@ -75,6 +75,19 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         if (!_businessRules.CanUpdateOrder(existingOrder, _currentUser.Role))
             throw new BusinessException("No tienes permisos para modificar este pedido en su estado actual");
 
+        if (request.Order.DeliveryFee.HasValue)
+        {
+            if (request.Order.DeliveryFee.Value < 0)
+                throw new BusinessException("La tarifa de domicilio no puede ser negativa");
+            var type = request.Order.Type ?? existingOrder.Type;
+            if (type != OrderType.Delivery && !(type == OrderType.Reservation
+                && (request.Order.AddressId ?? existingOrder.AddressId).HasValue))
+                throw new BusinessException("La tarifa solo aplica a pedidos con domicilio");
+            if (Roles.IsCashier(_currentUser.Role)
+                && existingOrder.Status is OrderStatus.Delivered or OrderStatus.Cancelled or OrderStatus.AwaitingPayment)
+                throw new BusinessException("El cajero solo puede cambiar el domicilio antes de entregar el pedido");
+        }
+
         // Validar si puede modificar productos
         if (request.Order.OrderDetails != null && !_businessRules.CanUpdateOrderProducts(existingOrder, _currentUser.Role))
             throw new BusinessException("No tienes permisos para modificar los productos de este pedido");
@@ -526,8 +539,7 @@ public class UpdateOrderHandler : IRequestHandler<UpdateOrderCommand, OrderDto>
         }
         if (dto.AppliedBenefitRewardType != LoyaltyRewardType.GiftProduct || !dto.ManualBenefitGiftProductId.HasValue)
             throw new BusinessException("Selecciona un producto regalo valido");
-        var validGift = await _db.Products.AsNoTracking().Include(x => x.Category).AnyAsync(x =>
-            x.Id == dto.ManualBenefitGiftProductId && x.Active && x.Category.BranchId == order.BranchId && x.Category.Name.ToLower() == "regalos", ct);
-        if (!validGift) throw new BusinessException("El producto debe estar activo y pertenecer a la categoria Regalos de la sucursal");
+        var validGift = await OrderGiftEligibility.IsValidProductAsync(_db, dto.ManualBenefitGiftProductId.Value, ct);
+        if (!validGift) throw new BusinessException("El producto debe estar activo y pertenecer a la categoria Regalos del restaurante");
     }
 }

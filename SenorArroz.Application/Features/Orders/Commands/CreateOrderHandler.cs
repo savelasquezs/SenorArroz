@@ -79,7 +79,6 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             var canCreateOperationalOrder = await _db.WhatsAppConversations.AsNoTracking().AnyAsync(x =>
                 x.Id == request.Order.WhatsAppConversationId.Value
                 && x.ChannelSettingId.HasValue
-                && x.OperationalBranchId == branchId
                 && x.AssignedUserId == _currentUser.Id,
                 cancellationToken);
             if (!canCreateOperationalOrder)
@@ -95,9 +94,11 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
             var canLinkWhatsAppConversation = await _db.WhatsAppConversations.AsNoTracking().AnyAsync(x =>
                 x.Id == request.Order.WhatsAppConversationId.Value
                 && (Roles.IsSuperadmin(_currentUser.Role)
-                    || !x.ChannelSettingId.HasValue && x.BranchId == branchId
-                    || x.ChannelSettingId.HasValue && x.OperationalBranchId == branchId
-                        && (x.OperationalBranchId == _currentUser.BranchId || x.AssignedUserId == _currentUser.Id)),
+                    || !x.ChannelSettingId.HasValue && x.BranchId == _currentUser.BranchId
+                    || x.ChannelSettingId.HasValue
+                        && (x.OperationalBranchId == _currentUser.BranchId || x.AssignedUserId == _currentUser.Id))
+                && (x.AttentionMode != WhatsAppAttentionMode.Human || !x.AssignedUserId.HasValue
+                    || x.AssignedUserId == _currentUser.Id || Roles.IsAdminOrSuperadmin(_currentUser.Role)),
                 cancellationToken);
             if (!canLinkWhatsAppConversation)
                 throw new BusinessException("No tienes permiso para vincular esta conversación de WhatsApp al pedido.");
@@ -471,9 +472,7 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         }
         if (dto.AppliedBenefitRewardType != LoyaltyRewardType.GiftProduct || !dto.ManualBenefitGiftProductId.HasValue)
             throw new BusinessException("Selecciona un producto regalo valido");
-        var validGift = await _db.Products.AsNoTracking().Include(x => x.Category).AnyAsync(x =>
-            x.Id == dto.ManualBenefitGiftProductId && x.Active && x.Category.BranchId == branchId &&
-            x.Category.Name.ToLower() == "regalos", ct);
-        if (!validGift) throw new BusinessException("El producto debe estar activo y pertenecer a la categoria Regalos de la sucursal");
+        var validGift = await OrderGiftEligibility.IsValidProductAsync(_db, dto.ManualBenefitGiftProductId.Value, ct);
+        if (!validGift) throw new BusinessException("El producto debe estar activo y pertenecer a la categoria Regalos del restaurante");
     }
 }
