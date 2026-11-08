@@ -187,7 +187,10 @@ public class UpdateOrderHandlerSchedulePreserveTests
     [InlineData(Roles.Superadmin, true, OrderStatus.Taken)]
     [InlineData(Roles.Admin, true, OrderStatus.Delivered)]
     [InlineData(Roles.Superadmin, true, OrderStatus.Delivered)]
-    [InlineData(Roles.Cashier, false, OrderStatus.Taken)]
+    [InlineData(Roles.Cashier, true, OrderStatus.Taken)]
+    [InlineData(Roles.Cashier, true, OrderStatus.Delivered)]
+    [InlineData(Roles.Kitchen, false, OrderStatus.Taken)]
+    [InlineData(Roles.Deliveryman, false, OrderStatus.Taken)]
     public async Task An_order_without_a_gift_can_receive_an_authorized_gift_from_the_shared_catalog(string role, bool allowed, OrderStatus status)
     {
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -228,6 +231,27 @@ public class UpdateOrderHandlerSchedulePreserveTests
         Assert.Equal(1, order.ManualBenefitGrantedByUserId);
         Assert.Equal("Cortesia", order.ManualBenefitReason);
         Assert.Equal(utc, order.ManualBenefitGrantedAt);
+    }
+
+    [Theory]
+    [InlineData(LoyaltyRewardType.FreeDelivery)]
+    [InlineData(LoyaltyRewardType.PercentageDiscount)]
+    public async Task Cashier_cannot_grant_other_manual_benefits(LoyaltyRewardType rewardType)
+    {
+        var utc = new DateTime(2026, 11, 8, 15, 0, 0, DateTimeKind.Utc);
+        var order = FeeOrder(utc, OrderStatus.Taken);
+        var repo = OrderRepository(order);
+        var handler = BuildHandler(repo.Object, Mock.Of<IAddressRepository>(), utc, role: Roles.Cashier);
+
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => handler.Handle(
+            new UpdateOrderCommand { Id = order.Id, Order = new()
+            {
+                AppliedBenefitType = OrderBenefitType.Manual,
+                AppliedBenefitRewardType = rewardType,
+                ManualBenefitReason = "Cortesia"
+            } }, default));
+
+        repo.Verify(x => x.UpdateAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Theory]
