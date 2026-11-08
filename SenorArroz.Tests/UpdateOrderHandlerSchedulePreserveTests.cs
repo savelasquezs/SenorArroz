@@ -1,4 +1,7 @@
 using AutoMapper;
+using SenorArroz.Application.Common.Helpers;
+using Microsoft.EntityFrameworkCore;
+using SenorArroz.Infrastructure.Data;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using SenorArroz.Application.Common.Interfaces;
@@ -23,10 +26,10 @@ public class UpdateOrderHandlerSchedulePreserveTests
         public DateTime UtcNow => utcNow;
     }
 
-    private sealed class TestCurrentUser : ICurrentUser
+    private sealed class TestCurrentUser(string role = Roles.Cashier) : ICurrentUser
     {
         public int Id => 1;
-        public string Role => Roles.Cashier;
+        public string Role => role;
         public int BranchId => 1;
         public bool IsAuthenticated => true;
     }
@@ -72,7 +75,9 @@ public class UpdateOrderHandlerSchedulePreserveTests
         DateTime utcNow,
         IOrderNotificationService? notifications = null,
         Mock<IBankPaymentRepository>? bankPaymentRepoMock = null,
-        Mock<IReservationDepositRepository>? reservationDepositRepoMock = null)
+        Mock<IReservationDepositRepository>? reservationDepositRepoMock = null,
+        IApplicationDbContext? db = null,
+        string role = Roles.Cashier)
     {
         var mapper = new MapperConfiguration(cfg =>
         {
@@ -93,15 +98,169 @@ public class UpdateOrderHandlerSchedulePreserveTests
         }
         return new UpdateOrderHandler(
             repo,
-            new Mock<IApplicationDbContext>().Object,
+            db ?? new Mock<IApplicationDbContext>().Object,
             addressRepo,
             bankPaymentRepo.Object,
             reservationDepositRepo.Object,
             mapper,
-            new TestCurrentUser(),
+            new TestCurrentUser(role),
             new OrderBusinessRulesService(clock),
             notifications ?? new NullNotifications(),
             clock);
+    }
+
+    [Theory]
+    [InlineData(OrderStatus.Taken, 0)]
+    [InlineData(OrderStatus.InPreparation, 3500)]
+    [InlineData(OrderStatus.Ready, 5000)]
+    [InlineData(OrderStatus.OnTheWay, 6000)]
+    public async Task Cashier_updates_delivery_fee_before_delivery_and_recalculates_total(OrderStatus status, int fee)
+    {
+        var utc = new DateTime(2026, 11, 8, 15, 0, 0, DateTimeKind.Utc);
+        var order = FeeOrder(utc, status);
+        var repo = OrderRepository(order);
+        var handler = BuildHandler(repo.Object, Mock.Of<IAddressRepository>(), utc);
+
+        await handler.Handle(new UpdateOrderCommand { Id = order.Id, Order = new() { DeliveryFee = fee } }, default);
+
+        Assert.Equal(fee, order.DeliveryFee);
+        Assert.Equal(10000 + fee, order.Total);
+        repo.Verify(x => x.UpdateAsync(order, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(OrderStatus.Delivered)]
+    [InlineData(OrderStatus.Cancelled)]
+    [InlineData(OrderStatus.AwaitingPayment)]
+    public async Task Cashier_cannot_change_fee_after_delivery_cancellation_or_during_online_payment(OrderStatus status)
+    {
+        var utc = new DateTime(2026, 11, 8, 15, 0, 0, DateTimeKind.Utc);
+        var order = FeeOrder(utc, status);
+        var repo = OrderRepository(order);
+        var handler = BuildHandler(repo.Object, Mock.Of<IAddressRepository>(), utc);
+
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => handler.Handle(
+            new UpdateOrderCommand { Id = order.Id, Order = new() { DeliveryFee = 4000 } }, default));
+
+        Assert.Equal(5000, order.DeliveryFee);
+        repo.Verify(x => x.UpdateAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Negative_fee_is_rejected_before_changing_the_order()
+    {
+        var utc = new DateTime(2026, 11, 8, 15, 0, 0, DateTimeKind.Utc);
+        var order = FeeOrder(utc, OrderStatus.Ready);
+        var repo = OrderRepository(order);
+        var handler = BuildHandler(repo.Object, Mock.Of<IAddressRepository>(), utc);
+
+        await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => handler.Handle(
+            new UpdateOrderCommand { Id = order.Id, Order = new() { DeliveryFee = -1 } }, default));
+
+        Assert.Equal(5000, order.DeliveryFee);
+        repo.Verify(x => x.UpdateAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Cashier_corrects_delivered_order_with_unchanged_delivery_fee(bool changeProducts)
+    {
+        var utc = new DateTime(2026, 11, 8, 15, 0, 0, DateTimeKind.Utc);
+        var order = FeeOrder(utc, OrderStatus.Delivered);
+        var repo = OrderRepository(order);
+        var handler = BuildHandler(repo.Object, Mock.Of<IAddressRepository>(), utc);
+        var update = new UpdateOrderDto { DeliveryFee = 5000, Notes = "Correccion del pedido" };
+        if (changeProducts)
+            update.OrderDetails = [new() { Id = 1, ProductId = 10, Quantity = 2, UnitPrice = 10000 }];
+
+        await handler.Handle(new UpdateOrderCommand { Id = order.Id, Order = update }, default);
+
+        Assert.Equal(5000, order.DeliveryFee);
+        Assert.Equal("Correccion del pedido", order.Notes);
+        Assert.Equal(changeProducts ? 25000 : 15000, order.Total);
+        repo.Verify(x => x.UpdateAsync(order, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(Roles.Admin, true, OrderStatus.Taken)]
+    [InlineData(Roles.Superadmin, true, OrderStatus.Taken)]
+    [InlineData(Roles.Admin, true, OrderStatus.Delivered)]
+    [InlineData(Roles.Superadmin, true, OrderStatus.Delivered)]
+    [InlineData(Roles.Cashier, false, OrderStatus.Taken)]
+    public async Task An_order_without_a_gift_can_receive_an_authorized_gift_from_the_shared_catalog(string role, bool allowed, OrderStatus status)
+    {
+        await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
+            currentTenant: TestTenantContext.Default, tenantExecutionContext: TestTenantContext.Default);
+        var category = new ProductCategory { Id = 80, BranchId = 2, Name = "Regalos" };
+        db.Products.Add(new Product { Id = 90, Category = category, CategoryId = 80, Name = "Papas", Price = 2000, Active = true });
+        db.Users.Add(new User { Id = 1, Name = "Admin", BranchId = 1 });
+        await db.SaveChangesAsync();
+        var utc = new DateTime(2026, 11, 8, 15, 0, 0, DateTimeKind.Utc);
+        var order = FeeOrder(utc, status);
+        var repo = OrderRepository(order);
+        var handler = BuildHandler(repo.Object, Mock.Of<IAddressRepository>(), utc, db: db, role: role);
+        var command = new UpdateOrderCommand { Id = order.Id, Order = new()
+        {
+            AppliedBenefitType = OrderBenefitType.Manual, AppliedBenefitRewardType = LoyaltyRewardType.GiftProduct,
+            AppliedBenefitLabel = "Regalo manual: Papas", ManualBenefitGiftProductId = 90,
+            ManualBenefitReason = "Cortesia",
+            OrderDetails = [new() { Id = 1, ProductId = 10, Quantity = 1, UnitPrice = 10000 },
+                new() { ProductId = 90, Quantity = 1, UnitPrice = 0 }],
+        }};
+        if (!allowed)
+        {
+            await Assert.ThrowsAsync<SenorArroz.Domain.Exceptions.BusinessException>(() => handler.Handle(command, default));
+            Assert.Single(order.OrderDetails);
+            repo.Verify(x => x.UpdateAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>()), Times.Never);
+            return;
+        }
+
+        await handler.Handle(command, default);
+
+        Assert.Equal(15000, order.Total);
+        var gift = Assert.Single(order.OrderDetails, line => line.ProductId == 90);
+        Assert.Equal(0, gift.UnitPrice);
+        Assert.Equal(1, gift.Quantity);
+        Assert.Equal(OrderBenefitType.Manual, order.AppliedBenefitType);
+        Assert.Equal(90, order.ManualBenefitGiftProductId);
+        Assert.Equal(1, order.ManualBenefitGrantedByUserId);
+        Assert.Equal("Cortesia", order.ManualBenefitReason);
+        Assert.Equal(utc, order.ManualBenefitGrantedAt);
+    }
+
+    [Theory]
+    [InlineData(true, " Regalos ", true)]
+    [InlineData(false, "Regalos", false)]
+    [InlineData(true, "Bebidas", false)]
+    public async Task Gift_eligibility_requires_an_active_gift_product_in_the_current_tenant(bool active, string categoryName, bool valid)
+    {
+        var tenant = new TestTenantContext(2);
+        await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options, currentTenant: tenant, tenantExecutionContext: tenant);
+        db.Products.Add(new Product { Id = 90, Active = active, Name = "Papas",
+            Category = new ProductCategory { Id = 80, BranchId = 2, Name = categoryName } });
+        await db.SaveChangesAsync();
+        Assert.Equal(valid, await OrderGiftEligibility.IsValidProductAsync(db, 90, default));
+        using (tenant.BeginTenantScope(1))
+            Assert.False(await OrderGiftEligibility.IsValidProductAsync(db, 90, default));
+    }
+
+    private static Order FeeOrder(DateTime utc, OrderStatus status) => new()
+    {
+        Id = 249, BranchId = 1, TenantId = 1, TakenById = 1, Type = OrderType.Delivery,
+        Status = status, CreatedAt = utc, DeliveryFee = 5000, Total = 15000,
+        OrderDetails = [new() { Id = 1, ProductId = 10, Quantity = 1, UnitPrice = 10000, Subtotal = 10000 }],
+    };
+
+    private static Mock<IOrderRepository> OrderRepository(Order order)
+    {
+        var repo = new Mock<IOrderRepository>();
+        repo.Setup(x => x.GetByIdWithDetailsAsync(order.Id, It.IsAny<CancellationToken>())).ReturnsAsync(order);
+        repo.Setup(x => x.GetByIdWithFullDetailsAsync(order.Id, It.IsAny<CancellationToken>())).ReturnsAsync(order);
+        repo.Setup(x => x.UpdateAsync(It.IsAny<Order>(), It.IsAny<CancellationToken>())).ReturnsAsync((Order value, CancellationToken _) => value);
+        return repo;
     }
 
     [Theory]

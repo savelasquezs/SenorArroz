@@ -694,3 +694,10 @@ La disponibilidad del POS usa la sucursal operativa del borrador. La consulta fo
 ## Abonos iniciales del POS
 
 Al crear una reserva, los medios recibidos del sidebar se guardan como `ReservationDeposit` dentro de la misma transacción e idempotencia del pedido. La fecha/usuario/tenant/sucursal se resuelven en servidor. No se presume recibido el saldo pendiente sin marcar efectivo. Los pagos operativos enlazados no son ingresos nuevos: bancos/apps y efectivo conservan compatibilidad con entrega y liquidación. Al editar/eliminar un abono se sincroniza su representación; un abono de app liquidado no se elimina ni modifica. El cobro es total menos cobertura única, incluyendo efectivo parcial y excluyendo movimientos de liquidación. La contabilidad conserva `ReceivedAt`, también al preparar/entregar. No hay backfill de pagos anteriores.
+
+## Edición de domicilio y regalos desde el chat
+
+- El cajero puede modificar `Order.DeliveryFee` antes de entregar, incluso en camino. El servidor rechaza importes negativos y cambios del cajero después de entrega, cancelación o mientras espera pago en línea; recalcula el total desde los detalles.
+- Los regalos manuales conservan autorización Admin/Superadmin, motivo y auditoría. La elegibilidad usa productos activos de Regalos del catálogo compartido del tenant, independientemente de la sucursal histórica de la categoría.
+- En pedidos de WhatsApp, la autorización se resuelve por acceso a la conversación; el destino explícito del pedido se valida como sucursal activa del mismo tenant. Un cajero asignado puede escoger ese destino sin transferir la conversación ni modificar la sucursal de su sesión.
+- El editor embebido utiliza los endpoints e idempotencia del POS existentes; no requiere SQL ni activa cambios experimentales del motor de IA.

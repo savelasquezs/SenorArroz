@@ -231,7 +231,7 @@ public sealed class AdminApplicationSessionTests
         public JwtService Jwt { get; }
         private readonly RefreshTokenRepository _refresh;
         private readonly IMapper _mapper;
-        private readonly FakeClock _clock = new(new DateTime(2026, 11, 6, 15, 0, 0, DateTimeKind.Utc));
+        private readonly FakeClock _clock = new(DateTime.UtcNow);
         private readonly IDeliveryAppVersionPolicy _policy = Mock.Of<IDeliveryAppVersionPolicy>();
 
         private Fixture(UserRole role, DbContextOptions<ApplicationDbContext>? options = null)

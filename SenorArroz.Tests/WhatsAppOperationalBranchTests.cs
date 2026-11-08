@@ -184,11 +184,21 @@ public sealed class WhatsAppOperationalBranchTests
         Assert.Empty(listPayload!.Data!);
     }
 
-    [Fact]
-    public async Task Assigned_cashier_can_create_order_for_selected_operational_branch_only()
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    [InlineData(2, false)]
+    public async Task Assigned_cashier_can_choose_order_destination_independently_of_conversation_routing(int destination, bool central)
     {
         await using var db = CreateDb();
         await SeedCentralConversationAsync(db, operationalBranchId: 2, assignedUserId: 7);
+        if (!central)
+        {
+            var conversation = await db.WhatsAppConversations.SingleAsync();
+            conversation.ChannelSettingId = null;
+            conversation.ChannelSetting = null;
+            await db.SaveChangesAsync();
+        }
         var currentUser = new Mock<ICurrentUser>();
         currentUser.SetupGet(x => x.Id).Returns(7);
         currentUser.SetupGet(x => x.Role).Returns("Cashier");
@@ -219,7 +229,7 @@ public sealed class WhatsAppOperationalBranchTests
             AllowAssignedWhatsAppOperationalBranch = true,
             Order = new CreateOrderDto
             {
-                BranchId = 2,
+                BranchId = destination,
                 WhatsAppConversationId = 11,
                 Type = OrderType.Onsite,
                 GuestName = "Persona que recoge",
@@ -228,12 +238,14 @@ public sealed class WhatsAppOperationalBranchTests
         }, default);
 
         Assert.NotNull(createdOrder);
-        Assert.Equal(2, createdOrder!.BranchId);
+        Assert.Equal(destination, createdOrder!.BranchId);
+        Assert.Equal(1, createdOrder.OriginBranchId);
+        Assert.Equal(1, currentUser.Object.BranchId);
         Assert.Equal(11, createdOrder.WhatsAppConversationId);
     }
 
     [Fact]
-    public async Task Cashier_cannot_use_conversation_to_create_order_outside_its_operational_branch()
+    public async Task Cashier_cannot_use_assigned_conversation_to_create_order_for_unknown_destination()
     {
         await using var db = CreateDb();
         await SeedCentralConversationAsync(db, operationalBranchId: 2, assignedUserId: 7);
@@ -242,10 +254,10 @@ public sealed class WhatsAppOperationalBranchTests
         var exception = await Assert.ThrowsAsync<BusinessException>(() => handler.Handle(new CreateOrderCommand
         {
             AllowAssignedWhatsAppOperationalBranch = true,
-            Order = OrderRequest(branchId: 1)
+            Order = OrderRequest(branchId: 999)
         }, default));
 
-        Assert.Contains("No tienes permiso", exception.Message);
+        Assert.Contains("sucursal destino", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -259,6 +271,22 @@ public sealed class WhatsAppOperationalBranchTests
         {
             AllowAssignedWhatsAppOperationalBranch = true,
             Order = OrderRequest(branchId: 2)
+        }, default));
+    }
+
+    [Fact]
+    public async Task Cashier_cannot_confirm_a_local_chat_order_after_another_advisor_takes_ownership()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, operationalBranchId: 1, assignedUserId: 8);
+        var conversation = await db.WhatsAppConversations.SingleAsync();
+        conversation.AttentionMode = WhatsAppAttentionMode.Human;
+        await db.SaveChangesAsync();
+        var handler = CreateOrderHandler(db, userId: 7, branchId: 1);
+
+        await Assert.ThrowsAsync<BusinessException>(() => handler.Handle(new CreateOrderCommand
+        {
+            Order = OrderRequest(branchId: 1)
         }, default));
     }
 
