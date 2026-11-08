@@ -78,8 +78,8 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
 
             var canCreateOperationalOrder = await _db.WhatsAppConversations.AsNoTracking().AnyAsync(x =>
                 x.Id == request.Order.WhatsAppConversationId.Value
-                && x.ChannelSettingId.HasValue
-                && x.AssignedUserId == _currentUser.Id,
+                && (x.ChannelSettingId.HasValue && x.AssignedUserId == _currentUser.Id
+                    || !x.ChannelSettingId.HasValue && x.BranchId == _currentUser.BranchId),
                 cancellationToken);
             if (!canCreateOperationalOrder)
                 throw new BusinessException("No tienes permiso para crear este pedido de WhatsApp en otra sucursal.");

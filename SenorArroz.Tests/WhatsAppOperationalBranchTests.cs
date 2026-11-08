@@ -185,12 +185,20 @@ public sealed class WhatsAppOperationalBranchTests
     }
 
     [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    public async Task Assigned_cashier_can_choose_order_destination_independently_of_conversation_routing(int destination)
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    [InlineData(2, false)]
+    public async Task Assigned_cashier_can_choose_order_destination_independently_of_conversation_routing(int destination, bool central)
     {
         await using var db = CreateDb();
         await SeedCentralConversationAsync(db, operationalBranchId: 2, assignedUserId: 7);
+        if (!central)
+        {
+            var conversation = await db.WhatsAppConversations.SingleAsync();
+            conversation.ChannelSettingId = null;
+            conversation.ChannelSetting = null;
+            await db.SaveChangesAsync();
+        }
         var currentUser = new Mock<ICurrentUser>();
         currentUser.SetupGet(x => x.Id).Returns(7);
         currentUser.SetupGet(x => x.Role).Returns("Cashier");
