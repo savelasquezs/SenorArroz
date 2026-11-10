@@ -40,6 +40,15 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Gateway SDK and stdio tests
+        run: |
+          node --experimental-strip-types --test tools/data-gateway/client.test.ts
+          python3 -m unittest discover -s tools/data-gateway -p 'test_*.py'
+
       - name: Restore
         run: dotnet restore SenorArroz.sln
 

@@ -1,24 +1,28 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using SenorArroz.API.Security;
 using SenorArroz.Application.Common.Interfaces;
 
 namespace SenorArroz.API.Controllers;
 
 /// <summary>
 /// Sessionless MCP Streamable HTTP JSON-RPC endpoint over the existing HTTPS API.
-/// Authentication is currently the normal Superadmin JWT. A ChatGPT remote connector
-/// additionally requires an OAuth-compatible authorization setup before enabling.
+/// Uses the shared gateway authorization policy for local JWT or OAuth access.
 /// </summary>
 [ApiController]
 [Route("api/internal/data-gateway/mcp")]
-[Authorize(Roles = "Superadmin")]
+[Authorize(Policy = DataGatewaySecurity.Policy)]
+[EnableRateLimiting(DataGatewaySecurity.Policy)]
+[RequestSizeLimit(32768)]
 public sealed class DataGatewayMcpController(
     IConfiguration config,
     ICurrentTenant tenant,
     ILogger<DataGatewayController> gatewayLogger) : ControllerBase
 {
-    private const string Version = "2025-03-26";
+    private const string Version = "2025-06-18";
+    private static readonly string[] Versions = ["2025-03-26", Version, "2025-11-25"];
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -29,17 +33,20 @@ public sealed class DataGatewayMcpController(
         new {
             name = "get_schema",
             description = "List explicitly allowed diagnostic views and columns",
-            inputSchema = new { type = "object", properties = new { }, additionalProperties = false }
+            inputSchema = new { type = "object", properties = new { }, additionalProperties = false },
+            annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false }
         },
         new {
             name = "execute_query",
             description = "Read a permitted diagnostic view with filters; no arbitrary SQL",
-            inputSchema = QuerySchema()
+            inputSchema = QuerySchema(),
+            annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false }
         },
         new {
             name = "explain_query",
             description = "EXPLAIN without ANALYZE for a structured query",
-            inputSchema = QuerySchema()
+            inputSchema = QuerySchema(),
+            annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false }
         }
     ];
 
@@ -49,14 +56,16 @@ public sealed class DataGatewayMcpController(
         properties = new Dictionary<string, object>
         {
             ["view"] = new { type = "string" },
-            ["columns"] = new { type = "array", items = new { type = "string" } },
+            ["columns"] = new { type = "array", maxItems = 30, uniqueItems = true, items = new { type = "string", maxLength = 63 } },
             ["filters"] = new
             {
                 type = "array",
+                maxItems = 20,
                 items = new
                 {
                     type = "object",
                     required = new[] { "column", "op", "value" },
+                    additionalProperties = false,
                     properties = new
                     {
                         column = new { type = "string" },
@@ -77,18 +86,30 @@ public sealed class DataGatewayMcpController(
     private object Error(object? id, int code, string message) =>
         new { jsonrpc = "2.0", id, error = new { code, message } };
 
+    [HttpGet]
+    [HttpDelete]
+    public IActionResult NoStream() => StatusCode(405);
+
     [HttpPost]
     public async Task<IActionResult> Handle([FromBody] JsonElement request, CancellationToken ct)
     {
         if (!config.GetValue<bool>("DataGateway:Enabled")
-            || !tenant.HasTenant
+            || !tenant.HasTenant || tenant.TenantId != config.GetValue("DataGateway:ReaderTenantId", 1)
             || config.GetSection("DataGateway:AllowedViews").Get<string[]>() is not { Length: > 0 }
             || string.IsNullOrWhiteSpace(config.GetConnectionString("DataGatewayReader")))
             return NotFound();
 
+        if (Request.Headers.TryGetValue("Origin", out var origin)
+            && !(config.GetSection("DataGateway:AllowedOrigins").Get<string[]>() ?? [])
+                .Contains(origin.ToString(), StringComparer.Ordinal))
+            return StatusCode(403);
+        if (Request.Headers.TryGetValue("MCP-Protocol-Version", out var protocol)
+            && !Versions.Contains(protocol.ToString(), StringComparer.Ordinal))
+            return BadRequest(Error(null, -32600, "Unsupported MCP protocol version"));
+
         if (request.ValueKind != JsonValueKind.Object
             || !request.TryGetProperty("jsonrpc", out var version)
-            || version.GetString() != "2.0"
+            || version.ValueKind != JsonValueKind.String || version.GetString() != "2.0"
             || !request.TryGetProperty("method", out var methodElement)
             || methodElement.ValueKind != JsonValueKind.String)
             return Ok(Error(null, -32600, "Invalid JSON-RPC request"));
@@ -99,24 +120,32 @@ public sealed class DataGatewayMcpController(
             // MCP client initialization notifications have no response.
             return Accepted();
         }
-        object? id = idElement.ValueKind == JsonValueKind.String
-            ? idElement.GetString()
-            : idElement.ValueKind == JsonValueKind.Number ? idElement.GetInt64() : null;
+        if (idElement.ValueKind is not (JsonValueKind.String or JsonValueKind.Number))
+            return BadRequest(Error(null, -32600, "Invalid request ID"));
+        object id = idElement.Clone();
 
         switch (method)
         {
             case "initialize":
+                var selectedVersion = Version;
+                if (request.TryGetProperty("params", out var init) && init.ValueKind == JsonValueKind.Object
+                    && init.TryGetProperty("protocolVersion", out var requested)
+                    && requested.ValueKind == JsonValueKind.String && Versions.Contains(requested.GetString()!))
+                    selectedVersion = requested.GetString()!;
                 return Ok(Rpc(id, new
                 {
-                    protocolVersion = Version,
+                    protocolVersion = selectedVersion,
                     capabilities = new { tools = new { listChanged = false } },
-                    serverInfo = new { name = "senor-arroz-data-gateway", version = "0.1.0" }
+                    serverInfo = new { name = "senor-arroz-data-gateway", version = "1.0.0" }
                 }));
             case "ping":
                 return Ok(Rpc(id, new { }));
             case "tools/list":
                 return Ok(Rpc(id, new { tools = Tools }));
             case "tools/call":
+                if (!request.TryGetProperty("params", out var call) || call.ValueKind != JsonValueKind.Object
+                    || !call.TryGetProperty("name", out var toolName) || toolName.ValueKind != JsonValueKind.String)
+                    return Ok(Error(id, -32602, "Invalid tool call"));
                 return Ok(Rpc(id, await Call(request, ct)));
             default:
                 return Ok(Error(id, -32601, "Method not found"));
@@ -147,7 +176,12 @@ public sealed class DataGatewayMcpController(
         try
         {
             if (name == "get_schema")
+            {
+                if (arguments.ValueKind != JsonValueKind.Undefined
+                    && (arguments.ValueKind != JsonValueKind.Object || arguments.EnumerateObject().Any()))
+                    return ToolError("Invalid arguments");
                 result = await controller.Schema(ct);
+            }
             else
             {
                 if (arguments.ValueKind != JsonValueKind.Object)
@@ -167,6 +201,7 @@ public sealed class DataGatewayMcpController(
             return new
             {
                 content = new[] { new { type = "text", text = JsonSerializer.Serialize(ok.Value) } },
+                structuredContent = ok.Value,
                 isError = false
             };
         return ToolError(result is ObjectResult obj

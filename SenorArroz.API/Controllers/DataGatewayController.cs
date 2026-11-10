@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 using NpgsqlTypes;
+using Microsoft.AspNetCore.RateLimiting;
+using SenorArroz.API.Security;
 using SenorArroz.Application.Common.Interfaces;
 
 namespace SenorArroz.API.Controllers;
@@ -15,7 +17,9 @@ namespace SenorArroz.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/internal/data-gateway")]
-[Authorize(Roles = "Superadmin")]
+[Authorize(Policy = DataGatewaySecurity.Policy)]
+[EnableRateLimiting(DataGatewaySecurity.Policy)]
+[RequestSizeLimit(32768)]
 public sealed class DataGatewayController(
     IConfiguration configuration,
     ICurrentTenant tenant,
@@ -26,7 +30,9 @@ public sealed class DataGatewayController(
         @"\A[a-z_][a-z0-9_]*\z", RegexOptions.CultureInvariant | RegexOptions.Compiled,
         TimeSpan.FromMilliseconds(100));
 
+    [System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
     public sealed record Filter(string Column, string Op, JsonElement Value);
+    [System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
     public sealed record QueryRequest(string View, string[]? Columns = null,
         Filter[]? Filters = null, string? OrderBy = null, bool Descending = false, int MaxRows = 100);
 
@@ -40,7 +46,7 @@ public sealed class DataGatewayController(
         connectionString = configuration.GetConnectionString("DataGatewayReader") ?? "";
         return configuration.GetValue<bool>("DataGateway:Enabled")
             && !string.IsNullOrWhiteSpace(connectionString)
-            && tenant.HasTenant && tenant.TenantId > 0
+            && tenant.HasTenant && tenant.TenantId == configuration.GetValue("DataGateway:ReaderTenantId", 1)
             && AllowedViews.Length > 0;
     }
 
@@ -58,8 +64,14 @@ public sealed class DataGatewayController(
             MaxPoolSize = 3,
             Timeout = 3,
             CommandTimeout = 4,
-            NoResetOnClose = false
+            NoResetOnClose = false,
+            Multiplexing = false,
+            IncludeErrorDetail = false,
+            LogParameters = false,
+            ApplicationName = "senorarroz-data-gateway"
         };
+        if (options.Username != "senorarroz_db_reader")
+            throw new InvalidOperationException("Data Gateway requires the existing reader role.");
         var connection = new NpgsqlConnection(options.ConnectionString);
         try
         {
@@ -70,10 +82,23 @@ public sealed class DataGatewayController(
                 SELECT set_config('app.current_tenant_id', @tenant, true),
                        set_config('app.system_scope', 'off', true);
                 SET LOCAL statement_timeout = '3000ms';
+                SET LOCAL lock_timeout = '500ms';
+                SET LOCAL idle_in_transaction_session_timeout = '5000ms';
+                SET LOCAL search_path = pg_catalog;
                 """, connection, transaction);
             init.Parameters.AddWithValue("tenant", tenant.TenantId.ToString(
                 System.Globalization.CultureInfo.InvariantCulture));
             await init.ExecuteNonQueryAsync(ct);
+            await using var check = new NpgsqlCommand("""
+                SELECT NOT (rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolreplication)
+                  AND current_user = 'senorarroz_db_reader'
+                  AND NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE member = r.oid)
+                  AND NOT EXISTS (SELECT 1 FROM pg_class WHERE relowner = r.oid)
+                  AND NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspowner = r.oid)
+                FROM pg_roles r WHERE rolname = current_user
+                """, connection, transaction);
+            if (await check.ExecuteScalarAsync(ct) is not true)
+                throw new InvalidOperationException("Unsafe Data Gateway database role.");
             return (connection, transaction);
         }
         catch
@@ -87,10 +112,14 @@ public sealed class DataGatewayController(
         NpgsqlConnection conn, NpgsqlTransaction tx, string view, CancellationToken ct)
     {
         const string sql = """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = 'diagnostics' AND table_name = @view
-            ORDER BY ordinal_position
+            SELECT a.attname
+            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_attribute a ON a.attrelid = c.oid
+            WHERE n.nspname = 'diagnostics' AND c.relname = @view AND c.relkind = 'v'
+              AND c.reloptions @> ARRAY['security_invoker=true', 'security_barrier=true']
+              AND has_table_privilege(current_user, c.oid, 'SELECT')
+              AND a.attnum > 0 AND NOT a.attisdropped
+            ORDER BY a.attnum
             """;
         await using var cmd = new NpgsqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("view", view.Split('.')[1]);
@@ -116,15 +145,16 @@ public sealed class DataGatewayController(
                 foreach (var view in AllowedViews)
                 {
                     var columns = await ColumnsAsync(connection, tx, view, ct);
-                    result.Add(new { view, columns = columns.OrderBy(c => c).ToArray() });
+                    if (columns.Count > 0)
+                        result.Add(new { view, columns = columns.OrderBy(c => c).ToArray() });
                 }
                 await tx.CommitAsync(ct);
                 return Ok(new { views = result });
             }
         }
-        catch (Exception ex) when (ex is PostgresException or NpgsqlException or TimeoutException)
+        catch (Exception ex) when (ex is NpgsqlException or TimeoutException or InvalidOperationException or ArgumentException)
         {
-            logger.LogWarning(ex, "DataGateway schema error trace={Trace}", HttpContext.TraceIdentifier);
+            logger.LogWarning("DataGateway schema error type={Type} trace={Trace}", ex.GetType().Name, HttpContext.TraceIdentifier);
             return StatusCode(503, new { error = "Database query failed" });
         }
         finally { Concurrency.Release(); }
@@ -145,6 +175,16 @@ public sealed class DataGatewayController(
             return BadRequest(new { error = "View is not allowed" });
         if (request.MaxRows is < 1 or > 500 || request.Columns?.Length > 30 || request.Filters?.Length > 20)
             return BadRequest(new { error = "Request limits exceeded" });
+        if (request.Columns?.Any(c => !IsIdentifier(c)) == true
+            || request.Columns?.Distinct(StringComparer.Ordinal).Count() != request.Columns?.Length
+            || request.OrderBy is not null && !IsIdentifier(request.OrderBy)
+            || request.Filters?.Any(f => f is null || !IsIdentifier(f.Column)
+                || f.Op is not ("eq" or "ne" or "gt" or "gte" or "lt" or "lte")
+                || f.Value.ValueKind is JsonValueKind.Array or JsonValueKind.Object or JsonValueKind.Undefined
+                || f.Value.ValueKind == JsonValueKind.String && f.Value.GetString()!.Length > 2048
+                || f.Value.ValueKind == JsonValueKind.Number && !f.Value.TryGetDecimal(out _)
+                || f.Value.ValueKind == JsonValueKind.Null && f.Op is not ("eq" or "ne")) == true)
+            return BadRequest(new { error = "Invalid columns or filters" });
         if (!await Concurrency.WaitAsync(0, ct)) return StatusCode(429);
         try
         {
@@ -183,18 +223,19 @@ public sealed class DataGatewayController(
                         continue;
                     }
                     predicates.Add(Quote(filter.Column) + " " + ops[filter.Op] + " @" + param);
-                    cmd.Parameters.Add(filter.Value.ValueKind switch
+                    var parameter = filter.Value.ValueKind switch
                     {
-                        JsonValueKind.String => new NpgsqlParameter(param, NpgsqlDbType.Text)
+                        JsonValueKind.String => new NpgsqlParameter(param, NpgsqlDbType.Unknown)
                             { Value = filter.Value.GetString()! },
                         JsonValueKind.Number when filter.Value.TryGetInt64(out var integer) =>
                             new NpgsqlParameter(param, NpgsqlDbType.Bigint) { Value = integer },
-                        JsonValueKind.Number => new NpgsqlParameter(param, NpgsqlDbType.Double)
-                            { Value = filter.Value.GetDouble() },
+                        JsonValueKind.Number => new NpgsqlParameter(param, NpgsqlDbType.Numeric)
+                            { Value = filter.Value.GetDecimal() },
                         JsonValueKind.True => new NpgsqlParameter(param, NpgsqlDbType.Boolean) { Value = true },
                         JsonValueKind.False => new NpgsqlParameter(param, NpgsqlDbType.Boolean) { Value = false },
                         _ => throw new ArgumentException("Unsupported filter")
-                    });
+                    };
+                    cmd.Parameters.Add(parameter);
                 }
                 if (predicates.Count > 0) sql += " WHERE " + string.Join(" AND ", predicates);
                 if (request.OrderBy is not null)
@@ -205,6 +246,8 @@ public sealed class DataGatewayController(
                 await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct);
                 var cols = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToArray();
                 var rows = new List<Dictionary<string, object?>>();
+                var bytes = 0;
+                var truncated = false;
                 while (rows.Count <= request.MaxRows && await reader.ReadAsync(ct))
                 {
                     var row = new Dictionary<string, object?>();
@@ -215,10 +258,12 @@ public sealed class DataGatewayController(
                         row[cols[i]] = serialized is { Length: > 2048 }
                             ? serialized[..2048] + "…" : serialized;
                     }
+                    bytes += System.Text.Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(row));
+                    if (bytes > 262144) { truncated = true; break; }
                     rows.Add(row);
                 }
-                var truncated = rows.Count > request.MaxRows;
-                if (truncated) rows.RemoveAt(rows.Count - 1);
+                truncated |= rows.Count > request.MaxRows;
+                if (rows.Count > request.MaxRows) rows.RemoveAt(rows.Count - 1);
                 await reader.CloseAsync();
                 await tx.CommitAsync(ct);
                 logger.LogInformation("DataGateway read tenant={Tenant} view={View} explain={Explain} rows={Count} trace={Trace}",
@@ -226,10 +271,10 @@ public sealed class DataGatewayController(
                 return Ok(new { columns = cols, rows, truncated });
             }
         }
-        catch (Exception ex) when (ex is PostgresException or NpgsqlException or TimeoutException)
+        catch (Exception ex) when (ex is NpgsqlException or TimeoutException or InvalidOperationException or ArgumentException)
         {
-            logger.LogWarning(ex, "DataGateway read error tenant={Tenant} trace={Trace}",
-                tenant.TenantId, HttpContext.TraceIdentifier);
+            logger.LogWarning("DataGateway read error type={Type} tenant={Tenant} trace={Trace}",
+                ex.GetType().Name, tenant.TenantId, HttpContext.TraceIdentifier);
             return StatusCode(503, new { error = "Database query failed" });
         }
         finally { Concurrency.Release(); }
