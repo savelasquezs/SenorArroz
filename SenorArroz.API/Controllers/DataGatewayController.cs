@@ -52,7 +52,7 @@ public sealed class DataGatewayController(
         var settings = new NpgsqlConnectionStringBuilder(connectionString)
         {
             Pooling = true,
-            MaximumPoolSize = 3,
+            MaxPoolSize = 3,
             Timeout = 3,
             CommandTimeout = 4,
             NoResetOnClose = false
