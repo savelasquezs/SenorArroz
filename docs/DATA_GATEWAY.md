@@ -26,7 +26,7 @@ Dos vías aisladas, bajo la misma política del gateway:
 
 El consentimiento alojado valida las credenciales existentes sin abrir ni sustituir sesiones del POS. Incluye antiforgery, CSP, límites de cuerpo e intentos por IP. DCR solo registra clientes públicos con PKCE y callbacks HTTPS de ChatGPT o loopback de Codex; máximo 128 clientes y dos registros simultáneos. Las cuatro tablas técnicas de `gateway_oauth` tienen FORCE RLS y guard restrictivo tenant=1 para la cuenta runtime existente; el lector no puede acceder a ellas. No contienen datos operativos del restaurante. La migración se aplica mediante Actions y nunca al arrancar la API.
 
-Los tokens OAuth del gateway solo son aceptados por esta política; no autentican las otras rutas administrativas. Se publican metadata RFC 9728, RFC 8414, JWKS y challenge WWW-Authenticate. El JWT del POS sirve para clientes administrativos, mientras ChatGPT usa el consentimiento OAuth.
+Los tokens OAuth del gateway solo son aceptados por esta política; no autentican las otras rutas administrativas. Se publican metadata RFC 9728, RFC 8414, JWKS y challenge WWW-Authenticate. El JWT del POS sirve para clientes administrativos, mientras ChatGPT usa el consentimiento OAuth. Los clientes públicos usan token_endpoint_auth_method=none con PKCE; no se crean secretos de cliente. Para clientes antiguos que omiten resource, el servidor asigna exclusivamente su Resource configurado; un resource explícito distinto siempre se rechaza y el token conserva la audiencia exacta.
 
 Se rechaza todo `Origin` del MCP salvo coincidencia exacta en `DataGateway:AllowedOrigins`; clientes servidor a servidor pueden omitirlo. No autorizar comodines. No incluir tokens en URLs, logs, Issues o repositorios.
 

@@ -25,6 +25,7 @@ using SenorArroz.Infrastructure.Services;
 
 namespace SenorArroz.Tests;
 
+[Collection("Gateway database roles")]
 public sealed class DataGatewayOAuthTests
 {
     [Theory]
@@ -55,6 +56,12 @@ public sealed class DataGatewayOAuthTests
 
     [GatewayPostgreSqlFact]
     public async Task Hosted_oauth_enforces_consent_pkce_one_time_codes_refresh_revocation_and_tenant_access()
+    {
+        await VerifyHostedOAuth(true);
+        await VerifyHostedOAuth(false);
+    }
+
+    private static async Task VerifyHostedOAuth(bool includeResource)
     {
         var source = Environment.GetEnvironmentVariable("FLOW_POSTGRES_TEST_CONNECTION")!;
         Assert.Contains(new NpgsqlConnectionStringBuilder(source).Host, new[] { "localhost", "127.0.0.1", "::1", "flow-postgres" });
@@ -126,6 +133,8 @@ public sealed class DataGatewayOAuthTests
             var discovery = JsonDocument.Parse(await client.GetStringAsync("/.well-known/oauth-authorization-server"));
             Assert.Contains("S256", discovery.RootElement.GetProperty("code_challenge_methods_supported").EnumerateArray().Select(v => v.GetString()));
             Assert.DoesNotContain("plain", discovery.RootElement.GetProperty("code_challenge_methods_supported").EnumerateArray().Select(v => v.GetString()));
+            Assert.Equal(new[] { "none" }, discovery.RootElement.GetProperty("token_endpoint_auth_methods_supported").EnumerateArray().Select(v => v.GetString()));
+            Assert.DoesNotContain("openid", discovery.RootElement.GetProperty("scopes_supported").EnumerateArray().Select(v => v.GetString()));
             Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync(prefix + "/register", new { redirect_uris = new[] { "https://evil.example/callback" } })).StatusCode);
             var registration = await client.PostAsJsonAsync(prefix + "/register", new { redirect_uris = new[] { "https://chatgpt.com/connector_platform_oauth_redirect" }, token_endpoint_auth_method = "none" });
             Assert.Equal(HttpStatusCode.Created, registration.StatusCode);
@@ -138,8 +147,16 @@ public sealed class DataGatewayOAuthTests
                 ["resource"] = config["DataGateway:OAuth:Resource"], ["code_challenge"] = Base64UrlEncoder.Encode(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(verifier))), ["code_challenge_method"] = "S256"
             };
             var authorizeUri = QueryHelpers.AddQueryString(prefix + "/authorize", parameters);
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync(QueryHelpers.AddQueryString(prefix + "/authorize",
+                new Dictionary<string, string?>(parameters) { ["resource"] = "https://other.example/mcp" }))).StatusCode);
+            if (!includeResource)
+            {
+                parameters.Remove("resource");
+                authorizeUri = QueryHelpers.AddQueryString(prefix + "/authorize", parameters);
+            }
             var consent = await client.GetAsync(authorizeUri);
             Assert.True(consent.StatusCode == HttpStatusCode.OK, await consent.Content.ReadAsStringAsync());
+            Assert.Contains("form-action 'self' https://chatgpt.com;", string.Join(';', consent.Headers.GetValues("Content-Security-Policy")));
             var html = await consent.Content.ReadAsStringAsync();
             Assert.DoesNotContain("value=\"test-login-only\"", html);
             var token = Regex.Match(html, "name=\"__RequestVerificationToken\" value=\"([^\"]+)\"").Groups[1].Value;
@@ -155,13 +172,15 @@ public sealed class DataGatewayOAuthTests
             Assert.Equal("state-test", redirect["state"].ToString()); Assert.Equal(DataGatewayOAuth.Issuer(config), redirect["iss"].ToString());
             var code = redirect["code"].ToString();
             var exchange = new Dictionary<string, string> { ["grant_type"] = "authorization_code", ["client_id"] = clientId,
-                ["code"] = code, ["code_verifier"] = verifier, ["redirect_uri"] = parameters["redirect_uri"]!, ["resource"] = parameters["resource"]! };
+                ["code"] = code, ["code_verifier"] = verifier, ["redirect_uri"] = parameters["redirect_uri"]! };
+            if (includeResource) exchange["resource"] = config["DataGateway:OAuth:Resource"]!;
             var wrongVerifier = new Dictionary<string, string>(exchange) { ["code_verifier"] = new string('x', 43) };
             Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync(prefix + "/token", new FormUrlEncodedContent(wrongVerifier))).StatusCode);
             var exchanged = await client.PostAsync(prefix + "/token", new FormUrlEncodedContent(exchange));
             Assert.Equal(HttpStatusCode.OK, exchanged.StatusCode);
             var tokens = JsonDocument.Parse(await exchanged.Content.ReadAsStringAsync()).RootElement;
             var access = tokens.GetProperty("access_token").GetString()!; var refresh = tokens.GetProperty("refresh_token").GetString()!;
+            Assert.Contains(DataGatewayOAuth.Resource(config), new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(access).Audiences);
             async Task<HttpStatusCode> Ping(string bearer)
             {
                 using var request = new HttpRequestMessage(HttpMethod.Post, "/api/internal/data-gateway/mcp");
@@ -174,8 +193,12 @@ public sealed class DataGatewayOAuthTests
             user.Role = UserRole.Cashier; Assert.Equal(HttpStatusCode.Forbidden, await Ping(access)); user.Role = UserRole.Superadmin;
             user.TenantId = 2; Assert.Equal(HttpStatusCode.Forbidden, await Ping(access)); user.TenantId = 1;
             user.Tenant.AccessVersion = 2; Assert.Equal(HttpStatusCode.Forbidden, await Ping(access)); user.Tenant.AccessVersion = 1;
-            var renewed = await client.PostAsync(prefix + "/token", new FormUrlEncodedContent(new Dictionary<string, string>
-            { ["grant_type"] = "refresh_token", ["client_id"] = clientId, ["refresh_token"] = refresh, ["resource"] = parameters["resource"]! }));
+            var refreshForm = new Dictionary<string, string>
+            { ["grant_type"] = "refresh_token", ["client_id"] = clientId, ["refresh_token"] = refresh };
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsync(prefix + "/token", new FormUrlEncodedContent(
+                new Dictionary<string, string>(refreshForm) { ["resource"] = "https://other.example/mcp" }))).StatusCode);
+            if (includeResource) refreshForm["resource"] = config["DataGateway:OAuth:Resource"]!;
+            var renewed = await client.PostAsync(prefix + "/token", new FormUrlEncodedContent(refreshForm));
             Assert.Equal(HttpStatusCode.OK, renewed.StatusCode);
             var renewedTokens = JsonDocument.Parse(await renewed.Content.ReadAsStringAsync()).RootElement;
             var newAccess = renewedTokens.GetProperty("access_token").GetString()!;
