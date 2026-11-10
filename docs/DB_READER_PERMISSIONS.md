@@ -27,13 +27,11 @@ una política RESTRICTIVE por tabla específica al lector para fijarlo al
 **tenant 1**: esto evita que el lector pueda obtener datos de otro tenant
 mediante `SELECT set_config('app.current_tenant_id', ...)` o
 `app.system_scope`. El modelo no permite compartir ese rol con futuros
-tenants. Las tablas previamente otorgadas al lector también deben auditarse
-para detectar permisos demasiado amplios.
+tenants. Las 14 tablas previamente otorgadas al lector también quedan cubiertas\npor la política RESTRICTIVE específica del rol, para evitar la suplantación\ndel contexto de sesión. Esos permisos históricos no se amplían.
 
 ## Para ejecutar más adelante
 
-1. Confirmar que el tenant de operación sigue siendo 1 y auditar las
-   14 tablas ya autorizadas (y sus políticas).
+1. Confirmar que el tenant de operación sigue siendo 1 y revisar las\n   políticas de las 14 tablas ya autorizadas. El script exige RLS forzado\n   también para esas 14 tablas antes de aplicar cualquier cambio.
 2. Respaldar la base y **verificar restaurabilidad**, no solo existencia
    de archivo. La migración no cambia datos, pero sí políticas de seguridad.
 3. Pasar el script por el importador del repositorio privado
