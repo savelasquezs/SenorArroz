@@ -55,6 +55,15 @@ BEGIN
     'storefront_analytics_daily'
   ]
   LOOP
+    IF EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE schemaname='public' AND tablename=required_table
+        AND policyname='db_reader_tenant_guard'
+        AND (permissive <> 'RESTRICTIVE' OR cmd <> 'SELECT'
+             OR qual <> '(tenant_id = 1)' OR roles::text <> '{senorarroz_db_reader}')
+    ) THEN
+      RAISE EXCEPTION 'Existing reader guard differs for %', required_table;
+    END IF;
     IF NOT EXISTS (
       SELECT 1 FROM pg_policies
       WHERE schemaname='public' AND tablename=required_table
@@ -83,9 +92,12 @@ GRANT SELECT ON TABLE
   public.delivery_routing_plan,
   public.delivery_route_proposal,
   public.delivery_route_proposal_stop,
-  public.delivery_authorized_place,
-  public.discount_code
+  public.delivery_authorized_place
 TO senorarroz_db_reader;
+
+-- Discount codes themselves can be treated as credentials. Expose metadata only.
+GRANT SELECT (id,tenant_id,branch_id,type,gift_product_id,discount_percentage,starts_at,ends_at,minimum_order_value,is_active,created_at,updated_at)
+  ON public.discount_code TO senorarroz_db_reader;
 
 -- Inventory: allow operational counts, not costs, notes, user attribution
 -- or idempotency keys (sensitive business/diagnostic metadata).
