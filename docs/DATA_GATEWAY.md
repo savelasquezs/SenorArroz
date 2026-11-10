@@ -83,3 +83,26 @@ RLS, privilegios, límites, truncamiento y rechazo de operaciones peligrosas.
 
 El gateway puede desplegarse en `main` inerte; no se necesita modificar
 la configuración de producción hasta completar la lista anterior.
+
+
+## Reutilización del usuario existente de GitHub Actions
+
+La cuenta prevista es **`senorarroz_db_reader`**, ya usada por
+`savelasquezs/senorarroz-db-assistant` a través del secreto
+`DATABASE_READ_URL`. La verificación de conectividad con SELECT 1 fue
+satisfactoria (Issue #76 del repositorio privado).
+
+- **No crear ni rotar la contraseña** ni copiar el secreto a archivos,
+  Issues o comentarios. Los secretos de GitHub Actions no son recuperables
+  desde esta integración.
+- Reutilizar exactamente el mismo **rol PostgreSQL**, previa auditoría de
+  atributos (`NOSUPERUSER`, `NOBYPASSRLS`, sin propietario), RLS y GRANT
+  sobre la vista de diagnóstico elegida.
+- En Railway, crear posteriormente `ConnectionStrings__DataGatewayReader`
+  con las credenciales del lector. Preferir el hostname de red privada para
+  reducir exposición y tráfico público, sin cambiar el usuario ni la contraseña.
+- Antes de habilitar `DataGateway__Enabled`, confirmar `SELECT` sobre
+  vistas `diagnostics` y rechazo efectivo de operaciones no autorizadas.
+- Conservar GitHub Actions funcionando como respaldo hasta validar el
+  gateway por completo. La rotación futura afectará **ambos** sistemas,
+  ya que comparten rol.
