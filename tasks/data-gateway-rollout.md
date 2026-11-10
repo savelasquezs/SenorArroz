@@ -4,7 +4,9 @@
 
 Implementación integrada en la API existente; flag desactivado por defecto. SQL preparado, sin aplicación automática en producción. Actions permanece operativo. No se cambiaron contraseñas ni se crearon servicios Railway.
 
-Importación #84 fallida y cerrada; reemplazada por #87 (éxito). SQL importado en PR #88 de `savelasquezs/senorarroz-db-assistant`. PR #86 corrige normalización LF y reporte de rechazos. Huella importada verificada contra el archivo de origen. Pruebas locales: 24 del gateway en PostgreSQL 17; suite completa Release 1 583 aprobadas, 141 omitidas por condiciones de entorno; SDK 4 y stdio 6; asistente 40. CI de integración dispone de PostgreSQL y ejecuta las pruebas que lo requieren.
+Importación #84 fallida y cerrada; reemplazada por #87 (éxito). SQL importado y fusionado en PR #88 de `savelasquezs/senorarroz-db-assistant`. PR #86 corrige normalización LF y reporte de rechazos. Huella importada verificada contra el archivo de origen. [Solicitud #89](https://github.com/savelasquezs/senorarroz-db-assistant/issues/89) preparada con respaldo verificado; sin comentario de aplicación. Comprobación productiva de solo lectura #90: lector existente, 0 vistas diagnostics y 14 concesiones de tabla previas; migración pendiente.
+
+Pruebas locales: 24 del gateway en PostgreSQL 17, también con SCRAM; suite completa Release 1 583 aprobadas, 141 omitidas por condiciones de entorno; SDK 4 y stdio 7; asistente 40. CI de integración dispone de PostgreSQL y ejecuta las pruebas que lo requieren.
 
 ## Pasos pendientes que requieren operador
 

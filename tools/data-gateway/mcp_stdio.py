@@ -81,7 +81,7 @@ def main():
         else:
             answer = dispatch(line)
         if answer is not None:
-            sys.stdout.write(json.dumps(answer, ensure_ascii=False) + "\n")
+            sys.stdout.write(json.dumps(answer, ensure_ascii=True) + "\n")
             sys.stdout.flush()
 
 

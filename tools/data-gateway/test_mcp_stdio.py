@@ -44,6 +44,15 @@ class AdapterTests(unittest.TestCase):
             mcp.main()
         self.assertEqual(1, len(output.getvalue().splitlines()))
 
+    def test_unicode_results_remain_valid_utf8_on_windows_pipes(self):
+        stream = io.TextIOWrapper(io.BytesIO(b'{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n'))
+        output = io.StringIO()
+        answer = {"jsonrpc": "2.0", "id": 1, "result": {"text": "Señor Arroz 🍚"}}
+        with patch.object(mcp.sys, 'stdin', stream), patch.object(mcp.sys, 'stdout', output), patch.object(mcp, 'gateway', return_value=answer):
+            mcp.main()
+        self.assertTrue(output.getvalue().isascii())
+        self.assertEqual(answer, json.loads(output.getvalue().encode('ascii').decode('utf-8')))
+
 
 if __name__ == '__main__':
     unittest.main()
