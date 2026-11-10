@@ -12,6 +12,7 @@ using SenorArroz.Application.Common.Interfaces;
 
 namespace SenorArroz.Tests;
 
+[Collection("Gateway database roles")]
 public sealed class DataGatewayPostgreSqlTests
 {
     [GatewayPostgreSqlFact]
@@ -141,3 +142,6 @@ public sealed class GatewayPostgreSqlFactAttribute : FactAttribute
             Skip = "Requires an isolated PostgreSQL server via FLOW_POSTGRES_TEST_CONNECTION; Backend CI supplies it.";
     }
 }
+
+[CollectionDefinition("Gateway database roles", DisableParallelization = true)]
+public sealed class GatewayDatabaseRolesCollection;

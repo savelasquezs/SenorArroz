@@ -25,6 +25,7 @@ using SenorArroz.Infrastructure.Services;
 
 namespace SenorArroz.Tests;
 
+[Collection("Gateway database roles")]
 public sealed class DataGatewayOAuthTests
 {
     [Theory]
