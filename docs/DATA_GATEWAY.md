@@ -14,7 +14,7 @@ Las consultas son objetos `{view, columns?, filters?, orderBy?, descending?, max
 
 Cada conexión comprueba nombre, atributos, membresías y propiedad del lector. Cada transacción es READ ONLY, configura tenant desde identidad autenticada y apaga system_scope; timeout SQL 3 s, lock 500 ms, pool máximo 3 y 2 consultas concurrentes por instancia. Cuerpos de hasta 32 KiB, 60 solicitudes/minuto por tenant, 500 filas, 30 columnas y 20 filtros; valores de texto limitados a 2048 caracteres y filas serializadas a 256 KiB. `truncated` indica filas omitidas. Los valores numéricos se devuelven como cadenas para preservar precisión.
 
-Las 37 tablas autorizadas usan SELECT por columna; 38 vistas incluyen además filtro explícito tenant=1. `orders_summary` agrupa por fecha de Colombia y conserva decimales. Las 92 tablas restantes se excluyen. El inventario completo y las columnas aprobadas están en [DB_READER_PERMISSIONS.md](DB_READER_PERMISSIONS.md).
+Las 38 tablas autorizadas usan SELECT por columna; 39 vistas incluyen además filtro explícito tenant=1. `orders_summary` agrupa por fecha de Colombia y conserva decimales. Las 91 tablas restantes se excluyen. El inventario completo y las columnas aprobadas están en [DB_READER_PERMISSIONS.md](DB_READER_PERMISSIONS.md). `diagnostics.users` agrega exclusivamente `id` y `name` desde la tabla real `public."user"`; requiere `add_gateway_user_names_20261110.sql` y añadir la vista a AllowedViews después de aplicar el SQL. `tenant_id` se concede únicamente para el filtro interno y no aparece en la vista.
 
 ## Autenticación
 
@@ -39,7 +39,7 @@ Preparación en `tools/data-gateway/railway.env.example`. Servicio existente: `S
 1. Mantener `DataGateway__Enabled=false`.
 2. Instalar `ConnectionStrings__DataGatewayReader` con la credencial existente y host privado de MainDatabase. El workflow manual owner-only `reader-handoff.yml` del asistente permite transportarla cifrada RSA-OAEP SHA-256: la clave privada permanece en memoria del operador y el artefacto contiene solo ciphertext. No usar DefaultConnection ni rotar la contraseña.
 3. Configurar `DataGateway__OAuth__HostedEnabled=true`, Authority `https://senorarrozapi.up.railway.app/api/internal/data-gateway/oauth/`, Resource `https://senorarrozapi.up.railway.app/api/internal/data-gateway/mcp` y `AllowTenantSuperadmins=true` o IDs autorizados. Instalar SigningKey RSA-3072+ PKCS8 PEM y EncryptionKey AES-256 Base64 como variables secretas; conservarlas entre despliegues y no reutilizar JwtSettings.
-4. Configurar `DataGateway__AllowedViews__N` solo con las 38 vistas revisadas de diagnostics.
+4. Configurar `DataGateway__AllowedViews__N` solo con las 39 vistas revisadas de diagnostics.
 5. Aplicar ambas migraciones mediante importación, revisión, SHA, respaldo restaurado y autorización del workflow existente. El merge no aplica SQL.
 6. Comprobar con el lector real: columnas excluidas, RLS entre tenants, credencial sin escritura, protocolo MCP y expiración. Activar `DataGateway__Enabled=true` después de documentar resultados. Apagado inmediato: `DataGateway__Enabled=false`; para cerrar también autorización, HostedEnabled=false.
 
