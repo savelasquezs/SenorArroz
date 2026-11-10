@@ -155,6 +155,7 @@ public sealed class DataGatewayOAuthTests
             }
             var consent = await client.GetAsync(authorizeUri);
             Assert.True(consent.StatusCode == HttpStatusCode.OK, await consent.Content.ReadAsStringAsync());
+            Assert.Contains("form-action 'self' https://chatgpt.com;", string.Join(';', consent.Headers.GetValues("Content-Security-Policy")));
             var html = await consent.Content.ReadAsStringAsync();
             Assert.DoesNotContain("value=\"test-login-only\"", html);
             var token = Regex.Match(html, "name=\"__RequestVerificationToken\" value=\"([^\"]+)\"").Groups[1].Value;

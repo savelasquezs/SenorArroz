@@ -132,10 +132,11 @@ public sealed class DataGatewayOAuthController(IConfiguration config, IAntiforge
 
     private IActionResult Consent(string? error = null)
     {
-        Response.Headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+        var request = HttpContext.GetOpenIddictServerRequest()!;
+        var callbackOrigin = new Uri(request.RedirectUri!).GetLeftPart(UriPartial.Authority);
+        Response.Headers["Content-Security-Policy"] = $"default-src 'none'; style-src 'unsafe-inline'; form-action 'self' {callbackOrigin}; frame-ancestors 'none'; base-uri 'none'";
         Response.Headers["X-Frame-Options"] = "DENY";
         var token = antiforgery.GetAndStoreTokens(HttpContext);
-        var request = HttpContext.GetOpenIddictServerRequest()!;
         var hidden = new StringBuilder();
         foreach (var name in new[] { "client_id", "redirect_uri", "response_type", "scope", "state", "code_challenge", "code_challenge_method", "resource" })
             hidden.Append($"<input type=\"hidden\" name=\"{name}\" value=\"{Encode((string?)request[name])}\">");
