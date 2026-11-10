@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -10,9 +10,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.8" />
     <PackageReference Include="coverlet.collector" Version="6.0.2" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.8" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.8" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.8" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.19" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.19" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.19" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.14.0" />
@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <None Include="../SenorArroz.Infrastructure/Scripts/add_data_gateway_oauth_20261110.sql" Link="Scripts/add_data_gateway_oauth_20261110.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../SenorArroz.Infrastructure/Scripts/expand_db_reader_diagnostics_grants_20261110.sql" Link="Scripts/expand_db_reader_diagnostics_grants_20261110.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../scripts/delivery-routing-addresses.json" Link="delivery-routing-addresses.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../SenorArroz.Infrastructure/Scripts/rappi_connections_by_environment.sql" Link="Scripts/rappi_connections_by_environment.sql" CopyToOutputDirectory="PreserveNewest" />

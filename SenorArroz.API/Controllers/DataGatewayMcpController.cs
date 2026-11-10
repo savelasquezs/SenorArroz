@@ -34,19 +34,22 @@ public sealed class DataGatewayMcpController(
             name = "get_schema",
             description = "List explicitly allowed diagnostic views and columns",
             inputSchema = new { type = "object", properties = new { }, additionalProperties = false },
-            annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false }
+            annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false },
+            securitySchemes = new[] { new { type = "oauth2", scopes = new[] { DataGatewaySecurity.Scope } } }
         },
         new {
             name = "execute_query",
             description = "Read a permitted diagnostic view with filters; no arbitrary SQL",
             inputSchema = QuerySchema(),
-            annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false }
+            annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false },
+            securitySchemes = new[] { new { type = "oauth2", scopes = new[] { DataGatewaySecurity.Scope } } }
         },
         new {
             name = "explain_query",
             description = "EXPLAIN without ANALYZE for a structured query",
             inputSchema = QuerySchema(),
-            annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false }
+            annotations = new { readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false },
+            securitySchemes = new[] { new { type = "oauth2", scopes = new[] { DataGatewaySecurity.Scope } } }
         }
     ];
 
@@ -103,7 +106,10 @@ public sealed class DataGatewayMcpController(
             && !(config.GetSection("DataGateway:AllowedOrigins").Get<string[]>() ?? [])
                 .Contains(origin.ToString(), StringComparer.Ordinal))
             return StatusCode(403);
-        if (Request.Headers.TryGetValue("MCP-Protocol-Version", out var protocol)
+        var initializing = request.ValueKind == JsonValueKind.Object
+            && request.TryGetProperty("method", out var initialMethod)
+            && initialMethod.ValueKind == JsonValueKind.String && initialMethod.GetString() == "initialize";
+        if (!initializing && Request.Headers.TryGetValue("MCP-Protocol-Version", out var protocol)
             && !Versions.Contains(protocol.ToString(), StringComparer.Ordinal))
             return BadRequest(Error(null, -32600, "Unsupported MCP protocol version"));
 

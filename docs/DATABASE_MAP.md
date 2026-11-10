@@ -620,3 +620,9 @@ User.delivery_context_version/last_delivery_take_id ordenan el contexto. Deliver
 ## Abonos iniciales de reservas (2026-11-06)
 
 `add_reservation_receipt_payment_links.sql` es aditivo y debe aplicarse antes del backend. `app_payment.source_reservation_deposit_id` vincula un pago operativo con su abono del mismo tenant; es único cuando no es NULL. `reservation_deposit.cash_applied_to_order` distingue el efectivo ya incorporado al snapshot del pedido. Sus valores legacy son NULL/false: no se reconstruyen ni reclasifican movimientos históricos.
+
+## Data Gateway y OAuth
+
+Auditoría de 129 tablas public: lector existente con 37 concesiones SELECT por columna y 38 vistas diagnostics invoker/barrier, todas fijas al tenant 1. Las otras 92 tablas y columnas privadas siguen excluidas. SQL: `expand_db_reader_diagnostics_grants_20261110.sql`.
+
+`add_data_gateway_oauth_20261110.sql` añade application, authorization, scope y token en esquema gateway_oauth, con tenant_id=1, FORCE RLS y guard restrictivo para senorarroz_runtime. El lector no tiene acceso. Son tablas técnicas fuera del ApplicationDbContext; no cambian el inventario de entidades funcionales. No se crean ni rotan roles/credenciales.

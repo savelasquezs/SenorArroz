@@ -643,6 +643,7 @@ app.UseStaticFiles();
 app.UseCors("Frontend");
 
 // Authentication & Authorization
+app.UseHostedDataGatewayOAuth(builder.Configuration);
 app.UseAuthentication();
 app.UseMiddleware<DeliveryAppVersionMiddleware>();
 app.UseAuthorization();

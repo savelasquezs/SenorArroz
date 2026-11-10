@@ -18,12 +18,15 @@ public static class DataGatewaySecurity
             tenantId == config.GetValue("DataGateway:ReaderTenantId", 1) &&
             (identity.AuthenticationType == Scheme
                 ? identity.FindAll("scope").SelectMany(c => c.Value.Split(' ')).Contains(Scope) &&
-                  (config.GetSection("DataGateway:OAuth:AllowedSubjects").Get<string[]>() ?? [])
+                  ((config.GetSection("DataGateway:OAuth:AllowedSubjects").Get<string[]>() ?? [])
                     .Contains(identity.FindFirst("sub")?.Value, StringComparer.Ordinal)
+                    || DataGatewayOAuth.Hosted(config) && config.GetValue<bool>("DataGateway:OAuth:AllowTenantSuperadmins")
+                        && identity.HasClaim("role", "Superadmin"))
                 : identity.HasClaim(identity.RoleClaimType, "Superadmin")));
 
     public static IServiceCollection AddDataGateway(this IServiceCollection services, IConfiguration config)
     {
+        services.AddHostedDataGatewayOAuth(config);
         var authority = config["DataGateway:OAuth:Authority"];
         var resource = config["DataGateway:OAuth:Resource"];
         var oauth = Uri.TryCreate(authority, UriKind.Absolute, out var issuer) && issuer.Scheme == "https"
@@ -33,7 +36,7 @@ public static class DataGatewaySecurity
         if (oauth)
             services.AddAuthentication().AddJwtBearer(Scheme, options =>
             {
-                options.Authority = authority;
+                options.Authority = DataGatewayOAuth.Hosted(config) ? null : authority;
                 options.Audience = resource;
                 options.RequireHttpsMetadata = true;
                 options.MapInboundClaims = false;
@@ -43,6 +46,11 @@ public static class DataGatewaySecurity
                     ValidateLifetime = true, ValidateIssuerSigningKey = true, RequireSignedTokens = true,
                     ClockSkew = TimeSpan.FromSeconds(15), NameClaimType = "sub"
                 };
+                if (DataGatewayOAuth.Hosted(config))
+                {
+                    options.TokenValidationParameters.ValidIssuer = DataGatewayOAuth.Issuer(config);
+                    options.TokenValidationParameters.IssuerSigningKey = new RsaSecurityKey(DataGatewayOAuth.SigningKey(config));
+                }
                 options.Events = new JwtBearerEvents
                 {
                     OnChallenge = context =>
@@ -65,7 +73,9 @@ public static class DataGatewaySecurity
                     try
                     {
                         var jwt = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(token[7..]);
-                        if (jwt.Issuer.TrimEnd('/') == authority!.TrimEnd('/')) return Scheme;
+                        if (jwt.Issuer.TrimEnd('/') == authority!.TrimEnd('/'))
+                            return DataGatewayOAuth.Hosted(config)
+                                ? OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme : Scheme;
                     }
                     catch (ArgumentException) { }
                 }
@@ -76,7 +86,17 @@ public static class DataGatewaySecurity
         services.AddAuthorization(options => options.AddPolicy(Policy, policy =>
         {
             policy.AddAuthenticationSchemes(Policy);
-            policy.RequireAuthenticatedUser().RequireAssertion(c => Authorized(c.User, config));
+            policy.RequireAuthenticatedUser().RequireAssertion(async context =>
+            {
+                if (!Authorized(context.User, config)) return false;
+                if (!DataGatewayOAuth.Hosted(config) || context.User.Identity?.AuthenticationType != Scheme) return true;
+                if (context.Resource is not HttpContext http
+                    || !int.TryParse(context.User.FindFirst("sub")?.Value, out var id)
+                    || !long.TryParse(context.User.FindFirst("tenant_access_version")?.Value, out var version)) return false;
+                var repo = http.RequestServices.GetRequiredService<SenorArroz.Domain.Interfaces.Repositories.IAuthRepository>();
+                var user = await repo.GetUserByIdWithBranchAsync(id, http.RequestAborted);
+                return DataGatewayOAuth.CanAuthorize(user, config) && user!.Tenant.AccessVersion == version;
+            });
         }));
         services.AddRateLimiter(options => options.AddPolicy(Policy, context =>
             RateLimitPartition.GetFixedWindowLimiter(
