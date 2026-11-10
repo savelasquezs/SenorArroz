@@ -2,7 +2,7 @@
 
 Inventario de 129 tablas: Issues privados #79–#82; columnas históricas: #85 (2026-11-10).
 
-37 tablas con SELECT por columna y 38 vistas security_invoker/security_barrier. Las 14 concesiones históricas se sustituyen; nunca se amplían con SELECT de tabla completa. Las otras 92 tablas permanecen excluidas. Tenant fijo: 1.
+38 tablas con SELECT por columna y 39 vistas security_invoker/security_barrier. Las 14 concesiones históricas se sustituyen; nunca se amplían con SELECT de tabla completa. Las otras 91 tablas permanecen excluidas. Tenant fijo: 1.
 
 La migración es transaccional, idempotente y falla ante RLS ausente, columnas distintas, privilegios heredados, escritura o SELECT fuera de la lista. No crea roles ni modifica contraseñas. Las vistas incluyen el filtro tenant=1 además de RLS; el propietario no se usa para acceder a las tablas base.
 
@@ -117,7 +117,7 @@ La migración es transaccional, idempotente y falla ante RLS ausente, columnas d
 | `supplier_expense` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
 | `tenant` | No | Excluida: sin aislamiento tenant forzado |
 | `tenant_ai_setting` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
-| `user` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
+| `user` | Sí | SELECT(id,name,tenant_id); diagnostics.users expone únicamente id y name |
 | `user_device_token` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
 | `whatsapp_ai_invocation` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
 | `whatsapp_branch_setting` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
@@ -187,3 +187,5 @@ La migración es transaccional, idempotente y falla ante RLS ausente, columnas d
 5. Verificar aislamiento y permisos con el lector real antes de activar. Mantener Actions como respaldo.
 
 El cambio reduce columnas disponibles en consultas históricas de Actions (teléfonos, direcciones, GPS, notas, tokens, identidad y costos). Las consultas que dependan de ellas deberán pasar por autorización separada; el restaurante usa otro rol y sus permisos/políticas no se alteran.
+
+Ampliación autorizada de nombres: `add_gateway_user_names_20261110.sql` concede solo `id`, `name` y `tenant_id` técnico en `public."user"`. La vista `diagnostics.users` devuelve exclusivamente `id` y `name` para resolver identidades de domiciliarios por ID; incluye los usuarios del tenant, sin filtrar ni publicar roles. Correo, teléfono, hashes, sesiones, dispositivos, nómina y demás campos siguen excluidos. FORCE RLS, guard restrictivo tenant=1, invoker/barrier y comprobaciones de privilegios son obligatorios. Aplicar después de la migración base mediante el mismo workflow con SHA y respaldo verificado.

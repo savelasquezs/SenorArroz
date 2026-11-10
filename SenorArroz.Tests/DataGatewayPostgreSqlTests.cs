@@ -104,6 +104,7 @@ public sealed class DataGatewayPostgreSqlTests
             tenant.SetupGet(t => t.TenantId).Returns(2);
             Assert.IsType<NotFoundResult>(await gateway.Query(query, default));
             tenant.SetupGet(t => t.TenantId).Returns(1);
+            await VerifyUserNames(admin, reader, gateway, config);
             await Execute(admin, "INSERT INTO public.\"order\" (id,tenant_id,branch_id,created_at,total,status) SELECT i,1,1,now(),1,'delivered' FROM generate_series(3,1003) i");
             var limited = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await gateway.Query(new("diagnostics.order", MaxRows: 3), default)).Value);
             Assert.Equal(3, limited.GetProperty("rows").GetArrayLength());
@@ -128,6 +129,59 @@ public sealed class DataGatewayPostgreSqlTests
             await Execute(server, $"DROP DATABASE {database} WITH (FORCE)");
             if (createdReader) await Execute(server, "DROP ROLE senorarroz_db_reader");
         }
+    }
+
+    private static async Task VerifyUserNames(NpgsqlConnection admin, NpgsqlConnection reader,
+        DataGatewayController gateway, IConfiguration config)
+    {
+        await Execute(admin, """
+            CREATE TABLE public."user" (id integer PRIMARY KEY,tenant_id integer NOT NULL,name text NOT NULL,
+              email text,password_hash text,phone text,active_session_id uuid);
+            ALTER TABLE public."user" ENABLE ROW LEVEL SECURITY;
+            CREATE POLICY tenant_select_policy ON public."user" FOR SELECT USING (
+              current_setting('app.system_scope',true)='on' OR tenant_id=NULLIF(current_setting('app.current_tenant_id',true),'')::integer);
+            INSERT INTO public."user" (id,tenant_id,name,email,password_hash,phone)
+              VALUES (1,1,'José','private@example.test','private-hash','private-phone'),(2,2,'Other tenant',NULL,NULL,NULL);
+            """);
+        var migration = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Scripts", "add_gateway_user_names_20261110.sql"));
+        await using (var rejected = await admin.BeginTransactionAsync())
+        {
+            await Assert.ThrowsAsync<PostgresException>(() => Execute(admin, migration, rejected));
+            await rejected.RollbackAsync();
+        }
+        await Execute(admin, """
+            ALTER TABLE public."user" FORCE ROW LEVEL SECURITY;
+            CREATE POLICY db_reader_tenant_guard ON public."user" FOR SELECT TO senorarroz_db_reader USING (true);
+            """);
+        await using (var rejected = await admin.BeginTransactionAsync())
+        {
+            await Assert.ThrowsAsync<PostgresException>(() => Execute(admin, migration, rejected));
+            await rejected.RollbackAsync();
+        }
+        await Execute(admin, "DROP POLICY db_reader_tenant_guard ON public.\"user\"; GRANT SELECT,UPDATE ON public.\"user\" TO senorarroz_db_reader");
+        await using (var tx = await admin.BeginTransactionAsync())
+        {
+            await Execute(admin, migration, tx); await Execute(admin, migration, tx); await tx.CommitAsync();
+        }
+        await Execute(reader, "SET app.current_tenant_id='2'; SET app.system_scope='on'");
+        Assert.Equal(1L, await new NpgsqlCommand("SELECT count(*) FROM public.\"user\"", reader).ExecuteScalarAsync());
+        Assert.Equal(0L, await new NpgsqlCommand("SELECT count(*) FROM public.\"user\" WHERE tenant_id=2", reader).ExecuteScalarAsync());
+        Assert.Equal(0L, await new NpgsqlCommand("SELECT count(*) FROM diagnostics.users", reader).ExecuteScalarAsync());
+        foreach (var sql in new[] { "SELECT * FROM public.\"user\"", "SELECT email FROM public.\"user\"",
+            "SELECT password_hash FROM public.\"user\"", "SELECT phone FROM public.\"user\"", "SELECT active_session_id FROM public.\"user\"",
+            "UPDATE public.\"user\" SET name='changed'", "DELETE FROM public.\"user\"" })
+            Assert.Equal("42501", (await Assert.ThrowsAsync<PostgresException>(() => Execute(reader, sql))).SqlState);
+        config["DataGateway:AllowedViews:3"] = "diagnostics.users";
+        var result = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await gateway.Query(new("diagnostics.users"), default)).Value);
+        Assert.Single(result.GetProperty("rows").EnumerateArray());
+        Assert.Equal(new[] { "id", "name" }, result.GetProperty("rows")[0].EnumerateObject().Select(p => p.Name).OrderBy(n => n));
+        Assert.Equal("José", result.GetProperty("rows")[0].GetProperty("name").GetString());
+        Assert.False(result.GetProperty("truncated").GetBoolean());
+        Assert.IsType<BadRequestObjectResult>(await gateway.Query(new("diagnostics.users", Columns: ["email"]), default));
+        Assert.IsType<BadRequestObjectResult>(await gateway.Query(new("diagnostics.users", Columns: ["tenant_id"]), default));
+        var schema = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await gateway.Schema(default)).Value);
+        var userView = Assert.Single(schema.GetProperty("views").EnumerateArray(), v => v.GetProperty("view").GetString() == "diagnostics.users");
+        Assert.Equal(new[] { "id", "name" }, userView.GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
     }
 
     private static async Task Execute(NpgsqlConnection connection, string sql, NpgsqlTransaction? tx = null)
