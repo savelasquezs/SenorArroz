@@ -21,6 +21,8 @@ public static class DataGatewayOAuth
     public static bool Hosted(IConfiguration config) => config.GetValue<bool>("DataGateway:OAuth:HostedEnabled");
     public static string Issuer(IConfiguration config) => config["DataGateway:OAuth:Authority"]!.TrimEnd('/') + "/";
     public static string Resource(IConfiguration config) => config["DataGateway:OAuth:Resource"]!;
+    public static bool MatchesResource(OpenIddictRequest request, IConfiguration config) =>
+        request.GetResources().IsDefaultOrEmpty || request.GetResources().SequenceEqual([Resource(config)]);
 
     public static RSA SigningKey(IConfiguration config)
     {
@@ -91,6 +93,9 @@ public static class DataGatewayOAuth
                 {
                     context.Response["registration_endpoint"] = new Uri(new Uri(Issuer(config)), Prefix + "/register").AbsoluteUri;
                     context.Response["authorization_response_iss_parameter_supported"] = true;
+                    context.Response["token_endpoint_auth_methods_supported"] = System.Text.Json.JsonSerializer.SerializeToElement(new[] { "none" });
+                    context.Response["revocation_endpoint_auth_methods_supported"] = System.Text.Json.JsonSerializer.SerializeToElement(new[] { "none" });
+                    context.Response["scopes_supported"] = System.Text.Json.JsonSerializer.SerializeToElement(new[] { DataGatewaySecurity.Scope, Scopes.OfflineAccess });
                     return default;
                 }));
                 options.AddEventHandler<OpenIddictServerEvents.ApplyAuthorizationResponseContext>(builder => builder.UseInlineHandler(context =>
@@ -101,6 +106,7 @@ public static class DataGatewayOAuth
             })
             .AddValidation(options =>
             {
+                options.AddAudiences(Resource(config));
                 options.UseLocalServer();
                 options.EnableTokenEntryValidation();
                 options.EnableAuthorizationEntryValidation();

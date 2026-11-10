@@ -84,7 +84,7 @@ public sealed class DataGatewayOAuthController(IConfiguration config, IAntiforge
     {
         if (!Ready) return NotFound();
         var request = HttpContext.GetOpenIddictServerRequest();
-        if (request is null || !request.GetResources().SequenceEqual([DataGatewayOAuth.Resource(config)])
+        if (request is null || !DataGatewayOAuth.MatchesResource(request, config)
             || request.CodeChallengeMethod != CodeChallengeMethods.Sha256
             || !request.GetScopes().Contains(DataGatewaySecurity.Scope)
             || request.GetScopes().Any(s => s is not (DataGatewaySecurity.Scope or Scopes.OfflineAccess)))
@@ -112,7 +112,7 @@ public sealed class DataGatewayOAuthController(IConfiguration config, IAntiforge
     {
         if (!Ready) return NotFound();
         var request = HttpContext.GetOpenIddictServerRequest();
-        if (request is null || !request.GetResources().SequenceEqual([DataGatewayOAuth.Resource(config)])
+        if (request is null || !DataGatewayOAuth.MatchesResource(request, config)
             || !(request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType()))
             return BadRequest(new { error = "invalid_request" });
         var auth = await HttpContext.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);

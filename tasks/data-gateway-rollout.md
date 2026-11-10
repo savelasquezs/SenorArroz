@@ -6,7 +6,11 @@ PR backend #116 y asistente #86/#88 fusionados. Importación #84 corregida y ree
 
 Credencial existente instalada en Railway mediante handoff cifrado RSA-OAEP SHA-256 (PR #91; run 42863497538); no se imprimió ni regeneró. Gateway apagado durante preparación. El nuevo consentimiento OAuth usa la API y usuarios actuales, sin modificar sesiones POS. Las claves nuevas de OAuth son independientes de todas las credenciales existentes.
 
-Pendiente hasta cerrar esta entrega: CI y merge OAuth, importar/aplicar su SQL con SHA y respaldo comprobado, verificar despliegue, activar flags, instalar el conector privado ChatGPT y completar consentimiento. Actualizar esta sección con los resultados observados, sin confundir configuración con conexión efectiva.
+PR OAuth backend #117 fusionado (ec06ca48); CI 42867657670: 1747 aprobadas, 1 omitida; SDK 4 y stdio 7. PR SQL #94 fusionado; solicitud #95 / Actions 42868402601 aplicada con SHA 6df50d5e96d010ad64ff33cad29ebdfd0786164d26c2cd1713743c893c21b04a. Solicitud #96 confirma cuatro tablas con FORCE RLS, cuatro guards restrictivos y ningún acceso del lector.
+
+Railway: despliegue inicial be2063d4 y activación a4edd193 correctos; metadata RFC 8414/RFC 9728 HTTP 200 y MCP anónimo HTTP 401 con challenge correcto. Sin nuevas credenciales PostgreSQL ni servicios. Configuración global Codex senor_arroz añadida preservando las preferencias existentes; requiere login OAuth. La CLI instalada 0.123.0 necesita el override temporal service_tier=fast para leer su configuración (no cambiar la preferencia priority del escritorio).
+
+Validación del cliente real: corregir metadata para anunciar clientes públicos none; permitir ausencia de resource únicamente asignando la audiencia fija, para la CLI Codex instalada. Pruebas verifican ambos flujos y rechazan resource externo. Completar instalación/consentimiento ChatGPT y comprobar una consulta real antes de declarar la cuenta conectada.
 
 ## Respaldo
 
