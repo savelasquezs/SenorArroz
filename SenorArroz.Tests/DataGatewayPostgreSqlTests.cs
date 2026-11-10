@@ -28,7 +28,7 @@ public sealed class DataGatewayPostgreSqlTests
         {
             await using var admin = new NpgsqlConnection(adminOptions.ConnectionString);
             await admin.OpenAsync();
-            await Execute(admin, "CREATE ROLE senorarroz_db_reader LOGIN NOSUPERUSER NOBYPASSRLS; REVOKE CREATE ON SCHEMA public FROM PUBLIC;");
+            await Execute(admin, "CREATE ROLE senorarroz_db_reader LOGIN PASSWORD 'gateway-test-only-password' NOSUPERUSER NOBYPASSRLS; REVOKE CREATE ON SCHEMA public FROM PUBLIC;");
             var sql = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Scripts", "expand_db_reader_diagnostics_grants_20261110.sql"));
             var manifest = JsonSerializer.Deserialize<Dictionary<string, string[]>>(
                 Regex.Match(sql, "manifest constant jsonb := '(.*?)'::jsonb;", RegexOptions.Singleline).Groups[1].Value)!;
@@ -61,7 +61,7 @@ public sealed class DataGatewayPostgreSqlTests
                 await tx.CommitAsync();
             }
             var readerOptions = new NpgsqlConnectionStringBuilder(adminOptions.ConnectionString)
-            { Username = "senorarroz_db_reader", Password = "", Pooling = false };
+            { Username = "senorarroz_db_reader", Password = "gateway-test-only-password", Pooling = false };
             await using var reader = new NpgsqlConnection(readerOptions.ConnectionString);
             await reader.OpenAsync();
             await Execute(reader, "SET app.current_tenant_id='2'; SET app.system_scope='on';");
