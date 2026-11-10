@@ -19,16 +19,19 @@ public sealed class DataGatewayPostgreSqlTests
     {
         var source = Environment.GetEnvironmentVariable("FLOW_POSTGRES_TEST_CONNECTION");
         Assert.False(string.IsNullOrWhiteSpace(source), "FLOW_POSTGRES_TEST_CONNECTION is required for gateway security verification");
+        Assert.Contains(new NpgsqlConnectionStringBuilder(source).Host, new[] { "localhost", "127.0.0.1", "::1", "flow-postgres" });
         var database = "gateway_" + Guid.NewGuid().ToString("N");
         await using var server = new NpgsqlConnection(source);
         await server.OpenAsync();
         await Execute(server, $"CREATE DATABASE {database}");
         var adminOptions = new NpgsqlConnectionStringBuilder(source) { Database = database, Pooling = false };
+        var createdReader = false;
         try
         {
             await using var admin = new NpgsqlConnection(adminOptions.ConnectionString);
             await admin.OpenAsync();
             await Execute(admin, "CREATE ROLE senorarroz_db_reader LOGIN PASSWORD 'gateway-test-only-password' NOSUPERUSER NOBYPASSRLS; REVOKE CREATE ON SCHEMA public FROM PUBLIC;");
+            createdReader = true;
             var sql = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Scripts", "expand_db_reader_diagnostics_grants_20261110.sql"));
             var manifest = JsonSerializer.Deserialize<Dictionary<string, string[]>>(
                 Regex.Match(sql, "manifest constant jsonb := '(.*?)'::jsonb;", RegexOptions.Singleline).Groups[1].Value)!;
@@ -122,7 +125,7 @@ public sealed class DataGatewayPostgreSqlTests
         {
             NpgsqlConnection.ClearAllPools();
             await Execute(server, $"DROP DATABASE {database} WITH (FORCE)");
-            await Execute(server, "DROP ROLE IF EXISTS senorarroz_db_reader");
+            if (createdReader) await Execute(server, "DROP ROLE senorarroz_db_reader");
         }
     }
 
