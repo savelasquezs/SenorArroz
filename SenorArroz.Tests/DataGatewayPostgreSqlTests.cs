@@ -14,7 +14,7 @@ namespace SenorArroz.Tests;
 
 public sealed class DataGatewayPostgreSqlTests
 {
-    [Fact]
+    [GatewayPostgreSqlFact]
     public async Task Migration_and_gateway_enforce_reader_isolation_limits_and_performance()
     {
         var source = Environment.GetEnvironmentVariable("FLOW_POSTGRES_TEST_CONNECTION");
@@ -128,4 +128,13 @@ public sealed class DataGatewayPostgreSqlTests
 
     private static async Task Execute(NpgsqlConnection connection, string sql, NpgsqlTransaction? tx = null)
     { await using var command = new NpgsqlCommand(sql, connection, tx); await command.ExecuteNonQueryAsync(); }
+}
+
+public sealed class GatewayPostgreSqlFactAttribute : FactAttribute
+{
+    public GatewayPostgreSqlFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FLOW_POSTGRES_TEST_CONNECTION")))
+            Skip = "Requires an isolated PostgreSQL server via FLOW_POSTGRES_TEST_CONNECTION; Backend CI supplies it.";
+    }
 }
