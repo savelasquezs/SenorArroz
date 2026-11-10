@@ -78,11 +78,13 @@ public sealed class DataGatewaySecurityTests
     public async Task Negotiates_protocol_preserves_large_id_and_annotations()
     {
         var controller = Mcp();
+        controller.Request.Headers["MCP-Protocol-Version"] = "2026-07-28";
         using var doc = JsonDocument.Parse("""{"jsonrpc":"2.0","id":999999999999999999999999999,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}""");
         var result = Assert.IsType<OkObjectResult>(await controller.Handle(doc.RootElement, default));
         var json = JsonSerializer.SerializeToElement(result.Value);
         Assert.Equal("2025-11-25", json.GetProperty("result").GetProperty("protocolVersion").GetString());
         Assert.Equal("999999999999999999999999999", json.GetProperty("id").GetRawText());
+        controller.Request.Headers.Remove("MCP-Protocol-Version");
         using var list = JsonDocument.Parse("""{"jsonrpc":"2.0","id":2,"method":"tools/list"}""");
         var tools = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await controller.Handle(list.RootElement, default)).Value);
         Assert.All(tools.GetProperty("result").GetProperty("tools").EnumerateArray(),

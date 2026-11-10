@@ -2,18 +2,11 @@
 
 ## Estado
 
-Implementación integrada en la API existente; flag desactivado por defecto. SQL preparado, sin aplicación automática en producción. Actions permanece operativo. No se cambiaron contraseñas ni se crearon servicios Railway.
+PR backend #116 y asistente #86/#88 fusionados. Importación #84 corregida y reemplazada por #87. Migración del lector aplicada en producción mediante solicitud #89 y Actions 42862104302, con autorización del propietario del 10 de noviembre. Validación de lectura #92: rol existente, 38 vistas, 37 guards, acceso a columnas sensibles falso y escrituras falso.
 
-Importación #84 fallida y cerrada; reemplazada por #87 (éxito). SQL importado y fusionado en PR #88 de `savelasquezs/senorarroz-db-assistant`. PR #86 corrige normalización LF y reporte de rechazos. Huella importada verificada contra el archivo de origen. [Solicitud #89](https://github.com/savelasquezs/senorarroz-db-assistant/issues/89) preparada con respaldo verificado; sin comentario de aplicación. Comprobación productiva de solo lectura #90: lector existente, 0 vistas diagnostics y 14 concesiones de tabla previas; migración pendiente.
+Credencial existente instalada en Railway mediante handoff cifrado RSA-OAEP SHA-256 (PR #91; run 42863497538); no se imprimió ni regeneró. Gateway apagado durante preparación. El nuevo consentimiento OAuth usa la API y usuarios actuales, sin modificar sesiones POS. Las claves nuevas de OAuth son independientes de todas las credenciales existentes.
 
-Pruebas locales: 24 del gateway en PostgreSQL 17, también con SCRAM; suite completa Release 1 583 aprobadas, 141 omitidas por condiciones de entorno; SDK 4 y stdio 7; asistente 40. CI de integración dispone de PostgreSQL y ejecuta las pruebas que lo requieren.
-
-## Pasos pendientes que requieren operador
-
-1. Autorizar expresamente la aplicación del archivo importado y su SHA-256 mediante el procedimiento de `senorarroz-db-assistant`; no emitir el comentario de aprobación sin autorización del propietario.
-2. Instalar la misma credencial `senorarroz_db_reader` en `ConnectionStrings__DataGatewayReader` de Railway. No sustituirla por la cuenta de mantenimiento.
-3. Configurar un proveedor OAuth con PKCE S256, cliente ChatGPT, audience Resource, scope gateway:read, tenant_id=1 y sujetos autorizados. No hay proveedor configurado actualmente en Railway.
-4. Después de aplicar SQL: pruebas con el lector real en producción, activar el flag y realizar consentimiento/instalación del conector desde la cuenta ChatGPT. Mantener el flag apagado hasta completar estas comprobaciones.
+Pendiente hasta cerrar esta entrega: CI y merge OAuth, importar/aplicar su SQL con SHA y respaldo comprobado, verificar despliegue, activar flags, instalar el conector privado ChatGPT y completar consentimiento. Actualizar esta sección con los resultados observados, sin confundir configuración con conexión efectiva.
 
 ## Respaldo
 
