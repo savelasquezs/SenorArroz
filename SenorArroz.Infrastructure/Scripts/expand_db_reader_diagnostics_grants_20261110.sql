@@ -11,7 +11,7 @@ BEGIN
     RAISE EXCEPTION 'Reader role missing or has unsafe role attributes';
   END IF;
 
-  -- Every candidate must have forced RLS and a tenant_id column.
+  -- Every candidate and all 14 previously granted tables must have forced RLS and a tenant_id column.
   FOREACH required_table IN ARRAY ARRAY[
     'branch_business_hour', 'commercial_profile', 'daily_promotion',
     'daily_promotion_product', 'expense_category', 'expense_unit_conversion',
@@ -21,7 +21,12 @@ BEGIN
     'delivery_authorized_place', 'discount_code',
     'inventory_balance', 'inventory_count', 'inventory_count_line',
     'inventory_movement', 'inventory_transfer', 'inventory_transfer_line',
-    'storefront_analytics_daily'
+    'storefront_analytics_daily',
+    -- Existing reader privileges must be protected against session-GUC spoofing too.
+    'branch', 'delivery_device_event', 'delivery_route', 'delivery_route_stop',
+    'delivery_tracking_alert', 'delivery_tracking_incident',
+    'delivery_work_session', 'deliveryman_advance', 'deliveryman_day_state',
+    'deliveryman_location', 'order', 'order_detail', 'product', 'product_category'
   ]
   LOOP
     IF NOT EXISTS (
@@ -41,7 +46,7 @@ BEGIN
   -- This reader is intentionally pinned to the currently provisioned tenant 1.
   -- PostgreSQL custom GUC values can be changed through SELECT set_config(),
   -- so ordinary tenant-select policies cannot by themselves protect an SQL reader.
-  -- Additional restrictive policies apply ONLY to this reader role and do NOT
+  -- Additional restrictive policies cover newly granted AND previously granted tables.\n  -- They apply ONLY to this reader role and do NOT
   -- grant write permissions or alter policies for the application's runtime role.
   FOREACH required_table IN ARRAY ARRAY[
     'branch_business_hour', 'commercial_profile', 'daily_promotion',
@@ -52,7 +57,12 @@ BEGIN
     'delivery_authorized_place', 'discount_code',
     'inventory_balance', 'inventory_count', 'inventory_count_line',
     'inventory_movement', 'inventory_transfer', 'inventory_transfer_line',
-    'storefront_analytics_daily'
+    'storefront_analytics_daily',
+    -- Existing reader privileges must be protected against session-GUC spoofing too.
+    'branch', 'delivery_device_event', 'delivery_route', 'delivery_route_stop',
+    'delivery_tracking_alert', 'delivery_tracking_incident',
+    'delivery_work_session', 'deliveryman_advance', 'deliveryman_day_state',
+    'deliveryman_location', 'order', 'order_detail', 'product', 'product_category'
   ]
   LOOP
     IF EXISTS (
