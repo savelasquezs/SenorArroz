@@ -105,6 +105,7 @@ public sealed class DataGatewayPostgreSqlTests
             Assert.IsType<NotFoundResult>(await gateway.Query(query, default));
             tenant.SetupGet(t => t.TenantId).Returns(1);
             await VerifyUserNames(admin, reader, gateway, config);
+            await VerifyLunchReview(admin, reader, gateway, config);
             await Execute(admin, "INSERT INTO public.\"order\" (id,tenant_id,branch_id,created_at,total,status) SELECT i,1,1,now(),1,'delivered' FROM generate_series(3,1003) i");
             var limited = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await gateway.Query(new("diagnostics.order", MaxRows: 3), default)).Value);
             Assert.Equal(3, limited.GetProperty("rows").GetArrayLength());
@@ -182,6 +183,74 @@ public sealed class DataGatewayPostgreSqlTests
         var schema = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await gateway.Schema(default)).Value);
         var userView = Assert.Single(schema.GetProperty("views").EnumerateArray(), v => v.GetProperty("view").GetString() == "diagnostics.users");
         Assert.Equal(new[] { "id", "name" }, userView.GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
+    }
+
+    private static async Task VerifyLunchReview(NpgsqlConnection admin, NpgsqlConnection reader,
+        DataGatewayController gateway, IConfiguration config)
+    {
+        await Execute(admin, """
+            CREATE TABLE public.employee_lunch (id integer,tenant_id integer,user_id integer,branch_id integer,
+              started_at timestamptz,ended_at timestamptz,updated_at timestamptz,started_by_user_id integer);
+            ALTER TABLE public.employee_lunch ENABLE ROW LEVEL SECURITY;
+            CREATE POLICY tenant_select_policy ON public.employee_lunch FOR SELECT USING (
+              current_setting('app.system_scope',true)='on' OR tenant_id=NULLIF(current_setting('app.current_tenant_id',true),'')::integer);
+            INSERT INTO public.employee_lunch VALUES
+              (1,1,1,1,'2026-11-10T17:00Z','2026-11-10T18:00Z',now(),1),
+              (2,2,2,2,'2026-11-10T17:00Z','2026-11-10T18:00Z',now(),2);
+            ALTER TABLE public.delivery_tracking_alert ADD COLUMN deliveryman_id integer,ADD COLUMN incident_id bigint,ADD COLUMN message text;
+            ALTER TABLE public.delivery_tracking_incident ADD COLUMN deliveryman_id integer,ADD COLUMN evidence_complete boolean,ADD COLUMN admin_notes text;
+            UPDATE public.delivery_tracking_alert SET deliveryman_id=id,incident_id=id,branch_id=1,alert_type='unexpected_stay';
+            UPDATE public.delivery_tracking_incident SET deliveryman_id=id,branch_id=1,incident_type='stay',
+              started_at='2026-11-10T17:00:00Z',ended_at='2026-11-10T18:00:00Z',evidence_complete=true;
+            """);
+        var migration = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Scripts", "add_gateway_lunch_review_20261110.sql"));
+        await using (var rejected = await admin.BeginTransactionAsync())
+        {
+            await Assert.ThrowsAsync<PostgresException>(() => Execute(admin, migration, rejected));
+            await rejected.RollbackAsync();
+        }
+        await Execute(admin, "ALTER TABLE public.employee_lunch FORCE ROW LEVEL SECURITY; GRANT SELECT,UPDATE ON public.employee_lunch TO senorarroz_db_reader");
+        await using (var tx = await admin.BeginTransactionAsync())
+        {
+            await Execute(admin, migration, tx); await Execute(admin, migration, tx); await tx.CommitAsync();
+        }
+        await Execute(reader, "SET app.current_tenant_id='2'; SET app.system_scope='on'");
+        foreach (var table in new[] { "employee_lunch", "delivery_tracking_alert", "delivery_tracking_incident" })
+        {
+            Assert.Equal(1L, await new NpgsqlCommand($"SELECT count(*) FROM public.{table}", reader).ExecuteScalarAsync());
+            Assert.Equal(0L, await new NpgsqlCommand($"SELECT count(*) FROM public.{table} WHERE tenant_id=2", reader).ExecuteScalarAsync());
+            Assert.Equal(0L, await new NpgsqlCommand($"SELECT count(*) FROM diagnostics.{table}", reader).ExecuteScalarAsync());
+            foreach (var sql in new[] { $"SELECT private_secret FROM public.{table}", $"SELECT * FROM public.{table}",
+                $"UPDATE public.{table} SET id=3", $"DELETE FROM public.{table}" })
+            {
+                if (table == "employee_lunch" && sql.Contains("private_secret")) continue;
+                Assert.Equal("42501", (await Assert.ThrowsAsync<PostgresException>(() => Execute(reader, sql))).SqlState);
+            }
+        }
+        config["DataGateway:AllowedViews:4"] = "diagnostics.employee_lunch";
+        config["DataGateway:AllowedViews:5"] = "diagnostics.delivery_tracking_alert";
+        config["DataGateway:AllowedViews:6"] = "diagnostics.delivery_tracking_incident";
+        foreach (var (view, columns) in new[] {
+            ("employee_lunch", new[] { "id", "user_id", "branch_id", "started_at", "ended_at", "updated_at" }),
+            ("delivery_tracking_alert", new[] { "id", "deliveryman_id", "incident_id" }),
+            ("delivery_tracking_incident", new[] { "id", "deliveryman_id", "started_at", "ended_at", "evidence_complete" }) })
+        {
+            var result = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await gateway.Query(new DataGatewayController.QueryRequest("diagnostics." + view, Columns: columns), default)).Value);
+            Assert.Single(result.GetProperty("rows").EnumerateArray());
+            Assert.Equal(columns.OrderBy(n => n).ToArray(), result.GetProperty("rows")[0].EnumerateObject().Select(p => p.Name).OrderBy(n => n).ToArray());
+        }
+        foreach (var (view, column) in new[] { ("employee_lunch", "started_by_user_id"),
+            ("delivery_tracking_alert", "message"), ("delivery_tracking_incident", "admin_notes") })
+        {
+            Assert.IsType<BadRequestObjectResult>(await gateway.Query(new DataGatewayController.QueryRequest("diagnostics." + view, Columns: new[] { column }), default));
+            Assert.Equal("42501", (await Assert.ThrowsAsync<PostgresException>(() => Execute(reader, $"SELECT {column} FROM public.{view}"))).SqlState);
+        }
+        await Execute(admin, "INSERT INTO public.employee_lunch VALUES (3,1,1,1,'2026-11-10T18:00Z',NULL,now(),1)");
+        var openFilter = new DataGatewayController.Filter("ended_at", "eq", JsonSerializer.SerializeToElement<string?>(null));
+        var open = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await gateway.Query(
+            new DataGatewayController.QueryRequest("diagnostics.employee_lunch", Filters: new[] { openFilter }), default)).Value);
+        Assert.Single(open.GetProperty("rows").EnumerateArray());
+        Assert.Equal("3", open.GetProperty("rows")[0].GetProperty("id").GetString());
     }
 
     private static async Task Execute(NpgsqlConnection connection, string sql, NpgsqlTransaction? tx = null)

@@ -605,6 +605,8 @@ electronic_invoice_integration conserva proveedor, ambiente, credenciales cifrad
 
 EmployeeLunch (employee_lunch) es tenant-owned, con sucursal histórica, empleado, salida/regreso UTC y actores. FK compuestas por tenant, RLS forzado, índice de intervalo abierto único y trigger de no solapamiento. Las asignaciones operativas y los almuerzos escriben la misma fila de usuario para serializar y detectar snapshots serializables obsoletos; no se cambia la identidad ni sus asociaciones. UpdatedAt es la versión de corrección administrativa. Script: add_employee_lunch.sql. El inicializador raíz incorpora el mismo SQL sin depender de facturación electrónica.
 
+Data Gateway: `add_gateway_lunch_review_20261110.sql` autoriza solo identidad operativa, sucursal, inicio/fin y versión de almuerzo. Extiende las vistas de alertas/incidentes con el vínculo de empleado/incidente y evidencia completa para contrastar los intervalos en el cliente, sin coordenadas, textos privados, escrituras ni reclasificaciones automáticas.
+
 ## Entrega fiscal propia
 add_invoice_delivery.sql amplía electronic_invoice_document con provider_pdf, pdf_version, email_channel, email_error y email_sent_at. EmailOutboxMessage incorpora deduplication_key única por tenant, first_attempted_at, lease_until y provider_message_id. Los adjuntos se referencian por documento y hashes SHA-256 en metadata_json; no se duplican los bytes. RLS y trigger impiden correos fiscales que referencien documentos de otro tenant.
 

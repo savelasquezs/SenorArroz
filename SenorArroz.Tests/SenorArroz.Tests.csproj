@@ -23,6 +23,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <None Include="../SenorArroz.Infrastructure/Scripts/add_gateway_user_names_20261110.sql" Link="Scripts/add_gateway_user_names_20261110.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../SenorArroz.Infrastructure/Scripts/add_gateway_lunch_review_20261110.sql" Link="Scripts/add_gateway_lunch_review_20261110.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../SenorArroz.Infrastructure/Scripts/add_data_gateway_oauth_20261110.sql" Link="Scripts/add_data_gateway_oauth_20261110.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../SenorArroz.Infrastructure/Scripts/expand_db_reader_diagnostics_grants_20261110.sql" Link="Scripts/expand_db_reader_diagnostics_grants_20261110.sql" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../scripts/delivery-routing-addresses.json" Link="delivery-routing-addresses.json" CopyToOutputDirectory="PreserveNewest" />
