@@ -1,12 +1,8 @@
 -- Expansion of diagnostic reader permissions: review and apply ONLY via approved migration workflow.
 -- No data mutation. No role creation, password changes, BYPASSRLS or broad schema grants.
 -- Read access from MCP remains restricted to separately allowlisted diagnostics views.
-BEGIN;
-
-DO $$
+DO $
 DECLARE
-  table_name text;
-  chosen text[];
   required_table text;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles
@@ -41,7 +37,36 @@ BEGIN
       RAISE EXCEPTION 'Missing forced tenant RLS on %', required_table;
     END IF;
   END LOOP;
-END $$;
+
+  -- This reader is intentionally pinned to the currently provisioned tenant 1.
+  -- PostgreSQL custom GUC values can be changed through SELECT set_config(),
+  -- so ordinary tenant-select policies cannot by themselves protect an SQL reader.
+  -- Additional restrictive policies apply ONLY to this reader role and do NOT
+  -- grant write permissions or alter policies for the application's runtime role.
+  FOREACH required_table IN ARRAY ARRAY[
+    'branch_business_hour', 'commercial_profile', 'daily_promotion',
+    'daily_promotion_product', 'expense_category', 'expense_unit_conversion',
+    'loyalty_cycle_step', 'neighborhood', 'product_expense_requirement',
+    'kitchen_voice_event', 'delivery_routing_plan',
+    'delivery_route_proposal', 'delivery_route_proposal_stop',
+    'delivery_authorized_place', 'discount_code',
+    'inventory_balance', 'inventory_count', 'inventory_count_line',
+    'inventory_movement', 'inventory_transfer', 'inventory_transfer_line',
+    'storefront_analytics_daily'
+  ]
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE schemaname='public' AND tablename=required_table
+      AND policyname='db_reader_tenant_guard'
+    ) THEN
+      EXECUTE format(
+        'CREATE POLICY db_reader_tenant_guard ON public.%I AS RESTRICTIVE FOR SELECT TO senorarroz_db_reader USING (tenant_id = 1)',
+        required_table
+      );
+    END IF;
+  END LOOP;
+END $;
 
 -- Operational configuration/catalog tables without customer credentials or PII.
 GRANT SELECT ON TABLE
@@ -81,7 +106,11 @@ GRANT SELECT (id,tenant_id,transfer_id,expense_id,quantity,received_quantity,cre
 GRANT SELECT (id,tenant_id,event_date,event_name,branch_id,fulfillment_type,payment_type,status_code,coverage_state,event_count,value_sum,created_at,updated_at)
   ON public.storefront_analytics_daily TO senorarroz_db_reader;
 
+-- A dedicated restrictive policy pins the reader to tenant 1, even if the
+-- read-only SQL client attempts to spoof app.current_tenant_id or app.system_scope.
+-- Before onboarding another tenant, use separate tenant-scoped readers or a
+-- redesigned database-authoritative identity check. Never share one reader
+-- credential among tenants.
 -- No new grants on user, customer, address, tokens, phone, payment,
 -- electronic invoice, Rappi/WhatsApp webhook, integrations or backup tables.
 -- Never GRANT SELECT ON ALL TABLES or ALTER DEFAULT PRIVILEGES here.
-COMMIT;
