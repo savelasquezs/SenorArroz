@@ -12,6 +12,10 @@ ChatGPT y Codex OAuth autorizados por el propietario. Verificación real del 10 
 
 Ampliación solicitada: diagnostics.users con solo id/name, desde public."user" y con tenant fijo 1. SQL add_gateway_user_names_20261110.sql, pruebas de columnas privadas/RLS/escrituras y matriz actualizada. Aplicar mediante importación, revisión, SHA y respaldo comprobado; después añadir únicamente diagnostics.users a AllowedViews y verificar desde ChatGPT. El estado productivo de esta ampliación se registra en la solicitud de migración correspondiente, sin inferirlo del merge.
 
+## Ampliación de almuerzos
+
+Ampliación de almuerzos/permanencias: SQL `add_gateway_lunch_review_20261110.sql`, una vista nueva y dos proyecciones ampliadas, sin herramientas MCP nuevas. Helper de cruce temporal en `tools/data-gateway/helpers/stay-lunch.ts`, con casos de cobertura total/parcial, extremos, medianoche, duplicados, otro empleado/tenant, almuerzo abierto y datos incompletos. Importar/revisar/fusionar, verificar respaldo, autorizar/aplicar el SHA por Actions y luego permitir `diagnostics.employee_lunch` en Railway. No convertir ausencia de almuerzo en sanción ni modificar revisiones existentes. Registrar el resultado productivo en la solicitud de migración; la ejecución efectiva de Code Mode y su ahorro siguen pendientes de prueba en el cliente.
+
 ## Respaldo
 
 Objeto Railway existente `backup-20261110-080417.dump`, 2026-11-10 08:04:21 UTC, 13 522 480 bytes. SHA-256 `617c67c1ffcb8dc5c65d90207ba0edaae94c2eaf552a421080ca3ced8c09dee2`.

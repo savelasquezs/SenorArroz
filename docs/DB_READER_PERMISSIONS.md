@@ -2,7 +2,7 @@
 
 Inventario de 129 tablas: Issues privados #79–#82; columnas históricas: #85 (2026-11-10).
 
-38 tablas con SELECT por columna y 39 vistas security_invoker/security_barrier. Las 14 concesiones históricas se sustituyen; nunca se amplían con SELECT de tabla completa. Las otras 91 tablas permanecen excluidas. Tenant fijo: 1.
+39 tablas con SELECT por columna y 40 vistas security_invoker/security_barrier tras aplicar las ampliaciones revisadas. Las 14 concesiones históricas se sustituyen; nunca se amplían con SELECT de tabla completa. Las otras 90 tablas permanecen excluidas. Tenant fijo: 1.
 
 La migración es transaccional, idempotente y falla ante RLS ausente, columnas distintas, privilegios heredados, escritura o SELECT fuera de la lista. No crea roles ni modifica contraseñas. Las vistas incluyen el filtro tenant=1 además de RLS; el propietario no se usa para acceder a las tablas base.
 
@@ -69,7 +69,7 @@ La migración es transaccional, idempotente y falla ante RLS ausente, columnas d
 | `email_outbox_message` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
 | `employee_leave_attachment` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
 | `employee_leave_request` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
-| `employee_lunch` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
+| `employee_lunch` | Sí | SELECT por columna: empleado, sucursal, intervalo UTC y versión; sin actores ni auditoría privada |
 | `entity_audit_log` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
 | `expense` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
 | `expense_bank_payment` | Sí | Excluida: identidad, PII, finanzas, mensajes o payload operativo no aprobado |
@@ -152,14 +152,15 @@ La migración es transaccional, idempotente y falla ante RLS ausente, columnas d
 - `delivery_route_proposal_stop`: `id`, `tenant_id`, `delivery_routing_plan_id`, `delivery_route_proposal_id`, `order_id`, `stop_sequence`, `estimated_ready_at_utc`, `estimated_arrival_at_utc`, `travel_from_previous_seconds`, `service_seconds`, `was_ready_at_generation`, `is_suggested_wait`, `created_at`, `updated_at`
 - `delivery_route_stop`: `id`, `tenant_id`, `delivery_route_id`, `order_id`, `stop_sequence`, `arrival_confirmed_at_utc`, `auto_delivered_at_utc`, `created_at`, `updated_at`
 - `delivery_routing_plan`: `id`, `tenant_id`, `branch_id`, `generation_number`, `status`, `generated_at_utc`, `available_slot_count`, `soon_slot_count`, `solver_duration_ms`, `matrix_source`, `created_at`, `updated_at`
-- `delivery_tracking_alert`: `id`, `tenant_id`, `branch_id`, `alert_type`, `severity`, `status`, `occurred_at`, `occurrence_count`, `resolved_at`, `duration_seconds`, `created_at`, `updated_at`
-- `delivery_tracking_incident`: `id`, `tenant_id`, `branch_id`, `incident_type`, `started_at`, `ended_at`, `duration_seconds`, `review_status`, `final_classification`, `created_at`, `updated_at`
+- `delivery_tracking_alert`: `id`, `tenant_id`, `branch_id`, `alert_type`, `severity`, `status`, `occurred_at`, `occurrence_count`, `resolved_at`, `duration_seconds`, `created_at`, `updated_at`, `deliveryman_id`, `incident_id`
+- `delivery_tracking_incident`: `id`, `tenant_id`, `branch_id`, `incident_type`, `started_at`, `ended_at`, `duration_seconds`, `review_status`, `final_classification`, `created_at`, `updated_at`, `deliveryman_id`, `evidence_complete`
 - `delivery_work_session`: `id`, `tenant_id`, `branch_id`, `app_version`, `started_at`, `ended_at`, `status`, `created_at`, `updated_at`
 - `deliveryman_advance`: `id`, `tenant_id`, `branch_id`, `amount`, `payment_method`, `created_at`, `updated_at`
 - `deliveryman_day_state`: `id`, `tenant_id`, `branch_id`, `date`, `liquidation_mode`, `blocked`, `created_at`, `updated_at`
 - `deliveryman_location`: `id`, `tenant_id`, `recorded_at`, `accuracy_meters`, `internet_available`, `gps_enabled`, `tracking_mode`, `created_at`, `synced_at`
 - `discount_code`: `id`, `tenant_id`, `branch_id`, `type`, `gift_product_id`, `discount_percentage`, `starts_at`, `ends_at`, `minimum_order_value`, `is_active`, `created_at`, `updated_at`
 - `expense_category`: `id`, `tenant_id`, `name`, `created_at`, `updated_at`
+- `employee_lunch`: `id`, `tenant_id`, `branch_id`, `user_id`, `started_at`, `ended_at`, `updated_at`
 - `expense_menu_target`: `id`, `tenant_id`, `expense_id`, `target_type`, `target_id`, `created_at`, `updated_at`
 - `expense_unit_conversion`: `id`, `tenant_id`, `expense_id`, `name`, `base_quantity`, `active`, `created_at`, `updated_at`
 - `inventory_balance`: `id`, `tenant_id`, `branch_id`, `expense_id`, `quantity_on_hand`, `quantity_reserved`, `created_at`, `updated_at`
@@ -189,3 +190,5 @@ La migración es transaccional, idempotente y falla ante RLS ausente, columnas d
 El cambio reduce columnas disponibles en consultas históricas de Actions (teléfonos, direcciones, GPS, notas, tokens, identidad y costos). Las consultas que dependan de ellas deberán pasar por autorización separada; el restaurante usa otro rol y sus permisos/políticas no se alteran.
 
 Ampliación autorizada de nombres: `add_gateway_user_names_20261110.sql` concede solo `id`, `name` y `tenant_id` técnico en `public."user"`. La vista `diagnostics.users` devuelve exclusivamente `id` y `name` para resolver identidades de domiciliarios por ID; incluye los usuarios del tenant, sin filtrar ni publicar roles. Correo, teléfono, hashes, sesiones, dispositivos, nómina y demás campos siguen excluidos. FORCE RLS, guard restrictivo tenant=1, invoker/barrier y comprobaciones de privilegios son obligatorios. Aplicar después de la migración base mediante el mismo workflow con SHA y respaldo verificado.
+
+Cruce de almuerzos: `add_gateway_lunch_review_20261110.sql` agrega una vista `diagnostics.employee_lunch` y extiende las dos vistas de seguimiento existentes. Conservar el orden previo de sus columnas. No concede GPS, mensajes, explicaciones, notas administrativas ni actores de corrección. Aplicar después de la migración base; agregar la nueva vista a AllowedViews únicamente después de validar SQL/RLS. Las correcciones registradas de almuerzo se consultan en su estado vigente sin alterar ni cerrar alertas.
