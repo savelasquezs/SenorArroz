@@ -353,6 +353,7 @@ builder.Services.AddAuthentication(options =>
     _ => { });
 
 builder.Services.AddAuthorization();
+SenorArroz.API.Security.DataGatewaySecurity.AddDataGateway(builder.Services, builder.Configuration);
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {

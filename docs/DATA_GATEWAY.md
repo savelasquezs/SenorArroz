@@ -1,108 +1,57 @@
-# Data Gateway de diagnóstico — código preparado, configuración pendiente
+# Data Gateway
 
-## Estado y límites de seguridad
+Integrado en la API .NET 9 existente. Desactivado por defecto; no requiere otro servicio Railway. Reutiliza exclusivamente `senorarroz_db_reader`, con tenant fijo 1. No compartir esta credencial con otros tenants. GitHub Actions permanece como respaldo.
 
-El gateway está integrado en la API .NET 9, **desactivado por defecto**.\nIncluye endpoint MCP HTTP JSON-RPC sin sesiones en `POST /api/internal/data-gateway/mcp`,\nprotegido por el mismo JWT Superadmin. La autenticación OAuth y el registro\ncomo conector remoto de ChatGPT requieren configuración/implementación\nposterior; no está conectado automáticamente.
-No acepta SQL libre. Solo construye consultas SELECT sobre vistas explícitamente permitidas
-del esquema `diagnostics`. Este diseño evita que el cliente llame `set_config()`,
-cambie el tenant, ejecute funciones arbitrarias o envíe sentencias DDL/DML por SQL.
+## Superficie
 
-Endpoints:
 - `GET /api/internal/data-gateway/schema`
 - `POST /api/internal/data-gateway/query`
-- `POST /api/internal/data-gateway/explain` (sin ANALYZE)
+- `POST /api/internal/data-gateway/explain`
+- `POST /api/internal/data-gateway/mcp` (Streamable HTTP sin sesiones; GET/DELETE devuelven 405).
+- `GET /.well-known/oauth-protected-resource/api/internal/data-gateway/mcp` y alias raíz.
 
-El usuario necesita JWT válido de rol `Superadmin` y tenant válido.
-Se aplican transacción READ ONLY, `app.current_tenant_id` y `app.system_scope=off`
-por transacción, timeout de 3 s, hasta 500 filas, salida de cadenas limitada, 2
-consultas concurrentes por instancia y pool de máximo 3 conexiones.
+Las consultas son objetos `{view, columns?, filters?, orderBy?, descending?, maxRows?}`. Solo se permiten vistas explícitamente configuradas dentro de `diagnostics`, con `security_invoker=true` y `security_barrier=true`. Identificadores cotejados con el catálogo; valores parametrizados; operadores eq/ne/gt/gte/lt/lte; propiedades desconocidas rechazadas. No hay SQL libre, joins enviados por clientes, DDL/DML ni ejecución de código en el servidor.
 
-## Formato de consulta
+Cada conexión comprueba nombre, atributos, membresías y propiedad del lector. Cada transacción es READ ONLY, configura tenant desde identidad autenticada y apaga system_scope; timeout SQL 3 s, lock 500 ms, pool máximo 3 y 2 consultas concurrentes por instancia. Cuerpos de hasta 32 KiB, 60 solicitudes/minuto por tenant, 500 filas, 30 columnas y 20 filtros; valores de texto limitados a 2048 caracteres y filas serializadas a 256 KiB. `truncated` indica filas omitidas. Los valores numéricos se devuelven como cadenas para preservar precisión.
 
-```json
-{
-  "view": "diagnostics.orders_summary",
-  "columns": ["branch_id", "total"],
-  "filters": [{"column": "branch_id", "op": "eq", "value": 1}],
-  "orderBy": "total",
-  "descending": true,
-  "maxRows": 100
-}
-```
+Las 37 tablas autorizadas usan SELECT por columna; 38 vistas incluyen además filtro explícito tenant=1. `orders_summary` agrupa por fecha de Colombia y conserva decimales. Las 92 tablas restantes se excluyen. El inventario completo y las columnas aprobadas están en [DB_READER_PERMISSIONS.md](DB_READER_PERMISSIONS.md).
 
-Las columnas y la vista deben existir en el catálogo autorizado. Los operadores
-aceptados son eq/ne/gt/gte/lt/lte. El servidor parametriza todos los valores.
-La API NO permite joins, SQL arbitrario, UPDATE, DELETE o transacciones externas.
-Para nuevas relaciones complejas, agregar una vista de diagnóstico revisada,
-no un endpoint por tabla.
+## Autenticación
 
-## Configuración manual pendiente (no realizada)
+Dos vías aisladas, bajo la misma política del gateway:
 
-1. Auditar RLS y los datos sensibles. Crear un rol PostgreSQL único,
-   `LOGIN NOSUPERUSER NOBYPASSRLS`, sin propiedad de tablas, sin CREATE,
-   sin membresía del dueño ni BYPASSRLS, y permisos SELECT **solo sobre
-   vistas autorizadas**. Verificar que las vistas de diagnóstico filtren
-   por tenant y no revelen PII/secretos. Para vistas `security_invoker`,
-   configurar cuidadosamente las concesiones de tablas base y FORCE RLS.
-   Para vistas con propietario, documentar y probar el contexto de ejecución,
-   porque un propietario que omite RLS puede revelar tenants cruzados.
-2. Preparar y probar inicialmente `diagnostics.orders_summary` o el nombre
-   real de la primera vista autorizada en una BD de pruebas. No existe todavía
-   esa vista en el código y NO se aplicó DDL en producción.
-3. Establecer en Railway (servicio API) secretos/variables:
-   - `ConnectionStrings__DataGatewayReader`: cadena PostgreSQL del lector
-     restringido; usar hostname interno de Railway si se aloja allí.
-   - `DataGateway__AllowedViews__0=diagnostics.orders_summary`
-     (sustituir por la vista realmente creada).
-   - `DataGateway__Enabled=true` **solo tras aprobar las pruebas**.
-4. Probar aislamiento entre tenants, lectura indebida, latencia, datos sensibles,
-   reconexión y apagado seguro (`Enabled=false`).
-5. Instalar/conectar el adaptador MCP según cliente elegido. No confundir un
-   servidor MCP local con un conector MCP remoto compatible con ChatGPT.
+- JWT habitual de la API: Superadmin del tenant 1; conserva las comprobaciones existentes de sesión y revocación.
+- OAuth del gateway: firma y descubrimiento OIDC mediante `DataGateway:OAuth:Authority`, audiencia exactamente `DataGateway:OAuth:Resource`, expiración, claim `tenant_id=1`, scope `gateway:read` y `sub` presente en `DataGateway:OAuth:AllowedSubjects`. El issuer debe emitir access tokens JWT. Sin usuarios autorizados no se concede acceso OAuth.
 
-## Clientes en código
+Los tokens OAuth del gateway solo son aceptados por esta política; no autentican las otras rutas administrativas. Los endpoints publican metadata RFC 9728 y challenge `WWW-Authenticate` para descubrir el proveedor. El proveedor OAuth es una dependencia de configuración pendiente: debe ofrecer authorization code + PKCE S256, registro del cliente ChatGPT mediante DCR/CIMD o cliente preestablecido, audiencia ligada al resource y refresh tokens si se requiere acceso continuo. No basta el JWT del POS para conectar ChatGPT.
 
-- `tools/data-gateway/client.ts`: SDK TypeScript con `schema()`,
-  `query()`, `explain()`. Consume HTTP autenticado. Código ejecutado
-  por agentes no debe poder leer secretos del servidor.
-- `tools/data-gateway/mcp_stdio.py`: puente MCP stdio local
-  (Python estándar), útil para Codex local o clientes con servidores stdio.
-  Requiere variables `SENOR_ARROZ_GATEWAY_URL` y
-  `SENOR_ARROZ_GATEWAY_TOKEN`, este último un JWT Superadmin vigente;
-  al vencer hay que renovarlo. Nunca versionar credenciales.
-- Para ChatGPT remoto hace falta construir/operar un punto MCP HTTPS
-  autenticado, idealmente OAuth o autorización de usuarios, más la
-  configuración manual de conexión. El bridge stdio **no está expuesto
-  directamente a ChatGPT**.
+Se rechaza todo `Origin` del MCP salvo coincidencia exacta en `DataGateway:AllowedOrigins`; clientes servidor a servidor pueden omitirlo. No autorizar comodines. No incluir tokens en URLs, logs, Issues o repositorios.
 
-## Verificaciones
+Referencias: [autenticación de OpenAI](https://developers.openai.com/plugins/build/auth), [MCP en Codex](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), [transporte MCP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports), [vistas PostgreSQL](https://www.postgresql.org/docs/17/sql-createview.html).
 
-Pruebas unitarias iniciales: gateway apagado, tenant inválido y vista prohibida.
-Antes de activar producción se requieren pruebas PostgreSQL con vistas reales,
-RLS, privilegios, límites, truncamiento y rechazo de operaciones peligrosas.
+## Railway
 
-El gateway puede desplegarse en `main` inerte; no se necesita modificar
-la configuración de producción hasta completar la lista anterior.
+Preparación en `tools/data-gateway/railway.env.example`. Servicio existente: `SenorArroz`; no crear otro servicio.
 
+1. Mantener `DataGateway__Enabled=false`.
+2. Configurar `ConnectionStrings__DataGatewayReader` con la credencial existente del lector y el host interno de MainDatabase. No usar `DefaultConnection`, no crear/rotar la contraseña. `DATABASE_READ_URL` de GitHub Actions no es recuperable mediante la API de secrets; el operador debe instalar la misma credencial en Railway sin publicarla.
+3. Configurar Authority del proveedor OAuth, Resource canónico HTTPS y sujetos autorizados. Vincular tenant y scope en el proveedor, con consentimiento del usuario; no aceptar tenant desde parámetros del cliente.
+4. Configurar `DataGateway__AllowedViews__N` solo para vistas revisadas y ya instaladas. Inicialmente `diagnostics.orders_summary`.
+5. Aplicar la migración únicamente mediante importación, revisión, SHA, respaldo restaurado y autorización explícita del workflow existente. El merge no aplica SQL.
+6. Comprobar con el lector real: columnas excluidas, RLS entre tenants, credencial sin escritura, protocolo MCP y expiración. Activar solamente después de documentar resultados y aprobación. Apagado inmediato: `DataGateway__Enabled=false`.
 
-## Reutilización del usuario existente de GitHub Actions
+## ChatGPT, Codex y Code Mode
 
-La cuenta prevista es **`senorarroz_db_reader`**, ya usada por
-`savelasquezs/senorarroz-db-assistant` a través del secreto
-`DATABASE_READ_URL`. La verificación de conectividad con SELECT 1 fue
-satisfactoria (Issue #76 del repositorio privado).
+ChatGPT: registrar la URL HTTPS `/api/internal/data-gateway/mcp` como app/conector privado y configurar el cliente OAuth en el proveedor. Completar inicio de sesión y consentimiento. Probar `get_schema`, `execute_query` y `explain_query`; herramientas declaradas de lectura, idempotentes y con `structuredContent`. La instalación/consentimiento de una cuenta ChatGPT requiere intervención del propietario y no se realiza automáticamente al desplegar.
 
-- **No crear ni rotar la contraseña** ni copiar el secreto a archivos,
-  Issues o comentarios. Los secretos de GitHub Actions no son recuperables
-  desde esta integración.
-- Reutilizar exactamente el mismo **rol PostgreSQL**, previa auditoría de
-  atributos (`NOSUPERUSER`, `NOBYPASSRLS`, sin propietario), RLS y GRANT
-  sobre la vista de diagnóstico elegida.
-- En Railway, crear posteriormente `ConnectionStrings__DataGatewayReader`
-  con las credenciales del lector. Preferir el hostname de red privada para
-  reducir exposición y tráfico público, sin cambiar el usuario ni la contraseña.
-- Antes de habilitar `DataGateway__Enabled`, confirmar `SELECT` sobre
-  vistas `diagnostics` y rechazo efectivo de operaciones no autorizadas.
-- Conservar GitHub Actions funcionando como respaldo hasta validar el
-  gateway por completo. La rotación futura afectará **ambos** sistemas,
-  ya que comparten rol.
+Codex HTTP: en su configuración MCP indicar `url` con ese endpoint y ejecutar `codex mcp login senor_arroz` cuando se use OAuth. Alternativamente `bearer_token_env_var="SENOR_ARROZ_GATEWAY_TOKEN"` para un JWT administrativo vigente; no escribir el token en TOML. Codex stdio: ejecutar `python` con ruta absoluta a `tools/data-gateway/mcp_stdio.py`, pasando `SENOR_ARROZ_GATEWAY_URL` y `SENOR_ARROZ_GATEWAY_TOKEN` por entorno. El puente reenvía el protocolo HTTP y reutiliza los esquemas del servidor. No sigue redirecciones ni imprime credenciales.
+
+SDK TypeScript: `DataGateway` consume REST con token suministrado por el host, timeout y respuestas limitadas, sin redirecciones. En un sandbox Code Mode usar `codeModeGateway(invoke)`: el host proporciona una función que invoca las tres herramientas MCP y conserva las credenciales fuera del código del agente. No exponer variables de entorno, conexiones PostgreSQL ni tokens al sandbox. La disponibilidad de Code Mode depende del cliente; el gateway no habilita esa función en una cuenta.
+
+## Validación
+
+CI ejecuta .NET, SDK TypeScript y stdio. Las pruebas HTTP verifican firmas, expiración, audiencia, scope, sujeto, rol y tenant; las pruebas PostgreSQL ejecutan dos veces la migración, suplantación de GUC, columnas privadas, SQL malicioso, escrituras, filtros de fecha, decimales, límites de filas y un umbral de rendimiento local. `FLOW_POSTGRES_TEST_CONNECTION` debe apuntar a un servidor desechable con permiso de crear bases y roles. Nunca apuntarlo a producción. La prueba crea/elimina una base aislada y el rol lector dentro de ese servidor.
+
+Pendientes operativos y evidencia del respaldo: [tasks/data-gateway-rollout.md](../tasks/data-gateway-rollout.md).
+
+Mejoras posteriores: medir p95 y CPU con carga real antes de ampliar límites; agregar índices compuestos tenant/fecha solo cuando EXPLAIN lo justifique; autorizar nuevas vistas por caso de uso. No cachear datos entre identidades ni compartir el lector con otros tenants.
