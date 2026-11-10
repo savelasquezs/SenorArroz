@@ -2,7 +2,7 @@
 
 ## Estado y límites de seguridad
 
-El gateway está integrado en la API .NET 9, **desactivado por defecto**.
+El gateway está integrado en la API .NET 9, **desactivado por defecto**.\nIncluye endpoint MCP HTTP JSON-RPC sin sesiones en `POST /api/internal/data-gateway/mcp`,\nprotegido por el mismo JWT Superadmin. La autenticación OAuth y el registro\ncomo conector remoto de ChatGPT requieren configuración/implementación\nposterior; no está conectado automáticamente.
 No acepta SQL libre. Solo construye consultas SELECT sobre vistas explícitamente permitidas
 del esquema `diagnostics`. Este diseño evita que el cliente llame `set_config()`,
 cambie el tenant, ejecute funciones arbitrarias o envíe sentencias DDL/DML por SQL.
