@@ -35,6 +35,7 @@ public class DeliveryTrackingIncidentsController : ControllerBase
     public async Task<ActionResult<ApiResponse<PagedResult<DeliveryTrackingIncidentListItemDto>>>> GetAll(
         [FromQuery] int? branchId = null,
         [FromQuery] int? deliverymanId = null,
+        [FromQuery] string? incidentType = null,
         [FromQuery] string? reviewStatus = null,
         [FromQuery] DateTime? from = null,
         [FromQuery] DateTime? to = null,
@@ -46,6 +47,8 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             return Forbid();
         if (!TryParseReviewStatus(reviewStatus, out var parsedReviewStatus))
             return BadRequest(ApiResponse.Error("Estado de revisión inválido."));
+        if (!TryParseIncidentType(incidentType, out var parsedIncidentType))
+            return BadRequest(ApiResponse.Error("Tipo de incidente inválido."));
 
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
@@ -54,6 +57,8 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             query = query.Where(x => x.BranchId == resolvedBranchId.Value);
         if (deliverymanId.HasValue)
             query = query.Where(x => x.DeliverymanId == deliverymanId.Value);
+        if (parsedIncidentType.HasValue)
+            query = query.Where(x => x.IncidentType == parsedIncidentType.Value);
         if (parsedReviewStatus.HasValue)
             query = query.Where(x => x.ReviewStatus == parsedReviewStatus.Value);
         if (from.HasValue)
@@ -132,6 +137,51 @@ public class DeliveryTrackingIncidentsController : ControllerBase
             TotalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize),
         };
         return Ok(ApiResponse<PagedResult<DeliveryTrackingIncidentListItemDto>>.SuccessResponse(result));
+    }
+
+    /// <summary>Opciones de filtros basadas en los incidentes reales, no en la página actual.</summary>
+    [HttpGet("filter-options")]
+    public async Task<ActionResult<ApiResponse<DeliveryTrackingIncidentFilterOptionsDto>>> GetFilterOptions(
+        [FromQuery] int? branchId = null,
+        [FromQuery] string? reviewStatus = null,
+        [FromQuery] DateTime? from = null,
+        [FromQuery] DateTime? to = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryResolveBranch(branchId, out var resolvedBranchId))
+            return Forbid();
+        if (!TryParseReviewStatus(reviewStatus, out var parsedReviewStatus))
+            return BadRequest(ApiResponse.Error("Estado de revisión inválido."));
+
+        var query = _db.DeliveryTrackingIncidents.AsNoTracking().AsQueryable();
+        if (resolvedBranchId.HasValue)
+            query = query.Where(x => x.BranchId == resolvedBranchId.Value);
+        if (parsedReviewStatus.HasValue)
+            query = query.Where(x => x.ReviewStatus == parsedReviewStatus.Value);
+        if (from.HasValue)
+            query = query.Where(x => x.StartedAt >= ColombiaTimeHelper.EnsureUtc(from.Value));
+        if (to.HasValue)
+            query = query.Where(x => x.StartedAt < ColombiaTimeHelper.EnsureUtc(to.Value));
+
+        var combinations = await query
+            .Select(x => new { x.DeliverymanId, x.IncidentType })
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var names = await LoadNamesAsync(combinations.Select(x => x.DeliverymanId), cancellationToken);
+        var deliverymen = combinations
+            .Select(x => x.DeliverymanId)
+            .Distinct()
+            .Select(id => new DeliveryTrackingIncidentDeliverymanOptionDto(
+                id, names.GetValueOrDefault(id, $"Domiciliario #{id}")))
+            .OrderBy(x => x.Name)
+            .ThenBy(x => x.Id)
+            .ToList();
+        var typesByDeliveryman = combinations
+            .Select(x => new DeliveryTrackingIncidentTypeOptionDto(x.DeliverymanId, x.IncidentType))
+            .ToList();
+
+        return Ok(ApiResponse<DeliveryTrackingIncidentFilterOptionsDto>.SuccessResponse(
+            new DeliveryTrackingIncidentFilterOptionsDto(deliverymen, typesByDeliveryman)));
     }
 
     [HttpGet("{id:long}")]
@@ -285,6 +335,22 @@ public class DeliveryTrackingIncidentsController : ControllerBase
         return true;
     }
 
+    private static bool TryParseIncidentType(
+        string? value,
+        out DeliveryTrackingIncidentType? type)
+    {
+        type = value?.Trim().ToLowerInvariant() switch
+        {
+            null or "" => null,
+            "stay" => DeliveryTrackingIncidentType.Stay,
+            "route_deviation" => DeliveryTrackingIncidentType.RouteDeviation,
+            "location_disabled" => DeliveryTrackingIncidentType.LocationDisabled,
+            "tracking_interruption" => DeliveryTrackingIncidentType.TrackingInterruption,
+            _ => null,
+        };
+        return string.IsNullOrWhiteSpace(value) || type.HasValue;
+    }
+
     private static bool TryParseReviewStatus(
         string? value,
         out DeliveryIncidentReviewStatus? status)
@@ -368,6 +434,16 @@ public class DeliveryTrackingIncidentsController : ControllerBase
         bool? GpsEnabled,
         bool? InternetAvailable);
 }
+
+public record DeliveryTrackingIncidentDeliverymanOptionDto(int Id, string Name);
+
+public record DeliveryTrackingIncidentTypeOptionDto(
+    int DeliverymanId,
+    DeliveryTrackingIncidentType IncidentType);
+
+public record DeliveryTrackingIncidentFilterOptionsDto(
+    IReadOnlyList<DeliveryTrackingIncidentDeliverymanOptionDto> Deliverymen,
+    IReadOnlyList<DeliveryTrackingIncidentTypeOptionDto> TypesByDeliveryman);
 
 public record DeliveryTrackingIncidentListItemDto(
     long Id,
