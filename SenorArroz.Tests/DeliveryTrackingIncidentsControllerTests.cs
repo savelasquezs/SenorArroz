@@ -109,6 +109,71 @@ public class DeliveryTrackingIncidentsControllerTests
         Assert.Null(db.DeliveryTrackingIncidents.Single().FinalClassification);
     }
 
+    [Fact]
+    public async Task GetAll_FiltersByDeliverymanAndIncidentTypeBeforePaging()
+    {
+        await using var db = CreateDb();
+        SeedNames(db);
+        var stay = Incident(1, branchId: 7, deliverymanId: 11);
+        var interruption = Incident(2, branchId: 7, deliverymanId: 11);
+        interruption.IncidentType = DeliveryTrackingIncidentType.TrackingInterruption;
+        interruption.DeliveryStayId = null;
+        var otherDeliveryman = Incident(3, branchId: 7, deliverymanId: 12);
+        otherDeliveryman.IncidentType = DeliveryTrackingIncidentType.TrackingInterruption;
+        db.DeliveryTrackingIncidents.AddRange(stay, interruption, otherDeliveryman);
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, role: "admin", branchId: 7)
+            .GetAll(deliverymanId: 11, incidentType: "tracking_interruption",
+                page: 1, pageSize: 1, cancellationToken: default);
+
+        var response = Assert.IsType<ApiResponse<PagedResult<DeliveryTrackingIncidentListItemDto>>>(
+            Assert.IsType<OkObjectResult>(action.Result).Value);
+        var item = Assert.Single(response.Data!.Items);
+        Assert.Equal(2, item.Id);
+        Assert.Equal(1, response.Data.TotalCount);
+        Assert.Equal(DeliveryTrackingIncidentType.TrackingInterruption, item.IncidentType);
+    }
+
+    [Fact]
+    public async Task GetFilterOptions_UsesBranchStatusAndDateAcrossAllCases()
+    {
+        await using var db = CreateDb();
+        SeedNames(db);
+        db.Users.Add(new User
+        {
+            Id = 13, BranchId = 7, Name = "Domiciliario Tres", Email = "d3@test.co",
+            Phone = "4", PasswordHash = "x", Role = UserRole.Deliveryman
+        });
+        var stay = Incident(1, branchId: 7, deliverymanId: 11);
+        var interruption = Incident(2, branchId: 7, deliverymanId: 13);
+        interruption.IncidentType = DeliveryTrackingIncidentType.TrackingInterruption;
+        var otherBranch = Incident(3, branchId: 8, deliverymanId: 12);
+        otherBranch.IncidentType = DeliveryTrackingIncidentType.LocationDisabled;
+        var reviewed = Incident(4, branchId: 7, deliverymanId: 11);
+        reviewed.ReviewStatus = DeliveryIncidentReviewStatus.Justified;
+        reviewed.IncidentType = DeliveryTrackingIncidentType.LocationDisabled;
+        var older = Incident(5, branchId: 7, deliverymanId: 13);
+        older.StartedAt = BaseTime.AddDays(-10);
+        older.IncidentType = DeliveryTrackingIncidentType.Stay;
+        db.DeliveryTrackingIncidents.AddRange(stay, interruption, otherBranch, reviewed, older);
+        await db.SaveChangesAsync();
+
+        var action = await Controller(db, role: "admin", branchId: 7).GetFilterOptions(
+            branchId: 7, reviewStatus: "pending",
+            from: BaseTime.AddMinutes(-1), to: BaseTime.AddMinutes(1),
+            cancellationToken: default);
+
+        var response = Assert.IsType<ApiResponse<DeliveryTrackingIncidentFilterOptionsDto>>(
+            Assert.IsType<OkObjectResult>(action.Result).Value);
+        Assert.Equal(new[] { 11, 13 }, response.Data!.Deliverymen.Select(x => x.Id).OrderBy(x => x));
+        Assert.Equal(2, response.Data.TypesByDeliveryman.Count);
+        Assert.Contains(response.Data.TypesByDeliveryman,
+            x => x.DeliverymanId == 11 && x.IncidentType == DeliveryTrackingIncidentType.Stay);
+        Assert.Contains(response.Data.TypesByDeliveryman,
+            x => x.DeliverymanId == 13 && x.IncidentType == DeliveryTrackingIncidentType.TrackingInterruption);
+    }
+
     [Theory]
     [InlineData(20, true)]
     [InlineData(450, true)]
