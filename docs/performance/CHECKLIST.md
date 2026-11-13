@@ -75,7 +75,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M14-F02 | Poll y claim del agente Windows | PR listo para revisión | 2026-10-17 | [Informe 2026-10-17](reviews/2026-10-17-M14-F02.md) | [PR único API #38](https://github.com/savelasquezs/SenorArroz/pull/38) | Apertura EF establece tenant RLS en claim específico; auth proyecta 3 campos; orden de claim determinista. [Backend CI #191](https://github.com/savelasquezs/SenorArroz/actions/runs/39052260958) 919/919 incl. nueva regresión PostgreSQL RLS; [remotos #70](https://github.com/savelasquezs/SenorArroz/actions/runs/39052261022) 894/919 (25 omitidas) + PG 3/3. Sin SQL ni despliegue. |
 | M14-F03 | Notificaciones SignalR del agente | Pendiente | — | — | — | — |
 | M14-F04 | Confirmar, fallar y reintentar impresión | Pendiente | — | — | — | — |
-| M14-F05 | Configuración y reimpresión | Pendiente | — | — | — | — |
+| M14-F05 | Configuración y reimpresión | Bloqueado | 2026-11-13 | [Informe](reviews/2026-11-13-M14-F05.md) | [Vue #81](https://github.com/savelasquezs/senorArrozFront/pull/81) (borrador), PR documental de esta rama | Ventana antes del confirmDialog permitía rotaciones concurrentes de token; guardia temprana + 3 regresiones nuevas. [CI Vue](https://github.com/savelasquezs/senorArrozFront/actions/runs/43430208400) en revisión; prueba UI y agente Windows pendientes. Sin SQL, merge ni despliegue. |
 | M15-F01 | Pedidos disponibles para despacho | Pendiente | — | — | — | — |
 | M15-F02 | Asignar y desasignar domiciliario | Pendiente | — | — | — | — |
 | M15-F03 | Tablero y filtro de asignados | Pendiente | — | — | — | — |
