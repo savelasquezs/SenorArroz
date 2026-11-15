@@ -16,8 +16,6 @@ Ampliación solicitada: diagnostics.users con solo id/name, desde public."user" 
 
 Ampliación de almuerzos/permanencias: PR backend #120 y asistente #105 fusionados. SQL `add_gateway_lunch_review_20261110.sql` aplicado por #106, SHA normalizado `308e237d8f4d5f7af901f4c68fc5c747434776c74b2217eb23a7f3d8bf40f65e`: una vista nueva y dos proyecciones ampliadas, sin herramientas MCP nuevas. #107 confirma FORCE RLS, invoker/barrier, cero columnas fuera de la lista y cero escrituras. `AllowedViews__39=diagnostics.employee_lunch` configurada después de SQL. Helper temporal en `tools/data-gateway/helpers/stay-lunch.ts`, con casos de cobertura total/parcial, extremos, medianoche, duplicados, otro empleado/tenant, almuerzo abierto y datos incompletos. CI: 1747 pruebas aprobadas/1 omitida, SDK 9, stdio 7 y asistente 40. No convertir ausencia de almuerzo en sanción ni modificar revisiones existentes. El estado del despliegue y la consulta real se registra en #106; la ejecución efectiva de Code Mode y su ahorro siguen pendientes de prueba en el cliente.
 
-## Respaldo
-
 ## Validación de Code Mode — 14 de noviembre
 
 Ejecutados informes reales en `functions.exec` con las herramientas del plugin ya conectado: un período amplio (92 filas leídas, 11 incidentes, cuatro consultas MCP) y un caso individual. Cálculo y unión realizados en V8, sin emitir las filas intermedias. Verificación independiente de intervalos y estados correcta. Evidencia sanitizada: `docs/DATA_GATEWAY_CODE_MODE_BENCHMARK.json`. Tráfico tokenizado del período: 7745 tokens directos frente a 526 de programa/resumen, o 878 incluyendo el arranque de este cliente. No mide consumo facturado total; en la muestra pequeña, el arranque supera la ruta directa por 27 tokens.
