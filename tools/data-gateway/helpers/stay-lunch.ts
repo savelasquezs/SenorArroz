@@ -1,6 +1,6 @@
 import type { Result } from "../client.ts";
 
-function instant(value: string | null | undefined): number {
+export function instant(value: string | null | undefined): number {
   if (value?.startsWith('"')) value = JSON.parse(value);
   if (!value || !/(Z|[+-]\d{2}:\d{2})$/i.test(value)) throw new Error("Timestamp with timezone required");
   const timestamp = Date.parse(value);
@@ -8,7 +8,7 @@ function instant(value: string | null | undefined): number {
   return timestamp;
 }
 
-function id(value: string | null | undefined): string {
+export function id(value: string | null | undefined): string {
   if (!value || !/^[1-9]\d*$/.test(value)) throw new Error("Missing or invalid identity");
   return value;
 }

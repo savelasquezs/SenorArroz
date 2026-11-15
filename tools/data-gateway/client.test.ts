@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DataGateway, codeModeGateway, type GatewayInvoker } from "./client.ts";
 import { reviewStayLunches } from "./helpers/stay-lunch.ts";
+import { stayLunchSummary } from "./helpers/stay-lunch-summary.ts";
 
 test("rejects unsafe URLs and credentials", () => {
   for (const url of ["http://example.com", "http://localhost.evil", "https://u:p@example.com", "https://example.com?a=x", "https://example.com#x"])
@@ -96,4 +97,76 @@ test("refuses truncated data, invalid intervals, missing identities and timestam
     assert.throws(() => reviewStayLunches(rows([invalid]), rows([]), cutoff));
   assert.throws(() => reviewStayLunches(rows([stay]), rows([{ ...lunch, ended_at: "invalid" }]), cutoff));
   assert.throws(() => reviewStayLunches(rows([stay]), rows([{ ...lunch, ended_at: lunch.started_at }]), cutoff));
+});
+
+const reportOptions = { from: "2026-11-10T00:00:00-05:00", to: "2026-11-11T00:00:00-05:00", asOf: "2026-11-12T00:00:00Z", names: true };
+function reportQuery(change: Record<string, string | null> = {}) {
+  const calls: import("./client.ts").Query[] = [];
+  const query = async (request: import("./client.ts").Query) => {
+    calls.push(request);
+    if (request.view.endsWith("delivery_tracking_alert")) return rows([
+      { id: "1", tenant_id: "1", branch_id: "1", deliveryman_id: "20", incident_id: stay.id },
+      { id: "2", tenant_id: "1", branch_id: "1", deliveryman_id: "20", incident_id: stay.id },
+    ]);
+    if (request.view.endsWith("delivery_tracking_incident")) return rows([{ ...stay, ...change }]);
+    if (request.view.endsWith("employee_lunch")) return rows(request.filters?.some(f => f.column === "ended_at" && f.value === null)
+      ? [] : [{ id: "3", ...lunch }]);
+    return rows([{ id: "20", name: "Empleado de prueba" }]);
+  };
+  return { query, calls };
+}
+
+test("hybrid report joins alerts, deduplicates incidents and emits only a compact summary", async () => {
+  const { query, calls } = reportQuery();
+  const summary = await stayLunchSummary(query, reportOptions);
+  assert.equal(summary.alerts, 2); assert.equal(summary.incidents, 1);
+  assert.equal(summary.lunch_seconds, 3600); assert.equal(summary.outside_lunch_seconds, 0);
+  assert.deepEqual(summary.categories, { covered_by_recorded_lunch: 1 });
+  assert.equal(summary.by_employee[0].name, "Empleado de prueba");
+  assert.equal(summary.by_employee[0].pending_review, 1);
+  assert.equal(calls.length, 5);
+  assert.ok(calls.every(call => call.columns?.includes("id") && call.maxRows === 500));
+  assert.ok(!JSON.stringify(summary).includes("started_at"));
+  const lunches = calls.filter(call => call.view.endsWith("employee_lunch"));
+  assert.equal(lunches.length, 2);
+  assert.ok(lunches.every(call => !call.filters?.some(f => f.column === "branch_id")));
+});
+
+test("report preserves administrative classifications and refuses inconsistent evidence", async () => {
+  const { query } = reportQuery({ review_status: "reviewed", final_classification: "authorized_place" });
+  const summary = await stayLunchSummary(query, reportOptions);
+  assert.deepEqual(summary.review_states, { reviewed: 1 });
+  assert.deepEqual(summary.final_classifications, { authorized_place: 1 });
+  assert.equal(summary.by_employee[0].pending_review, 0);
+  for (const mismatch of [{ tenant_id: "2" }, { deliveryman_id: "21" }, { branch_id: "2" }, { incident_type: "device_event" }])
+    await assert.rejects(stayLunchSummary(reportQuery(mismatch).query, reportOptions), /Inconsistent/);
+});
+
+test("report completes keyset pages and stops on repeated or excessive pages", async () => {
+  const fixture = reportQuery();
+  let page = 0;
+  const summary = await stayLunchSummary(async request => {
+    const result = await fixture.query(request);
+    if (request.view.endsWith("delivery_tracking_alert")) {
+      page++;
+      if (page === 1) return rows(result.rows.slice(0, 1), true);
+      assert.ok(request.filters?.some(f => f.column === "id" && f.op === "gt" && f.value === "1"));
+      return rows(result.rows.slice(1));
+    }
+    return result;
+  }, reportOptions);
+  assert.equal(summary.alerts, 2); assert.equal(page, 2);
+  await assert.rejects(stayLunchSummary(async () => rows([{ id: "1" }], true), reportOptions), /pagination/);
+  let cursor = 0;
+  await assert.rejects(stayLunchSummary(async () => rows([{ id: String(++cursor) }], true), reportOptions), /Incomplete/);
+  assert.equal(cursor, 4);
+});
+
+test("empty and invalid reports avoid unnecessary calls and fail closed", async () => {
+  let calls = 0;
+  const summary = await stayLunchSummary(async () => { calls++; return rows([]); }, reportOptions);
+  assert.equal(summary.complete, true); assert.equal(summary.alerts, 0); assert.equal(calls, 1);
+  await assert.rejects(stayLunchSummary(reportQuery().query, { ...reportOptions, to: reportOptions.from }), /Invalid report/);
+  await assert.rejects(stayLunchSummary(reportQuery().query, { ...reportOptions, branchId: -1 }), /scope/);
+  await assert.rejects(stayLunchSummary(async () => { throw new Error("Gateway query failed"); }, reportOptions), /Gateway/);
 });

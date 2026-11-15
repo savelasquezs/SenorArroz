@@ -1,0 +1,58 @@
+{
+  "verified_local_date": "2026-11-14",
+  "timezone": "America/Bogota",
+  "surface": "functions.exec + authenticated gateway MCP",
+  "measurement": "o200k_base tokenized tool traffic; not billed end-to-end model usage",
+  "tiktoken_version": "0.14.0",
+  "bundle_sha256": "e73de9800cb2b140d2c4a78a1ae8c7b96bf81b29812dde77c07c3ab17a38e530",
+  "cases": [
+    {
+      "case": "november_1_to_14",
+      "tool_calls": 4,
+      "elapsed_ms": 4635,
+      "direct_text_tokens": 7362,
+      "structured_only_tokens": 6714,
+      "summary_tokens": 331,
+      "direct_arguments_tokens": 383,
+      "direct_tool_traffic_tokens": 7745,
+      "payload_reduction_percent": 95.5,
+      "execution_program_tokens": 195,
+      "program_plus_summary_tokens": 526,
+      "estimated_net_saved_tokens": 7219,
+      "bootstrap_tokens": 352,
+      "cold_program_plus_summary_tokens": 878,
+      "estimated_cold_net_saved_tokens": 6867,
+      "source_rows": 92,
+      "matched_incidents": 11,
+      "summary_groups": 5,
+      "independent_reconciliation": "passed"
+    },
+    {
+      "case": "single_alert",
+      "tool_calls": 4,
+      "elapsed_ms": 4108,
+      "direct_text_tokens": 245,
+      "structured_only_tokens": 237,
+      "summary_tokens": 157,
+      "direct_arguments_tokens": 436,
+      "direct_tool_traffic_tokens": 681,
+      "payload_reduction_percent": 35.92,
+      "execution_program_tokens": 199,
+      "program_plus_summary_tokens": 356,
+      "estimated_net_saved_tokens": 325,
+      "bootstrap_tokens": 352,
+      "cold_program_plus_summary_tokens": 708,
+      "estimated_cold_net_saved_tokens": -27,
+      "source_rows": 2,
+      "matched_incidents": 1,
+      "summary_groups": 1,
+      "independent_reconciliation": "passed"
+    }
+  ],
+  "limitations": [
+    "Same captured MCP requests and responses for the direct baseline; no separate direct-model run.",
+    "Does not include model thinking, caching, chat history replay, tool envelope overhead or billing.",
+    "Bootstrap measures this session's resource loader; another client may load skill source into model context.",
+    "Desktop programmatic execution does not by itself verify the web plugin update."
+  ]
+}

@@ -46,6 +46,7 @@ jobs:
 
       - name: Gateway SDK and stdio tests
         run: |
+          node tools/data-gateway/build-code-mode.mjs --check
           node --experimental-strip-types --test tools/data-gateway/client.test.ts
           python3 -m unittest discover -s tools/data-gateway -p 'test_*.py'
 
