@@ -18,7 +18,6 @@ public class OrderDto
     public int? CustomerId { get; set; }
     public string? CustomerName { get; set; }
     public string? CustomerPhone { get; set; }
-    /// <summary>Nombre de usuario público de WhatsApp del cliente, si no comparte teléfono.</summary>
     public string? CustomerWhatsAppUsername { get; set; }
     public int? AddressId { get; set; }
     public string? AddressVersion { get; set; }

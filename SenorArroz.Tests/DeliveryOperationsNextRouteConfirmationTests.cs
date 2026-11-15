@@ -50,6 +50,19 @@ public sealed class DeliveryOperationsNextRouteConfirmationTests
     }
 
     [Fact]
+    public async Task LostResponseReplayCannotChangeTheOriginalSelection()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var request = f.Take([new ConfirmedPreviousDelivery(30, 3)]);
+        await f.Service.ExecuteAsync(request, default);
+        var changed = request with { Selection = new SelfAssignOrdersDto { OrderIds = [32] } };
+        await Assert.ThrowsAsync<OrderConcurrencyException>(() => f.Service.ExecuteAsync(changed, default));
+        Assert.Equal(1, f.NewRouteAttempts);
+        Assert.Equal([30], f.DeliveredIds);
+        Assert.Single(f.Db.EntityAuditLogs.Where(x => x.EntityType == "delivery_operation"));
+    }
+
+    [Fact]
     public async Task PreviousWorkSessionRouteRemainsConfirmableButIsNotTheCurrentRoute()
     {
         await using var f = await Fixture.CreateAsync();
