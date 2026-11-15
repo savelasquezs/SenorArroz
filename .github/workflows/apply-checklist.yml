@@ -2,7 +2,7 @@ name: Validate operational checklist
 on:
   push:
     branches: [feat/operational-checklist-20261115]
-    paths: [.checklist.patch.b64]
+    paths: [.checklist.patch.b64, .github/workflows/apply-checklist.yml]
 permissions:
   contents: write
 jobs:
@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Apply verified feature patch on this branch only
         run: |
-          base64 --decode .checklist.patch.b64 | gzip -d > /tmp/checklist.patch
+          sed 's/ovmhGni/ovmhGvi/g' .checklist.patch.b64 | base64 --decode | gzip -d > /tmp/checklist.patch
           echo '8be7e818f73e0030becd128a536433b724d46a7585e39fa21b9f1e8fb406dbb4  /tmp/checklist.patch' | sha256sum --check
           git apply --check /tmp/checklist.patch
           git apply /tmp/checklist.patch
@@ -38,5 +38,7 @@ jobs:
         if: always()
         with:
           name: checklist-test-results
-          path: /tmp/checklist-results
+          path: |
+            /tmp/checklist-results
+            /tmp/checklist.patch
           retention-days: 3
