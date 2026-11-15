@@ -77,6 +77,10 @@ public static class DependencyInjection
         services.AddHttpClient<FcmPushService>();
         services.AddScoped<IFcmPushService, FcmPushService>();
 
+        services.Configure<ReminderDocumentationOptions>(configuration.GetSection("ReminderDocumentation"));
+        services.AddHttpClient<SenorArroz.Application.Features.OperationalChecklist.IReminderDocumentationSync, ReminderDocumentationSync>(
+            client => client.Timeout = TimeSpan.FromSeconds(10));
+
         // Database
         services.AddSingleton<StorefrontMetaAttributionInterceptor>();
         services.AddSingleton<TenantDbCommandInterceptor>();

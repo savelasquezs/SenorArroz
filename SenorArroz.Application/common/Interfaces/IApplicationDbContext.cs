@@ -168,6 +168,8 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<SupplierExpense> SupplierExpenses { get; set; }
 
         DbSet<User> Users { get; set; }
+        DbSet<OperationalReminder> OperationalReminders { get; set; }
+        DbSet<OperationalReminderState> OperationalReminderStates { get; set; }
         DbSet<EmployeeLunch> EmployeeLunches { get; set; }
         DbSet<EmployeeLeaveRequest> EmployeeLeaveRequests { get; set; }
         DbSet<EmployeeLeaveAttachment> EmployeeLeaveAttachments { get; set; }

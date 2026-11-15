@@ -628,3 +628,7 @@ User.delivery_context_version/last_delivery_take_id ordenan el contexto. Deliver
 Auditoría de 129 tablas public: lector existente con 39 concesiones SELECT por columna y 40 vistas diagnostics invoker/barrier, todas fijas al tenant 1. Las otras 90 tablas y columnas privadas siguen excluidas. SQL base: `expand_db_reader_diagnostics_grants_20261110.sql`; ampliación de nombres: `add_gateway_user_names_20261110.sql`, que expone únicamente id/name en diagnostics.users y usa tenant_id solo como control interno; ampliación de almuerzos/permanencias: `add_gateway_lunch_review_20261110.sql`, sin GPS ni textos privados.
 
 `add_data_gateway_oauth_20261110.sql` añade application, authorization, scope y token en esquema gateway_oauth, con tenant_id=1, FORCE RLS y guard restrictivo para senorarroz_runtime. El lector no tiene acceso. Son tablas técnicas fuera del ApplicationDbContext; no cambian el inventario de entidades funcionales. No se crean ni rotan roles/credenciales.
+
+## Recordatorios operativos del POS
+
+`operational_reminder` contiene configuración por tenant y sucursal. `operational_reminder_state` mantiene una única fila mutable por tarea con fecha local y revisión; no guarda historial ni identidad del trabajador. Ambas tablas tienen RLS. Script aditivo: `add_operational_checklist.sql`; aplicar antes del despliegue. Configuración y descripción son la fuente para el POS y el snippet de Mintlify. Ver `docs/OPERATIONAL_CHECKLIST.md`.
