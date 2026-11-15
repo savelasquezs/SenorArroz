@@ -136,6 +136,24 @@ public sealed class EmployeeLeaveTests
     }
 
     [Fact]
+    public async Task DecisionRejectsOver500CharactersAndAcceptsThe500CharacterLimit()
+    {
+        await using var db = Db(); var user = Person(1); var admin = Person(2, UserRole.Admin); await Seed(db, user, admin);
+        var id = await Commands(db, user).Handle(new SaveEmployeeLeaveCommand(null, Input()), default);
+        var tooLong = Approve(); tooLong.Status = "denied"; tooLong.IsPaid = null; tooLong.Reason = new string('x', 501);
+        var error = await Assert.ThrowsAsync<BusinessException>(() =>
+            Commands(db, admin).Handle(new ChangeEmployeeLeaveCommand(id, "decision", tooLong), default));
+        Assert.Equal("Motivo: ingresa entre 1 y 500 caracteres.", error.Message);
+        Assert.Equal("pending", (await db.EmployeeLeaveRequests.SingleAsync()).Status);
+        Assert.Single(db.EntityAuditLogs);
+
+        var valid = Approve(); valid.Status = "denied"; valid.IsPaid = null; valid.Reason = new string('x', 500);
+        await Commands(db, admin).Handle(new ChangeEmployeeLeaveCommand(id, "decision", valid), default);
+        Assert.Equal("denied", (await db.EmployeeLeaveRequests.SingleAsync()).Status);
+        Assert.Equal(500, (await db.EntityAuditLogs.OrderByDescending(x => x.Id).FirstAsync()).SummaryText.Length);
+    }
+
+    [Fact]
     public async Task DecisionRequiresReasonCurrentPasswordAndFreshVersionAndNotifiesWorker()
     {
         await using var db = Db(); var user = Person(1); var admin = Person(2, UserRole.Admin); await Seed(db, user, admin);
