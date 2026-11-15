@@ -18,6 +18,7 @@ public class OrderDto
     public int? CustomerId { get; set; }
     public string? CustomerName { get; set; }
     public string? CustomerPhone { get; set; }
+    public string? CustomerWhatsAppUsername { get; set; }
     public int? AddressId { get; set; }
     public string? AddressVersion { get; set; }
     public string? AddressDescription { get; set; }
