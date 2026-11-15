@@ -53,7 +53,7 @@ public sealed partial class EmployeeLeaveCommands : IRequestHandler<SaveEmployee
         var own = leave.UserId == actor.Id;
         var periodRecord = leave.PolicyVersion >= EmployeeLeaveRules.CurrentPolicyVersion && EmployeeLeaveRules.Kind(leave.Kind).IsPeriodRecord;
         var reason = command.Action == "return" ? "Regreso confirmado por el trabajador."
-            : EmployeeLeaveRules.RequiredText(input.Reason, 1000, "Motivo");
+            : EmployeeLeaveRules.RequiredText(input.Reason, 500, "Motivo");
         switch (command.Action)
         {
             case "decision":
