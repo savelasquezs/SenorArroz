@@ -197,6 +197,8 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<SupplierExpense> SupplierExpenses { get; set; }
 
         public virtual DbSet<User> Users { get; set; }
+        public virtual DbSet<OperationalReminder> OperationalReminders { get; set; }
+        public virtual DbSet<OperationalReminderState> OperationalReminderStates { get; set; }
         public virtual DbSet<EmployeeLunch> EmployeeLunches { get; set; }
         public virtual DbSet<EmployeeLeaveRequest> EmployeeLeaveRequests { get; set; }
         public virtual DbSet<EmployeeLeaveAttachment> EmployeeLeaveAttachments { get; set; }
@@ -251,6 +253,8 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new KitchenVoiceEventConfiguration());
             modelBuilder.ApplyConfiguration(new PrintJobConfiguration());
             modelBuilder.ApplyConfiguration(new UserConfiguration());
+            modelBuilder.ApplyConfiguration(new OperationalReminderConfiguration());
+            modelBuilder.ApplyConfiguration(new OperationalReminderStateConfiguration());
             modelBuilder.ApplyConfiguration(new EmployeeLunchConfiguration());
             modelBuilder.ApplyConfiguration(new EmployeeLeaveRequestConfiguration());
             modelBuilder.ApplyConfiguration(new EmployeeLeaveAttachmentConfiguration());

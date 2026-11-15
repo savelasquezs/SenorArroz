@@ -45,6 +45,10 @@ public class OrderNotificationService : IOrderNotificationService
         });
     }
 
+    public Task NotifyOperationalChecklistChanged(int branchId) =>
+        _hubContext.Clients.Group(TenantRealtimeGroups.BranchRole(_tenant.TenantId, branchId, "Admin"))
+            .SendAsync("OperationalChecklistChanged", new { branchId });
+
     public Task NotifyEmployeeLunchChanged(int branchId, int userId) =>
         _hubContext.Clients.Group(TenantRealtimeGroups.Branch(_tenant.TenantId, branchId))
             .SendAsync("EmployeeLunchChanged", new { userId });
