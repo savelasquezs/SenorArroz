@@ -36,7 +36,7 @@ jobs:
           s = s.replace('Assert.Equal(114, entityTypes.Count);', 'Assert.Equal(116, entityTypes.Count);')
           s = s.replace('Assert.Equal(113, tenantOwned.Count);', 'Assert.Equal(115, tenantOwned.Count);\n        Assert.Contains(tenantOwned, x => x.ClrType == typeof(OperationalReminder));\n        Assert.Contains(tenantOwned, x => x.ClrType == typeof(OperationalReminderState));')
           p.write_text(s)
-          p = Path('add_operational_checklist.sql')
+          p = Path('SenorArroz.Infrastructure/Scripts/add_operational_checklist.sql')
           s = p.read_text()
           anchor = 'CREATE INDEX IF NOT EXISTS ix_operational_reminder_state_branch'
           assert anchor in s
@@ -46,10 +46,11 @@ jobs:
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add SenorArroz.Tests/TenantIsolationV2Tests.cs add_operational_checklist.sql .github/workflows/checklist-finalize.yml
+          git add SenorArroz.Tests/TenantIsolationV2Tests.cs SenorArroz.Infrastructure/Scripts/add_operational_checklist.sql .github/workflows/checklist-finalize.yml
           git commit -m 'fix(checklist): include both entities in tenant contracts and align state index'
           git push origin HEAD:feat/operational-checklist-20261115
           git rev-parse HEAD | tee validated-sha.txt
+          git merge --no-commit --no-ff origin/main
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
