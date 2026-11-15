@@ -1,0 +1,29 @@
+name: Prepare M38-F04 documentation object
+on:
+  push:
+    branches: [work/pr129-review-docs-20261115]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'docs/performance/CHECKLIST.md';
+            const original = fs.readFileSync(path, 'utf8');
+            const rows = original.split('\n');
+            const matches = rows.map((line,i) => line.startsWith('| M38-F04 |') ? i : -1).filter(i => i >= 0);
+            if (matches.length !== 1) throw new Error('Expected one M38-F04 row');
+            rows[matches[0]] = '| M38-F04 | Difusión WhatsApp/impresión | Mejora aprobada | 2026-11-15 | [Informe](reviews/2026-11-15-M38-F04.md) | [Vue #84](https://github.com/savelasquezs/senorArrozFront/pull/84), [API #129](https://github.com/savelasquezs/SenorArroz/pull/129) | Ampliación autorizada: cola común de bandeja, espera de ambas lecturas, cancelación de filtros, protección de selección/sesión, contexto por sucursal y reconexión. Pruebas integradas y CI del SHA final enlazadas en informe/PR; merge condicionado a verificación. Sin SQL; despliegue y métricas productivas no verificados. |';
+            const content = rows.join('\n');
+            if (content.split('\n').filter((line,i) => line !== original.split('\n')[i]).length !== 1) throw new Error('Unexpected diff');
+            const { data } = await github.rest.git.createBlob({ ...context.repo, content, encoding: 'utf-8' });
+            core.info(JSON.stringify({ path, mode: '100644', type: 'blob', sha: data.sha }));
+            // No branches, PRs, production resources or refs are changed by this workflow.
