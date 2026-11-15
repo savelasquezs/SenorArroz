@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS public.operational_reminder_state (
     FOREIGN KEY (tenant_id,branch_id,reminder_id) REFERENCES public.operational_reminder(tenant_id,branch_id,id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS ix_operational_reminder_tenant ON public.operational_reminder(tenant_id);
+CREATE INDEX IF NOT EXISTS ix_operational_reminder_state_tenant ON public.operational_reminder_state(tenant_id);
 CREATE INDEX IF NOT EXISTS ix_operational_reminder_state_branch ON public.operational_reminder_state(tenant_id,branch_id);
 DO $$
 DECLARE tbl text;
