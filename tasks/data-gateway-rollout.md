@@ -18,6 +18,14 @@ Ampliación de almuerzos/permanencias: PR backend #120 y asistente #105 fusionad
 
 ## Respaldo
 
+## Validación de Code Mode — 14 de noviembre
+
+Ejecutados informes reales en `functions.exec` con las herramientas del plugin ya conectado: un período amplio (92 filas leídas, 11 incidentes, cuatro consultas MCP) y un caso individual. Cálculo y unión realizados en V8, sin emitir las filas intermedias. Verificación independiente de intervalos y estados correcta. Evidencia sanitizada: `docs/DATA_GATEWAY_CODE_MODE_BENCHMARK.json`. Tráfico tokenizado del período: 7745 tokens directos frente a 526 de programa/resumen, o 878 incluyendo el arranque de este cliente. No mide consumo facturado total; en la muestra pequeña, el arranque supera la ruta directa por 27 tokens.
+
+Plugin privado 1.1.0 preparado con el mismo nombre y mapeo de app/OAuth y una habilidad reutilizable. Pendiente operativo: cargar el ZIP mediante Upload new version y probarlo en una conversación web nueva. El control de Chrome y sus controles nativos dejaron de responder; abrir Chrome desde PowerShell fue rechazado por la política del entorno. El propietario fue avisado para abrirlo manualmente. No declarar instalada la actualización web por el mero hecho de generar el ZIP o validar Code Mode en esta sesión.
+
+## Respaldo restaurable
+
 Objeto Railway existente `backup-20261110-080417.dump`, 2026-11-10 08:04:21 UTC, 13 522 480 bytes. SHA-256 `617c67c1ffcb8dc5c65d90207ba0edaae94c2eaf552a421080ca3ced8c09dee2`.
 
 Restaurado íntegramente con PostgreSQL 17 en base local aislada (exit 0, 129 tablas). Se recreó únicamente en el servidor de pruebas el nombre del rol requerido por las políticas del dump; el respaldo usa --no-owner/--no-acl, por lo que no restaura contraseñas ni roles de cluster. Migración aplicada dos veces sobre el clon: 37 guards y 38 vistas, sin error; SELECT de columnas privadas y acceso cross-tenant denegados. 30 consultas de resumen sobre los datos restaurados: promedio 14.19 ms, máximo 16.76 ms (medición local; no predice latencia Railway). Clon eliminado tras verificar. Huella normalizada de migración: `82e6255386cb296fa7f6c6728d97b06175d32d4bba125b0d6071ed044d4ad9eb`.

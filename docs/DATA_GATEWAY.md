@@ -57,7 +57,30 @@ La detección operativa ya excluye los puntos del intervalo de almuerzo y divide
 
 El helper puro `tools/data-gateway/helpers/stay-lunch.ts` procesa respuestas completas en el cliente y devuelve segundos cubiertos/no cubiertos, sin herramientas ni endpoints adicionales. Une intervalos superpuestos y usa límites `[inicio, fin)` UTC; admite cruces de medianoche. Un intervalo cerrado totalmente cubierto se excluye de una revisión por permanencia. El solapamiento parcial requiere revisar solo el tiempo exterior; ausencia de solapamiento indica investigar, nunca una falta imputable automática. Un almuerzo sin regreso y evidencia incompleta requieren revisión; conservar las clasificaciones administrativas existentes.
 
-El cliente debe consultar todos los almuerzos que puedan solaparse, incluidos los iniciados antes del período: una consulta de cerrados con `started_at < fin` y `ended_at > inicio`, y otra de abiertos con `started_at < fin` y `ended_at eq null`. Combinar ambas respuestas y conservar `truncated=true` si cualquiera fue truncada. Si se alcanza el límite de 500 filas, acotar por empleado o dividir el período antes de concluir ausencia de almuerzo. Fijar un `asOf` explícito con zona horaria y seleccionar `tenant_id`, identidades, intervalos, `evidence_complete` y revisión; el helper rechaza datos parciales o intervalos inválidos. El host Code Mode puede emitir solo este resumen al modelo. La existencia del helper no demuestra ejecución Code Mode en ChatGPT ni ahorro de tokens: esa validación del cliente sigue pendiente.
+El cliente debe consultar todos los almuerzos que puedan solaparse, incluidos los iniciados antes del período: una consulta de cerrados con `started_at < fin` y `ended_at > inicio`, y otra de abiertos con `started_at < fin` y `ended_at eq null`. Combinar ambas respuestas y conservar `truncated=true` si cualquiera fue truncada. Fijar un `asOf` explícito con zona horaria y seleccionar `tenant_id`, identidades, intervalos, `evidence_complete` y revisión; el helper rechaza datos parciales o intervalos inválidos.
+
+`stayLunchSummary` orquesta el cruce desde el cliente: selecciona alertas por `occurred_at` dentro de `[from,to)`, pagina por ID, obtiene el rango de incidentes referenciados y descarta los ajenos dentro de Code Mode. Valida identidad/tenant/sucursal, deduplica incidentes y conserva los estados y clasificaciones administrativas en el resumen. Consulta almuerzos cerrados y abiertos con un máximo de dos llamadas concurrentes. Cada conjunto admite cuatro páginas de 500 filas; si falta evidencia o se agota ese límite, falla y exige acotar el período/empleado. El límite del desglose de empleados se marca aparte y no cambia los totales. La fuente `helpers/stay-lunch-summary.ts` y el helper temporal se compilan al recurso JS del skill con `node tools/data-gateway/build-code-mode.mjs`; CI comprueba que no esté desactualizado.
+
+### Plugin híbrido y medición de Code Mode
+
+El paquete privado 1.1.0 conserva el nombre y `.app.json` del plugin instalado y añade `skills/senor-arroz-analytics`. No cambia el servidor MCP, OAuth, credenciales ni permisos. Generar el ZIP con `python tools/data-gateway/package-plugin.py <destino.zip>` y actualizar el plugin existente mediante **Upload new version**; iniciar una conversación nueva para cargar la habilidad. No crear otra app ni reconectar OAuth si la conexión existente sigue vigente.
+
+La habilidad dirige cruces/agregaciones a Code Mode y mantiene lecturas simples como llamadas directas. Su recurso contiene código confiable revisado; puede cargarse y compilarse dentro del sandbox y reutilizarse por versión mediante store/load. Las respuestas PostgreSQL se pasan como datos y nunca se compilan. El host conserva autenticación; el programa emite solo el resumen. El recurso no necesita shell, red directa ni un servicio permanente. Si el cliente no ofrece Code Mode, debe indicar esa limitación en lugar de afirmar que ejecutó el programa.
+
+El 14 de noviembre de 2026 se verificaron ejecuciones reales mediante `functions.exec` y las herramientas MCP autenticadas de este gateway: cuatro consultas por informe, datos intermedios retenidos en V8 y únicamente el resumen emitido. Dos informes se reconciliaron independientemente contra las respuestas capturadas. La prueba de escritorio no acredita por sí sola que la versión actualizada del plugin ya esté instalada en la web; el estado de esa instalación se registra en `tasks/data-gateway-rollout.md`.
+
+Medición reproducible con tiktoken 0.14.0 / `o200k_base`, sobre las mismas consultas y respuestas capturadas:
+
+| Caso | Filas leídas | Respuestas completas | Resumen | Argumentos + respuestas directas | Programa + resumen, recurso cargado | Primera carga medida |
+|---|---:|---:|---:|---:|---:|---:|
+| Período amplio, 11 incidentes | 92 | 7362 | 331 | 7745 | 526 | 878 |
+| Un incidente | 2 | 245 | 157 | 681 | 356 | 708 |
+
+La primera prueba reduce el contenido de respuestas un 95.50%; contando argumentos frente al programa y resumen, el tráfico tokenizado disminuye un 93.21% con el recurso cargado y un 88.66% incluyendo el arranque medido. En el caso pequeño, el arranque consume 27 tokens más que la ruta directa. Cargar recursos dentro de Code Mode y reutilizarlos evita repetir fuente en el contexto. Otro cliente puede cargar esa fuente de forma distinta y tener un arranque más caro.
+
+Estas cifras son conteos del tráfico de herramientas, no facturación ni consumo completo del modelo: excluyen razonamiento, caché, historial, envolturas del cliente y la selección del skill. No se ejecutó un modelo directo separado; se mantuvieron iguales las consultas y los datos para comparar su representación. Un A/B de consumo total exige sesiones aisladas con el mismo modelo/prompts y contadores `usage` de ambos recorridos. No atribuir el porcentaje medido al costo total de ChatGPT.
+
+`benchmark_tokens.py` cuenta capturas privadas con `--program` y opcionalmente `--bootstrap`/`--bootstrap-output`; requiere tiktoken. No versionar filas, nombres ni capturas de empleados. La evidencia técnica sanitizada está en [DATA_GATEWAY_CODE_MODE_BENCHMARK.json](DATA_GATEWAY_CODE_MODE_BENCHMARK.json). La comparación conserva completitud y revisión; reducir salida no debe esconder errores, páginas faltantes ni evidencia necesaria.
 
 ## Validación
 
