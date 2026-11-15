@@ -69,7 +69,7 @@ public sealed partial class EmployeeLeaveCommands
             ?? throw new NotFoundException("Soporte no encontrado.");
         if (leave.Attachments.Any(x => x.ReplacesAttachmentId == attachment.Id))
             throw new BusinessException("El documento forma parte del historial de reemplazos.");
-        var reason = EmployeeLeaveRules.RequiredText(input.Reason, 1000, "Motivo");
+        var reason = EmployeeLeaveRules.RequiredText(input.Reason, 500, "Motivo");
         var before = Snapshot(leave);
         leave.Attachments.Remove(attachment);
         EmployeeLeaveRules.RequirePriorEvidence(leave);
