@@ -24,6 +24,23 @@ namespace SenorArroz.Tests;
 
 public sealed class WhatsAppOperationalBranchTests
 {
+    [Theory]
+    [InlineData("Superadmin", true)]
+    [InlineData("Admin", true)]
+    [InlineData("Cashier", true)]
+    [InlineData("Kitchen", false)]
+    [InlineData("Deliveryman", false)]
+    public void WhatsApp_hub_restricts_personal_and_branch_groups_to_inbox_roles(string role, bool allowed)
+    {
+        // User-targeted SignalR events must not bypass the REST inbox role policy.
+        var attribute = Assert.Single(typeof(WhatsAppHub)
+            .GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), inherit: true)
+            .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>());
+        var roles = attribute.Roles?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            ?? [];
+        Assert.Equal(allowed, roles.Contains(role, StringComparer.Ordinal));
+    }
+
     [Fact]
     public async Task Message_cursor_handles_equal_timestamps_and_preserves_new_unread_while_loading_older_messages()
     {

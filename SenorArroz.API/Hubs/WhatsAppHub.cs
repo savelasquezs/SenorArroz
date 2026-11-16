@@ -5,7 +5,7 @@ using System.Security.Claims;
 
 namespace SenorArroz.API.Hubs;
 
-[Authorize]
+[Authorize(Roles = "Superadmin, Admin, Cashier")]
 [DisableRateLimiting]
 public class WhatsAppHub : Hub
 {
