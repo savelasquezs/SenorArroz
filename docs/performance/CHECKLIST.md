@@ -63,7 +63,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M11-F03 | Listado de pedidos por sede origen | Pendiente | — | — | — | — |
 | M11-F04 | Editar y seguir pedido remoto | Pendiente | — | — | — | — |
 | M11-F05 | Permisos y concurrencia remota | Pendiente | — | — | — | — |
-| M12-F01 | Listado reservas y filtros | Pendiente | — | — | — | — |
+| M12-F01 | Listado reservas y filtros | PR listo para revisión | 2026-10-25 | [Informe](reviews/2026-10-25-M12-F01.md) | [API #64](https://github.com/savelasquezs/SenorArroz/pull/64), [Vue #42](https://github.com/savelasquezs/senorArrozFront/pull/42), [Docs #65](https://github.com/savelasquezs/SenorArroz/pull/65) | API [CI](https://github.com/savelasquezs/SenorArroz/actions/runs/40199143317) 1357/1357, 2 regresiones nuevas incluyendo PostgreSQL; Vue [CI](https://github.com/savelasquezs/senorArrozFront/actions/runs/40199147929) 835/835, 4 regresiones nuevas. Filtro de reservas activas y búsqueda antes de paginar; sin SQL, merge ni despliegue. Publicar backend antes de frontend. |
 | M12-F02 | Crear/editar reserva | Pendiente | — | — | — | — |
 | M12-F03 | Abonos y saldos | Pendiente | — | — | — | — |
 | M12-F04 | Vencimiento y estados reservas | Pendiente | — | — | — | — |
