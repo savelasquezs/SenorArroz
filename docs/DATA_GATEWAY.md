@@ -16,6 +16,12 @@ Cada conexión comprueba nombre, atributos, membresías y propiedad del lector. 
 
 Las 39 tablas autorizadas usan SELECT por columna; 40 vistas incluyen además filtro explícito tenant=1 tras aplicar las ampliaciones revisadas. `orders_summary` agrupa por fecha de Colombia y conserva decimales. Las 90 tablas restantes se excluyen. El inventario completo y las columnas aprobadas están en [DB_READER_PERMISSIONS.md](DB_READER_PERMISSIONS.md). `diagnostics.users` agrega exclusivamente `id` y `name` desde la tabla real `public."user"`; requiere `add_gateway_user_names_20261110.sql` y añadir la vista a AllowedViews después de aplicar el SQL. `tenant_id` se concede únicamente para el filtro interno y no aparece en esa vista.
 
+### Entregas por domiciliario
+
+`add_gateway_order_deliveries_20261117.sql` amplía la vista existente `diagnostics.order` con `delivery_man_id` y `delivered_at` (`timestamptz`). El nombre se resuelve con `diagnostics.users.id/name`. La fecha procede exclusivamente de `status_times.delivered` cuando el estado actual es `delivered`; valores ausentes, inválidos o sin zona horaria devuelven NULL. No se reconstruye desde creación, actualización o cierre de ruta. La vista conserva su orden de columnas previo, tenant fijo 1, FORCE RLS, guard restrictivo e invoker/barrier. El lector recibe SELECT técnico sobre `delivery_man_id/status_times`; el JSON completo no se publica en el gateway. No requiere nuevos endpoints, herramientas, configuración, credenciales ni despliegue de API: el catálogo descubre las columnas después de aplicar la migración.
+
+Para comparar domicilios, filtrar `type=delivery`, `status=delivered`, `delivery_man_id ne null` y `delivered_at` dentro de límites UTC derivados del calendario Colombia; paginar por ID hasta `truncated=false`. Agrupar y sumar el `delivery_fee` histórico en Code Mode, conservando NULL como desconocido y señalando entregas sin fecha, sin domiciliario o sin tarifa. La suma de tarifas no demuestra una liquidación o pago al empleado. No filtrar por sucursal actual del usuario: usar la sucursal histórica del pedido. Evaluar índices tenant/fecha solo si EXPLAIN y mediciones justifican su costo.
+
 ## Autenticación
 
 Dos vías aisladas, bajo la misma política del gateway:
