@@ -106,6 +106,7 @@ public sealed class DataGatewayPostgreSqlTests
             tenant.SetupGet(t => t.TenantId).Returns(1);
             await VerifyUserNames(admin, reader, gateway, config);
             await VerifyLunchReview(admin, reader, gateway, config);
+            await VerifyOrderDeliveries(admin, reader, gateway);
             await Execute(admin, "INSERT INTO public.\"order\" (id,tenant_id,branch_id,created_at,total,status) SELECT i,1,1,now(),1,'delivered' FROM generate_series(3,1003) i");
             var limited = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await gateway.Query(new("diagnostics.order", MaxRows: 3), default)).Value);
             Assert.Equal(3, limited.GetProperty("rows").GetArrayLength());
@@ -251,6 +252,65 @@ public sealed class DataGatewayPostgreSqlTests
             new DataGatewayController.QueryRequest("diagnostics.employee_lunch", Filters: new[] { openFilter }), default)).Value);
         Assert.Single(open.GetProperty("rows").EnumerateArray());
         Assert.Equal("3", open.GetProperty("rows")[0].GetProperty("id").GetString());
+    }
+
+    private static async Task VerifyOrderDeliveries(NpgsqlConnection admin, NpgsqlConnection reader,
+        DataGatewayController gateway)
+    {
+        await Execute(admin, """
+            ALTER TABLE public."order" ADD COLUMN delivery_man_id integer, ADD COLUMN status_times jsonb;
+            UPDATE public."order" SET delivery_man_id=1,delivery_fee='4500',
+              status_times='{"delivered":"2026-11-01T00:30:00-05:00"}';
+            """);
+        var migration = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Scripts", "add_gateway_order_deliveries_20261117.sql"));
+        await Execute(admin, "ALTER TABLE public.\"order\" NO FORCE ROW LEVEL SECURITY");
+        await using (var rejected = await admin.BeginTransactionAsync())
+        {
+            await Assert.ThrowsAsync<PostgresException>(() => Execute(admin, migration, rejected));
+            await rejected.RollbackAsync();
+        }
+        await Execute(admin, "ALTER TABLE public.\"order\" FORCE ROW LEVEL SECURITY");
+        await using (var tx = await admin.BeginTransactionAsync())
+        {
+            await Execute(admin, migration, tx);
+            await Execute(admin, migration, tx);
+            await tx.CommitAsync();
+        }
+        await Execute(reader, "SET app.current_tenant_id='2'; SET app.system_scope='on'");
+        Assert.Equal(0L, await new NpgsqlCommand("SELECT count(*) FROM diagnostics.\"order\"", reader).ExecuteScalarAsync());
+        Assert.Equal(0L, await new NpgsqlCommand("SELECT count(*) FROM public.\"order\" WHERE tenant_id=2", reader).ExecuteScalarAsync());
+        foreach (var sql in new[] { "SELECT private_secret FROM public.\"order\"", "SELECT * FROM public.\"order\"",
+            "UPDATE public.\"order\" SET delivery_man_id=2", "DELETE FROM public.\"order\"" })
+            Assert.Equal("42501", (await Assert.ThrowsAsync<PostgresException>(() => Execute(reader, sql))).SqlState);
+
+        var request = new DataGatewayController.QueryRequest("diagnostics.order",
+            Columns: ["id", "delivery_man_id", "delivery_fee", "delivered_at"],
+            Filters: [new("delivered_at", "gte", JsonSerializer.SerializeToElement("2026-11-01T05:00:00Z")),
+                new("delivered_at", "lt", JsonSerializer.SerializeToElement("2026-12-01T05:00:00Z"))]);
+        var result = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await gateway.Query(request, default)).Value);
+        Assert.Single(result.GetProperty("rows").EnumerateArray());
+        var row = result.GetProperty("rows")[0];
+        Assert.Equal("1", row.GetProperty("delivery_man_id").GetString());
+        Assert.Equal("4500", row.GetProperty("delivery_fee").GetString());
+        Assert.Equal(DateTimeOffset.Parse("2026-11-01T05:30:00Z"),
+            JsonSerializer.Deserialize<DateTimeOffset>(row.GetProperty("delivered_at").GetString()!));
+        Assert.IsType<BadRequestObjectResult>(await gateway.Query(request with { Columns = ["status_times"] }, default));
+
+        foreach (var (status, delivered) in new[] {
+            ("preparing", "2026-11-01T05:30:00Z"), ("cancelled", "2026-11-01T05:30:00Z"),
+            ("delivered", "invalid"), ("delivered", "2026-02-30T05:30:00Z"),
+            ("delivered", "2026-11-01T05:30:00"), ("delivered", ""), ("delivered", (string?)null) })
+        {
+            await using var update = new NpgsqlCommand("UPDATE public.\"order\" SET status=@status,status_times=@times::jsonb WHERE id=1", admin);
+            update.Parameters.AddWithValue("status", status);
+            update.Parameters.AddWithValue("times", JsonSerializer.Serialize(new { delivered }));
+            await update.ExecuteNonQueryAsync();
+            var missing = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await gateway.Query(
+                request with { Filters = null }, default)).Value);
+            Assert.Equal(JsonValueKind.Null, missing.GetProperty("rows")[0].GetProperty("delivered_at").ValueKind);
+            var excluded = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(await gateway.Query(request, default)).Value);
+            Assert.Empty(excluded.GetProperty("rows").EnumerateArray());
+        }
     }
 
     private static async Task Execute(NpgsqlConnection connection, string sql, NpgsqlTransaction? tx = null)

@@ -181,6 +181,8 @@ La migración es transaccional, idempotente y falla ante RLS ausente, columnas d
 
 ## Aplicación a producción
 
+Ampliación de entregas: `add_gateway_order_deliveries_20261117.sql` concede SELECT técnico sobre `order.delivery_man_id` y `order.status_times`; la vista existente añade únicamente `delivery_man_id` y `delivered_at`, conservando las columnas previas. El JSON completo permanece fuera del catálogo MCP. Se preservan FORCE RLS, guard restrictivo tenant=1 e invoker/barrier. Fechas inválidas, sin zona, ausentes o de pedidos actualmente no entregados se proyectan como NULL. No se conceden escrituras ni SELECT de tabla completa, y no cambian los permisos de usuarios.
+
 1. Importar el SQL desde el SHA revisado con el workflow existente. #84 falló por `DO $`; no aplicó cambios.
 2. Fusionar el PR importado y fijar SHA-256 normalizado.
 3. Restaurar un respaldo reciente en una base aislada y registrar objeto, fecha, huella y verificaciones. La existencia de un backup o un deploy SUCCESS del cron no acredita restaurabilidad.
