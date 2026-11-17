@@ -187,7 +187,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M40-F02 | Worker de Rappi | Pendiente | — | — | — | — |
 | M40-F03 | Workers de pagos y correos | Pendiente | — | — | — | — |
 | M40-F04 | Workers GPS y cierre jornadas | Pendiente | — | — | — | — |
-| M40-F05 | Carga recurrente y ciclos de polling | Bloqueado | 2026-11-17 | [Informe](reviews/2026-11-17-M40-F05.md) | [Vue #86](https://github.com/savelasquezs/senorArrozFront/pull/86), [Docs #133](https://github.com/savelasquezs/SenorArroz/pull/133) (borradores) | Sidebar Rappi: singleflight y protección de sucursal/sesión en GET cada 60s; 6 regresiones añadidas, CI/QA pendientes. No SQL, merge ni despliegue. |
+| M40-F05 | Carga recurrente y ciclos de polling | Bloqueado | 2026-11-17 | [Informe](reviews/2026-11-17-M40-F05.md) | [Vue #86](https://github.com/savelasquezs/senorArrozFront/pull/86), [Docs #133](https://github.com/savelasquezs/SenorArroz/pull/133) (borradores) | Sidebar Rappi: singleflight y protección de sucursal/sesión en GET cada 60s; 6/6 regresiones y CI Vue [#44090231817](https://github.com/savelasquezs/senorArrozFront/actions/runs/44090231817) SUCCESS (1125/1125 pruebas); QA de 2 sedes pendiente. No SQL, merge ni despliegue. |
 | M41-F01 | SQL pedidos y detalles | Pendiente | — | — | — | — |
 | M41-F02 | SQL clientes y direcciones | Pendiente | — | — | — | — |
 | M41-F03 | SQL dashboard y agregados | Pendiente | — | — | — | — |
