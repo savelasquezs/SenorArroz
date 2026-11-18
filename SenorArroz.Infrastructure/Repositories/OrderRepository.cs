@@ -1620,29 +1620,29 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        var rows = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
-            .Select(o => new { o.CreatedAt, o.PrepareAt, o.Total })
+        // Colombia's operational timezone is UTC-05:00. Group in PostgreSQL rather
+        // than transferring every order to .NET; preserve PrepareAt/CreatedAt semantics.
+        var buckets = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
+            .GroupBy(o => new
+            {
+                Day = (o.PrepareAt ?? o.CreatedAt).AddHours(-5).Date,
+                Hour = (o.PrepareAt ?? o.CreatedAt).AddHours(-5).Hour,
+            })
+            .Select(g => new
+            {
+                g.Key.Day,
+                g.Key.Hour,
+                OrderCount = g.Count(),
+                TotalSalesCop = g.Sum(o => (long)o.Total),
+            })
             .ToListAsync(cancellationToken);
 
-        return rows
-            .Select(o =>
-            {
-                var day = ColombiaTimeHelper.OrderSalesEffectiveColombiaCalendarDate(o.CreatedAt, o.PrepareAt);
-                return new
-                {
-                    Day = day,
-                    DayOfWeek = IsoDayOfWeek(day),
-                    Hour = ColombiaTimeHelper.OrderSalesEffectiveColombiaHour(o.CreatedAt, o.PrepareAt),
-                    o.Total,
-                };
-            })
-            .GroupBy(o => new { o.Day, o.DayOfWeek, o.Hour })
-            .Select(g => new SalesDailyHourBucket(
-                g.Key.Day,
-                g.Key.DayOfWeek,
-                g.Key.Hour,
-                g.Count(),
-                g.Sum(x => (long)x.Total)))
+        return buckets.Select(b => new SalesDailyHourBucket(
+                DateTime.SpecifyKind(b.Day, DateTimeKind.Unspecified),
+                IsoDayOfWeek(b.Day),
+                b.Hour,
+                b.OrderCount,
+                b.TotalSalesCop))
             .OrderBy(b => b.Day)
             .ThenBy(b => b.Hour)
             .ToList();
