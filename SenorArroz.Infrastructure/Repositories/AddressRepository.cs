@@ -24,7 +24,6 @@ public class AddressRepository : IAddressRepository
             .Include(a => a.Neighborhood)
             .Include(a => a.BranchServices).ThenInclude(x => x.Neighborhood)
             .Include(a => a.BranchServices).ThenInclude(x => x.Branch)
-            .Include(a => a.Customer)
             .Where(a => a.TenantId == _tenantId && a.CustomerId == customerId)
             .OrderByDescending(a => a.CreatedAt)
             .ToListAsync(cancellationToken);
