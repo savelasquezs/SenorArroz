@@ -1620,13 +1620,15 @@ OFFSET {{{sqlParams.Count}}} LIMIT {{{sqlParams.Count + 1}}}";
         DateTime toUtc,
         CancellationToken cancellationToken = default)
     {
-        // Colombia's operational timezone is UTC-05:00. Group in PostgreSQL rather
-        // than transferring every order to .NET; preserve PrepareAt/CreatedAt semantics.
+        // Npgsql translates the Colombian timezone conversion and grouping to SQL.
+        // This keeps PrepareAt/CreatedAt semantics without transferring every order.
         var buckets = await DashboardNonCancelledOrdersInRange(branchId, fromUtc, toUtc)
             .GroupBy(o => new
             {
-                Day = (o.PrepareAt ?? o.CreatedAt).AddHours(-5).Date,
-                Hour = (o.PrepareAt ?? o.CreatedAt).AddHours(-5).Hour,
+                Day = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(
+                    o.PrepareAt ?? o.CreatedAt, "America/Bogota").Date,
+                Hour = TimeZoneInfo.ConvertTimeBySystemTimeZoneId(
+                    o.PrepareAt ?? o.CreatedAt, "America/Bogota").Hour,
             })
             .Select(g => new
             {
