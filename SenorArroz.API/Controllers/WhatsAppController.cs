@@ -1026,7 +1026,9 @@ public partial class WhatsAppController : ControllerBase
 
     private IQueryable<WhatsAppConversation> GetAccessibleConversationsQuery()
     {
-        var branchIds = GetAllowedVerifiedBranchIdsQuery();
+        var localBranch = _branchContext.RequireBranch();
+        var branchLines = _db.WhatsAppBranchSettings.AsNoTracking()
+            .Where(x => x.BranchId == localBranch && x.IsActive && x.IsVerified);
         var tenantId = TenantId;
         var userId = _currentUser.Id;
         var branchId = _currentUser.BranchId;
@@ -1038,7 +1040,8 @@ public partial class WhatsAppController : ControllerBase
 
         return _db.WhatsAppConversations.AsNoTracking()
             .Where(x => x.TenantId == tenantId && (
-                (x.ChannelSettingId == null && branchIds.Contains(x.BranchId))
+                (x.ChannelSettingId == null && branchLines.Any(s => s.BranchId == x.BranchId
+                    && (x.BranchLineId == null ? !s.CoexistenceEnabled : s.Id == x.BranchLineId)))
                 || (x.ChannelSettingId.HasValue && channelIds.Contains(x.ChannelSettingId.Value)
                     && (isSuperadmin || isBranchInboxUser && (x.OperationalBranchId == null
                         || x.OperationalBranchId == branchId || x.AssignedUserId == userId)))));

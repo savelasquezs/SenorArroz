@@ -25,7 +25,8 @@ public sealed class WhatsAppProcessingStore(ApplicationDbContext db, ITenantExec
                 .Where(x => (envelope.PhoneNumber != null && x.PhoneNumber == envelope.PhoneNumber
                     || envelope.UserId != null && x.WhatsAppUserId == envelope.UserId)
                     && (x.ChannelSettingId != null && db.WhatsAppChannelSettings.Any(c => c.Id == x.ChannelSettingId && c.PhoneNumberId == envelope.PhoneNumberId)
-                        || x.ChannelSettingId == null && db.WhatsAppBranchSettings.Any(c => c.BranchId == x.BranchId && c.PhoneNumberId == envelope.PhoneNumberId)))
+                        || x.ChannelSettingId == null && db.WhatsAppBranchSettings.Any(c => c.BranchId == x.BranchId && c.PhoneNumberId == envelope.PhoneNumberId
+                            && (x.BranchLineId == null ? !c.CoexistenceEnabled : c.Id == x.BranchLineId))))
                 .OrderBy(x => x.Id).Select(x => new { x.Id, x.PhoneNumber, x.WhatsAppUserId, x.AttentionModeUpdatedAt }).Take(2).ToListAsync(ct);
             var established = known.FirstOrDefault(x => envelope.UserId != null && x.WhatsAppUserId == envelope.UserId)
                 ?? known.FirstOrDefault(x => x.PhoneNumber == envelope.PhoneNumber

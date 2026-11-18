@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Models;
 using SenorArroz.Application.Common.Services;
@@ -91,7 +92,8 @@ public class WhatsAppAutomaticMessageSender(ApplicationDbContext db,IWhatsAppClo
    var channel=await db.WhatsAppChannelSettings.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==conversation.ChannelSettingId&&x.TenantId==conversation.TenantId&&x.IsActive&&x.IsVerified&&(!requireAway||x.AwayMessageEnabled),ct);
    return channel==null?null:new(channel.PhoneNumberId,channel.AccessToken);
   }
-  var branch=await db.WhatsAppBranchSettings.AsNoTracking().FirstOrDefaultAsync(x=>x.BranchId==conversation.BranchId&&x.IsActive&&x.IsVerified&&(!requireAway||x.AwayMessageEnabled),ct);
+  var branch=await db.WhatsAppBranchSettings.AsNoTracking().ForConversation(conversation)
+   .FirstOrDefaultAsync(x=>x.IsActive&&x.IsVerified&&(!requireAway||x.AwayMessageEnabled),ct);
   return branch==null?null:new(branch.PhoneNumberId,branch.AccessToken);
  }
  private sealed record ChannelCredentials(string PhoneNumberId,string AccessToken);

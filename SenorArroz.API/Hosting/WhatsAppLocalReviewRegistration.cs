@@ -178,7 +178,7 @@ public sealed class WhatsAppCoexistencePilot
         var users = echoes.Select(x => x.UserId).Distinct().ToArray();
         var phones = echoes.Where(x => AllowsRecipient(x.PhoneNumber)).Select(x => x.PhoneNumber).Distinct().ToArray();
         var known = await db.WhatsAppConversations.AsNoTracking().Where(x => x.TenantId == TenantId
-            && x.BranchId == BranchId && x.ChannelSettingId == null
+            && x.BranchId == BranchId && x.BranchLine != null && x.BranchLine.PhoneNumberId == PhoneNumberId
             && (users.Contains(x.WhatsAppUserId) || phones.Contains(x.PhoneNumber)))
             .Select(x => new { x.Id, x.PhoneNumber, x.WhatsAppUserId }).ToListAsync(ct);
 

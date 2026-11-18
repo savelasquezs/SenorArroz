@@ -29,7 +29,7 @@ public sealed class WhatsAppCoexistenceController(IApplicationDbContext db, ICur
     public async Task<IActionResult> Get(int branchId, CancellationToken ct)
     {
         if (!await AllowedAsync(branchId, ct)) return Forbid();
-        var setting = await db.WhatsAppBranchSettings.AsNoTracking().SingleOrDefaultAsync(x => x.BranchId == branchId, ct);
+        var setting = await db.WhatsAppBranchSettings.AsNoTracking().SingleOrDefaultAsync(x => x.BranchId == branchId && x.CoexistenceEnabled, ct);
         var recoveryUnavailable = IsRecoveryCredentialUnavailable(setting);
         var state = setting?.CoexistenceEnabled != true ? "pending" : !setting.IsActive ? "disconnected"
             : (!setting.IsVerified || recoveryUnavailable) && setting.ConnectionState != "disconnected" ? "degraded" : setting.ConnectionState;
@@ -82,7 +82,7 @@ public sealed class WhatsAppCoexistenceController(IApplicationDbContext db, ICur
         var claimed = await db.WhatsAppWebhookEvents.Where(x => x.DeduplicationKey == key && x.RequestedByUserId == user.Id
             && x.ProcessingState == "signup_pending").ExecuteUpdateAsync(x => x.SetProperty(e => e.ProcessingState, "signup_connecting"), ct);
         if (claimed != 1) return Conflict(ApiResponse<object>.ErrorResponse("Este registro ya fue utilizado. Consulta el diagnóstico de la línea."));
-        var setting = await db.WhatsAppBranchSettings.SingleOrDefaultAsync(x => x.BranchId == branchId, ct);
+        var setting = await db.WhatsAppBranchSettings.SingleOrDefaultAsync(x => x.BranchId == branchId && x.CoexistenceEnabled, ct);
         try
         {
             await meta.VerifyWebhookFieldsAsync(ct, liveOnly: pilot is not null);
@@ -113,7 +113,7 @@ public sealed class WhatsAppCoexistenceController(IApplicationDbContext db, ICur
             return NotFound();
         if (!await AllowedAsync(branchId, ct)) return Forbid();
 
-        var setting = await db.WhatsAppBranchSettings.SingleOrDefaultAsync(x => x.BranchId == branchId, ct);
+        var setting = await db.WhatsAppBranchSettings.SingleOrDefaultAsync(x => x.BranchId == branchId && x.CoexistenceEnabled, ct);
         if (HasDifferentCoexistenceLine(setting, phoneId, wabaId))
             return Conflict(ApiResponse<object>.ErrorResponse("La sucursal ya tiene otra línea de coexistencia."));
         if (!NeedsRecovery(setting)) return await Get(branchId, ct);
@@ -160,10 +160,10 @@ public sealed class WhatsAppCoexistenceController(IApplicationDbContext db, ICur
         if (pilot?.PhoneNumberId is { } configuredPhoneId && configuredPhoneId != phoneId)
             return Conflict(ApiResponse<object>.ErrorResponse("Meta devolvió un identificador distinto al del piloto."));
         if (await db.WhatsAppChannelSettings.AnyAsync(x => x.PhoneNumberId == phoneId, ct)
-            || await db.WhatsAppBranchSettings.AnyAsync(x => x.PhoneNumberId == phoneId && x.BranchId != branchId, ct))
+            || await db.WhatsAppBranchSettings.AnyAsync(x => x.PhoneNumberId == phoneId && (x.BranchId != branchId || !x.CoexistenceEnabled), ct))
             return Conflict(ApiResponse<object>.ErrorResponse("Esta línea ya está configurada en otro canal."));
         if (setting is not null && setting.PhoneNumberId != phoneId
-            && await db.WhatsAppConversations.AnyAsync(x => x.BranchId == branchId && x.ChannelSettingId == null, ct))
+            && await db.WhatsAppConversations.AnyAsync(x => x.BranchLineId == setting.Id, ct))
             return Conflict(ApiResponse<object>.ErrorResponse("Esta sucursal ya tiene conversaciones de otro número. Conserva su canal antes de cambiar la línea."));
 
         if (recovery && pilot?.CallbackUrl is { } callback)

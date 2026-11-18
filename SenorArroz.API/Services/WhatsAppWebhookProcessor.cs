@@ -307,12 +307,15 @@ public sealed partial class WhatsAppWebhookProcessor
     }
 
     private async Task<(WhatsAppConversation? ByUserId, WhatsAppConversation? ByPhone)> FindConversationIdentityAsync(
-        WhatsAppInboundIdentity identity, int branchId, int? channelSettingId, CancellationToken ct)
+        WhatsAppInboundIdentity identity, WhatsAppBranchSetting setting, int? channelSettingId, CancellationToken ct)
     {
+        int? branchLineId = setting.CoexistenceEnabled ? setting.Id : null;
         var tracked = _db.WhatsAppConversations.Local.Where(x => x.TenantId == TenantId
-            && (channelSettingId.HasValue ? x.ChannelSettingId == channelSettingId : x.BranchId == branchId && x.ChannelSettingId == null));
+            && x.ChannelSettingId == channelSettingId && x.BranchLineId == branchLineId
+            && (channelSettingId.HasValue || x.BranchId == setting.BranchId));
         var saved = await _db.WhatsAppConversations.Where(x => x.TenantId == TenantId
-            && (channelSettingId.HasValue ? x.ChannelSettingId == channelSettingId : x.BranchId == branchId && x.ChannelSettingId == null)
+            && x.ChannelSettingId == channelSettingId && x.BranchLineId == branchLineId
+            && (channelSettingId.HasValue || x.BranchId == setting.BranchId)
             && (identity.UserId != null && x.WhatsAppUserId == identity.UserId
                 || identity.PhoneNumber != null && x.PhoneNumber == identity.PhoneNumber))
             .ToListAsync(ct);
@@ -333,6 +336,7 @@ public sealed partial class WhatsAppWebhookProcessor
         if (!value.TryGetProperty("messages", out var messages) || messages.ValueKind != JsonValueKind.Array)
             return false;
 
+        int? branchLineId = setting.CoexistenceEnabled ? setting.Id : null;
         var processed = false;
         foreach (var messageElement in messages.EnumerateArray())
         {
@@ -343,8 +347,8 @@ public sealed partial class WhatsAppWebhookProcessor
 
             if (!string.IsNullOrWhiteSpace(messageId)
                 && await _db.WhatsAppMessages.AnyAsync(x => x.WhatsAppMessageId == messageId
-                    && (channelSettingId.HasValue ? x.Conversation.ChannelSettingId == channelSettingId
-                        : x.Conversation.ChannelSettingId == null && x.Conversation.BranchId == setting.BranchId), cancellationToken))
+                    && x.Conversation.ChannelSettingId == channelSettingId && x.Conversation.BranchLineId == branchLineId
+                    && (channelSettingId.HasValue || x.Conversation.BranchId == setting.BranchId), cancellationToken))
             {
                 continue;
             }
@@ -361,7 +365,7 @@ public sealed partial class WhatsAppWebhookProcessor
             }
 
             var timestamp = ParseWhatsAppTimestamp(TryGetString(messageElement, "timestamp")) ?? _clock.UtcNow;
-            var (conversationByUserId, conversationByPhone) = await FindConversationIdentityAsync(identity, setting.BranchId,
+            var (conversationByUserId, conversationByPhone) = await FindConversationIdentityAsync(identity, setting,
                 channelSettingId, cancellationToken);
             var phoneIdentityMismatch = conversationByUserId is null
                 && conversationByPhone is not null
@@ -391,11 +395,12 @@ public sealed partial class WhatsAppWebhookProcessor
             {
                 var aiActive = channelSettingId.HasValue
                     ? await _db.TenantAiSettings.AsNoTracking().AnyAsync(x => x.TenantId == TenantId && x.IsActive && x.IsVerified, cancellationToken)
-                    : await IsBranchAiActiveAsync(setting.BranchId, cancellationToken);
+                    : !setting.CoexistenceEnabled && await IsBranchAiActiveAsync(setting.BranchId, cancellationToken);
                 conversation = new WhatsAppConversation
                 {
                     TenantId = TenantId,
                     ChannelSettingId = channelSettingId,
+                    BranchLineId = branchLineId,
                     BranchId = setting.BranchId,
                     PhoneNumber = phoneIdentityMismatch ? null : identity.PhoneNumber,
                     WhatsAppUserId = identity.UserId,
@@ -636,7 +641,8 @@ public sealed partial class WhatsAppWebhookProcessor
                 .FirstOrDefaultAsync(x => x.WhatsAppMessageId == messageId
                     && (x.Conversation.ChannelSettingId.HasValue
                         ? _db.WhatsAppChannelSettings.Any(c => c.Id == x.Conversation.ChannelSettingId && c.PhoneNumberId == phoneNumberId)
-                        : _db.WhatsAppBranchSettings.Any(c => c.BranchId == x.Conversation.BranchId && c.PhoneNumberId == phoneNumberId)), cancellationToken);
+                        : _db.WhatsAppBranchSettings.Any(c => c.BranchId == x.Conversation.BranchId && c.PhoneNumberId == phoneNumberId
+                            && (x.Conversation.BranchLineId == null ? !c.CoexistenceEnabled : c.Id == x.Conversation.BranchLineId))), cancellationToken);
             if (message is null)
                 continue;
 

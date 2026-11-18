@@ -96,7 +96,7 @@ public sealed class WhatsAppCoexistenceTests
         var central = new WhatsAppChannelSetting { Id = 42, PhoneNumberId = "central" };
         db.AddRange(central, new WhatsAppConversation { BranchId = 1, ChannelSettingId = central.Id,
                 WhatsAppUserId = "US.123", PhoneNumber = "573000000001" },
-            new WhatsAppConversation { BranchId = 1, WhatsAppUserId = "US.previous", PhoneNumber = "573000000001" });
+            new WhatsAppConversation { BranchId = 1, BranchLineId = 1, WhatsAppUserId = "US.previous", PhoneNumber = "573000000001" });
         await db.SaveChangesAsync();
         var processor = Processor(db, new(), new());
 
@@ -123,10 +123,11 @@ public sealed class WhatsAppCoexistenceTests
         await using var db = Db();
         await Seed(db);
         var central = new WhatsAppChannelSetting { Id = 42, PhoneNumberId = "central" };
+        (await db.WhatsAppBranchSettings.SingleAsync(x => x.Id == 1)).PhoneNumberId = "456";
         db.AddRange(central,
-            new WhatsAppConversation { BranchId = 1, WhatsAppUserId = "US.allowed", PhoneNumber = "573000000001" },
-            new WhatsAppConversation { BranchId = 1, WhatsAppUserId = "US.outside", PhoneNumber = "573000000009" },
-            new WhatsAppConversation { BranchId = 2, WhatsAppUserId = "US.anotherline", PhoneNumber = "573000000002" },
+            new WhatsAppConversation { BranchId = 1, BranchLineId = 1, WhatsAppUserId = "US.allowed", PhoneNumber = "573000000001" },
+            new WhatsAppConversation { BranchId = 1, BranchLineId = 1, WhatsAppUserId = "US.outside", PhoneNumber = "573000000009" },
+            new WhatsAppConversation { BranchId = 2, BranchLineId = 2, WhatsAppUserId = "US.anotherline", PhoneNumber = "573000000002" },
             new WhatsAppConversation { BranchId = 1, ChannelSettingId = central.Id, WhatsAppUserId = "US.central", PhoneNumber = "573000000002" });
         await db.SaveChangesAsync();
         var pilot = CreateRecoveryPilot(new ServiceCollection(), RecoverySettings(temporary: false));
@@ -141,10 +142,29 @@ public sealed class WhatsAppCoexistenceTests
     }
 
     [Fact]
+    public async Task Phone_echo_uses_the_coexistence_line_when_the_legacy_line_has_the_same_customer()
+    {
+        await using var db = Db();
+        await Seed(db);
+        db.Add(new WhatsAppBranchSetting { Id = 3, BranchId = 1, PhoneNumberId = "legacy", IsActive = true, IsVerified = true });
+        db.Add(new WhatsAppConversation { Id = 10, BranchId = 1, PhoneNumber = "573000000001" });
+        await db.SaveChangesAsync();
+
+        await Processor(db, new(), new()).ProcessAsync(new WhatsAppWebhookEvent(),
+            Payload("smb_message_echoes", new[] { Echo() }), default);
+
+        var message = await db.WhatsAppMessages.SingleAsync();
+        var conversation = await db.WhatsAppConversations.SingleAsync(x => x.Id == message.ConversationId);
+        Assert.Equal(1, conversation.BranchLineId);
+        Assert.Equal("573000000001", conversation.PhoneNumber);
+        Assert.Null((await db.WhatsAppConversations.SingleAsync(x => x.Id == 10)).BranchLineId);
+    }
+
+    [Fact]
     public async Task Phone_intervention_pauses_automation_without_impersonation_or_reassignment()
     {
         await using var db = Db(); await Seed(db);
-        db.WhatsAppConversations.Add(new WhatsAppConversation { Id = 10, BranchId = 1, PhoneNumber = "573000000001",
+        db.WhatsAppConversations.Add(new WhatsAppConversation { Id = 10, BranchId = 1, BranchLineId = 1, PhoneNumber = "573000000001",
             AttentionMode = WhatsAppAttentionMode.Ai, AttentionModeUpdatedAt = Now.AddMinutes(-1) });
         await db.SaveChangesAsync();
         var queue = new Mock<IWhatsAppAiWorkQueue>(); var notifications = new Mock<IWhatsAppNotificationService>();
@@ -201,7 +221,7 @@ public sealed class WhatsAppCoexistenceTests
     {
         await using var db = Db(); await Seed(db);
         var line = await db.WhatsAppBranchSettings.SingleAsync(x => x.Id == 1); line.BusinessAccountId = "123";
-        db.WhatsAppConversations.Add(new WhatsAppConversation { BranchId = 1, PhoneNumber = "573000000001", AttentionMode = WhatsAppAttentionMode.Ai });
+        db.WhatsAppConversations.Add(new WhatsAppConversation { BranchId = 1, BranchLineId = 1, PhoneNumber = "573000000001", AttentionMode = WhatsAppAttentionMode.Ai });
         await db.SaveChangesAsync();
         var payload = JsonSerializer.Serialize(new { @object = "whatsapp_business_account", entry = new[] {
             new { id = "123", time = 1793901600, changes = new[] { new { field = "account_update", value = new { @event = "PARTNER_REMOVED" } } } } } });
@@ -322,7 +342,7 @@ public sealed class WhatsAppCoexistenceTests
         Assert.IsType<OkObjectResult>(await controller.RecoverPilot(1, default));
         Assert.Equal(7, attempts.Count);
 
-        var line = await db.WhatsAppBranchSettings.SingleAsync();
+        var line = await db.WhatsAppBranchSettings.SingleAsync(x => x.CoexistenceEnabled);
         Assert.Equal("123", line.BusinessAccountId);
         Assert.Equal("456", line.PhoneNumberId);
         Assert.Equal("skipped", line.HistorySyncStatus);
@@ -331,6 +351,7 @@ public sealed class WhatsAppCoexistenceTests
         Assert.StartsWith("pilot-recovery.0.", line.AccessToken);
         Assert.DoesNotContain("recovery-token", line.AccessToken);
         Assert.Equal("3904", (await db.WhatsAppChannelSettings.SingleAsync()).PhoneNumberId);
+        Assert.Equal("3904", (await db.WhatsAppBranchSettings.SingleAsync(x => !x.CoexistenceEnabled)).PhoneNumberId);
     }
 
     [Theory]
@@ -362,7 +383,7 @@ public sealed class WhatsAppCoexistenceTests
         await SeedRecoveryAsync(db);
         var temporary = RecoveryController(db, "ready", [], temporary: true);
         Assert.Equal("connected", ReadRecoveryStatus(await temporary.RecoverPilot(1, default)).GetProperty("state").GetString());
-        var recovered = await db.WhatsAppBranchSettings.SingleAsync();
+        var recovered = await db.WhatsAppBranchSettings.SingleAsync(x => x.CoexistenceEnabled);
         var recoveredId = recovered.Id;
         Assert.StartsWith("pilot-recovery.", recovered.AccessToken);
         Assert.DoesNotContain("recovery-token", recovered.AccessToken);
@@ -374,7 +395,7 @@ public sealed class WhatsAppCoexistenceTests
         var durable = RecoveryController(db, "already_subscribed", attempts);
         Assert.True(ReadRecoveryStatus(await durable.Get(1, default)).GetProperty("pilotRecoveryAvailable").GetBoolean());
         Assert.Equal("connected", ReadRecoveryStatus(await durable.RecoverPilot(1, default)).GetProperty("state").GetString());
-        var upgraded = await db.WhatsAppBranchSettings.SingleAsync();
+        var upgraded = await db.WhatsAppBranchSettings.SingleAsync(x => x.CoexistenceEnabled);
         Assert.Equal(recoveredId, upgraded.Id);
         Assert.StartsWith("pilot-recovery.0.", upgraded.AccessToken);
         Assert.DoesNotContain("recovery-token", upgraded.AccessToken);

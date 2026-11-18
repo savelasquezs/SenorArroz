@@ -42,7 +42,7 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
         var first = InboxPayload(await controller.GetConversationPage(new() { Inbox = "mine" }, default));
         Assert.Equal(280, first.Items[0].Id);
         Assert.Equal(50, first.Items.Count);
-        Assert.Equal(2, commands.Count);
+        Assert.Equal(3, commands.Count);
         Assert.DoesNotContain(commands, sql => sql.Contains("ai_order_state") || sql.Contains("access_token") || sql.Contains("state_json"));
         Assert.True(JsonSerializer.SerializeToUtf8Bytes(first).Length < 100000);
         var all = first.Items.Select(x => x.Id).ToList();

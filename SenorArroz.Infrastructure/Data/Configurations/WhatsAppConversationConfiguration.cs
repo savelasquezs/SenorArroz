@@ -16,6 +16,7 @@ public class WhatsAppConversationConfiguration : IEntityTypeConfiguration<WhatsA
         builder.Property(x => x.Id).HasColumnName("id");
         builder.Property(x => x.TenantId).HasColumnName("tenant_id").IsRequired().HasDefaultValue(1);
         builder.Property(x => x.ChannelSettingId).HasColumnName("channel_setting_id");
+        builder.Property(x => x.BranchLineId).HasColumnName("branch_line_id");
         builder.Property(x => x.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(x => x.OperationalBranchId).HasColumnName("operational_branch_id");
         builder.Property(x => x.CustomerId).HasColumnName("customer_id");
@@ -56,6 +57,7 @@ public class WhatsAppConversationConfiguration : IEntityTypeConfiguration<WhatsA
             .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.OperationalBranch).WithMany().HasForeignKey(x => x.OperationalBranchId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.ChannelSetting).WithMany().HasForeignKey(x => x.ChannelSettingId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.BranchLine).WithMany().HasForeignKey(x => x.BranchLineId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Customer)
             .WithMany()
             .HasForeignKey(x => x.CustomerId)
@@ -70,12 +72,18 @@ public class WhatsAppConversationConfiguration : IEntityTypeConfiguration<WhatsA
         builder.HasIndex(x => x.OperationalBranchId).HasDatabaseName("ix_whatsapp_conversation_operational_branch");
         builder.HasIndex(x => new { x.BranchId, x.PhoneNumber })
             .IsUnique()
-            .HasFilter("channel_setting_id IS NULL AND phone_number IS NOT NULL AND phone_number <> ''")
+            .HasFilter("channel_setting_id IS NULL AND branch_line_id IS NULL AND phone_number IS NOT NULL AND phone_number <> ''")
             .HasDatabaseName("idx_whatsapp_conversation_branch_phone");
         builder.HasIndex(x => new { x.BranchId, x.WhatsAppUserId })
             .IsUnique()
-            .HasFilter("channel_setting_id IS NULL AND whatsapp_user_id IS NOT NULL AND whatsapp_user_id <> ''")
+            .HasFilter("channel_setting_id IS NULL AND branch_line_id IS NULL AND whatsapp_user_id IS NOT NULL AND whatsapp_user_id <> ''")
             .HasDatabaseName("uq_whatsapp_conversation_branch_user_id");
+        builder.HasIndex(x => new { x.BranchLineId, x.PhoneNumber }).IsUnique()
+            .HasFilter("branch_line_id IS NOT NULL AND phone_number IS NOT NULL AND phone_number <> ''")
+            .HasDatabaseName("ux_whatsapp_conversation_branch_line_phone");
+        builder.HasIndex(x => new { x.BranchLineId, x.WhatsAppUserId }).IsUnique()
+            .HasFilter("branch_line_id IS NOT NULL AND whatsapp_user_id IS NOT NULL AND whatsapp_user_id <> ''")
+            .HasDatabaseName("ux_whatsapp_conversation_branch_line_user");
         builder.HasIndex(x => new { x.ChannelSettingId, x.PhoneNumber }).IsUnique()
             .HasFilter("channel_setting_id IS NOT NULL AND phone_number IS NOT NULL AND phone_number <> ''")
             .HasDatabaseName("uq_whatsapp_conversation_channel_phone");

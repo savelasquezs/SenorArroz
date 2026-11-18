@@ -42,11 +42,11 @@ public class WhatsAppBranchSettingConfiguration : IEntityTypeConfiguration<Whats
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
 
         builder.HasOne(x => x.Branch)
-            .WithOne(b => b.WhatsAppSetting)
-            .HasForeignKey<WhatsAppBranchSetting>(x => x.BranchId)
+            .WithMany(b => b.WhatsAppSettings)
+            .HasForeignKey(x => x.BranchId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex(x => x.BranchId).IsUnique().HasDatabaseName("idx_whatsapp_branch_setting_branch");
+        builder.HasIndex(x => new { x.BranchId, x.CoexistenceEnabled }).IsUnique().HasDatabaseName("ux_whatsapp_branch_setting_kind");
         builder.HasIndex(x => x.PhoneNumberId).IsUnique().HasFilter("phone_number_id <> ''").HasDatabaseName("ux_whatsapp_branch_setting_line");
         builder.HasIndex(x => x.WebhookVerifyToken).HasDatabaseName("idx_whatsapp_branch_setting_verify_token");
     }

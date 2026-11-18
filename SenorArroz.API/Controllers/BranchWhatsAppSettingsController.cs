@@ -49,7 +49,7 @@ public class BranchWhatsAppSettingsController : ControllerBase
 
         var setting = await _db.WhatsAppBranchSettings
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BranchId == branchId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && !x.CoexistenceEnabled, cancellationToken);
 
         return Ok(ApiResponse<WhatsAppBranchSettingDto>.SuccessResponse(
             ToDto(setting, branchId),
@@ -90,7 +90,7 @@ public class BranchWhatsAppSettingsController : ControllerBase
         }
 
         var setting = await _db.WhatsAppBranchSettings
-            .FirstOrDefaultAsync(x => x.BranchId == branchId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && !x.CoexistenceEnabled, cancellationToken);
 
         if (setting is null)
         {
@@ -153,7 +153,7 @@ public class BranchWhatsAppSettingsController : ControllerBase
             return Forbid();
 
         var setting = await _db.WhatsAppBranchSettings
-            .FirstOrDefaultAsync(x => x.BranchId == branchId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && !x.CoexistenceEnabled, cancellationToken);
 
         if (setting is null)
             return NotFound(ApiResponse<WhatsAppTestConnectionResultDto>.ErrorResponse("No hay configuración de WhatsApp para esta sucursal."));

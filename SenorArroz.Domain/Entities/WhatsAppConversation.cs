@@ -6,6 +6,7 @@ namespace SenorArroz.Domain.Entities;
 public class WhatsAppConversation : TenantOwnedEntity
 {
     public int? ChannelSettingId { get; set; }
+    public int? BranchLineId { get; set; }
     public int BranchId { get; set; }
     public int? OperationalBranchId { get; set; }
     public int? CustomerId { get; set; }
@@ -36,6 +37,7 @@ public class WhatsAppConversation : TenantOwnedEntity
     public virtual Branch Branch { get; set; } = null!;
     public virtual Branch? OperationalBranch { get; set; }
     public virtual WhatsAppChannelSetting? ChannelSetting { get; set; }
+    public virtual WhatsAppBranchSetting? BranchLine { get; set; }
     public virtual Customer? Customer { get; set; }
     public virtual User? AssignedUser { get; set; }
     public virtual User? AttentionModeUpdatedByUser { get; set; }

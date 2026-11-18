@@ -19,7 +19,8 @@ public partial class WhatsAppController
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppConversationDto>>> GetConversation(int conversationId, CancellationToken ct)
     {
-        var conversation = await _db.WhatsAppConversations.AsNoTracking().Include(x => x.ChannelSetting).Include(x => x.Branch).ThenInclude(x => x.WhatsAppSetting).Include(x => x.OperationalBranch)
+        var conversation = await _db.WhatsAppConversations.AsNoTracking().Include(x => x.ChannelSetting).Include(x => x.BranchLine)
+            .Include(x => x.Branch).ThenInclude(x => x.WhatsAppSettings.Where(s => !s.CoexistenceEnabled)).Include(x => x.OperationalBranch)
             .Include(x => x.Customer).Include(x => x.AssignedUser).SingleOrDefaultAsync(x => x.Id == conversationId, ct);
         if (conversation is null) return NotFound();
         if (!await CanAccessConversationAsync(conversation, ct)) return Forbid();

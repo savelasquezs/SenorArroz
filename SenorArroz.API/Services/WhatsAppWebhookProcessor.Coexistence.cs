@@ -17,7 +17,7 @@ public sealed partial class WhatsAppWebhookProcessor
             line.IsVerified = false;
             line.ConnectionState = "disconnected";
             line.ConnectionError = "La cuenta se desconectó de la plataforma. Conecta nuevamente desde Meta.";
-            var conversations = await _db.WhatsAppConversations.Where(x => x.ChannelSettingId == null && x.BranchId == line.BranchId).ToListAsync(ct);
+            var conversations = await _db.WhatsAppConversations.Where(x => x.BranchLineId == line.Id).ToListAsync(ct);
             foreach (var conversation in conversations)
             {
                 if (conversation.AttentionMode == WhatsAppAttentionMode.Ai) conversation.AttentionMode = WhatsAppAttentionMode.Paused;
@@ -91,21 +91,21 @@ public sealed partial class WhatsAppWebhookProcessor
     private async Task<WhatsAppConversation> CoexistenceConversationAsync(WhatsAppBranchSetting setting, string phone, CancellationToken ct)
     {
         var conversation = _db.WhatsAppConversations.Local.FirstOrDefault(x => x.TenantId == TenantId
-            && x.ChannelSettingId == null && x.BranchId == setting.BranchId && x.PhoneNumber == phone)
+            && x.BranchLineId == setting.Id && x.PhoneNumber == phone)
             ?? await _db.WhatsAppConversations.FirstOrDefaultAsync(x => x.TenantId == TenantId
-                && x.ChannelSettingId == null && x.BranchId == setting.BranchId && x.PhoneNumber == phone, ct);
-        return conversation ?? await CreateCoexistenceConversationAsync(setting, phone, null, ct);
+                && x.BranchLineId == setting.Id && x.PhoneNumber == phone, ct);
+        return conversation ?? CreateCoexistenceConversation(setting, phone, null);
     }
 
     private async Task<WhatsAppConversation> CoexistenceEchoConversationAsync(WhatsAppBranchSetting setting,
         WhatsAppInboundIdentity identity, CancellationToken ct)
     {
-        var (byUserId, byPhone) = await FindConversationIdentityAsync(identity, setting.BranchId, null, ct);
+        var (byUserId, byPhone) = await FindConversationIdentityAsync(identity, setting, null, ct);
         var phoneConflict = byPhone is not null && identity.UserId is not null
             && !string.IsNullOrWhiteSpace(byPhone.WhatsAppUserId) && byPhone.WhatsAppUserId != identity.UserId;
         var conversation = byUserId ?? (phoneConflict ? null : byPhone);
         if (conversation is null)
-            return await CreateCoexistenceConversationAsync(setting, phoneConflict ? null : identity.PhoneNumber, identity.UserId, ct);
+            return CreateCoexistenceConversation(setting, phoneConflict ? null : identity.PhoneNumber, identity.UserId);
 
         if (byPhone is null || ReferenceEquals(byPhone, conversation))
         {
@@ -115,12 +115,11 @@ public sealed partial class WhatsAppWebhookProcessor
         return conversation;
     }
 
-    private async Task<WhatsAppConversation> CreateCoexistenceConversationAsync(WhatsAppBranchSetting setting,
-        string? phone, string? userId, CancellationToken ct)
+    private WhatsAppConversation CreateCoexistenceConversation(WhatsAppBranchSetting setting, string? phone, string? userId)
     {
-        var conversation = new WhatsAppConversation { TenantId = TenantId, BranchId = setting.BranchId, PhoneNumber = phone, WhatsAppUserId = userId,
+        var conversation = new WhatsAppConversation { TenantId = TenantId, BranchId = setting.BranchId, BranchLineId = setting.Id, PhoneNumber = phone, WhatsAppUserId = userId,
             Status = WhatsAppConversationStatus.Archived,
-            AttentionMode = _attentionService.InitialMode(await IsBranchAiActiveAsync(setting.BranchId, ct)), AttentionModeUpdatedAt = _clock.UtcNow };
+            AttentionMode = _attentionService.InitialMode(false), AttentionModeUpdatedAt = _clock.UtcNow };
         _db.WhatsAppConversations.Add(conversation);
         return conversation;
     }

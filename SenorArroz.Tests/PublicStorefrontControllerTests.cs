@@ -1602,7 +1602,7 @@ public class PublicStorefrontControllerTests
             IsActive = true,
             IsVerified = true,
         };
-        branch.WhatsAppSetting = setting;
+        branch.WhatsAppSettings.Add(setting);
         var category = new ProductCategory { Id = 12, BranchId = branch.Id, Branch = branch, Name = "Arroces", StorefrontRole = "rice" };
         db.AddRange(
             branch,

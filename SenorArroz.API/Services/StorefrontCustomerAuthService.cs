@@ -43,7 +43,7 @@ public sealed class StorefrontCustomerAuthService(
             throw new StorefrontAuthRateLimitException("No fue posible enviar más códigos en este momento. Intenta más tarde.");
 
         var setting = await db.WhatsAppBranchSettings.AsNoTracking().FirstOrDefaultAsync(
-            x => x.BranchId == _options.AuthenticationBranchId && x.IsActive && x.IsVerified, ct);
+            x => x.BranchId == _options.AuthenticationBranchId && !x.CoexistenceEnabled && x.IsActive && x.IsVerified, ct);
         if (setting is null)
             throw new StorefrontAuthUnavailableException("La verificación por WhatsApp no está disponible en este momento.");
 

@@ -12,7 +12,7 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
 {
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
-    public async Task Stage45_Concurrent_confirmations_return_one_remote_order_and_one_outbox_message()
+    public async Task Stage45_Concurrent_confirmations_return_one_remote_order_without_automatic_message()
     {
         using var tenant = _tenant.BeginTenantScope(1);
         await using var seed = Db();
@@ -46,7 +46,7 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
         Assert.Equal(1, order.OriginBranchId);
         Assert.Equal(7, order.TakenById);
         Assert.Equal(2, await verify.Orders.CountAsync());
-        Assert.Single(await verify.WhatsAppCommerceOutboxMessages.ToListAsync());
+        Assert.False(await verify.WhatsAppCommerceOutboxMessages.AnyAsync());
         var conversation = await verify.WhatsAppConversations.SingleAsync();
         Assert.Equal(1, conversation.OperationalBranchId);
         Assert.Equal(7, conversation.AssignedUserId);

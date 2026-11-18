@@ -84,6 +84,6 @@ public class Branch : TenantOwnedEntity
     public virtual ICollection<DiscountCode> DiscountCodes { get; set; } = new List<DiscountCode>();
 
     public virtual BranchPrintSettings? PrintSettings { get; set; }
-    public virtual WhatsAppBranchSetting? WhatsAppSetting { get; set; }
+    public virtual ICollection<WhatsAppBranchSetting> WhatsAppSettings { get; set; } = new List<WhatsAppBranchSetting>();
     public virtual BranchAiSetting? AiSetting { get; set; }
 }

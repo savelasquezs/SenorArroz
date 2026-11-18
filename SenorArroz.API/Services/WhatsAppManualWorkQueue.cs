@@ -49,7 +49,8 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
                 x.PhoneNumber, x.WhatsAppUserId,
                 PhoneNumberId = x.ChannelSettingId.HasValue
                     ? db.WhatsAppChannelSettings.Where(c => c.Id == x.ChannelSettingId).Select(c => c.PhoneNumberId).FirstOrDefault()
-                    : db.WhatsAppBranchSettings.Where(c => c.BranchId == x.BranchId).Select(c => c.PhoneNumberId).FirstOrDefault()
+                    : db.WhatsAppBranchSettings.Where(c => c.BranchId == x.BranchId
+                        && (x.BranchLineId == null ? !c.CoexistenceEnabled : c.Id == x.BranchLineId)).Select(c => c.PhoneNumberId).FirstOrDefault()
             }).SingleAsync(ct) : null;
         var aliases = identity?.PhoneNumberId is string phoneId
             ? WhatsAppWebhookEnvelope.AliasesFor(phoneId, identity.PhoneNumber, identity.WhatsAppUserId) : [];

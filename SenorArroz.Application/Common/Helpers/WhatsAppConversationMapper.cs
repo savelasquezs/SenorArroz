@@ -9,7 +9,11 @@ public static class WhatsAppConversationMapper
 {
     public static readonly Expression<Func<WhatsAppConversation, WhatsAppConversationDto>> Projection = conversation => new WhatsAppConversationDto()
     {
-        SenderLine = conversation.ChannelSetting != null ? conversation.ChannelSetting.DisplayPhoneNumber : conversation.Branch != null && conversation.Branch.WhatsAppSetting != null ? conversation.Branch.WhatsAppSetting.DisplayPhoneNumber : null,
+        SenderLine = conversation.ChannelSetting != null ? conversation.ChannelSetting.DisplayPhoneNumber
+            : conversation.BranchLine != null ? conversation.BranchLine.DisplayPhoneNumber
+            : conversation.BranchLineId == null && conversation.ChannelSettingId == null && conversation.Branch != null
+                ? conversation.Branch.WhatsAppSettings.Where(x => !x.CoexistenceEnabled).Select(x => x.DisplayPhoneNumber).FirstOrDefault()
+                : null,
         AttentionRevision = conversation.AttentionRevision,
         NeedsHumanResponse = conversation.NeedsHumanResponse,
         LastCustomerMessageAt = AsUtc(conversation.LastCustomerMessageAt),

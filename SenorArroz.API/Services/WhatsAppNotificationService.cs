@@ -191,7 +191,8 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
                 OperationalBranchName = x.OperationalBranch != null ? x.OperationalBranch.Name : null,
                 x.AssignedUserId, Advisor = x.AssignedUser != null ? x.AssignedUser.Name : null,
                 Line = x.ChannelSetting != null ? x.ChannelSetting.DisplayPhoneNumber
-                    : x.Branch != null && x.Branch.WhatsAppSetting != null ? x.Branch.WhatsAppSetting.DisplayPhoneNumber : null,
+                    : x.BranchLineId != null ? x.BranchLine!.DisplayPhoneNumber
+                        : x.Branch.WhatsAppSettings.Where(s => !s.CoexistenceEnabled).Select(s => s.DisplayPhoneNumber).FirstOrDefault(),
                 Commerce = _db.WhatsAppCommerceSessions.Where(s => s.ConversationId == x.Id).OrderByDescending(s => s.Id)
                     .Select(s => new { s.CommercialStatus, s.OrderId }).FirstOrDefault()
             }).SingleOrDefaultAsync(cancellationToken);

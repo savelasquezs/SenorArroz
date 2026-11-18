@@ -150,9 +150,9 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
             {
                 using var callback = Db();
                 var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
-                if (body.Contains("\"history\"")) callback.WhatsAppBranchSettings.Where(x => x.BranchId == 1)
+                if (body.Contains("\"history\"")) callback.WhatsAppBranchSettings.Where(x => x.BranchId == 1 && x.CoexistenceEnabled)
                     .ExecuteUpdate(x => x.SetProperty(s => s.HistorySyncStatus, "completed").SetProperty(s => s.ConnectionState, "connected"));
-                else callback.WhatsAppBranchSettings.Where(x => x.BranchId == 1)
+                else callback.WhatsAppBranchSettings.Where(x => x.BranchId == 1 && x.CoexistenceEnabled)
                     .ExecuteUpdate(x => x.SetProperty(s => s.ContactsSyncStatus, "received"));
             }
             return "{\"request_id\":\"local-request\"}";
@@ -164,7 +164,7 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
         var request = new WhatsAppCoexistenceController.ConnectRequest(session, "temporary-local-code", "123", "456");
         var result = await controller.Connect(1, request, default);
         Assert.IsType<OkObjectResult>(result); Assert.Equal(8, calls);
-        var line = await db.WhatsAppBranchSettings.AsNoTracking().SingleAsync();
+        var line = await db.WhatsAppBranchSettings.AsNoTracking().SingleAsync(x => x.CoexistenceEnabled);
         Assert.True(line.CoexistenceEnabled && line.IsVerified); Assert.Equal("connected", line.ConnectionState);
         Assert.Equal("completed", line.HistorySyncStatus); Assert.Equal("received", line.ContactsSyncStatus);
         Assert.DoesNotContain("local-test-token", JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(result).Value));

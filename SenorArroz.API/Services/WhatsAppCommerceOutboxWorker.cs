@@ -87,7 +87,8 @@ public sealed class WhatsAppCommerceOutboxWorker(
             { phoneNumberId = channel.PhoneNumberId; accessToken = channel.AccessToken; }
             else if (message.ChannelSettingId is null)
             {
-                var branchLine = await db.WhatsAppBranchSettings.AsNoTracking().SingleOrDefaultAsync(x => x.BranchId == message.Conversation.BranchId && x.IsActive && x.IsVerified, ct)
+                var branchLine = await db.WhatsAppBranchSettings.AsNoTracking().ForConversation(message.Conversation)
+                    .SingleOrDefaultAsync(x => x.IsActive && x.IsVerified, ct)
                     ?? throw new InvalidOperationException("La línea remitente no está disponible.");
                 phoneNumberId = branchLine.PhoneNumberId; accessToken = branchLine.AccessToken;
             }
