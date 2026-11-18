@@ -123,6 +123,9 @@ public sealed class DashboardHourlySqlAggregationPostgreSqlTests : IAsyncLifetim
         var (from, to) = ColombiaTimeHelper.GetColombiaCalendarDateRangeUtc(
             new DateTime(2026, 7, 2), new DateTime(2026, 7, 3));
 
+        // The result must not depend on PostgreSQL session timezone.
+        await db.Database.OpenConnectionAsync();
+        await db.Database.ExecuteSqlRawAsync("SET TIME ZONE 'Asia/Tokyo'");
         _capture.Statements.Clear();
         var buckets = await new OrderRepository(db, new SystemUtcClock())
             .GetDashboardSalesDailyHourBucketsAsync(first.Id, from, to);
@@ -130,6 +133,7 @@ public sealed class DashboardHourlySqlAggregationPostgreSqlTests : IAsyncLifetim
         // Exactly one grouped result query, not one row transferred per order.
         var query = Assert.Single(_capture.Statements);
         Assert.Contains("GROUP BY", query, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("AT TIME ZONE", query, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(4, buckets.Count);
         Assert.Equal(6, buckets.Sum(x => x.OrderCount));
         var day2Morning = Assert.Single(buckets, x => x.Day == new DateTime(2026, 7, 2) && x.Hour == 11);
