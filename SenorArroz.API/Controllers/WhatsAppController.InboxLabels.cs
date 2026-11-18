@@ -33,7 +33,7 @@ public partial class WhatsAppController
         public bool WithoutOrder { get; init; }
     }
 
-    private DateTime InboxDayStart() => DateTime.SpecifyKind(_clock.UtcNow.AddHours(-5).Date.AddHours(5), DateTimeKind.Utc);
+    private DateTime InboxDayStart() => ColombiaTimeHelper.GetTodayStartInUtcFromUtc(_clock.UtcNow);
 
     private IQueryable<WhatsAppConversation> ScopedInbox(IQueryable<WhatsAppConversation> query, int? branchId, bool unroutedOnly)
     {
