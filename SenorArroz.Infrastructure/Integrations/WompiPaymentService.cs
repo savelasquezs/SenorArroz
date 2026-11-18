@@ -23,7 +23,8 @@ public sealed class WompiPaymentService(
     ILogger<WompiPaymentService> logger,
     IBackgroundWorkSignal<PaymentNotificationOutboxWork>? notificationSignal = null,
     ITenantExecutionContext? tenantExecutionContext = null,
-    IInventoryService? inventory = null) : IWompiPaymentService
+    IInventoryService? inventory = null,
+    IWhatsAppNotificationService? whatsappNotifications = null) : IWompiPaymentService
 {
     public Task<WompiPaymentIntegration?> GetEnabledIntegrationAsync(int tenantId, int branchId, CancellationToken cancellationToken) =>
         db.WompiPaymentIntegrations
@@ -194,6 +195,8 @@ public sealed class WompiPaymentService(
                 processed.Result.PaymentAttemptId!.Value,
                 processed.ReviewReason ?? "Pago que requiere revisión.",
                 cancellationToken);
+        if (processed.Result.Accepted && !processed.Result.Duplicate)
+            await NotifyInboxSafelyAsync(processed.Result.PaymentAttemptId, cancellationToken);
         return processed.Result;
     }
 
@@ -255,6 +258,8 @@ public sealed class WompiPaymentService(
                 observed.Result.PaymentAttemptId!.Value,
                 observed.ReviewReason ?? "Pago que requiere revisión.",
                 cancellationToken);
+        if (observed.Result.Accepted && !observed.Result.Duplicate)
+            await NotifyInboxSafelyAsync(observed.Result.PaymentAttemptId, cancellationToken);
         return observed.Status;
     }
 
@@ -320,7 +325,23 @@ public sealed class WompiPaymentService(
                 observed.Result.PaymentAttemptId!.Value,
                 observed.ReviewReason ?? "Pago que requiere revisión.",
                 cancellationToken);
+        if (observed.Result.Accepted && !observed.Result.Duplicate)
+            await NotifyInboxSafelyAsync(observed.Result.PaymentAttemptId, cancellationToken);
         return observed.Status;
+    }
+
+    private async Task NotifyInboxSafelyAsync(int? attemptId, CancellationToken ct)
+    {
+        if (whatsappNotifications is null || attemptId is null) return;
+        try
+        {
+            var chatId = await db.WompiPaymentAttempts.AsNoTracking().Where(x => x.Id == attemptId)
+                .Select(x => (x.Order != null ? x.Order.WhatsAppConversationId : null)
+                    ?? (x.StorefrontCheckout != null ? x.StorefrontCheckout.WhatsAppConversationId : null))
+                .SingleOrDefaultAsync(ct);
+            if (chatId.HasValue) await whatsappNotifications.NotifyInboxConversationChangedAsync(chatId.Value, ct);
+        }
+        catch (Exception error) { logger.LogWarning(error, "Payment saved; WhatsApp inbox update failed."); }
     }
 
     private async Task NotifyReviewSafelyAsync(
@@ -796,10 +817,20 @@ public sealed class WompiPaymentService(
         var conversation = await db.WhatsAppConversations.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == checkout.WhatsAppConversationId.Value && x.ChannelSettingId != null, cancellationToken);
         if (conversation?.ChannelSettingId is not int channelSettingId) return;
-        var session = await db.WhatsAppCommerceSessions.AsNoTracking()
+        var session = await db.WhatsAppCommerceSessions
             .FirstOrDefaultAsync(x => x.IdempotencyKey == checkout.IdempotencyKey && x.ConversationId == conversation.Id, cancellationToken);
         if (session is not null)
         {
+            session.CheckoutId = checkout.PublicId;
+            if (eventType == "payment-approved" && checkout.OrderId.HasValue)
+            {
+                session.OrderId = checkout.OrderId;
+                session.CommercialStatus = "order_taken";
+                session.CompletedAt = observedAt;
+            }
+            else if (eventType is "payment-expired" or "payment-voided")
+                session.CommercialStatus = "no_sale";
+            session.Version++;
             db.WhatsAppCommerceEvents.Add(new WhatsAppCommerceEvent
             {
                 TenantId = checkout.TenantId,

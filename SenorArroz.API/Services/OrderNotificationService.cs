@@ -17,6 +17,7 @@ public class OrderNotificationService : IOrderNotificationService
     private readonly ILogger<OrderNotificationService> _logger;
     private readonly ICurrentTenant _tenant;
     private readonly ApplicationDbContext _db;
+    private readonly IWhatsAppNotificationService? _whatsApp;
 
     public OrderNotificationService(
         IHubContext<OrderHub> hubContext,
@@ -24,7 +25,8 @@ public class OrderNotificationService : IOrderNotificationService
         IFreeDeliverymanFcmTokenResolver freeDeliverymanTokens,
         ICurrentTenant tenant,
         ApplicationDbContext db,
-        ILogger<OrderNotificationService> logger)
+        ILogger<OrderNotificationService> logger,
+        IWhatsAppNotificationService? whatsApp = null)
     {
         _hubContext = hubContext;
         _fcm = fcm;
@@ -32,6 +34,7 @@ public class OrderNotificationService : IOrderNotificationService
         _tenant = tenant;
         _db = db;
         _logger = logger;
+        _whatsApp = whatsApp;
     }
 
     public async Task NotifyOrderManagementChanged(int orderId, int branchId, int? originBranchId, long version)
@@ -43,6 +46,9 @@ public class OrderNotificationService : IOrderNotificationService
         {
             orderId, branchId, originBranchId, managementVersion = version
         });
+        if (_whatsApp is not null && await _db.Orders.AsNoTracking().Where(x => x.Id == orderId)
+            .Select(x => x.WhatsAppConversationId).SingleOrDefaultAsync() is int conversationId)
+            await _whatsApp.NotifyInboxConversationChangedAsync(conversationId);
     }
 
     public Task NotifyOperationalChecklistChanged(int branchId) =>

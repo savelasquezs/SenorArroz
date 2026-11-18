@@ -49,7 +49,7 @@ public class BranchWhatsAppSettingsController : ControllerBase
 
         var setting = await _db.WhatsAppBranchSettings
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.BranchId == branchId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && !x.CoexistenceEnabled, cancellationToken);
 
         return Ok(ApiResponse<WhatsAppBranchSettingDto>.SuccessResponse(
             ToDto(setting, branchId),
@@ -90,7 +90,7 @@ public class BranchWhatsAppSettingsController : ControllerBase
         }
 
         var setting = await _db.WhatsAppBranchSettings
-            .FirstOrDefaultAsync(x => x.BranchId == branchId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && !x.CoexistenceEnabled, cancellationToken);
 
         if (setting is null)
         {
@@ -110,6 +110,10 @@ public class BranchWhatsAppSettingsController : ControllerBase
             || !string.Equals(setting.BusinessAccountId, dto.BusinessAccountId.Trim(), StringComparison.Ordinal)
             || !string.Equals(setting.WebhookVerifyToken, dto.WebhookVerifyToken.Trim(), StringComparison.Ordinal)
             || !string.IsNullOrWhiteSpace(dto.AccessToken);
+
+        if (setting.Id > 0 && setting.PhoneNumberId != dto.PhoneNumberId.Trim()
+            && await _db.WhatsAppConversations.AnyAsync(x => x.BranchId == branchId && x.ChannelSettingId == null, cancellationToken))
+            return Conflict(ApiResponse<WhatsAppBranchSettingDto>.ErrorResponse("Esta línea ya tiene conversaciones. Conserva el canal existente antes de cambiar el número."));
 
         setting.PhoneNumberId = dto.PhoneNumberId.Trim();
         setting.BusinessAccountId = dto.BusinessAccountId.Trim();
@@ -131,6 +135,7 @@ public class BranchWhatsAppSettingsController : ControllerBase
         {
             setting.IsVerified = false;
             setting.LastVerifiedAt = null;
+            if (setting.CoexistenceEnabled) setting.ConnectionState = "degraded";
         }
 
         await _db.SaveChangesAsync(cancellationToken);
@@ -148,7 +153,7 @@ public class BranchWhatsAppSettingsController : ControllerBase
             return Forbid();
 
         var setting = await _db.WhatsAppBranchSettings
-            .FirstOrDefaultAsync(x => x.BranchId == branchId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.BranchId == branchId && !x.CoexistenceEnabled, cancellationToken);
 
         if (setting is null)
             return NotFound(ApiResponse<WhatsAppTestConnectionResultDto>.ErrorResponse("No hay configuración de WhatsApp para esta sucursal."));

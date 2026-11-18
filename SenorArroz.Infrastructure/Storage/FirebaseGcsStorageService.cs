@@ -20,6 +20,20 @@ public sealed class FirebaseGcsStorageService : IFirebaseGcsStorage
 
     private StorageClient Client => _client ??= StorageClient.Create();
 
+    public async Task<byte[]> DownloadObjectAsync(string objectName, long maxBytes, CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        if (string.IsNullOrWhiteSpace(objectName) || maxBytes is < 1 or > 70_000_000)
+            throw new ArgumentException("Invalid storage download bounds.");
+        var metadata = await Client.GetObjectAsync(_opt.Bucket.Trim(), objectName, cancellationToken: cancellationToken);
+        if (metadata.Size is null || metadata.Size > (ulong)maxBytes)
+            throw new InvalidOperationException("El archivo supera el límite permitido.");
+        using var stream = new MemoryStream((int)metadata.Size.Value);
+        await Client.DownloadObjectAsync(metadata, stream, cancellationToken: cancellationToken);
+        if (stream.Length > maxBytes) throw new InvalidOperationException("El archivo supera el límite permitido.");
+        return stream.ToArray();
+    }
+
     public async Task<string> UploadPublicObjectAsync(byte[] content, string objectName, string contentType, CancellationToken cancellationToken = default)
     {
         EnsureReady();

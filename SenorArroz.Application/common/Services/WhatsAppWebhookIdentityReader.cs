@@ -10,7 +10,11 @@ public sealed record WhatsAppInboundIdentity(
 
 public static class WhatsAppWebhookIdentityReader
 {
-    public static WhatsAppInboundIdentity Read(JsonElement value, JsonElement message)
+    public static WhatsAppInboundIdentity ReadEchoRecipient(JsonElement message) =>
+        new(NormalizePhone(GetString(message, "to")),
+            WhatsAppIdentityNormalizer.NormalizeUserId(GetString(message, "to_user_id")), null, null);
+
+    public static WhatsAppInboundIdentity Read(JsonElement value, JsonElement message, bool matchContactOnly = false)
     {
         var phoneNumber = NormalizePhone(GetString(message, "from"));
         var userId = WhatsAppIdentityNormalizer.NormalizeUserId(GetString(message, "from_user_id"));
@@ -35,7 +39,7 @@ public static class WhatsAppWebhookIdentityReader
             }
         }
 
-        var selectedContact = matchedContact ?? (contactCount == 1 ? firstContact : null);
+        var selectedContact = matchedContact ?? (!matchContactOnly && contactCount == 1 ? firstContact : null);
         string? contactName = null;
         string? username = null;
         if (selectedContact is { } contact)
@@ -52,7 +56,7 @@ public static class WhatsAppWebhookIdentityReader
         return new(phoneNumber, userId, username, contactName);
     }
 
-    private static string? NormalizePhone(string? value)
+    public static string? NormalizePhone(string? value)
     {
         var digits = new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
         return NullIfBlank(digits);

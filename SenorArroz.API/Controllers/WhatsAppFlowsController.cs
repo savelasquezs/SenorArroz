@@ -109,6 +109,7 @@ public sealed class WhatsAppFlowsController(
         try
         {
             var data = root.TryGetProperty("data", out var dataElement) ? dataElement : default;
+            await WhatsAppCommercialDraft.LockAsync(db, session.TenantId, session.ConversationId, ct);
             var response = await commerce.HandleAsync(session, action, screen, flowToken!, data, ct);
             response["version"] = version;
             var responseJson = JsonSerializer.Serialize(response);

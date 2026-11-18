@@ -40,6 +40,63 @@ public class WhatsAppSimpleOrchestratorTests
 
     [Fact] public async Task ProviderTimeoutResponse_IsRetried() { await using var f = await Fixture.Create("Hola", retries: 2); f.Provider.SetupSequence(x => x.GenerateAsync(It.IsAny<AiChatRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(new AiChatResponse(null, [], "model", null, null, null, true, "request timeout")).ReturnsAsync(new AiChatResponse("Listo", [], "model", "stop", 1, 1)); await f.Orchestrator.ProcessIncomingMessageAsync(1, 1); f.Provider.Verify(x => x.GenerateAsync(It.IsAny<AiChatRequest>(), It.IsAny<CancellationToken>()), Times.Exactly(2)); }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Restart_discards_response_from_previous_attention(bool missingVersion)
+    {
+        await using var f = await Fixture.Create("Hola");
+        var conversation = (await f.Db.WhatsAppConversations.FindAsync(1))!;
+        var originalVersion = DateTime.UtcNow.AddMinutes(-5);
+        conversation.AttentionModeUpdatedAt = originalVersion.AddMinutes(2);
+        var message = (await f.Db.WhatsAppMessages.FindAsync(1))!;
+        message.AiGeneratedResponse = "Respuesta anterior";
+        message.AiResponseAttemptId = "previous-attempt";
+        message.AiResponseAttentionVersion = missingVersion ? null : originalVersion;
+        await f.Db.SaveChangesAsync();
+        f.Db.ChangeTracker.Clear();
+
+        var result = await f.Orchestrator.ProcessIncomingMessageAsync(1, 1);
+
+        Assert.False(result.ResponseSent);
+        Assert.Equal(WhatsAppAiProcessingStatus.Ignored, (await f.Db.WhatsAppMessages.FindAsync(1))!.AiProcessingStatus);
+        f.Provider.Verify(x => x.GenerateAsync(It.IsAny<AiChatRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Restart_resumes_generated_response_with_original_attention_version()
+    {
+        await using var f = await Fixture.Create("Hola");
+        var conversation = (await f.Db.WhatsAppConversations.FindAsync(1))!;
+        conversation.AttentionModeUpdatedAt = DateTime.UtcNow.AddMinutes(-2);
+        var message = (await f.Db.WhatsAppMessages.FindAsync(1))!;
+        message.AiGeneratedResponse = "Respuesta guardada";
+        message.AiResponseAttemptId = "same-attempt";
+        message.AiResponseAttentionVersion = conversation.AttentionModeUpdatedAt;
+        await f.Db.SaveChangesAsync();
+        f.Db.ChangeTracker.Clear();
+
+        var result = await f.Orchestrator.ProcessIncomingMessageAsync(1, 1);
+
+        Assert.True(result.ResponseSent);
+        f.Provider.Verify(x => x.GenerateAsync(It.IsAny<AiChatRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Equal(conversation.AttentionModeUpdatedAt, (await f.Db.WhatsAppMessages.FindAsync(1))!.AiResponseAttentionVersion);
+    }
+
+    [Fact]
+    public async Task Legacy_pending_message_before_handoff_does_not_adopt_the_current_attention()
+    {
+        await using var f = await Fixture.Create("Hola pendiente");
+        var conversation = (await f.Db.WhatsAppConversations.FindAsync(1))!;
+        conversation.AttentionModeUpdatedAt = DateTime.UtcNow.AddMinutes(1);
+        await f.Db.SaveChangesAsync();
+        f.Db.ChangeTracker.Clear();
+        var result = await f.Orchestrator.ProcessIncomingMessageAsync(1, 1);
+        Assert.False(result.ResponseSent);
+        Assert.Equal(WhatsAppAiProcessingStatus.Ignored, (await f.Db.WhatsAppMessages.FindAsync(1))!.AiProcessingStatus);
+        f.Provider.Verify(x => x.GenerateAsync(It.IsAny<AiChatRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         public ApplicationDbContext Db = null!; public Mock<IAiChatProvider> Provider = new(); public Mock<IAgentToolExecutor> Tools = new(); public WhatsAppSimpleOrderStateService State = null!; public IWhatsAppAiOrchestrator Orchestrator = null!;

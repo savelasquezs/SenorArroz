@@ -50,6 +50,13 @@ public class AgentToolExecutor : IAgentToolExecutor, IAgentToolCatalog
         if (schema.TryGetProperty("properties", out var properties))
             foreach (var property in arguments.EnumerateObject())
                 if (!properties.TryGetProperty(property.Name, out _)) return new(false, null, $"Argumento no permitido: {property.Name}.", "invalid_arguments");
+        if (tool.Category is "order" or "catalog")
+        {
+            var destination = await _db.WhatsAppCommerceSessions.AsNoTracking()
+                .Where(x => x.ConversationId == context.ConversationId && x.Status == "active")
+                .Select(x => x.BranchId).FirstOrDefaultAsync(ct);
+            if (destination.HasValue) effectiveBranchId = destination.Value;
+        }
         return await tool.ExecuteAsync(context with { BranchId = effectiveBranchId, PhoneNumber = conversation.PhoneNumber, CustomerId = conversation.CustomerId, AttentionMode = conversation.AttentionMode.ToString() }, arguments, ct);
     }
 }

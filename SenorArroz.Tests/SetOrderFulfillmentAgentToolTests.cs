@@ -76,6 +76,7 @@ public class SetOrderFulfillmentAgentToolTests
         db.Addresses.AddRange(
             new Address { Id = 20, CustomerId = 10, NeighborhoodId = 1, AddressText = "Calle 1" },
             new Address { Id = 21, CustomerId = 11, NeighborhoodId = 1, AddressText = "Calle 2" });
+        db.AddressBranches.Add(new AddressBranch { AddressId = 20, BranchId = 1, IsCovered = true, DeliveryFee = 5000 });
         db.WhatsAppConversations.Add(new WhatsAppConversation { Id = 1, BranchId = 1, CustomerId = 10, PhoneNumber = "573001234567", AttentionMode = WhatsAppAttentionMode.Ai });
         await db.SaveChangesAsync();
         return db;

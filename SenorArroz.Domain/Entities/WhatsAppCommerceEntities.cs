@@ -44,7 +44,7 @@ public sealed class TenantAiSetting : TenantOwnedEntity
 public sealed class WhatsAppCommerceSession : TenantOwnedEntity
 {
     public Guid CorrelationId { get; set; } = Guid.NewGuid();
-    public int ChannelSettingId { get; set; }
+    public int? ChannelSettingId { get; set; }
     public int ConversationId { get; set; }
     public int? BranchId { get; set; }
     public int? CustomerId { get; set; }
@@ -55,8 +55,15 @@ public sealed class WhatsAppCommerceSession : TenantOwnedEntity
     public string IdempotencyKey { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public string DraftJson { get; set; } = "{}";
+    public string? EditorJson { get; set; }
+    public string DraftSource { get; set; } = "flow";
+    public string CommercialStatus { get; set; } = "in_progress";
+    public int? OrderId { get; set; }
+    public string? CheckoutId { get; set; }
+    public string InternalNotesJson { get; set; } = "[]";
 
-    public WhatsAppChannelSetting ChannelSetting { get; set; } = null!;
+    public WhatsAppChannelSetting? ChannelSetting { get; set; } = null!;
     public WhatsAppConversation Conversation { get; set; } = null!;
     public Branch? Branch { get; set; }
     public Customer? Customer { get; set; }
@@ -83,7 +90,7 @@ public sealed class WhatsAppFlowExchange : TenantOwnedEntity
 
 public sealed class WhatsAppCommerceOutboxMessage : TenantOwnedEntity
 {
-    public int ChannelSettingId { get; set; }
+    public int? ChannelSettingId { get; set; }
     public int ConversationId { get; set; }
     public string EventKey { get; set; } = string.Empty;
     public string Body { get; set; } = string.Empty;
@@ -94,7 +101,7 @@ public sealed class WhatsAppCommerceOutboxMessage : TenantOwnedEntity
     public DateTime NextAttemptAt { get; set; }
     public DateTime? SentAt { get; set; }
     public string? LastError { get; set; }
-    public WhatsAppChannelSetting ChannelSetting { get; set; } = null!;
+    public WhatsAppChannelSetting? ChannelSetting { get; set; } = null!;
     public WhatsAppConversation Conversation { get; set; } = null!;
 }
 

@@ -692,6 +692,44 @@ GET /api/deliverymen/map devuelve pedidos de domicilio en camino/entregados del 
 La disponibilidad del POS usa la sucursal operativa del borrador. La consulta forOrderCreation exige rol de gestión y sucursal activa del mismo tenant; el catálogo de productos compartido conserva sus recetas y se cruza con los saldos de esa sede. Las consultas administrativas conservan su alcance anterior.
 
 
+
+## WhatsApp: procesamiento separado (etapas 0 y 1)
+
+- Embedded mantiene la ejecución existente; External habilita aceptación durable del webhook y un worker separado. Su activación requiere esquema previo y corte coordinado de consumidores.
+- La API valida firma y canal/tenant antes de persistir. El payload de procesamiento se cifra y se elimina después del éxito; la auditoría conserva la versión saneada.
+- Las concesiones y claves únicas son PostgreSQL; las señales solo despiertan trabajo. Resultados externos inciertos requieren conciliación y no se reenvían ciegamente.
+- El worker no reemplaza el motor comercial. Las herramientas que modifican negocio y el reintento comercial de pago utilizan un contrato interno autenticado de la API, con tenant derivado del mensaje persistido.
+- Cada réplica de API entrega sus eventos SignalR y revalida los destinatarios actuales. Una transferencia invalida acceso anterior sin reenviar contenido a grupos revocados.
+- La sucursal del cajero o de la línea no constituye el destino permanente del pedido. Se conserva OriginBranchId/BranchId y la operación entre sucursales. El contrato de destino del borrador es independiente de transferir el chat; su nueva implementación pertenece a la etapa 4.
+- Contratos, pendientes, configuración y mediciones: docs/WHATSAPP_PROCESSING_STAGE01.md.
+
+- En procesamiento WhatsApp External, aceptar un envío manual devuelve un trabajo pendiente; no significa que Meta lo recibió ni que se confirmó un pedido. El worker valida nuevamente actor, sede de trabajo y versión de atención, conserva resultados y evita reintentar envíos inciertos automáticamente. El transporte no cambia el destino comercial, la procedencia ni la sucursal global del cajero.
+
+
+## WhatsApp coexistencia y atención multiasesor
+
+- El historial importado y los contactos del celular no generan no leídos, IA, ausencia, Flows, avisos, pedidos ni ventanas de atención nuevas. Los números conservan canales separados; eliminar un contacto no elimina historial ni cambia el cliente comercial.
+- Los mensajes enviados desde Business aparecen como celular, sin inventar empleado, y pausan la automatización manteniendo al responsable humano. Una desconexión confirmada invalida la automatización de esa línea.
+- Tomar es explícito y versionado. Otro asesor recibe conflicto; la toma forzada exige supervisor con acceso y motivo. La supervisión y lectura no permiten enviar, editar cliente/borrador ni crear pedidos sin responsabilidad.
+- Libres, Míos, Equipo y Cerrados son independientes del enrutamiento. Leer no resuelve la necesidad de respuesta. Las transferencias de asesor, enrutamiento y destino del pedido tienen semánticas distintas; cambiar un enrutamiento existente libera al asesor.
+- Fuera de la ventana calculada desde el último mensaje entrante nuevo, el envío libre se rechaza. Una plantilla debe estar aprobada para la cuenta de la conversación y salir desde el mismo número, sin cambiar al canal de otra sucursal. Su envío no abre por sí mismo la ventana.
+- Se conservan procedencia, preparación y permisos de pedidos entre sucursales. La sesión comercial compartida y el editor completo siguen en etapas 4/5. Detalle: `docs/WHATSAPP_COEXISTENCE_ATTENTION.md`.
+
+
+## WhatsApp: intento comercial y destino independientes
+
+- El borrador compartido conserva datos comerciales completos por conversación e intento. Guardar requiere responsable, revisión de atención y versión vigentes; transferir o soltar no lo elimina.
+- La sucursal que prepara se elige en el pedido. Cambiarla no transfiere el chat, no cambia la línea y no modifica el contexto global del cajero. Se conservan `OriginBranchId` del servidor y `BranchId` del destino.
+- La cotización comercial reutiliza la disponibilidad del catálogo compartido del POS: la sucursal de la categoría no restringe el producto y los saldos de inventario se validan en la sucursal que prepara.
+- Confirmar usa el motor existente, una revisión comercial presentada al usuario y una clave común. Primero se vincula el pedido; después se envía el mensaje. Reintentar un mensaje nunca crea otro pedido.
+- IA/Flow no reemplazan un borrador avanzado editado por asesor. Su lectura y la confirmación quedan ligadas al mismo intento comercial.
+- Una consulta no inicia una venta. Tras cierre o pedido tomado, iniciar otro requiere acción explícita y clave nueva. Los checkouts vigentes o en revisión impiden un segundo intento.
+- Las notas internas no son mensajes al cliente. El detalle confirmado conserva los controles existentes de permisos y versiones para gestión entre sucursales.
+- Una respuesta manual solo resuelve el pendiente humano si no llegó otro mensaje del cliente después de su fecha de envío; las fechas históricas almacenadas sin zona se interpretan en UTC antes de comparar.
+## WhatsApp: ventanas de lectura y continuidad
+
+La bandeja aplica permisos y filtros antes de prioridad y paginación; los pendientes antiguos permanecen accesibles. El cursor queda ligado al actor/contexto/filtros y se reinicia al cambiarlos. Actualización y reconexión concilian los cambios ocurridos entre páginas. Limitar la caché no cancela pedidos ni suelta conversaciones. Los cambios comerciales pendientes se conservan aunque se desmonte su editor. El destino de preparación continúa siendo explícito e independiente de la línea y del responsable.
+
 ## Abonos iniciales del POS
 
 Al crear una reserva, los medios recibidos del sidebar se guardan como `ReservationDeposit` dentro de la misma transacción e idempotencia del pedido. La fecha/usuario/tenant/sucursal se resuelven en servidor. No se presume recibido el saldo pendiente sin marcar efectivo. Los pagos operativos enlazados no son ingresos nuevos: bancos/apps y efectivo conservan compatibilidad con entrega y liquidación. Al editar/eliminar un abono se sincroniza su representación; un abono de app liquidado no se elimina ni modifica. El cobro es total menos cobertura única, incluyendo efectivo parcial y excluyendo movimientos de liquidación. La contabilidad conserva `ReceivedAt`, también al preparar/entregar. No hay backfill de pagos anteriores.

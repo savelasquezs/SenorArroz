@@ -27,5 +27,5 @@ public class WhatsAppAttentionServiceTests
         Assert.False(changed); Assert.Equal(old, c.AttentionModeUpdatedAt); Assert.Equal(3, c.AttentionModeUpdatedByUserId);
     }
     [Fact] public void Take_BySameUser_IsIdempotent() { var c = new WhatsAppConversation { AttentionMode = WhatsAppAttentionMode.Human, AssignedUserId = 7, AttentionModeUpdatedAt = Now.AddHours(-1) }; Assert.False(_service.Take(c, 7, Now)); Assert.NotEqual(Now, c.AttentionModeUpdatedAt); }
-    [Fact] public void Take_ByAnotherUser_Reassigns() { var c = new WhatsAppConversation { AttentionMode = WhatsAppAttentionMode.Human, AssignedUserId = 3 }; Assert.True(_service.Take(c, 7, Now)); Assert.Equal(7, c.AssignedUserId); Assert.Equal(Now, c.AttentionModeUpdatedAt); }
+    [Fact] public void Take_ByAnotherUser_RequiresExplicitForcedTake() { var c = new WhatsAppConversation { AttentionMode = WhatsAppAttentionMode.Human, AssignedUserId = 7 }; Assert.Throws<BusinessException>(() => _service.Take(c, 8, Now)); Assert.Equal(7, c.AssignedUserId); }
 }

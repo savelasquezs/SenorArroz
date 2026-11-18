@@ -142,6 +142,7 @@ public class UpsertWhatsAppQuickReplyDto
 
 public sealed class UpdateWhatsAppOperationalBranchDto
 {
+    public long? ExpectedVersion { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("branchId")]
     public int? OperationalBranchId { get; set; }
 }
@@ -154,6 +155,15 @@ public sealed class WhatsAppOperationalBranchOptionDto
 
 public class WhatsAppConversationDto
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Labels { get; set; }
+    public string? CommercialStatus { get; set; }
+    public int? CommercialOrderId { get; set; }
+    public string? SenderLine { get; set; }
+    public long AttentionRevision { get; set; }
+    public bool NeedsHumanResponse { get; set; }
+    public DateTime? LastCustomerMessageAt { get; set; }
+    public DateTime? CustomerServiceWindowExpiresAt { get; set; }
     public int Id { get; set; }
     public int BranchId { get; set; }
     public string? BranchName { get; set; }
@@ -185,6 +195,8 @@ public class WhatsAppConversationDto
 
 public class WhatsAppAttentionDto
 {
+    public long AttentionRevision { get; set; }
+    public bool NeedsHumanResponse { get; set; }
     public int ConversationId { get; set; }
     public string AttentionMode { get; set; } = "ai";
     public string? AttentionReason { get; set; }
@@ -199,6 +211,10 @@ public class WhatsAppAttentionDto
 
 public class WhatsAppMessageDto
 {
+    public bool DraftAddressApplied { get; set; }
+    public bool DraftProductApplied { get; set; }
+    public string Source { get; set; } = "api";
+    public bool IsHistorical { get; set; }
     public int Id { get; set; }
     public int ConversationId { get; set; }
     public string? WhatsAppMessageId { get; set; }
@@ -283,17 +299,44 @@ public record WhatsAppOrderDraftAddressDto(int Id, string Address, string? Addit
 public record WhatsAppOrderDraftActivityDto(string Type, string Message, DateTime Timestamp);
 public class UpdateWhatsAppOrderDraftFulfillmentDto { public string OrderType { get; set; } = string.Empty; public int? AddressId { get; set; } }
 
+public sealed record WhatsAppConversationPageDto(IReadOnlyList<WhatsAppConversationDto> Items, string? NextCursor, bool HasMore);
+
+public sealed record WhatsAppInboxLabelDto(string Key, string Name, bool Editable);
+public sealed record WhatsAppInboxTabCountsDto(int PendingOrders, int UnreadConversations);
+public sealed record WhatsAppInboxLabelWriteDto(bool Applied);
+public sealed record WhatsAppInboxTakenResetDto(int? BranchId, bool UnroutedOnly = false);
+
 public class WhatsAppConversationSearchDto
 {
+    public string? Label { get; set; }
+    public string? Cursor { get; set; }
+    public int Limit { get; set; } = 50;
+    public string? Inbox { get; set; }
+    public bool? UnroutedOnly { get; set; }
     public int? BranchId { get; set; }
     public string? Search { get; set; }
     public string? Status { get; set; }
     public bool? UnreadOnly { get; set; }
 }
 
+public sealed class WhatsAppAttentionActionDto
+{
+    public string Action { get; set; } = string.Empty;
+    public long? ExpectedVersion { get; set; }
+    public int? TargetUserId { get; set; }
+    public string? Reason { get; set; }
+}
+
 public class SendWhatsAppMessageDto
 {
     public string Text { get; set; } = string.Empty;
+}
+
+public sealed class SendConversationWhatsAppTemplateDto
+{
+    public string TemplateName { get; set; } = string.Empty;
+    public string Language { get; set; } = string.Empty;
+    public List<string> Parameters { get; set; } = [];
 }
 
 public class SendWhatsAppQuickReplyDto

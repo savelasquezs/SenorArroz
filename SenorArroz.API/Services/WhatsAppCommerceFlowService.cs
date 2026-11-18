@@ -114,10 +114,12 @@ public sealed class WhatsAppCommerceFlowService(
         if (recipient is null) return false;
 
         var session = await db.WhatsAppCommerceSessions.Include(x => x.Tokens)
-            .Where(x => x.ConversationId == conversation.Id && x.Status == "active" && x.ExpiresAt > clock.UtcNow)
+            .Where(x => x.ConversationId == conversation.Id && x.Status == "active")
             .OrderByDescending(x => x.Id).FirstOrDefaultAsync(ct);
         if (session is null)
         {
+            if (await db.WhatsAppCommerceSessions.AnyAsync(x => x.ConversationId == conversationId && x.CompletedAt != null, ct))
+                return false;
             var customerSession = await customerAuth.ResolveTrustedPhoneAsync(conversation.PhoneNumber ?? recipient, ct);
             var initialState = new WhatsAppCommerceState
             {
@@ -149,12 +151,25 @@ public sealed class WhatsAppCommerceFlowService(
         }
 
         var state = DeserializeState(session.StateJson);
+        if (session.DraftSource == "ai")
+        {
+            var shared = WhatsAppCommercialDraft.Read(session);
+            state.Cart = shared.OrderDetails.Select(x => new WhatsAppCartItemState { ProductId = x.ProductId, Quantity = x.Quantity }).ToList();
+            state.FulfillmentType = shared.Type == OrderType.Delivery ? "delivery" : "pickup";
+            state.SavedAddressId = shared.AddressId;
+            state.SelectedBranchId = shared.BranchId > 0 ? shared.BranchId : null;
+            state.Name = shared.GuestName ?? conversation.ContactName ?? "";
+            state.OrderNotes = shared.Notes;
+            session.DraftSource = "flow";
+        }
+
         if (state.LastScreen != "HOME") state.ResumeScreen = state.LastScreen;
         if (!Screens.Contains(state.ResumeScreen ?? string.Empty) || state.ResumeScreen == "HOME") state.ResumeScreen = "CATEGORY";
         state.LastScreen = "HOME";
         state.BackStack.Clear();
         state.NavigationHistory.Clear();
         session.StateJson = JsonSerializer.Serialize(state, JsonOptions);
+        await SyncCommercialDraftAsync(session, state, ct);
         session.Version++;
 
         var rawToken = Base64Url(RandomNumberGenerator.GetBytes(32));
@@ -253,7 +268,7 @@ public sealed class WhatsAppCommerceFlowService(
     {
         if (session.TenantId != TenantId || session.ExpiresAt <= clock.UtcNow)
         {
-            session.Status = "expired";
+            // Token expiration does not discard the shared commercial draft.
             TrackEvent(session, "flow_expired", session.BranchId, screen, "expired");
             await db.SaveChangesAsync(ct);
             return Recovery(session.Version, "Esta sesión venció. Cierra este menú y escribe PEDIDO para comenzar nuevamente.", false);
@@ -261,6 +276,8 @@ public sealed class WhatsAppCommerceFlowService(
         if (session.Status != "active")
             return Complete(flowToken, "Este pedido ya fue procesado. Revisa los mensajes del chat.");
 
+        if (session.Conversation.AttentionMode == WhatsAppAttentionMode.Human || session.DraftSource == "advisor")
+            return Recovery(session.Version, "Un asesor está gestionando este pedido. Continúa por el chat para conservar todos sus cambios.", false);
         var state = DeserializeState(session.StateJson);
         if (action == "INIT") return await BuildScreenAsync(session, state, state.LastScreen, null, ct);
         if (action == "BACK")
@@ -630,7 +647,7 @@ public sealed class WhatsAppCommerceFlowService(
             state.SavedAddressId = null;
             if (!state.SelectedBranchId.HasValue || !await IsAvailableBranchAsync(state.SelectedBranchId.Value, ct))
                 return (addressScreen, "Elige una sede disponible.");
-            session.Conversation.OperationalBranchId = state.SelectedBranchId;
+
         }
         else
         {
@@ -783,6 +800,7 @@ public sealed class WhatsAppCommerceFlowService(
         state.LastScreen = screen;
         state.NavigationSnapshots[screen] = CaptureNavigationState(state, screen);
         session.StateJson = JsonSerializer.Serialize(state, JsonOptions);
+        await SyncCommercialDraftAsync(session, state, ct);
         await db.SaveChangesAsync(ct);
         return new() { ["screen"] = screen, ["data"] = payload };
     }
@@ -1035,7 +1053,9 @@ public sealed class WhatsAppCommerceFlowService(
         session.Status = "completed";
         session.CompletedAt = clock.UtcNow;
         session.BranchId = result.BranchId;
-        session.Conversation.OperationalBranchId = result.BranchId;
+        session.OrderId = result.OrderId;
+        session.CheckoutId = result.CheckoutId;
+        session.CommercialStatus = result.OrderId.HasValue ? "order_taken" : "waiting_customer";
         session.Conversation.LastMessagePreview = result.PaymentMethod == "online" ? "Enlace de pago enviado" : "Pedido confirmado";
         session.Version++;
         var body = result.OrderId.HasValue
@@ -1059,6 +1079,43 @@ public sealed class WhatsAppCommerceFlowService(
         }
         await db.SaveChangesAsync(ct);
         return Complete(flowToken, result.OrderId.HasValue ? $"Pedido #{result.OrderId} confirmado." : "Revisa el enlace de pago enviado al chat.");
+    }
+
+    private async Task SyncCommercialDraftAsync(WhatsAppCommerceSession session, WhatsAppCommerceState state, CancellationToken ct)
+    {
+        session.Conversation.UpdatedAt = clock.UtcNow;
+        if (session.DraftSource == "advisor") return;
+        var ids = state.Cart.Select(x => x.ProductId).ToArray();
+        var products = await db.Products.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+        var draft = WhatsAppCommercialDraft.Read(session);
+        draft.CustomerId = session.CustomerId;
+        draft.BranchId = state.SelectedBranchId ?? session.BranchId ?? 0;
+        draft.Type = state.FulfillmentType == "delivery" ? OrderType.Delivery : OrderType.Onsite;
+        draft.AddressId = state.SavedAddressId;
+        draft.GuestName = state.Name;
+        draft.Notes = state.OrderNotes;
+        draft.OrderDetails = state.Cart.Where(x => products.ContainsKey(x.ProductId)).Select(x => new SenorArroz.Application.Features.Orders.DTOs.CreateOrderDetailDto
+        { ProductId = x.ProductId, Quantity = x.Quantity, UnitPrice = products[x.ProductId].Price }).ToList();
+        if (!string.IsNullOrWhiteSpace(state.LastQuoteJson))
+        {
+            var quote = JsonSerializer.Deserialize<PublicDeliveryQuoteDto>(state.LastQuoteJson, JsonOptions);
+            if (quote is not null)
+            {
+                draft.DeliveryFee = quote.EstimatedDeliveryFee;
+                draft.OrderDetails = quote.Items.Select(x => new SenorArroz.Application.Features.Orders.DTOs.CreateOrderDetailDto
+                { ProductId = x.ProductId, Quantity = x.Quantity, UnitPrice = x.UnitPrice, Discount = x.Discount, Notes = x.Notes }).ToList();
+                if (quote.AppliedBenefit is { } benefit)
+                {
+                    draft.AppliedBenefitType = StorefrontCommerceService.ParseBenefitType(benefit.Source);
+                    draft.AppliedBenefitRewardType = StorefrontCommerceService.ParseRewardType(benefit.RewardType);
+                    draft.AppliedBenefitAmount = benefit.DiscountPercentage;
+                    draft.AppliedBenefitSourceId = benefit.SourceId;
+                    draft.AppliedBenefitLabel = benefit.Title;
+                    draft.AppliedBenefitSnapshot = benefit.Snapshot;
+                }
+            }
+        }
+        WhatsAppCommercialDraft.Write(session, draft);
     }
 
     private async Task<WhatsAppQuoteResult> GetQuoteAsync(WhatsAppCommerceSession session, WhatsAppCommerceState state, CancellationToken ct)
@@ -1130,6 +1187,7 @@ public sealed class WhatsAppCommerceFlowService(
         TrackEvent(session, "recovery_shown", session.BranchId, "RECOVERY", state.LastErrorCode);
         var payload = Recovery(session.Version, message, recoverable);
         session.StateJson = JsonSerializer.Serialize(state, JsonOptions);
+        await SyncCommercialDraftAsync(session, state, ct);
         await db.SaveChangesAsync(ct);
         return payload;
     }
@@ -1556,7 +1614,7 @@ public sealed class WhatsAppCommerceFlowService(
     {
         state.SelectedBranchId = quote.CheckoutBranchId;
         session.BranchId = quote.CheckoutBranchId;
-        session.Conversation.OperationalBranchId = quote.CheckoutBranchId;
+
     }
 
     private static void InvalidateQuote(WhatsAppCommerceState state)

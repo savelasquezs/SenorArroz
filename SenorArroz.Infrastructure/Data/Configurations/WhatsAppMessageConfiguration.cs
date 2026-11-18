@@ -40,9 +40,14 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
         builder.Property(x => x.AiProcessingStartedAt).HasColumnName("ai_processing_started_at");
         builder.Property(x => x.AiNextRetryAt).HasColumnName("ai_next_retry_at");
         builder.Property(x => x.AiGeneratedResponse).HasColumnName("ai_generated_response").HasMaxLength(4096);
+        builder.Property(x => x.AiResponseAttentionVersion).HasColumnName("ai_response_attention_version");
         builder.Property(x => x.AiResponseAttemptId).HasColumnName("ai_response_attempt_id").HasMaxLength(64);
         builder.Property(x => x.AiResponseWhatsAppMessageId).HasColumnName("ai_response_whatsapp_message_id").HasMaxLength(128);
         builder.Property(x => x.AgentDispatchKey).HasColumnName("agent_dispatch_key").HasMaxLength(180);
+        builder.Property(x => x.Source).HasColumnName("source").HasMaxLength(32).HasDefaultValue("api");
+        builder.Property(x => x.IsHistorical).HasColumnName("is_historical").HasDefaultValue(false);
+        builder.HasIndex(x => new { x.TenantId, x.ConversationId, x.WhatsAppMessageId }).IsUnique()
+            .HasFilter("whatsapp_message_id IS NOT NULL AND whatsapp_message_id <> ''").HasDatabaseName("ux_whatsapp_message_conversation_meta_id");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()")
             .ValueGeneratedOnAdd()
             .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
@@ -59,6 +64,9 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
             .HasForeignKey(x => x.SentByUserId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.HasIndex(x => new { x.TenantId, x.ConversationId, x.Timestamp, x.Id }, "ix_whatsapp_message_history").IsDescending(false, false, true, true).HasDatabaseName("ix_whatsapp_message_history");
+        builder.HasIndex(x => new { x.TenantId, x.ConversationId, x.Timestamp, x.Id }, "ix_whatsapp_message_transfer_reason").IsDescending(false, false, true, true)
+            .HasFilter("ai_processing_status = 'transferredtohuman' AND ai_processing_error IS NOT NULL").HasDatabaseName("ix_whatsapp_message_transfer_reason");
         builder.HasIndex(x => x.ConversationId).HasDatabaseName("idx_whatsapp_message_conversation");
         builder.HasIndex(x => x.WhatsAppMessageId).HasDatabaseName("idx_whatsapp_message_whatsapp_id");
         builder.HasIndex(x => x.MediaId).HasDatabaseName("idx_whatsapp_message_media_id");

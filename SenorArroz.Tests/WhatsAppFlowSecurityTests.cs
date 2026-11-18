@@ -210,7 +210,30 @@ public sealed class WhatsAppFlowSecurityTests
         Assert.Equal(sensitive, parameters.GetProperty("flow_token").GetString());
     }
 
-    private sealed class FlowResponseHandler(string sensitive, bool networkFailure) : HttpMessageHandler
+    [Theory]
+    [InlineData("{\"error\":\"local_review_transport_disabled\"}")]
+    [InlineData("{\"error\":null}")]
+    [InlineData("{\"error\":[]}")]
+    [InlineData("{\"error\":true}")]
+    [InlineData("{\"error\":503}")]
+    [InlineData("{\"error\":{\"message\":false,\"type\":[]}}")]
+    [InlineData("{\"error\":{\"message\":\"hidden-access-token\",\"code\":503}}")]
+    [InlineData("\"hidden-access-token\"")]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("false")]
+    [InlineData("not-json hidden-access-token")]
+    public async Task Text_send_handles_non_object_errors_without_throwing_or_leaking_token(string body)
+    {
+        using var http = new HttpClient(new FlowResponseHandler("hidden-access-token", false, body));
+        var client = new WhatsAppCloudClient(http, Options.Create(new WhatsAppCloudOptions()), new FlowLogger());
+        var result = await client.SendTextMessageAsync("123", "hidden-access-token", "573000000000", "Mensaje");
+        Assert.False(result.Success);
+        Assert.Contains("Meta WhatsApp HTTP 400", result.ErrorMessage);
+        Assert.DoesNotContain("hidden-access-token", result.ErrorMessage);
+    }
+
+    private sealed class FlowResponseHandler(string sensitive, bool networkFailure, string? rawBody = null) : HttpMessageHandler
     {
         public string? Payload { get; private set; }
 
@@ -220,7 +243,7 @@ public sealed class WhatsAppFlowSecurityTests
             if (networkFailure) throw new HttpRequestException(sensitive);
             return new HttpResponseMessage(HttpStatusCode.BadRequest)
             {
-                Content = new StringContent(JsonSerializer.Serialize(new { error = new { message = sensitive } }))
+                Content = new StringContent(rawBody ?? JsonSerializer.Serialize(new { error = new { message = sensitive } }))
             };
         }
     }

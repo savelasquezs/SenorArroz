@@ -16,6 +16,14 @@ public class WhatsAppAiMessageClaimer(
                 && x.ConversationId == conversationId
                 && x.Direction == WhatsAppMessageDirection.Inbound
                 && x.AiProcessingStatus == WhatsAppAiProcessingStatus.Pending
+                && !db.WhatsAppWebhookEvents.Any(e => e.WhatsAppMessageId == x.WhatsAppMessageId
+                    && e.ProcessingState != "legacy" && e.ProcessingState != "completed")
+                && !db.WhatsAppMessages.Any(earlier => earlier.ConversationId == conversationId
+                    && earlier.Id < messageId && earlier.Direction == WhatsAppMessageDirection.Inbound
+                    && (earlier.AiProcessingStatus == WhatsAppAiProcessingStatus.Pending
+                        || earlier.AiProcessingStatus == WhatsAppAiProcessingStatus.Processing
+                        || earlier.AiProcessingStatus == WhatsAppAiProcessingStatus.ResponseGenerated
+                        || earlier.AiProcessingStatus == WhatsAppAiProcessingStatus.Sending))
                 && x.AiProcessingAttempts < options.Value.MaxPersistentAttempts
                 && (x.AiNextRetryAt == null || x.AiNextRetryAt <= DateTime.UtcNow))
             .ExecuteUpdateAsync(

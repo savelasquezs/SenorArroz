@@ -359,6 +359,43 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 
 **Despliegue manual posterior a revisión:** aplicar primero `SenorArroz.Infrastructure/Scripts/add_remote_order_management.sql` con cuenta de mantenimiento; después backend y frontend. SQL aditivo/idempotente, sin backfill, sin migraciones EF. No se ejecuta desde CI ni se modifica producción en esta rama. Cobrar desde origen no traslada dinero entre cajas: el registro pertenece al destino; transferencias físicas entre sedes continúan por los procesos existentes.
 
+
+## WhatsApp: etapas 0/1 y worker separado
+
+- Arranque compartido API/worker: SenorArroz.API/Hosting/ApiHost.cs y WhatsAppProcessingRegistration.cs. Program.cs mantiene el punto de entrada de la API.
+- Ejecutable independiente: SenorArroz.WhatsApp.Worker; imagen: Dockerfile.whatsapp-worker. El worker solo expone salud y no registra endpoints de negocio.
+- Entrada HTTP valida y persiste: WhatsAppController. Procesamiento extraído: WhatsAppWebhookProcessor. Cola/consumidor: WhatsAppProcessingStore y WhatsAppWebhookWorker.
+- Señales durables-first: WhatsAppDatabaseSignal. Eventos hacia la API: WhatsAppNotificationService y WhatsAppRealtimeRelay. Herramientas comerciales internas: WhatsAppBusinessGateway.
+- Contratos, matriz, configuración y límites de la entrega: docs/WHATSAPP_PROCESSING_STAGE01.md. Plan transversal: tasks/WHATSAPP-CHAT-ORDERS-WORKER.md en la rama homónima del frontend.
+
+- Operaciones manuales compartidas y transporte durable: `WhatsAppManualOperations` / `WhatsAppManualWorkQueue`. `GET /api/whatsapp/operations/{id}` entrega el resultado al actor autorizado. El frontend resuelve aceptación 202 y resultado con `src/helpers/whatsappOperation.ts`. Métricas/retención: `WhatsAppProcessingMaintenance`.
+- Línea base repetible en solo lectura: `SenorArroz.Infrastructure/Scripts/inspect_whatsapp_processing_baseline.sql`, mediante la conexión interactiva habitual desde Bash con `railway connect MainDatabase`. Evidencia agregada en `artifacts/whatsapp-stage01/`.
+
+
+## WhatsApp: coexistencia y atención multiasesor (etapas 2/3)
+
+- Contratos, configuración y pendientes externos: `docs/WHATSAPP_COEXISTENCE_ATTENTION.md`.
+- Conexión guiada: `Controllers/WhatsAppCoexistenceController.cs`, `Services/WhatsAppCoexistenceClient.cs` en API.
+- Ecos, contactos, historial y desconexión: `Services/WhatsAppWebhookProcessor.Coexistence.cs`; ingreso particionado en `WhatsAppWebhookEnvelope`.
+- Atención versionada y plantillas por conversación: `Controllers/WhatsAppController.Attention.cs`, `WhatsAppAttentionService`, `Services/WhatsAppManualOperations.Templates.cs`.
+- SQL previo al código: `SenorArroz.Infrastructure/Scripts/add_whatsapp_coexistence_attention.sql`. Sin despliegue ni activación implícitos.
+
+
+## WhatsApp: borrador compartido y editor, etapas 4–5 locales
+
+- Contrato y decisiones: `docs/WHATSAPP_SHARED_DRAFT_EDITOR.md`.
+- Endpoints: `SenorArroz.API/Controllers/WhatsAppController.CommercialDraft.cs`.
+- Sesión e identidad comercial: `WhatsAppCommercialDraft`; elegibilidad reutilizada: `OrderBenefitEligibility`.
+- Motor de creación: `CreateOrderHandler`; Flow e IA comparten sesión, revisión y vínculo comercial.
+- Esquema: `add_whatsapp_shared_draft.sql`. Pruebas de concurrencia y destino: `WhatsAppStage45PostgreSqlTests.cs` y `WhatsAppOperationalBranchTests.CommercialDraft.cs`.
+## WhatsApp: paginación y validación local, etapa 6
+
+- Bandeja con cursor y proyección autorizada: `SenorArroz.API/Controllers/WhatsAppController.Inbox.cs` y `WhatsAppConversationMapper.Projection`.
+- Índices: `SenorArroz.Infrastructure/Scripts/add_whatsapp_inbox_pagination.sql`.
+- Pruebas: `WhatsAppStage6PostgreSqlTests.cs`, `WhatsAppStage6HttpPostgreSqlTests.cs`. Estado de aceptación y límites: `docs/WHATSAPP_STAGE6_VALIDATION.md`; métricas: `artifacts/whatsapp-stage6/`.
+- Revisión sobre copia del laboratorio: `Hosting/WhatsAppLocalReviewRegistration.cs` deshabilita consumidores y transporte externo únicamente mediante flag explícito y guard de entorno/base local. Regresión: `WhatsAppLocalReviewTests.cs`. Frontend real: `scripts/whatsapp_local_review.mjs`, puerto 4182 y proxy a la API 5089; datos y credenciales privados en `.work/coexistence-local/`.
+- Su transporte local devuelve recibos `wamid.local.simulation.sent.*` únicamente para texto de la línea ficticia `local-coexistence-review` con token ficticio. Resto de proveedores/líneas bloqueados. `WhatsAppCloudClient` admite errores JSON que no sean objetos; `WhatsAppManualOperations` reutiliza `AsUtc` al comparar mensajes históricos con el último mensaje del cliente.
+
 ## Data Gateway
 
 `DataGatewayController` valida consultas estructuradas de vistas diagnostics; `DataGatewayMcpController` publica las tres herramientas. `DataGatewaySecurity` aísla JWT del POS y OAuth; `DataGatewayOAuth` configura OpenIddict/PKCE, y `DataGatewayOAuthController` gestiona registro y consentimiento. `DataGatewayOAuthDbContext` guarda únicamente autorizaciones técnicas en gateway_oauth. SDK, Code Mode y stdio: `tools/data-gateway/`. Operación y migraciones: `docs/DATA_GATEWAY.md`, `docs/DB_READER_PERMISSIONS.md`, `tasks/data-gateway-rollout.md`.
