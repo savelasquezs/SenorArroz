@@ -24,9 +24,9 @@ public class GetCustomerAddressesHandler : IRequestHandler<GetCustomerAddressesQ
 
     public async Task<IEnumerable<CustomerAddressDto>> Handle(GetCustomerAddressesQuery request, CancellationToken cancellationToken)
     {
-        // First, verify the customer exists and user has access to it
-        var customer = await _customerRepository.GetByIdAsync(request.CustomerId, cancellationToken);
-        if (customer == null)
+        // Verify tenant-scoped existence without loading unrelated customer phones/branch.
+        var customerExists = await _customerRepository.ExistsAsync(request.CustomerId, cancellationToken);
+        if (!customerExists)
         {
             throw new BusinessException("Cliente no encontrado");
         }
