@@ -17,6 +17,11 @@ public sealed class WhatsAppDraftWriteDto
 
 public sealed record WhatsAppInternalNote(int UserId, string Text, DateTime CreatedAt);
 public sealed record WhatsAppProductChoiceGroupDto(int Id, string Name, bool IsRice, string? Shortcut);
+public sealed record WhatsAppProductSuggestionsRequest(int[] MessageIds);
+public sealed record WhatsAppProductSuggestionDto(string Kind, int? ProductId, string? Name, int Quantity,
+    int? UnitPrice, bool Available, string? Reply);
+public sealed record WhatsAppMessageProductSuggestionsDto(int MessageId, IReadOnlyList<WhatsAppProductSuggestionDto> Suggestions);
+public sealed record WhatsAppProductSuggestionsDto(int BranchId, IReadOnlyList<WhatsAppMessageProductSuggestionsDto> Messages);
 public sealed record WhatsAppCommercialDraftDto(int SessionId, Guid AttemptId, int ConversationId,
     int Version, string Status, string CommercialStatus, CreateOrderDto Order, JsonElement? Editor,
     int? OrderId, string? CheckoutId, string? ConfirmationStatus, string? ConfirmationError,

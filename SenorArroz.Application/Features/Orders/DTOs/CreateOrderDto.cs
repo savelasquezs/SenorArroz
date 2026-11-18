@@ -54,6 +54,8 @@ public class CreateOrderDetailDto
     public string? Notes { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public WhatsAppProductChoiceDto? WhatsAppProductChoice { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? WhatsAppSuggestionMessageId { get; set; }
 }
 
 public sealed record WhatsAppProductChoiceDto(string Key, string Name);

@@ -12,6 +12,7 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Models;
 using SenorArroz.Application.Features.Orders.Commands;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Application.Features.Inventory.DTOs;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
@@ -25,6 +26,168 @@ namespace SenorArroz.Tests;
 
 public sealed partial class WhatsAppOperationalBranchTests
 {
+    private static readonly WhatsAppProductSuggestions.CatalogProduct[] SuggestionCatalog =
+    [
+        new(1, "Arroz ropa vieja con chicharrón Súper", "Arroz Ropa Vieja con Chicharrón", "rice", null, 7, 9, 66000),
+        new(2, "Arroz ropa vieja Súper", "Arroz Ropa Vieja", "rice", null, 7, 9, 61000),
+        new(3, "Arroz paisa Dúo", "Arroz Paisa", "rice", null, 2, 3, 31000),
+        new(4, "Arroz paisa con chicharrón Dúo", "Arroz Paisa con Chicharrón", "rice", null, 2, 3, 34000),
+        new(5, "Papas a la francesa 500 gr", "Papas a la francesa", "addition", "500 g", null, null, 9000),
+        new(6, "Papas a la francesa 250 gr", "Papas a la francesa", "addition", "250 g", null, null, 5500),
+        new(7, "Yuca x5 unidades", "Yuca", "addition", "5 unidades", null, null, 5000),
+        new(8, "Yuca x12 unidades", "Yuca", "addition", "12 unidades", null, null, 11000),
+        new(9, "CocaCola 1.5L", "Coca-Cola", "beverage", "1.5 L", null, null, 8000),
+        new(10, "CocaCola zero 1.5 l", "Coca-Cola", "beverage", null, null, null, 8000),
+        new(11, "CocaCola PET 400", "Coca-Cola", "beverage", "400 ml", null, null, 3500),
+        new(12, "Pepsi pet 400", "Pepsi", "beverage", "400 ml", null, null, 3000),
+        new(13, "Pepsi Econo", "Pepsi", "beverage", "1 L", null, null, 5000),
+        new(14, "Pepsi econo zero", "Pepsi", "beverage", "1 L sin azúcar", null, null, 5000),
+        new(15, "Manzana litro y medio", "Manzana", "beverage", "1.5 L", null, null, 6000),
+        new(16, "Manzana Personal", "Manzana", "beverage", "Personal", null, null, 3000),
+        new(17, "Hit Mango 1Litro", "Hit", "beverage", "1 L", null, null, 6000),
+        new(18, "Hit frutos 1Litro", "Hit", "beverage", "1 L", null, null, 6000)
+    ];
+
+    [Theory]
+    [InlineData("Ropa vieja con chicharrón súper", 1, 1)]
+    [InlineData("dos ropavieja super familiar com chicharron", 1, 2)]
+    [InlineData("ropa vieja sin chicharrón para 7 personas", 2, 1)]
+    [InlineData("2 yucas x5", 7, 2)]
+    [InlineData("Yuca x12", 8, 1)]
+    [InlineData("Yuca x5 para dos personas", 7, 1)]
+    [InlineData("papas de 500 g en 20 minutos", 5, 1)]
+    [InlineData("un paiza dúo sin chillaron", 3, 1)]
+    [InlineData("2 botellas de Coca-Cola de 1,5 litros", 9, 2)]
+    [InlineData("una Coca Cola de litro y medio sin azúcar", 10, 1)]
+    [InlineData("coca cola pet 400", 11, 1)]
+    [InlineData("4 Pepsi de 400 ml", 12, 4)]
+    [InlineData("Pepsi Econo", 13, 1)]
+    [InlineData("Pepsi de un litro cero", 14, 1)]
+    [InlineData("Manzana litro y medio", 15, 1)]
+    [InlineData("manzana personal", 16, 1)]
+    [InlineData("2 Hit mango de 1 litro", 17, 2)]
+    public void Suggestions_match_catalog_product_and_order_quantity(string input, int productId, int quantity)
+    {
+        var match = Assert.Single(WhatsAppProductSuggestions.Find(input, SuggestionCatalog));
+        Assert.Equal(productId, match.Product!.Id);
+        Assert.Equal(quantity, match.Quantity);
+        Assert.Null(match.Reply);
+    }
+
+    [Fact]
+    public void Suggestions_keep_separate_products_and_prepare_price_or_clarification()
+    {
+        var matches = WhatsAppProductSuggestions.Find("Dos ropa vieja súper con chicharrón y papas de 500 g", SuggestionCatalog);
+        Assert.Equal(new[] { (1, 2), (5, 1) }, matches.Select(m => (m.Product!.Id, m.Quantity)));
+        var clarification = Assert.Single(WhatsAppProductSuggestions.Find("ropa vieja súper", SuggestionCatalog));
+        Assert.True(clarification.Clarification);
+        Assert.Equal("¿Lo quieres con o sin chicharrón?", clarification.Reply);
+        var price = Assert.Single(WhatsAppProductSuggestions.Find("¿Cuánto vale el paisa dúo sin chicharrón?", SuggestionCatalog));
+        Assert.Contains("31.000", price.Reply!);
+        Assert.False(price.Clarification);
+    }
+
+    [Fact]
+    public void Suggestions_keep_beverage_volume_together_in_a_mixed_order()
+    {
+        var matches = WhatsAppProductSuggestions.Find(
+            "Dos ropa vieja súper con chicharrón y 3 Pepsi de 400 ml, 1 Manzana litro y medio y 2 Coca-Cola Zero de 1,5 litros",
+            SuggestionCatalog);
+        Assert.Equal(new[] { (1, 2), (12, 3), (15, 1), (10, 2) }, matches.Select(m => (m.Product!.Id, m.Quantity)));
+    }
+
+    [Theory]
+    [InlineData("No me mandes ropa vieja con chicharrón súper")]
+    [InlineData("mejor ropa vieja con chicharron super")]
+    [InlineData("ropa vieja con chicharrón súper sin cebolla")]
+    [InlineData("ropa vieja súper con y sin chicharrón")]
+    [InlineData("1,5 ropa vieja con chicharrón súper")]
+    [InlineData("con chicharrón")]
+    [InlineData("papas")]
+    [InlineData("2 yucas")]
+    [InlineData("2 coca cola")]
+    [InlineData("Pepsi de 400 ml sin azúcar")]
+    [InlineData("Manzana personal de litro y medio")]
+    [InlineData("una Coca Cola 1.5 L o 400 ml")]
+    [InlineData("2 Hit de un litro")]
+    public void Suggestions_leave_unclear_orders_to_the_cashier(string input)
+        => Assert.DoesNotContain(WhatsAppProductSuggestions.Find(input, SuggestionCatalog), m => m.Reply is null);
+
+    [Fact]
+    public async Task Suggested_product_save_checks_owner_price_stock_preparing_branch_and_duplicate()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, 1, 7);
+        db.ProductCategories.Add(new ProductCategory { Id = 4, BranchId = 1, Name = "Arroces", StorefrontRole = "rice" });
+        var product = new Product { Id = 1, CategoryId = 4, Name = "Arroz ropa vieja con chicharrón Súper", Price = 66000 };
+        db.Add(product);
+        db.WhatsAppMessages.AddRange(
+            new WhatsAppMessage { Id = 91, ConversationId = 11, Direction = WhatsAppMessageDirection.Inbound, TextBody = "dos ropa vieja súper con chicharrón" },
+            new WhatsAppMessage { Id = 92, ConversationId = 11, Direction = WhatsAppMessageDirection.Outbound, TextBody = "ropa vieja súper con chicharrón" },
+            new WhatsAppMessage { Id = 93, ConversationId = 11, Direction = WhatsAppMessageDirection.Inbound, IsHistorical = true, TextBody = "ropa vieja súper con chicharrón" });
+        await db.SaveChangesAsync();
+        var inventory = new Mock<IInventoryService>();
+        inventory.Setup(x => x.GetAvailabilityAsync(It.IsAny<IReadOnlyCollection<int>>(), It.IsAny<int>(), It.IsAny<CancellationToken>(), true))
+            .ReturnsAsync((IReadOnlyCollection<int> ids, int branch, CancellationToken _, bool _) =>
+                ids.Select(id => new ProductAvailabilityDto(id, true, branch == 1 ? 5 : 2, InventoryControlMode.Strict, false, [])).ToArray());
+        var controller = CreateController(db, inventory: inventory.Object);
+        var result = Assert.IsType<ApiResponse<WhatsAppProductSuggestionsDto>>(Assert.IsType<OkObjectResult>(
+            await controller.GetProductSuggestions(11, new([91, 92, 93]), default)).Value).Data!;
+        Assert.Equal(1, result.BranchId);
+        Assert.Equal(91, Assert.Single(result.Messages).MessageId);
+        Assert.True(Assert.Single(result.Messages[0].Suggestions).Available);
+        Assert.Empty(await db.WhatsAppCommerceSessions.ToListAsync());
+
+        var started = DraftPayload(await controller.StartCommercialDraft(11, new(), default));
+        var request = new WhatsAppDraftWriteDto { SessionId = started.SessionId, ExpectedVersion = started.Version,
+            Order = new() { BranchId = 2, OrderDetails =
+            [
+                new() { ProductId = 1, Quantity = 1, UnitPrice = 66000 },
+                new() { ProductId = 1, Quantity = 2, UnitPrice = 66000, WhatsAppSuggestionMessageId = 91 },
+            ] } };
+        Assert.IsType<ConflictObjectResult>(await CreateController(db, userId: 8).SaveCommercialDraft(11, request, default));
+        await Assert.ThrowsAsync<BusinessException>(() => controller.SaveCommercialDraft(11, request, default));
+        inventory.Verify(x => x.GetAvailabilityAsync(It.IsAny<IReadOnlyCollection<int>>(), 2, It.IsAny<CancellationToken>(), true), Times.Once);
+        request.Order.OrderDetails.RemoveAt(0);
+        product.Price = 67000;
+        await db.SaveChangesAsync();
+        await Assert.ThrowsAsync<BusinessException>(() => controller.SaveCommercialDraft(11, request, default));
+        request.Order.OrderDetails[0].UnitPrice = 67000;
+        var saved = DraftPayload(await controller.SaveCommercialDraft(11, request, default));
+        Assert.Equal(2, saved.Order.BranchId);
+        Assert.Equal(91, Assert.Single(saved.Order.OrderDetails).WhatsAppSuggestionMessageId);
+        Assert.IsType<ConflictObjectResult>(await controller.SaveCommercialDraft(11, request, default));
+        request.ExpectedVersion = saved.Version;
+        request.Order.OrderDetails.Add(request.Order.OrderDetails[0]);
+        await Assert.ThrowsAsync<BusinessException>(() => controller.SaveCommercialDraft(11, request, default));
+        Assert.Single(DraftPayload(await controller.GetCommercialDraft(11, default)).Order.OrderDetails);
+        Assert.Empty(await db.Orders.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Product_suggestions_use_public_menu_prices_and_skip_internal_gifts()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, 1, 7);
+        db.ProductCategories.AddRange(
+            new ProductCategory { Id = 5, BranchId = 1, Name = "Adiciones", StorefrontRole = "addition" },
+            new ProductCategory { Id = 6, BranchId = 1, Name = "Regalos", StorefrontRole = "hidden" });
+        db.Products.AddRange(
+            new Product { Id = 39, CategoryId = 5, Name = "Chicharrón 250 gr", Price = 12000 },
+            new Product { Id = 94, CategoryId = 6, Name = "Chicharron 250g", Price = 0 },
+            new Product { Id = 93, CategoryId = 6, Name = "Gaseosa litro y medio", Price = 0 });
+        db.WhatsAppMessages.AddRange(
+            new WhatsAppMessage { Id = 91, ConversationId = 11, Direction = WhatsAppMessageDirection.Inbound, TextBody = "Un chicharrón 250g" },
+            new WhatsAppMessage { Id = 92, ConversationId = 11, Direction = WhatsAppMessageDirection.Inbound, TextBody = "Gaseosa litro y medio" });
+        await db.SaveChangesAsync();
+
+        var result = Assert.IsType<ApiResponse<WhatsAppProductSuggestionsDto>>(Assert.IsType<OkObjectResult>(
+            await CreateController(db).GetProductSuggestions(11, new([91, 92]), default)).Value).Data!;
+        var product = Assert.Single(result.Messages.Single(row => row.MessageId == 91).Suggestions);
+        Assert.Equal((39, 12000, 1), (product.ProductId, product.UnitPrice, product.Quantity));
+        Assert.Empty(result.Messages.Single(row => row.MessageId == 92).Suggestions);
+    }
+
     [Theory]
     [InlineData("Arroz Paisa con Chicharrón", true, "paisacon")]
     [InlineData("Arroz Paisa", true, "paisasin")]

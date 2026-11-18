@@ -49,6 +49,7 @@ public sealed class WhatsAppLocalReviewTests
     [InlineData("https://provider.example.invalid/v20.0/local-coexistence-review/messages", "local-disabled", "text")]
     [InlineData("https://graph.facebook.com/v20.0/local-coexistence-review/messages?other=1", "local-disabled", "text")]
     [InlineData("https://graph.facebook.com/v20.0/local-coexistence-review/messages", "local-disabled", "image")]
+    [InlineData("https://graph.facebook.com/v20.0/local-coexistence-review/messages", "local-disabled", "interactive")]
     public async Task Local_simulation_rejects_other_lines_tokens_hosts_queries_and_media(string url, string token, string type)
     {
         await using var provider = LocalProvider();
@@ -58,6 +59,22 @@ public sealed class WhatsAppLocalReviewTests
         request.Content = JsonContent.Create(new { messaging_product = "whatsapp", to = "573000000000", type, text = new { body = "Prueba" } });
         using var response = await http.SendAsync(request);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Local_catalog_choices_support_buttons_and_lists_on_the_simulated_line()
+    {
+        await using var provider = LocalProvider();
+        using var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient("provider");
+        var client = new WhatsAppCloudClient(http, Options.Create(new WhatsAppCloudOptions()), NullLogger<WhatsAppCloudClient>.Instance);
+        var buttons = await client.SendReplyButtonsMessageAsync("local-coexistence-review", "local-disabled", "573000000000",
+            "Elige las papas", [new("papas-500", "500 g")]);
+        var list = await client.SendListMessageAsync("local-coexistence-review", "local-disabled", "573000000000",
+            "Elige el tamaño", "Presentaciones", [new("arroz-duo", "Dúo", "$ 31.000")]);
+        Assert.True(buttons.Success);
+        Assert.True(list.Success);
+        Assert.StartsWith("wamid.local.simulation.sent.", buttons.WhatsAppMessageId);
+        Assert.StartsWith("wamid.local.simulation.sent.", list.WhatsAppMessageId);
     }
 
     [Theory]
