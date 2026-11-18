@@ -95,6 +95,8 @@ public sealed class DashboardHourlySqlAggregationPostgreSqlTests : IAsyncLifetim
         var user = new User { Name = "Test user", Email = "hourly@test.local" };
         db.Tenants.Add(tenant);
         db.Branches.AddRange(first, other);
+        await db.SaveChangesAsync();
+        user.BranchId = first.Id;
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
