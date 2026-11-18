@@ -111,6 +111,10 @@ public class BranchWhatsAppSettingsController : ControllerBase
             || !string.Equals(setting.WebhookVerifyToken, dto.WebhookVerifyToken.Trim(), StringComparison.Ordinal)
             || !string.IsNullOrWhiteSpace(dto.AccessToken);
 
+        if (setting.Id > 0 && setting.PhoneNumberId != dto.PhoneNumberId.Trim()
+            && await _db.WhatsAppConversations.AnyAsync(x => x.BranchId == branchId && x.ChannelSettingId == null, cancellationToken))
+            return Conflict(ApiResponse<WhatsAppBranchSettingDto>.ErrorResponse("Esta línea ya tiene conversaciones. Conserva el canal existente antes de cambiar el número."));
+
         setting.PhoneNumberId = dto.PhoneNumberId.Trim();
         setting.BusinessAccountId = dto.BusinessAccountId.Trim();
         setting.DisplayPhoneNumber = dto.DisplayPhoneNumber.Trim();
@@ -131,6 +135,7 @@ public class BranchWhatsAppSettingsController : ControllerBase
         {
             setting.IsVerified = false;
             setting.LastVerifiedAt = null;
+            if (setting.CoexistenceEnabled) setting.ConnectionState = "degraded";
         }
 
         await _db.SaveChangesAsync(cancellationToken);

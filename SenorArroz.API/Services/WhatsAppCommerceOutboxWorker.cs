@@ -34,15 +34,24 @@ public sealed class WhatsAppCommerceOutboxWorker(
         var executionContext = scope.ServiceProvider.GetRequiredService<ITenantExecutionContext>();
         var cloud = scope.ServiceProvider.GetRequiredService<IWhatsAppCloudClient>();
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
+        var pilot = scope.ServiceProvider.GetService<SenorArroz.API.Hosting.WhatsAppCoexistencePilot>();
         var staleBefore = clock.UtcNow.AddMinutes(-5);
         PendingMessage? candidate;
         using (executionContext.BeginSystemScope())
         {
-            await db.WhatsAppCommerceOutboxMessages.Where(x => x.Status == "processing" && x.UpdatedAt <= staleBefore)
+            var messages = db.WhatsAppCommerceOutboxMessages.AsQueryable();
+            if (pilot is not null)
+                messages = messages.Where(x => x.TenantId == pilot.TenantId
+                    && x.ChannelSettingId == null && x.Conversation.BranchId == pilot.BranchId
+                    && x.EventKey.StartsWith("whatsapp-order-created:")
+                    && db.WhatsAppBranchSettings.Any(line => line.BranchId == pilot.BranchId
+                        && line.PhoneNumberId == pilot.PhoneNumberId && line.CoexistenceEnabled
+                        && line.CoexistenceConnectedAt < x.CreatedAt));
+            await messages.Where(x => x.Status == "processing" && x.UpdatedAt <= staleBefore)
                 .ExecuteUpdateAsync(update => update.SetProperty(x => x.Status, "failed")
                     .SetProperty(x => x.LastError, "delivery_unknown_requires_review"), ct);
-            candidate = await db.WhatsAppCommerceOutboxMessages.AsNoTracking()
-                .Where(x => x.Status == "pending" && x.NextAttemptAt <= clock.UtcNow && x.ChannelSetting.IsActive && x.ChannelSetting.IsVerified)
+            candidate = await messages.AsNoTracking()
+                .Where(x => x.Status == "pending" && x.NextAttemptAt <= clock.UtcNow && (x.ChannelSettingId == null || x.ChannelSetting!.IsActive && x.ChannelSetting.IsVerified))
                 .OrderBy(x => x.Id)
                 .Select(x => new PendingMessage(x.Id, x.TenantId))
                 .FirstOrDefaultAsync(ct);
@@ -61,18 +70,40 @@ public sealed class WhatsAppCommerceOutboxWorker(
         var message = await db.WhatsAppCommerceOutboxMessages
             .Include(x => x.ChannelSetting).Include(x => x.Conversation)
             .FirstAsync(x => x.Id == candidateId, ct);
+        if (WhatsAppCommercialDraft.IsLegacyAdvisorConfirmation(message))
+        {
+            message.Status = "failed";
+            message.LastError = "manual_confirmation_disabled";
+            await db.SaveChangesAsync(ct);
+            return true;
+        }
         message.AttemptCount++;
         WhatsAppMessage? sentMessage = null;
         var retrySafe = false;
         try
         {
+            string phoneNumberId, accessToken;
+            if (message.ChannelSetting is { IsActive: true, IsVerified: true } channel)
+            { phoneNumberId = channel.PhoneNumberId; accessToken = channel.AccessToken; }
+            else if (message.ChannelSettingId is null)
+            {
+                var branchLine = await db.WhatsAppBranchSettings.AsNoTracking().SingleOrDefaultAsync(x => x.BranchId == message.Conversation.BranchId && x.IsActive && x.IsVerified, ct)
+                    ?? throw new InvalidOperationException("La línea remitente no está disponible.");
+                phoneNumberId = branchLine.PhoneNumberId; accessToken = branchLine.AccessToken;
+            }
+            else throw new InvalidOperationException("La línea remitente no está disponible.");
+            var lastCustomerMessage = message.Conversation.LastCustomerMessageAt ?? await db.WhatsAppMessages
+                .Where(x => x.ConversationId == message.ConversationId && x.Direction == WhatsAppMessageDirection.Inbound && !x.IsHistorical)
+                .MaxAsync(x => (DateTime?)x.Timestamp, ct);
+            if (!lastCustomerMessage.HasValue || lastCustomerMessage.Value.AddHours(24) <= clock.UtcNow)
+                throw new InvalidOperationException("La ventana de atención cerró. Usa una plantilla desde este chat.");
             var recipient = WhatsAppRecipientResolver.Resolve(message.Conversation)
                 ?? throw new InvalidOperationException("La conversación no tiene destinatario.");
             var result = string.IsNullOrWhiteSpace(message.Url)
-                ? await cloud.SendTextMessageAsync(message.ChannelSetting.PhoneNumberId, message.ChannelSetting.AccessToken, recipient, message.Body, ct)
-                : await cloud.SendUrlButtonMessageAsync(message.ChannelSetting.PhoneNumberId, message.ChannelSetting.AccessToken, recipient, message.Body, message.ButtonText ?? "Abrir", message.Url, ct);
-            retrySafe = IsRetrySafe(result.ErrorMessage);
-            if (!result.Success) throw new InvalidOperationException("Meta no confirmó el envío.");
+                ? await cloud.SendTextMessageAsync(phoneNumberId, accessToken, recipient, pilot is null ? message.Body : $"PRUEBA DE DESARROLLO\n{message.Body}", ct)
+                : await cloud.SendUrlButtonMessageAsync(phoneNumberId, accessToken, recipient, message.Body, message.ButtonText ?? "Abrir", message.Url, ct);
+            retrySafe = pilot is null && IsRetrySafe(result.ErrorMessage);
+            if (!result.Success || string.IsNullOrWhiteSpace(result.WhatsAppMessageId)) throw new InvalidOperationException("Meta no confirmó el envío.");
             message.Status = "sent";
             message.SentAt = clock.UtcNow;
             message.LastError = null;

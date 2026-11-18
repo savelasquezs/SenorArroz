@@ -1017,14 +1017,14 @@ public sealed class StorefrontCommerceService(
         payment?.PaymentStatus ?? "Pending",
         payment?.Checkout);
 
-    private static OrderBenefitType ParseBenefitType(string? source) => Normalize(source) switch
+    internal static OrderBenefitType ParseBenefitType(string? source) => Normalize(source) switch
     {
         "daily_promotion" => OrderBenefitType.DailyPromotion,
         "loyalty" => OrderBenefitType.Loyalty,
         _ => OrderBenefitType.None,
     };
 
-    private static LoyaltyRewardType? ParseRewardType(string? value) =>
+    internal static LoyaltyRewardType? ParseRewardType(string? value) =>
         Enum.TryParse<LoyaltyRewardType>(value, true, out var parsed) ? parsed : null;
 
     private IQueryable<Branch> EligibleBranchesQuery() => db.Branches
@@ -1116,33 +1116,7 @@ public sealed class StorefrontCommerceService(
         int? customerId,
         CancellationToken cancellationToken)
     {
-        if (!customerId.HasValue) return null;
-        var hasReservedReward = await db.Orders.AsNoTracking().AnyAsync(
-                x => x.CustomerId == customerId
-                    && x.AppliedBenefitType == OrderBenefitType.Loyalty
-                    && x.Status != OrderStatus.Cancelled
-                    && x.Status != OrderStatus.Delivered,
-                cancellationToken)
-            || await db.StorefrontCheckouts.AsNoTracking().AnyAsync(
-                x => x.CustomerId == customerId
-                    && x.AppliedBenefitType == OrderBenefitType.Loyalty
-                    && x.Status == "pending"
-                    && x.ExpiresAt > clock.UtcNow,
-                cancellationToken);
-        if (hasReservedReward) return null;
-        var delivered = await db.Orders.AsNoTracking().CountAsync(
-            x => x.CustomerId == customerId && x.Status == OrderStatus.Delivered,
-            cancellationToken);
-        if (LoyaltyDeliveriesPerReward.GetDeliveriesUntilNextReward(delivered) != 1) return null;
-        var cycleLength = await db.LoyaltyCycleSteps.AsNoTracking()
-            .Where(x => x.BranchId == branchId && x.IsActive)
-            .Select(x => (int?)x.StepIndex)
-            .MaxAsync(cancellationToken) ?? 0;
-        if (cycleLength <= 0) return null;
-        var stepIndex = LoyaltyDeliveriesPerReward.GetStepIndexAtMilestone(delivered + 1, cycleLength);
-        var step = await db.LoyaltyCycleSteps.AsNoTracking()
-            .Include(x => x.GiftProduct)
-            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.StepIndex == stepIndex && x.IsActive, cancellationToken);
+        var (step, delivered) = await OrderBenefitEligibility.LoyaltyAsync(db, branchId, customerId, clock.UtcNow, cancellationToken);
         if (step?.RewardType is null) return null;
         var snapshot = JsonSerializer.Serialize(new
         {

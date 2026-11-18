@@ -4,6 +4,8 @@ namespace SenorArroz.Application.Common.Interfaces;
 
 public interface IWhatsAppNotificationService
 {
+    Task NotifyInboxScopeChangedAsync(int branchId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    Task NotifyInboxConversationChangedAsync(int conversationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     Task NotifyMessageCreatedAsync(
         int branchId,
         WhatsAppConversationDto conversation,

@@ -16,6 +16,15 @@ public class WhatsAppBranchSetting : TenantOwnedEntity
     public DateTime? LastVerifiedAt { get; set; }
     public bool AwayMessageEnabled { get; set; }
     public string? AwayMessageText { get; set; }
+    public bool CoexistenceEnabled { get; set; }
+    public string ConnectionState { get; set; } = "pending";
+    public string? ConnectionError { get; set; }
+    public DateTime? CoexistenceConnectedAt { get; set; }
+    public string HistorySyncStatus { get; set; } = "not_started";
+    public string ContactsSyncStatus { get; set; } = "not_started";
+    public string? HistorySyncRequestId { get; set; }
+    public string? ContactsSyncRequestId { get; set; }
+    public DateTime? LastSyncAt { get; set; }
 
     public virtual Branch Branch { get; set; } = null!;
 }

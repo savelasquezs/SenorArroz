@@ -71,7 +71,20 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         if (branchId <= 0)
             throw new BusinessException("Debes especificar la sucursal que atenderá el pedido");
 
-        if (request.AllowAssignedWhatsAppOperationalBranch)
+        WhatsAppCommerceSession? commercialSession = null;
+        if (request.Order.WhatsAppConversationId.HasValue)
+        {
+            commercialSession = await _db.WhatsAppCommerceSessions.Where(x =>
+                x.ConversationId == request.Order.WhatsAppConversationId).OrderByDescending(x => x.Id).FirstOrDefaultAsync(cancellationToken);
+            if (commercialSession is not null && (commercialSession.Status != "active" || commercialSession.Id != request.WhatsAppCommerceSessionId
+                || commercialSession.Version != request.ExpectedWhatsAppDraftVersion
+                || _db.Database.IsRelational() && _db.Database.CurrentTransaction is null))
+                throw new BusinessException("Confirma el borrador compartido de WhatsApp con su versión actual.");
+            if (request.WhatsAppCommerceSessionId.HasValue && commercialSession is null)
+                throw new BusinessException("El intento comercial ya terminó. Recarga el pedido.");
+        }
+
+        if (request.AllowAssignedWhatsAppOperationalBranch && commercialSession is null)
         {
             if (!Roles.IsCashier(_currentUser.Role) || !request.Order.WhatsAppConversationId.HasValue)
                 throw new BusinessException("La conversación de WhatsApp y su sucursal operativa son obligatorias.");
@@ -91,7 +104,13 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
 
         if (request.Order.WhatsAppConversationId.HasValue)
         {
-            var canLinkWhatsAppConversation = await _db.WhatsAppConversations.AsNoTracking().AnyAsync(x =>
+            var conversation = await _db.WhatsAppConversations.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == request.Order.WhatsAppConversationId.Value, cancellationToken);
+            if (conversation is null || !SenorArroz.Domain.Services.WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id))
+                throw new BusinessException("Toma la conversación de WhatsApp antes de crear su pedido.");
+            if (commercialSession is not null && conversation.AttentionRevision != request.ExpectedWhatsAppAttentionRevision)
+                throw new BusinessException("Cambió el responsable de la conversación.");
+            var canLinkWhatsAppConversation = commercialSession is not null || await _db.WhatsAppConversations.AsNoTracking().AnyAsync(x =>
                 x.Id == request.Order.WhatsAppConversationId.Value
                 && (Roles.IsSuperadmin(_currentUser.Role)
                     || !x.ChannelSettingId.HasValue && x.BranchId == _currentUser.BranchId
@@ -168,6 +187,11 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderDto>
         order.OriginBranchId = originBranchId;
         order.ManagementVersion = 1;
         order.PosCreationKey = posCreationKey;
+        if (commercialSession is not null)
+        {
+            order.StorefrontIdempotencyKey = commercialSession.IdempotencyKey;
+            order.OrderSource = "whatsapp";
+        }
         order.PosCreationFingerprint = posFingerprint;
         // Solo las recogidas entre sucursales requieren identificador obligatorio.
         // Mantener opcional el nombre en las recogidas locales existentes.

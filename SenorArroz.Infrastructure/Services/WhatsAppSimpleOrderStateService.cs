@@ -1,5 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SenorArroz.Application.Common.Helpers;
+using SenorArroz.Domain.Exceptions;
+using SenorArroz.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Models;
@@ -14,6 +17,19 @@ public sealed class WhatsAppSimpleOrderStateService(ApplicationDbContext db,IClo
     public async Task<WhatsAppSimpleOrderState> LoadAsync(int conversationId,CancellationToken ct=default)
     {
         var conversation=await db.WhatsAppConversations.FirstAsync(x=>x.Id==conversationId,ct);
+        var shared = await db.WhatsAppCommerceSessions.Where(x => x.ConversationId == conversationId).OrderByDescending(x => x.Id).FirstOrDefaultAsync(ct);
+        if (shared is not null)
+        {
+            if (shared.Status != "active") return Empty();
+            var draft = WhatsAppCommercialDraft.Read(shared);
+            var common = Empty();
+            if (!string.IsNullOrWhiteSpace(conversation.AiOrderState))
+                try { common = JsonSerializer.Deserialize<WhatsAppSimpleOrderState>(conversation.AiOrderState, JsonOptions) ?? common; } catch (JsonException) { }
+            common.OrderType = draft.Type;
+            common.SelectedAddressId = draft.AddressId;
+            common.Items = draft.OrderDetails.Select(x => new WhatsAppSimpleOrderItem { ProductId = x.ProductId, Quantity = x.Quantity, Notes = x.Notes }).ToList();
+            return common;
+        }
         if(conversation.AiOrderStateUpdatedAt.HasValue&&conversation.AiOrderStateUpdatedAt.Value<clock.UtcNow.AddMinutes(-60))
         {
             conversation.AiOrderState=null;conversation.AiOrderStateUpdatedAt=null;await db.SaveChangesAsync(ct);return Empty();
@@ -41,6 +57,39 @@ public sealed class WhatsAppSimpleOrderStateService(ApplicationDbContext db,IClo
     {
         state.Version=1;state.UpdatedAt=clock.UtcNow;state.AppliedOperationKeys=state.AppliedOperationKeys.Distinct(StringComparer.Ordinal).TakeLast(20).ToList();state.Activities=state.Activities.Where(x=>!string.IsNullOrWhiteSpace(x.Type)&&!string.IsNullOrWhiteSpace(x.Message)).TakeLast(30).ToList();
         var conversation=await db.WhatsAppConversations.FirstAsync(x=>x.Id==conversationId,ct);
+        if (conversation.AttentionMode != WhatsAppAttentionMode.Ai)
+            throw new BusinessException("La conversación ya está siendo atendida por un asesor.");
+        var session = await db.WhatsAppCommerceSessions.Where(x => x.ConversationId == conversationId).OrderByDescending(x => x.Id).FirstOrDefaultAsync(ct);
+        if (session?.DraftSource == "advisor")
+            throw new BusinessException("Este borrador lo está gestionando un asesor. Solicita atención humana para conservar pagos, beneficios y programación.");
+        if (session is not null && session.Status != "active")
+            throw new BusinessException("El pedido ya terminó. Un asesor debe iniciar un nuevo intento comercial.");
+        if (session is null && (state.Items.Count > 0 || state.OrderType.HasValue))
+        {
+            session = WhatsAppCommercialDraft.New(conversation, clock.UtcNow);
+            session.DraftSource = "ai";
+            db.WhatsAppCommerceSessions.Add(session);
+        }
+        if (session is not null)
+        {
+            var draft = WhatsAppCommercialDraft.Read(session);
+            if (draft.BranchId <= 0) draft.BranchId = conversation.OperationalBranchId ?? conversation.BranchId;
+            draft.CustomerId = conversation.CustomerId;
+            draft.AddressId = state.SelectedAddressId;
+            draft.Type = state.OrderType ?? draft.Type;
+            var ids = state.Items.Select(x => x.ProductId).ToArray();
+            var products = await db.Products.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+            draft.OrderDetails = state.Items.Where(x => products.ContainsKey(x.ProductId)).Select(x =>
+            {
+                var previous = draft.OrderDetails.FirstOrDefault(y => y.ProductId == x.ProductId);
+                return new SenorArroz.Application.Features.Orders.DTOs.CreateOrderDetailDto
+                { ProductId = x.ProductId, Quantity = x.Quantity, UnitPrice = previous?.UnitPrice ?? products[x.ProductId].Price,
+                    Discount = previous is null ? 0 : Math.Min(previous.Discount, (previous.UnitPrice * x.Quantity)), Notes = x.Notes };
+            }).ToList();
+            WhatsAppCommercialDraft.Write(session, draft);
+            session.EditorJson = null;
+            session.Version++;
+        }
         conversation.AiOrderState=JsonSerializer.Serialize(state,JsonOptions);conversation.AiOrderStateUpdatedAt=clock.UtcNow;await db.SaveChangesAsync(ct);
     }
 

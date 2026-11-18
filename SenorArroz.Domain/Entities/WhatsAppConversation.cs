@@ -17,6 +17,12 @@ public class WhatsAppConversation : TenantOwnedEntity
     public DateTime? LastMessageAt { get; set; }
     public string? LastMessagePreview { get; set; }
     public int UnreadCount { get; set; }
+    public DateTime? LastCustomerMessageAt { get; set; }
+    public bool IsSupplier { get; set; }
+    public DateTime? PendingOrderMarkedAt { get; set; }
+    public bool IsPaymentPending { get; set; }
+    public bool NeedsHumanResponse { get; set; }
+    public long AttentionRevision { get; set; }
     public WhatsAppAttentionMode AttentionMode { get; set; } = WhatsAppAttentionMode.Ai;
     public int? AssignedUserId { get; set; }
     public DateTime? AiPausedAt { get; set; }

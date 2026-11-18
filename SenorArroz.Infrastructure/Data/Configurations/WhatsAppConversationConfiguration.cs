@@ -28,6 +28,12 @@ public class WhatsAppConversationConfiguration : IEntityTypeConfiguration<WhatsA
         builder.Property(x => x.LastMessageAt).HasColumnName("last_message_at");
         builder.Property(x => x.LastMessagePreview).HasColumnName("last_message_preview").HasMaxLength(500);
         builder.Property(x => x.UnreadCount).HasColumnName("unread_count").HasDefaultValue(0);
+        builder.Property(x => x.LastCustomerMessageAt).HasColumnName("last_customer_message_at");
+        builder.Property(x => x.IsSupplier).HasColumnName("is_supplier");
+        builder.Property(x => x.PendingOrderMarkedAt).HasColumnName("pending_order_marked_at");
+        builder.Property(x => x.IsPaymentPending).HasColumnName("is_payment_pending");
+        builder.Property(x => x.NeedsHumanResponse).HasColumnName("needs_human_response").HasDefaultValue(false);
+        builder.Property(x => x.AttentionRevision).HasColumnName("attention_revision").HasDefaultValue(0L).IsConcurrencyToken();
         builder.Property(x => x.AttentionMode).HasColumnName("attention_mode").HasMaxLength(32).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<WhatsAppAttentionMode>(v, true)).HasDefaultValue(WhatsAppAttentionMode.Ai);
         builder.Property(x => x.AssignedUserId).HasColumnName("assigned_user_id");
         builder.Property(x => x.AiPausedAt).HasColumnName("ai_paused_at");
@@ -58,6 +64,8 @@ public class WhatsAppConversationConfiguration : IEntityTypeConfiguration<WhatsA
         builder.HasOne(x => x.AttentionModeUpdatedByUser).WithMany().HasForeignKey(x => x.AttentionModeUpdatedByUserId).OnDelete(DeleteBehavior.SetNull);
 
         builder.HasIndex(x => x.BranchId).HasDatabaseName("idx_whatsapp_conversation_branch");
+        builder.HasIndex(x => new { x.TenantId, x.AssignedUserId, x.AttentionMode, x.LastMessageAt, x.Id })
+            .IsDescending(false, false, false, true, true).HasDatabaseName("ix_whatsapp_conversation_inbox");
         builder.HasIndex(x => new { x.TenantId, x.ChannelSettingId }).HasDatabaseName("ix_whatsapp_conversation_tenant_channel");
         builder.HasIndex(x => x.OperationalBranchId).HasDatabaseName("ix_whatsapp_conversation_operational_branch");
         builder.HasIndex(x => new { x.BranchId, x.PhoneNumber })

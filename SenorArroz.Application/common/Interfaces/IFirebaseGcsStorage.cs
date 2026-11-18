@@ -3,6 +3,7 @@ namespace SenorArroz.Application.Common.Interfaces;
 /// <summary>Subida y borrado de objetos en el bucket de Firebase / Google Cloud Storage.</summary>
 public interface IFirebaseGcsStorage
 {
+    Task<byte[]> DownloadObjectAsync(string objectName, long maxBytes, CancellationToken cancellationToken = default);
     /// <summary>Sube bytes y devuelve URL HTTPS de descarga (formato host Firebase).</summary>
     Task<string> UploadPublicObjectAsync(byte[] content, string objectName, string contentType, CancellationToken cancellationToken = default);
 

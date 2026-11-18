@@ -77,6 +77,7 @@ public class WhatsAppMetaErrorHandlingTests
 
         Assert.False(result.Success);
         Assert.StartsWith(expectedPrefix, result.ErrorMessage);
+        Assert.True(result.OutcomeUncertain);
         Assert.Contains(timeout ? "request timed out" : "connection reset", result.ErrorMessage);
     }
 

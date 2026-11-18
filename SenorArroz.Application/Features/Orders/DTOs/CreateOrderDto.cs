@@ -52,4 +52,8 @@ public class CreateOrderDetailDto
     public int UnitPrice { get; set; }
     public int Discount { get; set; }
     public string? Notes { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WhatsAppProductChoiceDto? WhatsAppProductChoice { get; set; }
 }
+
+public sealed record WhatsAppProductChoiceDto(string Key, string Name);

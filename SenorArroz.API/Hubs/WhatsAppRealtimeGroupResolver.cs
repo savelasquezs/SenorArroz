@@ -4,6 +4,12 @@ namespace SenorArroz.API.Hubs;
 
 public static class WhatsAppRealtimeGroupResolver
 {
+    public const string InboxChanged = "WhatsAppInboxChanged";
+
+    public static IReadOnlyList<string> InboxScope(int tenantId, int branchId) => branchId == 0
+        ? [TenantRealtimeGroups.TenantChannel(tenantId, "WhatsApp_Unassigned")]
+        : [TenantRealtimeGroups.BranchRole(tenantId, branchId, "WhatsApp"), TenantRealtimeGroups.TenantChannel(tenantId, "WhatsApp_Superadmin")];
+
     public static string User(int tenantId, int userId) => TenantRealtimeGroups.User(tenantId, userId, "WhatsApp");
 
     public static IReadOnlyList<string> Resolve(int tenantId, int legacyBranchId, WhatsAppConversationDto conversation)

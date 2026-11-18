@@ -47,7 +47,7 @@ public sealed class SetOrderFulfillmentAgentTool(
                 .Include(x => x.Neighborhood)
                 .FirstOrDefaultAsync(x => x.Id == addressId.Value
                     && x.CustomerId == context.CustomerId.Value
-                    && x.Customer.BranchId == context.BranchId,
+                    && db.AddressBranches.Any(service => service.AddressId == x.Id && service.BranchId == context.BranchId && service.IsCovered),
                     cancellationToken);
             if (address is null)
                 return new(false, null, "La dirección no pertenece al cliente y la sucursal del contexto.", "address_not_found");

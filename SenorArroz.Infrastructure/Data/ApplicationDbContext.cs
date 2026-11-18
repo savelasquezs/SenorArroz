@@ -74,6 +74,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<TenantAiSetting> TenantAiSettings { get; set; }
 
         public virtual DbSet<WhatsAppCommerceSession> WhatsAppCommerceSessions { get; set; }
+        public virtual DbSet<WhatsAppInboxTakenReset> WhatsAppInboxTakenResets { get; set; }
         public virtual DbSet<WhatsAppCommerceSessionToken> WhatsAppCommerceSessionTokens { get; set; }
 
         public virtual DbSet<WhatsAppFlowExchange> WhatsAppFlowExchanges { get; set; }
@@ -91,6 +92,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<WhatsAppTemplate> WhatsAppTemplates { get; set; }
 
         public virtual DbSet<WhatsAppWebhookEvent> WhatsAppWebhookEvents { get; set; }
+        public virtual DbSet<WhatsAppRealtimeEvent> WhatsAppRealtimeEvents { get; set; }
         public virtual DbSet<DeliveryAppConnection> DeliveryAppConnections { get; set; }
         public virtual DbSet<DeliveryAppStore> DeliveryAppStores { get; set; }
         public virtual DbSet<DeliveryAppWebhookSubscription> DeliveryAppWebhookSubscriptions { get; set; }
@@ -225,6 +227,16 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new WhatsAppChannelSettingConfiguration());
             modelBuilder.ApplyConfiguration(new TenantAiSettingConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppCommerceSessionConfiguration());
+            modelBuilder.Entity<WhatsAppInboxTakenReset>(builder =>
+            {
+                builder.ToTable("whatsapp_inbox_taken_reset");
+                builder.Property(x => x.Id).HasColumnName("id");
+                builder.Property(x => x.ScopeBranchId).HasColumnName("scope_branch_id");
+                builder.Property(x => x.ClearedBefore).HasColumnName("cleared_before");
+                builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+                builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+                builder.HasIndex(x => new { x.TenantId, x.ScopeBranchId }).IsUnique();
+            });
             modelBuilder.ApplyConfiguration(new WhatsAppCommerceSessionTokenConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppFlowExchangeConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppCommerceOutboxMessageConfiguration());
@@ -235,6 +247,7 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new WhatsAppQuickReplyConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppTemplateConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppWebhookEventConfiguration());
+            modelBuilder.ApplyConfiguration(new WhatsAppRealtimeEventConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryAppConnectionConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryAppStoreConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryAppWebhookSubscriptionConfiguration());

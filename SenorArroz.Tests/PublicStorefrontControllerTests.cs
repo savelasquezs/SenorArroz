@@ -860,7 +860,8 @@ public class PublicStorefrontControllerTests
         await Exchange(flow, session, "FULFILLMENT", new { fulfillment_type = "pickup" });
         var address = await Exchange(flow, session, "ADDRESS_PICKUP", new { branch_id = "10", name = "Cliente Flow" });
         Assert.Equal("PAYMENT", address["screen"]);
-        Assert.Equal(10, session.Conversation.OperationalBranchId);
+        Assert.Null(session.Conversation.OperationalBranchId);
+        Assert.Equal(10, session.BranchId);
         await Exchange(flow, session, "PAYMENT", new { payment_method = "cash", order_notes = "Sin cubiertos" });
         var confirmed = await Exchange(flow, session, "SUMMARY", new { command = "confirm" });
         Assert.Equal("SUCCESS", confirmed["screen"]);

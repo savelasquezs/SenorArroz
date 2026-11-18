@@ -112,6 +112,42 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         try{using var response=await _httpClient.SendAsync(request,cancellationToken);var json=await response.Content.ReadAsStringAsync(cancellationToken);if(!response.IsSuccessStatusCode)return new(false,null,CreateMetaHttpError("send_reply_buttons",json,response.StatusCode,accessToken));using var document=JsonDocument.Parse(json);return new(true,TryGetFirstMessageId(document.RootElement),null);}catch(Exception ex)when(ex is HttpRequestException or TaskCanceledException or JsonException){return new(false,null,CreateClientError("send_reply_buttons",ex,accessToken));}
     }
 
+    public async Task<WhatsAppCloudSendResult> SendListMessageAsync(string phoneNumberId, string accessToken, string to,
+        string body, string button, IReadOnlyList<WhatsAppListOption> options, CancellationToken cancellationToken = default)
+    {
+        if (options.Count is < 1 or > 10) return new(false, null, "La lista debe tener entre una y diez opciones.");
+        using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Content = JsonContent.Create(new
+        {
+            messaging_product = "whatsapp",
+            to,
+            type = "interactive",
+            interactive = new
+            {
+                type = "list",
+                body = new { text = body },
+                action = new
+                {
+                    button,
+                    sections = new[] { new { rows = options.Select(x => new { id = x.Id, title = x.Title, description = x.Description }).ToArray() } }
+                }
+            }
+        });
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode) return new(false, null, CreateMetaHttpError("send_list", json, response.StatusCode, accessToken));
+            using var document = JsonDocument.Parse(json);
+            return new(true, TryGetFirstMessageId(document.RootElement), null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            return new(false, null, CreateClientError("send_list", ex, accessToken));
+        }
+    }
+
     public async Task<WhatsAppCloudSendResult> SendImageLinkMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string imageUrl, string? caption, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages")); request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
@@ -465,8 +501,11 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         try
         {
             using var document = JsonDocument.Parse(body);
-            if (document.RootElement.TryGetProperty("error", out var error))
+            if (document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("error", out var error))
             {
+                if (error.ValueKind == JsonValueKind.String) return error.GetString() ?? body;
+                if (error.ValueKind != JsonValueKind.Object) return body;
                 var message = TryGetString(error, "message");
                 var type = TryGetString(error, "type");
                 var userMessage = TryGetString(error, "error_user_msg");
@@ -507,14 +546,15 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
 
     private static string? TryGetString(JsonElement element, string propertyName)
     {
-        return element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+        return element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
     }
 
     private static long? TryGetLong(JsonElement element, string propertyName)
     {
-        if (!element.TryGetProperty(propertyName, out var value))
+        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(propertyName, out var value))
             return null;
         if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number))
             return number;
@@ -525,7 +565,8 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
 
     private static string? TryGetFirstMessageId(JsonElement root)
     {
-        if (!root.TryGetProperty("messages", out var messages) || messages.ValueKind != JsonValueKind.Array)
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("messages", out var messages) || messages.ValueKind != JsonValueKind.Array)
             return null;
 
         var first = messages.EnumerateArray().FirstOrDefault();

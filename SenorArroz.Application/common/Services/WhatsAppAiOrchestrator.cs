@@ -33,6 +33,7 @@ public class WhatsAppAiOrchestrator(
 {
     private readonly WhatsAppAiOrchestratorOptions _options = options.Value;
     private readonly WhatsAppAiPricingOptions _pricing = pricing?.Value ?? new();
+    private DateTime? _attentionVersion;
 
     public async Task<WhatsAppAiProcessingResult> ProcessIncomingMessageAsync(
         int conversationId,
@@ -67,6 +68,7 @@ public class WhatsAppAiOrchestrator(
 
             if (conversation is null)
                 return await Ignore(message, "Conversación inexistente.", ct);
+            _attentionVersion = message.AiResponseAttentionVersion ?? conversation.AttentionModeUpdatedAt;
             var effectiveBranchId = conversation.OperationalBranchId ?? conversation.BranchId;
 
             await NotifyCurrentStatusAsync(message.Id, conversation.BranchId, ct);
@@ -75,6 +77,14 @@ public class WhatsAppAiOrchestrator(
                 return await Ignore(message, $"Modo {conversation.AttentionMode}.", ct, conversation.BranchId);
             if (message.Type != WhatsAppMessageType.Text || string.IsNullOrWhiteSpace(message.TextBody))
                 return await Ignore(message, "Tipo no soportado.", ct, conversation.BranchId);
+            if (message.AiResponseAttentionVersion != conversation.AttentionModeUpdatedAt
+                && (message.AiResponseAttentionVersion.HasValue || !string.IsNullOrWhiteSpace(message.AiGeneratedResponse)))
+                return await Ignore(message, "La respuesta pertenece a una atención anterior o no tiene versión recuperable.", ct, conversation.BranchId);
+            if (!message.AiResponseAttentionVersion.HasValue && message.CreatedAt < conversation.AttentionModeUpdatedAt)
+                return await Ignore(message, "El mensaje pendiente precede al último cambio de atención.", ct, conversation.BranchId);
+            var claimedMessage = await db.WhatsAppMessages.FirstAsync(x => x.Id == message.Id, ct);
+            claimedMessage.AiResponseAttentionVersion = _attentionVersion;
+            await db.SaveChangesAsync(ct);
 
             var setting = conversation.ChannelSettingId.HasValue
                 ? await db.TenantAiSettings.AsNoTracking().Where(x => x.TenantId == conversation.TenantId)
@@ -248,6 +258,7 @@ public class WhatsAppAiOrchestrator(
                     var source = await db.WhatsAppMessages.FirstAsync(x => x.Id == message.Id, ct);
                     source.AiProcessingStatus = WhatsAppAiProcessingStatus.ResponseGenerated;
                     source.AiGeneratedResponse = finalText;
+                    source.AiResponseAttentionVersion = _attentionVersion;
                     source.AiResponseAttemptId ??= Guid.NewGuid().ToString("N");
                     await db.SaveChangesAsync(ct);
                     await NotifyCurrentStatusAsync(source.Id, conversation.BranchId, ct);
@@ -317,7 +328,7 @@ public class WhatsAppAiOrchestrator(
                             null,
                             conversation.AttentionMode.ToString(),
                             message.AiResponseAttemptId ??= $"ai-{incomingMessageId}",
-                            "whatsapp_ai"),
+                            "whatsapp_ai", AttentionVersion: _attentionVersion),
                         call.Arguments,
                         ct);
                     totalTools++;
@@ -492,7 +503,8 @@ public class WhatsAppAiOrchestrator(
     private Task<bool> StillAi(int conversationId, CancellationToken cancellationToken) =>
         db.WhatsAppConversations
             .AsNoTracking()
-            .AnyAsync(x => x.Id == conversationId && x.AttentionMode == WhatsAppAttentionMode.Ai, cancellationToken);
+            .AnyAsync(x => x.Id == conversationId && x.AttentionMode == WhatsAppAttentionMode.Ai
+                && (!_attentionVersion.HasValue || x.AttentionModeUpdatedAt == _attentionVersion.Value), cancellationToken);
 
     private static string NormalizeFinalResponse(string value)
     {

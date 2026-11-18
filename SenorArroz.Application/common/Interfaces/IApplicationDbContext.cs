@@ -49,6 +49,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<WhatsAppChannelSetting> WhatsAppChannelSettings { get; set; }
         DbSet<TenantAiSetting> TenantAiSettings { get; set; }
         DbSet<WhatsAppCommerceSession> WhatsAppCommerceSessions { get; set; }
+        DbSet<WhatsAppInboxTakenReset> WhatsAppInboxTakenResets { get; set; }
         DbSet<WhatsAppCommerceSessionToken> WhatsAppCommerceSessionTokens { get; set; }
         DbSet<WhatsAppFlowExchange> WhatsAppFlowExchanges { get; set; }
         DbSet<WhatsAppCommerceOutboxMessage> WhatsAppCommerceOutboxMessages { get; set; }
@@ -64,6 +65,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<WhatsAppTemplate> WhatsAppTemplates { get; set; }
 
         DbSet<WhatsAppWebhookEvent> WhatsAppWebhookEvents { get; set; }
+        DbSet<WhatsAppRealtimeEvent> WhatsAppRealtimeEvents { get; set; }
         DbSet<DeliveryAppConnection> DeliveryAppConnections { get; set; }
         DbSet<DeliveryAppStore> DeliveryAppStores { get; set; }
         DbSet<DeliveryAppWebhookSubscription> DeliveryAppWebhookSubscriptions { get; set; }

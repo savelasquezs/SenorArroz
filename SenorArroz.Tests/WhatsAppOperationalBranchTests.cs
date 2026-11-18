@@ -22,7 +22,7 @@ using SenorArroz.Shared.Models;
 
 namespace SenorArroz.Tests;
 
-public sealed class WhatsAppOperationalBranchTests
+public sealed partial class WhatsAppOperationalBranchTests
 {
     [Fact]
     public async Task Message_cursor_handles_equal_timestamps_and_preserves_new_unread_while_loading_older_messages()
@@ -73,7 +73,7 @@ public sealed class WhatsAppOperationalBranchTests
         var conversation = Assert.Single(listPayload!.Data!);
         Assert.Null(conversation.OperationalBranchId);
 
-        var taken = await controller.TakeConversation(conversation.Id, default);
+        var taken = await controller.ExecuteAttentionAction(conversation.Id, new WhatsAppAttentionActionDto { Action = "take", ExpectedVersion = 0 }, default);
         Assert.IsType<OkObjectResult>(taken.Result);
         var entity = await db.WhatsAppConversations.SingleAsync();
         Assert.Equal(7, entity.AssignedUserId);
@@ -87,7 +87,7 @@ public sealed class WhatsAppOperationalBranchTests
         await SeedCentralConversationAsync(db, operationalBranchId: null, assignedUserId: 7);
         var controller = CreateController(db);
 
-        var result = await controller.UpdateOperationalBranch(11, new UpdateWhatsAppOperationalBranchDto { OperationalBranchId = 2 }, default);
+        var result = await controller.UpdateOperationalBranch(11, new UpdateWhatsAppOperationalBranchDto { ExpectedVersion = 0, OperationalBranchId = 2 }, default);
 
         var payload = Assert.IsType<OkObjectResult>(result.Result).Value as ApiResponse<WhatsAppConversationDto>;
         Assert.Equal(2, payload!.Data!.OperationalBranchId);
@@ -172,7 +172,7 @@ public sealed class WhatsAppOperationalBranchTests
         await SeedCentralConversationAsync(db, operationalBranchId: 1, assignedUserId: 7);
         var controller = CreateController(db);
 
-        var result = await controller.UpdateOperationalBranch(11, new UpdateWhatsAppOperationalBranchDto { OperationalBranchId = 2 }, default);
+        var result = await controller.UpdateOperationalBranch(11, new UpdateWhatsAppOperationalBranchDto { ExpectedVersion = 0, OperationalBranchId = 2 }, default);
 
         Assert.IsType<OkObjectResult>(result.Result);
         var entity = await db.WhatsAppConversations.SingleAsync();
@@ -388,17 +388,17 @@ public sealed class WhatsAppOperationalBranchTests
                 OperationalBranchId = operationalBranchId,
                 AssignedUserId = assignedUserId,
                 UnreadCount = unreadCount,
-                AttentionMode = WhatsAppAttentionMode.Ai,
+                AttentionMode = assignedUserId.HasValue ? WhatsAppAttentionMode.Human : WhatsAppAttentionMode.Ai,
                 PhoneNumber = "3000000000"
             });
         await db.SaveChangesAsync();
     }
 
-    private static WhatsAppController CreateController(ApplicationDbContext db, int userId = 7, int branchId = 1)
+    private static WhatsAppController CreateController(ApplicationDbContext db, int userId = 7, int branchId = 1, string role = "Cashier", IWhatsAppCloudClient? cloud = null, IInventoryService? inventory = null)
     {
         var currentUser = new Mock<ICurrentUser>();
         currentUser.SetupGet(x => x.Id).Returns(userId);
-        currentUser.SetupGet(x => x.Role).Returns("Cashier");
+        currentUser.SetupGet(x => x.Role).Returns(role);
         currentUser.SetupGet(x => x.BranchId).Returns(branchId);
         var branchContext = new Mock<IBranchContext>();
         branchContext.Setup(x => x.RequireBranch(It.IsAny<int?>())).Returns(branchId);
@@ -413,7 +413,7 @@ public sealed class WhatsAppOperationalBranchTests
             currentUser.Object,
             branchContext.Object,
             Mock.Of<IClock>(x => x.UtcNow == DateTime.UtcNow),
-            Mock.Of<IWhatsAppCloudClient>(),
+            cloud ?? Mock.Of<IWhatsAppCloudClient>(),
             notifications.Object,
             Mock.Of<IFirebaseGcsStorage>(),
             Options.Create(new FirebaseStorageOptions()),
@@ -427,7 +427,8 @@ public sealed class WhatsAppOperationalBranchTests
             null!,
             null!,
             TestTenantContext.Default,
-            TestTenantContext.Default);
+            TestTenantContext.Default,
+            inventory: inventory);
     }
 
     private static CreateOrderHandler CreateOrderHandler(ApplicationDbContext db, int userId, int branchId)

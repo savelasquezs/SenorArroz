@@ -2,8 +2,15 @@ using SenorArroz.Application.Common.Models;
 namespace SenorArroz.Application.Common.Interfaces;
 
 public record WhatsAppCloudTestResult(bool Success, string? DisplayPhoneNumber, string? ErrorMessage);
+public record WhatsAppListOption(string Id, string Title, string? Description);
 
-public record WhatsAppCloudSendResult(bool Success, string? WhatsAppMessageId, string? ErrorMessage);
+public record WhatsAppCloudSendResult(bool Success, string? WhatsAppMessageId, string? ErrorMessage)
+{
+    public bool OutcomeUncertain => Success && string.IsNullOrWhiteSpace(WhatsAppMessageId)
+        || !Success && (ErrorMessage?.StartsWith("Meta WhatsApp timeout:", StringComparison.OrdinalIgnoreCase) == true
+            || ErrorMessage?.StartsWith("Meta WhatsApp network_error:", StringComparison.OrdinalIgnoreCase) == true
+            || ErrorMessage?.StartsWith("Meta WhatsApp invalid_response:", StringComparison.OrdinalIgnoreCase) == true);
+}
 
 public record WhatsAppCloudTemplate(
     string MetaTemplateId,
@@ -50,6 +57,8 @@ public interface IWhatsAppCloudClient
         CancellationToken cancellationToken = default);
     Task<WhatsAppCloudSendResult> SendUrlButtonMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string body, string buttonText, string url, CancellationToken cancellationToken = default);
     Task<WhatsAppCloudSendResult> SendReplyButtonsMessageAsync(string phoneNumberId,string accessToken,string toPhoneNumber,string body,IReadOnlyList<WhatsAppReplyButton> buttons,CancellationToken cancellationToken=default);
+    Task<WhatsAppCloudSendResult> SendListMessageAsync(string phoneNumberId, string accessToken, string to, string body,
+        string button, IReadOnlyList<WhatsAppListOption> options, CancellationToken cancellationToken = default);
     Task<WhatsAppCloudSendResult> SendImageLinkMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string imageUrl, string? caption, CancellationToken cancellationToken = default);
     Task<WhatsAppCloudSendResult> SendFlowMessageAsync(string phoneNumberId,string accessToken,string toPhoneNumber,string body,string buttonText,string flowId,string flowToken,string initialScreen,CancellationToken cancellationToken=default);
 

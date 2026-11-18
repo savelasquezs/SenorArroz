@@ -6,7 +6,9 @@ Este mapa existe para que Codex ubique rápido las entidades y entienda cómo pr
 
 ## Estado de aislamiento v2
 
-- Inventario EF: 109 entidades; `Tenant` global y 108 tenant-owned.
+La clasificación de la bandeja de WhatsApp guarda Proveedor, Pendiente y Pendiente de pago en `whatsapp_conversation`. El corte de Tomado se guarda en `whatsapp_inbox_taken_reset` por tenant y sucursal. El ámbito central sin asignar usa `scope_branch_id = 0`. El script `add_whatsapp_inbox_labels.sql` activa RLS e inicializa el corte al comienzo del día de despliegue en Bogotá.
+
+- Inventario EF: 115 entidades; `Tenant` global y 114 tenant-owned, incluido `WhatsAppRealtimeEvent`.
 - Contrato común: `ITenantOwned` y `TenantOwnedEntity`.
 - EF aplica centralmente `tenant_id` obligatorio, índice, concurrency token y query filter.
 - `SaveChanges` asigna el tenant actual en altas sin tenant y rechaza altas, cambios o borrados cross-tenant.
@@ -618,6 +620,41 @@ add_email_delivery_tracking.sql incorpora delivery_status, delivery_event_at, de
 
 ## DELIVERY-2026-10
 User.delivery_context_version/last_delivery_take_id ordenan el contexto. DeliveryRoute.closure_source distingue cierre operativo. Order.delivery_completion_source distingue entregas observadas/inferidas. Los recibos viven en entity_audit_log (delivery_operation, usuario, UUID) bajo índice único tenant-owned, sin caducidad automática. Scripts add_delivery_operations.sql y enforce_delivery_route_uniqueness.sql; preflight obligatorio, sin borrado de historia.
+
+
+## WhatsApp: cola durable y eventos entre procesos
+
+- add_whatsapp_processing_worker.sql amplía whatsapp_webhook_event con estado, clave de deduplicación por tenant, partición, payload protegido, intentos, próximo intento, token y vencimiento de concesión. Los eventos históricos conservan estado legacy y no se reprocesan automáticamente.
+- WhatsAppRealtimeEvent / whatsapp_realtime_event conserva payload, conversación, grupos y confirmaciones por consumidor. Es tenant-owned, tiene filtro EF y RLS forzado en el SQL puntual.
+- Aplicar el SQL antes del backend que consulta las nuevas columnas. No se ejecuta automáticamente al arrancar.
+- La copia aislada de ../local-init-completo.sql incorpora esta ampliación; el inicializador compartido del laboratorio no se modificó. Ver docs/WHATSAPP_PROCESSING_STAGE01.md para ubicación y hash de origen.
+
+- Ampliación de etapa 1: `whatsapp_message.ai_response_attention_version` conserva la atención de la generación al recuperar IA. `whatsapp_webhook_event` incorpora `partition_aliases` (text[] + GIN), `protected_result`, `requested_by_user_id` y `conversation_id` para resultados manuales cifrados y autorización. No crea otro motor de pedidos ni cambia `OriginBranchId`/`BranchId`. Requiere reaplicar el SQL aditivo `add_whatsapp_processing_worker.sql` antes de la nueva versión.
+- Retención acotada: eventos realtime 2 días y saneamiento de payloads/resultados terminales a 7 días, conservando las claves de deduplicación; pendientes y trabajos en proceso no se eliminan por antigüedad.
+
+- `whatsapp_webhook_event.attention_version` congela la atención conocida al aceptar el ingreso; los trabajos manuales y entrantes comparten partición. Índice adicional `(tenant_id, conversation_id, id)` para esa resolución.
+
+
+## WhatsApp coexistencia/atención — 2026-11-05
+
+Script aditivo: `add_whatsapp_coexistence_attention.sql`. `whatsapp_branch_setting` agrega estado/diagnóstico de coexistencia, fecha de conexión, estados e identificadores de sincronización y última recepción. El número de línea no vacío es único entre sucursales. `whatsapp_message` agrega `source` e `is_historical`, con unicidad por tenant/conversación/identificador Meta no vacío. `whatsapp_conversation` agrega `last_customer_message_at`, `needs_human_response` y `attention_revision` como token de concurrencia; índice de bandeja por tenant/responsable/atención/actividad.
+
+No se agregan entidades globales ni tablas fuera de RLS. Las sesiones de registro de un solo uso y la auditoría `attention_action` reutilizan `whatsapp_webhook_event` con el tenant persistido. Las sesiones vinculan actor, sucursal y vencimiento en un token cifrado; las acciones guardan responsable anterior/nuevo y revisión, sin credenciales ni textos de mensajes. La retención de transporte conserva la auditoría. No se modifican pedidos confirmados, `OriginBranchId` ni `BranchId`.
+
+
+## WhatsApp: etapas 4 y 5 locales
+
+- `whatsapp_commerce_session`: línea central opcional para permitir líneas de sucursal; `draft_json`, `editor_json`, `draft_source`, `commercial_status`, `order_id`, `checkout_id`, `internal_notes_json` y versión concurrente. Un intento activo por tenant/conversación.
+- `whatsapp_commerce_outbox.channel_setting_id` permite la línea de sucursal; se resuelve desde el chat, nunca desde el destino del pedido.
+- Script idempotente: `SenorArroz.Infrastructure/Scripts/add_whatsapp_shared_draft.sql`. Aplicado en PostgreSQL desechable y en la copia local independiente `senor_arroz_coexistence_local`; sin aplicación productiva.
+- Contrato, continuidad y componentes: `docs/WHATSAPP_SHARED_DRAFT_EDITOR.md`.
+## WhatsApp: índices de lectura, etapa 6 local
+
+`add_whatsapp_inbox_pagination.sql` agrega idempotentemente `ix_whatsapp_commerce_latest` por tenant/conversación/id descendente, `ix_whatsapp_message_history` por tenant/conversación/fecha/id descendentes e índice parcial `ix_whatsapp_message_transfer_reason` para transferencias humanas con motivo. EF conserva nombres de modelo diferentes para los dos índices de mensajes con las mismas columnas. Sin nuevas tablas, cambios de RLS ni aplicación productiva.
+
+La copia local del laboratorio del 5-nov usa contenedor `senorarroz-coexistence-db-20261105`, volumen independiente y red Docker interna, sin puerto PostgreSQL accesible desde el host. Las cuatro ampliaciones WhatsApp se aplicaron dos veces. Se archivaron y marcaron vencidas 14 sesiones antiguas sin pedido/pago pendiente, únicamente en la copia. El rol runtime `whatsapp_local` conserva RLS y no tiene superusuario/BYPASSRLS. La fuente `senor_arroz_whatsapp_dev` no se modificó. Respaldo privado, manifiesto y credenciales en `.work/coexistence-local/`; resultados y límites en `docs/WHATSAPP_STAGE6_VALIDATION.md`.
+
+En la copia histórica, `whatsapp_message.timestamp` es `timestamp without time zone` con valores UTC, mientras `whatsapp_conversation.last_customer_message_at` es `timestamp with time zone`. Las respuestas manuales normalizan la fecha leída mediante el helper `AsUtc` antes de compararla. No se altera el esquema histórico ni se desactiva la validación de fechas de Npgsql. Regresión PostgreSQL: `Stage23_Manual_reply_handles_legacy_timestamp_and_preserves_newer_customer_pending`.
 
 ## Abonos iniciales de reservas (2026-11-06)
 

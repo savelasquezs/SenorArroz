@@ -10,6 +10,8 @@ public class WhatsAppAttentionService
     public bool Take(WhatsAppConversation c, int userId, DateTime now)
     {
         EnsureNotClosed(c);
+        if (c.AssignedUserId.HasValue && c.AssignedUserId != userId)
+            throw new BusinessException("La conversación ya está siendo atendida por otro asesor.");
         if (c.AttentionMode == WhatsAppAttentionMode.Human && c.AssignedUserId == userId) return false;
         Apply(c, WhatsAppAttentionMode.Human, userId, now); return true;
     }
@@ -29,14 +31,28 @@ public class WhatsAppAttentionService
     public bool Reopen(WhatsAppConversation c, int userId, DateTime now, bool aiActive)
     {
         if (c.AttentionMode != WhatsAppAttentionMode.Closed) throw new BusinessException("Solo una conversación cerrada puede reabrirse.");
-        Apply(c, aiActive ? WhatsAppAttentionMode.Ai : WhatsAppAttentionMode.Human, userId, now); return true;
+        Apply(c, aiActive ? WhatsAppAttentionMode.Ai : WhatsAppAttentionMode.WaitingForHuman, userId, now); return true;
     }
+    public bool Release(WhatsAppConversation c, int userId, DateTime now)
+    { EnsureNotClosed(c); Apply(c, WhatsAppAttentionMode.WaitingForHuman, userId, now); return true; }
+    public bool Transfer(WhatsAppConversation c, int actorId, int targetId, DateTime now)
+    { EnsureNotClosed(c); Apply(c, WhatsAppAttentionMode.Human, actorId, now); c.AssignedUserId = targetId; return true; }
+    public bool ForceTake(WhatsAppConversation c, int userId, DateTime now)
+    { EnsureNotClosed(c); Apply(c, WhatsAppAttentionMode.Human, userId, now); return true; }
+    public void RequestHumanAfterNewMessage(WhatsAppConversation c, DateTime now) => Apply(c, WhatsAppAttentionMode.WaitingForHuman, null, now);
+    public static bool CanWrite(WhatsAppConversation c, int userId) => c.AttentionMode == WhatsAppAttentionMode.Human && c.AssignedUserId == userId;
     private static bool ChangeIdempotent(WhatsAppConversation c, WhatsAppAttentionMode target, int? userId, DateTime now)
     { EnsureNotClosed(c); if (c.AttentionMode == target) return false; Apply(c, target, userId, now); return true; }
     private static void EnsureNotClosed(WhatsAppConversation c) { if (c.AttentionMode == WhatsAppAttentionMode.Closed) throw new BusinessException("La conversación debe reabrirse antes de cambiar su atención."); }
     private static void Apply(WhatsAppConversation c, WhatsAppAttentionMode target, int? userId, DateTime now)
     {
+        now = now > c.AttentionModeUpdatedAt ? now : c.AttentionModeUpdatedAt.AddTicks(10);
         c.AttentionMode = target; c.AttentionModeUpdatedAt = now; c.AttentionModeUpdatedByUserId = userId;
+        c.AttentionRevision++;
+        c.NeedsHumanResponse = target == WhatsAppAttentionMode.WaitingForHuman
+            || target is WhatsAppAttentionMode.Human or WhatsAppAttentionMode.Paused
+                && (c.NeedsHumanResponse || c.LastCustomerMessageAt.HasValue && c.LastCustomerMessageAt >= c.LastMessageAt);
+        c.Status = target == WhatsAppAttentionMode.Closed ? WhatsAppConversationStatus.Closed : WhatsAppConversationStatus.Open;
         c.AssignedUserId = target == WhatsAppAttentionMode.Human ? userId : null;
         c.HumanAssignedAt = target == WhatsAppAttentionMode.Human ? now : null;
         c.AiPausedAt = target is WhatsAppAttentionMode.Paused or WhatsAppAttentionMode.WaitingForHuman ? now : null;
