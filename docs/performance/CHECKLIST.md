@@ -190,7 +190,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M40-F05 | Carga recurrente y ciclos de polling | Pendiente | — | — | — | — |
 | M41-F01 | SQL pedidos y detalles | Pendiente | — | — | — | — |
 | M41-F02 | SQL clientes y direcciones | Pendiente | — | — | — | — |
-| M41-F03 | SQL dashboard y agregados | Pendiente | — | — | — | — |
+| M41-F03 | SQL dashboard y agregados | Bloqueado | 2026-11-18 | [Informe](reviews/2026-11-18-M41-F03.md) | [Código #135](https://github.com/savelasquezs/SenorArroz/pull/135), [Docs #136](https://github.com/savelasquezs/SenorArroz/pull/136) (borradores) | Agrupación día/hora en SQL para dashboard de ventas: una fila por bucket en lugar de por pedido. CI PostgreSQL aislado y backend pendientes. Sin SQL DDL, merge ni despliegue; p50/p95, CPU/RAM y egress productivos sin medir. |
 | M41-F04 | SQL tracking geográfico | Pendiente | — | — | — | — |
 | M41-F05 | Índices, planes EXPLAIN y paginación | Pendiente | — | — | — | — |
 | M41-F06 | Pooling conexiones, RLS y concurrencia | Pendiente | — | — | — | — |
