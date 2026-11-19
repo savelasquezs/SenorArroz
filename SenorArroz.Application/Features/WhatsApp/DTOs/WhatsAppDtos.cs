@@ -118,6 +118,7 @@ public class WhatsAppQuickReplyDto
     public string? BranchName { get; set; }
     public string Shortcut { get; set; } = string.Empty;
     public string MessageTemplate { get; set; } = string.Empty;
+    public string ReplyMode { get; set; } = "send";
     public bool IsActive { get; set; }
     public int UsageCount { get; set; }
     public DateTime? LastUsedAt { get; set; }
@@ -137,8 +138,14 @@ public class UpsertWhatsAppQuickReplyDto
     public int? BranchId { get; set; }
     public string Shortcut { get; set; } = string.Empty;
     public string MessageTemplate { get; set; } = string.Empty;
+    public string? ReplyMode { get; set; }
     public bool IsActive { get; set; } = true;
 }
+
+public sealed record WhatsAppQuickReplyPreviewRequest(string? Family, string? Size);
+public sealed record WhatsAppQuickReplyPresentationDto(string Family, string Size);
+public sealed record WhatsAppQuickReplyPreviewDto(string? Text, string? Family = null, string? Size = null,
+    IReadOnlyList<WhatsAppQuickReplyPresentationDto>? Presentations = null);
 
 public sealed class UpdateWhatsAppOperationalBranchDto
 {

@@ -13,6 +13,7 @@ public static class WhatsAppProductSuggestions
     private const string Sizes = @"personal(?:es)?|duos?|trios?|familiares|familiar|super(?:\s*familiar(?:es)?)?s?";
     private const string Counts = @"[0-9]+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez";
     private const string Capacity = $@"\b(?:de|para)\s+({Counts})(?:\s+(?:a|hasta)\s+({Counts}))?\s+(?:personas?|porciones?)\b";
+    private const string Correction = @"\b(?:no\s+(?:me\s+)?(?:quiero|manda|mandes|necesito|agregues|pongas|es|era)|mejor|en vez|cambi\w*|quit\w*|cancel\w*|corrij\w*|perdon|reemplaz\w*|ya no|ni|solo era|en lugar|era|sin adiciones|sin papas|sin yuca)\b";
     private static readonly Regex BeverageVolume = new(@"\b\d+ml\b");
     private static readonly CultureInfo Colombian = CultureInfo.GetCultureInfo("es-CO");
 
@@ -20,7 +21,7 @@ public static class WhatsAppProductSuggestions
     {
         if (string.IsNullOrWhiteSpace(text) || text.Length > 4096) return [];
         var normalized = Normalize(text);
-        if (Regex.IsMatch(normalized, @"\b(?:no\s+(?:me\s+)?(?:quiero|manda|mandes|necesito|agregues|pongas|es|era)|mejor|en vez|cambi\w*|quit\w*|cancel\w*|corrij\w*|perdon|reemplaz\w*|ya no|ni|solo era|en lugar|era|sin adiciones|sin papas|sin yuca)\b"))
+        if (Regex.IsMatch(normalized, Correction))
             return [];
 
         var priceQuestion = Regex.IsMatch(normalized, @"\b(?:cuanto|cuesta\w*|valen?|precio(?:s)?|que valor|cotiz\w*)\b");
@@ -50,6 +51,31 @@ public static class WhatsAppProductSuggestions
         }).ToArray();
     }
 
+    public static (string? Family, string? Size) ChicharronContext(string? message, IEnumerable<CatalogProduct> catalog)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return (null, null);
+        var text = Normalize(message);
+        if (Regex.IsMatch(text, Correction)) return (null, null);
+        var families = catalog.Where(x => x.Role == "rice").Select(FamilyOf).Distinct()
+            .Where(x => x.Length > 0 && Contains(text, x)).ToArray();
+        if (families.Length > 1 || families.Length == 1 && families[0] is not ("paisa" or "ropa vieja"))
+            return (null, null);
+        var sizes = MentionedSizes(text);
+        return (families.SingleOrDefault(), sizes.Length == 1 ? sizes[0] : null);
+    }
+
+    public static (string Family, string Size, bool WithChicharron)? ChicharronPresentation(CatalogProduct product)
+    {
+        if (product.Role != "rice") return null;
+        var family = FamilyOf(product);
+        if (family is not ("paisa" or "ropa vieja")) return null;
+        var sizes = MentionedSizes(Normalize(product.Presentation + " " + product.Name));
+        return sizes.Length == 1 ? (family, sizes[0], WithChicharron(product)) : null;
+    }
+
+    private static string[] MentionedSizes(string text) =>
+        Regex.Matches(text, $@"\b(?:{Sizes})\b").Select(m => CanonicalSize(m.Value)).Distinct().ToArray();
+
     private static Match? FindFragment(string text, IReadOnlyList<IGrouping<string, CatalogProduct>> catalog, bool priceQuestion)
     {
         if (text.Length == 0) return null;
@@ -78,7 +104,7 @@ public static class WhatsAppProductSuggestions
             }
 
             remaining = Regex.Replace(remaining, @"\b(?:con|sin)\s+chich\w*\b", " ");
-            var sizes = Regex.Matches(remaining, $@"\b(?:{Sizes})\b").Select(m => CanonicalSize(m.Value)).Distinct().ToArray();
+            var sizes = MentionedSizes(remaining);
             if (sizes.Length > 1) return Clarify("¿Qué tamaño prefieres?");
             if (sizes.Length == 1)
             {

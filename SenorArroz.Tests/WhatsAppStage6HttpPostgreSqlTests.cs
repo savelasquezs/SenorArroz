@@ -18,12 +18,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 using SenorArroz.API.Controllers;
+using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Options;
 using SenorArroz.Application.Features.Orders.Commands;
 using SenorArroz.Application.Features.Orders.Queries;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Services;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Repositories;
 using SenorArroz.Infrastructure.Services;
@@ -83,6 +86,169 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
         }).RequireAuthorization();
         await app.StartAsync();
         return app;
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Idle_attention_closes_only_completed_chats_and_releases_a_returning_customer_to_two_cashiers()
+    {
+        _clock.UtcNow = new DateTime(2026, 11, 19, 15, 0, 0, DateTimeKind.Utc);
+        var originalAssignment = _clock.UtcNow.AddHours(-5);
+        using (var tenant = _tenant.BeginTenantScope(1))
+        {
+            await using var db = Db();
+            await SeedManualAsync(db);
+            db.Users.Add(new User { Id = 8, BranchId = 1, Role = UserRole.Cashier, Name = "Segundo asesor", Email = "second@example.invalid" });
+            var first = await db.WhatsAppConversations.SingleAsync();
+            first.HumanAssignedAt = first.AttentionModeUpdatedAt = originalAssignment;
+            first.LastMessageAt = first.LastCustomerMessageAt = originalAssignment;
+            for (var id = 12; id <= 16; id++)
+                db.WhatsAppConversations.Add(new WhatsAppConversation
+                {
+                    Id = id, BranchId = 1, OperationalBranchId = 1, ChannelSettingId = 1, PhoneNumber = $"5730000000{id}",
+                    AttentionMode = WhatsAppAttentionMode.Human, AssignedUserId = 7, AttentionModeUpdatedAt = originalAssignment,
+                    HumanAssignedAt = originalAssignment, LastMessageAt = originalAssignment,
+                    IsPaymentPending = id == 12, NeedsHumanResponse = id == 14,
+                    LastCustomerMessageAt = id == 14 ? _clock.UtcNow.AddHours(-3) : originalAssignment
+                });
+            db.WhatsAppCommerceSessions.Add(new WhatsAppCommerceSession
+            { ConversationId = 13, ChannelSettingId = 1, FlowTokenHash = "active-draft", IdempotencyKey = "active-draft" });
+            var order = await db.Orders.SingleAsync();
+            order.Status = OrderStatus.Delivered;
+            order.SetStatusTimes(new() { ["delivered"] = _clock.UtcNow.AddHours(-3) });
+            for (var id = 12; id <= 16; id++)
+            {
+                var subsequentOrder = new Order
+                {
+                    Id = 100 + id, BranchId = 1, OriginBranchId = 1, TakenById = 7, Type = OrderType.Onsite,
+                    WhatsAppConversationId = id, CreatedAt = originalAssignment.AddMinutes(5),
+                    Status = id == 16 ? OrderStatus.Ready : OrderStatus.Delivered
+                };
+                subsequentOrder.SetStatusTimes(new() { ["delivered"] = _clock.UtcNow.AddHours(id == 15 ? -1 : -3) });
+                db.Orders.Add(subsequentOrder);
+            }
+            await db.SaveChangesAsync();
+            await db.Orders.Where(x => x.Id == order.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.CreatedAt, originalAssignment.AddMinutes(5)));
+        }
+
+        var notifier = Mock.Of<IWhatsAppNotificationService>();
+        await using var services = new ServiceCollection()
+            .AddSingleton<ITenantExecutionContext>(_tenant).AddSingleton<IClock>(_clock)
+            .AddSingleton(notifier).AddScoped<WhatsAppAttentionService>()
+            .AddScoped<IApplicationDbContext>(_ => Db()).BuildServiceProvider();
+        using var worker = new WhatsAppIdleAttentionWorker(services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<WhatsAppIdleAttentionWorker>.Instance);
+        Assert.Equal(1, await worker.ScanAsync(default));
+        Assert.Equal(0, await worker.ScanAsync(default));
+
+        using var business = _tenant.BeginTenantScope(1);
+        await using var verify = Db();
+        var saved = await verify.WhatsAppConversations.AsNoTracking().ToListAsync();
+        Assert.Equal(WhatsAppAttentionMode.Closed, saved.Single(c => c.Id == 11).AttentionMode);
+        Assert.All(saved.Where(c => c.Id != 11), c => Assert.Equal(7, c.AssignedUserId));
+        Assert.Empty(await verify.WhatsAppMessages.ToListAsync());
+
+        var cloud = new Mock<IWhatsAppCloudClient>(MockBehavior.Strict);
+        async Task Receive(int chatId, string id, DateTime sentAt)
+        {
+            await using var context = Db();
+            var phone = saved.Single(c => c.Id == chatId).PhoneNumber;
+            var payload = JsonSerializer.Serialize(new { entry = new[] { new { changes = new[] { new
+            {
+                field = "messages",
+                value = new {
+                    metadata = new { phone_number_id = "central" },
+                    messages = new[] { new { id, from = phone, timestamp = new DateTimeOffset(sentAt).ToUnixTimeSeconds().ToString(),
+                        type = "text", text = new { body = "Tengo una duda" } } }
+                }
+            } } } } });
+            var processor = new WhatsAppWebhookProcessor(context, _clock, cloud.Object, notifier, Mock.Of<IFirebaseGcsStorage>(),
+                Options.Create(new FirebaseStorageOptions()), Options.Create(new WhatsAppAiOrchestratorOptions()),
+                NullLogger<WhatsAppWebhookProcessor>.Instance, new WhatsAppAttentionService(), Mock.Of<IWhatsAppAiWorkQueue>(),
+                Mock.Of<IWhatsAppAutomaticMessageSender>(), Mock.Of<IBranchBusinessHoursService>(), null!, null!, _tenant,
+                processing: Options.Create(new WhatsAppProcessingOptions { Mode = "External" }));
+            await processor.ProcessAsync(new WhatsAppWebhookEvent(), payload, default);
+        }
+
+        await Receive(11, "wamid.older", originalAssignment.AddMinutes(-1));
+        Assert.Equal(WhatsAppAttentionMode.Closed, await verify.WhatsAppConversations.Where(c => c.Id == 11).Select(c => c.AttentionMode).SingleAsync());
+        _clock.UtcNow = _clock.UtcNow.AddHours(2);
+        await Receive(11, "wamid.returned", _clock.UtcNow);
+        await Receive(11, "wamid.returned", _clock.UtcNow);
+        await Receive(15, "wamid.before-sweep", _clock.UtcNow);
+        var reopened = await verify.WhatsAppConversations.AsNoTracking().Where(x => x.Id == 11 || x.Id == 15).ToArrayAsync();
+        Assert.All(reopened, c =>
+        {
+            Assert.Equal(WhatsAppAttentionMode.WaitingForHuman, c.AttentionMode);
+            Assert.Null(c.AssignedUserId);
+            Assert.Equal(1, c.UnreadCount);
+        });
+        Assert.Equal(2, await verify.WhatsAppWebhookEvents.CountAsync(x => x.EventType == "attention_action"));
+
+        await using var app = await Stage6HttpAsync();
+        using var client = app.GetTestClient();
+        var revision = reopened.Single(x => x.Id == 11).AttentionRevision;
+        async Task<HttpStatusCode> Take(string actor)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/whatsapp/conversations/11/attention-actions")
+                { Content = JsonContent.Create(new { action = "take", expectedVersion = revision }) };
+            request.Headers.Add("X-Test-Actor", actor);
+            using var response = await client.SendAsync(request);
+            return response.StatusCode;
+        }
+        var takes = await Task.WhenAll(Take("7"), Take("8"));
+        Assert.Contains(HttpStatusCode.OK, takes);
+        Assert.Contains(HttpStatusCode.Conflict, takes);
+        cloud.VerifyNoOtherCalls();
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Quick_reply_preview_resolves_catalog_prices_and_never_sends_editable_replies()
+    {
+        using (var tenant = _tenant.BeginTenantScope(1))
+        {
+            await using var db = Db();
+            await SeedManualAsync(db);
+            db.ProductCategories.Add(new ProductCategory { Id = 1, BranchId = 1, Name = "Arroces", StorefrontRole = "rice" });
+            db.Products.AddRange(
+                new Product { Id = 1, CategoryId = 1, Name = "Arroz Paisa Súper", Price = 66000, Active = true },
+                new Product { Id = 2, CategoryId = 1, Name = "Arroz Paisa con chicharrón Súper", Price = 77000, Active = true },
+                new Product { Id = 3, CategoryId = 1, Name = "Arroz Ropa Vieja Dúo", Price = 33000, Active = true });
+            db.WhatsAppQuickReplies.AddRange(new WhatsAppQuickReply
+            { Id = 1, BranchId = 1, Shortcut = "conchi", ReplyMode = WhatsAppQuickReply.ChicharronQuote },
+                new WhatsAppQuickReply { Id = 2, BranchId = 1, Shortcut = "saludo", ReplyMode = WhatsAppQuickReply.Draft, MessageTemplate = "Hola {{nombre_cliente}}" });
+            db.WhatsAppMessages.Add(new WhatsAppMessage
+            {
+                ConversationId = 11, Direction = WhatsAppMessageDirection.Inbound, Type = WhatsAppMessageType.Text,
+                Status = WhatsAppMessageStatus.Received, Timestamp = _clock.UtcNow, TextBody = "Paisa súper"
+            });
+            await db.SaveChangesAsync();
+        }
+        await using var app = await Stage6HttpAsync();
+        using var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Add("X-Test-Actor", "7");
+        async Task<JsonElement> Preview(int id, object body)
+        {
+            using var response = await client.PostAsJsonAsync($"/api/whatsapp/conversations/11/quick-replies/{id}/preview", body);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            return json.RootElement.GetProperty("data").Clone();
+        }
+        var automatic = (await Preview(1, new { })).GetProperty("text").GetString();
+        Assert.Contains("77.000", automatic);
+        Assert.Contains("66.000", automatic);
+        Assert.DoesNotContain("Ropa Vieja", automatic);
+        var chosen = (await Preview(1, new { family = "ropa vieja", size = "duo" })).GetProperty("text").GetString();
+        Assert.Contains("No disponible", chosen);
+        Assert.Contains("33.000", chosen);
+        Assert.Equal("Hola cliente", (await Preview(2, new { })).GetProperty("text").GetString());
+        using var send = await client.PostAsJsonAsync("/api/whatsapp/conversations/11/messages/quick-reply", new { quickReplyId = 1 });
+        Assert.Equal(HttpStatusCode.Conflict, send.StatusCode);
+        using var tenant1 = _tenant.BeginTenantScope(1);
+        await using var check = Db();
+        Assert.Equal(0, await check.WhatsAppMessages.CountAsync(x => x.Direction == WhatsAppMessageDirection.Outbound));
     }
 
     [PostgreSqlIntegrationFact]

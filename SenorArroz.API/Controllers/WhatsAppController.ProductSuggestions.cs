@@ -53,16 +53,19 @@ public partial class WhatsAppController
             .Select(x => new { x.Id, x.TextBody, CartPayload = x.AiProcessingError == WhatsAppCatalogCart.ManualReview
                 ? x.RawPayload : null }).ToListAsync(ct);
         if (messages.Count == 0) return [];
-        var catalog = await _db.Products.AsNoTracking()
-            .Where(x => x.Active && StorefrontCommerceService.PublicRoles.Contains(x.Category.StorefrontRole))
-            .Select(p => new WhatsAppProductSuggestions.CatalogProduct(p.Id, p.Name,
-                p.CommercialProfile == null ? null : p.CommercialProfile.Name, p.Category.StorefrontRole, p.StorefrontVariantLabel,
-                p.ServesPeopleMin, p.ServesPeopleMax, p.Price)).ToListAsync(ct);
+        var catalog = await ReadProductSuggestionCatalogAsync(ct);
         var products = catalog.ToDictionary(p => p.Id);
         return messages.ToDictionary(m => m.Id, m => m.CartPayload is null
             ? WhatsAppProductSuggestions.Find(m.TextBody, catalog)
             : WhatsAppCatalogCart.Read(m.CartPayload) is { } cart ? MatchCatalogCart(cart, products) : []);
     }
+
+    private Task<List<WhatsAppProductSuggestions.CatalogProduct>> ReadProductSuggestionCatalogAsync(CancellationToken ct) =>
+        _db.Products.AsNoTracking()
+            .Where(x => x.Active && StorefrontCommerceService.PublicRoles.Contains(x.Category.StorefrontRole))
+            .Select(p => new WhatsAppProductSuggestions.CatalogProduct(p.Id, p.Name,
+                p.CommercialProfile == null ? null : p.CommercialProfile.Name, p.Category.StorefrontRole, p.StorefrontVariantLabel,
+                p.ServesPeopleMin, p.ServesPeopleMax, p.Price)).ToListAsync(ct);
 
     private IReadOnlyList<WhatsAppProductSuggestions.Match> MatchCatalogCart(WhatsAppCatalogCart cart,
         IReadOnlyDictionary<int, WhatsAppProductSuggestions.CatalogProduct> catalog)

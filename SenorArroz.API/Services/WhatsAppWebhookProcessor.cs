@@ -93,7 +93,9 @@ public sealed partial class WhatsAppWebhookProcessor
         using var document = JsonDocument.Parse(rawPayload);
         webhookEvent.Processed = await ProcessWebhookPayloadAsync(document.RootElement, webhookEvent,
             createdMessages, aiProcessingChanges, awayMessageDispatches, cancellationToken);
-        await SaveInboundWithCommercialChoicesAsync(createdMessages, cancellationToken);
+        var released = await SaveInboundWithCommercialChoicesAsync(createdMessages, cancellationToken);
+        foreach (var (chat, previousUser) in released)
+            await WhatsAppIdleAttention.PublishAsync(_whatsAppNotificationService, chat, previousUser, _logger, cancellationToken);
         if (!webhookEvent.ConversationId.HasValue && createdMessages.FirstOrDefault(x => !x.IsHistorical
             && x.Direction == WhatsAppMessageDirection.Inbound) is { } incoming)
         {
@@ -513,17 +515,23 @@ public sealed partial class WhatsAppWebhookProcessor
                 ? null
                 : await DownloadAndStoreInboundMediaAsync(setting, conversation.BranchId, conversation.Id, mediaPayload.Value, messageType, cancellationToken);
 
-            if (conversation.AttentionMode == WhatsAppAttentionMode.Closed || cart is not null && conversation.AttentionMode == WhatsAppAttentionMode.Ai)
+            var beforeClosure = conversation.AttentionMode == WhatsAppAttentionMode.Closed && timestamp <= conversation.ClosedAt
+                && timestamp <= (conversation.LastMessageAt ?? conversation.LastCustomerMessageAt ?? conversation.ClosedAt);
+            if (!beforeClosure && (conversation.AttentionMode == WhatsAppAttentionMode.Closed
+                || cart is not null && conversation.AttentionMode == WhatsAppAttentionMode.Ai))
                 _attentionService.RequestHumanAfterNewMessage(conversation, _clock.UtcNow);
-            conversation.Status = WhatsAppConversationStatus.Open;
-            if (!conversation.LastMessageAt.HasValue || timestamp >= conversation.LastMessageAt)
+            if (!beforeClosure)
             {
-                conversation.LastMessageAt = timestamp;
-                conversation.LastMessagePreview = PreviewForMedia(messageType, text ?? string.Empty);
+                conversation.Status = WhatsAppConversationStatus.Open;
+                if (!conversation.LastMessageAt.HasValue || timestamp >= conversation.LastMessageAt)
+                {
+                    conversation.LastMessageAt = timestamp;
+                    conversation.LastMessagePreview = PreviewForMedia(messageType, text ?? string.Empty);
+                }
+                conversation.LastCustomerMessageAt = timestamp > conversation.LastCustomerMessageAt ? timestamp : conversation.LastCustomerMessageAt ?? timestamp;
+                conversation.NeedsHumanResponse = conversation.AttentionMode != WhatsAppAttentionMode.Ai;
+                conversation.UnreadCount += 1;
             }
-            conversation.LastCustomerMessageAt = timestamp > conversation.LastCustomerMessageAt ? timestamp : conversation.LastCustomerMessageAt ?? timestamp;
-            conversation.NeedsHumanResponse = conversation.AttentionMode != WhatsAppAttentionMode.Ai;
-            conversation.UnreadCount += 1;
 
             var aiProcessingStatus = WhatsAppAiProcessingStatus.Pending;
             DateTime? aiProcessedAt = null;
@@ -556,7 +564,7 @@ public sealed partial class WhatsAppWebhookProcessor
                 aiProcessedAt = _clock.UtcNow;
                 aiProcessingError = WhatsAppCatalogCart.ManualReview;
             }
-            if (cart is null && !channelSettingId.HasValue && setting.AwayMessageEnabled)
+            if (!beforeClosure && cart is null && !channelSettingId.HasValue && setting.AwayMessageEnabled)
             {
                 var receivedAtUtc = _clock.UtcNow;
                 var evaluation = await _businessHoursService.Evaluate(setting.BranchId, receivedAtUtc, cancellationToken);
@@ -615,7 +623,8 @@ public sealed partial class WhatsAppWebhookProcessor
                 Status = WhatsAppMessageStatus.Received,
                 Timestamp = timestamp,
                 RawPayload = SenorArroz.Application.Common.Helpers.WhatsAppFlowPayload.WithoutTokens(messageElement.GetRawText()),
-                AiProcessingStatus = aiProcessingStatus,
+                IsHistorical = beforeClosure,
+                AiProcessingStatus = beforeClosure ? WhatsAppAiProcessingStatus.NotApplicable : aiProcessingStatus,
                 AiResponseAttentionVersion = webhookEvent.AttentionVersion ?? conversation.AttentionModeUpdatedAt,
                 AiProcessedAt = aiProcessedAt,
                 AiProcessingError = aiProcessingError,
@@ -974,19 +983,43 @@ public sealed partial class WhatsAppWebhookProcessor
             : null;
     }
 
-    private async Task SaveInboundWithCommercialChoicesAsync(List<WhatsAppMessage> messages, CancellationToken ct)
+    private async Task<List<(WhatsAppConversation Chat, int PreviousUser)>> SaveInboundWithCommercialChoicesAsync(
+        List<WhatsAppMessage> messages, CancellationToken ct)
     {
-        var selections = messages.Where(x => !x.IsHistorical && x.Direction == WhatsAppMessageDirection.Inbound)
+        var inbound = messages.Where(x => !x.IsHistorical && x.Direction == WhatsAppMessageDirection.Inbound).ToArray();
+        var selections = inbound
             .Select(x => (Message: x, Choice: ReadCommercialChoice(x.RawPayload)))
             .Where(x => x.Choice.HasValue).OrderBy(x => x.Message.Conversation.Id).ToArray();
-        await using var transaction = selections.Length > 0 && _db.Database.IsRelational()
+        var possiblyExpired = inbound.GroupBy(x => x.Conversation.Id)
+            .Select(x => x.OrderBy(m => m.Timestamp).First())
+            .Where(x => WhatsAppIdleAttention.CouldExpire(x.Conversation, x.Timestamp)).ToArray();
+        var conversationIds = selections.Select(x => x.Message.Conversation.Id)
+            .Concat(possiblyExpired.Select(x => x.Conversation.Id)).Distinct().Order().ToArray();
+        await using var transaction = conversationIds.Length > 0 && _db.Database.IsRelational()
             ? await _db.Database.BeginTransactionAsync(ct) : null;
+        foreach (var id in conversationIds)
+            await WhatsAppCommercialDraft.LockAsync(_db, TenantId, id, ct);
+
+        var released = new List<(WhatsAppConversation, int)>();
+        foreach (var message in possiblyExpired)
+        {
+            var chat = message.Conversation;
+            var before = await _db.WhatsAppConversations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == chat.Id, ct);
+            if (before is null || before.AttentionRevision != chat.AttentionRevision
+                || !await WhatsAppIdleAttention.EligibleAsync(_db, before, message.Timestamp, ct)) continue;
+
+            var previousUser = before.AssignedUserId!.Value;
+            _attentionService.RequestHumanAfterNewMessage(chat, _clock.UtcNow);
+            WhatsAppIdleAttention.Audit(_db, chat, previousUser, "release-on-inbound", _clock.UtcNow);
+            released.Add((chat, previousUser));
+        }
+
         foreach (var (message, choice) in selections)
         {
-            await WhatsAppCommercialDraft.LockAsync(_db, TenantId, message.Conversation.Id, ct);
             var selection = choice!.Value;
             var isProduct = selection.Prefix == WhatsAppCommercialDraft.ProductChoicePrefix;
-            var applied = await ApplyCommercialChoiceAsync(message, selection, ct);
+            var applied = message.Conversation.AttentionMode == WhatsAppAttentionMode.Human
+                && await ApplyCommercialChoiceAsync(message, selection, ct);
             message.AiProcessingStatus = WhatsAppAiProcessingStatus.NotApplicable;
             message.AiProcessedAt = _clock.UtcNow;
             message.AiProcessingError = isProduct
@@ -1000,6 +1033,7 @@ public sealed partial class WhatsAppWebhookProcessor
         }
         await _db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
+        return released;
     }
 
     private readonly record struct CommercialSelection(string? ContextId, string Prefix, Guid RequestId, int OptionId);
