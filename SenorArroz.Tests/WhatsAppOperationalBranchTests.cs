@@ -394,7 +394,7 @@ public sealed partial class WhatsAppOperationalBranchTests
         await db.SaveChangesAsync();
     }
 
-    private static WhatsAppController CreateController(ApplicationDbContext db, int userId = 7, int branchId = 1, string role = "Cashier", IWhatsAppCloudClient? cloud = null, IInventoryService? inventory = null)
+    private static WhatsAppController CreateController(ApplicationDbContext db, int userId = 7, int branchId = 1, string role = "Cashier", IWhatsAppCloudClient? cloud = null, IInventoryService? inventory = null, WhatsAppCloudOptions? cloudOptions = null)
     {
         var currentUser = new Mock<ICurrentUser>();
         currentUser.SetupGet(x => x.Id).Returns(userId);
@@ -417,7 +417,7 @@ public sealed partial class WhatsAppOperationalBranchTests
             notifications.Object,
             Mock.Of<IFirebaseGcsStorage>(),
             Options.Create(new FirebaseStorageOptions()),
-            Options.Create(new WhatsAppCloudOptions()),
+            Options.Create(cloudOptions ?? new()),
             Options.Create(new WhatsAppAiOrchestratorOptions()),
             Mock.Of<ILogger<WhatsAppController>>(),
             new WhatsAppAttentionService(),

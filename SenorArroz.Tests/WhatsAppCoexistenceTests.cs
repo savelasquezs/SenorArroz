@@ -58,11 +58,50 @@ public sealed class WhatsAppCoexistenceTests
         await db.SaveChangesAsync();
     }
     private static WhatsAppWebhookProcessor Processor(ApplicationDbContext db, Mock<IWhatsAppAiWorkQueue> queue,
-        Mock<IWhatsAppNotificationService> notifications) => new(db, Mock.Of<IClock>(x => x.UtcNow == Now),
+        Mock<IWhatsAppNotificationService> notifications, WhatsAppCloudOptions? cloudOptions = null) => new(db, Mock.Of<IClock>(x => x.UtcNow == Now),
         Mock.Of<IWhatsAppCloudClient>(), notifications.Object, Mock.Of<IFirebaseGcsStorage>(), Options.Create(new FirebaseStorageOptions()),
         Options.Create(new WhatsAppAiOrchestratorOptions()), NullLogger<WhatsAppWebhookProcessor>.Instance,
         new WhatsAppAttentionService(), queue.Object, Mock.Of<IWhatsAppAutomaticMessageSender>(),
-        Mock.Of<IBranchBusinessHoursService>(), null!, null!, TestTenantContext.Default);
+        Mock.Of<IBranchBusinessHoursService>(), null!, null!, TestTenantContext.Default,
+        cloudOptions: Options.Create(cloudOptions ?? new()));
+
+    [Fact]
+    public async Task Catalog_cart_is_delivered_once_for_manual_attention_with_its_original_amounts()
+    {
+        await using var db = Db();
+        await Seed(db);
+        db.ProductCategories.Add(new ProductCategory { Id = 4, BranchId = 1, Name = "Arroces", StorefrontRole = "rice" });
+        db.Products.Add(new Product { Id = 26, CategoryId = 4, Name = "Arroz paisa Personal", Price = 19000 });
+        db.WhatsAppConversations.Add(new WhatsAppConversation { BranchId = 1, BranchLineId = 1,
+            PhoneNumber = "573000000001", AttentionMode = WhatsAppAttentionMode.Ai });
+        await db.SaveChangesAsync();
+        var options = new WhatsAppCloudOptions { CatalogProductIds = new() { ["catalog-1"] = new() { ["personal"] = 26 } } };
+        var queue = new Mock<IWhatsAppAiWorkQueue>();
+        var processor = Processor(db, queue, new(), options);
+        const string payload = """
+            {"object":"whatsapp_business_account","entry":[{"id":"waba","changes":[{"field":"messages","value":{
+            "metadata":{"phone_number_id":"line-1"},"messages":[{"id":"wamid.cart","from":"573000000001","type":"order",
+            "order":{"catalog_id":"catalog-1","text":"Recojo en Santander","product_items":[
+            {"product_retailer_id":"personal","quantity":"2","item_price":"18000","currency":"COP"},
+            {"product_retailer_id":"unmapped","quantity":1,"item_price":40000,"currency":"COP"}]}}]}}]}]}
+            """;
+        await processor.ProcessAsync(new WhatsAppWebhookEvent(), payload, default);
+        await processor.ProcessAsync(new WhatsAppWebhookEvent(), payload, default);
+
+        var message = Assert.Single(await db.WhatsAppMessages.ToListAsync());
+        Assert.Equal(WhatsAppMessageDirection.Inbound, message.Direction);
+        Assert.Equal(WhatsAppCatalogCart.ManualReview, message.AiProcessingError);
+        Assert.Equal(WhatsAppAiProcessingStatus.NotApplicable, message.AiProcessingStatus);
+        Assert.Contains("2 × Arroz paisa Personal · $18.000 c/u", message.TextBody);
+        Assert.Contains("Artículo unmapped (sin equivalencia)", message.TextBody);
+        Assert.Contains("$76.000", message.TextBody);
+        Assert.Contains("Recojo en Santander", message.TextBody);
+        Assert.Equal(WhatsAppAttentionMode.WaitingForHuman, message.Conversation.AttentionMode);
+        Assert.True(message.Conversation.NeedsHumanResponse);
+        queue.Verify(x => x.TryEnqueue(It.IsAny<int>(), It.IsAny<int>()), Times.Never);
+        Assert.Empty(await db.WhatsAppCommerceSessions.ToListAsync());
+        Assert.Empty(await db.Orders.ToListAsync());
+    }
 
     [Fact]
     public void Echo_and_history_use_the_contact_partition_and_keep_lines_separate()

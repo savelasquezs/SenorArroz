@@ -9,4 +9,5 @@ public class WhatsAppCloudOptions
     public string? AccessToken { get; set; }
     public string? BusinessAccountId { get; set; }
     public string? PhoneNumberId { get; set; }
+    public Dictionary<string, Dictionary<string, int>> CatalogProductIds { get; set; } = [];
 }

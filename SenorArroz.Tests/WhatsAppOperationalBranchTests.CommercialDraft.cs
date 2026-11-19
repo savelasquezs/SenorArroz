@@ -165,6 +165,41 @@ public sealed partial class WhatsAppOperationalBranchTests
     }
 
     [Fact]
+    public async Task Catalog_cart_suggests_only_verified_skus_with_customer_quantities_and_current_prices()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, 1, 7);
+        db.ProductCategories.Add(new ProductCategory { Id = 4, BranchId = 1, Name = "Arroces", StorefrontRole = "rice" });
+        db.Products.Add(new Product { Id = 26, CategoryId = 4, Name = "Arroz paisa Personal", Price = 19000 });
+        db.WhatsAppMessages.Add(new WhatsAppMessage
+        {
+            Id = 91, ConversationId = 11, Direction = WhatsAppMessageDirection.Inbound, Type = WhatsAppMessageType.Text,
+            AiProcessingError = WhatsAppCatalogCart.ManualReview, TextBody = "Carrito de WhatsApp",
+            RawPayload = """
+                {"type":"order","order":{"catalog_id":"catalog-1","text":"Arroz paisa personal sin chicharrón",
+                "product_items":[{"product_retailer_id":"personal","quantity":"2","item_price":"18000","currency":"COP"},
+                {"product_retailer_id":"unmapped","quantity":"1","item_price":"19000","currency":"COP"}]}}
+                """
+        });
+        await db.SaveChangesAsync();
+        var options = new WhatsAppCloudOptions { CatalogProductIds = new() { ["catalog-1"] = new() { ["personal"] = 26 } } };
+        var controller = CreateController(db, cloudOptions: options);
+        var result = Assert.IsType<ApiResponse<WhatsAppProductSuggestionsDto>>(Assert.IsType<OkObjectResult>(
+            await controller.GetProductSuggestions(11, new([91]), default)).Value).Data!;
+        var suggestion = Assert.Single(Assert.Single(result.Messages).Suggestions);
+        Assert.Equal(("add", 26, 2, 19000), (suggestion.Kind, suggestion.ProductId, suggestion.Quantity, suggestion.UnitPrice));
+
+        var started = DraftPayload(await controller.StartCommercialDraft(11, new(), default));
+        var request = new WhatsAppDraftWriteDto { SessionId = started.SessionId, ExpectedVersion = started.Version,
+            Order = new() { BranchId = 1, OrderDetails = [
+                new() { ProductId = 26, Quantity = 2, UnitPrice = 19000, WhatsAppSuggestionMessageId = 91 }
+            ] } };
+        var saved = DraftPayload(await controller.SaveCommercialDraft(11, request, default));
+        Assert.Equal(91, Assert.Single(saved.Order.OrderDetails).WhatsAppSuggestionMessageId);
+        Assert.Empty(await db.Orders.ToListAsync());
+    }
+
+    [Fact]
     public async Task Product_suggestions_use_public_menu_prices_and_skip_internal_gifts()
     {
         await using var db = CreateDb();
