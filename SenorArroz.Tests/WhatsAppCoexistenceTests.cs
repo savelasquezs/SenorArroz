@@ -35,7 +35,7 @@ public sealed class WhatsAppCoexistenceTests
     {
         @object = "whatsapp_business_account", entry = new[] { new { id = "waba", changes = new[] {
             new { field, value = new Dictionary<string, object> { ["metadata"] = new { phone_number_id = line },
-                [field == "smb_message_echoes" ? "message_echoes" : field == "history" ? "history" : "state_sync"] = data } } } } }
+                [field switch { "smb_message_echoes" => "message_echoes", "history" => "history", "messages" => "messages", _ => "state_sync" }] = data } } } } }
     });
     private static object Echo(string id = "echo-1") => new { from = "573111111111", to = "573000000001", id,
         timestamp = "1793901600", type = "text", text = new { body = "Te atiendo desde el celular" } };
@@ -102,6 +102,44 @@ public sealed class WhatsAppCoexistenceTests
         Assert.True(update.IsUpdate);
         Assert.Equal("businessApp", update.HiddenSource);
         Assert.Empty(update.TextBody);
+    }
+
+    [Fact]
+    public async Task Edits_from_the_customer_and_business_app_keep_the_original_messages_and_activity()
+    {
+        await using var db = Db();
+        await Seed(db);
+        var queue = new Mock<IWhatsAppAiWorkQueue>();
+        var notifications = new Mock<IWhatsAppNotificationService>();
+        var processor = Processor(db, queue, notifications);
+        await processor.ProcessAsync(new(), Payload("smb_message_echoes", new[] { Echo("outbound") }), default);
+        var original = new { id = "inbound", from = "573000000001", type = "text", timestamp = "1793901601",
+            context = new { id = "outbound" }, text = new { body = "Texto inicial" } };
+        await processor.ProcessAsync(new(), Payload("messages", new[] { original }), default);
+        var chat = await db.WhatsAppConversations.SingleAsync();
+        var lastActivity = chat.LastMessageAt;
+        var unread = chat.UnreadCount;
+
+        static object Edit(string id, string target, string text, string timestamp, bool outbound) => new
+        {
+            id, from = outbound ? "573111111111" : "573000000001", to = "573000000001", timestamp, type = "edit",
+            edit = new { original_message_id = target, message = new { type = "text", text = new { body = text } } }
+        };
+        var newest = Edit("edit-new", "inbound", "Texto corregido", "1793901620", false);
+        await processor.ProcessAsync(new(), Payload("messages", new[] { newest }), default);
+        await processor.ProcessAsync(new(), Payload("messages", new[] { newest, Edit("edit-old", "inbound", "Versión anterior", "1793901610", false) }), default);
+        await processor.ProcessAsync(new(), Payload("smb_message_echoes", new[] { Edit("edit-business", "outbound", "Respuesta corregida", "1793901630", true) }), default);
+
+        Assert.Equal(2, await db.WhatsAppMessages.CountAsync());
+        Assert.Equal(lastActivity, chat.LastMessageAt);
+        Assert.Equal(unread, chat.UnreadCount);
+        Assert.Equal("Texto corregido", chat.LastMessagePreview);
+        var changes = notifications.Invocations.Where(x => x.Method.Name == nameof(IWhatsAppNotificationService.NotifyMessageCreatedAsync))
+            .Select(x => (WhatsAppMessageDto)x.Arguments[2]).Where(x => x.IsUpdate).ToArray();
+        Assert.Equal(2, changes.Length);
+        Assert.All(changes, message => Assert.NotNull(message.EditedAt));
+        Assert.Equal("outbound", changes[0].ReplyToWhatsAppMessageId);
+        Assert.Equal("Respuesta corregida", changes[1].TextBody);
     }
 
     [Fact]

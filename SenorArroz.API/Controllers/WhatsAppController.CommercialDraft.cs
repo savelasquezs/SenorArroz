@@ -176,6 +176,8 @@ public partial class WhatsAppController
                 }
                 else if (action == "cancel")
                 {
+                    if (session.CheckoutId is not null)
+                        throw new BusinessException("Revisa el pago en línea antes de descartar este borrador.");
                     conversation.NeedsHumanResponse = false;
                     session.Status = "cancelled";
                     session.CommercialStatus = "no_sale";

@@ -141,6 +141,11 @@ public sealed partial class WhatsAppWebhookProcessor
         }
         var conversation = historical ? await CoexistenceConversationAsync(setting, identity.PhoneNumber!, ct)
             : await CoexistenceEchoConversationAsync(setting, identity, ct);
+        if (kind == "edit")
+        {
+            await ApplyProviderEditAsync(conversation, item, timestamp, outbound, historical ? [] : updates, ct);
+            return;
+        }
         var existing = _db.WhatsAppMessages.Local.FirstOrDefault(x => x.Conversation == conversation && x.WhatsAppMessageId == id)
             ?? await _db.WhatsAppMessages.FirstOrDefaultAsync(x => x.ConversationId == conversation.Id && x.WhatsAppMessageId == id, ct);
         if (existing is not null)
@@ -158,25 +163,18 @@ public sealed partial class WhatsAppWebhookProcessor
             return;
         }
         var content = item;
-        if (kind is "edit" or "revoke" && item.TryGetProperty(kind, out var change))
+        if (kind == "revoke" && item.TryGetProperty(kind, out var change))
         {
             var originalId = TryGetString(change, "original_message_id");
             var original = originalId is null ? null : _db.WhatsAppMessages.Local.FirstOrDefault(x => x.Conversation == conversation
                 && x.WhatsAppMessageId == originalId) ?? await _db.WhatsAppMessages.FirstOrDefaultAsync(x => x.ConversationId == conversation.Id
                     && x.WhatsAppMessageId == originalId, ct);
-            if (kind == "edit" && change.TryGetProperty("message", out var edited)) content = edited;
             if (original is not null)
             {
-                if (kind == "revoke")
-                {
-                    original.HiddenAt = timestamp;
-                    original.HiddenByUserId = null;
-                }
-                else
-                    original.TextBody = TryGetTextBody(content) ?? (content.TryGetProperty(TryGetString(content, "type") ?? "image", out var media)
-                        ? TryGetString(media, "caption") : null) ?? original.TextBody;
+                original.HiddenAt = timestamp;
+                original.HiddenByUserId = null;
                 if (conversation.LastMessageAt == original.Timestamp)
-                    conversation.LastMessagePreview = original.HiddenAt.HasValue ? "Mensaje eliminado desde WhatsApp Business" : original.TextBody;
+                    conversation.LastMessagePreview = "Mensaje eliminado desde WhatsApp Business";
                 if (!historical) updates.Add(original);
                 return;
             }
