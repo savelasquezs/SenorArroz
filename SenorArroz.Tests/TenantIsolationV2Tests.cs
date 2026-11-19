@@ -24,10 +24,12 @@ public sealed class TenantIsolationV2Tests
             .ToList();
         var global = entityTypes.Except(tenantOwned).ToList();
 
-        Assert.Equal(118, entityTypes.Count);
-        Assert.Equal(117, tenantOwned.Count);
+        Assert.Equal(120, entityTypes.Count);
+        Assert.Equal(119, tenantOwned.Count);
         Assert.Contains(tenantOwned, x => x.ClrType == typeof(WhatsAppRealtimeEvent));
         Assert.Contains(tenantOwned, x => x.ClrType == typeof(WhatsAppInboxTakenReset));
+        Assert.Contains(tenantOwned, x => x.ClrType == typeof(WhatsAppInboxLabel));
+        Assert.Contains(tenantOwned, x => x.ClrType == typeof(WhatsAppConversationLabel));
         Assert.Contains(tenantOwned, x => x.ClrType == typeof(OperationalReminder));
         Assert.Contains(tenantOwned, x => x.ClrType == typeof(OperationalReminderState));
         Assert.Contains(tenantOwned, x => x.ClrType == typeof(BillingRecipientProfile));
