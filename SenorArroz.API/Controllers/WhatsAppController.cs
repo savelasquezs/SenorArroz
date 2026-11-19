@@ -476,10 +476,10 @@ public partial class WhatsAppController : ControllerBase
     [HttpGet("conversations")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<WhatsAppConversationDto>>>> GetConversations(
-        [FromQuery] WhatsAppConversationSearchDto search,
+        [FromQuery] WhatsAppConversationSearchDto request,
         CancellationToken cancellationToken)
     {
-        var page = await GetConversationPage(search, cancellationToken);
+        var page = await GetConversationPage(request, cancellationToken);
         if (page.Result is OkObjectResult { Value: ApiResponse<WhatsAppConversationPageDto> response })
             return Ok(ApiResponse<IReadOnlyList<WhatsAppConversationDto>>.SuccessResponse(response.Data!.Items));
         return page.Result!;
