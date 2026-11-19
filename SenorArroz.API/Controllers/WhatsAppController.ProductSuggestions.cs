@@ -50,15 +50,29 @@ public partial class WhatsAppController
         var messages = await _db.WhatsAppMessages.AsNoTracking()
             .Where(x => x.ConversationId == conversationId && ids.Contains(x.Id) && x.Direction == WhatsAppMessageDirection.Inbound
                 && x.Type == WhatsAppMessageType.Text && !x.IsHistorical)
-            .Select(x => new { x.Id, x.TextBody }).ToListAsync(ct);
+            .Select(x => new { x.Id, x.TextBody, CartPayload = x.AiProcessingError == WhatsAppCatalogCart.ManualReview
+                ? x.RawPayload : null }).ToListAsync(ct);
         if (messages.Count == 0) return [];
         var catalog = await _db.Products.AsNoTracking()
             .Where(x => x.Active && StorefrontCommerceService.PublicRoles.Contains(x.Category.StorefrontRole))
             .Select(p => new WhatsAppProductSuggestions.CatalogProduct(p.Id, p.Name,
                 p.CommercialProfile == null ? null : p.CommercialProfile.Name, p.Category.StorefrontRole, p.StorefrontVariantLabel,
                 p.ServesPeopleMin, p.ServesPeopleMax, p.Price)).ToListAsync(ct);
-        return messages.ToDictionary(m => m.Id, m => WhatsAppProductSuggestions.Find(m.TextBody, catalog));
+        var products = catalog.ToDictionary(p => p.Id);
+        return messages.ToDictionary(m => m.Id, m => m.CartPayload is null
+            ? WhatsAppProductSuggestions.Find(m.TextBody, catalog)
+            : WhatsAppCatalogCart.Read(m.CartPayload) is { } cart ? MatchCatalogCart(cart, products) : []);
     }
+
+    private IReadOnlyList<WhatsAppProductSuggestions.Match> MatchCatalogCart(WhatsAppCatalogCart cart,
+        IReadOnlyDictionary<int, WhatsAppProductSuggestions.CatalogProduct> catalog)
+        => cart.Items.Select(item => (Id: cart.ProductId(_whatsAppOptions, item), item.Quantity))
+            .Where(item => item.Id.HasValue && catalog.ContainsKey(item.Id.Value))
+            .GroupBy(item => item.Id!.Value, item => (long)item.Quantity)
+            .Select(group => (group.Key, Quantity: group.Sum()))
+            .Where(item => item.Quantity <= 999)
+            .Select(item => new WhatsAppProductSuggestions.Match(catalog[item.Key], (int)item.Quantity, null))
+            .ToArray();
 
     private async Task<IReadOnlyDictionary<int, ProductAvailabilityDto>?> ProductSuggestionAvailabilityAsync(
         IEnumerable<int> ids, int branchId, CancellationToken ct)

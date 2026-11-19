@@ -107,7 +107,7 @@ public partial class WhatsAppController : ControllerBase
         _webhookProcessor = webhookProcessor ?? new WhatsAppWebhookProcessor(db, clock, whatsAppCloudClient, whatsAppNotificationService, firebaseStorage, firebaseOptions,
             aiOptions, Microsoft.Extensions.Logging.Abstractions.NullLogger<WhatsAppWebhookProcessor>.Instance,
             attentionService, aiWorkQueue, automaticMessageSender, businessHoursService, awayMessageService,
-            commerceFlow, currentTenant, inventory);
+            commerceFlow, currentTenant, inventory, cloudOptions: whatsAppOptions);
         _manualOperations = manualOperations ?? new WhatsAppManualOperations(db, currentUser, branchContext, clock,
             whatsAppCloudClient, whatsAppNotificationService, whatsAppOptions, logger, attentionService,
             commerceFlow, _webhookProcessor, currentTenant, inventory, processingOptions);

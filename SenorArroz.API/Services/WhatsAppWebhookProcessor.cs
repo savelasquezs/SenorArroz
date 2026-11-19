@@ -41,6 +41,7 @@ public sealed partial class WhatsAppWebhookProcessor
     private readonly int _aiMaxPersistentAttempts;
     private readonly Lazy<IAgentToolExecutor>? _toolExecutor;
     private readonly bool _externalProcessing;
+    private readonly WhatsAppCloudOptions _cloudOptions;
 
     public WhatsAppWebhookProcessor(
         IApplicationDbContext db,
@@ -60,7 +61,8 @@ public sealed partial class WhatsAppWebhookProcessor
         ICurrentTenant? currentTenant = null,
         IInventoryService? inventory = null,
         Lazy<IAgentToolExecutor>? toolExecutor = null,
-        IOptions<WhatsAppProcessingOptions>? processing = null)
+        IOptions<WhatsAppProcessingOptions>? processing = null,
+        IOptions<WhatsAppCloudOptions>? cloudOptions = null)
     {
         _db = db;
         _clock = clock;
@@ -80,6 +82,7 @@ public sealed partial class WhatsAppWebhookProcessor
         _inventory = inventory;
         _toolExecutor = toolExecutor;
         _externalProcessing = processing?.Value.External == true;
+        _cloudOptions = cloudOptions?.Value ?? new();
     }
 
     public async Task ProcessAsync(WhatsAppWebhookEvent webhookEvent, string rawPayload, CancellationToken cancellationToken)
@@ -107,7 +110,7 @@ public sealed partial class WhatsAppWebhookProcessor
                         ToConversationDto(message.Conversation), cancellationToken);
                     continue;
                 }
-                if (message.Direction != WhatsAppMessageDirection.Inbound
+                if (message.Direction != WhatsAppMessageDirection.Inbound || message.AiProcessingError == WhatsAppCatalogCart.ManualReview
                     || message.AiProcessingError is WhatsAppCommercialDraft.AddressApplied or WhatsAppCommercialDraft.ProductApplied
                         or "order_address_unavailable" or "order_product_unavailable") continue;
                 if (message.Conversation.ChannelSettingId.HasValue
@@ -342,7 +345,9 @@ public sealed partial class WhatsAppWebhookProcessor
         {
             var messageId = TryGetString(messageElement, "id");
             var typeText = TryGetString(messageElement, "type");
-            if (!TryMapMessageType(typeText, out var messageType))
+            var cart = WhatsAppCatalogCart.Read(messageElement);
+            var messageType = WhatsAppMessageType.Text;
+            if (cart is null ? !TryMapMessageType(typeText, out messageType) : string.IsNullOrWhiteSpace(messageId))
                 continue;
 
             if (!string.IsNullOrWhiteSpace(messageId)
@@ -358,6 +363,14 @@ public sealed partial class WhatsAppWebhookProcessor
             var text = messageType == WhatsAppMessageType.Text
                 ? TryGetTextBody(messageElement)
                 : TryGetMediaCaptionOrName(mediaPayload, messageType);
+            if (cart is not null)
+            {
+                var ids = cart.Items.Select(item => cart.ProductId(_cloudOptions, item)).OfType<int>().Distinct().ToArray();
+                var names = ids.Length == 0 ? new Dictionary<int, string>() : await _db.Products.AsNoTracking()
+                    .Where(p => ids.Contains(p.Id) && p.Active && StorefrontCommerceService.PublicRoles.Contains(p.Category.StorefrontRole))
+                    .ToDictionaryAsync(p => p.Id, p => p.Name, cancellationToken);
+                text = cart.Format(_cloudOptions, names);
+            }
             if (identity.PhoneNumber is null && identity.UserId is null)
             {
                 _logger.LogWarning("WhatsApp inbound message {MessageId} ignored because it has neither phone nor BSUID.", messageId);
@@ -500,7 +513,7 @@ public sealed partial class WhatsAppWebhookProcessor
                 ? null
                 : await DownloadAndStoreInboundMediaAsync(setting, conversation.BranchId, conversation.Id, mediaPayload.Value, messageType, cancellationToken);
 
-            if (conversation.AttentionMode == WhatsAppAttentionMode.Closed)
+            if (conversation.AttentionMode == WhatsAppAttentionMode.Closed || cart is not null && conversation.AttentionMode == WhatsAppAttentionMode.Ai)
                 _attentionService.RequestHumanAfterNewMessage(conversation, _clock.UtcNow);
             conversation.Status = WhatsAppConversationStatus.Open;
             if (!conversation.LastMessageAt.HasValue || timestamp >= conversation.LastMessageAt)
@@ -537,7 +550,13 @@ public sealed partial class WhatsAppWebhookProcessor
             }
             DateTime? awayClosedPeriodStartedAtUtc = null;
             string? awayText = null;
-            if (!channelSettingId.HasValue && setting.AwayMessageEnabled)
+            if (cart is not null)
+            {
+                aiProcessingStatus = WhatsAppAiProcessingStatus.NotApplicable;
+                aiProcessedAt = _clock.UtcNow;
+                aiProcessingError = WhatsAppCatalogCart.ManualReview;
+            }
+            if (cart is null && !channelSettingId.HasValue && setting.AwayMessageEnabled)
             {
                 var receivedAtUtc = _clock.UtcNow;
                 var evaluation = await _businessHoursService.Evaluate(setting.BranchId, receivedAtUtc, cancellationToken);
