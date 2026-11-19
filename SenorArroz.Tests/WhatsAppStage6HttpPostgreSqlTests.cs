@@ -253,6 +253,49 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Two_cashiers_taking_an_empty_chat_create_one_draft_and_no_order()
+    {
+        using (var tenant = _tenant.BeginTenantScope(1))
+        {
+            await using var db = Db();
+            await SeedManualAsync(db);
+            db.Users.Add(new User { Id = 8, BranchId = 1, Name = "Segundo asesor", Email = "second@example.invalid", Role = UserRole.Cashier });
+            var conversation = await db.WhatsAppConversations.SingleAsync();
+            conversation.AttentionMode = WhatsAppAttentionMode.WaitingForHuman;
+            conversation.AssignedUserId = null;
+            db.Orders.Remove(await db.Orders.SingleAsync());
+            await db.SaveChangesAsync();
+        }
+
+        await using var app = await Stage6HttpAsync();
+        using var client = app.GetTestClient();
+        async Task<HttpStatusCode> Take(string actor)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/whatsapp/conversations/11/attention-actions")
+                { Content = JsonContent.Create(new { action = "take", expectedVersion = 0 }) };
+            request.Headers.Add("X-Test-Actor", actor);
+            using var response = await client.SendAsync(request);
+            return response.StatusCode;
+        }
+
+        var responses = await Task.WhenAll(Take("7"), Take("8"));
+        Assert.Contains(HttpStatusCode.OK, responses);
+        Assert.Contains(HttpStatusCode.Conflict, responses);
+
+        using var business = _tenant.BeginTenantScope(1);
+        await using var verify = Db();
+        var session = await verify.WhatsAppCommerceSessions.SingleAsync(x => x.ConversationId == 11);
+        Assert.Equal("active", session.Status);
+        Assert.Equal(1, session.BranchId);
+        Assert.Null(session.OrderId);
+        Assert.Equal(responses[0] == HttpStatusCode.OK ? 7 : 8,
+            await verify.WhatsAppConversations.Select(x => x.AssignedUserId).SingleAsync());
+        Assert.Empty(await verify.Orders.Where(o => o.WhatsAppConversationId == 11).ToListAsync());
+        Assert.Empty(await verify.WhatsAppMessages.ToListAsync());
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
     public async Task Stage6_HTTP_rejects_wrong_tenant_branch_role_and_former_owner_and_deduplicates_confirmation()
     {
         using (var tenant = _tenant.BeginTenantScope(1))
@@ -288,16 +331,42 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
             order = new { branchId = 2, type = 0, guestName = "Recoge remoto", orderDetails = new[] { new { productId = 31, quantity = 2, unitPrice = 10000 } } }
         });
         Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
-        var payload = new { sessionId, expectedVersion = 2, attentionVersion = 0 };
-        var replies = await Task.WhenAll(Request("7", HttpMethod.Post, "11/commercial-draft/confirm", payload), Request("7", HttpMethod.Post, "11/commercial-draft/confirm", payload));
+        var takeover = new { action = "takeover", expectedVersion = 0 };
+        Assert.Equal(HttpStatusCode.Forbidden, (await Request("9", HttpMethod.Post, "11/attention-actions", takeover)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await Request("17", HttpMethod.Post, "11/attention-actions", takeover)).StatusCode);
+        Assert.Equal(HttpStatusCode.PreconditionRequired, (await Request("8", HttpMethod.Post, "11/attention-actions", new { action = "takeover" })).StatusCode);
+        using (var tenant = _tenant.BeginTenantScope(1))
+        {
+            await using var db = Db();
+            db.WhatsAppWebhookEvents.Add(new WhatsAppWebhookEvent {
+                ConversationId = 11, EventType = "manual_operation", ProcessingState = "processing", RequestedByUserId = 7, RawPayload = "{}"
+            });
+            await db.SaveChangesAsync();
+            Assert.Equal(HttpStatusCode.Conflict, (await Request("8", HttpMethod.Post, "11/attention-actions", takeover)).StatusCode);
+            await db.WhatsAppWebhookEvents.Where(x => x.EventType == "manual_operation")
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.ProcessingState, "completed"));
+        }
+        Assert.Equal(HttpStatusCode.OK, (await Request("8", HttpMethod.Post, "11/attention-actions", takeover)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Request("7", HttpMethod.Post, "11/attention-actions", takeover)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Request("7", HttpMethod.Post, "11/commercial-draft/confirm",
+            new { sessionId, expectedVersion = 2, attentionVersion = 0 })).StatusCode);
+        var shared = await (await Request("8", HttpMethod.Get, "11/commercial-draft")).Content.ReadFromJsonAsync<JsonElement>();
+        var sameDraft = shared.GetProperty("data");
+        Assert.Equal(sessionId, sameDraft.GetProperty("sessionId").GetInt32());
+        Assert.Equal(initial.GetProperty("attemptId").GetString(), sameDraft.GetProperty("attemptId").GetString());
+        Assert.Equal(2, sameDraft.GetProperty("order").GetProperty("orderDetails")[0].GetProperty("quantity").GetInt32());
+        var payload = new { sessionId, expectedVersion = 2, attentionVersion = 1 };
+        var replies = await Task.WhenAll(Request("8", HttpMethod.Post, "11/commercial-draft/confirm", payload), Request("8", HttpMethod.Post, "11/commercial-draft/confirm", payload));
         Assert.All(replies, reply => Assert.Equal(HttpStatusCode.OK, reply.StatusCode));
         var ids = await Task.WhenAll(replies.Select(async reply => JsonDocument.Parse(await reply.Content.ReadAsStringAsync()).RootElement.GetProperty("data").GetProperty("orderId").GetInt32()));
         Assert.Equal(ids[0], ids[1]);
-        var transferred = await Request("7", HttpMethod.Post, "11/attention-actions", new { action = "transfer", expectedVersion = 0, targetUserId = 8 });
+        var transferred = await Request("8", HttpMethod.Post, "11/attention-actions", new { action = "transfer", expectedVersion = 1, targetUserId = 7 });
         Assert.Equal(HttpStatusCode.OK, transferred.StatusCode);
-        Assert.Equal(HttpStatusCode.Conflict, (await Request("7", HttpMethod.Put, "11/commercial-draft", new { sessionId, expectedVersion = 3, attentionVersion = 0 })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Request("8", HttpMethod.Put, "11/commercial-draft", new { sessionId, expectedVersion = 3, attentionVersion = 1 })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Request("8", HttpMethod.Post, "11/attention-actions", new { action = "takeover", expectedVersion = 2 })).StatusCode);
         using var tenant1 = _tenant.BeginTenantScope(1);
         await using var check = Db();
+        Assert.Equal(ids[0], (await check.WhatsAppCommerceSessions.SingleAsync(x => x.ConversationId == 11)).OrderId);
         var order = await check.Orders.SingleAsync(x => x.Id == ids[0]);
         Assert.Equal(1, order.OriginBranchId); Assert.Equal(2, order.BranchId);
         Assert.Equal(2, await check.Orders.CountAsync()); Assert.Empty(await check.WhatsAppCommerceOutboxMessages.ToListAsync());

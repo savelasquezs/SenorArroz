@@ -131,14 +131,7 @@ public partial class WhatsAppController
                     if (checkout is null || checkout.Status == "review_required" || checkout.ExpiresAt > _clock.UtcNow)
                         throw new BusinessException("Revisa el pago pendiente antes de iniciar otro pedido.");
                 }
-                session = WhatsAppCommercialDraft.New(conversation, _clock.UtcNow);
-                WhatsAppCommercialDraft.Write(session, new()
-                {
-                    BranchId = WhatsAppCommercialDraft.InitialBranch(conversation),
-                    CustomerId = conversation.CustomerId,
-                    Type = OrderType.Delivery
-                });
-                _db.WhatsAppCommerceSessions.Add(session);
+                session = CreateCommercialDraft(conversation, _clock.UtcNow);
             }
             else if (session is null) return NotFound();
             else if (action == "retry-message")
@@ -231,11 +224,26 @@ public partial class WhatsAppController
                 var winner = await _db.WhatsAppCommerceSessions.AsNoTracking().Where(x => x.ConversationId == conversationId)
                     .Include(x => x.Conversation).OrderByDescending(x => x.Id).FirstOrDefaultAsync(ct);
                 if (winner is not null && (action == "start" && winner.Status == "active"
+                    && WhatsAppAttentionService.CanWrite(winner.Conversation, _currentUser.Id)
+                    && winner.Conversation.AttentionRevision == request.AttentionVersion
                     || action == "confirm" && winner.Id == request.SessionId && winner.OrderId.HasValue))
                     return Ok(ApiResponse<WhatsAppCommercialDraftDto>.SuccessResponse(await CommercialDtoAsync(winner, winner.Conversation, ct)));
             }
             return Conflict(ApiResponse<object>.ErrorResponse("El pedido o su atención cambiaron. Recarga el borrador y revisa antes de continuar."));
         }
+    }
+
+    private WhatsAppCommerceSession CreateCommercialDraft(WhatsAppConversation conversation, DateTime now)
+    {
+        var session = WhatsAppCommercialDraft.New(conversation, now);
+        WhatsAppCommercialDraft.Write(session, new()
+        {
+            BranchId = WhatsAppCommercialDraft.InitialBranch(conversation),
+            CustomerId = conversation.CustomerId,
+            Type = OrderType.Delivery
+        });
+        _db.WhatsAppCommerceSessions.Add(session);
+        return session;
     }
 
     private async Task ValidateDraftReferencesAsync(WhatsAppDraftWriteDto request, CancellationToken ct)
