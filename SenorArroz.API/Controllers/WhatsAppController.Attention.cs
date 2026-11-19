@@ -67,6 +67,8 @@ public partial class WhatsAppController
     public async Task<ActionResult<ApiResponse<WhatsAppAttentionDto>>> ExecuteAttentionAction(int conversationId,
         [FromBody] WhatsAppAttentionActionDto request, CancellationToken ct)
     {
+        await using var transaction = _db.Database.IsRelational() ? await _db.Database.BeginTransactionAsync(ct) : null;
+        await WhatsAppCommercialDraft.LockAsync(_db, TenantId, conversationId, ct);
         var conversation = await _db.WhatsAppConversations.SingleOrDefaultAsync(x => x.Id == conversationId, ct);
         if (conversation is null) return NotFound(ApiResponse<WhatsAppAttentionDto>.ErrorResponse("Conversación no encontrada."));
         if (!await CanAccessConversationAsync(conversation, ct)) return Forbid();
@@ -81,6 +83,14 @@ public partial class WhatsAppController
             if (!supervisor) return Forbid();
             if (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500)
                 return BadRequest(ApiResponse<WhatsAppAttentionDto>.ErrorResponse("Indica el motivo de la toma forzada (máximo 500 caracteres)."));
+        }
+        else if (action == "takeover")
+        {
+            if (conversation.AttentionMode != WhatsAppAttentionMode.Human || conversation.AssignedUserId is null || owner)
+                return await AttentionConflictAsync(conversation, ct);
+            if (await _db.WhatsAppWebhookEvents.AnyAsync(x => x.ConversationId == conversationId
+                && x.EventType == "manual_operation" && x.ProcessingState == "processing", ct))
+                return Conflict(ApiResponse<WhatsAppAttentionDto>.ErrorResponse("Hay un envío en curso. Espera a que termine y vuelve a retomar la conversación."));
         }
         else if (action != "take" && action != "reopen" && !owner
             && !(conversation.AssignedUserId is null && action is "pause-ai" or "request-human"))
@@ -105,7 +115,7 @@ public partial class WhatsAppController
             changed = action switch
             {
                 "take" => _attentionService.Take(conversation, _currentUser.Id, now),
-                "force-take" => _attentionService.ForceTake(conversation, _currentUser.Id, now),
+                "force-take" or "takeover" => _attentionService.ForceTake(conversation, _currentUser.Id, now),
                 "release" => _attentionService.Release(conversation, _currentUser.Id, now),
                 "transfer" => _attentionService.Transfer(conversation, _currentUser.Id, request.TargetUserId!.Value, now),
                 "return-to-ai" => _attentionService.ReturnToAi(conversation, _currentUser.Id, now, aiActive),
@@ -117,29 +127,46 @@ public partial class WhatsAppController
             };
         }
         catch (BusinessException e) { return BadRequest(ApiResponse<WhatsAppAttentionDto>.ErrorResponse(e.Message)); }
+        var startedDraft = (action is "take" or "takeover" or "force-take" or "transfer")
+            && !await _db.WhatsAppCommerceSessions.AnyAsync(x => x.ConversationId == conversationId, ct);
+        if (startedDraft) CreateCommercialDraft(conversation, now);
+        WhatsAppWebhookEvent? audit = null;
         if (changed)
         {
-            var audit = new WhatsAppWebhookEvent { TenantId = conversation.TenantId, ConversationId = conversation.Id,
+            audit = new WhatsAppWebhookEvent { TenantId = conversation.TenantId, ConversationId = conversation.Id,
                 EventType = "attention_action", ProcessingState = "completed", Processed = true, RequestedByUserId = _currentUser.Id,
                 RawPayload = JsonSerializer.Serialize(new { action, before, version = conversation.AttentionRevision,
                     assignedUserId = conversation.AssignedUserId, reason = request.Reason?.Trim() }) };
             _db.WhatsAppWebhookEvents.Add(audit);
+        }
+        if (changed || startedDraft)
+        {
             try { await _db.SaveChangesAsync(ct); }
             catch (DbUpdateConcurrencyException)
             {
-                _db.WhatsAppWebhookEvents.Remove(audit);
+                if (audit is not null) _db.WhatsAppWebhookEvents.Remove(audit);
                 var current = await _db.WhatsAppConversations.AsNoTracking().SingleAsync(x => x.Id == conversationId, ct);
                 return await AttentionConflictAsync(current, ct);
             }
         }
-        var dto = await ToAttentionDtoAsync(conversation, ct);
-        if (changed)
+        if (transaction is not null)
         {
-            if (previousUser != conversation.AssignedUserId)
-                await _whatsAppNotificationService.NotifyConversationRoutingChangedAsync(conversation.BranchId,
-                    conversation.OperationalBranchId, previousUser, ToConversationDto(conversation, dto.AssignedUserName), ct);
-            await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId,
-                ToConversationDto(conversation, dto.AssignedUserName), ct);
+            await transaction.CommitAsync(ct);
+            await transaction.DisposeAsync();
+        }
+        var dto = await ToAttentionDtoAsync(conversation, ct);
+        if (changed || startedDraft)
+        {
+            try
+            {
+                var summary = ToConversationDto(conversation, dto.AssignedUserName);
+                await EnrichCommercialSummariesAsync([summary], ct);
+                if (previousUser != conversation.AssignedUserId)
+                    await _whatsAppNotificationService.NotifyConversationRoutingChangedAsync(conversation.BranchId,
+                        conversation.OperationalBranchId, previousUser, summary, ct);
+                await _whatsAppNotificationService.NotifyAttentionChangedAsync(conversation.BranchId, summary, ct);
+            }
+            catch (Exception ex) { _logger.LogWarning(ex, "WhatsApp attention saved; realtime notification failed. ConversationId={ConversationId}", conversationId); }
         }
         return Ok(ApiResponse<WhatsAppAttentionDto>.SuccessResponse(dto, "Atención actualizada."));
     }

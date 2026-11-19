@@ -174,10 +174,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
             {
                 http.HttpContext = context;
                 operations.ControllerContext = new ControllerContext { HttpContext = context };
-                var currentVersion = command.ConversationId.HasValue
-                    ? await db.WhatsAppConversations.AsNoTracking().Where(x => x.Id == command.ConversationId)
-                        .Select(x => (DateTime?)x.AttentionModeUpdatedAt).FirstOrDefaultAsync(ct) : null;
-                if (!await CanUseAsync(command.ConversationId, ct, write: true) || currentVersion != command.AttentionVersion)
+                if (!await CanExecuteAsync(command, ct))
                     result = Error(409, "La atención cambió antes de ejecutar el envío. Revisa la conversación.");
                 else result = command.Operation switch
                 {
@@ -230,6 +227,18 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
 
     private static Result Error(int status, string message) => new(status, JsonSerializer.SerializeToElement(ApiResponse<object>.ErrorResponse(message), JsonOptions));
     private static object Pending(int id) => ApiResponse<object>.SuccessResponse(new { operationId = id, pending = true }, "Operación aceptada para procesamiento.");
+    private async Task<bool> CanExecuteAsync(Command command, CancellationToken ct)
+    {
+        if (command.ConversationId is not int conversationId)
+            return await CanUseAsync(null, ct, write: true);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await WhatsAppCommercialDraft.LockAsync(db, tenant.TenantId, conversationId, ct);
+        var version = await db.WhatsAppConversations.AsNoTracking().Where(x => x.Id == conversationId)
+            .Select(x => (DateTime?)x.AttentionModeUpdatedAt).FirstOrDefaultAsync(ct);
+        return version == command.AttentionVersion && await CanUseAsync(conversationId, ct, write: true);
+    }
+
     private static string RequestKey(HttpRequest request)
     {
         var value = request.Headers["X-WhatsApp-Request-Id"].FirstOrDefault();
