@@ -191,7 +191,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M41-F01 | SQL pedidos y detalles | Pendiente | — | — | — | — |
 | M41-F02 | SQL clientes y direcciones | Pendiente | — | — | — | — |
 | M41-F03 | SQL dashboard y agregados | Pendiente | — | — | — | — |
-| M41-F04 | SQL tracking geográfico | Bloqueado | 2026-11-19 | [Informe](reviews/2026-11-19-M41-F04.md) | [API #144](https://github.com/savelasquezs/SenorArroz/pull/144), [Docs #145](https://github.com/savelasquezs/SenorArroz/pull/145) | Se elimina hidratación de todas las ubicaciones históricas por sesión al seleccionar última posición y una segunda lectura del modo GPS. Pruebas InMemory/PostgreSQL efímero preparadas; CI/QA por confirmar; sin SQL, merge ni despliegue. CPU/RAM/egress reales sin medir. |
+| M41-F04 | SQL tracking geográfico | Bloqueado | 2026-11-19 | [Informe](reviews/2026-11-19-M41-F04.md) | [API #144](https://github.com/savelasquezs/SenorArroz/pull/144), [Docs #145](https://github.com/savelasquezs/SenorArroz/pull/145) | Se selecciona en PostgreSQL la última ubicación por sesión (sin hidratar todo el historial), ahorrando además el SELECT de modo GPS. Las 2 regresiones nuevas pasaron, incluida PostgreSQL aislada; Remote order checks SUCCESS. Backend CI inicial FAIL por presupuesto p95 de test no modificado WhatsApp/POS; reejecución solicitada y pendiente. PRs borrador; sin SQL, merge, despliegue ni métricas productivas. |
 | M41-F05 | Índices, planes EXPLAIN y paginación | Pendiente | — | — | — | — |
 | M41-F06 | Pooling conexiones, RLS y concurrencia | Pendiente | — | — | — | — |
 | M41-F07 | Backups, mantenimiento y limpieza | Pendiente | — | — | — | — |
