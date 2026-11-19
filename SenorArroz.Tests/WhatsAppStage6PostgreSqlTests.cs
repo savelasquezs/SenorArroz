@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.TestHost;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
@@ -67,7 +69,7 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
-    public async Task Stage6_Inbox_search_matches_formatted_numbers_and_handles_across_accessible_tabs()
+    public async Task Stage6_Inbox_search_binds_http_filters_and_matches_formatted_numbers_across_accessible_tabs()
     {
         using var tenant = _tenant.BeginTenantScope(1);
         await using var db = Db();
@@ -82,13 +84,27 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
             new WhatsAppConversation { Id = 22, BranchId = 1, ChannelSettingId = 1, OperationalBranchId = 2,
                 ContactName = "Consulta otra sede", LastMessageAt = activity.AddMinutes(1), AttentionMode = WhatsAppAttentionMode.Paused });
         await db.SaveChangesAsync();
-        var controller = Stage23Controller(db, 7);
-        var phone = InboxPayload(await controller.GetConversationPage(new() { Search = "+57 (300) 555-5121" }, default));
+        await using var app = await Stage6HttpAsync();
+        using var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Add("X-Test-Actor", "7");
+        async Task<WhatsAppConversationPageDto> Search(string query, string parameters = "")
+        {
+            var result = await client.GetFromJsonAsync<ApiResponse<WhatsAppConversationPageDto>>(
+                $"/api/whatsapp/conversations/page?search={Uri.EscapeDataString(query)}{parameters}");
+            return Assert.IsType<WhatsAppConversationPageDto>(result?.Data);
+        }
+        var phone = await Search("+57 (300) 555-5121");
         Assert.Equal(20, Assert.Single(phone.Items).Id);
-        var handle = InboxPayload(await controller.GetConversationPage(new() { Search = "@consulta_ARROZ" }, default));
+        var handle = await Search("@consulta_ARROZ");
         Assert.Equal(21, Assert.Single(handle.Items).Id);
-        var name = InboxPayload(await controller.GetConversationPage(new() { Search = "CONSULTA" }, default));
-        Assert.Equal(new[] { 20, 21 }, name.Items.Select(x => x.Id));
+        var first = await Search("CONSULTA", "&limit=1");
+        Assert.Equal(20, Assert.Single(first.Items).Id);
+        Assert.True(first.HasMore);
+        var second = await Search("CONSULTA", $"&limit=1&cursor={Uri.EscapeDataString(first.NextCursor!)}");
+        Assert.Equal(21, Assert.Single(second.Items).Id);
+        Assert.False(second.HasMore);
+        Assert.Empty((await Search("sin-coincidencias-98765")).Items);
+        Assert.Empty((await Search("Consulta", "&inbox=mine")).Items);
     }
 
     private static WhatsAppConversationPageDto InboxPayload(ActionResult<ApiResponse<WhatsAppConversationPageDto>> result) =>

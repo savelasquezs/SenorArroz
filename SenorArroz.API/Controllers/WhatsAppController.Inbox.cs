@@ -19,21 +19,21 @@ public partial class WhatsAppController
     [HttpGet("conversations/page")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppConversationPageDto>>> GetConversationPage(
-        [FromQuery] WhatsAppConversationSearchDto search, CancellationToken cancellationToken)
+        [FromQuery] WhatsAppConversationSearchDto request, CancellationToken cancellationToken)
     {
         var accessibleConversations = GetAccessibleConversationsQuery();
         var isSuperadmin = Roles.IsSuperadmin(_currentUser.Role);
         var adminBranchId = _currentUser.BranchId;
-        if (search.BranchId.HasValue && !isSuperadmin && search.BranchId != adminBranchId)
+        if (request.BranchId.HasValue && !isSuperadmin && request.BranchId != adminBranchId)
             return Forbid();
 
         IQueryable<WhatsAppConversation> query = accessibleConversations;
-        if (search.Status != "archived") query = query.Where(x => x.Status != WhatsAppConversationStatus.Archived);
+        if (request.Status != "archived") query = query.Where(x => x.Status != WhatsAppConversationStatus.Archived);
 
         var day = InboxDayStart();
-        query = ScopedInbox(query, search.BranchId, search.UnroutedOnly == true);
+        query = ScopedInbox(query, request.BranchId, request.UnroutedOnly == true);
 
-        var term = search.Search?.Trim().ToLowerInvariant();
+        var term = request.Search?.Trim().ToLowerInvariant();
         if (!string.IsNullOrWhiteSpace(term))
         {
             var usernameTerm = term.TrimStart('@');
@@ -51,38 +51,38 @@ public partial class WhatsAppController
                     || (usernameTerm != "" && x.Customer.WhatsAppUsername != null && x.Customer.WhatsAppUsername.ToLower().Contains(usernameTerm)))));
         }
 
-        if (!string.IsNullOrWhiteSpace(search.Status) && TryParseConversationStatus(search.Status, out var status))
+        if (!string.IsNullOrWhiteSpace(request.Status) && TryParseConversationStatus(request.Status, out var status))
             query = query.Where(x => x.Status == status);
 
-        if (search.UnreadOnly == true)
+        if (request.UnreadOnly == true)
             query = query.Where(x => x.UnreadCount > 0);
-        if (!string.IsNullOrEmpty(search.Label))
+        if (!string.IsNullOrEmpty(request.Label))
         {
             var state = InboxLabelStates(query, day);
-            switch (search.Label)
+            switch (request.Label)
             {
                 case SupplierLabel: query = query.Where(x => x.IsSupplier); break;
                 case PaymentLabel: query = query.Where(x => x.IsPaymentPending); break;
                 case PendingLabel: query = state.Where(x => x.Pending).Select(x => x.Conversation); break;
                 case TakenLabel: query = state.Where(x => x.Taken).Select(x => x.Conversation); break;
                 default:
-                    if (TryGetCustomLabelId(search.Label, out var labelId))
+                    if (TryGetCustomLabelId(request.Label, out var labelId))
                     {
                         query = query.Where(x => _db.WhatsAppConversationLabels.Any(y => y.ConversationId == x.Id && y.LabelId == labelId));
                         break;
                     }
-                    if (!search.Label.StartsWith(BranchLabelPrefix, StringComparison.Ordinal)
-                        || !int.TryParse(search.Label.AsSpan(BranchLabelPrefix.Length), out var target) || target <= 0)
+                    if (!request.Label.StartsWith(BranchLabelPrefix, StringComparison.Ordinal)
+                        || !int.TryParse(request.Label.AsSpan(BranchLabelPrefix.Length), out var target) || target <= 0)
                         return BadRequest(ApiResponse<WhatsAppConversationPageDto>.ErrorResponse("Etiqueta no válida."));
                     query = state.Where(x => x.RemoteBranchId == target).Select(x => x.Conversation);
                     break;
             }
         }
-        if (!string.IsNullOrWhiteSpace(search.Inbox))
+        if (!string.IsNullOrWhiteSpace(request.Inbox))
         {
-            if (search.Inbox is not ("free" or "mine" or "team" or "closed"))
+            if (request.Inbox is not ("free" or "mine" or "team" or "closed"))
                 return BadRequest(ApiResponse<WhatsAppConversationPageDto>.ErrorResponse("Bandeja no válida."));
-            query = search.Inbox switch
+            query = request.Inbox switch
             {
                 "closed" => query.Where(x => x.AttentionMode == WhatsAppAttentionMode.Closed),
                 "mine" => query.Where(x => x.AttentionMode != WhatsAppAttentionMode.Closed && x.AssignedUserId == _currentUser.Id),
@@ -91,20 +91,20 @@ public partial class WhatsAppController
             };
         }
 
-        if (search.Limit is < 1 or > 100)
+        if (request.Limit is < 1 or > 100)
             return BadRequest(ApiResponse<WhatsAppConversationPageDto>.ErrorResponse("Consulta entre 1 y 100 conversaciones por página."));
         var scope = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
         {
             TenantId, Actor = _currentUser.Id, WorkContext = _branchContext.EffectiveBranchId, _currentUser.Role, WorkBranchId = _currentUser.BranchId,
-            Sort = "activity-v2", search.Inbox, search.UnroutedOnly, search.BranchId, Search = term, search.Status, search.UnreadOnly, search.Label, search.Limit
+            Sort = "activity-v2", request.Inbox, request.UnroutedOnly, request.BranchId, Search = term, request.Status, request.UnreadOnly, request.Label, request.Limit
         })));
         InboxCursor? cursor = null;
-        if (search.Cursor is not null)
+        if (request.Cursor is not null)
         {
             try
             {
-                if (search.Cursor.Length > 512) throw new FormatException();
-                cursor = JsonSerializer.Deserialize<InboxCursor>(Convert.FromBase64String(search.Cursor));
+                if (request.Cursor.Length > 512) throw new FormatException();
+                cursor = JsonSerializer.Deserialize<InboxCursor>(Convert.FromBase64String(request.Cursor));
                 if (cursor is null || cursor.Scope != scope || cursor.Id <= 0
                     || cursor.Activity.Kind != DateTimeKind.Utc) throw new FormatException();
             }
@@ -126,9 +126,9 @@ public partial class WhatsAppController
         if (cursor is not null)
             ranked = ranked.Where(x => x.Activity < cursor.Activity || x.Activity == cursor.Activity && x.Id < cursor.Id);
         var rows = await ranked.OrderByDescending(x => x.Activity).ThenByDescending(x => x.Id)
-            .Take(search.Limit + 1).ToListAsync(cancellationToken);
-        var more = rows.Count > search.Limit;
-        var page = rows.Take(search.Limit).ToArray();
+            .Take(request.Limit + 1).ToListAsync(cancellationToken);
+        var more = rows.Count > request.Limit;
+        var page = rows.Take(request.Limit).ToArray();
         var ids = page.Select(x => x.Id).ToArray();
         var details = await query.Where(x => ids.Contains(x.Id)).Select(WhatsAppConversationMapper.Projection)
             .ToDictionaryAsync(x => x.Id, cancellationToken);
