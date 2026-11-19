@@ -75,6 +75,8 @@ namespace SenorArroz.Infrastructure.Data
 
         public virtual DbSet<WhatsAppCommerceSession> WhatsAppCommerceSessions { get; set; }
         public virtual DbSet<WhatsAppInboxTakenReset> WhatsAppInboxTakenResets { get; set; }
+        public virtual DbSet<WhatsAppInboxLabel> WhatsAppInboxLabels { get; set; }
+        public virtual DbSet<WhatsAppConversationLabel> WhatsAppConversationLabels { get; set; }
         public virtual DbSet<WhatsAppCommerceSessionToken> WhatsAppCommerceSessionTokens { get; set; }
 
         public virtual DbSet<WhatsAppFlowExchange> WhatsAppFlowExchanges { get; set; }
@@ -238,6 +240,24 @@ namespace SenorArroz.Infrastructure.Data
                 builder.HasIndex(x => new { x.TenantId, x.ScopeBranchId }).IsUnique();
             });
             modelBuilder.ApplyConfiguration(new WhatsAppCommerceSessionTokenConfiguration());
+            modelBuilder.Entity<WhatsAppInboxLabel>(builder =>
+            {
+                builder.ToTable("whatsapp_inbox_label");
+                builder.Property(x => x.Id).HasColumnName("id");
+                builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(40).IsRequired();
+                builder.Property(x => x.NormalizedName).HasColumnName("normalized_name").HasMaxLength(40).IsRequired();
+                builder.Property(x => x.Color).HasColumnName("color").HasMaxLength(12).IsRequired();
+                builder.HasIndex(x => new { x.TenantId, x.NormalizedName }).IsUnique()
+                    .HasDatabaseName("ux_whatsapp_inbox_label_name");
+            });
+            modelBuilder.Entity<WhatsAppConversationLabel>(builder =>
+            {
+                builder.ToTable("whatsapp_conversation_label");
+                builder.HasKey(x => new { x.TenantId, x.ConversationId, x.LabelId });
+                builder.Property(x => x.ConversationId).HasColumnName("conversation_id");
+                builder.Property(x => x.LabelId).HasColumnName("label_id");
+                builder.HasIndex(x => new { x.TenantId, x.LabelId, x.ConversationId });
+            });
             modelBuilder.ApplyConfiguration(new WhatsAppFlowExchangeConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppCommerceOutboxMessageConfiguration());
             modelBuilder.ApplyConfiguration(new WhatsAppCommerceEventConfiguration());

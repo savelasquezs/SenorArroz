@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
 using SenorArroz.Domain.Entities;
@@ -16,6 +17,9 @@ public partial class WhatsAppController
     private const string TakenLabel = "taken";
     private const string PaymentLabel = "payment_pending";
     private const string BranchLabelPrefix = "branch:";
+    private const string CustomLabelPrefix = "custom:";
+    private static readonly HashSet<string> InboxLabelColors =
+        ["violet", "amber", "orange", "emerald", "blue", "teal", "rose", "slate"];
     private static readonly WhatsAppInboxLabelDto[] FixedLabels =
     [
         new(SupplierLabel, "Proveedor", true),
@@ -83,7 +87,12 @@ public partial class WhatsAppController
         if (conversations.Count == 0) return;
         var ids = conversations.Select(x => x.Id).ToArray();
         var labels = await InboxLabelStates(_db.WhatsAppConversations.AsNoTracking().Where(x => ids.Contains(x.Id)), day)
-            .Select(x => new { x.Conversation.Id, x.Conversation.IsSupplier, x.Pending, x.Taken, x.Conversation.IsPaymentPending, x.RemoteBranchId })
+            .Select(x => new
+            {
+                x.Conversation.Id, x.Conversation.IsSupplier, x.Pending, x.Taken, x.Conversation.IsPaymentPending, x.RemoteBranchId,
+                CustomLabelIds = _db.WhatsAppConversationLabels.Where(y => y.ConversationId == x.Conversation.Id)
+                    .OrderBy(y => y.LabelId).Select(y => y.LabelId).ToList()
+            })
             .ToDictionaryAsync(x => x.Id, ct);
         foreach (var conversation in conversations)
         {
@@ -94,6 +103,7 @@ public partial class WhatsAppController
             if (entry.Taken) values.Add(TakenLabel);
             if (entry.IsPaymentPending) values.Add(PaymentLabel);
             if (entry.RemoteBranchId is int branchId) values.Add($"{BranchLabelPrefix}{branchId}");
+            values.AddRange(entry.CustomLabelIds.Select(id => $"{CustomLabelPrefix}{id}"));
             conversation.Labels = values;
         }
     }
@@ -103,8 +113,84 @@ public partial class WhatsAppController
     public async Task<IActionResult> GetInboxLabels(CancellationToken ct)
     {
         var branches = await _db.Branches.AsNoTracking().OrderBy(x => x.Name).Select(x => new { x.Id, x.Name }).ToListAsync(ct);
+        var custom = await _db.WhatsAppInboxLabels.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct);
         return Ok(ApiResponse<IReadOnlyList<WhatsAppInboxLabelDto>>.SuccessResponse(
-            FixedLabels.Concat(branches.Select(x => new WhatsAppInboxLabelDto($"{BranchLabelPrefix}{x.Id}", x.Name, false))).ToArray()));
+            FixedLabels.Concat(branches.Select(x => new WhatsAppInboxLabelDto($"{BranchLabelPrefix}{x.Id}", x.Name, false)))
+                .Concat(custom.Select(ToInboxLabelDto)).ToArray()));
+    }
+
+    [HttpPost("labels")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public Task<IActionResult> CreateInboxLabel([FromBody] WhatsAppInboxLabelDefinitionDto request, CancellationToken ct) =>
+        SaveInboxLabelAsync(null, request, ct);
+
+    [HttpPut("labels/{key}")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<IActionResult> UpdateInboxLabel(string key, [FromBody] WhatsAppInboxLabelDefinitionDto request, CancellationToken ct)
+    {
+        if (!TryGetCustomLabelId(key, out var id)) return NotFound();
+        var label = await _db.WhatsAppInboxLabels.SingleOrDefaultAsync(x => x.Id == id, ct);
+        return label is null ? NotFound() : await SaveInboxLabelAsync(label, request, ct);
+    }
+
+    [HttpDelete("labels/{key}")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<IActionResult> DeleteInboxLabel(string key, CancellationToken ct)
+    {
+        if (!TryGetCustomLabelId(key, out var id)) return NotFound();
+        var label = await _db.WhatsAppInboxLabels.SingleOrDefaultAsync(x => x.Id == id, ct);
+        if (label is null) return NotFound();
+        _db.WhatsAppInboxLabels.Remove(label);
+        try { await _db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { return NotFound(); }
+        await PublishInboxChangeAsync(() => _whatsAppNotificationService.NotifyInboxLabelCatalogChangedAsync(ct));
+        return NoContent();
+    }
+
+    private async Task<IActionResult> SaveInboxLabelAsync(WhatsAppInboxLabel? existing, WhatsAppInboxLabelDefinitionDto request, CancellationToken ct)
+    {
+        var name = request.Name?.Trim();
+        if (name is null || name.Length is < 1 or > 40 || name.Any(char.IsControl))
+            return BadRequest(ApiResponse<object>.ErrorResponse("Escribe un nombre de entre 1 y 40 caracteres."));
+        name = name.Normalize();
+        var normalized = name.ToUpperInvariant();
+        if (name.Length > 40 || normalized.Length > 40)
+            return BadRequest(ApiResponse<object>.ErrorResponse("Escribe un nombre de entre 1 y 40 caracteres."));
+        if (request.Color is not { } color || !InboxLabelColors.Contains(color))
+            return BadRequest(ApiResponse<object>.ErrorResponse("Elige un color de la paleta."));
+        var id = existing?.Id ?? 0;
+        if (FixedLabels.Any(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase))
+            || await _db.WhatsAppInboxLabels.AnyAsync(x => x.NormalizedName == normalized && x.Id != id, ct))
+            return DuplicateInboxLabelName();
+
+        var label = existing ?? new WhatsAppInboxLabel { TenantId = TenantId };
+        label.Name = name;
+        label.NormalizedName = normalized;
+        label.Color = color;
+        if (existing is null) _db.WhatsAppInboxLabels.Add(label);
+        try { await _db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { return NotFound(); }
+        catch (DbUpdateException error) when (error.InnerException is PostgresException
+            { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "ux_whatsapp_inbox_label_name" })
+        {
+            return DuplicateInboxLabelName();
+        }
+
+        await PublishInboxChangeAsync(() => _whatsAppNotificationService.NotifyInboxLabelCatalogChangedAsync(ct));
+        return Ok(ApiResponse<WhatsAppInboxLabelDto>.SuccessResponse(ToInboxLabelDto(label)));
+    }
+
+    private IActionResult DuplicateInboxLabelName() =>
+        Conflict(ApiResponse<object>.ErrorResponse("Ya existe una etiqueta con ese nombre."));
+
+    private static WhatsAppInboxLabelDto ToInboxLabelDto(WhatsAppInboxLabel label) =>
+        new($"{CustomLabelPrefix}{label.Id}", label.Name, true, label.Color, true);
+
+    private static bool TryGetCustomLabelId(string key, out int id)
+    {
+        id = 0;
+        return key.StartsWith(CustomLabelPrefix, StringComparison.Ordinal)
+            && int.TryParse(key.AsSpan(CustomLabelPrefix.Length), out id) && id > 0;
     }
 
     [HttpGet("inbox-summary")]
@@ -128,13 +214,24 @@ public partial class WhatsAppController
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<IActionResult> SetInboxLabel(int conversationId, string key, [FromBody] WhatsAppInboxLabelWriteDto request, CancellationToken ct)
     {
-        if (key is not (SupplierLabel or PendingLabel or PaymentLabel)) return BadRequest(ApiResponse<object>.ErrorResponse("La etiqueta es automática o no existe."));
+        var custom = TryGetCustomLabelId(key, out var labelId);
+        if (!custom && key is not (SupplierLabel or PendingLabel or PaymentLabel))
+            return BadRequest(ApiResponse<object>.ErrorResponse("La etiqueta es automática o no existe."));
         await using var transaction = _db.Database.IsRelational() ? await _db.Database.BeginTransactionAsync(ct) : null;
         await WhatsAppCommercialDraft.LockAsync(_db, TenantId, conversationId, ct);
         if (!await GetAccessibleConversationsQuery().AnyAsync(x => x.Id == conversationId, ct)) return NotFound();
         var chat = await _db.WhatsAppConversations.SingleAsync(x => x.Id == conversationId, ct);
         if (Roles.IsCashier(_currentUser.Role) && (chat.AttentionMode == WhatsAppAttentionMode.Closed
             || chat.AssignedUserId is int assigned && assigned != _currentUser.Id)) return Forbid();
+        if (custom)
+        {
+            if (!await _db.WhatsAppInboxLabels.AnyAsync(x => x.Id == labelId, ct)) return NotFound();
+            var assignment = await _db.WhatsAppConversationLabels.SingleOrDefaultAsync(x =>
+                x.ConversationId == conversationId && x.LabelId == labelId, ct);
+            if (request.Applied && assignment is null)
+                _db.WhatsAppConversationLabels.Add(new() { TenantId = TenantId, ConversationId = conversationId, LabelId = labelId });
+            if (!request.Applied && assignment is not null) _db.WhatsAppConversationLabels.Remove(assignment);
+        }
         if (key == SupplierLabel) chat.IsSupplier = request.Applied;
         if (key == PaymentLabel) chat.IsPaymentPending = request.Applied;
         if (key == PendingLabel)
@@ -144,7 +241,13 @@ public partial class WhatsAppController
                 .Select(x => x.Pending).SingleAsync(ct))
                 chat.PendingOrderMarkedAt = _clock.UtcNow;
         }
-        await _db.SaveChangesAsync(ct);
+        try { await _db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) when (custom) { return NotFound(); }
+        catch (DbUpdateException error) when (custom && error.InnerException is PostgresException
+            { SqlState: PostgresErrorCodes.ForeignKeyViolation, ConstraintName: "fk_whatsapp_conversation_label_definition" })
+        {
+            return NotFound();
+        }
         if (transaction is not null)
         {
             await transaction.CommitAsync(ct);

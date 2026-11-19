@@ -8,6 +8,8 @@ Este mapa existe para que Codex ubique rápido las entidades y entienda cómo pr
 
 La clasificación de la bandeja de WhatsApp guarda Proveedor, Pendiente y Pendiente de pago en `whatsapp_conversation`. El corte de Tomado se guarda en `whatsapp_inbox_taken_reset` por tenant y sucursal. El ámbito central sin asignar usa `scope_branch_id = 0`. El script `add_whatsapp_inbox_labels.sql` activa RLS e inicializa el corte al comienzo del día de despliegue en Bogotá.
 
+Las etiquetas personalizadas se definen por tenant en `whatsapp_inbox_label` y se asignan mediante `whatsapp_conversation_label`. El script `add_whatsapp_custom_inbox_labels.sql` activa RLS y elimina las asignaciones al borrar su etiqueta o conversación.
+
 - Inventario EF: 115 entidades; `Tenant` global y 114 tenant-owned, incluido `WhatsAppRealtimeEvent`.
 - Contrato común: `ITenantOwned` y `TenantOwnedEntity`.
 - EF aplica centralmente `tenant_id` obligatorio, índice, concurrency token y query filter.
