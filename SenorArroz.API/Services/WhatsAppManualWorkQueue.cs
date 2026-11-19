@@ -78,7 +78,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
     }
 
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> EnqueueMediaAsync(int conversationId,
-        IFormFile? file, string? caption, HttpRequest request, CancellationToken ct)
+        IFormFile? file, string? caption, HttpRequest request, CancellationToken ct, int? replyToMessageId = null)
     {
         if (file is null || file.Length is <= 0 or > 69_000_000)
             return new BadRequestObjectResult(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Seleccione un archivo de hasta 69 MB."));
@@ -92,8 +92,9 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
         await using var content = new MemoryStream();
         await file.CopyToAsync(content, ct);
         var bytes = content.ToArray();
-        var mediaFingerprint = Hash(JsonSerializer.Serialize(new { conversationId, caption, fileName, file.ContentType,
-            contentHash = Convert.ToHexString(SHA256.HashData(bytes)) }));
+        var mediaIdentity = new { conversationId, caption, fileName, file.ContentType, contentHash = Convert.ToHexString(SHA256.HashData(bytes)) };
+        var mediaFingerprint = Hash(replyToMessageId.HasValue
+            ? JsonSerializer.Serialize(new { mediaIdentity, replyToMessageId }) : JsonSerializer.Serialize(mediaIdentity));
         var existing = await db.WhatsAppWebhookEvents.AsNoTracking().FirstOrDefaultAsync(x => x.DeduplicationKey == deduplication, ct);
         if (existing is not null)
         {
@@ -113,7 +114,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
             return new BadRequestObjectResult(ApiResponse<WhatsAppMessageDto>.ErrorResponse("No se pudo guardar el archivo en Firebase Storage."));
         }
         return await EnqueueAsync<WhatsAppMessageDto>("send-media", conversationId,
-            JsonSerializer.SerializeToElement(new { caption, fileName, file.ContentType, objectName, url, mediaFingerprint }), request, ct);
+            JsonSerializer.SerializeToElement(new { caption, fileName, file.ContentType, objectName, url, mediaFingerprint, replyToMessageId }), request, ct);
     }
 
     public async Task<IActionResult> GetResultAsync(int id, CancellationToken ct)
@@ -179,6 +180,9 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
                 else result = command.Operation switch
                 {
                     "send-message" => Capture(await operations.SendMessage(command.ConversationId!.Value, command.Body.Deserialize<SendWhatsAppMessageDto>(JsonOptions)!, ct)),
+                    "send-reaction" => Capture(await operations.ReactToMessageAsync(command.ConversationId!.Value,
+                        command.Body.GetProperty("messageId").GetInt32(),
+                        command.Body.GetProperty("reaction").Deserialize<WhatsAppMessageReactionDto>(JsonOptions)!, ct)),
                     "send-address-choices" => Capture(await operations.SendCommercialAddressChoicesAsync(command.ConversationId!.Value, command.Body.Deserialize<WhatsAppDraftWriteDto>(JsonOptions)!, ct)),
                     "send-product-choices" => Capture(await operations.SendCommercialProductChoicesAsync(command.ConversationId!.Value,
                         command.Body.GetProperty("groupId").GetInt32(), command.Body.GetProperty("draft").Deserialize<WhatsAppDraftWriteDto>(JsonOptions)!, ct)),
@@ -214,7 +218,9 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
             Headers = new HeaderDictionary(), ContentType = body.GetProperty("ContentType").GetString() ?? "application/octet-stream"
         };
         var caption = body.TryGetProperty("caption", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-        return Capture(await operations.SendMediaMessage(command.ConversationId!.Value, file, caption, ct, body.GetProperty("url").GetString()));
+        int? replyTo = body.TryGetProperty("replyToMessageId", out var target) && target.ValueKind == JsonValueKind.Number
+            && target.TryGetInt32(out var id) ? id : null;
+        return Capture(await operations.SendMediaMessage(command.ConversationId!.Value, file, caption, ct, body.GetProperty("url").GetString(), replyTo));
     }
 
     private static Result Capture<T>(ActionResult<ApiResponse<T>> action) => action.Result switch

@@ -52,7 +52,7 @@ public static class WhatsAppLocalReviewRegistration
                     var body = payload.RootElement;
                     if (body.ValueKind == JsonValueKind.Object
                         && body.TryGetProperty("messaging_product", out var product) && product.ValueKind == JsonValueKind.String && product.ValueEquals("whatsapp")
-                        && body.TryGetProperty("to", out var to) && to.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(to.GetString())
+                        && (HasText(body, "to") || HasText(body, "recipient"))
                         && IsSimulatedMessage(body))
                     {
                         var response = new HttpResponseMessage(HttpStatusCode.OK)
@@ -79,8 +79,12 @@ public static class WhatsAppLocalReviewRegistration
         private static bool IsSimulatedMessage(JsonElement message)
         {
             if (!message.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String) return false;
+            if (message.TryGetProperty("context", out var context) && !HasText(context, "message_id")) return false;
             if (type.ValueEquals("text"))
                 return message.TryGetProperty("text", out var text) && HasText(text, "body");
+            if (type.ValueEquals("reaction"))
+                return message.TryGetProperty("reaction", out var reaction) && HasText(reaction, "message_id")
+                    && reaction.TryGetProperty("emoji", out var emoji) && emoji.ValueKind == JsonValueKind.String;
             if (!type.ValueEquals("interactive") || !message.TryGetProperty("interactive", out var interactive)
                 || interactive.ValueKind != JsonValueKind.Object
                 || !interactive.TryGetProperty("body", out var body) || !HasText(body, "text")

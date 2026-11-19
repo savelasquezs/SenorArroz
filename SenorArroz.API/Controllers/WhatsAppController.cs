@@ -751,6 +751,8 @@ public partial class WhatsAppController : ControllerBase
         [FromBody] LinkWhatsAppConversationCustomerDto dto,
         CancellationToken cancellationToken)
     {
+        await using var transaction = _db.Database.IsRelational() ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
+        await WhatsAppCommercialDraft.LockAsync(_db, TenantId, conversationId, cancellationToken);
         var conversation = await _db.WhatsAppConversations
             .Include(x => x.Branch)
             .Include(x => x.Customer)
@@ -761,9 +763,17 @@ public partial class WhatsAppController : ControllerBase
             return Forbid();
         if (!WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id))
             return Conflict(ApiResponse<WhatsAppConversationDto>.ErrorResponse("Toma la conversación antes de cambiar el cliente."));
+        if (dto.ExpectedAttentionVersion.HasValue && dto.ExpectedAttentionVersion != conversation.AttentionRevision)
+            return Conflict(ApiResponse<WhatsAppConversationDto>.ErrorResponse("La atención cambió. Revisa el responsable antes de vincular al cliente."));
 
-        var customer = await _db.Customers
-            .FirstOrDefaultAsync(x => x.Id == dto.CustomerId && x.BranchId == conversation.BranchId && x.Active, cancellationToken);
+        var phone = NormalizeCustomerPhone(dto.PhoneNumber);
+        if (dto.PhoneNumber is not null && phone is null)
+            return BadRequest(ApiResponse<WhatsAppConversationDto>.ErrorResponse("El teléfono del cliente no es válido."));
+        var candidates = _db.Customers.Where(x => x.Id == dto.CustomerId && x.Active);
+        candidates = phone is null
+            ? candidates.Where(x => x.BranchId == conversation.BranchId)
+            : candidates.Where(x => x.Phones.Any(p => p.Active && p.PhoneNormalized == phone) || x.Phone1 == phone || x.Phone2 == phone);
+        var customer = await candidates.SingleOrDefaultAsync(cancellationToken);
         if (customer is null)
             return BadRequest(ApiResponse<WhatsAppConversationDto>.ErrorResponse("Cliente no encontrado para la sucursal de esta conversación."));
 
@@ -795,8 +805,8 @@ public partial class WhatsAppController : ControllerBase
                 previousCustomer!.WhatsAppUserId = null;
 
             customer.WhatsAppUserId = conversation.WhatsAppUserId;
-            customer.WhatsAppUsername = conversation.WhatsAppUsername ?? customer.WhatsAppUsername;
         }
+        customer.WhatsAppUsername = conversation.WhatsAppUsername ?? customer.WhatsAppUsername;
 
         if (string.IsNullOrWhiteSpace(customer.Phone1) && !string.IsNullOrWhiteSpace(conversation.PhoneNumber))
         {
@@ -817,6 +827,7 @@ public partial class WhatsAppController : ControllerBase
         conversation.ContactName = customer.Name;
         conversation.UpdatedAt = _clock.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
 
         conversation.Customer = customer;
         return Ok(ApiResponse<WhatsAppConversationDto>.SuccessResponse(ToConversationDto(conversation), "Cliente vinculado a la conversación."));
@@ -948,11 +959,54 @@ public partial class WhatsAppController : ControllerBase
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendProductDetails(int conversationId, int productId, CancellationToken cancellationToken)
     {
-
         if (_manualQueue is not null)
             return await _manualQueue.EnqueueAsync<WhatsAppMessageDto>("send-product", conversationId, JsonSerializer.SerializeToElement(new { productId }), Request, cancellationToken);
         _manualOperations.ControllerContext = ControllerContext;
         return await _manualOperations.SendProductDetails(conversationId, productId, cancellationToken);
+    }
+
+    [HttpPost("conversations/{conversationId:int}/messages/{messageId:int}/reaction")]
+    [RequestSizeLimit(1024)]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> ReactToMessage(int conversationId, int messageId,
+        [FromBody] WhatsAppMessageReactionDto reaction, CancellationToken ct)
+    {
+        if (_manualQueue is not null)
+            return await _manualQueue.EnqueueAsync<WhatsAppMessageDto>("send-reaction", conversationId,
+                JsonSerializer.SerializeToElement(new { messageId, reaction }), Request, ct);
+        _manualOperations.ControllerContext = ControllerContext;
+        return await _manualOperations.ReactToMessageAsync(conversationId, messageId, reaction, ct);
+    }
+
+    [HttpPost("conversations/{conversationId:int}/messages/{messageId:int}/hide")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> HideMessage(int conversationId, int messageId, CancellationToken ct)
+    {
+        await using var transaction = _db.Database.IsRelational() ? await _db.Database.BeginTransactionAsync(ct) : null;
+        await WhatsAppCommercialDraft.LockAsync(_db, TenantId, conversationId, ct);
+        var conversation = await _db.WhatsAppConversations.SingleOrDefaultAsync(chat => chat.Id == conversationId, ct);
+        if (conversation is null) return NotFound();
+        if (!WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id) || !await CanAccessConversationAsync(conversation, ct))
+            return Forbid();
+        var message = await _db.WhatsAppMessages.SingleOrDefaultAsync(item => item.Id == messageId
+            && item.ConversationId == conversationId, ct);
+        if (message is null) return NotFound();
+        if (message.HiddenAt.HasValue) return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message)));
+
+        message.HiddenAt = _clock.UtcNow;
+        message.HiddenByUserId = _currentUser.Id;
+        var latest = await _db.WhatsAppMessages.Where(item => item.ConversationId == conversationId)
+            .OrderByDescending(item => item.Timestamp).ThenByDescending(item => item.Id).Select(item => item.Id).FirstAsync(ct);
+        if (latest == messageId) conversation.LastMessagePreview = "Mensaje oculto en el POS";
+        await _db.SaveChangesAsync(ct);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+            await transaction.DisposeAsync();
+        }
+        try { await _webhookProcessor.NotifyWhatsAppMessageCreatedAsync(messageId, ct, isUpdate: true); }
+        catch (Exception ex) { _logger.LogWarning(ex, "WhatsApp message hidden; realtime notification failed. MessageId={MessageId}", messageId); }
+        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message)));
     }
 
     [HttpPost("conversations/{conversationId:int}/messages/menu")]
@@ -990,13 +1044,13 @@ public partial class WhatsAppController : ControllerBase
         int conversationId,
         IFormFile? file,
         [FromForm] string? caption,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, [FromForm] int? replyToMessageId = null)
     {
 
         if (_manualQueue is not null)
-            return await _manualQueue.EnqueueMediaAsync(conversationId, file, caption, Request, cancellationToken);
+            return await _manualQueue.EnqueueMediaAsync(conversationId, file, caption, Request, cancellationToken, replyToMessageId);
         _manualOperations.ControllerContext = ControllerContext;
-        return await _manualOperations.SendMediaMessage(conversationId, file, caption, cancellationToken);
+        return await _manualOperations.SendMediaMessage(conversationId, file, caption, cancellationToken, replyToMessageId: replyToMessageId);
     }
 
     private async Task EnsureMediaDownloadUrlsAsync(IReadOnlyList<WhatsAppMessage> messages, CancellationToken cancellationToken)
@@ -1004,7 +1058,7 @@ public partial class WhatsAppController : ControllerBase
         var changed = false;
         foreach (var message in messages)
         {
-            if (string.IsNullOrWhiteSpace(message.MediaUrl))
+            if (message.HiddenAt.HasValue || string.IsNullOrWhiteSpace(message.MediaUrl))
                 continue;
 
             try

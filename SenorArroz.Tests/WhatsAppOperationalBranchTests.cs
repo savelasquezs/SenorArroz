@@ -25,6 +25,52 @@ namespace SenorArroz.Tests;
 public sealed partial class WhatsAppOperationalBranchTests
 {
     [Fact]
+    public async Task WhatsApp_customer_can_be_linked_by_exact_phone_across_branches()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, operationalBranchId: 1, assignedUserId: 7);
+        var chat = await db.WhatsAppConversations.SingleAsync();
+        chat.WhatsAppUserId = "CO.test1020";
+        chat.WhatsAppUsername = "@nuevo_usuario";
+        var customer = new Customer { Id = 104, BranchId = 2, Name = "Cliente registrado", Phone1 = "3001234567", Active = true };
+        db.Customers.Add(customer);
+        await db.SaveChangesAsync();
+        var controller = CreateController(db);
+        var wrongPhone = await controller.LinkCustomer(11, new() { CustomerId = 104, PhoneNumber = "3001234568" }, default);
+        Assert.IsType<BadRequestObjectResult>(wrongPhone.Result);
+        var stale = await controller.LinkCustomer(11, new() { CustomerId = 104, PhoneNumber = "3001234567", ExpectedAttentionVersion = 4 }, default);
+        Assert.IsType<ConflictObjectResult>(stale.Result);
+        var linked = await controller.LinkCustomer(11, new() { CustomerId = 104, PhoneNumber = "+57 300 123 4567", ExpectedAttentionVersion = 0 }, default);
+        Assert.IsType<OkObjectResult>(linked.Result);
+        Assert.Equal(customer.Id, chat.CustomerId);
+        Assert.Equal("@nuevo_usuario", customer.WhatsAppUsername);
+        Assert.Equal("CO.test1020", customer.WhatsAppUserId);
+        Assert.Equal("Cliente registrado", customer.Name);
+        Assert.Equal("3001234567", customer.Phone1);
+    }
+
+    [Fact]
+    public async Task Hiding_a_message_preserves_the_row_and_redacts_content_for_other_cashiers()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, operationalBranchId: 1, assignedUserId: 7);
+        db.WhatsAppMessages.Add(new WhatsAppMessage { Id = 92, ConversationId = 11, TextBody = "Contenido oculto",
+            MediaUrl = "https://example.invalid/photo", WhatsAppMessageId = "wamid.fixture" });
+        await db.SaveChangesAsync();
+        var observer = CreateController(db, userId: 8);
+        Assert.IsType<ForbidResult>((await observer.HideMessage(11, 92, default)).Result);
+        var hidden = await CreateController(db).HideMessage(11, 92, default);
+        Assert.IsType<OkObjectResult>(hidden.Result);
+        var history = Assert.IsType<ApiResponse<WhatsAppMessagePageDto>>(
+            Assert.IsType<OkObjectResult>((await observer.GetMessagesPage(11)).Result).Value);
+        var item = Assert.Single(history.Data!.Items);
+        Assert.Equal("pos", item.HiddenSource);
+        Assert.Empty(item.TextBody);
+        Assert.Null(item.MediaUrl);
+        Assert.Equal("Contenido oculto", (await db.WhatsAppMessages.SingleAsync()).TextBody);
+    }
+
+    [Fact]
     public async Task Message_cursor_handles_equal_timestamps_and_preserves_new_unread_while_loading_older_messages()
     {
         await using var db = CreateDb();

@@ -54,23 +54,42 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         }
     }
 
-    public async Task<WhatsAppCloudSendResult> SendTextMessageAsync(
+    public Task<WhatsAppCloudSendResult> SendTextMessageAsync(
         string phoneNumberId,
         string accessToken,
         string toPhoneNumber,
         string text,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SendContentAsync(phoneNumberId, accessToken, toPhoneNumber, "text", new { body = text }, null, cancellationToken);
+
+    public Task<WhatsAppCloudSendResult> SendTextReplyAsync(string phoneNumberId, string accessToken, string recipient,
+        string text, string quotedMessageId, CancellationToken ct) =>
+        SendContentAsync(phoneNumberId, accessToken, recipient, "text", new { body = text }, quotedMessageId, ct);
+
+    public Task<WhatsAppCloudSendResult> SendReactionAsync(string phoneNumberId, string accessToken, string recipient,
+        string quotedMessageId, string emoji, CancellationToken ct) =>
+        SendContentAsync(phoneNumberId, accessToken, recipient, "reaction", new { message_id = quotedMessageId, emoji }, null, ct);
+
+    public Task<WhatsAppCloudSendResult> SendMediaReplyAsync(string phoneNumberId, string accessToken, string recipient,
+        string mediaType, string mediaId, string? caption, string? fileName, string quotedMessageId, CancellationToken ct)
+    {
+        var type = NormalizeMediaType(mediaType);
+        return SendContentAsync(phoneNumberId, accessToken, recipient, type, BuildMediaReference(type, mediaId, caption, fileName), quotedMessageId, ct);
+    }
+
+    private async Task<WhatsAppCloudSendResult> SendContentAsync(string phoneNumberId, string accessToken,
+        string recipient, string type, object content, string? quotedMessageId, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Content = CreateMessageContent(toPhoneNumber, "text", new { body = text });
+        request.Content = CreateMessageContent(recipient, type, content, quotedMessageId);
 
         try
         {
             using var response = await _httpClient.SendAsync(request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
-                return new WhatsAppCloudSendResult(false, null, CreateMetaHttpError("send_text", body, response.StatusCode, accessToken));
+                return new WhatsAppCloudSendResult(false, null, CreateMetaHttpError($"send_{type}", body, response.StatusCode, accessToken));
 
             using var document = JsonDocument.Parse(body);
             var messageId = TryGetFirstMessageId(document.RootElement);
@@ -78,7 +97,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            return new WhatsAppCloudSendResult(false, null, CreateClientError("send_text", ex, accessToken));
+            return new WhatsAppCloudSendResult(false, null, CreateClientError($"send_{type}", ex, accessToken));
         }
     }
 
@@ -582,16 +601,18 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         return first.ValueKind == JsonValueKind.Object ? TryGetString(first, "id") : null;
     }
 
-    private static JsonContent CreateMessageContent(string destination, string type, object message)
+    private static JsonContent CreateMessageContent(string destination, string type, object message, string? quotedMessageId = null)
     {
         var isBsuid = Regex.IsMatch(destination, @"\A[A-Z]{2}\.(?:ENT\.)?[A-Za-z0-9]+\z");
-        return JsonContent.Create(new Dictionary<string, object>
+        var payload = new Dictionary<string, object>
         {
             ["messaging_product"] = "whatsapp",
             [isBsuid ? "recipient" : "to"] = destination,
             ["type"] = type,
             [type] = message
-        });
+        };
+        if (quotedMessageId is not null) payload["context"] = new { message_id = quotedMessageId };
+        return JsonContent.Create(payload);
     }
 
     private static Dictionary<string, string> BuildMediaReference(string mediaType, string mediaId, string? caption, string? fileName)
