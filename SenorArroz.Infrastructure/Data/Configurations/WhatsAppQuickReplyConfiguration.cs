@@ -16,6 +16,8 @@ public class WhatsAppQuickReplyConfiguration : IEntityTypeConfiguration<WhatsApp
         builder.Property(x => x.BranchId).HasColumnName("branch_id").IsRequired();
         builder.Property(x => x.Shortcut).HasColumnName("shortcut").HasMaxLength(40).IsRequired();
         builder.Property(x => x.MessageTemplate).HasColumnName("message_template").HasMaxLength(4096).IsRequired();
+        builder.Property(x => x.ReplyMode).HasColumnName("reply_mode").HasMaxLength(24)
+            .HasDefaultValue(WhatsAppQuickReply.Send).IsRequired();
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
         builder.Property(x => x.UsageCount).HasColumnName("usage_count").HasDefaultValue(0);
         builder.Property(x => x.LastUsedAt).HasColumnName("last_used_at");

@@ -10,6 +10,8 @@ La clasificación de la bandeja de WhatsApp guarda Proveedor, Pendiente y Pendie
 
 Las etiquetas personalizadas se definen por tenant en `whatsapp_inbox_label` y se asignan mediante `whatsapp_conversation_label`. El script `add_whatsapp_custom_inbox_labels.sql` activa RLS y elimina las asignaciones al borrar su etiqueta o conversación.
 
+`add_whatsapp_quick_reply_mode.sql` agrega `reply_mode` a `whatsapp_quick_reply`. Los modos son `send`, `draft` y `chicharron_quote`. Las respuestas `conchi` existentes pasan a cotización al aplicar el script por primera vez. El cierre por inactividad usa los estados y la auditoría de atención existentes, con la entrega registrada en `order.status_times`.
+
 - Inventario EF: 115 entidades; `Tenant` global y 114 tenant-owned, incluido `WhatsAppRealtimeEvent`.
 - Contrato común: `ITenantOwned` y `TenantOwnedEntity`.
 - EF aplica centralmente `tenant_id` obligatorio, índice, concurrency token y query filter.

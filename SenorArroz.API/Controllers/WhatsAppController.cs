@@ -307,6 +307,7 @@ public partial class WhatsAppController : ControllerBase
             BranchId = validation.BranchId,
             Shortcut = validation.Shortcut,
             MessageTemplate = dto.MessageTemplate.Trim(),
+            ReplyMode = dto.ReplyMode ?? WhatsAppQuickReply.Send,
             IsActive = dto.IsActive
         };
 
@@ -347,6 +348,7 @@ public partial class WhatsAppController : ControllerBase
         reply.BranchId = validation.BranchId;
         reply.Shortcut = validation.Shortcut;
         reply.MessageTemplate = dto.MessageTemplate.Trim();
+        reply.ReplyMode = dto.ReplyMode ?? reply.ReplyMode;
         reply.IsActive = dto.IsActive;
 
         await _db.SaveChangesAsync(cancellationToken);
@@ -1117,7 +1119,9 @@ public partial class WhatsAppController : ControllerBase
             return (BadRequest(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse(shortcutError)), 0, string.Empty);
 
         var template = (dto.MessageTemplate ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(template))
+        if (dto.ReplyMode is not (null or WhatsAppQuickReply.Send or WhatsAppQuickReply.Draft or WhatsAppQuickReply.ChicharronQuote))
+            return (BadRequest(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse("Elige un modo de respuesta válido.")), 0, string.Empty);
+        if (dto.ReplyMode != WhatsAppQuickReply.ChicharronQuote && string.IsNullOrWhiteSpace(template))
             return (BadRequest(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse("El mensaje no puede estar vacío.")), 0, string.Empty);
         if (template.Length > 4096)
             return (BadRequest(ApiResponse<WhatsAppQuickReplyDto>.ErrorResponse("El mensaje no puede superar 4096 caracteres.")), 0, string.Empty);
@@ -1253,6 +1257,7 @@ public partial class WhatsAppController : ControllerBase
         BranchName = reply.Branch?.Name,
         Shortcut = reply.Shortcut,
         MessageTemplate = reply.MessageTemplate,
+        ReplyMode = reply.ReplyMode,
         IsActive = reply.IsActive,
         UsageCount = reply.UsageCount,
         LastUsedAt = reply.LastUsedAt,

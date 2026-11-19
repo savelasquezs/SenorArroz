@@ -603,6 +603,8 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == dto.QuickReplyId && x.BranchId == conversation.BranchId && x.IsActive, cancellationToken);
         if (quickReply is null)
             return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Respuesta rápida no encontrada o inactiva para esta sucursal."));
+        if (quickReply.ReplyMode != WhatsAppQuickReply.Send)
+            return Conflict(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Prepara y revisa esta respuesta en el campo de mensaje antes de enviarla."));
 
         var text = RenderQuickReplyTemplate(quickReply.MessageTemplate, conversation).Trim();
         if (string.IsNullOrWhiteSpace(text))

@@ -23,7 +23,7 @@ public class WhatsAppAttentionService
     }
     public bool Pause(WhatsAppConversation c, int userId, DateTime now) => ChangeIdempotent(c, WhatsAppAttentionMode.Paused, userId, now);
     public bool RequestHuman(WhatsAppConversation c, int? userId, DateTime now) => ChangeIdempotent(c, WhatsAppAttentionMode.WaitingForHuman, userId, now);
-    public bool Close(WhatsAppConversation c, int userId, DateTime now)
+    public bool Close(WhatsAppConversation c, int? userId, DateTime now)
     {
         if (c.AttentionMode == WhatsAppAttentionMode.Closed) return false;
         Apply(c, WhatsAppAttentionMode.Closed, userId, now); return true;

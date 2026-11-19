@@ -165,6 +165,8 @@ public static class ApiHost
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         builder.Services.AddScoped<SenorArroz.API.Services.WhatsAppCommerceFlowService>();
         builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppCommerceOutboxWorker>();
+        if (!whatsappWorker)
+            builder.Services.AddHostedService<SenorArroz.API.Services.WhatsAppIdleAttentionWorker>();
         builder.Services.AddScoped<IPaymentReviewNotificationService, SenorArroz.API.Services.PaymentReviewNotificationService>();
         builder.Services.Configure<DeliveryAppVersionOptions>(
             builder.Configuration.GetSection(DeliveryAppVersionOptions.SectionName));
