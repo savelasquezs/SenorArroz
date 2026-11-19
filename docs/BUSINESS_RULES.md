@@ -419,7 +419,7 @@ Reglas:
 
 - La configuración de WhatsApp rechaza identificadores de app y otros valores con formato incorrecto en `AppSecret`; exige la clave secreta hexadecimal de 32 caracteres de Meta. Dejar el campo vacío al editar conserva la clave existente. La verificación del token de Cloud API no certifica la firma del webhook.
 - Los webhooks resuelven primero por BSUID (`from_user_id`/`contacts[].user_id`) y después por teléfono (`from`/`wa_id`); `contacts[].profile.username` se conserva como dato visible.
-- Una conversación puede operar sin teléfono cuando tiene BSUID. Los envíos prefieren teléfono y usan BSUID como alternativa; las plantillas de autenticación continúan exigiendo teléfono.
+- Una conversación puede operar sin teléfono cuando tiene BSUID. Los envíos usan el teléfono en `to` si está disponible. Si solo hay BSUID, envían el identificador completo en `recipient` y omiten `to`. Las plantillas de autenticación exigen teléfono.
 - Una asociación manual de cliente nunca se reemplaza por inferencia del webhook. Ante conflicto entre historial por BSUID e historial por teléfono se conservan ambos y no se fusionan mensajes.
 - Los clientes y conversaciones existentes por teléfono no reciben un BSUID inventado: se enriquecen únicamente con datos entregados por Meta.
 - Cada sucursal puede activar y personalizar su mensaje de ausencia.

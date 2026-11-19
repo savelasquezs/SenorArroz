@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,6 +17,45 @@ namespace SenorArroz.Tests;
 
 public class WhatsAppMetaErrorHandlingTests
 {
+    [Theory]
+    [InlineData("573001234567", "to", "recipient")]
+    [InlineData("+57 (300) 123-4567", "to", "recipient")]
+    [InlineData("CO.0123456789abCDEF", "recipient", "to")]
+    [InlineData("CO.ENT.0123456789abCDEF", "recipient", "to")]
+    public async Task CloudClient_SendsDestinationInExactlyOneField(
+        string destination, string expectedField, string omittedField)
+    {
+        var handler = new CapturingHandler();
+        var client = CreateClient(handler);
+        const string phoneId = "phone-id";
+        const string token = "token";
+        const string message = "Hola";
+        const string link = "https://example.com/menu.png";
+
+        var sends = new (string Type, Func<Task<WhatsAppCloudSendResult>> Send)[]
+        {
+            ("text", () => client.SendTextMessageAsync(phoneId, token, destination, message)),
+            ("interactive", () => client.SendUrlButtonMessageAsync(phoneId, token, destination, message, "Abrir", link)),
+            ("interactive", () => client.SendReplyButtonsMessageAsync(phoneId, token, destination, message, [new("yes", "Sí")])),
+            ("interactive", () => client.SendListMessageAsync(phoneId, token, destination, message, "Ver", [new("yes", "Sí", null)])),
+            ("interactive", () => client.SendFlowMessageAsync(phoneId, token, destination, message, "Abrir", "flow-id", "flow-token", "START")),
+            ("image", () => client.SendImageLinkMessageAsync(phoneId, token, destination, link, message)),
+            ("document", () => client.SendMediaMessageAsync(phoneId, token, destination, "document", "media-id", message, "menu.pdf")),
+            ("template", () => client.SendTemplateMessageAsync(phoneId, token, destination, "greeting", "es", [message]))
+        };
+
+        foreach (var (type, send) in sends)
+        {
+            Assert.True((await send()).Success);
+            using var json = JsonDocument.Parse(handler.Body);
+            var payload = json.RootElement;
+            Assert.Equal(destination, payload.GetProperty(expectedField).GetString());
+            Assert.False(payload.TryGetProperty(omittedField, out _));
+            Assert.Equal(type, payload.GetProperty("type").GetString());
+            Assert.Equal(JsonValueKind.Object, payload.GetProperty(type).ValueKind);
+        }
+    }
+
     [Fact]
     public async Task CloudClient_HttpErrorPreservesStatusMessageAndBodyButRedactsToken()
     {
@@ -58,7 +98,9 @@ public class WhatsAppMetaErrorHandlingTests
 
         Assert.True(result.Success);
         Assert.Contains("customers_web_authentication", handler.Body);
-        Assert.Contains("573001234567", handler.Body);
+        using var json = JsonDocument.Parse(handler.Body);
+        Assert.Equal("573001234567", json.RootElement.GetProperty("to").GetString());
+        Assert.False(json.RootElement.TryGetProperty("recipient", out _));
         Assert.Contains("\"sub_type\":\"url\"", handler.Body);
         Assert.Equal(2, handler.Body.Split("482193").Length - 1);
     }

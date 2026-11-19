@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -64,13 +63,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Content = JsonContent.Create(new
-        {
-            messaging_product = "whatsapp",
-            to = toPhoneNumber,
-            type = "text",
-            text = new { body = text }
-        });
+        request.Content = CreateMessageContent(toPhoneNumber, "text", new { body = text });
 
         try
         {
@@ -93,7 +86,12 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Content = JsonContent.Create(new { messaging_product = "whatsapp", to = toPhoneNumber, type = "interactive", interactive = new { type = "cta_url", body = new { text = body }, action = new { name = "cta_url", parameters = new { display_text = buttonText, url } } } });
+        request.Content = CreateMessageContent(toPhoneNumber, "interactive", new
+        {
+            type = "cta_url",
+            body = new { text = body },
+            action = new { name = "cta_url", parameters = new { display_text = buttonText, url } }
+        });
         try
         {
             using var response = await _httpClient.SendAsync(request, cancellationToken); var json = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -108,7 +106,14 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
     {
         var safe=buttons.Take(3).Select(x=>new{type="reply",reply=new{id=x.Id[..Math.Min(256,x.Id.Length)],title=x.Title[..Math.Min(20,x.Title.Length)]}}).ToArray();
         if(safe.Length==0)return new(false,null,"Se requiere al menos un botón.");
-        using var request=new HttpRequestMessage(HttpMethod.Post,BuildGraphUrl($"{phoneNumberId}/messages"));request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",accessToken);request.Content=JsonContent.Create(new{messaging_product="whatsapp",to=toPhoneNumber,type="interactive",interactive=new{type="button",body=new{text=body},action=new{buttons=safe}}});
+        using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Content = CreateMessageContent(toPhoneNumber, "interactive", new
+        {
+            type = "button",
+            body = new { text = body },
+            action = new { buttons = safe }
+        });
         try{using var response=await _httpClient.SendAsync(request,cancellationToken);var json=await response.Content.ReadAsStringAsync(cancellationToken);if(!response.IsSuccessStatusCode)return new(false,null,CreateMetaHttpError("send_reply_buttons",json,response.StatusCode,accessToken));using var document=JsonDocument.Parse(json);return new(true,TryGetFirstMessageId(document.RootElement),null);}catch(Exception ex)when(ex is HttpRequestException or TaskCanceledException or JsonException){return new(false,null,CreateClientError("send_reply_buttons",ex,accessToken));}
     }
 
@@ -118,20 +123,14 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         if (options.Count is < 1 or > 10) return new(false, null, "La lista debe tener entre una y diez opciones.");
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Content = JsonContent.Create(new
+        request.Content = CreateMessageContent(to, "interactive", new
         {
-            messaging_product = "whatsapp",
-            to,
-            type = "interactive",
-            interactive = new
+            type = "list",
+            body = new { text = body },
+            action = new
             {
-                type = "list",
-                body = new { text = body },
-                action = new
-                {
-                    button,
-                    sections = new[] { new { rows = options.Select(x => new { id = x.Id, title = x.Title, description = x.Description }).ToArray() } }
-                }
+                button,
+                sections = new[] { new { rows = options.Select(x => new { id = x.Id, title = x.Title, description = x.Description }).ToArray() } }
             }
         });
         try
@@ -151,7 +150,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
     public async Task<WhatsAppCloudSendResult> SendImageLinkMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string imageUrl, string? caption, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages")); request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Content = JsonContent.Create(new { messaging_product = "whatsapp", to = toPhoneNumber, type = "image", image = new { link = imageUrl, caption } });
+        request.Content = CreateMessageContent(toPhoneNumber, "image", new { link = imageUrl, caption });
         try { using var response = await _httpClient.SendAsync(request, cancellationToken); var json = await response.Content.ReadAsStringAsync(cancellationToken); if (!response.IsSuccessStatusCode) return new(false, null, CreateMetaHttpError("send_image_link", json, response.StatusCode, accessToken)); using var doc = JsonDocument.Parse(json); return new(true, TryGetFirstMessageId(doc.RootElement), null); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return new(false, null, CreateClientError("send_image_link", ex, accessToken)); }
     }
@@ -160,7 +159,23 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
     {
         using var request=new HttpRequestMessage(HttpMethod.Post,BuildGraphUrl($"{phoneNumberId}/messages"));
         request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",accessToken);
-        request.Content=JsonContent.Create(new{messaging_product="whatsapp",to=toPhoneNumber,type="interactive",interactive=new{type="flow",body=new{text=body},action=new{name="flow",parameters=new{flow_message_version="3",flow_token=flowToken,flow_id=flowId,flow_cta=buttonText,flow_action="data_exchange"}}}});
+        request.Content = CreateMessageContent(toPhoneNumber, "interactive", new
+        {
+            type = "flow",
+            body = new { text = body },
+            action = new
+            {
+                name = "flow",
+                parameters = new
+                {
+                    flow_message_version = "3",
+                    flow_token = flowToken,
+                    flow_id = flowId,
+                    flow_cta = buttonText,
+                    flow_action = "data_exchange"
+                }
+            }
+        });
         try
         {
             using var response=await _httpClient.SendAsync(request,cancellationToken);
@@ -237,22 +252,16 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Content = JsonContent.Create(new
+        request.Content = CreateMessageContent(toPhoneNumber, "template", new
         {
-            messaging_product = "whatsapp",
-            to = toPhoneNumber,
-            type = "template",
-            template = new
+            name = templateName,
+            language = new { code = language },
+            components = new[]
             {
-                name = templateName,
-                language = new { code = language },
-                components = new[]
+                new
                 {
-                    new
-                    {
-                        type = "body",
-                        parameters = parameters.Select(x => new { type = "text", text = x ?? string.Empty }).ToArray()
-                    }
+                    type = "body",
+                    parameters = parameters.Select(x => new { type = "text", text = x ?? string.Empty }).ToArray()
                 }
             }
         });
@@ -374,7 +383,7 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         var normalizedType = NormalizeMediaType(mediaType);
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Content = JsonContent.Create(BuildMediaPayload(toPhoneNumber, normalizedType, mediaId, caption, fileName));
+        request.Content = CreateMessageContent(toPhoneNumber, normalizedType, BuildMediaReference(normalizedType, mediaId, caption, fileName));
 
         try
         {
@@ -573,24 +582,26 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         return first.ValueKind == JsonValueKind.Object ? TryGetString(first, "id") : null;
     }
 
-    private static object BuildMediaPayload(string toPhoneNumber, string mediaType, string mediaId, string? caption, string? fileName)
+    private static JsonContent CreateMessageContent(string destination, string type, object message)
     {
-        var media = new MediaMessagePayload.MediaReference
+        var isBsuid = Regex.IsMatch(destination, @"\A[A-Z]{2}\.(?:ENT\.)?[A-Za-z0-9]+\z");
+        return JsonContent.Create(new Dictionary<string, object>
         {
-            Id = mediaId,
-            Caption = mediaType is "image" or "video" or "document" ? NullIfWhiteSpace(caption) : null,
-            Filename = mediaType == "document" ? NullIfWhiteSpace(fileName) : null
-        };
+            ["messaging_product"] = "whatsapp",
+            [isBsuid ? "recipient" : "to"] = destination,
+            ["type"] = type,
+            [type] = message
+        });
+    }
 
-        return mediaType switch
-        {
-            "image" => new MediaMessagePayload { To = toPhoneNumber, Type = mediaType, Image = media },
-            "audio" => new MediaMessagePayload { To = toPhoneNumber, Type = mediaType, Audio = media },
-            "video" => new MediaMessagePayload { To = toPhoneNumber, Type = mediaType, Video = media },
-            "document" => new MediaMessagePayload { To = toPhoneNumber, Type = mediaType, Document = media },
-            "sticker" => new MediaMessagePayload { To = toPhoneNumber, Type = mediaType, Sticker = media },
-            _ => throw new ArgumentOutOfRangeException(nameof(mediaType), mediaType, "Tipo de media WhatsApp no soportado.")
-        };
+    private static Dictionary<string, string> BuildMediaReference(string mediaType, string mediaId, string? caption, string? fileName)
+    {
+        var media = new Dictionary<string, string> { ["id"] = mediaId };
+        if (mediaType is "image" or "video" or "document" && NullIfWhiteSpace(caption) is { } mediaCaption)
+            media["caption"] = mediaCaption;
+        if (mediaType == "document" && NullIfWhiteSpace(fileName) is { } documentName)
+            media["filename"] = documentName;
+        return media;
     }
 
     private static string NormalizeMediaType(string mediaType)
@@ -604,49 +615,4 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private sealed class MediaMessagePayload
-    {
-        [JsonPropertyName("messaging_product")]
-        public string MessagingProduct { get; set; } = "whatsapp";
-
-        [JsonPropertyName("to")]
-        public string To { get; set; } = string.Empty;
-
-        [JsonPropertyName("type")]
-        public string Type { get; set; } = string.Empty;
-
-        [JsonPropertyName("image")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public MediaReference? Image { get; set; }
-
-        [JsonPropertyName("audio")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public MediaReference? Audio { get; set; }
-
-        [JsonPropertyName("video")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public MediaReference? Video { get; set; }
-
-        [JsonPropertyName("document")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public MediaReference? Document { get; set; }
-
-        [JsonPropertyName("sticker")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public MediaReference? Sticker { get; set; }
-
-        public sealed class MediaReference
-        {
-            [JsonPropertyName("id")]
-            public string Id { get; set; } = string.Empty;
-
-            [JsonPropertyName("caption")]
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public string? Caption { get; set; }
-
-            [JsonPropertyName("filename")]
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public string? Filename { get; set; }
-        }
-    }
 }
