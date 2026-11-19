@@ -134,7 +134,7 @@ public sealed class KitchenListDetailsTests
 
         var shortFirstPage = await handler.Handle(Query(true, 1, 10), CancellationToken.None);
         Assert.Equal(2, shortFirstPage.TotalCount);
-        Assert.Equal(2, shortFirstPage.Items.Count);
+        Assert.Equal(2, shortFirstPage.Items.Count());
         Assert.Equal(1, shortFirstPage.TotalPages);
 
         var second = await handler.Handle(Query(true, 2, 1), CancellationToken.None);
