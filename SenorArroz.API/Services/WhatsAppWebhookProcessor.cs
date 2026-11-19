@@ -356,12 +356,13 @@ public sealed partial class WhatsAppWebhookProcessor
             var typeText = TryGetString(messageElement, "type");
             var structuredLabel = StructuredMessageLabel(typeText);
             var isReaction = typeText == "reaction";
+            var isEdit = typeText == "edit";
             var cart = WhatsAppCatalogCart.Read(messageElement);
             var messageType = WhatsAppMessageType.Text;
-            if (cart is null ? !isReaction && !TryMapMessageType(typeText, out messageType) : string.IsNullOrWhiteSpace(messageId))
+            if (cart is null ? !isReaction && !isEdit && !TryMapMessageType(typeText, out messageType) : string.IsNullOrWhiteSpace(messageId))
                 continue;
 
-            if (!string.IsNullOrWhiteSpace(messageId)
+            if (!isEdit && !string.IsNullOrWhiteSpace(messageId)
                 && await _db.WhatsAppMessages.AnyAsync(x => x.WhatsAppMessageId == messageId
                     && x.Conversation.ChannelSettingId == channelSettingId && x.Conversation.BranchLineId == branchLineId
                     && (channelSettingId.HasValue || x.Conversation.BranchId == setting.BranchId), cancellationToken))
@@ -415,6 +416,12 @@ public sealed partial class WhatsAppWebhookProcessor
             }
 
             var conversation = conversationByUserId ?? (phoneIdentityMismatch ? null : conversationByPhone);
+            if (isEdit)
+            {
+                await ApplyProviderEditAsync(conversation, messageElement, timestamp, false, updatedMessages, cancellationToken);
+                processed = true;
+                continue;
+            }
             if (isReaction)
             {
                 await ApplyProviderReactionAsync(conversation, messageElement, timestamp, false, updatedMessages, cancellationToken);

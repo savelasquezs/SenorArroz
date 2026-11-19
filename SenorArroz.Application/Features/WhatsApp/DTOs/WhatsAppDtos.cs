@@ -219,6 +219,7 @@ public class WhatsAppAttentionDto
 public class WhatsAppMessageDto
 {
     public bool IsUpdate { get; set; }
+    public DateTime? EditedAt { get; set; }
     public string? HiddenSource { get; set; }
     public string? ReplyToWhatsAppMessageId { get; set; }
     public WhatsAppMessageLocationDto? Location { get; set; }
