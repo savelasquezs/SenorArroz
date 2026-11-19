@@ -52,11 +52,8 @@ public static class WhatsAppLocalReviewRegistration
                     var body = payload.RootElement;
                     if (body.ValueKind == JsonValueKind.Object
                         && body.TryGetProperty("messaging_product", out var product) && product.ValueKind == JsonValueKind.String && product.ValueEquals("whatsapp")
-                        && body.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String && type.ValueEquals("text")
                         && body.TryGetProperty("to", out var to) && to.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(to.GetString())
-                        && body.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.Object
-                        && text.TryGetProperty("body", out var message) && message.ValueKind == JsonValueKind.String
-                        && !string.IsNullOrWhiteSpace(message.GetString()))
+                        && IsSimulatedMessage(body))
                     {
                         var response = new HttpResponseMessage(HttpStatusCode.OK)
                         {
@@ -78,6 +75,25 @@ public static class WhatsAppLocalReviewRegistration
                     type = "local_review_transport_disabled" } })
             };
         }
+
+        private static bool IsSimulatedMessage(JsonElement message)
+        {
+            if (!message.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String) return false;
+            if (type.ValueEquals("text"))
+                return message.TryGetProperty("text", out var text) && HasText(text, "body");
+            if (!type.ValueEquals("interactive") || !message.TryGetProperty("interactive", out var interactive)
+                || interactive.ValueKind != JsonValueKind.Object
+                || !interactive.TryGetProperty("body", out var body) || !HasText(body, "text")
+                || !interactive.TryGetProperty("action", out var action) || action.ValueKind != JsonValueKind.Object
+                || !interactive.TryGetProperty("type", out var kind) || kind.ValueKind != JsonValueKind.String) return false;
+            var optionsProperty = kind.GetString() switch { "list" => "sections", "button" => "buttons", _ => null };
+            return optionsProperty is not null && action.TryGetProperty(optionsProperty, out var options)
+                && options.ValueKind == JsonValueKind.Array && options.GetArrayLength() > 0;
+        }
+
+        private static bool HasText(JsonElement container, string key) => container.ValueKind == JsonValueKind.Object
+            && container.TryGetProperty(key, out var text) && text.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(text.GetString());
     }
 }
 

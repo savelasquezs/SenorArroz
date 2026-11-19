@@ -52,7 +52,7 @@ public sealed class StorefrontCommerceService(
     private int StorefrontTenantId => storefrontOptions.Value.TenantId > 0
         ? storefrontOptions.Value.TenantId
         : throw new InvalidOperationException("StorefrontCustomerAuth:TenantId debe ser mayor que cero.");
-    private static readonly HashSet<string> PublicRoles = ["rice", "combo", "beverage", "addition"];
+    internal static readonly HashSet<string> PublicRoles = ["rice", "combo", "beverage", "addition"];
     private static readonly HashSet<string> MainRoles = ["rice", "combo"];
     private static readonly TimeSpan MapCacheDuration = TimeSpan.FromMinutes(5);
     private static readonly string[] AllowedCities = ["Medellín", "Bello", "Copacabana"];

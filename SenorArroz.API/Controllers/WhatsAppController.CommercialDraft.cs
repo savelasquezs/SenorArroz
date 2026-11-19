@@ -174,6 +174,7 @@ public partial class WhatsAppController
                     if (request.CommercialStatus is not ("in_progress" or "waiting_customer")) throw new BusinessException("Estado comercial inválido.");
                     if (request.Editor?.GetRawText().Length > 300000) throw new BusinessException("El borrador excede el tamaño permitido.");
                     await ValidateDraftReferencesAsync(request, ct);
+                    await ValidateProductSuggestionsAsync(conversation.Id, session, request.Order, ct);
                     WhatsAppCommercialDraft.Write(session, request.Order);
                     session.EditorJson = request.Editor?.GetRawText();
                     session.DraftSource = "advisor";
