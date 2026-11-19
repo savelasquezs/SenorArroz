@@ -188,7 +188,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M40-F03 | Workers de pagos y correos | Pendiente | — | — | — | — |
 | M40-F04 | Workers GPS y cierre jornadas | Pendiente | — | — | — | — |
 | M40-F05 | Carga recurrente y ciclos de polling | Pendiente | — | — | — | — |
-| M41-F01 | SQL pedidos y detalles | Pendiente | — | — | — | — |
+| M41-F01 | SQL pedidos y detalles | Bloqueado | 2026-11-19 | [Informe](reviews/2026-11-19-M41-F01.md) | [API #142](https://github.com/savelasquezs/SenorArroz/pull/142), [Docs #143](https://github.com/savelasquezs/SenorArroz/pull/143) (borradores) | `GetAllAsync`: omitir COUNT de página 1 incompleta reutilizando paginación optativa; test PostgreSQL con interceptación SQL, CI/QA pendientes de confirmación. Cualquier impacto productivo sin medir. Sin migración, merge ni despliegue. |
 | M41-F02 | SQL clientes y direcciones | Pendiente | — | — | — | — |
 | M41-F03 | SQL dashboard y agregados | Pendiente | — | — | — | — |
 | M41-F04 | SQL tracking geográfico | Pendiente | — | — | — | — |
