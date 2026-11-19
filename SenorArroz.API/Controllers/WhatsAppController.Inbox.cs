@@ -64,6 +64,11 @@ public partial class WhatsAppController
                 case PendingLabel: query = state.Where(x => x.Pending).Select(x => x.Conversation); break;
                 case TakenLabel: query = state.Where(x => x.Taken).Select(x => x.Conversation); break;
                 default:
+                    if (TryGetCustomLabelId(search.Label, out var labelId))
+                    {
+                        query = query.Where(x => _db.WhatsAppConversationLabels.Any(y => y.ConversationId == x.Id && y.LabelId == labelId));
+                        break;
+                    }
                     if (!search.Label.StartsWith(BranchLabelPrefix, StringComparison.Ordinal)
                         || !int.TryParse(search.Label.AsSpan(BranchLabelPrefix.Length), out var target) || target <= 0)
                         return BadRequest(ApiResponse<WhatsAppConversationPageDto>.ErrorResponse("Etiqueta no válida."));

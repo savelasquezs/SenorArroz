@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Helpers;
@@ -445,6 +446,67 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         _logger.LogInformation("WhatsApp outbound message sent for conversation {ConversationId}", conversationId);
         await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
         return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Mensaje enviado."));
+    }
+
+    internal async Task<string> SendClosedDayReplyAsync(WhatsAppConversation conversation, string text,
+        string dispatchKey, Func<CancellationToken, Task<bool>> stillEligible, CancellationToken ct)
+    {
+        var recipient = WhatsAppRecipientResolver.Resolve(conversation);
+        var setting = await ResolveConversationChannelAsync(conversation, ct);
+        if (setting is null || recipient is null) return "skipped";
+
+        var message = new WhatsAppMessage
+        {
+            ConversationId = conversation.Id,
+            Direction = WhatsAppMessageDirection.Outbound,
+            Type = WhatsAppMessageType.Text,
+            TextBody = text,
+            Status = WhatsAppMessageStatus.Failed,
+            SentByUserId = _currentUser.Id,
+            Timestamp = _clock.UtcNow,
+            AgentDispatchKey = dispatchKey,
+            RawPayload = JsonSerializer.Serialize(new { origin = "closed_day_follow_up", outcome = "reserved" })
+        };
+        _db.WhatsAppMessages.Add(message);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+            { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "ux_whatsapp_message_agent_dispatch_key" })
+        {
+            return "skipped";
+        }
+
+        if (!await stillEligible(ct))
+        {
+            _db.WhatsAppMessages.Remove(message);
+            await _db.SaveChangesAsync(ct);
+            return "skipped";
+        }
+
+        message.Timestamp = _clock.UtcNow;
+        var result = await _whatsAppCloudClient.SendTextMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, ct);
+        var outcome = result.OutcomeUncertain ? "review" : result.Success ? "sent" : "failed";
+        message.WhatsAppMessageId = result.WhatsAppMessageId;
+        message.Status = outcome == "sent" ? WhatsAppMessageStatus.Sent : WhatsAppMessageStatus.Failed;
+        message.RawPayload = JsonSerializer.Serialize(new { origin = "closed_day_follow_up", outcome });
+        await _db.SaveChangesAsync(ct);
+        if (outcome != "sent") return outcome;
+
+        var latest = _db.WhatsAppConversations.Where(c => c.Id == conversation.Id
+            && (!c.LastMessageAt.HasValue || c.LastMessageAt <= message.Timestamp));
+        if (_db.Database.IsRelational())
+            await latest.ExecuteUpdateAsync(update => update.SetProperty(c => c.LastMessageAt, message.Timestamp)
+                .SetProperty(c => c.LastMessagePreview, text), ct);
+        else if (await latest.AnyAsync(ct))
+        {
+            conversation.LastMessageAt = message.Timestamp;
+            conversation.LastMessagePreview = text;
+            await _db.SaveChangesAsync(ct);
+        }
+        await NotifyWhatsAppMessageCreatedAsync(message.Id, ct);
+        return outcome;
     }
 
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendProductDetails(int conversationId, int productId, CancellationToken cancellationToken)

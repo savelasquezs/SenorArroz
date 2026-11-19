@@ -69,6 +69,10 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
         PublishAsync(WhatsAppRealtimeGroupResolver.InboxChanged, 0, new { branchId },
             WhatsAppRealtimeGroupResolver.InboxScope(_tenant.TenantId, branchId), cancellationToken);
 
+    public Task NotifyInboxLabelCatalogChangedAsync(CancellationToken cancellationToken = default) =>
+        PublishAsync("WhatsAppInboxLabelCatalogChanged", 0, new { },
+            WhatsAppRealtimeGroupResolver.InboxScope(_tenant.TenantId, 0), cancellationToken);
+
     public async Task NotifyInboxConversationChangedAsync(int conversationId, CancellationToken cancellationToken = default)
     {
         var conversation = await _db.WhatsAppConversations.AsNoTracking().Where(x => x.Id == conversationId)

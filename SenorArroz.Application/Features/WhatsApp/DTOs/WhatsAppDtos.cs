@@ -301,7 +301,8 @@ public class UpdateWhatsAppOrderDraftFulfillmentDto { public string OrderType { 
 
 public sealed record WhatsAppConversationPageDto(IReadOnlyList<WhatsAppConversationDto> Items, string? NextCursor, bool HasMore);
 
-public sealed record WhatsAppInboxLabelDto(string Key, string Name, bool Editable);
+public sealed record WhatsAppInboxLabelDto(string Key, string Name, bool Editable, string? Color = null, bool Custom = false);
+public sealed record WhatsAppInboxLabelDefinitionDto(string? Name, string? Color);
 public sealed record WhatsAppInboxTabCountsDto(int PendingOrders, int UnreadConversations);
 public sealed record WhatsAppInboxLabelWriteDto(bool Applied);
 public sealed record WhatsAppInboxTakenResetDto(int? BranchId, bool UnroutedOnly = false);
