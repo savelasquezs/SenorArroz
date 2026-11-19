@@ -87,11 +87,13 @@ public partial class WhatsAppController
         if (conversations.Count == 0) return;
         var ids = conversations.Select(x => x.Id).ToArray();
         var labels = await InboxLabelStates(_db.WhatsAppConversations.AsNoTracking().Where(x => ids.Contains(x.Id)), day)
-            .Select(x => new { x.Conversation.Id, x.Conversation.IsSupplier, x.Pending, x.Taken, x.Conversation.IsPaymentPending, x.RemoteBranchId })
+            .Select(x => new
+            {
+                x.Conversation.Id, x.Conversation.IsSupplier, x.Pending, x.Taken, x.Conversation.IsPaymentPending, x.RemoteBranchId,
+                CustomLabelIds = _db.WhatsAppConversationLabels.Where(y => y.ConversationId == x.Conversation.Id)
+                    .OrderBy(y => y.LabelId).Select(y => y.LabelId).ToList()
+            })
             .ToDictionaryAsync(x => x.Id, ct);
-        var assignments = await _db.WhatsAppConversationLabels.AsNoTracking().Where(x => ids.Contains(x.ConversationId))
-            .OrderBy(x => x.LabelId).Select(x => new { x.ConversationId, x.LabelId }).ToListAsync(ct);
-        var customByConversation = assignments.ToLookup(x => x.ConversationId, x => $"{CustomLabelPrefix}{x.LabelId}");
         foreach (var conversation in conversations)
         {
             if (!labels.TryGetValue(conversation.Id, out var entry)) continue;
@@ -101,7 +103,7 @@ public partial class WhatsAppController
             if (entry.Taken) values.Add(TakenLabel);
             if (entry.IsPaymentPending) values.Add(PaymentLabel);
             if (entry.RemoteBranchId is int branchId) values.Add($"{BranchLabelPrefix}{branchId}");
-            values.AddRange(customByConversation[conversation.Id]);
+            values.AddRange(entry.CustomLabelIds.Select(id => $"{CustomLabelPrefix}{id}"));
             conversation.Labels = values;
         }
     }

@@ -32,6 +32,8 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
                     ContactName = $"Chat local {id}", LastMessageAt = id == 280 ? activity.AddDays(-10) : activity,
                     NeedsHumanResponse = id == 280, AiOrderState = JsonSerializer.Serialize(new { payload = new string('x', 100000) }), AttentionMode = WhatsAppAttentionMode.Human
                 });
+            seed.WhatsAppInboxLabels.Add(new WhatsAppInboxLabel { Id = 1, TenantId = 1, Name = "Revisar", NormalizedName = "REVISAR", Color = "violet" });
+            seed.WhatsAppConversationLabels.Add(new WhatsAppConversationLabel { TenantId = 1, ConversationId = 280, LabelId = 1 });
             await seed.SaveChangesAsync();
         }
         var commands = new List<string>();
@@ -41,6 +43,7 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
         var controller = Stage23Controller(db, 7);
         var first = InboxPayload(await controller.GetConversationPage(new() { Inbox = "mine" }, default));
         Assert.Equal(280, first.Items[0].Id);
+        Assert.Contains("custom:1", first.Items[0].Labels!);
         Assert.Equal(50, first.Items.Count);
         Assert.Equal(3, commands.Count);
         Assert.DoesNotContain(commands, sql => sql.Contains("ai_order_state") || sql.Contains("access_token") || sql.Contains("state_json"));
