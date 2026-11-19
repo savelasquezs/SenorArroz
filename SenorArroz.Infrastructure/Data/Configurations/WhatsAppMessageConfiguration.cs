@@ -32,6 +32,12 @@ public class WhatsAppMessageConfiguration : IEntityTypeConfiguration<WhatsAppMes
         builder.Property(x => x.SentByUserId).HasColumnName("sent_by_user_id");
         builder.Property(x => x.Timestamp).HasColumnName("timestamp").IsRequired();
         builder.Property(x => x.RawPayload).HasColumnName("raw_payload").HasColumnType("jsonb");
+        builder.Property(x => x.HiddenAt).HasColumnName("hidden_at");
+        builder.Property(x => x.HiddenByUserId).HasColumnName("hidden_by_user_id");
+        builder.Property(x => x.CustomerReaction).HasColumnName("customer_reaction").HasMaxLength(32);
+        builder.Property(x => x.CustomerReactionAt).HasColumnName("customer_reaction_at");
+        builder.Property(x => x.BusinessReaction).HasColumnName("business_reaction").HasMaxLength(32);
+        builder.Property(x => x.BusinessReactionAt).HasColumnName("business_reaction_at");
         builder.Property(x => x.AiProcessingStatus).HasColumnName("ai_processing_status").HasMaxLength(32).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<WhatsAppAiProcessingStatus>(v, true)).HasDefaultValue(WhatsAppAiProcessingStatus.NotApplicable);
         builder.Property(x => x.AiProcessedAt).HasColumnName("ai_processed_at");
         builder.Property(x => x.AiProcessingAttempts).HasColumnName("ai_processing_attempts").HasDefaultValue(0);

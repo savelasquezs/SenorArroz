@@ -88,12 +88,15 @@ public sealed partial class WhatsAppWebhookProcessor
     public async Task ProcessAsync(WhatsAppWebhookEvent webhookEvent, string rawPayload, CancellationToken cancellationToken)
     {
         var createdMessages = new List<WhatsAppMessage>();
+        var updatedMessages = new List<WhatsAppMessage>();
         var aiProcessingChanges = new List<WhatsAppMessage>();
         var awayMessageDispatches = new List<WhatsAppAwayMessageDispatch>();
         using var document = JsonDocument.Parse(rawPayload);
         webhookEvent.Processed = await ProcessWebhookPayloadAsync(document.RootElement, webhookEvent,
-            createdMessages, aiProcessingChanges, awayMessageDispatches, cancellationToken);
+            createdMessages, updatedMessages, aiProcessingChanges, awayMessageDispatches, cancellationToken);
         var released = await SaveInboundWithCommercialChoicesAsync(createdMessages, cancellationToken);
+        foreach (var messageId in updatedMessages.Select(message => message.Id).Where(id => id > 0).Distinct())
+            await NotifyWhatsAppMessageCreatedAsync(messageId, cancellationToken, isUpdate: true);
         foreach (var (chat, previousUser) in released)
             await WhatsAppIdleAttention.PublishAsync(_whatsAppNotificationService, chat, previousUser, _logger, cancellationToken);
         if (!webhookEvent.ConversationId.HasValue && createdMessages.FirstOrDefault(x => !x.IsHistorical
@@ -112,7 +115,7 @@ public sealed partial class WhatsAppWebhookProcessor
                         ToConversationDto(message.Conversation), cancellationToken);
                     continue;
                 }
-                if (message.Direction != WhatsAppMessageDirection.Inbound || message.AiProcessingError == WhatsAppCatalogCart.ManualReview
+                if (message.Direction != WhatsAppMessageDirection.Inbound || message.AiProcessingError is WhatsAppCatalogCart.ManualReview or "structured_message"
                     || message.AiProcessingError is WhatsAppCommercialDraft.AddressApplied or WhatsAppCommercialDraft.ProductApplied
                         or "order_address_unavailable" or "order_product_unavailable") continue;
                 if (message.Conversation.ChannelSettingId.HasValue
@@ -180,7 +183,7 @@ public sealed partial class WhatsAppWebhookProcessor
         DateTime ClosedPeriodStartedAtUtc,
         string Text);
 
-    internal async Task NotifyWhatsAppMessageCreatedAsync(int messageId, CancellationToken cancellationToken)
+    internal async Task NotifyWhatsAppMessageCreatedAsync(int messageId, CancellationToken cancellationToken, bool isUpdate = false)
     {
         var message = await _db.WhatsAppMessages
             .AsNoTracking()
@@ -197,10 +200,12 @@ public sealed partial class WhatsAppWebhookProcessor
         if (message?.Conversation is null)
             return;
 
+        var dto = ToMessageDto(message);
+        dto.IsUpdate = isUpdate;
         await _whatsAppNotificationService.NotifyMessageCreatedAsync(
             message.Conversation.BranchId,
             ToConversationDto(message.Conversation, message.Conversation.AssignedUser?.Name),
-            ToMessageDto(message),
+            dto,
             cancellationToken);
     }
 
@@ -237,6 +242,7 @@ public sealed partial class WhatsAppWebhookProcessor
         JsonElement root,
         WhatsAppWebhookEvent webhookEvent,
         List<WhatsAppMessage> createdMessages,
+        List<WhatsAppMessage> updatedMessages,
         List<WhatsAppMessage> aiProcessingChanges,
         List<WhatsAppAwayMessageDispatch> awayMessageDispatches,
         CancellationToken cancellationToken)
@@ -299,11 +305,11 @@ public sealed partial class WhatsAppWebhookProcessor
                 {
                     if (channel is null && setting.CoexistenceEnabled)
                         processedAny |= await ProcessCoexistenceAsync(TryGetString(change, "field")!, value,
-                            setting, createdMessages, cancellationToken);
+                            setting, createdMessages, updatedMessages, cancellationToken);
                     continue;
                 }
 
-                processedAny |= await ProcessInboundMessagesAsync(value, setting, channel?.Id, webhookEvent, createdMessages, awayMessageDispatches, cancellationToken);
+                processedAny |= await ProcessInboundMessagesAsync(value, setting, channel?.Id, webhookEvent, createdMessages, updatedMessages, awayMessageDispatches, cancellationToken);
                 processedAny |= await ProcessStatusesAsync(value, webhookEvent, aiProcessingChanges, cancellationToken);
             }
         }
@@ -335,6 +341,7 @@ public sealed partial class WhatsAppWebhookProcessor
         int? channelSettingId,
         WhatsAppWebhookEvent webhookEvent,
         List<WhatsAppMessage> createdMessages,
+        List<WhatsAppMessage> updatedMessages,
         List<WhatsAppAwayMessageDispatch> awayMessageDispatches,
         CancellationToken cancellationToken)
     {
@@ -347,9 +354,11 @@ public sealed partial class WhatsAppWebhookProcessor
         {
             var messageId = TryGetString(messageElement, "id");
             var typeText = TryGetString(messageElement, "type");
+            var structuredLabel = StructuredMessageLabel(typeText);
+            var isReaction = typeText == "reaction";
             var cart = WhatsAppCatalogCart.Read(messageElement);
             var messageType = WhatsAppMessageType.Text;
-            if (cart is null ? !TryMapMessageType(typeText, out messageType) : string.IsNullOrWhiteSpace(messageId))
+            if (cart is null ? !isReaction && !TryMapMessageType(typeText, out messageType) : string.IsNullOrWhiteSpace(messageId))
                 continue;
 
             if (!string.IsNullOrWhiteSpace(messageId)
@@ -363,7 +372,7 @@ public sealed partial class WhatsAppWebhookProcessor
             var identity = WhatsAppWebhookIdentityReader.Read(value, messageElement);
             var mediaPayload = TryGetMediaPayload(messageElement, messageType);
             var text = messageType == WhatsAppMessageType.Text
-                ? TryGetTextBody(messageElement)
+                ? structuredLabel ?? TryGetTextBody(messageElement)
                 : TryGetMediaCaptionOrName(mediaPayload, messageType);
             if (cart is not null)
             {
@@ -406,6 +415,12 @@ public sealed partial class WhatsAppWebhookProcessor
             }
 
             var conversation = conversationByUserId ?? (phoneIdentityMismatch ? null : conversationByPhone);
+            if (isReaction)
+            {
+                await ApplyProviderReactionAsync(conversation, messageElement, timestamp, false, updatedMessages, cancellationToken);
+                processed = true;
+                continue;
+            }
             if (conversation is null)
             {
                 var aiActive = channelSettingId.HasValue
@@ -605,6 +620,14 @@ public sealed partial class WhatsAppWebhookProcessor
                         awayText = rendered;
                     }
                 }
+            }
+
+            if (structuredLabel is not null)
+            {
+                aiProcessingStatus = WhatsAppAiProcessingStatus.NotApplicable;
+                aiProcessingError = "structured_message";
+                aiProcessedAt = _clock.UtcNow;
+                awayClosedPeriodStartedAtUtc = null;
             }
 
             var message = new WhatsAppMessage
@@ -1386,9 +1409,9 @@ public sealed partial class WhatsAppWebhookProcessor
         switch ((value ?? string.Empty).Trim().ToLowerInvariant())
         {
             case "text":
-                type = WhatsAppMessageType.Text;
-                return true;
             case "interactive":
+            case "location":
+            case "contacts":
                 type = WhatsAppMessageType.Text;
                 return true;
             case "image":
@@ -1417,8 +1440,10 @@ public sealed partial class WhatsAppWebhookProcessor
     internal static WhatsAppConversationDto ToConversationDto(WhatsAppConversation conversation, string? assignedUserName = null, string? attentionReason = null)
         => SenorArroz.Application.Common.Helpers.WhatsAppConversationMapper.ToDto(conversation, assignedUserName, attentionReason);
 
-    internal WhatsAppMessageDto ToMessageDto(WhatsAppMessage message) => new()
+    internal WhatsAppMessageDto ToMessageDto(WhatsAppMessage message)
     {
+        var dto = new WhatsAppMessageDto
+        {
         Source = message.Source,
         IsHistorical = message.IsHistorical,
         DraftAddressApplied = message.AiProcessingError == WhatsAppCommercialDraft.AddressApplied,
@@ -1443,7 +1468,22 @@ public sealed partial class WhatsAppWebhookProcessor
             && message.AiProcessingStatus != WhatsAppAiProcessingStatus.NotApplicable
                 ? WhatsAppAiDiagnosticsMapper.ToDto(message, _aiMaxPersistentAttempts, includeTechnicalDetail: false)
                 : null
-    };
+        };
+        if (message.HiddenAt.HasValue)
+        {
+            dto.HiddenSource = message.HiddenByUserId.HasValue ? "pos" : "businessApp";
+            dto.TextBody = string.Empty;
+            dto.MediaId = dto.MediaUrl = dto.MediaMimeType = dto.MediaFileName = dto.MediaSha256 = null;
+            dto.MediaFileSize = null;
+            dto.AiProcessing = null;
+            dto.DraftAddressApplied = dto.DraftProductApplied = false;
+            return dto;
+        }
+        dto.CustomerReaction = message.CustomerReaction;
+        dto.BusinessReaction = message.BusinessReaction;
+        ReadMessageContent(dto, message.RawPayload);
+        return dto;
+    }
 
     // PostgreSQL `timestamp without time zone` values are materialized with
     // DateTimeKind.Unspecified. They contain UTC in this application, so mark

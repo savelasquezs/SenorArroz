@@ -17,6 +17,30 @@ namespace SenorArroz.Tests;
 
 public class WhatsAppMetaErrorHandlingTests
 {
+    [Fact]
+    public async Task CloudClient_sends_native_quotes_and_adds_or_removes_reactions_with_a_bsuid()
+    {
+        var handler = new CapturingHandler();
+        var client = CreateClient(handler);
+        const string recipient = "CO.ENT.0123456789abCDEF";
+        Assert.True((await client.SendTextReplyAsync("line", "token", recipient, "Gracias", "wamid.target", default)).Success);
+        using var reply = JsonDocument.Parse(handler.Body);
+        Assert.Equal(recipient, reply.RootElement.GetProperty("recipient").GetString());
+        Assert.Equal("wamid.target", reply.RootElement.GetProperty("context").GetProperty("message_id").GetString());
+        Assert.True((await client.SendMediaReplyAsync("line", "token", recipient, "image", "media", null, null, "wamid.target", default)).Success);
+        using var media = JsonDocument.Parse(handler.Body);
+        Assert.Equal("wamid.target", media.RootElement.GetProperty("context").GetProperty("message_id").GetString());
+        foreach (var emoji in new[] { "👍", "" })
+        {
+            Assert.True((await client.SendReactionAsync("line", "token", recipient, "wamid.target", emoji, default)).Success);
+            using var data = JsonDocument.Parse(handler.Body);
+            Assert.Equal(recipient, data.RootElement.GetProperty("recipient").GetString());
+            Assert.Equal("reaction", data.RootElement.GetProperty("type").GetString());
+            Assert.Equal(emoji, data.RootElement.GetProperty("reaction").GetProperty("emoji").GetString());
+            Assert.Equal("wamid.target", data.RootElement.GetProperty("reaction").GetProperty("message_id").GetString());
+        }
+    }
+
     [Theory]
     [InlineData("573001234567", "to", "recipient")]
     [InlineData("+57 (300) 123-4567", "to", "recipient")]

@@ -403,13 +403,13 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         if (recipient is null)
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación no tiene teléfono ni identidad de WhatsApp para responder."));
 
+        var quoted = await ResolveQuotedMessageAsync(conversationId, dto.ReplyToMessageId, cancellationToken);
+        if (dto.ReplyToMessageId.HasValue && string.IsNullOrWhiteSpace(quoted))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Ya no puedes citar ese mensaje."));
         var timestamp = _clock.UtcNow;
-        var result = await _whatsAppCloudClient.SendTextMessageAsync(
-            setting.PhoneNumberId,
-            setting.AccessToken,
-            recipient,
-            text,
-            cancellationToken);
+        var result = quoted is null
+            ? await _whatsAppCloudClient.SendTextMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, cancellationToken)
+            : await _whatsAppCloudClient.SendTextReplyAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, quoted, cancellationToken);
         RequireKnownOutcome(result);
 
         var message = new WhatsAppMessage
@@ -426,6 +426,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             {
                 to = recipient,
                 text,
+                context = quoted is null ? null : new { message_id = quoted },
                 result.Success,
                 result.WhatsAppMessageId,
                 result.ErrorMessage
@@ -446,6 +447,47 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         _logger.LogInformation("WhatsApp outbound message sent for conversation {ConversationId}", conversationId);
         await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
         return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Mensaje enviado."));
+    }
+
+    private Task<string?> ResolveQuotedMessageAsync(int conversationId, int? replyId, CancellationToken ct) =>
+        replyId.HasValue ? _db.WhatsAppMessages.AsNoTracking()
+            .Where(message => message.Id == replyId && message.ConversationId == conversationId && message.HiddenAt == null)
+            .Select(message => message.WhatsAppMessageId).SingleOrDefaultAsync(ct) : Task.FromResult<string?>(null);
+
+    internal async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> ReactToMessageAsync(
+        int conversationId, int messageId, WhatsAppMessageReactionDto request, CancellationToken ct)
+    {
+        if (request.Emoji is not ("" or "👍" or "❤️" or "😂" or "😮" or "😢" or "🙌"))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Elige una reacción disponible."));
+        var conversation = await _db.WhatsAppConversations.SingleOrDefaultAsync(chat => chat.Id == conversationId, ct);
+        if (conversation is null) return NotFound();
+        if (!WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id) || !await CanAccessConversationAsync(conversation, ct))
+            return Forbid();
+        if (!await IsServiceWindowOpenAsync(conversation, ct))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La ventana de atención terminó."));
+        var target = await _db.WhatsAppMessages.SingleOrDefaultAsync(message => message.Id == messageId
+            && message.ConversationId == conversationId && message.HiddenAt == null, ct);
+        if (target is null || string.IsNullOrWhiteSpace(target.WhatsAppMessageId)) return NotFound();
+        var setting = await ResolveConversationChannelAsync(conversation, ct);
+        var recipient = WhatsAppRecipientResolver.Resolve(conversation);
+        if (setting is null || recipient is null)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La línea de WhatsApp no está disponible."));
+
+        var emoji = request.Emoji.Length > 0 ? request.Emoji : null;
+        if (target.BusinessReaction == emoji)
+            return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(target)));
+        var result = await _whatsAppCloudClient.SendReactionAsync(setting.PhoneNumberId, setting.AccessToken, recipient,
+            target.WhatsAppMessageId, request.Emoji, ct);
+        RequireKnownOutcome(result);
+        if (!result.Success)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(result.ErrorMessage ?? "No se pudo guardar la reacción en WhatsApp."));
+
+        target.BusinessReaction = emoji;
+        target.BusinessReactionAt = DateTimeOffset.FromUnixTimeSeconds(new DateTimeOffset(_clock.UtcNow).ToUnixTimeSeconds()).UtcDateTime;
+        await _db.SaveChangesAsync(ct);
+        try { await _webhookProcessor.NotifyWhatsAppMessageCreatedAsync(target.Id, ct, isUpdate: true); }
+        catch (Exception ex) { _logger.LogWarning(ex, "WhatsApp reaction saved; realtime notification failed. MessageId={MessageId}", target.Id); }
+        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(target)));
     }
 
     internal async Task<string> SendClosedDayReplyAsync(WhatsAppConversation conversation, string text,
@@ -673,7 +715,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         int conversationId,
         IFormFile? file,
         [FromForm] string? caption,
-        CancellationToken cancellationToken, string? stagedUrl = null)
+        CancellationToken cancellationToken, string? stagedUrl = null, int? replyToMessageId = null)
     {
         if (file is null || file.Length == 0)
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Seleccione un archivo."));
@@ -694,6 +736,9 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         if (recipient is null)
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación no tiene un destinatario de WhatsApp válido."));
 
+        var quoted = await ResolveQuotedMessageAsync(conversationId, replyToMessageId, cancellationToken);
+        if (replyToMessageId.HasValue && string.IsNullOrWhiteSpace(quoted))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Ya no puedes citar ese mensaje."));
         var mediaType = MediaTypeFromContentType(file.ContentType, file.FileName);
         var fileName = SanitizeFileName(file.FileName);
         var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
@@ -735,15 +780,11 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         WhatsAppCloudSendResult sendResult = new(false, null, uploadResult.ErrorMessage);
         if (uploadResult.Success && !string.IsNullOrWhiteSpace(uploadResult.MediaId))
         {
-            sendResult = await _whatsAppCloudClient.SendMediaMessageAsync(
-                setting.PhoneNumberId,
-                setting.AccessToken,
-                recipient,
-                MediaTypeToApi(mediaType),
-                uploadResult.MediaId,
-                trimmedCaption,
-                fileName,
-                cancellationToken);
+            sendResult = quoted is null
+                ? await _whatsAppCloudClient.SendMediaMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient,
+                    MediaTypeToApi(mediaType), uploadResult.MediaId, trimmedCaption, fileName, cancellationToken)
+                : await _whatsAppCloudClient.SendMediaReplyAsync(setting.PhoneNumberId, setting.AccessToken, recipient,
+                    MediaTypeToApi(mediaType), uploadResult.MediaId, trimmedCaption, fileName, quoted, cancellationToken);
             RequireKnownOutcome(sendResult);
         }
 
@@ -769,6 +810,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
                 mediaId = uploadResult.MediaId,
                 fileName,
                 caption = trimmedCaption,
+                context = quoted is null ? null : new { message_id = quoted },
                 storageUrl,
                 sendResult.Success,
                 sendResult.WhatsAppMessageId,

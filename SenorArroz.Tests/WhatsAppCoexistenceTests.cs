@@ -66,6 +66,45 @@ public sealed class WhatsAppCoexistenceTests
         cloudOptions: Options.Create(cloudOptions ?? new()));
 
     [Fact]
+    public async Task Shared_content_and_reactions_project_without_creating_reaction_bubbles()
+    {
+        await using var db = Db();
+        await Seed(db);
+        var queue = new Mock<IWhatsAppAiWorkQueue>();
+        var notifications = new Mock<IWhatsAppNotificationService>();
+        var processor = Processor(db, queue, notifications);
+        const string contents = """
+            {"entry":[{"changes":[{"field":"messages","value":{"metadata":{"phone_number_id":"line-1"},"messages":[
+            {"id":"location-test","from":"573000000001","type":"location","location":{"latitude":6.26,"longitude":-75.56,"name":"Entrega"}},
+            {"id":"contact-test","from":"573000000001","type":"contacts","context":{"id":"location-test"},"contacts":[{"name":{"formatted_name":"Contacto de prueba"},"phones":[{"phone":"+57 300 000 0101"}]}]},
+            {"id":"reaction-test","from":"573000000001","type":"reaction","reaction":{"message_id":"location-test","emoji":"👍"}}]}}]}]}
+            """;
+        await processor.ProcessAsync(new WhatsAppWebhookEvent(), contents, default);
+        var items = await db.WhatsAppMessages.OrderBy(x => x.Id).ToArrayAsync();
+        Assert.Equal(2, items.Length);
+        var notified = notifications.Invocations.Where(x => x.Method.Name == nameof(IWhatsAppNotificationService.NotifyMessageCreatedAsync))
+            .Select(x => (WhatsAppMessageDto)x.Arguments[2]).ToArray();
+        var location = notified.Last(message => message.WhatsAppMessageId == "location-test");
+        Assert.Equal(6.26, location.Location!.Latitude);
+        Assert.Equal("👍", location.CustomerReaction);
+        var contact = notified.Single(message => message.WhatsAppMessageId == "contact-test");
+        Assert.Equal("location-test", contact.ReplyToWhatsAppMessageId);
+        Assert.Equal("+57 300 000 0101", Assert.Single(Assert.Single(contact.Contacts!).Phones));
+        Assert.Equal(2, (await db.WhatsAppConversations.SingleAsync()).UnreadCount);
+        queue.VerifyNoOtherCalls();
+
+        await processor.ProcessAsync(new WhatsAppWebhookEvent(), Payload("smb_message_echoes", new[] { Echo("echo-to-revoke") }), default);
+        var revoke = new { id = "echo-revoke", from = "573111111111", to = "573000000001", type = "revoke",
+            revoke = new { original_message_id = "echo-to-revoke" } };
+        await processor.ProcessAsync(new WhatsAppWebhookEvent(), Payload("smb_message_echoes", new[] { revoke }), default);
+        Assert.Equal(3, await db.WhatsAppMessages.CountAsync());
+        var update = (WhatsAppMessageDto)notifications.Invocations.Last(x => x.Method.Name == nameof(IWhatsAppNotificationService.NotifyMessageCreatedAsync)).Arguments[2];
+        Assert.True(update.IsUpdate);
+        Assert.Equal("businessApp", update.HiddenSource);
+        Assert.Empty(update.TextBody);
+    }
+
+    [Fact]
     public async Task Catalog_cart_is_delivered_once_for_manual_attention_with_its_original_amounts()
     {
         await using var db = Db();

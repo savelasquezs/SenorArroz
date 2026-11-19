@@ -20,6 +20,12 @@ public class WhatsAppMessage : TenantOwnedEntity
     public int? SentByUserId { get; set; }
     public DateTime Timestamp { get; set; }
     public string? RawPayload { get; set; }
+    public DateTime? HiddenAt { get; set; }
+    public int? HiddenByUserId { get; set; }
+    public string? CustomerReaction { get; set; }
+    public DateTime? CustomerReactionAt { get; set; }
+    public string? BusinessReaction { get; set; }
+    public DateTime? BusinessReactionAt { get; set; }
     public WhatsAppAiProcessingStatus AiProcessingStatus { get; set; } = WhatsAppAiProcessingStatus.NotApplicable;
     public DateTime? AiProcessedAt { get; set; }
     public int AiProcessingAttempts { get; set; }

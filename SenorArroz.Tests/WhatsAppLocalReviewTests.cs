@@ -62,6 +62,24 @@ public sealed class WhatsAppLocalReviewTests
     }
 
     [Fact]
+    public async Task Local_quotes_and_reactions_use_the_simulated_line_only()
+    {
+        await using var provider = LocalProvider();
+        using var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient("provider");
+        var client = new WhatsAppCloudClient(http, Options.Create(new WhatsAppCloudOptions()), NullLogger<WhatsAppCloudClient>.Instance);
+        const string line = "local-coexistence-review", token = "local-disabled", recipient = "CO.ENT.test001", target = "wamid.test";
+        var reply = await client.SendTextReplyAsync(line, token, recipient, "Respuesta local con cita", target, default);
+        Assert.StartsWith("wamid.local.simulation.sent.", reply.WhatsAppMessageId);
+        foreach (var emoji in new[] { "👍", "" })
+        {
+            var result = await client.SendReactionAsync(line, token, recipient, target, emoji, default);
+            Assert.StartsWith("wamid.local.simulation.sent.", result.WhatsAppMessageId);
+        }
+        Assert.False((await client.SendReactionAsync("123456789", token, recipient, target, "👍", default)).Success);
+        Assert.False((await client.SendReactionAsync(line, token, recipient, "", "👍", default)).Success);
+    }
+
+    [Fact]
     public async Task Local_catalog_choices_support_buttons_and_lists_on_the_simulated_line()
     {
         await using var provider = LocalProvider();

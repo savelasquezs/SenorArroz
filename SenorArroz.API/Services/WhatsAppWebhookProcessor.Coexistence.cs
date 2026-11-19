@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SenorArroz.Application.Common.Helpers;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Services;
 using SenorArroz.Domain.Entities;
@@ -29,7 +30,7 @@ public sealed partial class WhatsAppWebhookProcessor
         return lines.Count > 0;
     }
     private async Task<bool> ProcessCoexistenceAsync(string field, JsonElement value, WhatsAppBranchSetting credentials,
-        List<WhatsAppMessage> created, CancellationToken ct)
+        List<WhatsAppMessage> created, List<WhatsAppMessage> updates, CancellationToken ct)
     {
         var setting = await _db.WhatsAppBranchSettings.SingleAsync(x => x.Id == credentials.Id, ct);
         if (value.TryGetProperty("errors", out _))
@@ -42,7 +43,7 @@ public sealed partial class WhatsAppWebhookProcessor
         if (field == "smb_message_echoes" && value.TryGetProperty("message_echoes", out var echoes))
             foreach (var item in echoes.EnumerateArray())
                 await ImportCoexistenceMessageAsync(item, WhatsAppWebhookIdentityReader.ReadEchoRecipient(item),
-                    false, true, setting, created, ct);
+                    false, true, setting, created, updates, ct);
         if (field == "history" && value.TryGetProperty("history", out var chunks))
             foreach (var chunk in chunks.EnumerateArray())
             {
@@ -61,7 +62,7 @@ public sealed partial class WhatsAppWebhookProcessor
                         foreach (var item in messages.EnumerateArray())
                         {
                             var outbound = !string.IsNullOrWhiteSpace(TryGetString(item, "to"));
-                            await ImportCoexistenceMessageAsync(item, identity, true, outbound, setting, created, ct);
+                            await ImportCoexistenceMessageAsync(item, identity, true, outbound, setting, created, updates, ct);
                         }
                     }
                 if (chunk.TryGetProperty("metadata", out var metadata)
@@ -125,10 +126,19 @@ public sealed partial class WhatsAppWebhookProcessor
     }
 
     private async Task ImportCoexistenceMessageAsync(JsonElement item, WhatsAppInboundIdentity identity, bool historical, bool outbound,
-        WhatsAppBranchSetting setting, List<WhatsAppMessage> created, CancellationToken ct)
+        WhatsAppBranchSetting setting, List<WhatsAppMessage> created, List<WhatsAppMessage> updates, CancellationToken ct)
     {
         var id = TryGetString(item, "id");
         if (string.IsNullOrWhiteSpace(id) || (identity.PhoneNumber is null && (historical || identity.UserId is null))) return;
+        var timestamp = ParseWhatsAppTimestamp(TryGetString(item, "timestamp")) ?? _clock.UtcNow;
+        var kind = TryGetString(item, "type");
+        if (kind == "reaction")
+        {
+            var (byUser, byPhone) = await FindConversationIdentityAsync(identity, setting, null, ct);
+            var targetConversation = byUser ?? (identity.UserId is null || string.IsNullOrEmpty(byPhone?.WhatsAppUserId) ? byPhone : null);
+            await ApplyProviderReactionAsync(targetConversation, item, timestamp, outbound, historical ? [] : updates, ct);
+            return;
+        }
         var conversation = historical ? await CoexistenceConversationAsync(setting, identity.PhoneNumber!, ct)
             : await CoexistenceEchoConversationAsync(setting, identity, ct);
         var existing = _db.WhatsAppMessages.Local.FirstOrDefault(x => x.Conversation == conversation && x.WhatsAppMessageId == id)
@@ -136,7 +146,7 @@ public sealed partial class WhatsAppWebhookProcessor
         if (existing is not null)
         {
             var historicalMedia = TryGetMediaPayload(item, existing.Type);
-            if (historical && existing.IsHistorical && historicalMedia is not null && existing.MediaUrl is null
+            if (historical && existing.IsHistorical && !existing.HiddenAt.HasValue && historicalMedia is not null && existing.MediaUrl is null
                 && !string.IsNullOrWhiteSpace(historicalMedia.Value.MediaId))
             {
                 var stored = await DownloadAndStoreInboundMediaAsync(setting, setting.BranchId, conversation.Id,
@@ -147,27 +157,34 @@ public sealed partial class WhatsAppWebhookProcessor
             }
             return;
         }
-        var timestamp = ParseWhatsAppTimestamp(TryGetString(item, "timestamp")) ?? _clock.UtcNow;
         var content = item;
-        var kind = TryGetString(item, "type");
         if (kind is "edit" or "revoke" && item.TryGetProperty(kind, out var change))
         {
             var originalId = TryGetString(change, "original_message_id");
-            var original = await _db.WhatsAppMessages.FirstOrDefaultAsync(x => x.ConversationId == conversation.Id
-                && x.WhatsAppMessageId == originalId, ct);
+            var original = originalId is null ? null : _db.WhatsAppMessages.Local.FirstOrDefault(x => x.Conversation == conversation
+                && x.WhatsAppMessageId == originalId) ?? await _db.WhatsAppMessages.FirstOrDefaultAsync(x => x.ConversationId == conversation.Id
+                    && x.WhatsAppMessageId == originalId, ct);
             if (kind == "edit" && change.TryGetProperty("message", out var edited)) content = edited;
             if (original is not null)
             {
-                original.TextBody = kind == "revoke" ? "Mensaje eliminado desde WhatsApp Business"
-                    : TryGetTextBody(content) ?? (content.TryGetProperty(TryGetString(content, "type") ?? "image", out var media)
+                if (kind == "revoke")
+                {
+                    original.HiddenAt = timestamp;
+                    original.HiddenByUserId = null;
+                }
+                else
+                    original.TextBody = TryGetTextBody(content) ?? (content.TryGetProperty(TryGetString(content, "type") ?? "image", out var media)
                         ? TryGetString(media, "caption") : null) ?? original.TextBody;
-                if (!historical) created.Add(original);
+                if (conversation.LastMessageAt == original.Timestamp)
+                    conversation.LastMessagePreview = original.HiddenAt.HasValue ? "Mensaje eliminado desde WhatsApp Business" : original.TextBody;
+                if (!historical) updates.Add(original);
+                return;
             }
         }
         var type = TryMapMessageType(TryGetString(content, "type"), out var mapped) ? mapped : WhatsAppMessageType.Text;
         var payload = TryGetMediaPayload(content, type);
         var text = kind == "revoke" ? "Mensaje eliminado desde WhatsApp Business"
-            : type == WhatsAppMessageType.Text ? TryGetTextBody(content) : TryGetMediaCaptionOrName(payload, type);
+            : type == WhatsAppMessageType.Text ? StructuredMessageLabel(TryGetString(content, "type")) ?? TryGetTextBody(content) : TryGetMediaCaptionOrName(payload, type);
         StoredWhatsAppMedia? mediaFile = null;
         if (payload is not null && !string.IsNullOrWhiteSpace(payload.Value.MediaId))
         {
@@ -180,6 +197,8 @@ public sealed partial class WhatsAppWebhookProcessor
             Type = type, TextBody = body[..Math.Min(body.Length, 4096)],
             Timestamp = timestamp, Status = outbound ? WhatsAppMessageStatus.Sent : WhatsAppMessageStatus.Received,
             Source = historical ? "history" : "businessApp", IsHistorical = historical,
+            HiddenAt = kind == "revoke" ? timestamp : null,
+            RawPayload = WhatsAppFlowPayload.WithoutTokens(content.GetRawText()),
             AiProcessingStatus = WhatsAppAiProcessingStatus.NotApplicable,
             MediaId = mediaFile?.MediaId ?? payload?.MediaId, MediaUrl = mediaFile?.MediaUrl,
             MediaMimeType = mediaFile?.MimeType ?? payload?.MimeType, MediaFileName = mediaFile?.FileName ?? payload?.FileName,

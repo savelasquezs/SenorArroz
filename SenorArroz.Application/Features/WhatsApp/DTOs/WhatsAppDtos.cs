@@ -218,6 +218,13 @@ public class WhatsAppAttentionDto
 
 public class WhatsAppMessageDto
 {
+    public bool IsUpdate { get; set; }
+    public string? HiddenSource { get; set; }
+    public string? ReplyToWhatsAppMessageId { get; set; }
+    public WhatsAppMessageLocationDto? Location { get; set; }
+    public IReadOnlyList<WhatsAppMessageContactDto>? Contacts { get; set; }
+    public string? CustomerReaction { get; set; }
+    public string? BusinessReaction { get; set; }
     public bool DraftAddressApplied { get; set; }
     public bool DraftProductApplied { get; set; }
     public string Source { get; set; } = "api";
@@ -338,7 +345,12 @@ public sealed class WhatsAppAttentionActionDto
 public class SendWhatsAppMessageDto
 {
     public string Text { get; set; } = string.Empty;
+    public int? ReplyToMessageId { get; set; }
 }
+
+public sealed record WhatsAppMessageLocationDto(double Latitude, double Longitude, string? Name, string? Address);
+public sealed record WhatsAppMessageContactDto(string Name, string[] Phones);
+public sealed record WhatsAppMessageReactionDto(string Emoji);
 
 public sealed class SendConversationWhatsAppTemplateDto
 {
@@ -355,4 +367,6 @@ public class SendWhatsAppQuickReplyDto
 public class LinkWhatsAppConversationCustomerDto
 {
     public int CustomerId { get; set; }
+    public long? ExpectedAttentionVersion { get; set; }
+    public string? PhoneNumber { get; set; }
 }

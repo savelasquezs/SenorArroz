@@ -55,6 +55,15 @@ public interface IWhatsAppCloudClient
         string toPhoneNumber,
         string text,
         CancellationToken cancellationToken = default);
+
+    Task<WhatsAppCloudSendResult> SendTextReplyAsync(string phoneNumberId, string accessToken, string recipient,
+        string text, string quotedMessageId, CancellationToken ct);
+
+    Task<WhatsAppCloudSendResult> SendReactionAsync(string phoneNumberId, string accessToken, string recipient,
+        string quotedMessageId, string emoji, CancellationToken ct);
+
+    Task<WhatsAppCloudSendResult> SendMediaReplyAsync(string phoneNumberId, string accessToken, string recipient,
+        string mediaType, string mediaId, string? caption, string? fileName, string quotedMessageId, CancellationToken ct);
     Task<WhatsAppCloudSendResult> SendUrlButtonMessageAsync(string phoneNumberId, string accessToken, string toPhoneNumber, string body, string buttonText, string url, CancellationToken cancellationToken = default);
     Task<WhatsAppCloudSendResult> SendReplyButtonsMessageAsync(string phoneNumberId,string accessToken,string toPhoneNumber,string body,IReadOnlyList<WhatsAppReplyButton> buttons,CancellationToken cancellationToken=default);
     Task<WhatsAppCloudSendResult> SendListMessageAsync(string phoneNumberId, string accessToken, string to, string body,
