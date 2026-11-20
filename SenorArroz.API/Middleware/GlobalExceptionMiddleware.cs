@@ -46,6 +46,11 @@ public class GlobalExceptionMiddleware
             if (context.GetEndpoint()?.DisplayName?.Contains(".GetProductSuggestions ", StringComparison.Ordinal) == true)
                 _logger.LogInformation("WhatsApp product suggestions interrupted. Reason=client_aborted TraceId={TraceId}", context.TraceIdentifier);
         }
+        catch (BusinessException business) when (business.Code is not null)
+        {
+            _logger.LogInformation("Business validation rejected. Reason={Reason} TraceId={TraceId}", business.Code, context.TraceIdentifier);
+            await HandleExceptionAsync(context, business);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Ocurri? una excepci?n no controlada: {Message}", ex.Message);
@@ -133,8 +138,9 @@ public class GlobalExceptionMiddleware
                 response.StatusCode = (int)HttpStatusCode.NotFound;
                 break;
 
-            case BusinessException:
+            case BusinessException business:
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
+                errorResponse.Code = business.Code;
                 break;
 
             case ValidationException validationEx:
