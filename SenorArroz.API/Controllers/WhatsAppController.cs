@@ -1036,6 +1036,41 @@ public partial class WhatsAppController : ControllerBase
         return await _manualOperations.SendQuickReply(conversationId, dto, cancellationToken);
     }
 
+    [HttpPost("conversations/{conversationId:int}/messages/forward")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> ForwardMessage(
+        int conversationId, [FromBody] WhatsAppForwardMessageDto request, CancellationToken cancellationToken)
+    {
+        if (request.SourceConversationId <= 0 || request.MessageId <= 0 || request.SourceConversationId == conversationId)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Selecciona un mensaje y otra conversación."));
+        if (_manualQueue is not null)
+            return await _manualQueue.EnqueueAsync<WhatsAppMessageDto>("forward-message", conversationId,
+                JsonSerializer.SerializeToElement(request), Request, cancellationToken);
+        _manualOperations.ControllerContext = ControllerContext;
+        return await _manualOperations.ForwardMessageAsync(conversationId, request, cancellationToken);
+    }
+
+    [HttpGet("conversations/{conversationId:int}/messages/{messageId:int}/sticker")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> DownloadSticker(int conversationId, int messageId, CancellationToken cancellationToken)
+    {
+        var conversation = await _db.WhatsAppConversations.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
+        if (conversation is null) return NotFound();
+        if (!await CanAccessConversationAsync(conversation, cancellationToken)) return Forbid();
+
+        var url = await _db.WhatsAppMessages.AsNoTracking()
+            .Where(x => x.ConversationId == conversationId && x.Id == messageId
+                && x.Type == WhatsAppMessageType.Sticker && x.Direction == WhatsAppMessageDirection.Inbound && x.HiddenAt == null)
+            .Select(x => x.MediaUrl)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(url)) return NotFound();
+
+        var bytes = await _firebaseStorage.DownloadObjectFromUrlAsync(url, MaxStickerBytes, cancellationToken);
+        return bytes is not null && IsSupportedSticker(bytes) ? File(bytes, "image/webp") : NotFound();
+    }
+
     [HttpPost("conversations/{conversationId:int}/messages/media")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     [Consumes("multipart/form-data")]
@@ -1044,13 +1079,13 @@ public partial class WhatsAppController : ControllerBase
         int conversationId,
         IFormFile? file,
         [FromForm] string? caption,
-        CancellationToken cancellationToken, [FromForm] int? replyToMessageId = null)
+        CancellationToken cancellationToken, [FromForm] int? replyToMessageId = null, [FromForm] bool asSticker = false)
     {
 
         if (_manualQueue is not null)
-            return await _manualQueue.EnqueueMediaAsync(conversationId, file, caption, Request, cancellationToken, replyToMessageId);
+            return await _manualQueue.EnqueueMediaAsync(conversationId, file, caption, Request, cancellationToken, replyToMessageId, asSticker);
         _manualOperations.ControllerContext = ControllerContext;
-        return await _manualOperations.SendMediaMessage(conversationId, file, caption, cancellationToken, replyToMessageId: replyToMessageId);
+        return await _manualOperations.SendMediaMessage(conversationId, file, caption, cancellationToken, replyToMessageId: replyToMessageId, asSticker: asSticker);
     }
 
     private async Task EnsureMediaDownloadUrlsAsync(IReadOnlyList<WhatsAppMessage> messages, CancellationToken cancellationToken)

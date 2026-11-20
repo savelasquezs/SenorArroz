@@ -1284,6 +1284,9 @@ public sealed partial class WhatsAppWebhookProcessor
             info.Sha256 ?? mediaPayload.Sha256);
     }
 
+    internal Task<byte[]?> DownloadStoredMediaAsync(string url, long maxBytes, CancellationToken ct) =>
+        _firebaseStorage.DownloadObjectFromUrlAsync(url, maxBytes, ct);
+
     internal async Task<string> SaveWhatsAppMediaToFirebaseAsync(
         int branchId,
         int conversationId,
@@ -1582,7 +1585,7 @@ public sealed partial class WhatsAppWebhookProcessor
         return string.IsNullOrWhiteSpace(name) ? "archivo" : name;
     }
 
-    private static string ExtensionFromContentType(string contentType, WhatsAppMessageType type)
+    internal static string ExtensionFromContentType(string contentType, WhatsAppMessageType type)
     {
         var ct = (contentType ?? string.Empty).ToLowerInvariant();
         return ct switch

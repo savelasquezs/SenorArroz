@@ -70,6 +70,10 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
         string quotedMessageId, string emoji, CancellationToken ct) =>
         SendContentAsync(phoneNumberId, accessToken, recipient, "reaction", new { message_id = quotedMessageId, emoji }, null, ct);
 
+    public Task<WhatsAppCloudSendResult> SendSharedContentAsync(string phoneNumberId, string accessToken, string recipient,
+        string type, JsonElement content, CancellationToken cancellationToken) =>
+        SendContentAsync(phoneNumberId, accessToken, recipient, type, content, null, cancellationToken);
+
     public Task<WhatsAppCloudSendResult> SendMediaReplyAsync(string phoneNumberId, string accessToken, string recipient,
         string mediaType, string mediaId, string? caption, string? fileName, string quotedMessageId, CancellationToken ct)
     {

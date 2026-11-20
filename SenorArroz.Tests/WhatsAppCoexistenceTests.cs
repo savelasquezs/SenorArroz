@@ -76,7 +76,11 @@ public sealed class WhatsAppCoexistenceTests
         const string contents = """
             {"entry":[{"changes":[{"field":"messages","value":{"metadata":{"phone_number_id":"line-1"},"messages":[
             {"id":"location-test","from":"573000000001","type":"location","location":{"latitude":6.26,"longitude":-75.56,"name":"Entrega"}},
-            {"id":"contact-test","from":"573000000001","type":"contacts","context":{"id":"location-test"},"contacts":[{"name":{"formatted_name":"Contacto de prueba"},"phones":[{"phone":"+57 300 000 0101"}]}]},
+            {"id":"contact-test","from":"573000000001","type":"contacts","context":{"id":"location-test"},"contacts":[
+              {"name":{"formatted_name":"Contacto de prueba"},"phones":[{"phone":"+57 300 000 0101"},{"phone":" ","wa_id":"573000000102"},{"wa_id":"CO.ENT.prueba"}],
+               "emails":[{"email":"contacto@example.invalid"}],"org":{"company":"Comercio","title":"Ventas"},
+               "addresses":[{"city":"Medellín","country":"Colombia"}],"birthday":"2000-01-07","urls":[{"url":"https://example.invalid"}]}
+            ]},
             {"id":"reaction-test","from":"573000000001","type":"reaction","reaction":{"message_id":"location-test","emoji":"👍"}}]}}]}]}
             """;
         await processor.ProcessAsync(new WhatsAppWebhookEvent(), contents, default);
@@ -89,7 +93,14 @@ public sealed class WhatsAppCoexistenceTests
         Assert.Equal("👍", location.CustomerReaction);
         var contact = notified.Single(message => message.WhatsAppMessageId == "contact-test");
         Assert.Equal("location-test", contact.ReplyToWhatsAppMessageId);
-        Assert.Equal("+57 300 000 0101", Assert.Single(Assert.Single(contact.Contacts!).Phones));
+        var shared = Assert.Single(contact.Contacts!);
+        Assert.Equal(new[] { "+57 300 000 0101", "+573000000102" }, shared.Phones);
+        Assert.Equal("CO.ENT.prueba", Assert.Single(shared.WhatsAppIds!));
+        Assert.Equal("contacto@example.invalid", Assert.Single(shared.Emails!));
+        Assert.Equal("Comercio · Ventas", shared.Organization);
+        Assert.Equal("Medellín, Colombia", Assert.Single(shared.Addresses!));
+        Assert.Equal("2000-01-07", shared.Birthday);
+        Assert.Equal("https://example.invalid", Assert.Single(shared.Websites!));
         Assert.Equal(2, (await db.WhatsAppConversations.SingleAsync()).UnreadCount);
         queue.VerifyNoOtherCalls();
 

@@ -392,33 +392,42 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
         cloud.VerifyNoOtherCalls();
     }
 
-    [PostgreSqlIntegrationFact]
+    [PostgreSqlIntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     [Trait("Category", "PostgreSqlIntegration")]
-    public async Task Manual_media_uses_durable_storage_and_never_places_binary_content_in_postgres()
+    public async Task Manual_media_uses_durable_storage_and_never_places_binary_content_in_postgres(bool asSticker)
     {
         using var tenant = _tenant.BeginTenantScope(1);
         await using var db = Db();
         await SeedManualAsync(db);
         var (queue, cloud, storage, http) = ManualQueue(db);
-        var bytes = new byte[] { 0, 1, 2, 3 };
-        storage.Setup(x => x.UploadPublicObjectAsync(It.IsAny<byte[]>(), It.IsAny<string>(), "audio/ogg", It.IsAny<CancellationToken>())).ReturnsAsync("https://example.invalid/staged.ogg");
-        storage.Setup(x => x.DownloadObjectAsync(It.Is<string>(s => s.StartsWith("whatsapp/1/manual/11/")), 69_000_000, It.IsAny<CancellationToken>())).ReturnsAsync(bytes);
-        cloud.Setup(x => x.UploadMediaAsync("central", "local-token", It.IsAny<byte[]>(), "audio.ogg", "audio/ogg", It.IsAny<CancellationToken>())).ReturnsAsync(new WhatsAppCloudUploadMediaResult(true, "media-id", null));
-        cloud.Setup(x => x.SendMediaMessageAsync("central", "local-token", "573000000001", "audio", "media-id", null, "audio.ogg", It.IsAny<CancellationToken>())).ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.audio", null));
+        var bytes = asSticker ? Convert.FromBase64String("UklGRi4AAABXRUJQVlA4TCIAAAAv/8F/AAfQlAIVsv8BgUCyv/cMRfQ/4z//+c9//vOf//wf") : new byte[] { 0, 1, 2, 3 };
+        var fileName = asSticker ? "sticker.webp" : "audio.ogg";
+        var mimeType = asSticker ? "image/webp" : "audio/ogg";
+        var mediaType = asSticker ? "sticker" : "audio";
+        var stagedUrl = $"https://example.invalid/{fileName}";
+        var maxBytes = asSticker ? 500 * 1024 : 69_000_000;
+        storage.Setup(x => x.UploadPublicObjectAsync(It.IsAny<byte[]>(), It.IsAny<string>(), mimeType, It.IsAny<CancellationToken>())).ReturnsAsync(stagedUrl);
+        storage.Setup(x => x.DownloadObjectAsync(It.Is<string>(s => s.StartsWith("whatsapp/1/manual/11/")), maxBytes, It.IsAny<CancellationToken>())).ReturnsAsync(bytes);
+        cloud.Setup(x => x.UploadMediaAsync("central", "local-token", It.IsAny<byte[]>(), fileName, mimeType, It.IsAny<CancellationToken>())).ReturnsAsync(new WhatsAppCloudUploadMediaResult(true, "media-id", null));
+        cloud.Setup(x => x.SendMediaMessageAsync("central", "local-token", "573000000001", mediaType, "media-id", null, fileName, It.IsAny<CancellationToken>())).ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.sent", null));
         using var stream = new MemoryStream(bytes);
-        var file = new FormFile(stream, 0, bytes.Length, "file", "audio.ogg") { Headers = new HeaderDictionary(), ContentType = "audio/ogg" };
-        await queue.EnqueueMediaAsync(11, file, null, http.HttpContext!.Request, default);
+        var file = new FormFile(stream, 0, bytes.Length, "file", fileName) { Headers = new HeaderDictionary(), ContentType = mimeType };
+        await queue.EnqueueMediaAsync(11, file, null, http.HttpContext!.Request, default, asSticker: asSticker);
         var job = (await Store(db).ClaimAsync(default))!;
         Assert.DoesNotContain(Convert.ToBase64String(bytes), Store(db).ReadPayload(job));
         await ExecuteManualWorkerAsync(queue, job, db);
         await Store(db).FinishAsync(job, true, default);
         Assert.Equal(200, Assert.IsType<ObjectResult>(await queue.GetResultAsync(job.Id, default)).StatusCode);
-        Assert.Equal("https://example.invalid/staged.ogg", (await db.WhatsAppMessages.SingleAsync()).MediaUrl);
+        var saved = await db.WhatsAppMessages.SingleAsync();
+        Assert.Equal(stagedUrl, saved.MediaUrl);
+        Assert.Equal(asSticker ? WhatsAppMessageType.Sticker : WhatsAppMessageType.Audio, saved.Type);
         storage.Verify(x => x.UploadPublicObjectAsync(It.IsAny<byte[]>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         http.HttpContext.Request.Headers["X-WhatsApp-Request-Id"] = Guid.NewGuid().ToString();
         storage.Setup(x => x.UploadPublicObjectAsync(It.IsAny<byte[]>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new IOException("Storage unavailable"));
-        var failedStage = await queue.EnqueueMediaAsync(11, file, null, http.HttpContext.Request, default);
+        var failedStage = await queue.EnqueueMediaAsync(11, file, null, http.HttpContext.Request, default, asSticker: asSticker);
         Assert.IsType<BadRequestObjectResult>(failedStage.Result);
         Assert.Single(await db.WhatsAppWebhookEvents.ToListAsync());
     }

@@ -4,6 +4,7 @@ namespace SenorArroz.Application.Common.Interfaces;
 public interface IFirebaseGcsStorage
 {
     Task<byte[]> DownloadObjectAsync(string objectName, long maxBytes, CancellationToken cancellationToken = default);
+    Task<byte[]?> DownloadObjectFromUrlAsync(string url, long maxBytes, CancellationToken cancellationToken = default);
     /// <summary>Sube bytes y devuelve URL HTTPS de descarga (formato host Firebase).</summary>
     Task<string> UploadPublicObjectAsync(byte[] content, string objectName, string contentType, CancellationToken cancellationToken = default);
 
