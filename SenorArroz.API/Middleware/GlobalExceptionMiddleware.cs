@@ -44,7 +44,7 @@ public class GlobalExceptionMiddleware
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
             if (context.GetEndpoint()?.DisplayName?.Contains(".GetProductSuggestions ", StringComparison.Ordinal) == true)
-                _logger.LogDebug("WhatsApp product suggestions request aborted by client. TraceId={TraceId}", context.TraceIdentifier);
+                _logger.LogInformation("WhatsApp product suggestions interrupted. Reason=client_aborted TraceId={TraceId}", context.TraceIdentifier);
         }
         catch (Exception ex)
         {
