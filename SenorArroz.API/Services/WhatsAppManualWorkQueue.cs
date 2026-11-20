@@ -21,8 +21,10 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     internal const string ForwardOperation = "forward-message";
+    internal const string ClientRequestItem = "WhatsAppManualRequestId";
     public sealed record Command(int ActorId, int AssignedBranchId, int WorkBranchId, string Operation,
-        int? ConversationId, JsonElement Body, string Scheme, string Host, string PathBase, DateTime? AttentionVersion);
+        int? ConversationId, JsonElement Body, string Scheme, string Host, string PathBase, DateTime? AttentionVersion,
+        string? ClientRequestId = null);
     public sealed record Result(int StatusCode, JsonElement Body);
 
     public async Task<ActionResult<ApiResponse<T>>> EnqueueAsync<T>(string operation, int? conversationId,
@@ -34,7 +36,8 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
         var key = RequestKey(request);
         var command = new Command(user.Id, user.BranchId, branches.EffectiveBranchId ?? user.BranchId, operation, conversationId,
             body, request.Scheme, request.Host.Value ?? "localhost", request.PathBase.Value ?? "",
-            conversationId.HasValue ? await db.WhatsAppConversations.Where(x => x.Id == conversationId).Select(x => (DateTime?)x.AttentionModeUpdatedAt).SingleAsync(ct) : null);
+            conversationId.HasValue ? await db.WhatsAppConversations.Where(x => x.Id == conversationId).Select(x => (DateTime?)x.AttentionModeUpdatedAt).SingleAsync(ct) : null,
+            key);
         var payload = JsonSerializer.Serialize(command, JsonOptions);
         var deduplication = Hash($"manual:{user.Id}:{key}");
         var fingerprintBody = (operation is "send-media" or "send-sticker") && body.TryGetProperty("mediaFingerprint", out var mediaHash)
@@ -129,13 +132,22 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
             .FirstOrDefaultAsync(x => x.Id == id && x.EventType == "manual_operation" && x.RequestedByUserId == user.Id, ct);
         if (item is null || !await CanUseAsync(item.ConversationId, ct)) return new NotFoundResult();
         if (item.ProcessingState == "review")
-            return new ConflictObjectResult(ApiResponse<object>.ErrorResponse($"El envío {id} requiere revisión: el resultado puede ser incierto. Revisa el chat antes de enviar otra vez."));
+            return new ConflictObjectResult(new { code = "send_review", message = "El envío requiere revisión. Verifica el historial antes de enviarlo otra vez." });
         if (item.ProcessingState != "completed")
             return new ObjectResult(Pending(id)) { StatusCode = StatusCodes.Status202Accepted };
         if (item.ProtectedResult is null)
             return new ObjectResult(ApiResponse<object>.ErrorResponse("El resultado expiró. Consulta el historial del chat.")) { StatusCode = StatusCodes.Status410Gone };
         var result = JsonSerializer.Deserialize<Result>(protector.Unprotect(item.ProtectedResult), JsonOptions)!;
         return new ObjectResult(result.Body) { StatusCode = result.StatusCode };
+    }
+
+    public async Task<IActionResult> FindRequestAsync(Guid requestId, CancellationToken ct)
+    {
+        var key = Hash($"manual:{user.Id}:{requestId:N}");
+        var id = await db.WhatsAppWebhookEvents.AsNoTracking()
+            .Where(x => x.EventType == "manual_operation" && x.RequestedByUserId == user.Id && x.DeduplicationKey == key)
+            .Select(x => (int?)x.Id).SingleOrDefaultAsync(ct);
+        return id.HasValue ? await GetResultAsync(id.Value, ct) : new NotFoundResult();
     }
 
     private async Task<bool> CanUseAsync(int? conversationId, CancellationToken ct, bool write = false)
@@ -174,6 +186,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
                 new Claim("branch_id", actor.BranchId.ToString()), new Claim("tenant_id", tenant.TenantId.ToString())
             }, "WhatsAppManualWorker")) };
             context.Request.Headers["X-Branch-Id"] = command.WorkBranchId.ToString();
+            if (command.ClientRequestId is not null) context.Items[ClientRequestItem] = command.ClientRequestId;
             context.Request.Scheme = command.Scheme;
             context.Request.Host = new HostString(command.Host);
             context.Request.PathBase = new PathString(command.PathBase);

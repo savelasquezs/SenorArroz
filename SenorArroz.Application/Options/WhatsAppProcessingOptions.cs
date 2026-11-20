@@ -16,12 +16,15 @@ public sealed class WhatsAppProcessingOptions
     public int CleanupBatchSize { get; set; } = 500;
     public string BusinessApiUrl { get; set; } = string.Empty;
     public string WorkerKey { get; set; } = string.Empty;
+    public int[] QueuedTextLineIds { get; set; } = [];
     public bool External => string.Equals(Mode, "External", StringComparison.OrdinalIgnoreCase);
+    public bool QueuedText => QueuedTextLineIds.Length > 0;
 
     public bool IsValid() => (External || string.Equals(Mode, "Embedded", StringComparison.OrdinalIgnoreCase))
         && Concurrency is >= 1 and <= 16 && AiConcurrency is >= 1 and <= 8 && PollSeconds is >= 1 and <= 60
         && WorkTimeoutSeconds is >= 5 and <= 600 && LeaseSeconds > WorkTimeoutSeconds
         && LeaseSeconds <= 900 && MaxAttempts is >= 1 and <= 10
+        && QueuedTextLineIds.All(id => id > 0)
         && MetricsIntervalSeconds is >= 5 and <= 300 && RealtimeRetentionDays is >= 1 and <= 30
         && PayloadRetentionDays is >= 1 and <= 90 && CleanupBatchSize is >= 1 and <= 2000;
 }

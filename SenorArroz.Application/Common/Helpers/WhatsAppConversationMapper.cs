@@ -22,6 +22,7 @@ public static class WhatsAppConversationMapper
         BranchId = conversation.BranchId,
         BranchName = conversation.Branch != null ? conversation.Branch.Name : null,
         IsCentralChannel = conversation.ChannelSettingId.HasValue,
+        BranchLineId = conversation.BranchLineId,
         OperationalBranchId = conversation.OperationalBranchId,
         OperationalBranchName = conversation.OperationalBranch != null ? conversation.OperationalBranch.Name : null,
         CustomerId = conversation.CustomerId,

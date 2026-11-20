@@ -47,6 +47,7 @@ public class WhatsAppStatusDto
 {
     public bool Enabled { get; set; }
     public IReadOnlyList<int> BranchIds { get; set; } = [];
+    public IReadOnlyList<int> QueuedTextLineIds { get; set; } = [];
 }
 
 public class WhatsAppUnreadSummaryDto
@@ -175,6 +176,7 @@ public class WhatsAppConversationDto
     public int BranchId { get; set; }
     public string? BranchName { get; set; }
     public bool IsCentralChannel { get; set; }
+    public int? BranchLineId { get; set; }
     public int? OperationalBranchId { get; set; }
     public string? OperationalBranchName { get; set; }
     public int? CustomerId { get; set; }
@@ -223,6 +225,7 @@ public class WhatsAppMessageDto
     public DateTime? EditedAt { get; set; }
     public string? HiddenSource { get; set; }
     public string? ReplyToWhatsAppMessageId { get; set; }
+    public string? ClientRequestId { get; set; }
     public WhatsAppMessageLocationDto? Location { get; set; }
     public IReadOnlyList<WhatsAppMessageContactDto>? Contacts { get; set; }
     public string? CustomerReaction { get; set; }
