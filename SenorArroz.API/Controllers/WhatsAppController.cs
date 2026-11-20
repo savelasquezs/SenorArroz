@@ -49,6 +49,7 @@ public partial class WhatsAppController : ControllerBase
 
     private readonly WhatsAppManualOperations _manualOperations;
     private readonly WhatsAppManualWorkQueue? _manualQueue;
+    private readonly WhatsAppManualWorkQueue? _queuedText;
     private readonly WhatsAppWebhookProcessor _webhookProcessor;
     private readonly WhatsAppProcessingStore? _processingStore;
     private readonly WhatsAppProcessingOptions _processingOptions;
@@ -111,14 +112,20 @@ public partial class WhatsAppController : ControllerBase
         _manualOperations = manualOperations ?? new WhatsAppManualOperations(db, currentUser, branchContext, clock,
             whatsAppCloudClient, whatsAppNotificationService, whatsAppOptions, logger, attentionService,
             commerceFlow, _webhookProcessor, currentTenant, inventory, processingOptions);
-        _manualQueue = manualQueue;
+        _manualQueue = _processingOptions.External ? manualQueue : null;
+        _queuedText = manualQueue;
         _pilot = pilot;
     }
 
     [HttpGet("operations/{operationId:int}")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<IActionResult> GetManualOperation(int operationId, CancellationToken ct) =>
-        _manualQueue is null ? NotFound() : await _manualQueue.GetResultAsync(operationId, ct);
+        _queuedText is null ? NotFound() : await _queuedText.GetResultAsync(operationId, ct);
+
+    [HttpGet("operations/request/{requestId:guid}")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public async Task<IActionResult> FindManualOperation(Guid requestId, CancellationToken ct) =>
+        _queuedText is null ? NotFound() : await _queuedText.FindRequestAsync(requestId, ct);
 
     [HttpGet("status")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
@@ -132,7 +139,8 @@ public partial class WhatsAppController : ControllerBase
         return Ok(ApiResponse<WhatsAppStatusDto>.SuccessResponse(new WhatsAppStatusDto
         {
             Enabled = branchIds.Count > 0 || centralEnabled,
-            BranchIds = branchIds
+            BranchIds = branchIds,
+            QueuedTextLineIds = _processingOptions.QueuedTextLineIds
         }, "Estado de WhatsApp obtenido."));
     }
 
@@ -429,6 +437,7 @@ public partial class WhatsAppController : ControllerBase
         catch (JsonException) { return BadRequest(); }
         using (document)
         {
+            var signature = Request.Headers["X-Hub-Signature-256"].FirstOrDefault();
             if (_pilot is not null)
             {
                 if (!_pilot.VerifySignature(signature, rawPayload))
@@ -437,7 +446,6 @@ public partial class WhatsAppController : ControllerBase
                 using var scope = _tenantExecutionContext!.BeginTenantScope(_pilot.TenantId);
                 var phoneId = await _db.WhatsAppBranchSettings.AsNoTracking()
                     .Where(x => x.BranchId == _pilot.BranchId && x.IsActive && x.IsVerified && x.CoexistenceEnabled
-            var signature = Request.Headers["X-Hub-Signature-256"].FirstOrDefault();
                         && x.PhoneNumberId == _pilot.PhoneNumberId)
                     .Select(x => x.PhoneNumberId)
                     .SingleOrDefaultAsync(cancellationToken);
@@ -948,9 +956,11 @@ public partial class WhatsAppController : ControllerBase
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendMessage(
         int conversationId,
         [FromBody] SendWhatsAppMessageDto dto,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromQuery] bool queue = false)
     {
 
+        if (queue) return await EnqueuePilotTextAsync(conversationId, "send-message", JsonSerializer.SerializeToElement(dto), cancellationToken);
         if (_manualQueue is not null)
             return await _manualQueue.EnqueueAsync<WhatsAppMessageDto>("send-message", conversationId, JsonSerializer.SerializeToElement(dto), Request, cancellationToken);
         _manualOperations.ControllerContext = ControllerContext;
@@ -1030,13 +1040,27 @@ public partial class WhatsAppController : ControllerBase
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendQuickReply(
         int conversationId,
         [FromBody] SendWhatsAppQuickReplyDto dto,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromQuery] bool queue = false)
     {
 
+        if (queue) return await EnqueuePilotTextAsync(conversationId, "send-quick-reply", JsonSerializer.SerializeToElement(dto), cancellationToken);
         if (_manualQueue is not null)
             return await _manualQueue.EnqueueAsync<WhatsAppMessageDto>("send-quick-reply", conversationId, JsonSerializer.SerializeToElement(dto), Request, cancellationToken);
         _manualOperations.ControllerContext = ControllerContext;
         return await _manualOperations.SendQuickReply(conversationId, dto, cancellationToken);
+    }
+
+    private async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> EnqueuePilotTextAsync(
+        int conversationId, string operation, JsonElement dto, CancellationToken ct)
+    {
+        if (!Guid.TryParse(Request.Headers["X-WhatsApp-Request-Id"].FirstOrDefault(), out _))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Falta el identificador del envío."));
+        if (_queuedText is null || !await _db.WhatsAppConversations.AnyAsync(c => c.Id == conversationId
+                && !c.ChannelSettingId.HasValue && c.BranchLineId.HasValue
+                && _processingOptions.QueuedTextLineIds.Contains(c.BranchLineId.Value), ct))
+            return Conflict(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La cola de envío no está disponible para esta línea."));
+        return await _queuedText.EnqueueAsync<WhatsAppMessageDto>(operation, conversationId, dto, Request, ct);
     }
 
     [HttpPost("conversations/{conversationId:int}/messages/forward")]

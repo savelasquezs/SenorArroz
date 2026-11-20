@@ -77,6 +77,7 @@ public sealed class WhatsAppProcessingMaintenance(IServiceScopeFactory scopes,
             WITH expired AS (
                 SELECT id FROM whatsapp_webhook_event
                 WHERE processing_state IN ('completed', 'review') AND event_type <> 'attention_action' AND updated_at < {payloadBefore}
+                    AND ({options.External} OR event_type = 'manual_operation')
                     AND (raw_payload <> {empty}::jsonb OR protected_payload IS NOT NULL OR protected_result IS NOT NULL)
                 ORDER BY updated_at, id FOR UPDATE SKIP LOCKED LIMIT {options.CleanupBatchSize})
             UPDATE whatsapp_webhook_event e SET raw_payload = {empty}::jsonb, protected_payload = NULL, protected_result = NULL

@@ -631,7 +631,8 @@ public static class ApiHost
             await connection.CloseAsync();
         }
 
-        if (app.Configuration.GetSection(WhatsAppProcessingOptions.SectionName).Get<WhatsAppProcessingOptions>()?.External == true)
+        if (app.Configuration.GetSection(WhatsAppProcessingOptions.SectionName).Get<WhatsAppProcessingOptions>() is { } processing
+            && (processing.External || processing.QueuedText))
         {
             using var schema = app.Services.CreateScope();
             var db = schema.ServiceProvider.GetRequiredService<SenorArroz.Infrastructure.Data.ApplicationDbContext>();
@@ -641,10 +642,10 @@ public static class ApiHost
             schema.ServiceProvider.GetRequiredService<IIntegrationSecretProtector>().Protect("startup-probe");
         }
 
-        if (whatsappWorker)
         app.MapGet("/health/ready", async (SenorArroz.Infrastructure.Data.ApplicationDbContext db, CancellationToken ct) =>
             await db.Database.CanConnectAsync(ct) ? Results.Ok() : Results.StatusCode(503)).AllowAnonymous();
 
+        if (whatsappWorker)
         {
             app.MapGet("/health/live", () => Results.Ok(new { service = "whatsapp-worker" }));
             await app.RunAsync();

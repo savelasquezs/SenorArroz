@@ -27,7 +27,7 @@ public static class WhatsAppProcessingRegistration
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddScoped(sp => new Lazy<IAgentToolExecutor>(() => sp.GetRequiredService<IAgentToolExecutor>()));
         services.AddScoped<WhatsAppProcessingStore>();
-        if (options.External)
+        if (options.External || options.QueuedText)
         {
             services.AddSingleton<WhatsAppDatabaseSignal>();
             services.AddScoped<WhatsAppManualWorkQueue>();
@@ -41,7 +41,7 @@ public static class WhatsAppProcessingRegistration
             foreach (var descriptor in services.Where(x => x.ServiceType == typeof(IHostedService)
                 && (worker || x.ImplementationType is not null && consumers.Contains(x.ImplementationType))).ToList())
                 services.Remove(descriptor);
-        if (options.External)
+        if (options.External || options.QueuedText)
             services.AddHostedService(sp => sp.GetRequiredService<WhatsAppDatabaseSignal>());
         if (worker)
         {
@@ -56,6 +56,11 @@ public static class WhatsAppProcessingRegistration
         }
         else if (options.External)
             services.AddHostedService<WhatsAppRealtimeRelay>();
+        else if (options.QueuedText)
+        {
+            services.AddHostedService<WhatsAppWebhookWorker>();
+            services.AddHostedService<WhatsAppProcessingMaintenance>();
+        }
         return services;
     }
 }

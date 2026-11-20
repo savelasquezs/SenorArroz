@@ -463,6 +463,8 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             ? await _whatsAppCloudClient.SendTextMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, cancellationToken)
             : await _whatsAppCloudClient.SendTextReplyAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, quoted, cancellationToken);
         RequireKnownOutcome(result);
+        if (!result.Success && ClientRequestId is not null)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(result.ErrorMessage ?? "No se pudo enviar el mensaje."));
 
         var message = new WhatsAppMessage
         {
@@ -481,6 +483,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
                 to = recipient,
                 text,
                 _pos_forwarded = forwarded,
+                _pos_client_request_id = ClientRequestId,
                 context = quoted is null ? null : new { message_id = quoted },
                 result.Success,
                 result.WhatsAppMessageId,
@@ -729,6 +732,8 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             text,
             cancellationToken);
         RequireKnownOutcome(result);
+        if (!result.Success && ClientRequestId is not null)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(result.ErrorMessage ?? "No se pudo enviar la respuesta rápida."));
 
         var message = new WhatsAppMessage
         {
@@ -745,6 +750,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
                 to = recipient,
                 text,
                 quickReplyId = quickReply.Id,
+                _pos_client_request_id = ClientRequestId,
                 result.Success,
                 result.WhatsAppMessageId,
                 result.ErrorMessage
@@ -1327,9 +1333,11 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         public static TemplateRecipientsResolution Denied() => new(true, null, []);
         public static TemplateRecipientsResolution Failed(string errorMessage) => new(false, errorMessage, []);
     }
+    private string? ClientRequestId => HttpContext?.Items[WhatsAppManualWorkQueue.ClientRequestItem] as string;
+
     private void RequireKnownOutcome(WhatsAppCloudSendResult result)
     {
-        if (_externalProcessing && result.OutcomeUncertain)
+        if ((_externalProcessing || ClientRequestId is not null) && result.OutcomeUncertain)
             throw new IOException("WhatsApp send outcome requires reconciliation.");
     }
 

@@ -78,7 +78,7 @@ public sealed class WhatsAppProcessingStore(ApplicationDbContext db, ITenantExec
         return (partition, aliases);
     }
 
-    public async Task<WhatsAppWebhookEvent?> ClaimAsync(CancellationToken ct)
+    public async Task<WhatsAppWebhookEvent?> ClaimAsync(CancellationToken ct, bool manualOnly = false)
     {
         using var system = execution.BeginSystemScope();
         var token = Guid.NewGuid();
@@ -95,17 +95,20 @@ public sealed class WhatsAppProcessingStore(ApplicationDbContext db, ITenantExec
                 lease_until = NULL, processing_error = 'attempts_exhausted', updated_at = {now}
             WHERE processing_state IN ('pending', 'processing') AND (processing_attempts >= {options.Value.MaxAttempts}
                 OR processed = true OR event_type = 'manual_operation' AND processing_state = 'processing')
+                AND (NOT {manualOnly} OR event_type = 'manual_operation')
                 AND (lease_until IS NULL OR lease_until < {now});
             """, ct);
         var count = await db.Database.ExecuteSqlInterpolatedAsync($"""
             WITH candidate AS (
                 SELECT w.id FROM whatsapp_webhook_event w
                 WHERE w.processing_state IN ('pending', 'processing')
+                    AND (NOT {manualOnly} OR w.event_type = 'manual_operation')
                     AND w.processing_attempts < {options.Value.MaxAttempts}
                     AND w.next_attempt_at <= {now} AND (w.lease_until IS NULL OR w.lease_until < {now})
                     AND NOT EXISTS (
                         SELECT 1 FROM whatsapp_webhook_event earlier
                         WHERE earlier.tenant_id = w.tenant_id AND earlier.partition_key = w.partition_key
+                            AND (NOT {manualOnly} OR earlier.event_type = 'manual_operation')
                             AND earlier.id < w.id AND earlier.processing_state IN ('pending', 'processing'))
                 ORDER BY w.id FOR UPDATE SKIP LOCKED LIMIT 1)
             UPDATE whatsapp_webhook_event w SET processing_state = 'processing', lease_token = {token},

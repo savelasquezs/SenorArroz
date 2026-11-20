@@ -25,6 +25,9 @@ public partial class WhatsAppWebhookProcessor
             using var document = JsonDocument.Parse(rawPayload);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return;
+            if (dto.Direction == "outbound" && dto.WhatsAppMessageId is not null
+                && Guid.TryParse(TryGetString(root, "_pos_client_request_id"), out var request))
+                dto.ClientRequestId = request.ToString("N");
             dto.IsForwarded = root.TryGetProperty("_pos_forwarded", out var forwarded) && forwarded.ValueKind == JsonValueKind.True;
             if (root.TryGetProperty(EditedAtKey, out var edit) && edit.ValueKind == JsonValueKind.String && edit.TryGetDateTime(out var editedAt))
                 dto.EditedAt = AsUtc(editedAt);
@@ -82,10 +85,10 @@ public partial class WhatsAppWebhookProcessor
         original.TextBody = editedText[..Math.Min(editedText.Length, 4096)];
         payload[EditedAtKey] = AsUtc(timestamp);
         original.RawPayload = payload.ToJsonString();
+        var originalTimestamp = AsUtc(original.Timestamp);
         if (conversation.LastMessageAt == original.Timestamp && !await _db.WhatsAppMessages.AnyAsync(
             x => x.ConversationId == conversation.Id && x.Timestamp == originalTimestamp && x.Id > original.Id, ct))
             conversation.LastMessagePreview = PreviewForMedia(original.Type, original.TextBody);
-        var originalTimestamp = AsUtc(original.Timestamp);
         updates.Add(original);
     }
 

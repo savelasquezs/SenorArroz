@@ -44,7 +44,7 @@ public sealed class WhatsAppWebhookWorker(IServiceScopeFactory scopes,
     {
         using var scope = scopes.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<WhatsAppProcessingStore>();
-        var job = await store.ClaimAsync(ct);
+        var job = await store.ClaimAsync(ct, manualOnly: !options.Value.External && options.Value.QueuedText);
         if (job is null) return false;
         using var tenant = scope.ServiceProvider.GetRequiredService<ITenantExecutionContext>().BeginTenantScope(job.TenantId);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

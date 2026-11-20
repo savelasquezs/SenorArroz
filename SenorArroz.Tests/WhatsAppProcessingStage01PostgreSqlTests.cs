@@ -37,6 +37,36 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
 {
     [PostgreSqlIntegrationTheory]
     [Trait("Category", "PostgreSqlIntegration")]
+    [InlineData("Texto del piloto")]
+    public async Task Embedded_consumer_reuses_the_request_and_claims_only_manual_jobs(string text)
+    {
+        using var tenant = _tenant.BeginTenantScope(1);
+        await using var db = Db();
+        await SeedManualAsync(db);
+        var (queue, cloud, _, http) = ManualQueue(db);
+        var request = http.HttpContext!.Request;
+        var key = Guid.Parse(request.Headers["X-WhatsApp-Request-Id"].ToString());
+        await Store(db).EnqueueAsync(1, WhatsAppProcessingTests.Payload("wamid.pending").Replace("channel-1", "central"), default);
+        for (var attempt = 0; attempt < 2; attempt++)
+            Assert.Equal(202, Assert.IsType<ObjectResult>((await queue.EnqueueAsync<WhatsAppMessageDto>(
+                "send-message", 11, JsonSerializer.SerializeToElement(new { text }), request, default)).Result).StatusCode);
+
+        var job = Assert.IsType<WhatsAppWebhookEvent>(await Store(db).ClaimAsync(default, manualOnly: true));
+        Assert.Equal("manual_operation", job.EventType);
+        await ExecuteManualWorkerAsync(queue, job, db);
+        Assert.True(await Store(db).FinishAsync(job, true, default));
+        Assert.Null(await Store(db).ClaimAsync(default, manualOnly: true));
+        Assert.Equal("webhook", (await Store(db).ClaimAsync(default))!.EventType);
+        var result = Assert.IsType<ObjectResult>(await queue.FindRequestAsync(key, default));
+        Assert.Equal(200, result.StatusCode);
+        var message = Assert.IsType<JsonElement>(result.Value).GetProperty("data");
+        Assert.Equal(key.ToString("N"), message.GetProperty("clientRequestId").GetString());
+        cloud.Verify(x => x.SendTextMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            text, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [PostgreSqlIntegrationTheory]
+    [Trait("Category", "PostgreSqlIntegration")]
     [InlineData(false)]
     [InlineData(true)]
     public async Task Incoming_and_manual_work_share_conversation_order_and_exclusion(bool incomingFirst)
