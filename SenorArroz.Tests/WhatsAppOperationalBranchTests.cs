@@ -25,13 +25,16 @@ namespace SenorArroz.Tests;
 
 public sealed partial class WhatsAppOperationalBranchTests
 {
-    [Fact]
-    public async Task Forwarding_requires_access_to_the_origin_and_preserves_native_location_content()
+    [Theory]
+    [InlineData(null)]
+    [InlineData(8)]
+    public async Task Forwarding_to_an_unowned_chat_requires_access_and_preserves_native_location_content(int? assignee)
     {
         await using var db = CreateDb();
-        await SeedCentralConversationAsync(db, operationalBranchId: 1, assignedUserId: 7);
+        await SeedCentralConversationAsync(db, operationalBranchId: 1, assignedUserId: assignee);
         var destination = await db.WhatsAppConversations.SingleAsync();
         destination.LastCustomerMessageAt = DateTime.UtcNow;
+        destination.NeedsHumanResponse = true;
         var origin = new WhatsAppConversation { Id = 12, TenantId = 1, ChannelSettingId = 1, BranchId = 1, OperationalBranchId = 2 };
         db.WhatsAppConversations.Add(origin);
         var message = new WhatsAppMessage
@@ -51,7 +54,22 @@ public sealed partial class WhatsAppOperationalBranchTests
         provider.VerifyNoOtherCalls();
 
         origin.OperationalBranchId = 1;
+        destination.OperationalBranchId = 2;
         await db.SaveChangesAsync();
+        Assert.IsType<ForbidResult>((await controller.ForwardMessage(destination.Id, request, default)).Result);
+        destination.OperationalBranchId = 1;
+        destination.AttentionMode = WhatsAppAttentionMode.Closed;
+        await db.SaveChangesAsync();
+        Assert.IsType<BadRequestObjectResult>((await controller.ForwardMessage(destination.Id, request, default)).Result);
+        var activeMode = assignee.HasValue ? WhatsAppAttentionMode.Human : WhatsAppAttentionMode.WaitingForHuman;
+        destination.AttentionMode = activeMode;
+        destination.LastCustomerMessageAt = DateTime.UtcNow.AddHours(-25);
+        await db.SaveChangesAsync();
+        Assert.IsType<BadRequestObjectResult>((await controller.ForwardMessage(destination.Id, request, default)).Result);
+        provider.VerifyNoOtherCalls();
+        destination.LastCustomerMessageAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        Assert.IsType<ForbidResult>((await controller.SendMessage(destination.Id, new() { Text = "Mensaje directo" }, default)).Result);
         var response = Assert.IsType<OkObjectResult>((await controller.ForwardMessage(destination.Id, request, default)).Result);
         var forwarded = Assert.IsType<ApiResponse<WhatsAppMessageDto>>(response.Value).Data!;
         Assert.True(forwarded.IsForwarded);
@@ -59,6 +77,9 @@ public sealed partial class WhatsAppOperationalBranchTests
         Assert.Equal("Punto", forwarded.Location?.Name);
         Assert.Null(forwarded.ReplyToWhatsAppMessageId);
         Assert.Equal(destination.Id, forwarded.ConversationId);
+        Assert.Equal(assignee, destination.AssignedUserId);
+        Assert.Equal(activeMode, destination.AttentionMode);
+        Assert.True(destination.NeedsHumanResponse);
     }
 
     [Fact]

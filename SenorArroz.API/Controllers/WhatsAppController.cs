@@ -1044,7 +1044,7 @@ public partial class WhatsAppController : ControllerBase
         if (request.SourceConversationId <= 0 || request.MessageId <= 0 || request.SourceConversationId == conversationId)
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Selecciona un mensaje y otra conversación."));
         if (_manualQueue is not null)
-            return await _manualQueue.EnqueueAsync<WhatsAppMessageDto>("forward-message", conversationId,
+            return await _manualQueue.EnqueueAsync<WhatsAppMessageDto>(WhatsAppManualWorkQueue.ForwardOperation, conversationId,
                 JsonSerializer.SerializeToElement(request), Request, cancellationToken);
         _manualOperations.ControllerContext = ControllerContext;
         return await _manualOperations.ForwardMessageAsync(conversationId, request, cancellationToken);

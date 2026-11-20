@@ -437,9 +437,10 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
         if (conversation is null)
             return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
-        if (!WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id) || !await CanAccessConversationAsync(conversation, cancellationToken))
+        var ownsAttention = WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id);
+        if ((!forwarded && !ownsAttention) || !await CanAccessConversationAsync(conversation, cancellationToken))
             return Forbid();
-        if (conversation.AttentionMode == WhatsAppAttentionMode.Closed)
+        if (conversation.AttentionMode == WhatsAppAttentionMode.Closed || forwarded && IsClosedForwardDestination(conversation))
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación está cerrada. Debes reabrirla antes de enviar mensajes."));
 
         if (!await IsServiceWindowOpenAsync(conversation, cancellationToken))
@@ -499,7 +500,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         }
 
         _logger.LogInformation("WhatsApp outbound message sent for conversation {ConversationId}", conversationId);
-        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
+        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken, clearPendingResponse: !forwarded || ownsAttention);
         return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Mensaje enviado."));
     }
 
@@ -807,8 +808,9 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("El archivo original no está disponible."));
         var destination = await _db.WhatsAppConversations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == conversationId, ct);
         if (destination is null) return NotFound();
-        if (!WhatsAppAttentionService.CanWrite(destination, _currentUser.Id) || !await CanAccessConversationAsync(destination, ct))
-            return Forbid();
+        if (!await CanAccessConversationAsync(destination, ct)) return Forbid();
+        if (IsClosedForwardDestination(destination))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación está cerrada. Debes reabrirla antes de reenviar mensajes."));
         if (!await IsServiceWindowOpenAsync(destination, ct))
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La ventana de atención terminó."));
 
@@ -825,6 +827,10 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         return await SendMediaMessage(conversationId, file, source.TextBody == name ? null : source.TextBody, ct, asSticker: sticker, forwarded: true);
     }
 
+    private static bool IsClosedForwardDestination(WhatsAppConversation destination) =>
+        destination.AttentionMode == WhatsAppAttentionMode.Closed
+        || destination.Status is WhatsAppConversationStatus.Closed or WhatsAppConversationStatus.Archived;
+
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendMediaMessage(
         int conversationId,
         IFormFile? file,
@@ -840,8 +846,11 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
         if (conversation is null)
             return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
-        if (!WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id) || !await CanAccessConversationAsync(conversation, cancellationToken))
+        var ownsAttention = WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id);
+        if ((!forwarded && !ownsAttention) || !await CanAccessConversationAsync(conversation, cancellationToken))
             return Forbid();
+        if (forwarded && IsClosedForwardDestination(conversation))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación está cerrada. Debes reabrirla antes de reenviar mensajes."));
 
         if (!await IsServiceWindowOpenAsync(conversation, cancellationToken))
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La ventana de atención terminó. Envía una plantilla aprobada."));
@@ -948,7 +957,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(sendResult.ErrorMessage ?? uploadResult.ErrorMessage ?? "No se pudo enviar el archivo."));
         }
 
-        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
+        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken, clearPendingResponse: !forwarded || ownsAttention);
         return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Archivo enviado."));
     }
 
@@ -1324,19 +1333,22 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             throw new IOException("WhatsApp send outcome requires reconciliation.");
     }
 
-    private async Task NotifyWhatsAppMessageCreatedAsync(int messageId, CancellationToken ct)
+    private async Task NotifyWhatsAppMessageCreatedAsync(int messageId, CancellationToken ct, bool clearPendingResponse = true)
     {
-        var sent = await _db.WhatsAppMessages.AsNoTracking().SingleAsync(x => x.Id == messageId, ct);
-        if (sent.Direction == WhatsAppMessageDirection.Outbound && sent.Status != WhatsAppMessageStatus.Failed)
+        if (clearPendingResponse)
         {
-            var sentAt = AsUtc(sent.Timestamp);
-            var query = _db.WhatsAppConversations.Where(x => x.Id == sent.ConversationId
-                && (!x.LastCustomerMessageAt.HasValue || x.LastCustomerMessageAt <= sentAt));
-            if (_db.Database.IsRelational()) await query.ExecuteUpdateAsync(x => x.SetProperty(c => c.NeedsHumanResponse, false), ct);
-            else
+            var sent = await _db.WhatsAppMessages.AsNoTracking().SingleAsync(x => x.Id == messageId, ct);
+            if (sent.Direction == WhatsAppMessageDirection.Outbound && sent.Status != WhatsAppMessageStatus.Failed)
             {
-                var conversation = await query.FirstOrDefaultAsync(ct);
-                if (conversation is not null) { conversation.NeedsHumanResponse = false; await _db.SaveChangesAsync(ct); }
+                var sentAt = AsUtc(sent.Timestamp);
+                var query = _db.WhatsAppConversations.Where(x => x.Id == sent.ConversationId
+                    && (!x.LastCustomerMessageAt.HasValue || x.LastCustomerMessageAt <= sentAt));
+                if (_db.Database.IsRelational()) await query.ExecuteUpdateAsync(x => x.SetProperty(c => c.NeedsHumanResponse, false), ct);
+                else
+                {
+                    var conversation = await query.FirstOrDefaultAsync(ct);
+                    if (conversation is not null) { conversation.NeedsHumanResponse = false; await _db.SaveChangesAsync(ct); }
+                }
             }
         }
         await _webhookProcessor.NotifyWhatsAppMessageCreatedAsync(messageId, ct);

@@ -20,6 +20,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
     ILogger<WhatsAppManualWorkQueue> logger, WhatsAppProcessingStore processingStore)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    internal const string ForwardOperation = "forward-message";
     public sealed record Command(int ActorId, int AssignedBranchId, int WorkBranchId, string Operation,
         int? ConversationId, JsonElement Body, string Scheme, string Host, string PathBase, DateTime? AttentionVersion);
     public sealed record Result(int StatusCode, JsonElement Body);
@@ -27,7 +28,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
     public async Task<ActionResult<ApiResponse<T>>> EnqueueAsync<T>(string operation, int? conversationId,
         JsonElement body, HttpRequest request, CancellationToken ct)
     {
-        if (!await CanUseAsync(conversationId, ct, write: true)) return new ForbidResult();
+        if (!await CanUseAsync(conversationId, ct, write: operation != ForwardOperation)) return new ForbidResult();
         if (Encoding.UTF8.GetByteCount(body.GetRawText()) > 32768)
             return new ObjectResult(ApiResponse<T>.ErrorResponse("La operación supera el tamaño permitido.")) { StatusCode = 413 };
         var key = RequestKey(request);
@@ -185,7 +186,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
                 else result = command.Operation switch
                 {
                     "send-message" => Capture(await operations.SendMessage(command.ConversationId!.Value, command.Body.Deserialize<SendWhatsAppMessageDto>(JsonOptions)!, ct)),
-                    "forward-message" => Capture(await operations.ForwardMessageAsync(command.ConversationId!.Value,
+                    ForwardOperation => Capture(await operations.ForwardMessageAsync(command.ConversationId!.Value,
                         command.Body.Deserialize<WhatsAppForwardMessageDto>(JsonOptions)!, ct)),
                     "send-reaction" => Capture(await operations.ReactToMessageAsync(command.ConversationId!.Value,
                         command.Body.GetProperty("messageId").GetInt32(),
@@ -243,6 +244,9 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
     private static object Pending(int id) => ApiResponse<object>.SuccessResponse(new { operationId = id, pending = true }, "Operación aceptada para procesamiento.");
     private async Task<bool> CanExecuteAsync(Command command, CancellationToken ct)
     {
+        if (command.Operation == ForwardOperation)
+            return await CanUseAsync(command.ConversationId, ct);
+
         if (command.ConversationId is not int conversationId)
             return await CanUseAsync(null, ct, write: true);
 
