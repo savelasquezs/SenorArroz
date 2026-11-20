@@ -33,7 +33,6 @@ public sealed class GetDeliveryMapHandler(IApplicationDbContext db, ICurrentUser
             && o.Type == OrderType.Delivery && o.DeliveryManId != null
             && (o.Status == OrderStatus.OnTheWay || o.Status == OrderStatus.Delivered)
             && ((o.CreatedAt >= fromUtc && o.CreatedAt <= toUtc) || (o.ReservedFor >= fromUtc && o.ReservedFor <= toUtc)));
-        var count = await orders.CountAsync(cancellationToken);
         var items = await orders.OrderByDescending(o => o.Id).Skip((request.Page - 1) * request.PageSize).Take(request.PageSize)
             .Select(o => new DeliveryMapOrderDto(o.Id, o.DeliveryManId, o.DeliveryRouteId, "delivery",
                 o.Status == OrderStatus.OnTheWay ? "on_the_way" : "delivered",
@@ -42,6 +41,10 @@ public sealed class GetDeliveryMapHandler(IApplicationDbContext db, ICurrentUser
                 o.Address == null ? null : o.Address.AddressText, o.Address == null ? null : o.Address.AdditionalInfo,
                 o.Address == null ? null : o.Address.Latitude, o.Address == null ? null : o.Address.Longitude))
             .ToListAsync(cancellationToken);
+        // An incomplete first page is the entire result set: avoid a redundant SQL COUNT.
+        var count = request.Page == 1 && items.Count < request.PageSize
+            ? items.Count
+            : await orders.CountAsync(cancellationToken);
         var locations = request.Page == 1
             ? await db.Users.AsNoTracking().Where(u => u.TenantId == user.TenantId && u.BranchId == branchId
                 && u.AccountType != EmployeeAccountType.Terminal
