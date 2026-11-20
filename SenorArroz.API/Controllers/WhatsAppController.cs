@@ -429,6 +429,7 @@ public partial class WhatsAppController : ControllerBase
         catch (JsonException) { return BadRequest(); }
         using (document)
         {
+            var signature = Request.Headers["X-Hub-Signature-256"].FirstOrDefault();
             if (_pilot is not null)
             {
                 if (!_pilot.VerifySignature(signature, rawPayload))
@@ -437,7 +438,6 @@ public partial class WhatsAppController : ControllerBase
                 using var scope = _tenantExecutionContext!.BeginTenantScope(_pilot.TenantId);
                 var phoneId = await _db.WhatsAppBranchSettings.AsNoTracking()
                     .Where(x => x.BranchId == _pilot.BranchId && x.IsActive && x.IsVerified && x.CoexistenceEnabled
-            var signature = Request.Headers["X-Hub-Signature-256"].FirstOrDefault();
                         && x.PhoneNumberId == _pilot.PhoneNumberId)
                     .Select(x => x.PhoneNumberId)
                     .SingleOrDefaultAsync(cancellationToken);

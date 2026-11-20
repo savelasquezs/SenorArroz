@@ -641,10 +641,10 @@ public static class ApiHost
             schema.ServiceProvider.GetRequiredService<IIntegrationSecretProtector>().Protect("startup-probe");
         }
 
-        if (whatsappWorker)
         app.MapGet("/health/ready", async (SenorArroz.Infrastructure.Data.ApplicationDbContext db, CancellationToken ct) =>
             await db.Database.CanConnectAsync(ct) ? Results.Ok() : Results.StatusCode(503)).AllowAnonymous();
 
+        if (whatsappWorker)
         {
             app.MapGet("/health/live", () => Results.Ok(new { service = "whatsapp-worker" }));
             await app.RunAsync();
