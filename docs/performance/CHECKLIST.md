@@ -192,7 +192,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M41-F02 | SQL clientes y direcciones | Pendiente | — | — | — | — |
 | M41-F03 | SQL dashboard y agregados | Pendiente | — | — | — | — |
 | M41-F04 | SQL tracking geográfico | Pendiente | — | — | — | — |
-| M41-F05 | Índices, planes EXPLAIN y paginación | Bloqueado | 2026-11-20 | [Informe](reviews/2026-11-20-M41-F05.md) | [API #153](https://github.com/savelasquezs/SenorArroz/pull/153) (borrador) | GET /api/deliverymen/map: evitar COUNT en primera página corta; prueba SQL PostgreSQL aislada y CI pendientes al preparar informe. No hay cambios de índices ni SQL de migración; no hay datos productivos, merge ni despliegue. |
+| M41-F05 | Índices, planes EXPLAIN y paginación | Bloqueado | 2026-11-20 | [Informe](reviews/2026-11-20-M41-F05.md) | [API #153](https://github.com/savelasquezs/SenorArroz/pull/153), [Docs #154](https://github.com/savelasquezs/SenorArroz/pull/154) (borrador) | Mapa: 1 COUNT omitido en primera página corta; Backend CI #44741215094 SUCCESS (1975/1976, 1 omitida; incluye test PostgreSQL COUNT), Remote #44741215129 SUCCESS; CI documental iniciales verdes. QA multiusuario/staging pendiente; sin SQL, EXPLAIN ni métricas productivas. Sin merge ni despliegue. |
 | M41-F06 | Pooling conexiones, RLS y concurrencia | Pendiente | — | — | — | — |
 | M41-F07 | Backups, mantenimiento y limpieza | Pendiente | — | — | — | — |
 | M42-F01 | Uso CPU/RAM por servicio | Pendiente | — | — | — | — |
