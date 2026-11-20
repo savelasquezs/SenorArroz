@@ -641,15 +641,12 @@ public static class ApiHost
             schema.ServiceProvider.GetRequiredService<IIntegrationSecretProtector>().Protect("startup-probe");
         }
 
+        app.MapGet("/health/ready", async (SenorArroz.Infrastructure.Data.ApplicationDbContext db, CancellationToken ct) =>
+            await db.Database.CanConnectAsync(ct) ? Results.Ok() : Results.StatusCode(503)).AllowAnonymous();
+
         if (whatsappWorker)
         {
             app.MapGet("/health/live", () => Results.Ok(new { service = "whatsapp-worker" }));
-            app.MapGet("/health/ready", async (IServiceScopeFactory scopes, CancellationToken ct) =>
-            {
-                using var scope = scopes.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<SenorArroz.Infrastructure.Data.ApplicationDbContext>();
-                return await db.Database.CanConnectAsync(ct) ? Results.Ok() : Results.StatusCode(503);
-            });
             await app.RunAsync();
             return;
         }
@@ -672,7 +669,7 @@ public static class ApiHost
         if (app.Environment.IsProduction())
             app.UseHsts();
 
-        app.UseHttpsRedirection();
+        app.UseWhen(context => !context.Request.Path.Equals("/health/ready"), branch => branch.UseHttpsRedirection());
 
         app.UseStaticFiles();
 

@@ -22,6 +22,22 @@ public partial class WhatsAppController
     [RequestSizeLimit(4096)]
     public async Task<IActionResult> GetProductSuggestions(int conversationId, [FromBody] WhatsAppProductSuggestionsRequest request, CancellationToken ct)
     {
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(TimeSpan.FromSeconds(8));
+        try
+        {
+            return await GetProductSuggestionsCoreAsync(conversationId, request, budget.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && budget.IsCancellationRequested)
+        {
+            _logger.LogWarning("WhatsApp product suggestions interrupted. Reason=server_timeout TraceId={TraceId}", HttpContext.TraceIdentifier);
+            return StatusCode(StatusCodes.Status504GatewayTimeout,
+                ApiResponse<object>.ErrorResponse("Las sugerencias tardaron demasiado. Puedes agregar productos desde el catálogo."));
+        }
+    }
+
+    private async Task<IActionResult> GetProductSuggestionsCoreAsync(int conversationId, WhatsAppProductSuggestionsRequest request, CancellationToken ct)
+    {
         if (request.MessageIds is not { Length: > 0 and <= ProductSuggestionBatchSize } || request.MessageIds.Any(id => id <= 0))
             return BadRequest(ApiResponse<object>.ErrorResponse("Selecciona entre uno y diez mensajes."));
 

@@ -82,8 +82,9 @@ public partial class WhatsAppWebhookProcessor
         original.TextBody = editedText[..Math.Min(editedText.Length, 4096)];
         payload[EditedAtKey] = AsUtc(timestamp);
         original.RawPayload = payload.ToJsonString();
+        var originalTimestamp = AsUtc(original.Timestamp);
         if (conversation.LastMessageAt == original.Timestamp && !await _db.WhatsAppMessages.AnyAsync(
-            x => x.ConversationId == conversation.Id && x.Timestamp == original.Timestamp && x.Id > original.Id, ct))
+            x => x.ConversationId == conversation.Id && x.Timestamp == originalTimestamp && x.Id > original.Id, ct))
             conversation.LastMessagePreview = PreviewForMedia(original.Type, original.TextBody);
         updates.Add(original);
     }

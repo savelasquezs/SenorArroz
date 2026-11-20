@@ -6,6 +6,8 @@ namespace SenorArroz.Domain.Exceptions;
 /// </summary>
 public class BusinessException : Exception
 {
+    public string? Code { get; init; }
+
     public BusinessException(string message) : base(message)
     {
     }

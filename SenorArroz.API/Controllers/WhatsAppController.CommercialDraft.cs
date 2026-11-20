@@ -189,7 +189,8 @@ public partial class WhatsAppController
                     var order = WhatsAppCommercialDraft.Read(session, conversation);
                     var quote = await QuoteDraftAsync(session, order, ct);
                     if (action == "quote") return Ok(ApiResponse<WhatsAppDraftQuoteDto>.SuccessResponse(quote));
-                    if (quote.Errors.Count > 0) throw new BusinessException(string.Join(" ", quote.Errors));
+                    if (quote.Errors.Count > 0)
+                        throw new BusinessException(string.Join(" ", quote.Errors)) { Code = "whatsapp_draft_validation" };
                     if (request.ReviewedFingerprint is not null && quote.Fingerprint != request.ReviewedFingerprint)
                         return Conflict(ApiResponse<WhatsAppDraftQuoteDto>.ErrorResponse("Revisa nuevamente el pedido: cambiaron sus condiciones."));
                     if (session.CheckoutId is not null) throw new BusinessException("Revisa el pago en línea antes de confirmar manualmente.");
