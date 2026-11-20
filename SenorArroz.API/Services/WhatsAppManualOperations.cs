@@ -259,22 +259,66 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
 
         if (productGroupId.HasValue)
         {
-            var products = await WhatsAppCommercialDraft.ChoiceCatalog(_db)
-                .Include(x => x.CommercialProfile)
-                .Where(x => x.Active && x.CommercialProfileId == productGroupId).OrderBy(x => x.Price)
+            var source = request.ProductChoiceSource;
+            WhatsAppProductSuggestions.ChoiceOffer? offer = null;
+            var quantity = 1;
+            if (source is not null)
+            {
+                var text = await _db.WhatsAppMessages.AsNoTracking()
+                    .Where(x => x.Id == source.MessageId && x.ConversationId == conversationId
+                        && x.Direction == WhatsAppMessageDirection.Inbound && x.Type == WhatsAppMessageType.Text
+                        && !x.IsHistorical && x.HiddenAt == null
+                        && x.AiProcessingError != WhatsAppCommercialDraft.ProductApplied && x.AiProcessingError != "order_product_unavailable")
+                    .Select(x => x.TextBody).SingleOrDefaultAsync(ct);
+                if (text is null || source.ChoiceIndex < 0) return Invalid("La sugerencia ya no está disponible.");
+                var catalog = await WhatsAppProductSuggestions.Catalog(_db.Products.Where(x =>
+                    StorefrontCommerceService.PublicRoles.Contains(x.Category.StorefrontRole))).ToListAsync(ct);
+                var match = WhatsAppProductSuggestions.Find(text, catalog).ElementAtOrDefault(source.ChoiceIndex);
+                offer = match?.Offer;
+                if (offer is null || offer.Products[0].GroupId != productGroupId || offer.Products[0].Id != source.ProductId)
+                    return Invalid("Las presentaciones cambiaron. Vuelve a consultar el mensaje.");
+                var answerKey = WhatsAppCommercialDraft.SuggestedProductAnswerKey(session.Id, source);
+                if (await _db.WhatsAppMessages.AnyAsync(x => x.AgentDispatchKey == answerKey, ct))
+                    return Invalid("El cliente ya eligió una opción para esta sugerencia.");
+                quantity = match!.Quantity;
+            }
+            var catalogChoices = WhatsAppCommercialDraft.ChoiceCatalog(_db).Include(x => x.CommercialProfile).Where(x => x.Active);
+            var offeredIds = offer?.Products.Select(p => p.Id).ToArray();
+            var products = await (offeredIds is null ? catalogChoices.Where(x => x.CommercialProfileId == productGroupId)
+                : catalogChoices.Where(x => offeredIds.Contains(x.Id))).OrderBy(x => x.Price)
                 .ThenBy(x => x.StorefrontSortOrder).ThenBy(x => x.Id).ToListAsync(ct);
             if (_inventory is not null && products.Count > 0)
             {
                 var availability = await _inventory.GetAvailabilityAsync(products.Select(x => x.Id).ToArray(), order.BranchId, ct, true);
-                var ordered = order.OrderDetails.GroupBy(x => x.ProductId).ToDictionary(x => x.Key, x => x.Sum(y => y.Quantity));
+                var ordered = order.OrderDetails.GroupBy(x => x.ProductId).ToDictionary(x => x.Key, x => x.Sum(y => (long)y.Quantity));
                 var available = availability.Where(x => x.Available && (!x.MaximumQuantity.HasValue
-                    || x.MaximumQuantity.Value > ordered.GetValueOrDefault(x.ProductId))).Select(x => x.ProductId).ToHashSet();
+                    || x.MaximumQuantity.Value >= ordered.GetValueOrDefault(x.ProductId) + quantity)).Select(x => x.ProductId).ToHashSet();
                 products.RemoveAll(x => !available.Contains(x.Id));
             }
             if (products.Count == 0) return Invalid("No hay presentaciones disponibles para la sucursal que prepara.");
-            var name = products[0].CommercialProfile!.Name;
+            var name = offer?.Name ?? products[0].CommercialProfile!.Name;
+            var body = quantity == 1 ? $"Elige una presentación de {name}." : $"Elige la presentación para {quantity} unidades de {name}.";
+            var productOptions = products.Select(x => ProductChoice(x, x.CommercialProfile!.Name)).ToArray();
+            if (offer?.ChicharronVariants == true)
+            {
+                var byId = offer.Products.ToDictionary(p => p.Id);
+                var presentations = products.Select(x => (Product: x, Presentation: WhatsAppProductSuggestions.ChicharronPresentation(byId[x.Id])))
+                    .ToArray();
+                var showSize = presentations.Select(p => p.Presentation?.Size).Distinct().Count() > 1;
+                productOptions = presentations.Select(x =>
+                {
+                    if (x.Presentation is not { } presentation) return ProductChoice(x.Product, x.Product.CommercialProfile!.Name);
+                    var variant = presentation.WithChicharron ? "Con chicharrón" : "Sin chicharrón";
+                    var label = showSize ? $"{WhatsAppProductSuggestions.SizeLabel(presentation.Size)} · {variant.ToLowerInvariant()}" : variant;
+                    var price = "$" + x.Product.Price.ToString("N0", CultureInfo.GetCultureInfo("es-CO"));
+                    return new CommercialChoice(x.Product.Id, label, label, price, $"{label} · {price}", x.Product.Price);
+                }).ToArray();
+            }
+            if (source is not null && productOptions.Length <= 3
+                && productOptions.Any(x => x.ButtonLabel != x.Preview) && productOptions.All(x => x.ButtonLabel.Length <= 20))
+                body += "\n" + string.Join("\n", productOptions.Select(option => option.Preview));
             return await SendChoicePromptAsync(conversation, session, order, setting, recipient,
-                $"Elige una presentación de {name}.", "Ver opciones", products.Select(x => ProductChoice(x, name)).ToArray(), productGroupId, ct);
+                body, "Ver opciones", productOptions, productGroupId, ct, source, quantity);
         }
 
         if (order.Type is not (OrderType.Delivery or OrderType.Reservation)) return Invalid("El pedido no requiere una dirección.");
@@ -299,17 +343,19 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
     private async Task<ActionResult<ApiResponse<WhatsAppMessageDto[]>>> SendChoicePromptAsync(
         WhatsAppConversation conversation, WhatsAppCommerceSession session,
         CreateOrderDto order, ConversationChannelCredentials setting,
-        string recipient, string body, string listButton, CommercialChoice[] options, int? productGroupId, CancellationToken ct)
+        string recipient, string body, string listButton, CommercialChoice[] options, int? productGroupId, CancellationToken ct,
+        WhatsAppProductChoiceSourceDto? source = null, int quantity = 1)
     {
         var prefix = productGroupId.HasValue ? WhatsAppCommercialDraft.ProductChoicePrefix : WhatsAppCommercialDraft.AddressChoicePrefix;
-        var scope = WhatsAppCommercialDraft.ChoiceScope(prefix, productGroupId);
+        var scope = WhatsAppCommercialDraft.ChoiceScope(prefix, productGroupId, source);
         var requestId = Guid.NewGuid();
         var sent = new List<WhatsAppMessageDto>();
         var index = 0;
         foreach (var group in options.Chunk(10))
         {
             string RowId(CommercialChoice option) => $"{prefix}{requestId:N}:{option.Id}";
-            var canUseButtons = group.Length <= 3 && group.All(x => x.ButtonLabel.Length <= 20 && x.ButtonLabel == x.Preview)
+            var canUseButtons = group.Length <= 3 && group.All(x => x.ButtonLabel.Length <= 20
+                && (x.ButtonLabel == x.Preview || source is not null && body.Contains(x.Preview, StringComparison.Ordinal)))
                 && group.Select(x => x.ButtonLabel).Distinct(StringComparer.OrdinalIgnoreCase).Count() == group.Length;
             var result = canUseButtons
                 ? await _whatsAppCloudClient.SendReplyButtonsMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, body,
@@ -329,14 +375,16 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             var prompt = new WhatsAppCommercialDraft.ChoicePrompt(requestId, session.Id, conversation.AttentionRevision,
                 order.CustomerId, order.BranchId, order.Type, order.AddressId,
                 AddressIds: productGroupId.HasValue ? null : group.Select(x => x.Id).ToArray(),
-                ProductGroupId: productGroupId, ProductPrices: productGroupId.HasValue ? group.ToDictionary(x => x.Id, x => x.Price) : null);
+                ProductGroupId: productGroupId, ProductPrices: productGroupId.HasValue ? group.ToDictionary(x => x.Id, x => x.Price) : null,
+                ProductChoiceSource: source, Quantity: quantity);
             var message = new WhatsAppMessage
             {
                 ConversationId = conversation.Id,
                 WhatsAppMessageId = result.WhatsAppMessageId,
                 Direction = WhatsAppMessageDirection.Outbound,
                 Type = WhatsAppMessageType.Text,
-                TextBody = body + "\n" + string.Join("\n", group.Select((x, i) => $"{index + i + 1}. {x.Preview}")),
+                TextBody = body + string.Concat(group.Where(x => source is null || !body.Contains(x.Preview, StringComparison.Ordinal))
+                    .Select((x, i) => $"\n{index + i + 1}. {x.Preview}")),
                 Status = WhatsAppMessageStatus.Sent,
                 SentByUserId = _currentUser.Id,
                 Timestamp = _clock.UtcNow,

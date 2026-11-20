@@ -13,13 +13,15 @@ public sealed class WhatsAppDraftWriteDto
     public string CommercialStatus { get; set; } = "in_progress";
     public string? ReviewedFingerprint { get; set; }
     public string? Note { get; set; }
+    public WhatsAppProductChoiceSourceDto? ProductChoiceSource { get; set; }
 }
 
+public sealed record WhatsAppProductChoiceSourceDto(int MessageId, int ChoiceIndex, int ProductId);
 public sealed record WhatsAppInternalNote(int UserId, string Text, DateTime CreatedAt);
 public sealed record WhatsAppProductChoiceGroupDto(int Id, string Name, bool IsRice, string? Shortcut);
 public sealed record WhatsAppProductSuggestionsRequest(int[] MessageIds);
 public sealed record WhatsAppProductSuggestionDto(string Kind, int? ProductId, string? Name, int Quantity,
-    int? UnitPrice, bool Available, string? Reply);
+    int? UnitPrice, bool Available, string? Reply, int? ChoiceGroupId = null, int? ChoiceIndex = null);
 public sealed record WhatsAppMessageProductSuggestionsDto(int MessageId, IReadOnlyList<WhatsAppProductSuggestionDto> Suggestions);
 public sealed record WhatsAppProductSuggestionsDto(int BranchId, IReadOnlyList<WhatsAppMessageProductSuggestionsDto> Messages);
 public sealed record WhatsAppCommercialDraftDto(int SessionId, Guid AttemptId, int ConversationId,

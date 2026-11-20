@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.DTOs;
+using SenorArroz.Application.Features.WhatsApp.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
 
@@ -21,13 +22,19 @@ public static class WhatsAppCommercialDraft
 
     public sealed record ChoicePrompt(Guid RequestId, int SessionId, long AttentionRevision, int? CustomerId,
         int BranchId, OrderType OrderType, int? PreviousAddressId, int[]? AddressIds = null,
-        int? ProductGroupId = null, Dictionary<int, int>? ProductPrices = null);
+        int? ProductGroupId = null, Dictionary<int, int>? ProductPrices = null,
+        WhatsAppProductChoiceSourceDto? ProductChoiceSource = null, int Quantity = 1);
 
     public static string? ChoicePrefix(string? id) =>
         id?.StartsWith(AddressChoicePrefix, StringComparison.Ordinal) == true ? AddressChoicePrefix
         : id?.StartsWith(ProductChoicePrefix, StringComparison.Ordinal) == true ? ProductChoicePrefix : null;
 
-    public static string ChoiceScope(string prefix, int? groupId) => groupId.HasValue ? $"{prefix}{groupId}:" : prefix;
+    public static string ChoiceScope(string prefix, int? groupId, WhatsAppProductChoiceSourceDto? source = null)
+        => source is not null ? $"{prefix}message:{source.MessageId}:{source.ChoiceIndex}:{source.ProductId}:"
+            : groupId.HasValue ? $"{prefix}{groupId}:" : prefix;
+
+    public static string SuggestedProductAnswerKey(int sessionId, WhatsAppProductChoiceSourceDto source)
+        => $"{ProductAnswerPrefix}{sessionId}:{source.MessageId}:{source.ChoiceIndex}:{source.ProductId}";
 
     public static bool IsLegacyAdvisorConfirmation(WhatsAppCommerceOutboxMessage message) =>
         message.EventKey.StartsWith("whatsapp-order-created:", StringComparison.Ordinal)
