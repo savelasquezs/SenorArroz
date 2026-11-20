@@ -82,6 +82,10 @@ public static class WhatsAppLocalReviewRegistration
             if (message.TryGetProperty("context", out var context) && !HasText(context, "message_id")) return false;
             if (type.ValueEquals("text"))
                 return message.TryGetProperty("text", out var text) && HasText(text, "body");
+            if (type.ValueEquals("image"))
+                return message.TryGetProperty("image", out var image) && HasText(image, "link")
+                    && Uri.TryCreate(image.GetProperty("link").GetString(), UriKind.Absolute, out var imageUrl)
+                    && imageUrl.Scheme == Uri.UriSchemeHttps;
             if (type.ValueEquals("reaction"))
                 return message.TryGetProperty("reaction", out var reaction) && HasText(reaction, "message_id")
                     && reaction.TryGetProperty("emoji", out var emoji) && emoji.ValueKind == JsonValueKind.String;

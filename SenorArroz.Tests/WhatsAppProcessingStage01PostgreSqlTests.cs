@@ -86,6 +86,44 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
         cloud.Verify(x => x.SendImageLinkMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), menu ? Times.Once() : Times.Never());
     }
 
+    [PostgreSqlIntegrationTheory]
+    [Trait("Category", "PostgreSqlIntegration")]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Menu_sends_only_configured_images_and_reports_partial_delivery(int acceptedImages)
+    {
+        using var tenant = _tenant.BeginTenantScope(1);
+        await using var db = Db();
+        await SeedManualAsync(db);
+        const string first = "https://example.invalid/menu-1.png", second = "https://example.invalid/menu-2.png";
+        await db.Branches.Where(x => x.Id == 1).ExecuteUpdateAsync(update => update
+            .SetProperty(x => x.MenuImageUrl1, first).SetProperty(x => x.MenuImageUrl2, second));
+        var (queue, cloud, _, http) = ManualQueue(db);
+        cloud.Setup(x => x.SendImageLinkMessageAsync("central", "local-token", "573000000001", first,
+                "Nuestra carta actual", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(acceptedImages >= 1 ? new WhatsAppCloudSendResult(true, "wamid.menu1", null) : new(false, null, "Archivo no disponible."));
+        cloud.Setup(x => x.SendImageLinkMessageAsync("central", "local-token", "573000000001", second,
+                "Carta (continuación)", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(acceptedImages == 2 ? new WhatsAppCloudSendResult(true, "wamid.menu2", null) : new(false, null, "Archivo no disponible."));
+
+        await queue.EnqueueAsync<WhatsAppMessageDto>("send-menu", 11,
+            JsonSerializer.SerializeToElement(new { }), http.HttpContext!.Request, default);
+        var job = (await Store(db).ClaimAsync(default))!;
+        await ExecuteManualWorkerAsync(queue, job, db);
+        Assert.True(await Store(db).FinishAsync(job, true, default));
+        var result = Assert.IsType<ObjectResult>(await queue.GetResultAsync(job.Id, default));
+
+        Assert.Equal(acceptedImages == 2 ? 200 : 400, result.StatusCode);
+        if (acceptedImages == 1)
+            Assert.Contains("Solo se envió 1 de 2", Assert.IsType<JsonElement>(result.Value).GetProperty("message").GetString());
+        var messages = await db.WhatsAppMessages.AsNoTracking().OrderBy(x => x.Id).ToListAsync();
+        Assert.All(messages, message => Assert.Equal(WhatsAppMessageType.Image, message.Type));
+        Assert.Equal(new[] { first, second }.Take(acceptedImages), messages.Select(message => message.MediaUrl));
+        cloud.Verify(x => x.SendTextMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
     public async Task Superadmin_without_selected_branch_keeps_server_assigned_work_origin()

@@ -638,7 +638,9 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         if (conversation is null) return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
         if (!WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id) || !await CanAccessConversationAsync(conversation, cancellationToken)) return Forbid();
         var branch = await _db.Branches.AsNoTracking().FirstAsync(x => x.Id == conversation.BranchId, cancellationToken);
-        if (string.IsNullOrWhiteSpace(branch.MenuImageUrl1) && string.IsNullOrWhiteSpace(branch.MenuImageUrl2))
+        var menuImages = new[] { branch.MenuImageUrl1, branch.MenuImageUrl2 }
+            .OfType<string>().Where(url => !string.IsNullOrWhiteSpace(url)).ToArray();
+        if (menuImages.Length == 0)
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Esta sucursal todavía no tiene una carta configurada."));
         if (!await IsServiceWindowOpenAsync(conversation, cancellationToken))
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La ventana de atención terminó. Envía una plantilla aprobada."));
@@ -646,40 +648,41 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         if (setting is null) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("WhatsApp no está activo y verificado para esta sucursal."));
         var recipient = WhatsAppRecipientResolver.Resolve(conversation);
         if (recipient is null) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación no tiene un destinatario de WhatsApp válido."));
-        var url = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/api/public/menu?branchId={conversation.BranchId}";
-        var text = $"Consulta nuestra carta aquí: {url}";
-        var menuImages = new[] { branch.MenuImageUrl1, branch.MenuImageUrl2 }.Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>().ToList();
-        var sentMessages = new List<WhatsAppMessage>();
-        string? lastError = null;
-        for (var index = 0; index < menuImages.Count; index++)
+        WhatsAppMessage? lastMessage = null;
+        for (var index = 0; index < menuImages.Length; index++)
         {
             var caption = index == 0 ? "Nuestra carta actual" : "Carta (continuación)";
             var result = await _whatsAppCloudClient.SendImageLinkMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, menuImages[index], caption, cancellationToken);
             RequireKnownOutcome(result);
-            if (!result.Success) { lastError = result.ErrorMessage; break; }
-            var timestamp = _clock.UtcNow;
-            var message = new WhatsAppMessage { ConversationId = conversation.Id, WhatsAppMessageId = result.WhatsAppMessageId, Direction = WhatsAppMessageDirection.Outbound, Type = WhatsAppMessageType.Image, TextBody = caption, MediaUrl = menuImages[index], Status = WhatsAppMessageStatus.Sent, SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null, Timestamp = timestamp, RawPayload = JsonSerializer.Serialize(new { action = "send_menu", mode = "image", slot = index + 1, result.Success }) };
-            _db.WhatsAppMessages.Add(message); sentMessages.Add(message);
-            conversation.LastMessageAt = timestamp; conversation.LastMessagePreview = "Carta enviada";
-            await _db.SaveChangesAsync(cancellationToken);
-            await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
-        }
-        var usedFallback = sentMessages.Count != menuImages.Count;
-        if (usedFallback)
-        {
-            var fallback = await _whatsAppCloudClient.SendTextMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, cancellationToken);
-            RequireKnownOutcome(fallback);
-            if (fallback.Success)
+            if (!result.Success)
             {
-                var fallbackMessage = new WhatsAppMessage { ConversationId = conversation.Id, WhatsAppMessageId = fallback.WhatsAppMessageId, Direction = WhatsAppMessageDirection.Outbound, Type = WhatsAppMessageType.Text, TextBody = text, Status = WhatsAppMessageStatus.Sent, SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null, Timestamp = _clock.UtcNow, RawPayload = JsonSerializer.Serialize(new { action = "send_menu", mode = "url_fallback", imageError = lastError }) };
-                _db.WhatsAppMessages.Add(fallbackMessage); sentMessages.Add(fallbackMessage);
+                var error = result.ErrorMessage ?? "No se pudo enviar la imagen de la carta.";
+                if (index > 0) error = $"Solo se envió {index} de {menuImages.Length} imágenes de la carta. {error}";
+                return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(error));
             }
-            else if (sentMessages.Count == 0) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(fallback.ErrorMessage ?? lastError ?? "No se pudo enviar la carta."));
-        }
-        var lastMessage = sentMessages[^1]; conversation.LastMessageAt = lastMessage.Timestamp; conversation.LastMessagePreview = "Carta enviada"; await _db.SaveChangesAsync(cancellationToken);
-        if (usedFallback && lastMessage.Type == WhatsAppMessageType.Text)
+
+            var timestamp = _clock.UtcNow;
+            lastMessage = new WhatsAppMessage
+            {
+                ConversationId = conversation.Id,
+                WhatsAppMessageId = result.WhatsAppMessageId,
+                Direction = WhatsAppMessageDirection.Outbound,
+                Type = WhatsAppMessageType.Image,
+                TextBody = caption,
+                MediaUrl = menuImages[index],
+                Status = WhatsAppMessageStatus.Sent,
+                SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null,
+                Timestamp = timestamp,
+                RawPayload = JsonSerializer.Serialize(new { action = "send_menu", mode = "image", slot = index + 1, result.Success })
+            };
+            _db.WhatsAppMessages.Add(lastMessage);
+            conversation.LastMessageAt = timestamp;
+            conversation.LastMessagePreview = "Carta enviada";
+            await _db.SaveChangesAsync(cancellationToken);
             await NotifyWhatsAppMessageCreatedAsync(lastMessage.Id, cancellationToken);
-        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(lastMessage), usedFallback ? "Carta enviada; se usó el enlace como respaldo." : "Carta enviada como imagen."));
+        }
+
+        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(lastMessage!), "Carta enviada como imagen."));
     }
 
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendQuickReply(
