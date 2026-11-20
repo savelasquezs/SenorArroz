@@ -34,6 +34,16 @@ public sealed class FirebaseGcsStorageService : IFirebaseGcsStorage
         return stream.ToArray();
     }
 
+    public async Task<byte[]?> DownloadObjectFromUrlAsync(string url, long maxBytes, CancellationToken cancellationToken = default)
+    {
+        if (!TryParseFirebaseStorageUrl(url, out var bucket, out var objectName) ||
+            !string.Equals(bucket, _opt.Bucket.Trim(), StringComparison.Ordinal))
+            return null;
+
+        try { return await DownloadObjectAsync(objectName, maxBytes, cancellationToken); }
+        catch (GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound) { return null; }
+    }
+
     public async Task<string> UploadPublicObjectAsync(byte[] content, string objectName, string contentType, CancellationToken cancellationToken = default)
     {
         EnsureReady();

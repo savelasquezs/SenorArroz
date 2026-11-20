@@ -19,11 +19,78 @@ using SenorArroz.Domain.Interfaces.Repositories;
 using SenorArroz.Domain.Services;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
+using System.Text.Json;
 
 namespace SenorArroz.Tests;
 
 public sealed partial class WhatsAppOperationalBranchTests
 {
+    [Fact]
+    public async Task Forwarding_requires_access_to_the_origin_and_preserves_native_location_content()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, operationalBranchId: 1, assignedUserId: 7);
+        var destination = await db.WhatsAppConversations.SingleAsync();
+        destination.LastCustomerMessageAt = DateTime.UtcNow;
+        var origin = new WhatsAppConversation { Id = 12, TenantId = 1, ChannelSettingId = 1, BranchId = 1, OperationalBranchId = 2 };
+        db.WhatsAppConversations.Add(origin);
+        var message = new WhatsAppMessage
+        {
+            ConversationId = origin.Id, TenantId = 1, TextBody = "Ubicación compartida", Direction = WhatsAppMessageDirection.Inbound,
+            RawPayload = """{"type":"location","from":"573000000001","location":{"latitude":6.26,"longitude":-75.56,"name":"Punto"}}"""
+        };
+        db.WhatsAppMessages.Add(message);
+        await db.SaveChangesAsync();
+        var provider = new Mock<IWhatsAppCloudClient>();
+        provider.Setup(x => x.SendSharedContentAsync("phone", "token", It.IsAny<string>(), "location",
+            It.Is<JsonElement>(j => j.GetProperty("latitude").GetDouble() == 6.26), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.forwarded", null));
+        var controller = CreateController(db, cloud: provider.Object);
+        var request = new WhatsAppForwardMessageDto(origin.Id, message.Id);
+        Assert.IsType<ForbidResult>((await controller.ForwardMessage(destination.Id, request, default)).Result);
+        provider.VerifyNoOtherCalls();
+
+        origin.OperationalBranchId = 1;
+        await db.SaveChangesAsync();
+        var response = Assert.IsType<OkObjectResult>((await controller.ForwardMessage(destination.Id, request, default)).Result);
+        var forwarded = Assert.IsType<ApiResponse<WhatsAppMessageDto>>(response.Value).Data!;
+        Assert.True(forwarded.IsForwarded);
+        Assert.Equal("location", forwarded.Type);
+        Assert.Equal("Punto", forwarded.Location?.Name);
+        Assert.Null(forwarded.ReplyToWhatsAppMessageId);
+        Assert.Equal(destination.Id, forwarded.ConversationId);
+    }
+
+    [Fact]
+    public async Task Sticker_download_checks_conversation_access_and_message_visibility()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, operationalBranchId: 1, assignedUserId: 7);
+        const string url = "https://storage.googleapis.com/test-bucket/sticker.webp";
+        var bytes = Convert.FromBase64String("UklGRi4AAABXRUJQVlA4TCIAAAAv/8F/AAfQlAIVsv8BgUCyv/cMRfQ/4z//+c9//vOf//wf");
+        var message = new WhatsAppMessage
+        {
+            ConversationId = 11, TenantId = 1, Direction = WhatsAppMessageDirection.Inbound,
+            Type = WhatsAppMessageType.Sticker, MediaUrl = url,
+        };
+        db.WhatsAppMessages.Add(message);
+        await db.SaveChangesAsync();
+
+        var storage = new Mock<IFirebaseGcsStorage>();
+        storage.Setup(x => x.DownloadObjectFromUrlAsync(url, 500 * 1024, It.IsAny<CancellationToken>())).ReturnsAsync(bytes);
+        var controller = CreateController(db, storage: storage.Object);
+        var otherBranch = CreateController(db, userId: 8, branchId: 2, storage: storage.Object);
+
+        Assert.IsType<ForbidResult>(await otherBranch.DownloadSticker(11, message.Id, default));
+        var downloaded = Assert.IsType<FileContentResult>(await controller.DownloadSticker(11, message.Id, default));
+        Assert.Equal("image/webp", downloaded.ContentType);
+        Assert.Equal(bytes, downloaded.FileContents);
+        message.HiddenAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        Assert.IsType<NotFoundResult>(await controller.DownloadSticker(11, message.Id, default));
+        storage.Verify(x => x.DownloadObjectFromUrlAsync(url, 500 * 1024, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task WhatsApp_customer_can_be_linked_by_exact_phone_across_branches()
     {
@@ -440,7 +507,7 @@ public sealed partial class WhatsAppOperationalBranchTests
         await db.SaveChangesAsync();
     }
 
-    private static WhatsAppController CreateController(ApplicationDbContext db, int userId = 7, int branchId = 1, string role = "Cashier", IWhatsAppCloudClient? cloud = null, IInventoryService? inventory = null, WhatsAppCloudOptions? cloudOptions = null)
+    private static WhatsAppController CreateController(ApplicationDbContext db, int userId = 7, int branchId = 1, string role = "Cashier", IWhatsAppCloudClient? cloud = null, IInventoryService? inventory = null, WhatsAppCloudOptions? cloudOptions = null, IFirebaseGcsStorage? storage = null)
     {
         var currentUser = new Mock<ICurrentUser>();
         currentUser.SetupGet(x => x.Id).Returns(userId);
@@ -461,7 +528,7 @@ public sealed partial class WhatsAppOperationalBranchTests
             Mock.Of<IClock>(x => x.UtcNow == DateTime.UtcNow),
             cloud ?? Mock.Of<IWhatsAppCloudClient>(),
             notifications.Object,
-            Mock.Of<IFirebaseGcsStorage>(),
+            storage ?? Mock.Of<IFirebaseGcsStorage>(),
             Options.Create(new FirebaseStorageOptions()),
             Options.Create(cloudOptions ?? new()),
             Options.Create(new WhatsAppAiOrchestratorOptions()),

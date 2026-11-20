@@ -1,3 +1,4 @@
+using System.Text.Json;
 using SenorArroz.Application.Common.Models;
 namespace SenorArroz.Application.Common.Interfaces;
 
@@ -44,6 +45,8 @@ public record WhatsAppCloudDownloadedMedia(
 
 public interface IWhatsAppCloudClient
 {
+    Task<WhatsAppCloudSendResult> SendSharedContentAsync(string phoneNumberId, string accessToken, string recipient,
+        string type, JsonElement content, CancellationToken cancellationToken);
     Task<WhatsAppCloudTestResult> TestConnectionAsync(
         string phoneNumberId,
         string accessToken,

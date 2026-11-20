@@ -425,7 +425,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendMessage(
         int conversationId,
         [FromBody] SendWhatsAppMessageDto dto,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool forwarded = false, (string Type, JsonElement Content)? shared = null)
     {
         var text = (dto.Text ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(text))
@@ -455,7 +455,10 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         if (dto.ReplyToMessageId.HasValue && string.IsNullOrWhiteSpace(quoted))
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Ya no puedes citar ese mensaje."));
         var timestamp = _clock.UtcNow;
-        var result = quoted is null
+        var result = shared is { } structure
+            ? await _whatsAppCloudClient.SendSharedContentAsync(setting.PhoneNumberId, setting.AccessToken, recipient,
+                structure.Type, structure.Content, cancellationToken)
+            : quoted is null
             ? await _whatsAppCloudClient.SendTextMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, cancellationToken)
             : await _whatsAppCloudClient.SendTextReplyAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, quoted, cancellationToken);
         RequireKnownOutcome(result);
@@ -470,10 +473,13 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             Status = result.Success ? WhatsAppMessageStatus.Sent : WhatsAppMessageStatus.Failed,
             SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null,
             Timestamp = timestamp,
-            RawPayload = JsonSerializer.Serialize(new
+            RawPayload = shared is { } content
+                ? JsonSerializer.Serialize(new Dictionary<string, object> { ["type"] = content.Type, [content.Type] = content.Content, ["_pos_forwarded"] = true })
+                : JsonSerializer.Serialize(new
             {
                 to = recipient,
                 text,
+                _pos_forwarded = forwarded,
                 context = quoted is null ? null : new { message_id = quoted },
                 result.Success,
                 result.WhatsAppMessageId,
@@ -632,7 +638,9 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         if (conversation is null) return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Conversación no encontrada."));
         if (!WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id) || !await CanAccessConversationAsync(conversation, cancellationToken)) return Forbid();
         var branch = await _db.Branches.AsNoTracking().FirstAsync(x => x.Id == conversation.BranchId, cancellationToken);
-        if (string.IsNullOrWhiteSpace(branch.MenuImageUrl1) && string.IsNullOrWhiteSpace(branch.MenuImageUrl2))
+        var menuImages = new[] { branch.MenuImageUrl1, branch.MenuImageUrl2 }
+            .OfType<string>().Where(url => !string.IsNullOrWhiteSpace(url)).ToArray();
+        if (menuImages.Length == 0)
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Esta sucursal todavía no tiene una carta configurada."));
         if (!await IsServiceWindowOpenAsync(conversation, cancellationToken))
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La ventana de atención terminó. Envía una plantilla aprobada."));
@@ -640,40 +648,41 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         if (setting is null) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("WhatsApp no está activo y verificado para esta sucursal."));
         var recipient = WhatsAppRecipientResolver.Resolve(conversation);
         if (recipient is null) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación no tiene un destinatario de WhatsApp válido."));
-        var url = $"{Request.Scheme}://{Request.Host}{Request.PathBase}/api/public/menu?branchId={conversation.BranchId}";
-        var text = $"Consulta nuestra carta aquí: {url}";
-        var menuImages = new[] { branch.MenuImageUrl1, branch.MenuImageUrl2 }.Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>().ToList();
-        var sentMessages = new List<WhatsAppMessage>();
-        string? lastError = null;
-        for (var index = 0; index < menuImages.Count; index++)
+        WhatsAppMessage? lastMessage = null;
+        for (var index = 0; index < menuImages.Length; index++)
         {
             var caption = index == 0 ? "Nuestra carta actual" : "Carta (continuación)";
             var result = await _whatsAppCloudClient.SendImageLinkMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, menuImages[index], caption, cancellationToken);
             RequireKnownOutcome(result);
-            if (!result.Success) { lastError = result.ErrorMessage; break; }
-            var timestamp = _clock.UtcNow;
-            var message = new WhatsAppMessage { ConversationId = conversation.Id, WhatsAppMessageId = result.WhatsAppMessageId, Direction = WhatsAppMessageDirection.Outbound, Type = WhatsAppMessageType.Image, TextBody = caption, MediaUrl = menuImages[index], Status = WhatsAppMessageStatus.Sent, SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null, Timestamp = timestamp, RawPayload = JsonSerializer.Serialize(new { action = "send_menu", mode = "image", slot = index + 1, result.Success }) };
-            _db.WhatsAppMessages.Add(message); sentMessages.Add(message);
-            conversation.LastMessageAt = timestamp; conversation.LastMessagePreview = "Carta enviada";
-            await _db.SaveChangesAsync(cancellationToken);
-            await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
-        }
-        var usedFallback = sentMessages.Count != menuImages.Count;
-        if (usedFallback)
-        {
-            var fallback = await _whatsAppCloudClient.SendTextMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, cancellationToken);
-            RequireKnownOutcome(fallback);
-            if (fallback.Success)
+            if (!result.Success)
             {
-                var fallbackMessage = new WhatsAppMessage { ConversationId = conversation.Id, WhatsAppMessageId = fallback.WhatsAppMessageId, Direction = WhatsAppMessageDirection.Outbound, Type = WhatsAppMessageType.Text, TextBody = text, Status = WhatsAppMessageStatus.Sent, SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null, Timestamp = _clock.UtcNow, RawPayload = JsonSerializer.Serialize(new { action = "send_menu", mode = "url_fallback", imageError = lastError }) };
-                _db.WhatsAppMessages.Add(fallbackMessage); sentMessages.Add(fallbackMessage);
+                var error = result.ErrorMessage ?? "No se pudo enviar la imagen de la carta.";
+                if (index > 0) error = $"Solo se envió {index} de {menuImages.Length} imágenes de la carta. {error}";
+                return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(error));
             }
-            else if (sentMessages.Count == 0) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(fallback.ErrorMessage ?? lastError ?? "No se pudo enviar la carta."));
-        }
-        var lastMessage = sentMessages[^1]; conversation.LastMessageAt = lastMessage.Timestamp; conversation.LastMessagePreview = "Carta enviada"; await _db.SaveChangesAsync(cancellationToken);
-        if (usedFallback && lastMessage.Type == WhatsAppMessageType.Text)
+
+            var timestamp = _clock.UtcNow;
+            lastMessage = new WhatsAppMessage
+            {
+                ConversationId = conversation.Id,
+                WhatsAppMessageId = result.WhatsAppMessageId,
+                Direction = WhatsAppMessageDirection.Outbound,
+                Type = WhatsAppMessageType.Image,
+                TextBody = caption,
+                MediaUrl = menuImages[index],
+                Status = WhatsAppMessageStatus.Sent,
+                SentByUserId = _currentUser.Id > 0 ? _currentUser.Id : null,
+                Timestamp = timestamp,
+                RawPayload = JsonSerializer.Serialize(new { action = "send_menu", mode = "image", slot = index + 1, result.Success })
+            };
+            _db.WhatsAppMessages.Add(lastMessage);
+            conversation.LastMessageAt = timestamp;
+            conversation.LastMessagePreview = "Carta enviada";
+            await _db.SaveChangesAsync(cancellationToken);
             await NotifyWhatsAppMessageCreatedAsync(lastMessage.Id, cancellationToken);
-        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(lastMessage), usedFallback ? "Carta enviada; se usó el enlace como respaldo." : "Carta enviada como imagen."));
+        }
+
+        return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(lastMessage!), "Carta enviada como imagen."));
     }
 
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendQuickReply(
@@ -759,14 +768,73 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Respuesta rápida enviada."));
     }
 
+    internal const int MaxStickerBytes = 500 * 1024;
+    internal const string UnsupportedSticker = "El sticker debe ser un WebP válido de hasta 100 KB si es estático o 500 KB si es animado.";
+
+    internal static bool IsSupportedSticker(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length is < 21 or > MaxStickerBytes || !bytes[..4].SequenceEqual("RIFF"u8)
+            || !bytes[8..12].SequenceEqual("WEBP"u8)) return false;
+        var chunk = bytes[12..16];
+        if (chunk.SequenceEqual("VP8X"u8)) return (bytes[20] & 2) != 0 || bytes.Length <= 100 * 1024;
+        return bytes.Length <= 100 * 1024 && (chunk.SequenceEqual("VP8 "u8) || chunk.SequenceEqual("VP8L"u8));
+    }
+
+    public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> ForwardMessageAsync(
+        int conversationId, WhatsAppForwardMessageDto request, CancellationToken ct)
+    {
+        if (request.SourceConversationId == conversationId) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Elige otra conversación."));
+        var origin = await _db.WhatsAppConversations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.SourceConversationId, ct);
+        if (origin is null) return NotFound();
+        if (!await CanAccessConversationAsync(origin, ct)) return Forbid();
+        var source = await _db.WhatsAppMessages.AsNoTracking().SingleOrDefaultAsync(x => x.ConversationId == origin.Id
+            && x.Id == request.MessageId && x.HiddenAt == null && x.Status != WhatsAppMessageStatus.Failed, ct);
+        if (source is null) return NotFound();
+
+        var content = ToMessageDto(source);
+        if (content.Type is "location" or "contacts")
+        {
+            if (content.Location is null && content.Contacts is not { Count: > 0 })
+                return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("El mensaje no contiene datos para reenviar."));
+            using var raw = JsonDocument.Parse(source.RawPayload!);
+            return await SendMessage(conversationId, new() { Text = content.Type == "location" ? "Ubicación compartida" : "Contacto compartido" },
+                ct, forwarded: true, shared: (content.Type, raw.RootElement.GetProperty(content.Type)));
+        }
+        if (source.Type == WhatsAppMessageType.Text)
+            return await SendMessage(conversationId, new() { Text = source.TextBody }, ct, forwarded: true);
+
+        if (string.IsNullOrWhiteSpace(source.MediaUrl))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("El archivo original no está disponible."));
+        var destination = await _db.WhatsAppConversations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == conversationId, ct);
+        if (destination is null) return NotFound();
+        if (!WhatsAppAttentionService.CanWrite(destination, _currentUser.Id) || !await CanAccessConversationAsync(destination, ct))
+            return Forbid();
+        if (!await IsServiceWindowOpenAsync(destination, ct))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La ventana de atención terminó."));
+
+        var sticker = source.Type == WhatsAppMessageType.Sticker;
+        var maxBytes = sticker ? MaxStickerBytes : 69_000_000;
+        if (source.MediaFileSize > maxBytes)
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("El archivo original supera el tamaño permitido."));
+        var bytes = await _webhookProcessor.DownloadStoredMediaAsync(source.MediaUrl, maxBytes, ct);
+        if (bytes is null) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("El archivo original no está disponible."));
+        var mimeType = sticker ? "image/webp" : source.MediaMimeType ?? "application/octet-stream";
+        var name = source.MediaFileName ?? $"archivo{ExtensionFromContentType(mimeType, source.Type)}";
+        using var stream = new MemoryStream(bytes, writable: false);
+        var file = new FormFile(stream, 0, bytes.Length, "file", name) { Headers = new HeaderDictionary(), ContentType = mimeType };
+        return await SendMediaMessage(conversationId, file, source.TextBody == name ? null : source.TextBody, ct, asSticker: sticker, forwarded: true);
+    }
+
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendMediaMessage(
         int conversationId,
         IFormFile? file,
         [FromForm] string? caption,
-        CancellationToken cancellationToken, string? stagedUrl = null, int? replyToMessageId = null)
+        CancellationToken cancellationToken, string? stagedUrl = null, int? replyToMessageId = null, bool asSticker = false, bool forwarded = false)
     {
         if (file is null || file.Length == 0)
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Seleccione un archivo."));
+        if (asSticker && (file.Length > MaxStickerBytes || !string.Equals(file.ContentType, "image/webp", StringComparison.OrdinalIgnoreCase)))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(UnsupportedSticker));
 
         var conversation = await _db.WhatsAppConversations
             .FirstOrDefaultAsync(x => x.Id == conversationId, cancellationToken);
@@ -787,18 +855,20 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         var quoted = await ResolveQuotedMessageAsync(conversationId, replyToMessageId, cancellationToken);
         if (replyToMessageId.HasValue && string.IsNullOrWhiteSpace(quoted))
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Ya no puedes citar ese mensaje."));
-        var mediaType = MediaTypeFromContentType(file.ContentType, file.FileName);
+        var mediaType = asSticker ? WhatsAppMessageType.Sticker : MediaTypeFromContentType(file.ContentType, file.FileName);
         var fileName = SanitizeFileName(file.FileName);
         var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
         await using var ms = new MemoryStream();
         await file.CopyToAsync(ms, cancellationToken);
         var bytes = ms.ToArray();
+        if (asSticker && !IsSupportedSticker(bytes))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(UnsupportedSticker));
         var timestamp = _clock.UtcNow;
-        var trimmedCaption = string.IsNullOrWhiteSpace(caption) ? null : caption.Trim();
+        var trimmedCaption = asSticker || string.IsNullOrWhiteSpace(caption) ? null : caption.Trim();
         if (trimmedCaption?.Length > 4096)
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("El texto del archivo no puede superar 4096 caracteres."));
 
-        var text = trimmedCaption ?? fileName;
+        var text = asSticker ? string.Empty : trimmedCaption ?? fileName;
 
         string? storageUrl = stagedUrl;
         if (storageUrl is null) try
@@ -856,6 +926,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
                 to = recipient,
                 mediaType = MediaTypeToApi(mediaType),
                 mediaId = uploadResult.MediaId,
+                _pos_forwarded = forwarded,
                 fileName,
                 caption = trimmedCaption,
                 context = quoted is null ? null : new { message_id = quoted },

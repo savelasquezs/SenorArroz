@@ -25,6 +25,7 @@ public partial class WhatsAppWebhookProcessor
             using var document = JsonDocument.Parse(rawPayload);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return;
+            dto.IsForwarded = root.TryGetProperty("_pos_forwarded", out var forwarded) && forwarded.ValueKind == JsonValueKind.True;
             if (root.TryGetProperty(EditedAtKey, out var edit) && edit.ValueKind == JsonValueKind.String && edit.TryGetDateTime(out var editedAt))
                 dto.EditedAt = AsUtc(editedAt);
             if (root.TryGetProperty("context", out var context) && context.ValueKind == JsonValueKind.Object)
@@ -90,14 +91,40 @@ public partial class WhatsAppWebhookProcessor
     private static WhatsAppMessageContactDto ReadContactCard(JsonElement card)
     {
         var name = card.TryGetProperty("name", out var details) && details.ValueKind == JsonValueKind.Object
-            ? TryGetString(details, "formatted_name") : null;
-        var phones = card.TryGetProperty("phones", out var entries) && entries.ValueKind == JsonValueKind.Array
-            ? entries.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Object)
-                .Select(x => TryGetString(x, "phone") ?? TryGetString(x, "wa_id")).OfType<string>()
-                .Where(phone => !string.IsNullOrWhiteSpace(phone)).Distinct().Take(10).ToArray()
-            : [];
-        return new(name ?? "Contacto", phones);
+            ? ContactValue(details, "formatted_name") ?? JoinContactValues(details, " ", "first_name", "middle_name", "last_name")
+            : ContactValue(card, "name");
+        var organization = card.TryGetProperty("org", out var org) && org.ValueKind == JsonValueKind.Object
+            ? JoinContactValues(org, " · ", "company", "department", "title") : null;
+        return new(name ?? "Contacto",
+            ReadContactValues(card, "phones", entry => ContactValue(entry, "phone") ?? ContactPhoneFromWhatsAppId(entry)),
+            ReadContactValues(card, "emails", entry => ContactValue(entry, "email")),
+            ReadContactValues(card, "addresses", entry => JoinContactValues(entry, ", ", "street", "city", "state", "zip", "country")),
+            ReadContactValues(card, "urls", entry => ContactValue(entry, "url")),
+            organization, ContactValue(card, "birthday"),
+            ReadContactValues(card, "phones", entry => ContactPhoneFromWhatsAppId(entry) is null ? ContactValue(entry, "wa_id") : null));
     }
+
+    private static string? ContactValue(JsonElement entry, string key) =>
+        entry.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String &&
+        value.GetString()?.Trim() is { Length: > 0 } text ? text : null;
+
+    private static string? JoinContactValues(JsonElement entry, string separator, params string[] keys)
+    {
+        var values = keys.Select(key => ContactValue(entry, key)).OfType<string>().ToArray();
+        return values.Length == 0 ? null : string.Join(separator, values);
+    }
+
+    private static string? ContactPhoneFromWhatsAppId(JsonElement entry)
+    {
+        var id = ContactValue(entry, "wa_id");
+        return id is { Length: >= 7 and <= 15 } && id.All(char.IsAsciiDigit) ? $"+{id}" : null;
+    }
+
+    private static string[] ReadContactValues(JsonElement card, string key, Func<JsonElement, string?> read) =>
+        card.TryGetProperty(key, out var entries) && entries.ValueKind == JsonValueKind.Array
+            ? entries.EnumerateArray().Where(entry => entry.ValueKind == JsonValueKind.Object)
+                .Select(read).OfType<string>().Distinct().Take(10).ToArray()
+            : [];
 
     private async Task ApplyProviderReactionAsync(WhatsAppConversation? conversation, JsonElement item, DateTime timestamp,
         bool outbound, List<WhatsAppMessage> updates, CancellationToken ct)

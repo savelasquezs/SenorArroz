@@ -219,6 +219,7 @@ public class WhatsAppAttentionDto
 public class WhatsAppMessageDto
 {
     public bool IsUpdate { get; set; }
+    public bool IsForwarded { get; set; }
     public DateTime? EditedAt { get; set; }
     public string? HiddenSource { get; set; }
     public string? ReplyToWhatsAppMessageId { get; set; }
@@ -350,7 +351,10 @@ public class SendWhatsAppMessageDto
 }
 
 public sealed record WhatsAppMessageLocationDto(double Latitude, double Longitude, string? Name, string? Address);
-public sealed record WhatsAppMessageContactDto(string Name, string[] Phones);
+public sealed record WhatsAppMessageContactDto(string Name, string[] Phones, string[]? Emails = null,
+    string[]? Addresses = null, string[]? Websites = null, string? Organization = null, string? Birthday = null,
+    string[]? WhatsAppIds = null);
+public sealed record WhatsAppForwardMessageDto(int SourceConversationId, int MessageId);
 public sealed record WhatsAppMessageReactionDto(string Emoji);
 
 public sealed class SendConversationWhatsAppTemplateDto

@@ -36,7 +36,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
             conversationId.HasValue ? await db.WhatsAppConversations.Where(x => x.Id == conversationId).Select(x => (DateTime?)x.AttentionModeUpdatedAt).SingleAsync(ct) : null);
         var payload = JsonSerializer.Serialize(command, JsonOptions);
         var deduplication = Hash($"manual:{user.Id}:{key}");
-        var fingerprintBody = operation == "send-media" && body.TryGetProperty("mediaFingerprint", out var mediaHash)
+        var fingerprintBody = (operation is "send-media" or "send-sticker") && body.TryGetProperty("mediaFingerprint", out var mediaHash)
             ? JsonSerializer.SerializeToElement(new { mediaFingerprint = mediaHash.GetString() }) : body;
         var fingerprint = Hash(JsonSerializer.Serialize(new { operation, conversationId, body = fingerprintBody }, JsonOptions));
         var protectedPayload = protector.Protect(payload);
@@ -78,10 +78,13 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
     }
 
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> EnqueueMediaAsync(int conversationId,
-        IFormFile? file, string? caption, HttpRequest request, CancellationToken ct, int? replyToMessageId = null)
+        IFormFile? file, string? caption, HttpRequest request, CancellationToken ct, int? replyToMessageId = null, bool asSticker = false)
     {
         if (file is null || file.Length is <= 0 or > 69_000_000)
             return new BadRequestObjectResult(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Seleccione un archivo de hasta 69 MB."));
+        if (asSticker && (file.Length > WhatsAppManualOperations.MaxStickerBytes || !string.Equals(file.ContentType, "image/webp", StringComparison.OrdinalIgnoreCase)))
+            return new BadRequestObjectResult(ApiResponse<WhatsAppMessageDto>.ErrorResponse(WhatsAppManualOperations.UnsupportedSticker));
+        if (asSticker) caption = null;
         if (caption?.Trim().Length > 4096)
             return new BadRequestObjectResult(ApiResponse<WhatsAppMessageDto>.ErrorResponse("El texto no puede superar 4096 caracteres."));
         if (!await CanUseAsync(conversationId, ct, write: true)) return new ForbidResult();
@@ -92,8 +95,10 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
         await using var content = new MemoryStream();
         await file.CopyToAsync(content, ct);
         var bytes = content.ToArray();
+        if (asSticker && !WhatsAppManualOperations.IsSupportedSticker(bytes))
+            return new BadRequestObjectResult(ApiResponse<WhatsAppMessageDto>.ErrorResponse(WhatsAppManualOperations.UnsupportedSticker));
         var mediaIdentity = new { conversationId, caption, fileName, file.ContentType, contentHash = Convert.ToHexString(SHA256.HashData(bytes)) };
-        var mediaFingerprint = Hash(replyToMessageId.HasValue
+        var mediaFingerprint = Hash(asSticker ? JsonSerializer.Serialize(new { mediaIdentity, replyToMessageId, asSticker }) : replyToMessageId.HasValue
             ? JsonSerializer.Serialize(new { mediaIdentity, replyToMessageId }) : JsonSerializer.Serialize(mediaIdentity));
         var existing = await db.WhatsAppWebhookEvents.AsNoTracking().FirstOrDefaultAsync(x => x.DeduplicationKey == deduplication, ct);
         if (existing is not null)
@@ -113,7 +118,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
             logger.LogWarning("WhatsApp media staging failed. Category={Category}", ex.GetType().Name);
             return new BadRequestObjectResult(ApiResponse<WhatsAppMessageDto>.ErrorResponse("No se pudo guardar el archivo en Firebase Storage."));
         }
-        return await EnqueueAsync<WhatsAppMessageDto>("send-media", conversationId,
+        return await EnqueueAsync<WhatsAppMessageDto>(asSticker ? "send-sticker" : "send-media", conversationId,
             JsonSerializer.SerializeToElement(new { caption, fileName, file.ContentType, objectName, url, mediaFingerprint, replyToMessageId }), request, ct);
     }
 
@@ -180,6 +185,8 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
                 else result = command.Operation switch
                 {
                     "send-message" => Capture(await operations.SendMessage(command.ConversationId!.Value, command.Body.Deserialize<SendWhatsAppMessageDto>(JsonOptions)!, ct)),
+                    "forward-message" => Capture(await operations.ForwardMessageAsync(command.ConversationId!.Value,
+                        command.Body.Deserialize<WhatsAppForwardMessageDto>(JsonOptions)!, ct)),
                     "send-reaction" => Capture(await operations.ReactToMessageAsync(command.ConversationId!.Value,
                         command.Body.GetProperty("messageId").GetInt32(),
                         command.Body.GetProperty("reaction").Deserialize<WhatsAppMessageReactionDto>(JsonOptions)!, ct)),
@@ -193,6 +200,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
                     "send-template" => Capture(await operations.SendTemplate(command.Body.Deserialize<SendWhatsAppTemplateDto>(JsonOptions)!, ct)),
                     "sync-templates" => Capture(await operations.SyncTemplates(command.Body.Deserialize<SyncWhatsAppTemplatesDto>(JsonOptions), ct)),
                     "send-media" => await SendMediaAsync(command, ct),
+                    "send-sticker" => await SendMediaAsync(command, ct, asSticker: true),
                     _ => Error(400, "Operación desconocida.")
                 };
             }
@@ -205,13 +213,13 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
         if (changed != 1) throw new InvalidOperationException("Manual operation lease expired before result persistence.");
     }
 
-    private async Task<Result> SendMediaAsync(Command command, CancellationToken ct)
+    private async Task<Result> SendMediaAsync(Command command, CancellationToken ct, bool asSticker = false)
     {
         var body = command.Body;
         var name = body.GetProperty("objectName").GetString()!;
         if (!name.StartsWith($"whatsapp/{tenant.TenantId}/manual/{command.ConversationId}/", StringComparison.Ordinal))
             return Error(403, "Archivo fuera del contexto de la conversación.");
-        var bytes = await storage.DownloadObjectAsync(name, 69_000_000, ct);
+        var bytes = await storage.DownloadObjectAsync(name, asSticker ? WhatsAppManualOperations.MaxStickerBytes : 69_000_000, ct);
         await using var stream = new MemoryStream(bytes, writable: false);
         var file = new FormFile(stream, 0, stream.Length, "file", body.GetProperty("fileName").GetString()!)
         {
@@ -220,7 +228,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
         var caption = body.TryGetProperty("caption", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
         int? replyTo = body.TryGetProperty("replyToMessageId", out var target) && target.ValueKind == JsonValueKind.Number
             && target.TryGetInt32(out var id) ? id : null;
-        return Capture(await operations.SendMediaMessage(command.ConversationId!.Value, file, caption, ct, body.GetProperty("url").GetString(), replyTo));
+        return Capture(await operations.SendMediaMessage(command.ConversationId!.Value, file, caption, ct, body.GetProperty("url").GetString(), replyTo, asSticker));
     }
 
     private static Result Capture<T>(ActionResult<ApiResponse<T>> action) => action.Result switch

@@ -50,7 +50,7 @@ public sealed class WhatsAppLocalReviewTests
     [InlineData("https://graph.facebook.com/v20.0/local-coexistence-review/messages?other=1", "local-disabled", "text")]
     [InlineData("https://graph.facebook.com/v20.0/local-coexistence-review/messages", "local-disabled", "image")]
     [InlineData("https://graph.facebook.com/v20.0/local-coexistence-review/messages", "local-disabled", "interactive")]
-    public async Task Local_simulation_rejects_other_lines_tokens_hosts_queries_and_media(string url, string token, string type)
+    public async Task Local_simulation_rejects_other_lines_tokens_hosts_queries_and_incomplete_payloads(string url, string token, string type)
     {
         await using var provider = LocalProvider();
         using var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient("provider");
@@ -59,6 +59,21 @@ public sealed class WhatsAppLocalReviewTests
         request.Content = JsonContent.Create(new { messaging_product = "whatsapp", to = "573000000000", type, text = new { body = "Prueba" } });
         using var response = await http.SendAsync(request);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Local_menu_images_receive_a_simulated_receipt_only_on_the_review_line()
+    {
+        await using var provider = LocalProvider();
+        using var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient("provider");
+        var client = new WhatsAppCloudClient(http, Options.Create(new WhatsAppCloudOptions()), NullLogger<WhatsAppCloudClient>.Instance);
+        const string menu = "https://storage.example.invalid/menu.png";
+        var result = await client.SendImageLinkMessageAsync("local-coexistence-review", "local-disabled", "573000000000", menu, "Nuestra carta actual");
+
+        Assert.True(result.Success);
+        Assert.StartsWith("wamid.local.simulation.sent.", result.WhatsAppMessageId);
+        Assert.False((await client.SendImageLinkMessageAsync("123456789", "local-disabled", "573000000000", menu, null)).Success);
+        Assert.False((await client.SendImageLinkMessageAsync("local-coexistence-review", "local-disabled", "573000000000", "file:///menu.png", null)).Success);
     }
 
     [Fact]
