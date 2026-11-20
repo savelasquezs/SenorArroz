@@ -34,13 +34,27 @@ public partial class WhatsAppController
             : WhatsAppCommercialDraft.Read(session, conversation);
         var matches = await MatchProductSuggestionsAsync(conversationId, request.MessageIds, ct);
         var available = await ProductSuggestionAvailabilityAsync(
-            matches.Values.SelectMany(list => list).Where(m => m.Product is not null).Select(m => m.Product!.Id), order.BranchId, ct);
+            matches.Values.SelectMany(list => list).SelectMany(m => m.Offer?.Products.Select(p => p.Id)
+                ?? (m.Product is not null ? [m.Product.Id] : Array.Empty<int>())), order.BranchId, ct);
         var quantities = order.OrderDetails.ToLookup(x => x.ProductId);
         var messages = matches.Select(pair => new WhatsAppMessageProductSuggestionsDto(pair.Key, pair.Value
-            .Select(m => new WhatsAppProductSuggestionDto(m.Clarification ? "clarify" : m.Reply is not null ? "reply" : "add",
-                m.Product?.Id, m.Product?.Name, m.Quantity, m.Product?.Price,
-                m.Product is not null && order.BranchId > 0 && CanAddSuggestedProduct(available, m.Product.Id,
-                    quantities[m.Product.Id].Sum(x => (long)x.Quantity) + m.Quantity), m.Reply)).ToArray())).ToArray();
+            .Select((m, index) =>
+            {
+                if (m.Offer is { } offer)
+                {
+                    if (offer.Products[0].GroupId is int groupId && offer.Products.All(p => p.GroupId.HasValue))
+                        return new WhatsAppProductSuggestionDto("choices", offer.Products[0].Id, offer.Name, m.Quantity, null,
+                            order.BranchId > 0 && offer.Products.Any(p => CanAddSuggestedProduct(available, p.Id,
+                                quantities[p.Id].Sum(x => (long)x.Quantity) + m.Quantity)),
+                            null, groupId, index);
+                    return new WhatsAppProductSuggestionDto("clarify", null, offer.Name, m.Quantity, null, false,
+                        $"¿Qué presentación de {offer.Name} prefieres?");
+                }
+                return new WhatsAppProductSuggestionDto(m.Clarification ? "clarify" : m.Reply is not null ? "reply" : "add",
+                    m.Product?.Id, m.Product?.Name, m.Quantity, m.Product?.Price,
+                    m.Product is not null && order.BranchId > 0 && CanAddSuggestedProduct(available, m.Product.Id,
+                        quantities[m.Product.Id].Sum(x => (long)x.Quantity) + m.Quantity), m.Reply);
+            }).ToArray())).ToArray();
         return Ok(ApiResponse<WhatsAppProductSuggestionsDto>.SuccessResponse(new(order.BranchId, messages)));
     }
 
@@ -49,7 +63,8 @@ public partial class WhatsAppController
     {
         var messages = await _db.WhatsAppMessages.AsNoTracking()
             .Where(x => x.ConversationId == conversationId && ids.Contains(x.Id) && x.Direction == WhatsAppMessageDirection.Inbound
-                && x.Type == WhatsAppMessageType.Text && !x.IsHistorical)
+                && x.Type == WhatsAppMessageType.Text && !x.IsHistorical && x.HiddenAt == null
+                && x.AiProcessingError != WhatsAppCommercialDraft.ProductApplied && x.AiProcessingError != "order_product_unavailable")
             .Select(x => new { x.Id, x.TextBody, CartPayload = x.AiProcessingError == WhatsAppCatalogCart.ManualReview
                 ? x.RawPayload : null }).ToListAsync(ct);
         if (messages.Count == 0) return [];
@@ -61,11 +76,8 @@ public partial class WhatsAppController
     }
 
     private Task<List<WhatsAppProductSuggestions.CatalogProduct>> ReadProductSuggestionCatalogAsync(CancellationToken ct) =>
-        _db.Products.AsNoTracking()
-            .Where(x => x.Active && StorefrontCommerceService.PublicRoles.Contains(x.Category.StorefrontRole))
-            .Select(p => new WhatsAppProductSuggestions.CatalogProduct(p.Id, p.Name,
-                p.CommercialProfile == null ? null : p.CommercialProfile.Name, p.Category.StorefrontRole, p.StorefrontVariantLabel,
-                p.ServesPeopleMin, p.ServesPeopleMax, p.Price)).ToListAsync(ct);
+        WhatsAppProductSuggestions.Catalog(_db.Products.Where(x =>
+            StorefrontCommerceService.PublicRoles.Contains(x.Category.StorefrontRole))).ToListAsync(ct);
 
     private IReadOnlyList<WhatsAppProductSuggestions.Match> MatchCatalogCart(WhatsAppCatalogCart cart,
         IReadOnlyDictionary<int, WhatsAppProductSuggestions.CatalogProduct> catalog)

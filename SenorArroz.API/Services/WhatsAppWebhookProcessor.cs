@@ -1082,7 +1082,7 @@ public sealed partial class WhatsAppWebhookProcessor
         var prompt = JsonSerializer.Deserialize<WhatsAppCommercialDraft.ChoicePrompt>(sent.RawPayload, WhatsAppCommercialDraft.JsonOptions);
         if (prompt is null || prompt.RequestId != selection.RequestId || prompt.AttentionRevision != conversation.AttentionRevision)
             return false;
-        var scope = WhatsAppCommercialDraft.ChoiceScope(selection.Prefix, prompt.ProductGroupId);
+        var scope = WhatsAppCommercialDraft.ChoiceScope(selection.Prefix, prompt.ProductGroupId, prompt.ProductChoiceSource);
         var requestPrefix = $"{scope}{selection.RequestId:N}:";
         if (sent.AgentDispatchKey?.StartsWith(requestPrefix, StringComparison.Ordinal) != true) return false;
         var latest = await prompts.Where(x => x.AgentDispatchKey!.StartsWith(scope))
@@ -1134,34 +1134,36 @@ public sealed partial class WhatsAppWebhookProcessor
         CreateOrderDto order, JsonObject? editor, int productId, CancellationToken ct)
     {
         if (prompt.ProductGroupId is not int groupId || prompt.ProductPrices?.TryGetValue(productId, out var price) != true
-            || order.OrderDetails.Count >= 200) return false;
-        var answerKey = $"{WhatsAppCommercialDraft.ProductAnswerPrefix}{prompt.RequestId:N}";
+            || order.OrderDetails.Count >= 200 || prompt.Quantity is < 1 or > 999) return false;
+        var source = prompt.ProductChoiceSource;
+        var answerKey = source is null ? $"{WhatsAppCommercialDraft.ProductAnswerPrefix}{prompt.RequestId:N}"
+            : WhatsAppCommercialDraft.SuggestedProductAnswerKey(prompt.SessionId, source);
         if (_db.WhatsAppMessages.Local.Any(x => x.AgentDispatchKey == answerKey)
             || await _db.WhatsAppMessages.AnyAsync(x => x.AgentDispatchKey == answerKey, ct)) return false;
         var product = await WhatsAppCommercialDraft.ChoiceCatalog(_db).SingleOrDefaultAsync(x =>
-            x.Id == productId && x.Active && x.CommercialProfileId == groupId && x.Price == price, ct);
+            x.Id == productId && x.Active && (source != null || x.CommercialProfileId == groupId) && x.Price == price, ct);
         if (product is null || !await _db.Branches.AnyAsync(x => x.Id == order.BranchId && x.IsActive, ct)) return false;
         if (_inventory is not null)
         {
             var availability = (await _inventory.GetAvailabilityAsync([productId], order.BranchId, ct, true)).SingleOrDefault();
-            var ordered = order.OrderDetails.Where(x => x.ProductId == productId).Sum(x => x.Quantity);
-            if (availability?.Available != true || availability.MaximumQuantity is int max && ordered >= max) return false;
+            var ordered = order.OrderDetails.Where(x => x.ProductId == productId).Sum(x => (long)x.Quantity);
+            if (availability?.Available != true || availability.MaximumQuantity is int max && ordered + prompt.Quantity > max) return false;
         }
         order.OrderDetails.Add(new CreateOrderDetailDto
         {
-            ProductId = productId, Quantity = 1, UnitPrice = price, WhatsAppProductChoice = new(answerKey, product.Name)
+            ProductId = productId, Quantity = prompt.Quantity, UnitPrice = price, WhatsAppProductChoice = new(answerKey, product.Name)
         });
         if (editor is not null && editor["orderItems"] is JsonArray items)
         {
             items.Add(JsonSerializer.SerializeToNode(new
             {
                 tempId = answerKey, productId, productName = product.Name, productPrice = price,
-                quantity = 1, unitPrice = price, discount = 0, freeDeliveryDiscount = 0, subtotal = price, notes = "",
+                quantity = prompt.Quantity, unitPrice = price, discount = 0, freeDeliveryDiscount = 0, subtotal = (long)price * prompt.Quantity, notes = "",
                 whatsAppProductChoice = new WhatsAppProductChoiceDto(answerKey, product.Name)
             }, WhatsAppCommercialDraft.JsonOptions));
         }
         message.AgentDispatchKey = answerKey;
-        message.TextBody = $"Producto elegido: {product.Name}";
+        message.TextBody = prompt.Quantity == 1 ? $"Producto elegido: {product.Name}" : $"Producto elegido: {prompt.Quantity} × {product.Name}";
         return true;
     }
 

@@ -45,7 +45,13 @@ public sealed partial class WhatsAppOperationalBranchTests
         new(15, "Manzana litro y medio", "Manzana", "beverage", "1.5 L", null, null, 6000),
         new(16, "Manzana Personal", "Manzana", "beverage", "Personal", null, null, 3000),
         new(17, "Hit Mango 1Litro", "Hit", "beverage", "1 L", null, null, 6000),
-        new(18, "Hit frutos 1Litro", "Hit", "beverage", "1 L", null, null, 6000)
+        new(18, "Hit frutos 1Litro", "Hit", "beverage", "1 L", null, null, 6000),
+        new(19, "Arroz ropa vieja Personal", "Ropa Vieja", "rice", null, 1, 2, 19000),
+        new(20, "Arroz ropa vieja Dúo", "Ropa Vieja", "rice", null, 2, 3, 33000),
+        new(21, "Arroz ropa vieja Trío", "Ropa Vieja", "rice", null, 3, 4, 44000),
+        new(22, "Arroz ropa vieja con chicharrón Trío", "Ropa Vieja Chich", "rice", null, 3, 4, 50000),
+        new(23, "Arroz paisa Familiar", "Paisa", "rice", "Familiar", 5, 6, 53000),
+        new(24, "Arroz paisa con chicharrón Familiar", "Paisa Chich", "rice", "Familiar", 5, 6, 61000)
     ];
 
     [Theory]
@@ -79,12 +85,36 @@ public sealed partial class WhatsAppOperationalBranchTests
     {
         var matches = WhatsAppProductSuggestions.Find("Dos ropa vieja súper con chicharrón y papas de 500 g", SuggestionCatalog);
         Assert.Equal(new[] { (1, 2), (5, 1) }, matches.Select(m => (m.Product!.Id, m.Quantity)));
-        var clarification = Assert.Single(WhatsAppProductSuggestions.Find("ropa vieja súper", SuggestionCatalog));
-        Assert.True(clarification.Clarification);
-        Assert.Equal("¿Lo quieres con o sin chicharrón?", clarification.Reply);
+        var offer = Assert.Single(WhatsAppProductSuggestions.Find("ropa vieja súper", SuggestionCatalog)).Offer!;
+        Assert.True(offer.ChicharronVariants);
+        Assert.Equal(new[] { 2, 1 }, offer.Products.Select(p => p.Id));
         var price = Assert.Single(WhatsAppProductSuggestions.Find("¿Cuánto vale el paisa dúo sin chicharrón?", SuggestionCatalog));
         Assert.Contains("31.000", price.Reply!);
         Assert.False(price.Clarification);
+    }
+
+    [Theory]
+    [InlineData("ropa vieja para 1", 19, 0)]
+    [InlineData("ropa vieja para dos", 20, 0)]
+    [InlineData("ropa vieja para 3", 21, 22)]
+    [InlineData("ropa vieja dúo para 3", 20, 0)]
+    [InlineData("paisa familiar", 23, 24)]
+    public void Suggestions_use_the_requested_size_or_house_portion_defaults(string text, int first, int second)
+    {
+        var match = Assert.Single(WhatsAppProductSuggestions.Find(text, SuggestionCatalog));
+        if (second == 0) Assert.Equal(first, match.Product?.Id);
+        else Assert.Equal(new[] { first, second }, match.Offer!.Products.Select(p => p.Id));
+        Assert.Equal(1, match.Quantity);
+    }
+
+    [Fact]
+    public void Suggestions_separate_rice_capacity_from_quantity_and_offer_papas()
+    {
+        var matches = WhatsAppProductSuggestions.Find("Una caja de 7 porciones ropa vieja y unas Papas", SuggestionCatalog);
+        Assert.Equal(2, matches.Count);
+        Assert.Equal(new[] { 2, 1 }, matches[0].Offer!.Products.Select(p => p.Id));
+        Assert.Equal(new[] { 6, 5 }, matches[1].Offer!.Products.Select(p => p.Id));
+        Assert.All(matches, match => Assert.Equal(1, match.Quantity));
     }
 
     [Fact]
@@ -111,7 +141,7 @@ public sealed partial class WhatsAppOperationalBranchTests
     [InlineData("una Coca Cola 1.5 L o 400 ml")]
     [InlineData("2 Hit de un litro")]
     public void Suggestions_leave_unclear_orders_to_the_cashier(string input)
-        => Assert.DoesNotContain(WhatsAppProductSuggestions.Find(input, SuggestionCatalog), m => m.Reply is null);
+        => Assert.DoesNotContain(WhatsAppProductSuggestions.Find(input, SuggestionCatalog), m => m.Product is not null && m.Reply is null);
 
     [Fact]
     public async Task Suggested_product_save_checks_owner_price_stock_preparing_branch_and_duplicate()
@@ -238,11 +268,13 @@ public sealed partial class WhatsAppOperationalBranchTests
         Assert.Equal(shortcut, WhatsAppCommercialDraft.ProductChoiceShortcut(name, isRice));
 
     [Theory]
-    [InlineData("Arroz Paisa", 5, false)]
-    [InlineData("Papas a la francesa", 2, false)]
-    [InlineData("Yuca", 2, false)]
-    [InlineData("Arroz Paisa", 5, true)]
-    public async Task Product_choices_use_catalog_prices_and_apply_once_to_the_active_draft(string name, int count, bool priceChanged)
+    [InlineData("Arroz Paisa", 5, false, false)]
+    [InlineData("Papas a la francesa", 2, false, false)]
+    [InlineData("Yuca", 2, false, false)]
+    [InlineData("Arroz Paisa", 5, true, false)]
+    [InlineData("Ropa Vieja", 2, false, true)]
+    [InlineData("Ropa Vieja", 2, true, true)]
+    public async Task Product_choices_use_catalog_prices_and_apply_once_to_the_active_draft(string name, int count, bool priceChanged, bool contextual)
     {
         const int groupId = 3;
         const string recipient = "573121234567";
@@ -253,11 +285,27 @@ public sealed partial class WhatsAppOperationalBranchTests
         conversation.LastCustomerMessageAt = DateTime.UtcNow;
         db.CommercialProfiles.Add(new CommercialProfile { Id = groupId, BranchId = 1, Name = name });
         var isRice = count == 5;
-        db.ProductCategories.Add(new ProductCategory { Id = 4, BranchId = 1, Name = name, StorefrontRole = isRice ? "rice" : "addition" });
-        for (var i = 1; i <= count; i++)
-            db.Products.Add(new Product { Id = i, CategoryId = 4, CommercialProfileId = groupId,
-                Name = $"{name} {i}", StorefrontVariantLabel = $"Tamaño {i}", Price = 5000 * i,
-                ServesPeopleMin = isRice ? i : null, ServesPeopleMax = isRice ? i + 1 : null });
+        const string selectedVariant = "Arroz ropa vieja con chicharrón Súper";
+        db.ProductCategories.Add(new ProductCategory { Id = 4, BranchId = 1, Name = name,
+            StorefrontRole = isRice || contextual ? "rice" : "addition" });
+        if (contextual)
+        {
+            db.CommercialProfiles.Add(new CommercialProfile { Id = groupId + 1, BranchId = 1, Name = "Ropa Vieja Chich" });
+            db.Products.AddRange(
+                new Product { Id = 1, CategoryId = 4, CommercialProfileId = groupId, Name = "Arroz ropa vieja Súper",
+                    Price = 77000, ServesPeopleMin = 7, ServesPeopleMax = 9 },
+                new Product { Id = 2, CategoryId = 4, CommercialProfileId = groupId + 1, Name = selectedVariant,
+                    Price = 84000, ServesPeopleMin = 7, ServesPeopleMax = 9 });
+            db.WhatsAppMessages.Add(new WhatsAppMessage { Id = 91, ConversationId = 11, Direction = WhatsAppMessageDirection.Inbound,
+                TextBody = "Dos cajas de 7 porciones ropa vieja" });
+        }
+        else
+        {
+            for (var i = 1; i <= count; i++)
+                db.Products.Add(new Product { Id = i, CategoryId = 4, CommercialProfileId = groupId,
+                    Name = $"{name} {i}", StorefrontVariantLabel = $"Tamaño {i}", Price = 5000 * i,
+                    ServesPeopleMin = isRice ? i : null, ServesPeopleMax = isRice ? i + 1 : null });
+        }
         await db.SaveChangesAsync();
 
         string? optionId = null;
@@ -275,28 +323,45 @@ public sealed partial class WhatsAppOperationalBranchTests
             });
         cloud.Setup(x => x.SendReplyButtonsMessageAsync("phone", "token", recipient, It.Is<string>(body => body.Contains(name)),
             It.IsAny<IReadOnlyList<WhatsAppReplyButton>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string _, string _, string _, string _, IReadOnlyList<WhatsAppReplyButton> buttons, CancellationToken _) =>
+            .ReturnsAsync((string _, string _, string _, string body, IReadOnlyList<WhatsAppReplyButton> buttons, CancellationToken _) =>
             {
                 Assert.False(isRice);
                 Assert.Equal(2, buttons.Count);
-                Assert.Equal("Tamaño 2 · $10.000", buttons[1].Title);
+                Assert.Equal(contextual ? "Con chicharrón" : "Tamaño 2 · $10.000", buttons[1].Title);
+                if (contextual)
+                {
+                    Assert.Equal("Sin chicharrón", buttons[0].Title);
+                    Assert.Contains("Ropa Vieja · Súper", body);
+                    Assert.Contains("Sin chicharrón · $77.000", body);
+                    Assert.Contains("Con chicharrón · $84.000", body);
+                }
                 optionId = buttons[1].Id;
                 return new(true, "product-prompt", null);
             });
         var controller = CreateController(db, cloud: cloud.Object);
         var groups = Assert.IsType<ApiResponse<WhatsAppProductChoiceGroupDto[]>>(
             Assert.IsType<OkObjectResult>(await controller.GetCommercialProductGroups(default)).Value).Data;
-        Assert.Equal(name, Assert.Single(groups!).Name);
+        Assert.Contains(groups!, group => group.Name == name && group.Id == groupId);
         var draft = DraftPayload(await controller.StartCommercialDraft(11, new(), default));
         var saved = DraftPayload(await controller.SaveCommercialDraft(11, new()
         {
             SessionId = draft.SessionId, ExpectedVersion = draft.Version,
             Order = new() { BranchId = 2, Type = OrderType.Delivery, Notes = "Mantener nota del cajero",
-                OrderDetails = [new() { ProductId = 1, Quantity = 3, UnitPrice = 5000 }] },
+                OrderDetails = [new() { ProductId = 1, Quantity = 3, UnitPrice = contextual ? 77000 : 5000 }] },
             Editor = JsonSerializer.SerializeToElement(new { orderItems = new[] { new { productId = 1, quantity = 3 } } })
         }, default));
-        var sent = await controller.SendCommercialProductChoices(11, groupId,
-            new() { SessionId = saved.SessionId, ExpectedVersion = saved.Version }, default);
+        var request = new WhatsAppDraftWriteDto { SessionId = saved.SessionId, ExpectedVersion = saved.Version };
+        if (contextual)
+        {
+            var result = Assert.IsType<OkObjectResult>(await controller.GetProductSuggestions(11, new([91]), default));
+            var suggestions = Assert.IsType<ApiResponse<WhatsAppProductSuggestionsDto>>(result.Value).Data!;
+            var offer = Assert.Single(Assert.Single(suggestions.Messages).Suggestions);
+            Assert.Equal("choices", offer.Kind);
+            Assert.Equal(2, offer.Quantity);
+            Assert.Equal(groupId, offer.ChoiceGroupId);
+            request.ProductChoiceSource = new(91, offer.ChoiceIndex!.Value, offer.ProductId!.Value);
+        }
+        var sent = await controller.SendCommercialProductChoices(11, groupId, request, default);
         Assert.IsType<OkObjectResult>(sent.Result);
         Assert.NotNull(optionId);
         if (priceChanged)
@@ -335,8 +400,8 @@ public sealed partial class WhatsAppOperationalBranchTests
         if (!priceChanged)
         {
             var chosen = loaded.Order.OrderDetails[1];
-            Assert.Equal((2, 1, 10000), (chosen.ProductId, chosen.Quantity, chosen.UnitPrice));
-            Assert.Equal($"{name} 2", chosen.WhatsAppProductChoice?.Name);
+            Assert.Equal((2, contextual ? 2 : 1, contextual ? 84000 : 10000), (chosen.ProductId, chosen.Quantity, chosen.UnitPrice));
+            Assert.Equal(contextual ? selectedVariant : $"{name} 2", chosen.WhatsAppProductChoice?.Name);
             Assert.Equal(2, loaded.Editor!.Value.GetProperty("orderItems")[1].GetProperty("productId").GetInt32());
         }
         Assert.Empty(db.Orders);
