@@ -124,6 +124,74 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
             It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never());
     }
 
+    [PostgreSqlIntegrationTheory]
+    [Trait("Category", "PostgreSqlIntegration")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Forwarding_queue_allows_a_free_chat_even_if_another_cashier_takes_it_before_sending(bool sendImage)
+    {
+        using var tenant = _tenant.BeginTenantScope(1);
+        await using var db = Db();
+        await SeedManualAsync(db);
+        var destination = await db.WhatsAppConversations.SingleAsync(x => x.Id == 11);
+        destination.AssignedUserId = null;
+        destination.AttentionMode = WhatsAppAttentionMode.WaitingForHuman;
+        destination.NeedsHumanResponse = true;
+        db.Users.Add(new User { Id = 8, BranchId = 1, Role = UserRole.Cashier, Name = "Otro asesor", Email = "another@example.invalid" });
+        db.WhatsAppConversations.Add(new WhatsAppConversation { Id = 12, BranchId = 1, OperationalBranchId = 1,
+            ChannelSettingId = 1, PhoneNumber = "573000000009", AttentionModeUpdatedAt = _clock.UtcNow });
+        const string sourceUrl = "https://storage.example.invalid/imagen.png";
+        var source = new WhatsAppMessage
+        {
+            ConversationId = 12, Direction = WhatsAppMessageDirection.Inbound, Timestamp = _clock.UtcNow,
+            Type = sendImage ? WhatsAppMessageType.Image : WhatsAppMessageType.Text,
+            TextBody = "Prueba de reenvío", MediaUrl = sendImage ? sourceUrl : null,
+            MediaMimeType = sendImage ? "image/png" : null, MediaFileName = sendImage ? "imagen.png" : null
+        };
+        db.WhatsAppMessages.Add(source);
+        await db.SaveChangesAsync();
+
+        var (queue, cloud, storage, http) = ManualQueue(db);
+        if (sendImage)
+        {
+            byte[] bytes = [1, 2, 3];
+            storage.Setup(x => x.DownloadObjectFromUrlAsync(sourceUrl, 69_000_000, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(bytes);
+            storage.Setup(x => x.UploadPublicObjectAsync(bytes, It.IsAny<string>(), "image/png", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(sourceUrl);
+            cloud.Setup(x => x.UploadMediaAsync("central", "local-token", bytes, "imagen.png", "image/png", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new WhatsAppCloudUploadMediaResult(true, "media-id", null));
+            cloud.Setup(x => x.SendMediaMessageAsync("central", "local-token", "573000000001", "image", "media-id",
+                    source.TextBody, "imagen.png", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.forwarded-image", null));
+        }
+        var request = http.HttpContext!.Request;
+        var direct = await queue.EnqueueAsync<WhatsAppMessageDto>("send-message", 11,
+            JsonSerializer.SerializeToElement(new { text = "Mensaje directo" }), request, default);
+        Assert.IsType<ForbidResult>(direct.Result);
+        var queued = await queue.EnqueueAsync<WhatsAppMessageDto>("forward-message", 11,
+            JsonSerializer.SerializeToElement(new { sourceConversationId = 12, messageId = source.Id }), request, default);
+        Assert.Equal(202, Assert.IsType<ObjectResult>(queued.Result).StatusCode);
+        destination.AssignedUserId = 8;
+        destination.AttentionMode = WhatsAppAttentionMode.Human;
+        destination.AttentionModeUpdatedAt = _clock.UtcNow.AddSeconds(1);
+        await db.SaveChangesAsync();
+
+        var job = (await Store(db).ClaimAsync(default))!;
+        await ExecuteManualWorkerAsync(queue, job, db);
+        Assert.True(await Store(db).FinishAsync(job, true, default));
+        Assert.Equal(200, Assert.IsType<ObjectResult>(await queue.GetResultAsync(job.Id, default)).StatusCode);
+        var sent = await db.WhatsAppMessages.AsNoTracking().SingleAsync(x => x.ConversationId == 11);
+        Assert.Equal(source.Type, sent.Type);
+        Assert.Equal(7, sent.SentByUserId);
+        using var payload = JsonDocument.Parse(sent.RawPayload!);
+        Assert.True(payload.RootElement.GetProperty("_pos_forwarded").GetBoolean());
+        var saved = await db.WhatsAppConversations.AsNoTracking().SingleAsync(x => x.Id == 11);
+        Assert.Equal(8, saved.AssignedUserId);
+        Assert.Equal(WhatsAppAttentionMode.Human, saved.AttentionMode);
+        Assert.True(saved.NeedsHumanResponse);
+    }
+
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
     public async Task Superadmin_without_selected_branch_keeps_server_assigned_work_origin()
