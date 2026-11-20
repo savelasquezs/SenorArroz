@@ -41,6 +41,11 @@ public class GlobalExceptionMiddleware
         {
             await _next(context);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            if (context.GetEndpoint()?.DisplayName?.Contains(".GetProductSuggestions ", StringComparison.Ordinal) == true)
+                _logger.LogDebug("WhatsApp product suggestions request aborted by client. TraceId={TraceId}", context.TraceIdentifier);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Ocurri? una excepci?n no controlada: {Message}", ex.Message);

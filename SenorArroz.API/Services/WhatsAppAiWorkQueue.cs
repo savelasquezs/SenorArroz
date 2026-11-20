@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +19,8 @@ public record WhatsAppAiWorkItem(int ConversationId, int MessageId);
 public class WhatsAppAiWorkQueue : IWhatsAppAiWorkQueue
 {
     private const int Capacity = 500;
+    private static readonly Meter Meter = new("SenorArroz.WhatsApp.AiWork");
+    private static readonly Counter<long> Saturated = Meter.CreateCounter<long>("whatsapp.ai.queue.saturated");
     private readonly ConcurrentDictionary<WhatsAppAiWorkItem, byte> _scheduled = new();
     private readonly Channel<WhatsAppAiWorkItem> _channel = Channel.CreateBounded<WhatsAppAiWorkItem>(
         new BoundedChannelOptions(Capacity)
@@ -42,6 +45,7 @@ public class WhatsAppAiWorkQueue : IWhatsAppAiWorkQueue
 
         // A full queue must not leave a phantom reservation that prevents a later retry.
         _scheduled.TryRemove(item, out _);
+        Saturated.Add(1);
         return false;
     }
 

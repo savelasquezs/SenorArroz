@@ -431,12 +431,13 @@ public partial class WhatsAppController : ControllerBase
         {
             if (_pilot is not null)
             {
-                if (!_pilot.VerifySignature(Request.Headers["X-Hub-Signature-256"].FirstOrDefault(), rawPayload))
-                    return Unauthorized();
+                if (!_pilot.VerifySignature(signature, rawPayload))
+                    return RejectWebhook(string.IsNullOrWhiteSpace(signature) ? "signature_absent" : "signature_invalid");
 
                 using var scope = _tenantExecutionContext!.BeginTenantScope(_pilot.TenantId);
                 var phoneId = await _db.WhatsAppBranchSettings.AsNoTracking()
                     .Where(x => x.BranchId == _pilot.BranchId && x.IsActive && x.IsVerified && x.CoexistenceEnabled
+            var signature = Request.Headers["X-Hub-Signature-256"].FirstOrDefault();
                         && x.PhoneNumberId == _pilot.PhoneNumberId)
                     .Select(x => x.PhoneNumberId)
                     .SingleOrDefaultAsync(cancellationToken);
@@ -450,13 +451,15 @@ public partial class WhatsAppController : ControllerBase
                 return Ok();
             }
 
-            int? tenantId;
+            (int? TenantId, string? Rejection) resolution;
             using (_tenantExecutionContext?.BeginSystemScope())
-                tenantId = await ResolveWebhookTenantIdAsync(document.RootElement, cancellationToken);
-            if (!tenantId.HasValue) return Unauthorized();
+                resolution = await ResolveWebhookTenantIdAsync(document.RootElement, cancellationToken);
+            var tenantId = resolution.TenantId;
+            if (!tenantId.HasValue) return RejectWebhook(resolution.Rejection!);
             using var tenantScope = _tenantExecutionContext?.BeginTenantScope(tenantId.Value);
-            if (!await ValidateWebhookSignatureAsync(document.RootElement, rawPayload, cancellationToken))
-                return Unauthorized();
+            if (string.IsNullOrWhiteSpace(signature)) return RejectWebhook("signature_absent");
+            if (!await ValidateWebhookSignatureAsync(document.RootElement, rawPayload, signature, cancellationToken))
+                return RejectWebhook("signature_invalid");
             if (_processingOptions.External)
             {
                 await _processingStore!.EnqueueAsync(tenantId.Value, rawPayload, cancellationToken);
@@ -1269,7 +1272,13 @@ public partial class WhatsAppController : ControllerBase
         return (phones, accounts);
     }
 
-    private async Task<bool> ValidateWebhookSignatureAsync(JsonElement payload, string rawPayload, CancellationToken cancellationToken)
+    private IActionResult RejectWebhook(string reason)
+    {
+        _logger.LogWarning("WhatsApp webhook rejected. Reason={Reason} TraceId={TraceId}", reason, HttpContext.TraceIdentifier);
+        return Unauthorized();
+    }
+
+    private async Task<bool> ValidateWebhookSignatureAsync(JsonElement payload, string rawPayload, string signature, CancellationToken cancellationToken)
     {
         var (phones, accounts) = WebhookChannels(payload);
         if (phones.Count == 0 && accounts.Count == 0) return false;
@@ -1279,15 +1288,14 @@ public partial class WhatsAppController : ControllerBase
         var branchSecrets = await _db.WhatsAppBranchSettings.AsNoTracking()
             .Where(x => (phones.Contains(x.PhoneNumberId) || x.CoexistenceEnabled && accounts.Contains(x.BusinessAccountId))
                 && x.IsActive && x.AppSecret != null).Select(x => x.AppSecret!).ToListAsync(cancellationToken);
-        var signature = Request.Headers["X-Hub-Signature-256"].FirstOrDefault();
         return channelSecrets.Concat(branchSecrets).Distinct(StringComparer.Ordinal)
             .Any(secret => WhatsAppWebhookSignature.IsValid(signature, rawPayload, secret));
     }
 
-    private async Task<int?> ResolveWebhookTenantIdAsync(JsonElement payload, CancellationToken cancellationToken)
+    private async Task<(int? TenantId, string? Rejection)> ResolveWebhookTenantIdAsync(JsonElement payload, CancellationToken cancellationToken)
     {
         var (phones, accounts) = WebhookChannels(payload);
-        if (phones.Count == 0 && accounts.Count == 0) return null;
+        if (phones.Count == 0 && accounts.Count == 0) return (null, "account_missing");
         var central = await _db.WhatsAppChannelSettings.AsNoTracking()
             .Where(x => phones.Contains(x.PhoneNumberId) && x.IsActive && x.IsVerified).Select(x => x.TenantId).ToListAsync(cancellationToken);
         var branches = await _db.WhatsAppBranchSettings.AsNoTracking()
@@ -1295,7 +1303,12 @@ public partial class WhatsAppController : ControllerBase
                 || x.CoexistenceEnabled && accounts.Contains(x.BusinessAccountId)) && x.IsActive)
             .Select(x => x.TenantId).ToListAsync(cancellationToken);
         var tenants = central.Concat(branches).Distinct().Take(2).ToList();
-        return tenants.Count == 1 ? tenants[0] : null;
+        return tenants.Count switch
+        {
+            1 => (tenants[0], null),
+            0 => (null, "account_unknown"),
+            _ => (null, "account_ambiguous")
+        };
     }
 
     private static string NormalizeWhatsAppPhone(string? value) => WhatsAppManualOperations.NormalizeWhatsAppPhone(value);
