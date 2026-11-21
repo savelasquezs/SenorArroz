@@ -53,11 +53,15 @@ public class GetAppsHandler : IRequestHandler<GetAppsQuery, PagedResult<AppDto>>
             if (branchFilter.HasValue && app.Bank.BranchId != branchFilter.Value)
                 continue;
 
-            // Add additional data
-            appDto.TotalPayments = await _appRepository.GetTotalAppPaymentsAsync(app.Id, cancellationToken);
-            appDto.UnsettledPayments = await _appRepository.GetUnsettledAppPaymentsAsync(app.Id, cancellationToken);
-            appDto.TotalPaymentsCount = await _appRepository.GetTotalAppPaymentsCountAsync(app.Id, cancellationToken);
-            appDto.UnsettledPaymentsCount = await _appRepository.GetUnsettledAppPaymentsCountAsync(app.Id, cancellationToken);
+            // Order creation displays app identity/availability, not settlement
+            // statistics. Retain the full aggregates for administrative lists.
+            if (!request.ForOrderCreation)
+            {
+                appDto.TotalPayments = await _appRepository.GetTotalAppPaymentsAsync(app.Id, cancellationToken);
+                appDto.UnsettledPayments = await _appRepository.GetUnsettledAppPaymentsAsync(app.Id, cancellationToken);
+                appDto.TotalPaymentsCount = await _appRepository.GetTotalAppPaymentsCountAsync(app.Id, cancellationToken);
+                appDto.UnsettledPaymentsCount = await _appRepository.GetUnsettledAppPaymentsCountAsync(app.Id, cancellationToken);
+            }
 
             appDtos.Add(appDto);
         }
