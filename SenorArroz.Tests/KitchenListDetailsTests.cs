@@ -1,6 +1,8 @@
 using System.Text.Json;
+using System.Data.Common;
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
@@ -18,6 +20,23 @@ namespace SenorArroz.Tests;
 public sealed class KitchenListDetailsTests
 {
     private static readonly DateTime Now = new(2026, 10, 15, 16, 0, 0, DateTimeKind.Utc);
+
+    private sealed class SqlReadCapture : DbCommandInterceptor
+    {
+        public List<string> Statements { get; } = [];
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData,
+            InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Statements.Add(command.CommandText);
+            return new ValueTask<InterceptionResult<DbDataReader>>(result);
+        }
+
+        public void Clear() => Statements.Clear();
+        public bool HasCount => Statements.Any(sql => sql.Contains("count(", StringComparison.OrdinalIgnoreCase));
+    }
+
 
     private sealed record Actor(string Role, int BranchId) : ICurrentUser
     {
@@ -113,6 +132,11 @@ public sealed class KitchenListDetailsTests
         Assert.Equal("Sin cebolla", details[0].Notes);
         Assert.Equal("Arroces", details[0].ProductCategoryName);
 
+        var shortFirstPage = await handler.Handle(Query(true, 1, 10), CancellationToken.None);
+        Assert.Equal(2, shortFirstPage.TotalCount);
+        Assert.Equal(2, shortFirstPage.Items.Count());
+        Assert.Equal(1, shortFirstPage.TotalPages);
+
         var second = await handler.Handle(Query(true, 2, 1), CancellationToken.None);
         Assert.Equal(ids[1], Assert.Single(second.Items).Id);
         Assert.Empty(second.Items.ElementAt(0).KitchenDetails!);
@@ -168,16 +192,38 @@ public sealed class KitchenListDetailsTests
     {
         await using var postgres = new PostgreSqlBuilder("postgres:16-alpine").Build();
         await postgres.StartAsync();
+        var capture = new SqlReadCapture();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(postgres.GetConnectionString()).Options;
+            .UseNpgsql(postgres.GetConnectionString())
+            .AddInterceptors(capture).Options;
         await using var db = new ApplicationDbContext(options,
             currentTenant: TestTenantContext.Default,
             tenantExecutionContext: TestTenantContext.Default);
         await db.Database.EnsureCreatedAsync();
         var (branch, ids) = await SeedAsync(db);
+
+        capture.Clear();
         var result = await Handler(db, branch).Handle(Query(true, 1, 10), CancellationToken.None);
         Assert.Equal(new[] { ids[0], ids[1] }, result.Items.Select(o => o.Id));
         Assert.Equal(2, result.Items.ElementAt(0).KitchenDetails!.Count);
         Assert.Empty(result.Items.ElementAt(1).KitchenDetails!);
+        Assert.False(capture.HasCount); // Before correction: an unnecessary COUNT(*) ran.
+
+        capture.Clear();
+        var fullFirstPage = await Handler(db, branch).Handle(Query(true, 1, 1), CancellationToken.None);
+        Assert.Equal(2, fullFirstPage.TotalCount);
+        Assert.True(capture.HasCount); // Exact total still needed for a full page.
+
+        capture.Clear();
+        var secondPage = await Handler(db, branch).Handle(Query(true, 2, 1), CancellationToken.None);
+        Assert.Equal(2, secondPage.TotalCount);
+        Assert.Equal(ids[1], Assert.Single(secondPage.Items).Id);
+        Assert.True(capture.HasCount); // Later pages retain exact total.
+
+        capture.Clear();
+        var regular = await Handler(db, branch).Handle(Query(false, 1, 10), CancellationToken.None);
+        Assert.Equal(2, regular.TotalCount);
+        Assert.All(regular.Items, x => Assert.Null(x.KitchenDetails));
+        Assert.False(capture.HasCount); // Same optimization for ordinary POS listings.
     }
 }
