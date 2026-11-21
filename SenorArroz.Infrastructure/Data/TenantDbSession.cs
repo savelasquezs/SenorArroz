@@ -14,12 +14,6 @@ internal static class TenantDbSession
             set_config('app.system_scope', @system_scope, false)
         """;
 
-    private const string ResetContextSql = """
-        SELECT
-            set_config('app.current_tenant_id', '', false),
-            set_config('app.system_scope', 'off', false)
-        """;
-
     public static void ValidatePooling(DbConnection connection)
     {
         if (connection is NpgsqlConnection npgsql
@@ -56,24 +50,6 @@ internal static class TenantDbSession
 
         await using var command = CreateCommand(connection, transaction, SetContextSql);
         AddContextParameters(command, currentTenant, executionContext);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    public static void Reset(DbConnection connection)
-    {
-        if (connection is not NpgsqlConnection || connection.State != ConnectionState.Open)
-            return;
-
-        using var command = CreateCommand(connection, null, ResetContextSql);
-        command.ExecuteNonQuery();
-    }
-
-    public static async Task ResetAsync(DbConnection connection, CancellationToken cancellationToken)
-    {
-        if (connection is not NpgsqlConnection || connection.State != ConnectionState.Open)
-            return;
-
-        await using var command = CreateCommand(connection, null, ResetContextSql);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -188,21 +164,6 @@ public sealed class TenantDbConnectionInterceptor(
         await TenantDbSession.ApplyAsync(connection, null, currentTenant, executionContext, cancellationToken);
     }
 
-    public override InterceptionResult ConnectionClosing(
-        DbConnection connection,
-        ConnectionEventData eventData,
-        InterceptionResult result)
-    {
-        TenantDbSession.Reset(connection);
-        return result;
-    }
-
-    public override async ValueTask<InterceptionResult> ConnectionClosingAsync(
-        DbConnection connection,
-        ConnectionEventData eventData,
-        InterceptionResult result)
-    {
-        await TenantDbSession.ResetAsync(connection, CancellationToken.None);
-        return result;
-    }
+    // Npgsql resets pooled session state when closing (NoResetOnClose is rejected above).
+    // Avoid issuing a second explicit reset SQL command on every EF connection close.
 }
