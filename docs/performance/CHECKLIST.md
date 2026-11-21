@@ -189,7 +189,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M40-F04 | Workers GPS y cierre jornadas | Pendiente | — | — | — | — |
 | M40-F05 | Carga recurrente y ciclos de polling | Pendiente | — | — | — | — |
 | M41-F01 | SQL pedidos y detalles | Pendiente | — | — | — | — |
-| M41-F02 | SQL clientes y direcciones | Pendiente | — | — | — | — |
+| M41-F02 | SQL clientes y direcciones | Bloqueado | 2026-11-18 | [Informe](reviews/2026-11-18-M41-F02.md) | [API #137](https://github.com/savelasquezs/SenorArroz/pull/137), [Docs #138](https://github.com/savelasquezs/SenorArroz/pull/138) (borrador) | GET customer/addresses: reemplaza lectura Customer+Phones+Branch por EXISTS tenant y retira JOIN Customer del listado; 3 regresiones añadidas, CI/QA pendientes de confirmar. No se reduce el número de consultas; SQL/CPU/RAM/p50/p95/egress sin medir. Sin SQL migratorio ni merge/despliegue. |
 | M41-F03 | SQL dashboard y agregados | Pendiente | — | — | — | — |
 | M41-F04 | SQL tracking geográfico | Pendiente | — | — | — | — |
 | M41-F05 | Índices, planes EXPLAIN y paginación | Pendiente | — | — | — | — |
