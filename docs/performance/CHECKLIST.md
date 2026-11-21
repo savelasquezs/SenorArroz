@@ -193,7 +193,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M41-F03 | SQL dashboard y agregados | Pendiente | — | — | — | — |
 | M41-F04 | SQL tracking geográfico | Pendiente | — | — | — | — |
 | M41-F05 | Índices, planes EXPLAIN y paginación | Pendiente | — | — | — | — |
-| M41-F06 | Pooling conexiones, RLS y concurrencia | Bloqueado | 2026-11-21 | [Informe](reviews/2026-11-21-M41-F06.md) | [API #160](https://github.com/savelasquezs/SenorArroz/pull/160) (borrador) | Remover un SET de limpieza redundante por cierre EF: Npgsql ya restaura la sesión del pool, con No Reset On Close prohibido. Regresión RLS PostgreSQL añadida para tenant 1/2, sistema y concurrencia. CI y staging pendientes. Sin SQL, merge ni despliegue. |
+| M41-F06 | Pooling conexiones, RLS y concurrencia | Bloqueado | 2026-11-21 | [Informe](reviews/2026-11-21-M41-F06.md) | [API #160](https://github.com/savelasquezs/SenorArroz/pull/160), [Docs #161](https://github.com/savelasquezs/SenorArroz/pull/161) (borrador) | Remover un SET de limpieza redundante por cierre EF: Npgsql ya restaura la sesión del pool, con No Reset On Close prohibido. Regresión RLS PostgreSQL añadida para tenant 1/2, sistema y concurrencia. CI y staging pendientes. Sin SQL, merge ni despliegue. |
 | M41-F07 | Backups, mantenimiento y limpieza | Pendiente | — | — | — | — |
 | M42-F01 | Uso CPU/RAM por servicio | Pendiente | — | — | — | — |
 | M42-F02 | Network egress Railway | Pendiente | — | — | — | — |
