@@ -188,7 +188,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M40-F03 | Workers de pagos y correos | Pendiente | — | — | — | — |
 | M40-F04 | Workers GPS y cierre jornadas | Pendiente | — | — | — | — |
 | M40-F05 | Carga recurrente y ciclos de polling | Pendiente | — | — | — | — |
-| M41-F01 | SQL pedidos y detalles | Pendiente | — | — | — | — |
+| M41-F01 | SQL pedidos y detalles | PR listo para revisión | 2026-11-19 | [Informe](reviews/2026-11-19-M41-F01.md) | [API #142](https://github.com/savelasquezs/SenorArroz/pull/142), [Docs #143](https://github.com/savelasquezs/SenorArroz/pull/143) | Primer listado corto evita COUNT redundante; [Backend CI](https://github.com/savelasquezs/SenorArroz/actions/runs/44530182916) SUCCESS 1951/1952, 1 omitido, incluida regresión PostgreSQL efímera; [Remote](https://github.com/savelasquezs/SenorArroz/actions/runs/44530182845) SUCCESS 1736 aprobadas, 199 omitidas y 14/14 PostgreSQL remoto. Latencia/CPU/egress productivos sin medir. Sin SQL, merge ni despliegue. |
 | M41-F02 | SQL clientes y direcciones | Pendiente | — | — | — | — |
 | M41-F03 | SQL dashboard y agregados | Pendiente | — | — | — | — |
 | M41-F04 | SQL tracking geográfico | Pendiente | — | — | — | — |
