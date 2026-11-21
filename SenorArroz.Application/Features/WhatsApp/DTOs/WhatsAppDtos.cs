@@ -360,6 +360,19 @@ public sealed record WhatsAppMessageContactDto(string Name, string[] Phones, str
 public sealed record WhatsAppForwardMessageDto(int SourceConversationId, int MessageId);
 public sealed record WhatsAppMessageReactionDto(string Emoji);
 
+public sealed record WhatsAppConversationStartRequest(
+    int BranchId, string Phone, string Template, bool RequestedByCustomer, int? OrderId, int? Amount,
+    string SenderId);
+
+public sealed record WhatsAppConversationStartTemplate(
+    string Key, string Name, string Status, string? Body, string? UnavailableReason);
+
+public sealed record WhatsAppConversationStartOptions(
+    int BranchId, string BranchName, string SenderId, string DisplayPhoneNumber,
+    string? Account, string? Holder, IReadOnlyList<WhatsAppConversationStartTemplate> Templates);
+
+public sealed record WhatsAppConversationStartResult(int ConversationId, bool Sent);
+
 public sealed class SendConversationWhatsAppTemplateDto
 {
     public string TemplateName { get; set; } = string.Empty;

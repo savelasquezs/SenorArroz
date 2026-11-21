@@ -208,6 +208,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
                     "send-product-choices" => Capture(await operations.SendCommercialProductChoicesAsync(command.ConversationId!.Value,
                         command.Body.GetProperty("groupId").GetInt32(), command.Body.GetProperty("draft").Deserialize<WhatsAppDraftWriteDto>(JsonOptions)!, ct)),
                     "send-conversation-template" => Capture(await operations.SendConversationTemplate(command.ConversationId!.Value, command.Body.Deserialize<SendConversationWhatsAppTemplateDto>(JsonOptions)!, ct)),
+                    "start-conversation" => Capture(await operations.StartConversationAsync(command.Body.Deserialize<WhatsAppConversationStartRequest>(JsonOptions)!, ct)),
                     "send-product" => Capture(await operations.SendProductDetails(command.ConversationId!.Value, command.Body.GetProperty("productId").GetInt32(), ct)),
                     "send-menu" => Capture(await operations.SendMenu(command.ConversationId!.Value, ct)),
                     "send-quick-reply" => Capture(await operations.SendQuickReply(command.ConversationId!.Value, command.Body.Deserialize<SendWhatsAppQuickReplyDto>(JsonOptions)!, ct)),

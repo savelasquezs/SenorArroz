@@ -15,6 +15,24 @@ namespace SenorArroz.API.Controllers;
 
 public partial class WhatsAppController
 {
+    [HttpGet("conversations/start/options")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    public Task<ActionResult<ApiResponse<WhatsAppConversationStartOptions>>> GetConversationStartOptions(
+        [FromQuery] int branchId, CancellationToken ct) => _manualOperations.GetConversationStartOptionsAsync(branchId, ct);
+
+    [HttpPost("conversations/start")]
+    [Authorize(Roles = "Superadmin, Admin, Cashier")]
+    [RequestSizeLimit(4096)]
+    public Task<ActionResult<ApiResponse<WhatsAppConversationStartResult>>> StartConversation(
+        [FromBody] WhatsAppConversationStartRequest request, CancellationToken ct)
+    {
+        if (_manualQueue is not null)
+            return _manualQueue.EnqueueAsync<WhatsAppConversationStartResult>("start-conversation", null,
+                JsonSerializer.SerializeToElement(request), Request, ct);
+        _manualOperations.ControllerContext = ControllerContext;
+        return _manualOperations.StartConversationAsync(request, ct);
+    }
+
     [HttpGet("conversations/{conversationId:int}")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     public async Task<ActionResult<ApiResponse<WhatsAppConversationDto>>> GetConversation(int conversationId, CancellationToken ct)

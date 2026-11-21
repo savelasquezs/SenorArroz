@@ -991,7 +991,7 @@ public sealed partial class WhatsAppWebhookProcessor
         return false;
     }
 
-    private async Task<Customer?> FindUniqueCustomerByPhoneAsync(string whatsappPhone, CancellationToken cancellationToken)
+    internal async Task<Customer?> FindUniqueCustomerByPhoneAsync(string whatsappPhone, CancellationToken cancellationToken)
     {
         var digits = OnlyDigits(whatsappPhone);
         if (!ColombianPhoneNormalizer.TryNormalize(whatsappPhone, out var last10))

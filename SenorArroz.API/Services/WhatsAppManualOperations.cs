@@ -40,6 +40,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
     private readonly WhatsAppCommerceFlowService _commerceFlow;
     private readonly ICurrentTenant? _currentTenant;
     private readonly IInventoryService? _inventory;
+    private readonly IFirebaseGcsStorage? _menuStorage;
     private readonly bool _externalProcessing;
     private int TenantId => _currentTenant?.TenantId ?? _commerceFlow.TenantId;
 
@@ -50,7 +51,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         IOptions<WhatsAppCloudOptions> whatsAppOptions, ILogger<WhatsAppController> logger,
         WhatsAppAttentionService attention, WhatsAppCommerceFlowService commerceFlow,
         WhatsAppWebhookProcessor processor, ICurrentTenant? currentTenant = null, IInventoryService? inventory = null,
-        IOptions<WhatsAppProcessingOptions>? processing = null)
+        IOptions<WhatsAppProcessingOptions>? processing = null, IFirebaseGcsStorage? menuStorage = null)
     {
         _db = db;
         _currentUser = currentUser;
@@ -65,6 +66,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         _webhookProcessor = processor;
         _currentTenant = currentTenant;
         _inventory = inventory;
+        _menuStorage = menuStorage;
         _externalProcessing = processing?.Value.External == true;
     }
 
@@ -146,6 +148,8 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Debe seleccionar una plantilla."));
         if (string.IsNullOrWhiteSpace(normalizedLanguage))
             return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Debe indicar el idioma de la plantilla."));
+        if (IsStarterTemplate(templateName, normalizedLanguage))
+            return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Envía esta plantilla desde Nueva conversación."));
 
         var template = await _db.WhatsAppTemplates
             .AsNoTracking()

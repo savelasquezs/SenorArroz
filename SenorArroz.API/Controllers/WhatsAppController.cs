@@ -111,7 +111,7 @@ public partial class WhatsAppController : ControllerBase
             commerceFlow, currentTenant, inventory, cloudOptions: whatsAppOptions);
         _manualOperations = manualOperations ?? new WhatsAppManualOperations(db, currentUser, branchContext, clock,
             whatsAppCloudClient, whatsAppNotificationService, whatsAppOptions, logger, attentionService,
-            commerceFlow, _webhookProcessor, currentTenant, inventory, processingOptions);
+            commerceFlow, _webhookProcessor, currentTenant, inventory, processingOptions, firebaseStorage);
         _manualQueue = _processingOptions.External ? manualQueue : null;
         _queuedText = manualQueue;
         _pilot = pilot;
@@ -263,7 +263,8 @@ public partial class WhatsAppController : ControllerBase
             .ToListAsync(cancellationToken);
 
         return Ok(ApiResponse<IReadOnlyList<WhatsAppTemplateDto>>.SuccessResponse(
-            templates.Select(ToTemplateDto).ToList(),
+            templates.Where(template => !WhatsAppManualOperations.IsStarterTemplate(template.Name, template.Language))
+                .Select(ToTemplateDto).ToList(),
             "Plantillas obtenidas."));
     }
 
