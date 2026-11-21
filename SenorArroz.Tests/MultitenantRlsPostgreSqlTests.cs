@@ -234,6 +234,60 @@ public sealed class MultitenantRlsPostgreSqlTests : IAsyncLifetime
         Assert.Empty(await service.ClaimPendingForAgentAsync(101, [PrintJobKind.Kitchen], 5));
     }
 
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Ef_pool_reset_isolates_tenants_after_system_scope_and_under_concurrent_requests()
+    {
+        // A one-connection pool forces reuse; the interceptor must reapply the
+        // tenant before every EF command while Npgsql resets on close.
+        var connectionString = new NpgsqlConnectionStringBuilder(_runtimeConnectionString)
+        {
+            MaxPoolSize = 1,
+            NoResetOnClose = false
+        }.ConnectionString;
+        var tenant = new TestTenantContext(1);
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(connectionString)
+            .AddInterceptors(new TenantDbConnectionInterceptor(tenant, tenant),
+                new TenantDbCommandInterceptor(tenant, tenant))
+            .Options;
+
+        async Task<int[]> ReadBranchesAsync()
+        {
+            await using var db = new ApplicationDbContext(options,
+                currentTenant: tenant, tenantExecutionContext: tenant);
+            // Raw SQL deliberately bypasses EF query filters: PostgreSQL RLS
+            // must enforce isolation even when the physical connection is reused.
+            return await db.Database.SqlQueryRaw<int>(
+                "SELECT id AS \"Value\" FROM branch ORDER BY id").ToArrayAsync();
+        }
+
+        using (tenant.BeginSystemScope())
+            Assert.Equal(new[] { 101, 202 }, await ReadBranchesAsync());
+        using (tenant.BeginTenantScope(1))
+            Assert.Equal(new[] { 101 }, await ReadBranchesAsync());
+        using (tenant.BeginTenantScope(2))
+            Assert.Equal(new[] { 202 }, await ReadBranchesAsync());
+
+        async Task<int[]> ReadForTenantAsync(int id)
+        {
+            using var scope = tenant.BeginTenantScope(id);
+            return await ReadBranchesAsync();
+        }
+
+        var expected = Enumerable.Range(0, 8).Select(i => i % 2 + 1).ToArray();
+        var results = await Task.WhenAll(expected.Select(ReadForTenantAsync));
+        for (var i = 0; i < results.Length; i++)
+            Assert.Equal(expected[i] == 1 ? new[] { 101 } : new[] { 202 }, results[i]);
+
+        // A non-EF client borrowing the same pool must not inherit the last
+        // tenant or system scope; this relies on Npgsql's default pool reset.
+        await using var unscoped = new NpgsqlConnection(connectionString);
+        await unscoped.OpenAsync();
+        Assert.Empty(await BranchIdsAsync(unscoped));
+    }
+
     private static async Task SetContextAsync(NpgsqlConnection connection, string tenantId, string systemScope, NpgsqlTransaction? transaction = null)
     {
         var command = new NpgsqlCommand("SELECT set_config('app.current_tenant_id', @tenant, false), set_config('app.system_scope', @system, false)", connection, transaction);
