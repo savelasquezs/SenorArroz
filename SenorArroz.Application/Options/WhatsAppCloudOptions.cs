@@ -10,4 +10,11 @@ public class WhatsAppCloudOptions
     public string? BusinessAccountId { get; set; }
     public string? PhoneNumberId { get; set; }
     public Dictionary<string, Dictionary<string, int>> CatalogProductIds { get; set; } = [];
+    public Dictionary<int, WhatsAppBranchTransferAccount> BancolombiaByBranch { get; set; } = [];
+}
+
+public sealed class WhatsAppBranchTransferAccount
+{
+    public string Account { get; set; } = "";
+    public string Holder { get; set; } = "";
 }
