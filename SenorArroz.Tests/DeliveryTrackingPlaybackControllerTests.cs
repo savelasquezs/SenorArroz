@@ -1,3 +1,6 @@
+using System.Data.Common;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Testcontainers.PostgreSql;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SenorArroz.API.Controllers;
@@ -227,6 +230,129 @@ public class DeliveryTrackingPlaybackControllerTests
 
         Assert.Equal(203, order.OrderId);
         Assert.Equal(["previous_route"], order.Roles);
+    }
+
+    [Fact]
+    public async Task Get_UsesLatestRecordedPointAndIdToDetermineActiveStay()
+    {
+        await using var db = CreateDb();
+        Seed(db);
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 20, DeliverymanId = 11, BranchId = 7,
+            DeviceInstallationId = "unit-device", DevicePlatform = "android",
+            StartedAt = From, AutoCloseAt = From.AddHours(8),
+            LastCommunicationAt = From.AddMinutes(25),
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        db.DeliverymanLocations.AddRange(
+            Location(501, 11, 25), Location(502, 11, 25), Location(503, 11, 24));
+        foreach (var location in db.DeliverymanLocations.Local)
+        {
+            location.WorkSessionId = 20;
+            location.TrackingMode = location.Id == 502 ? DeliveryTrackingMode.Light : DeliveryTrackingMode.ActiveDelivery;
+        }
+        var stay = new DeliveryStay
+        {
+            Id = 601, DeliverymanId = 11, WorkSessionId = 20,
+            FirstLocationId = 503, LastLocationId = 502,
+            StartedAt = From.AddMinutes(24), EndedAt = From.AddMinutes(25),
+            DurationSeconds = 60, CenterLatitude = 6.25m, CenterLongitude = -75.58m,
+            RadiusMeters = 10, AverageAccuracyMeters = 5, PointCount = 3,
+            Classification = DeliveryStayClassification.PendingReview,
+        };
+        db.DeliveryStays.Add(stay);
+        await db.SaveChangesAsync();
+
+        var now = From.AddMinutes(25).AddSeconds(100);
+        var result = await Controller(db, 7, now).Get([11], From, From.AddMinutes(24));
+        var data = Assert.IsType<ApiResponse<DeliveryTrackingPlaybackDto>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value).Data!;
+        Assert.True(Assert.Single(Assert.Single(data.Deliverymen).Stays).IsActive);
+
+        // Identical timestamps use the greater ID; an older stay must be inactive.
+        stay.LastLocationId = 501;
+        await db.SaveChangesAsync();
+        result = await Controller(db, 7, now).Get([11], From, From.AddMinutes(24));
+        data = Assert.IsType<ApiResponse<DeliveryTrackingPlaybackDto>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value).Data!;
+        Assert.False(Assert.Single(Assert.Single(data.Deliverymen).Stays).IsActive);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Get_LatestLocationLookupIsGroupedBySessionInPostgreSql()
+    {
+        await using var postgres = new PostgreSqlBuilder("postgres:16-alpine").Build();
+        await postgres.StartAsync();
+        var commands = new PlaybackSqlCommands();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(postgres.GetConnectionString()).AddInterceptors(commands).Options;
+        await using var db = new ApplicationDbContext(options,
+            currentTenant: TestTenantContext.Default,
+            tenantExecutionContext: TestTenantContext.Default);
+        await db.Database.EnsureCreatedAsync();
+        db.Tenants.Add(new Tenant { Id = 1, Name = "Playback perf", Slug = "playback-perf" });
+        await db.SaveChangesAsync();
+        Seed(db);
+
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 20, DeliverymanId = 11, BranchId = 7,
+            DeviceInstallationId = "postgres-device", DevicePlatform = "android",
+            StartedAt = From.AddHours(-3), AutoCloseAt = From.AddHours(8),
+            LastCommunicationAt = From.AddMinutes(25),
+            Status = DeliveryWorkSessionStatus.Active,
+        });
+        for (var i = 0; i < 120; i++)
+        {
+            var location = Location(1000 + i, 11, -120 + i);
+            location.WorkSessionId = 20;
+            location.TrackingMode = DeliveryTrackingMode.ActiveDelivery;
+            db.DeliverymanLocations.Add(location);
+        }
+        var latest = Location(2001, 11, 25);
+        latest.WorkSessionId = 20;
+        latest.TrackingMode = DeliveryTrackingMode.Light;
+        db.DeliverymanLocations.Add(latest);
+        db.DeliveryStays.Add(new DeliveryStay
+        {
+            Id = 601, DeliverymanId = 11, WorkSessionId = 20,
+            FirstLocationId = 1000, LastLocationId = 2001,
+            StartedAt = From.AddMinutes(20), EndedAt = From.AddMinutes(25),
+            DurationSeconds = 300, CenterLatitude = 6.25m, CenterLongitude = -75.58m,
+            RadiusMeters = 10, AverageAccuracyMeters = 5, PointCount = 121,
+            Classification = DeliveryStayClassification.PendingReview,
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        commands.Sql.Clear();
+
+        var action = await Controller(db, 7, From.AddMinutes(25).AddSeconds(30))
+            .Get([11], From.AddMinutes(20), From.AddMinutes(24));
+        var data = Assert.IsType<ApiResponse<DeliveryTrackingPlaybackDto>>(
+            Assert.IsType<OkObjectResult>(action.Result).Value).Data!;
+        Assert.Empty(Assert.Single(data.Deliverymen).Points); // The latest point is outside the requested interval.
+        Assert.True(Assert.Single(Assert.Single(data.Deliverymen).Stays).IsActive);
+        // The old query selected every historical location. The new relational SQL
+        // must perform latest-per-session selection in PostgreSQL before materializing.
+        Assert.Contains(commands.Sql, sql =>
+            sql.Contains("deliveryman_location", StringComparison.OrdinalIgnoreCase)
+            && (sql.Contains("ROW_NUMBER", StringComparison.OrdinalIgnoreCase)
+                || sql.Contains("LATERAL", StringComparison.OrdinalIgnoreCase)
+                || sql.Contains("DISTINCT ON", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private sealed class PlaybackSqlCommands : DbCommandInterceptor
+    {
+        public List<string> Sql { get; } = [];
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData,
+            InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Sql.Add(command.CommandText);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 
     private static DeliveryTrackingPlaybackController Controller(ApplicationDbContext db, int branchId, DateTime? now = null) =>

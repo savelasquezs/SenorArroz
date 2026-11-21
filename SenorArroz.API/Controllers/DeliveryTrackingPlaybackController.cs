@@ -127,26 +127,25 @@ public class DeliveryTrackingPlaybackController : ControllerBase
                     && x.AutoCloseAt > _clock.UtcNow)
                 .Select(x => x.Id)
                 .ToListAsync(cancellationToken);
+        // Resolve the newest point per session in PostgreSQL rather than transferring
+        // every historical GPS point to the API just to find the latest ID/mode.
         var latestLocations = sessionIds.Count == 0
             ? []
             : await _db.DeliverymanLocations.AsNoTracking()
                 .Where(x => x.WorkSessionId.HasValue && sessionIds.Contains(x.WorkSessionId.Value))
-                .Select(x => new LatestLocationRow(x.Id, x.WorkSessionId!.Value, x.RecordedAt))
+                .GroupBy(x => x.WorkSessionId!.Value)
+                .Select(group => group.OrderByDescending(x => x.RecordedAt).ThenByDescending(x => x.Id)
+                    .Select(x => new LatestLocationRow(x.Id, x.WorkSessionId!.Value, x.TrackingMode))
+                    .First())
                 .ToListAsync(cancellationToken);
-        var latestLocationBySession = latestLocations
-            .GroupBy(x => x.WorkSessionId)
-            .ToDictionary(
-                x => x.Key,
-                x => x.OrderByDescending(point => point.RecordedAt).ThenByDescending(point => point.Id).First().Id);
+        var latestLocationBySession = latestLocations.ToDictionary(x => x.WorkSessionId, x => x.Id);
         var activeSessionSet = activeSessionIds.ToHashSet();
         var cadences = await (from session in _db.DeliveryWorkSessions.AsNoTracking()
             join branch in _db.Branches.AsNoTracking() on session.BranchId equals branch.Id
             where sessionIds.Contains(session.Id)
             select new { session.Id, branch.DeliveryTrackingActiveIntervalSeconds, branch.DeliveryTrackingLightIntervalSeconds })
             .ToDictionaryAsync(x => x.Id, cancellationToken);
-        var lastIds = latestLocationBySession.Values.ToList();
-        var lastModes = await _db.DeliverymanLocations.AsNoTracking().Where(x => lastIds.Contains(x.Id))
-            .ToDictionaryAsync(x => x.Id, x => x.TrackingMode, cancellationToken);
+        var lastModes = latestLocations.ToDictionary(x => x.Id, x => x.TrackingMode);
 
         var routeHeaders = await _db.DeliveryRoutes.AsNoTracking()
             .Where(x => ids.Contains(x.DeliverymanId)
@@ -314,7 +313,7 @@ public class DeliveryTrackingPlaybackController : ControllerBase
         }
     }
 
-    private sealed record LatestLocationRow(long Id, int WorkSessionId, DateTime RecordedAt);
+    private sealed record LatestLocationRow(long Id, int WorkSessionId, DeliveryTrackingMode? TrackingMode);
     private sealed record PlaybackRouteRow(
         int Id,
         int DeliverymanId,
