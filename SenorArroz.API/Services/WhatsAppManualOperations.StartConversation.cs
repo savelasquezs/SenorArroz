@@ -83,10 +83,7 @@ public sealed partial class WhatsAppManualOperations
             var identity = $"whatsapp-start:{sender.PhoneNumberId}:{phone}";
             await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({TenantId}, hashtext({identity}))", ct);
         }
-        var existingId = await _db.WhatsAppConversations.AsNoTracking()
-            .Where(x => x.TenantId == TenantId && x.PhoneNumber == phone &&
-                x.ChannelSettingId == sender.ChannelId && x.BranchLineId == sender.BranchLineId &&
-                (sender.ChannelId != null || x.BranchId == request.BranchId))
+        var existingId = await StarterConversations(sender, phone)
             .Select(x => (int?)x.Id).SingleOrDefaultAsync(ct);
         if (existingId is int id) await WhatsAppCommercialDraft.LockAsync(_db, TenantId, id, ct);
         var conversation = existingId is int found
@@ -190,6 +187,17 @@ public sealed partial class WhatsAppManualOperations
         return Ok(ApiResponse<WhatsAppConversationStartResult>.SuccessResponse(new(conversation.Id, true)));
     }
 
+    internal async Task<bool> CanStartOrderConversationAsync(int branchId, string phone, CancellationToken ct)
+    {
+        var sender = await ResolveConversationStarterAsync(branchId, ct);
+        return sender is not null && !await StarterConversations(sender, phone).AnyAsync(ct);
+    }
+
+    private IQueryable<WhatsAppConversation> StarterConversations(ConversationStarter sender, string phone) =>
+        _db.WhatsAppConversations.AsNoTracking().Where(x => x.TenantId == TenantId && x.PhoneNumber == phone
+            && x.ChannelSettingId == sender.ChannelId && x.BranchLineId == sender.BranchLineId
+            && (sender.ChannelId != null || x.BranchId == sender.Branch.Id));
+
     private async Task<ConversationStarter?> ResolveConversationStarterAsync(int branchId, CancellationToken ct)
     {
         var branch = await _db.Branches.AsNoTracking()
@@ -253,7 +261,7 @@ public sealed partial class WhatsAppManualOperations
         component.ValueKind == JsonValueKind.Object && component.TryGetProperty(name, out var value)
         && value.ValueKind == JsonValueKind.String ? value.GetString()?.ToUpperInvariant() : null;
 
-    private static string? NormalizeStarterPhone(string? input)
+    internal static string? NormalizeStarterPhone(string? input)
     {
         if (string.IsNullOrWhiteSpace(input) || input.Length > 40 || !Regex.IsMatch(input.Trim(), @"^\+?[0-9 ().-]+$"))
             return null;
