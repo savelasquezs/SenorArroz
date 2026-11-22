@@ -22,6 +22,7 @@ public class OrderMappingProfile : Profile
             .ForMember(dest => dest.CustomerName, opt => opt.MapFrom(src => src.Customer != null ? src.Customer.Name : null))
             .ForMember(dest => dest.CustomerPhone, opt => opt.MapFrom(src => src.Customer != null ? src.Customer.Phone1 : null))
             .ForMember(dest => dest.CustomerWhatsAppUsername, opt => opt.MapFrom(src => src.Customer != null ? src.Customer.WhatsAppUsername : null))
+            .ForMember(dest => dest.HasWhatsAppConversation, opt => opt.MapFrom(src => src.WhatsAppConversationId.HasValue))
             .ForMember(dest => dest.AddressVersion, opt => opt.MapFrom(src => src.Address != null ? src.Address.UpdatedAt.Ticks.ToString() : null))
             .ForMember(dest => dest.AddressDescription, opt => opt.MapFrom(src => src.Address != null ? src.Address.AddressText : null))
             .ForMember(dest => dest.AddressAdditionalInfo, opt => opt.MapFrom(src => src.Address != null ? src.Address.AdditionalInfo : null))
