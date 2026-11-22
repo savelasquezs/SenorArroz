@@ -201,7 +201,7 @@ public class OrderRepository : IOrderRepository
         // Aplicar ordenamiento
         query = ApplySorting(query, sortBy, sortOrder);
 
-        return await query.ToPagedResultAsync(page, pageSize, cancellationToken);
+        return await query.ToPagedResultAsync(page, pageSize, cancellationToken, skipCountForIncompleteFirstPage: true);
     }
 
     public async Task<Order> CreateAsync(Order order, CancellationToken cancellationToken = default)
