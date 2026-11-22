@@ -5,8 +5,8 @@ using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Orders.Services;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Domain.Exceptions;
-using SenorArroz.Domain.Services;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -94,7 +94,8 @@ public sealed partial class WhatsAppOperationalBranchTests
     {
         db.Customers.Add(new Customer { Id = 12, TenantId = 1, BranchId = 1, Name = "Cliente", Phone1 = phone,
             WhatsAppUsername = username, Active = true });
-        db.Orders.Add(new Order { Id = 25, TenantId = 1, BranchId = 1, TakenById = 7, CustomerId = 12 });
+        db.Orders.Add(new Order { Id = 25, TenantId = 1, BranchId = 1, TakenById = 7, CustomerId = 12,
+            Type = OrderType.Delivery, Status = OrderStatus.Taken });
         await db.SaveChangesAsync();
     }
 
