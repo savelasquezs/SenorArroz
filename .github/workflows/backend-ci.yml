@@ -32,6 +32,9 @@ jobs:
         uses: actions/checkout@v4
 
       # Temporary P0 check: remove together with the measurement exporter in P6.
+      - name: PostgreSQL backup configuration regression (mock S3/pg_dump; no external access)
+        run: sh ops/postgres-backup/test-backup.sh
+
       - name: Routing measurement exporter tests
         run: python3 -m unittest discover -s scripts -p test_routing_measurement_report.py
 
