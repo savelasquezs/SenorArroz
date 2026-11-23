@@ -371,7 +371,7 @@ public sealed record WhatsAppForwardMessageDto(int SourceConversationId, int Mes
 public sealed record WhatsAppMessageReactionDto(string Emoji);
 
 public sealed record WhatsAppConversationStartRequest(
-    int BranchId, string Phone, string Template, bool RequestedByCustomer, int? OrderId, int? Amount,
+    int BranchId, string Phone, string Template, bool RequestedByCustomer, int? Amount,
     string SenderId);
 
 public sealed record WhatsAppConversationStartTemplate(

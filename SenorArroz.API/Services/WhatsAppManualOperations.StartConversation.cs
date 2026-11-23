@@ -19,15 +19,14 @@ namespace SenorArroz.API.Services;
 public sealed partial class WhatsAppManualOperations
 {
     private const string StarterLanguage = "es_CO";
-    private const string MenuDocumentName = "Carta Senor Arroz.pdf";
     private const string MenuDocumentType = "application/pdf";
     private const int MaxMenuImageBytes = 10_000_000;
     private static readonly CultureInfo Colombia = CultureInfo.GetCultureInfo("es-CO");
-    private static readonly (string Key, string Name, int Parameters)[] StarterTemplates =
+    private static readonly (string Key, string Name)[] StarterTemplates =
     [
-        ("menu", "carta_solicitada", 1),
-        ("catalog", "catalogo_solicitado", 1),
-        ("payment", "pago_pedido_bancolombia", 5)
+        ("menu", "carta_solicitada"),
+        ("catalog", "catalogo_solicitado"),
+        ("payment", "pago_pedido_bancolombia")
     ];
 
     internal static bool IsStarterTemplate(string name, string language) =>
@@ -51,7 +50,7 @@ public sealed partial class WhatsAppManualOperations
             var template = FindStarterTemplate(response, choice.Name);
             return new WhatsAppConversationStartTemplate(choice.Key, choice.Name, template?.Status ?? "NOT_FOUND",
                 template is null ? null : ExtractBodyText(template.ComponentsJson),
-                StarterUnavailableReason(sender.Branch, choice.Key, choice.Parameters, account, template));
+                StarterUnavailableReason(sender.Branch, choice.Key, account, template));
         }).ToArray();
 
         return Ok(ApiResponse<WhatsAppConversationStartOptions>.SuccessResponse(new(
@@ -102,38 +101,36 @@ public sealed partial class WhatsAppManualOperations
         if (!templates.Success) return Invalid("No se pudieron consultar las plantillas de esta línea en Meta.");
         var template = FindStarterTemplate(templates, choice.Name);
         var account = TransferAccount(request.BranchId);
-        var unavailable = StarterUnavailableReason(sender.Branch, choice.Key, choice.Parameters, account, template);
+        var unavailable = StarterUnavailableReason(sender.Branch, choice.Key, account, template);
         if (unavailable is not null) return Invalid(unavailable);
 
-        var customer = await _webhookProcessor.FindUniqueCustomerByPhoneAsync(phone, ct);
-        var parameters = new List<string> { sender.Branch.Name };
+        string[] parameters;
         if (choice.Key == "payment")
         {
-            if (request.OrderId is not > 0 || request.Amount is not > 0 || customer is null)
-                return Invalid("Indica un pedido de este cliente y un saldo pendiente mayor que cero.");
-            var order = await _db.Orders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == request.OrderId
-                && x.TenantId == TenantId && x.BranchId == request.BranchId && x.CustomerId == customer.Id
-                && x.Status != OrderStatus.Cancelled, ct);
-            if (order is null || request.Amount > order.Total)
-                return Invalid("El pedido o el saldo no corresponde a este cliente y sucursal.");
-            parameters.AddRange([$"#{order.Id}", "$" + request.Amount.Value.ToString("N0", Colombia) + " COP",
-                account!.Account.Trim(), account.Holder.Trim()]);
+            if (request.Amount is not > 0)
+                return Invalid("Ingresa un total a pagar mayor que cero.");
+            var amount = request.Amount.Value.ToString("N0", Colombia);
+            parameters = [account!.Account.Trim(), account.Holder.Trim(), $"${amount} COP"];
+        }
+        else
+        {
+            parameters = CountBodyTemplateParameters(template!.ComponentsJson) == 1 ? [sender.Branch.Name] : [];
         }
 
-        string? documentId = null, documentUrl = null;
+        string? documentId = null, documentUrl = null, documentName = null;
         if (choice.Key == "menu")
         {
-            (documentId, documentUrl) = await PrepareStarterMenuAsync(sender, ct);
+            documentName = $"Carta Señor Arroz - {sender.Branch.Name}.pdf";
+            (documentId, documentUrl) = await PrepareStarterMenuAsync(sender, documentName, ct);
             if (documentId is null)
                 return Invalid("No se pudo preparar el PDF con las imágenes de la carta de esta sucursal.");
         }
-        var components = new List<object>
-        {
-            new { type = "body", parameters = parameters.Select(text => new { type = "text", text }).ToArray() }
-        };
+        var components = new List<object>();
+        if (parameters.Length > 0)
+            components.Add(new { type = "body", parameters = parameters.Select(text => new { type = "text", text }).ToArray() });
         if (documentId is not null)
-            components.Add(new { type = "header", parameters = new[] { new
-                { type = "document", document = new { id = documentId, filename = MenuDocumentName } } } });
+            components.Add(new { type = "header", parameters = new[]
+                { new { type = "document", document = new { id = documentId, filename = documentName } } } });
         if (choice.Key == "catalog")
             components.Add(new { type = "button", sub_type = "catalog", index = 0, parameters = new[]
                 { new { type = "action", action = new Dictionary<string, string>() } } });
@@ -141,6 +138,7 @@ public sealed partial class WhatsAppManualOperations
         var timestamp = _clock.UtcNow;
         if (conversation is null)
         {
+            var customer = await _webhookProcessor.FindUniqueCustomerByPhoneAsync(phone, ct);
             conversation = new WhatsAppConversation
             {
                 TenantId = TenantId, BranchId = request.BranchId,
@@ -169,7 +167,7 @@ public sealed partial class WhatsAppManualOperations
             TenantId = TenantId, Conversation = conversation, WhatsAppMessageId = sent.WhatsAppMessageId,
             Direction = WhatsAppMessageDirection.Outbound, Type = documentId is null ? WhatsAppMessageType.Text : WhatsAppMessageType.Document,
             TextBody = text, MediaId = documentId, MediaUrl = documentUrl, MediaMimeType = documentId is null ? null : MenuDocumentType,
-            MediaFileName = documentId is null ? null : MenuDocumentName,
+            MediaFileName = documentName,
             Status = WhatsAppMessageStatus.Sent, Timestamp = _clock.UtcNow, SentByUserId = _currentUser.Id,
             RawPayload = JsonSerializer.Serialize(new { action = "start_conversation", template = choice.Name, language = StarterLanguage })
         };
@@ -225,14 +223,15 @@ public sealed partial class WhatsAppManualOperations
     private static WhatsAppCloudTemplate? FindStarterTemplate(WhatsAppCloudTemplateSyncResult result, string name) =>
         result.Templates.FirstOrDefault(x => x.Name == name && x.Language == StarterLanguage);
 
-    private string? StarterUnavailableReason(Branch branch, string key, int parameters,
+    private string? StarterUnavailableReason(Branch branch, string key,
         WhatsAppBranchTransferAccount? account, WhatsAppCloudTemplate? template)
     {
         if (template is null) return "Esta línea todavía no tiene esta plantilla en Meta.";
         if (!string.Equals(template.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
             return string.Equals(template.Status, "PENDING", StringComparison.OrdinalIgnoreCase)
                 ? "En revisión en Meta." : "Meta no habilita el envío de esta plantilla.";
-        if (CountBodyTemplateParameters(template.ComponentsJson) != parameters)
+        var parameters = CountBodyTemplateParameters(template.ComponentsJson);
+        if (key == "payment" ? parameters != 3 : parameters is not (0 or 1))
             return "Las variables aprobadas no coinciden con la configuración del POS.";
         if (!HasStarterComponents(template.ComponentsJson, key))
             return "Los componentes aprobados no coinciden con esta plantilla.";
@@ -275,7 +274,7 @@ public sealed partial class WhatsAppManualOperations
     private static string[] MenuImages(Branch branch) =>
         new[] { branch.MenuImageUrl1, branch.MenuImageUrl2 }.OfType<string>().Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
 
-    private async Task<(string? Id, string? Url)> PrepareStarterMenuAsync(ConversationStarter sender, CancellationToken ct)
+    private async Task<(string? Id, string? Url)> PrepareStarterMenuAsync(ConversationStarter sender, string documentName, CancellationToken ct)
     {
         if (_menuStorage is null) return (null, null);
         try
@@ -302,7 +301,7 @@ public sealed partial class WhatsAppManualOperations
             var publicUrl = await _menuStorage.UploadPublicObjectAsync(content,
                 $"whatsapp/{TenantId}/menus/{sender.Branch.Id}/{Guid.NewGuid():N}.pdf", MenuDocumentType, ct);
             var media = await _whatsAppCloudClient.UploadMediaAsync(sender.PhoneNumberId, sender.AccessToken,
-                content, MenuDocumentName, MenuDocumentType, ct);
+                content, documentName, MenuDocumentType, ct);
             return media.Success ? (media.MediaId, publicUrl) : (null, null);
         }
         catch (Exception error) when (error is not OperationCanceledException)

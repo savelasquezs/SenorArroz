@@ -275,19 +275,21 @@ public class WhatsAppCloudClient : IWhatsAppCloudClient
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildGraphUrl($"{phoneNumberId}/messages"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Content = CreateMessageContent(toPhoneNumber, "template", new
+        var template = new Dictionary<string, object>
         {
-            name = templateName,
-            language = new { code = language },
-            components = new[]
+            ["name"] = templateName,
+            ["language"] = new { code = language }
+        };
+        if (parameters.Count > 0)
+            template["components"] = new[]
             {
                 new
                 {
                     type = "body",
                     parameters = parameters.Select(x => new { type = "text", text = x ?? string.Empty }).ToArray()
                 }
-            }
-        });
+            };
+        request.Content = CreateMessageContent(toPhoneNumber, "template", template);
 
         try
         {

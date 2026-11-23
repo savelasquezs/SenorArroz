@@ -31,7 +31,7 @@ public sealed partial class WhatsAppOperationalBranchTests
             .ReturnsAsync("https://storage.example.invalid/carta.pdf");
         var cloud = StarterCloud(new("menu", "carta_solicitada", "es_CO", "MARKETING", "APPROVED",
             """[{"type":"HEADER","format":"DOCUMENT"},{"type":"BODY","text":"Carta de {{1}}. Responde para pedir."}]"""));
-        cloud.Setup(x => x.UploadMediaAsync("santander-line", "token", It.IsAny<byte[]>(), "Carta Senor Arroz.pdf", "application/pdf", It.IsAny<CancellationToken>()))
+        cloud.Setup(x => x.UploadMediaAsync("santander-line", "token", It.IsAny<byte[]>(), "Carta Señor Arroz - Santander.pdf", "application/pdf", It.IsAny<CancellationToken>()))
             .Callback<string, string, byte[], string, string, CancellationToken>((_, _, pdf, _, _, _) =>
             {
                 using var document = PdfReader.Open(new MemoryStream(pdf), PdfDocumentOpenMode.Import);
@@ -39,7 +39,7 @@ public sealed partial class WhatsAppOperationalBranchTests
             })
             .ReturnsAsync(new WhatsAppCloudUploadMediaResult(true, "uploaded-pdf", null));
         var response = await CreateController(db, cloud: cloud.Object, storage: storage.Object)
-            .StartConversation(new(1, "(300) 123-4567", "menu", true, null, null, "santander-line"), default);
+            .StartConversation(new(1, "(300) 123-4567", "menu", true, null, "santander-line"), default);
         var data = Assert.IsType<ApiResponse<WhatsAppConversationStartResult>>(Assert.IsType<OkObjectResult>(response.Result).Value).Data!;
         Assert.True(data.Sent);
         var conversation = await db.WhatsAppConversations.SingleAsync();
@@ -48,28 +48,36 @@ public sealed partial class WhatsAppOperationalBranchTests
         var message = await db.WhatsAppMessages.SingleAsync();
         Assert.Equal(WhatsAppMessageType.Document, message.Type);
         Assert.Equal("uploaded-pdf", message.MediaId);
+        Assert.Equal("Carta Señor Arroz - Santander.pdf", message.MediaFileName);
         Assert.Equal("Carta de Santander. Responde para pedir.", message.TextBody);
         cloud.Verify(x => x.SendSharedContentAsync("santander-line", "token", "573001234567", "template",
             It.Is<JsonElement>(payload => payload.GetProperty("components")[1].GetProperty("parameters")[0]
                 .GetProperty("document").GetProperty("id").GetString() == "uploaded-pdf"), It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
-    public async Task Start_conversation_sends_the_approved_catalog_template_to_the_normalized_number()
+    [Theory]
+    [InlineData("Catálogo de Señor Arroz.", "Catálogo de Señor Arroz.", 0)]
+    [InlineData("Catálogo de {{1}}.", "Catálogo de Santander.", 1)]
+    public async Task Start_conversation_sends_the_approved_catalog_template_to_the_normalized_number(
+        string body, string expected, int buttonIndex)
     {
         await using var db = CreateDb();
         await SeedStarterLine(db);
         var cloud = StarterCloud(new("catalog", "catalogo_solicitado", "es_CO", "MARKETING", "APPROVED",
-            """[{"type":"BODY","text":"Catálogo de {{1}}."},{"type":"BUTTONS","buttons":[{"type":"CATALOG"}]}]"""));
+            JsonSerializer.Serialize<object[]>([
+                new { type = "BODY", text = body },
+                new { type = "BUTTONS", buttons = new[] { new { type = "CATALOG" } } }
+            ])));
         var result = await CreateController(db, cloud: cloud.Object)
-            .StartConversation(new(1, "300 123 4567", "catalog", true, null, null, "santander-line"), default);
+            .StartConversation(new(1, "300 123 4567", "catalog", true, null, "santander-line"), default);
 
         var response = Assert.IsType<ApiResponse<WhatsAppConversationStartResult>>(Assert.IsType<OkObjectResult>(result.Result).Value);
         Assert.True(response.Data!.Sent);
-        Assert.Equal("Catálogo de Santander.", (await db.WhatsAppMessages.SingleAsync()).TextBody);
+        Assert.Equal(expected, (await db.WhatsAppMessages.SingleAsync()).TextBody);
         cloud.Verify(x => x.SendSharedContentAsync("santander-line", "token", "573001234567", "template",
             It.Is<JsonElement>(payload => payload.GetProperty("name").GetString() == "catalogo_solicitado"
-                && payload.GetProperty("components")[1].GetProperty("sub_type").GetString() == "catalog"),
+                && payload.GetProperty("components").GetArrayLength() == buttonIndex + 1
+                && payload.GetProperty("components")[buttonIndex].GetProperty("sub_type").GetString() == "catalog"),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -82,7 +90,7 @@ public sealed partial class WhatsAppOperationalBranchTests
             """[{"type":"BODY","text":"Catálogo de {{1}}. Responde para pedir."},{"type":"BUTTONS","buttons":[{"type":"CATALOG"}]}]""");
         var cloud = StarterCloud(template);
         var controller = CreateController(db, cloud: cloud.Object);
-        var request = new WhatsAppConversationStartRequest(1, "3001234567", "catalog", true, null, null, "santander-line");
+        var request = new WhatsAppConversationStartRequest(1, "3001234567", "catalog", true, null, "santander-line");
         Assert.IsType<BadRequestObjectResult>((await controller.StartConversation(request, default)).Result);
         Assert.Empty(await db.WhatsAppConversations.ToListAsync());
 
@@ -101,30 +109,38 @@ public sealed partial class WhatsAppOperationalBranchTests
     }
 
     [Fact]
-    public async Task Start_conversation_uses_the_branch_bank_account_and_validates_the_customer_order_and_amount()
+    public async Task Start_conversation_sends_the_branch_bank_account_with_a_manual_amount_to_a_new_contact()
     {
         await using var db = CreateDb();
         await SeedStarterLine(db);
-        db.Customers.Add(new Customer { Id = 12, TenantId = 1, BranchId = 1, Name = "Cliente", Phone1 = "3001234567", Active = true });
-        db.Orders.Add(new Order { Id = 25, TenantId = 1, BranchId = 1, CustomerId = 12, TakenById = 7, Total = 45000,
-            Status = OrderStatus.Taken, Type = OrderType.Delivery });
-        await db.SaveChangesAsync();
         var cloud = StarterCloud(new("bank", "pago_pedido_bancolombia", "es_CO", "UTILITY", "APPROVED",
-            """[{"type":"BODY","text":"Señor Arroz {{1}}: pedido {{2}} por {{3}}, cuenta {{4}} a nombre de {{5}}. Gracias."}]"""));
+            """[{"type":"BODY","text":"Hola, te dejo nuestros datos de pago:\n\nCuenta Bancolombia número {{1}} a nombre de {{2}}.\n\nEl total a pagar es de {{3}}. Muchas gracias."}]"""));
         var options = new WhatsAppCloudOptions
         {
-            BancolombiaByBranch = new() { [1] = new() { Account = "de ahorros 00000000000", Holder = "Titular de prueba" } }
+            BancolombiaByBranch = new() { [1] = new() { Account = " 00012345678 ", Holder = " Titular de prueba " } }
         };
         var controller = CreateController(db, cloud: cloud.Object, cloudOptions: options);
-        var request = new WhatsAppConversationStartRequest(1, "+57 3001234567", "payment", true, 25, 46000, "santander-line");
-        Assert.IsType<BadRequestObjectResult>((await controller.StartConversation(request, default)).Result);
-        Assert.IsType<BadRequestObjectResult>((await controller.StartConversation(request with { Phone = "3001234568", Amount = 42000 }, default)).Result);
-        Assert.IsType<BadRequestObjectResult>((await controller.StartConversation(request with { RequestedByCustomer = false, Amount = 42000 }, default)).Result);
-        Assert.IsType<OkObjectResult>((await controller.StartConversation(request with { Amount = 42000 }, default)).Result);
+        var request = new WhatsAppConversationStartRequest(1, "+57 3001234567", "payment", true, 42000, "santander-line");
+
+        foreach (var invalidAmount in new int?[] { null, 0, -1 })
+            Assert.IsType<BadRequestObjectResult>((await controller.StartConversation(request with { Amount = invalidAmount }, default)).Result);
+        Assert.IsType<BadRequestObjectResult>((await controller.StartConversation(request with { RequestedByCustomer = false }, default)).Result);
+        Assert.Empty(await db.WhatsAppConversations.ToListAsync());
+        cloud.Verify(x => x.SendSharedContentAsync("santander-line", "token", It.IsAny<string>(), "template",
+            It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        Assert.IsType<OkObjectResult>((await controller.StartConversation(request, default)).Result);
+        Assert.Null((await db.WhatsAppConversations.SingleAsync()).CustomerId);
+        Assert.Empty(await db.Orders.ToListAsync());
         var message = await db.WhatsAppMessages.SingleAsync();
-        Assert.Contains("pedido #25 por $42.000 COP, cuenta de ahorros 00000000000", message.TextBody);
+        Assert.Contains("Cuenta Bancolombia número 00012345678 a nombre de Titular de prueba.", message.TextBody);
+        Assert.Contains("El total a pagar es de $42.000 COP.", message.TextBody);
         cloud.Verify(x => x.SendSharedContentAsync("santander-line", "token", "573001234567", "template",
-            It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()), Times.Once);
+            It.Is<JsonElement>(payload => payload.GetProperty("components")[0].GetProperty("parameters").GetArrayLength() == 3
+                && payload.GetProperty("components")[0].GetProperty("parameters")[0].GetProperty("text").GetString() == "00012345678"
+                && payload.GetProperty("components")[0].GetProperty("parameters")[1].GetProperty("text").GetString() == "Titular de prueba"
+                && payload.GetProperty("components")[0].GetProperty("parameters")[2].GetProperty("text").GetString() == "$42.000 COP"),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static async Task SeedStarterLine(SenorArroz.Infrastructure.Data.ApplicationDbContext db)
