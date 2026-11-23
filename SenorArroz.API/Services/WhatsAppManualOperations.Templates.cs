@@ -23,7 +23,7 @@ public sealed partial class WhatsAppManualOperations
         var result = await _whatsAppCloudClient.GetMessageTemplatesAsync(channel.BusinessAccountId, channel.AccessToken, ct);
         if (!result.Success) return BadRequest(ApiResponse<IReadOnlyList<WhatsAppCloudTemplate>>.ErrorResponse("No se pudieron consultar las plantillas de esta línea en Meta."));
         return Ok(ApiResponse<IReadOnlyList<WhatsAppCloudTemplate>>.SuccessResponse(result.Templates
-            .Where(x => string.Equals(x.Status, "APPROVED", StringComparison.OrdinalIgnoreCase) && !IsStarterTemplate(x.Name, x.Language))
+            .Where(x => string.Equals(x.Status, "APPROVED", StringComparison.OrdinalIgnoreCase) && !IsStarterOnlyTemplate(x.Name, x.Language))
             .OrderBy(x => x.Name).ToList()));
     }
 
@@ -33,7 +33,7 @@ public sealed partial class WhatsAppManualOperations
         var conversation = await _db.WhatsAppConversations.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (conversation is null) return NotFound();
         if (!WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id) || !await CanAccessConversationAsync(conversation, ct)) return Forbid();
-        if (IsStarterTemplate(request.TemplateName, request.Language))
+        if (IsStarterOnlyTemplate(request.TemplateName, request.Language))
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Envía esta plantilla desde Nueva conversación."));
         if (request.Parameters is null || request.Parameters.Count > 20 || request.Parameters.Any(x => string.IsNullOrWhiteSpace(x) || x.Length > 1024))
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Completa los valores de la plantilla (máximo 1024 caracteres por valor)."));

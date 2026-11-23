@@ -377,7 +377,7 @@ public sealed record WhatsAppMessageReactionDto(string Emoji);
 
 public sealed record WhatsAppConversationStartRequest(
     int BranchId, string Phone, string Template, bool RequestedByCustomer, int? Amount,
-    string SenderId, string? TemplateName = null);
+    string SenderId, string? TemplateName = null, string? DeliveryUpdate = null);
 
 public sealed record WhatsAppConversationStartTemplate(
     string Key, string Name, string Status, string? Body, string? UnavailableReason);

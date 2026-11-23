@@ -184,6 +184,35 @@ public sealed partial class WhatsAppOperationalBranchTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task Start_conversation_lists_and_sends_a_delivery_update_with_one_manual_value()
+    {
+        await using var db = CreateDb();
+        await SeedStarterLine(db);
+        var cloud = StarterCloud(new("delivery", "novedad_entrega_domiciliario", "es_CO", "UTILITY", "APPROVED",
+            """[{"type":"BODY","text":"El domiciliario nos informa que {{1}}. Quedamos atentos."}]"""));
+        var controller = CreateController(db, cloud: cloud.Object);
+        var options = await controller.GetConversationStartOptions(1, default);
+        var data = Assert.IsType<ApiResponse<WhatsAppConversationStartOptions>>(Assert.IsType<OkObjectResult>(options.Result).Value).Data!;
+        var choice = Assert.Single(data.Templates, item => item.Key == "delivery_update");
+        Assert.Null(choice.UnavailableReason);
+
+        var request = new WhatsAppConversationStartRequest(1, "3001234567", choice.Key, true, null, "santander-line", choice.Name);
+        Assert.IsType<BadRequestObjectResult>((await controller.StartConversation(request, default)).Result);
+        Assert.IsType<BadRequestObjectResult>((await controller.StartConversation(request with { DeliveryUpdate = new string('x', 1024) }, default)).Result);
+        Assert.Empty(await db.WhatsAppConversations.ToListAsync());
+
+        var result = await controller.StartConversation(request with { DeliveryUpdate = "  ya llegó y está intentando contactarte  " }, default);
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal("El domiciliario nos informa que ya llegó y está intentando contactarte. Quedamos atentos.",
+            (await db.WhatsAppMessages.SingleAsync()).TextBody);
+        cloud.Verify(x => x.SendSharedContentAsync("santander-line", "token", "573001234567", "template",
+            It.Is<JsonElement>(payload => payload.GetProperty("name").GetString() == "novedad_entrega_domiciliario"
+                && payload.GetProperty("components")[0].GetProperty("parameters").GetArrayLength() == 1
+                && payload.GetProperty("components")[0].GetProperty("parameters")[0].GetProperty("text").GetString()
+                    == "ya llegó y está intentando contactarte"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     private static async Task SeedStarterLine(SenorArroz.Infrastructure.Data.ApplicationDbContext db)
     {
         db.Branches.Add(new Branch { Id = 1, TenantId = 1, Name = "Santander" });
