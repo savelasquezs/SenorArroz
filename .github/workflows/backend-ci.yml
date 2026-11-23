@@ -13,6 +13,8 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      POS_LOAD_TEST: SenorArroz.Tests.WhatsAppProcessingPostgreSqlTests.Stage6_HTTP_POS_and_inbox_profile_during_240_durable_events
     services:
       flow-postgres:
         image: postgres:16-alpine
@@ -61,4 +63,9 @@ jobs:
           RUN_POSTGRES_INTEGRATION_TESTS: 'true'
           FLOW_POSTGRES_TEST_CONNECTION: 'Host=localhost;Port=5432;Database=flow_test;Username=flow_test;Password=flow_test'
           INVOICE_TEST_POSTGRES: 'Host=localhost;Port=5432;Database=flow_test;Username=flow_test;Password=flow_test'
-        run: dotnet test SenorArroz.Tests/SenorArroz.Tests.csproj --configuration Release --no-build --logger "console;verbosity=normal"
+        run: dotnet test SenorArroz.Tests/SenorArroz.Tests.csproj --configuration Release --no-build --filter "FullyQualifiedName!=$POS_LOAD_TEST" --logger "console;verbosity=normal"
+
+      - name: POS load test
+        env:
+          RUN_POSTGRES_INTEGRATION_TESTS: 'true'
+        run: dotnet test SenorArroz.Tests/SenorArroz.Tests.csproj --configuration Release --no-build --filter "FullyQualifiedName=$POS_LOAD_TEST" --logger "console;verbosity=normal"

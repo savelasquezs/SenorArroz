@@ -357,7 +357,8 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         }
 
         if (order.Type is not (OrderType.Delivery or OrderType.Reservation)) return Invalid("El pedido no requiere una dirección.");
-        if (order.CustomerId is not int customerId || conversation.CustomerId != customerId)
+        if (order.CustomerId is not int customerId || (conversation.CustomerId != customerId
+            && !await TryLinkMatchingAddressCustomerAsync(conversation, session, customerId, ct)))
             return Invalid("Vincula el cliente del pedido con esta conversación antes de compartir sus direcciones.");
         var addresses = await _db.AddressBranches.AsNoTracking()
             .Where(x => x.BranchId == order.BranchId && x.Branch.IsActive && x.IsCovered && x.DeliveryFee >= 0
@@ -373,6 +374,40 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         return await SendChoicePromptAsync(conversation, session, order, setting, recipient,
             addresses.Count == 1 ? "¿Entregamos en esta dirección?" : "Elige dónde quieres recibir tu pedido.",
             "Ver direcciones", options, null, ct);
+    }
+
+    private async Task<bool> TryLinkMatchingAddressCustomerAsync(WhatsAppConversation conversation,
+        WhatsAppCommerceSession session, int customerId, CancellationToken ct)
+    {
+        if (conversation.CustomerId.HasValue) return false;
+
+        await using var transaction = _db.Database.IsRelational() ? await _db.Database.BeginTransactionAsync(ct) : null;
+        await WhatsAppCommercialDraft.LockAsync(_db, TenantId, conversation.Id, ct);
+        var current = await _db.WhatsAppConversations.SingleOrDefaultAsync(x => x.Id == conversation.Id, ct);
+        if (current is null || current.AttentionRevision != conversation.AttentionRevision
+            || current.PhoneNumber != conversation.PhoneNumber || current.WhatsAppUserId != conversation.WhatsAppUserId
+            || current.ChannelSettingId != conversation.ChannelSettingId || current.BranchLineId != conversation.BranchLineId
+            || current.CustomerId.HasValue && current.CustomerId != customerId
+            || !WhatsAppAttentionService.CanWrite(current, _currentUser.Id)
+            || !await _db.WhatsAppCommerceSessions.AsNoTracking().AnyAsync(x => x.Id == session.Id
+                && x.ConversationId == current.Id && x.Status == "active" && x.Version == session.Version, ct))
+            return false;
+
+        if (!current.CustomerId.HasValue)
+        {
+            var matched = !string.IsNullOrWhiteSpace(current.PhoneNumber)
+                ? await _webhookProcessor.FindUniqueCustomerByPhoneAsync(current.PhoneNumber, ct)
+                : await _webhookProcessor.FindUniqueCustomerByWhatsAppUserIdAsync(current.WhatsAppUserId!, ct);
+            if (matched is null || matched.Id != customerId || (!string.IsNullOrWhiteSpace(matched.WhatsAppUserId)
+                && !string.IsNullOrWhiteSpace(current.WhatsAppUserId) && matched.WhatsAppUserId != current.WhatsAppUserId))
+                return false;
+
+            current.CustomerId = customerId;
+            current.UpdatedAt = _clock.UtcNow;
+            await _db.SaveChangesAsync(ct);
+        }
+        if (transaction is not null) await transaction.CommitAsync(ct);
+        return true;
     }
 
     private async Task<ActionResult<ApiResponse<WhatsAppMessageDto[]>>> SendChoicePromptAsync(
