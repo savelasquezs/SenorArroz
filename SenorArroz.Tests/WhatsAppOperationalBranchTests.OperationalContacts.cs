@@ -2,8 +2,11 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Moq;
+using Microsoft.Extensions.Logging;
+using SenorArroz.API.Controllers;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
+using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.Suppliers.DTOs;
 using SenorArroz.Application.Features.Suppliers.Queries;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
@@ -114,6 +117,82 @@ public sealed partial class WhatsAppOperationalBranchTests
         await VerifyOperationalRoutesAsync(db);
     }
 
+    [Fact]
+    public async Task Shared_delivery_phones_follow_the_latest_gps_session_per_device()
+    {
+        await using var db = CreateDb();
+        await VerifySharedDeliveryPhonesAsync(db);
+    }
+
+    internal static async Task VerifySharedDeliveryPhonesAsync(ApplicationDbContext db)
+    {
+        await SeedCentralConversationAsync(db, 1, null);
+        var now = new DateTime(2026, 11, 22, 18, 0, 0, DateTimeKind.Utc);
+        db.AddRange(
+            new User { Id = 20, BranchId = 1, Role = UserRole.Deliveryman, Name = "Ana", Phone = "3000000000", Email = "a@demo.test" },
+            new User { Id = 21, BranchId = 1, Role = UserRole.Deliveryman, Name = "Luis", Email = "b@demo.test" },
+            new User { Id = 22, BranchId = 2, Role = UserRole.Deliveryman, Name = "Lina", Email = "c@demo.test" },
+            new User { Id = 23, BranchId = 1, Role = UserRole.Deliveryman, Name = "Iván", Email = "d@demo.test" });
+        db.AddRange(
+            Session(30, 20, 1, "equipo-a", now.AddHours(-3), closed: true),
+            Session(31, 21, 1, "equipo-a", now.AddHours(-1)),
+            Session(32, 20, 1, "equipo-b", now.AddHours(-25), closed: true),
+            Session(33, 22, 2, "equipo-foraneo", now.AddHours(-2)),
+            Session(35, 23, 1, "equipo-c", now.AddHours(-2)));
+        await db.SaveChangesAsync();
+
+        var settings = new BranchWhatsAppSettingsController(db,
+            Mock.Of<ICurrentUser>(x => x.Role == "Admin" && x.BranchId == 1), Mock.Of<IClock>(x => x.UtcNow == now),
+            Mock.Of<IWhatsAppCloudClient>(), Mock.Of<IBranchBusinessHoursService>(),
+            new WhatsAppAwayMessageService(), Mock.Of<ILogger<BranchWhatsAppSettingsController>>());
+        Assert.IsType<ForbidResult>((await settings.GetDeliveryPhones(2, default)).Result);
+        Assert.IsType<NotFoundObjectResult>(await settings.SaveDeliveryPhone(1, new("3020000003", 33), default));
+        Assert.IsType<NoContentResult>(await settings.SaveDeliveryPhone(1, new("300 000 0000", 31), default));
+        Assert.IsType<ConflictObjectResult>(await settings.SaveDeliveryPhone(1, new("3000000002", 31), default));
+        Assert.IsType<NoContentResult>(await settings.SaveDeliveryPhone(1, new("+573000000001", 32), default));
+        Assert.IsType<NoContentResult>(await settings.SaveDeliveryPhone(1, new("3020000003", 35), default));
+        var local = Assert.IsType<ApiResponse<DeliveryWorkPhoneSettingsDto>>(
+            Assert.IsType<OkObjectResult>((await settings.GetDeliveryPhones(1, default)).Result).Value).Data!;
+        Assert.Equal([31, 35, 32], local.Devices.Select(d => d.WorkSessionId));
+        Assert.Equal(["573000000000", "573000000001", "573020000003"], local.Phones.Select(p => p.Phone));
+
+        var known = await db.WhatsAppConversations.SingleAsync();
+        var unknownToday = new WhatsAppConversation { TenantId = 1, PhoneNumber = "3000000001" };
+        var manual = await WhatsAppOperationalContacts.FindAsync(db, unknownToday, default);
+        Assert.Equal(WhatsAppOperationalContacts.Deliveryman, manual?.Kind);
+        Assert.Equal(0, (await WhatsAppOperationalContacts.FindForRoutesAsync(db, unknownToday, now, default))?.Id);
+        var dtos = new[]
+        {
+            new WhatsAppConversationDto { PhoneNumber = known.PhoneNumber },
+            new WhatsAppConversationDto { PhoneNumber = unknownToday.PhoneNumber },
+            new WhatsAppConversationDto { PhoneNumber = "3020000003" },
+        };
+        await WhatsAppOperationalContacts.EnrichAsync(db, 1, dtos, default, now);
+        Assert.Equal(new WhatsAppOperationalContactDto("deliveryman", "Luis", true, 21), dtos[0].OperationalContact);
+        Assert.Equal(new WhatsAppOperationalContactDto("deliveryman", "", true), dtos[1].OperationalContact);
+        Assert.Equal(new WhatsAppOperationalContactDto("deliveryman", "Iván", true, 23), dtos[2].OperationalContact);
+
+        var first = await db.DeliveryWorkSessions.SingleAsync(x => x.Id == 31);
+        first.Close(now, DeliveryWorkSessionEndReason.UserChange);
+        await db.SaveChangesAsync();
+        Assert.Equal("Luis", (await WhatsAppOperationalContacts.FindForRoutesAsync(db, known, now, default))?.Name);
+        db.DeliveryWorkSessions.Add(Session(34, 20, 1, "equipo-a", now.AddMinutes(5)));
+        await db.SaveChangesAsync();
+        var next = await WhatsAppOperationalContacts.FindForRoutesAsync(db, known, now.AddMinutes(10), default);
+        Assert.Equal(20, next?.Id);
+        Assert.Equal("Ana", next?.Name);
+        Assert.Equal(0, (await WhatsAppOperationalContacts.FindForRoutesAsync(db, known, now.AddDays(1), default))?.Id);
+        Assert.Null(await WhatsAppOperationalContacts.FindAsync(db, new() { TenantId = 2, PhoneNumber = known.PhoneNumber }, default));
+
+        static DeliveryWorkSession Session(int id, int driverId, int branchId, string device, DateTime start, bool closed = false) => new()
+        {
+            Id = id, DeliverymanId = driverId, BranchId = branchId, DeviceInstallationId = device,
+            Status = closed ? DeliveryWorkSessionStatus.Closed : DeliveryWorkSessionStatus.Active,
+            StartedAt = start, AutoCloseAt = start.AddHours(4), LastCommunicationAt = start,
+            EndedAt = closed ? start.AddMinutes(30) : null,
+        };
+    }
+
     internal static async Task VerifyOperationalRoutesAsync(ApplicationDbContext db)
     {
         await SeedCentralConversationAsync(db, 1, null);
@@ -121,7 +200,7 @@ public sealed partial class WhatsAppOperationalBranchTests
         var session = new DeliveryWorkSession
         {
             Id = 24, DeliverymanId = 20, BranchId = 2, StartedAt = now.AddHours(-1),
-            AutoCloseAt = now.AddHours(1), LastCommunicationAt = now,
+            AutoCloseAt = now.AddHours(1), LastCommunicationAt = now, DeviceInstallationId = "route-device",
         };
         db.AddRange(new User { Id = 20, BranchId = 2, Role = UserRole.Deliveryman, Phone = "3000000000",
             Name = "Dom", Email = "driver@example.com" }, session);
@@ -156,6 +235,11 @@ public sealed partial class WhatsAppOperationalBranchTests
         routes = ReadRoutes(await controller.GetConversationDeliveryRoutes(11, default));
         Assert.Equal(new[] { 34, 33 }, routes.Select(r => r.Id));
         Assert.True(routes[0].IsCurrent);
+
+        db.DeliveryWorkPhones.Add(new DeliveryWorkPhone { BranchId = 2, Phone = "573000000000", DeviceInstallationId = "route-device" });
+        await db.SaveChangesAsync();
+        Assert.Empty(ReadRoutes(await controller.GetConversationDeliveryRoutes(11, default, expectedDeliverymanId: 21)));
+        Assert.Equal(new[] { 34, 33 }, ReadRoutes(await controller.GetConversationDeliveryRoutes(11, default, expectedDeliverymanId: 20)).Select(r => r.Id));
 
         DeliveryRoute Route(int id, int hoursAgo, bool current = false) => new()
         {

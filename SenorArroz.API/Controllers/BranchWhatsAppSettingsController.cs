@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Services;
@@ -54,6 +55,87 @@ public class BranchWhatsAppSettingsController : ControllerBase
         return Ok(ApiResponse<WhatsAppBranchSettingDto>.SuccessResponse(
             ToDto(setting, branchId),
             "Configuración de WhatsApp obtenida."));
+    }
+
+    [HttpGet("delivery-phones")]
+    public async Task<ActionResult<ApiResponse<DeliveryWorkPhoneSettingsDto>>> GetDeliveryPhones(int branchId, CancellationToken ct)
+    {
+        if (!CanAccessBranch(branchId)) return Forbid();
+        if (!await _db.Branches.AnyAsync(x => x.Id == branchId, ct)) return NotFound();
+
+        var cutoff = _clock.UtcNow.AddDays(-30);
+        var latestIds = _db.DeliveryWorkSessions
+            .Where(s => s.BranchId == branchId && s.StartedAt >= cutoff)
+            .GroupBy(s => s.DeviceInstallationId)
+            .Select(g => g.OrderByDescending(s => s.StartedAt).ThenByDescending(s => s.Id).Select(s => s.Id).First());
+        var devices = await _db.DeliveryWorkSessions.AsNoTracking()
+            .Where(s => s.BranchId == branchId && latestIds.Contains(s.Id))
+            .OrderByDescending(s => s.LastCommunicationAt)
+            .Select(s => new { s.DeviceInstallationId, Device = new DeliveryWorkPhoneDeviceDto(s.Id, s.DeviceDescription,
+                s.Deliveryman.Name, s.LastCommunicationAt) })
+            .ToListAsync(ct);
+        var deviceIds = devices.ToDictionary(x => x.DeviceInstallationId, x => x.Device.WorkSessionId);
+        var phones = await _db.DeliveryWorkPhones.AsNoTracking()
+            .Where(x => x.BranchId == branchId)
+            .OrderBy(x => x.Phone)
+            .ToListAsync(ct);
+        var result = new DeliveryWorkPhoneSettingsDto(
+            phones.Select(x => new DeliveryWorkPhoneDto(x.Id, x.Phone,
+                deviceIds.TryGetValue(x.DeviceInstallationId, out var sessionId) ? sessionId : null)).ToArray(),
+            devices.Select(x => x.Device).ToArray());
+        return Ok(ApiResponse<DeliveryWorkPhoneSettingsDto>.SuccessResponse(result));
+    }
+
+    [HttpPut("delivery-phones")]
+    public async Task<IActionResult> SaveDeliveryPhone(int branchId, UpsertDeliveryWorkPhoneDto dto, CancellationToken ct)
+    {
+        if (!CanAccessBranch(branchId)) return Forbid();
+        var phone = WhatsAppOperationalContacts.Normalize(dto.Phone);
+        if (phone is null) return BadRequest(ApiResponse<object>.ErrorResponse("Ingresa un número de WhatsApp válido."));
+
+        var cutoff = _clock.UtcNow.AddDays(-30);
+        var session = await _db.DeliveryWorkSessions.AsNoTracking()
+            .Where(x => x.BranchId == branchId && x.Id == dto.WorkSessionId && x.StartedAt >= cutoff)
+            .Select(x => new { x.TenantId, x.DeviceInstallationId })
+            .SingleOrDefaultAsync(ct);
+        if (session is null)
+            return NotFound(ApiResponse<object>.ErrorResponse("El equipo no tiene una jornada reciente en esta sucursal."));
+
+        var binding = await _db.DeliveryWorkPhones
+            .SingleOrDefaultAsync(x => x.TenantId == session.TenantId && x.Phone == phone, ct);
+        if ((binding != null && binding.BranchId != branchId)
+            || await _db.DeliveryWorkPhones.AnyAsync(x => x.TenantId == session.TenantId
+                && x.DeviceInstallationId == session.DeviceInstallationId && x.Phone != phone, ct))
+            return Conflict(ApiResponse<object>.ErrorResponse("El número o el equipo ya está vinculado."));
+
+        if (binding is null)
+        {
+            binding = new DeliveryWorkPhone { TenantId = session.TenantId, BranchId = branchId, Phone = phone };
+            _db.DeliveryWorkPhones.Add(binding);
+        }
+        binding.DeviceInstallationId = session.DeviceInstallationId;
+        binding.UpdatedAt = _clock.UtcNow;
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+            { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "ux_delivery_work_phone_number" or "ux_delivery_work_phone_device" })
+        {
+            return Conflict(ApiResponse<object>.ErrorResponse("El número o el equipo ya está vinculado."));
+        }
+        return NoContent();
+    }
+
+    [HttpDelete("delivery-phones/{phoneId:int}")]
+    public async Task<IActionResult> RemoveDeliveryPhone(int branchId, int phoneId, CancellationToken ct)
+    {
+        if (!CanAccessBranch(branchId)) return Forbid();
+        var binding = await _db.DeliveryWorkPhones.SingleOrDefaultAsync(x => x.BranchId == branchId && x.Id == phoneId, ct);
+        if (binding is null) return NotFound();
+        _db.DeliveryWorkPhones.Remove(binding);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
     }
 
     [HttpPost]

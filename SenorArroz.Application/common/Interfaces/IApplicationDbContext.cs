@@ -113,6 +113,7 @@ namespace SenorArroz.Application.Common.Interfaces
         DbSet<DeliveryIncidentDeviceEventEvidence> DeliveryIncidentDeviceEventEvidence { get; set; }
 
         DbSet<DeliveryWorkSession> DeliveryWorkSessions { get; set; }
+        DbSet<DeliveryWorkPhone> DeliveryWorkPhones { get; set; }
 
         DbSet<DeliveryRoute> DeliveryRoutes { get; set; }
 

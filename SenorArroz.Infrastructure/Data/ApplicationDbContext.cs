@@ -142,6 +142,7 @@ namespace SenorArroz.Infrastructure.Data
         public virtual DbSet<DeliveryIncidentDeviceEventEvidence> DeliveryIncidentDeviceEventEvidence { get; set; }
 
         public virtual DbSet<DeliveryWorkSession> DeliveryWorkSessions { get; set; }
+        public virtual DbSet<DeliveryWorkPhone> DeliveryWorkPhones { get; set; }
 
         public virtual DbSet<DeliveryRoute> DeliveryRoutes { get; set; }
 
@@ -327,6 +328,22 @@ namespace SenorArroz.Infrastructure.Data
             modelBuilder.ApplyConfiguration(new DeliveryIncidentLocationEvidenceConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryIncidentDeviceEventEvidenceConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryWorkSessionConfiguration());
+            modelBuilder.Entity<DeliveryWorkPhone>(builder =>
+            {
+                builder.ToTable("delivery_work_phone");
+                builder.Property(x => x.Id).HasColumnName("id");
+                builder.Property(x => x.BranchId).HasColumnName("branch_id");
+                builder.Property(x => x.Phone).HasColumnName("phone").HasMaxLength(15).IsRequired();
+                builder.Property(x => x.DeviceInstallationId).HasColumnName("device_installation_id").HasMaxLength(64).IsRequired();
+                builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("NOW()");
+                builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("NOW()");
+                builder.HasIndex(x => new { x.TenantId, x.Phone }).IsUnique().HasDatabaseName("ux_delivery_work_phone_number");
+                builder.HasIndex(x => new { x.TenantId, x.DeviceInstallationId }).IsUnique().HasDatabaseName("ux_delivery_work_phone_device");
+                builder.HasOne<Branch>().WithMany()
+                    .HasForeignKey(x => new { x.TenantId, x.BranchId })
+                    .HasPrincipalKey(x => new { x.TenantId, x.Id })
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
             modelBuilder.ApplyConfiguration(new DeliveryRouteConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRouteStopConfiguration());
             modelBuilder.ApplyConfiguration(new DeliveryRoutingPlanConfiguration());

@@ -163,7 +163,12 @@ public sealed class WhatsAppOperationalBranchOptionDto
     public string Name { get; set; } = string.Empty;
 }
 
-public sealed record WhatsAppOperationalContactDto(string Kind, string Name);
+public sealed record WhatsAppOperationalContactDto(string Kind, string Name, bool IsSharedPhone = false, int? DeliverymanId = null);
+
+public sealed record DeliveryWorkPhoneDto(int Id, string Phone, int? WorkSessionId);
+public sealed record DeliveryWorkPhoneDeviceDto(int WorkSessionId, string? Description, string DeliverymanName, DateTime LastCommunicationAt);
+public sealed record DeliveryWorkPhoneSettingsDto(IReadOnlyList<DeliveryWorkPhoneDto> Phones, IReadOnlyList<DeliveryWorkPhoneDeviceDto> Devices);
+public sealed record UpsertDeliveryWorkPhoneDto(string Phone, int WorkSessionId);
 
 public sealed record WhatsAppDeliveryRouteOrderDto(int OrderId, int StopSequence, OrderStatus Status);
 

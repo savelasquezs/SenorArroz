@@ -17,26 +17,29 @@ public partial class WhatsAppController
     private async Task<OkObjectResult> OperationalContactResponse(WhatsAppConversation conversation, string message, CancellationToken ct)
     {
         var dto = ToConversationDto(conversation);
-        await WhatsAppOperationalContacts.EnrichAsync(_db, conversation.TenantId, [dto], ct);
+        await WhatsAppOperationalContacts.EnrichAsync(_db, conversation.TenantId, [dto], ct, _clock.UtcNow);
         return Ok(ApiResponse<WhatsAppConversationDto>.SuccessResponse(dto, message));
     }
 
     [HttpGet("conversations/{conversationId:int}/delivery-routes")]
     [Authorize(Roles = "Superadmin, Admin, Cashier")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-    public async Task<IActionResult> GetConversationDeliveryRoutes(int conversationId, CancellationToken ct)
+    public async Task<IActionResult> GetConversationDeliveryRoutes(int conversationId, CancellationToken ct, int? expectedDeliverymanId = null)
     {
         var conversation = await GetAccessibleConversationsQuery().SingleOrDefaultAsync(x => x.Id == conversationId, ct);
         if (conversation is null) return NotFound();
-        var contact = await WhatsAppOperationalContacts.FindAsync(_db, conversation, ct);
+        var now = _clock.UtcNow;
+        var contact = await WhatsAppOperationalContacts.FindForRoutesAsync(_db, conversation, now, ct);
         if (contact is not { Kind: WhatsAppOperationalContacts.Deliveryman, BranchId: int driverBranch }) return NotFound();
+        if (contact.Id == 0 || (contact.DeviceInstallationId is not null
+            && expectedDeliverymanId.HasValue && contact.Id != expectedDeliverymanId))
+            return Ok(ApiResponse<IReadOnlyList<WhatsAppRecentDeliveryRouteDto>>.SuccessResponse([]));
 
         var branch = _branchContext.RequireBranch();
         var orders = _db.Orders.AsNoTracking().Where(o => o.TenantId == TenantId
             && (o.BranchId == branch || o.OriginBranchId == branch));
         var stops = _db.DeliveryRouteStops.AsNoTracking().Where(s => s.TenantId == TenantId
             && orders.Any(o => o.Id == s.OrderId));
-        var now = _clock.UtcNow;
         var currentId = await DeliveryRouteScope.Current(_db, driverBranch, contact.Id, now)
             .Where(r => r.TenantId == TenantId)
             .Select(r => (int?)r.Id).FirstOrDefaultAsync(ct);
