@@ -69,7 +69,7 @@ public sealed partial class WhatsAppOperationalBranchTests
         var storage = new Mock<IFirebaseGcsStorage>(MockBehavior.Strict);
         var cloud = StarterCloud(new("pdf", "carta_solicitada", "es_CO", "MARKETING", "APPROVED",
             """[{"type":"HEADER","format":"DOCUMENT"},{"type":"BODY","text":"Carta de {{1}}."}]"""),
-            new("image", "carta_imagen_solicitada", "es_CO", "MARKETING", imageStatus,
+            new WhatsAppCloudTemplate("image", "carta_imagen_solicitada", "es_CO", "MARKETING", imageStatus,
                 """[{"type":"HEADER","format":"IMAGE"},{"type":"BODY","text":"Te compartimos la carta solicitada."}]"""));
         var controller = CreateController(db, cloud: cloud.Object, storage: storage.Object);
         var options = await controller.GetConversationStartOptions(1, default);
