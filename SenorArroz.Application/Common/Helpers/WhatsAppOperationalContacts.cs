@@ -56,21 +56,20 @@ public static class WhatsAppOperationalContacts
 
         var devices = shared.Select(x => x.Value.DeviceInstallationId!).ToArray();
         var branches = shared.Select(x => x.Value.BranchId!.Value).Distinct().ToArray();
-        var today = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(utcNow);
-        var sessions = await db.DeliveryWorkSessions.AsNoTracking()
+        var latestIds = db.DeliveryWorkSessions
             .Where(s => s.TenantId == tenantId && branches.Contains(s.BranchId)
-                && devices.Contains(s.DeviceInstallationId) && s.StartedAt <= utcNow
-                && (s.StartedAt >= today || s.EndedAt >= today
-                    || (s.Status == DeliveryWorkSessionStatus.Active && s.AutoCloseAt > utcNow)))
-            .OrderByDescending(s => s.StartedAt).ThenByDescending(s => s.Id)
+                && devices.Contains(s.DeviceInstallationId) && s.StartedAt <= utcNow)
+            .GroupBy(s => new { s.BranchId, s.DeviceInstallationId })
+            .Select(g => g.OrderByDescending(s => s.StartedAt).ThenByDescending(s => s.Id).Select(s => s.Id).First());
+        var sessions = await db.DeliveryWorkSessions.AsNoTracking()
+            .Where(s => s.TenantId == tenantId && latestIds.Contains(s.Id))
             .Select(s => new { s.BranchId, s.DeviceInstallationId, s.DeliverymanId, s.Deliveryman.Name, s.Deliveryman.Active })
             .ToListAsync(ct);
-        var latest = sessions.ToLookup(s => (s.BranchId, s.DeviceInstallationId));
+        var latest = sessions.ToDictionary(s => (s.BranchId, s.DeviceInstallationId));
 
         foreach (var (phone, contact) in shared)
         {
-            var session = latest[(contact.BranchId!.Value, contact.DeviceInstallationId!)].FirstOrDefault();
-            if (session is { Active: true })
+            if (latest.TryGetValue((contact.BranchId!.Value, contact.DeviceInstallationId!), out var session) && session.Active)
                 matches[phone] = contact with { Id = session.DeliverymanId, Name = session.Name };
         }
     }
