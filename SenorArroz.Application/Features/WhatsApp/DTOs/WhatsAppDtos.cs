@@ -164,6 +164,8 @@ public sealed class WhatsAppOperationalBranchOptionDto
 }
 
 public sealed record WhatsAppOperationalContactDto(string Kind, string Name, bool IsSharedPhone = false, int? DeliverymanId = null);
+public sealed record WhatsAppDeliverymanContactDto(int? ConversationId = null, string? ShareText = null,
+    string? ChatUnavailableReason = null, string? ShareUnavailableReason = null);
 
 public sealed record DeliveryWorkPhoneDto(int Id, string Phone, int? WorkSessionId);
 public sealed record DeliveryWorkPhoneDeviceDto(int WorkSessionId, string? Description, string DeliverymanName, DateTime LastCommunicationAt);
@@ -178,6 +180,8 @@ public sealed record WhatsAppRecentDeliveryRouteDto(int Id, bool IsCurrent, Date
 public class WhatsAppConversationDto
 {
     public WhatsAppOperationalContactDto? OperationalContact { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? MatchesContactQuickFilter { get; set; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? Labels { get; set; }
     public string? CommercialStatus { get; set; }
@@ -352,6 +356,8 @@ public class WhatsAppConversationSearchDto
     public string? Search { get; set; }
     public string? Status { get; set; }
     public bool? UnreadOnly { get; set; }
+    public bool DeliverymenAssignedToday { get; set; }
+    public bool SuppliersOnly { get; set; }
 }
 
 public sealed class WhatsAppAttentionActionDto

@@ -14,6 +14,78 @@ namespace SenorArroz.Tests;
 
 public sealed partial class WhatsAppOperationalBranchTests
 {
+    [Fact]
+    public async Task Order_deliveryman_contact_prefers_matching_work_phone_and_requires_customer_chat()
+    {
+        await using var db = CreateDb();
+        await VerifyOrderDeliverymanContactAsync(db);
+    }
+
+    internal static async Task VerifyOrderDeliverymanContactAsync(ApplicationDbContext db)
+    {
+        await SeedCentralConversationAsync(db, 1, 7);
+        var now = new DateTime(2026, 11, 23, 15, 0, 0, DateTimeKind.Utc);
+        var source = await db.WhatsAppConversations.SingleAsync();
+        source.LastCustomerMessageAt = now.AddMinutes(-10);
+        db.Users.AddRange(
+            new User { Id = 20, BranchId = 2, Role = UserRole.Deliveryman, Name = "Ana", Email = "ana@demo.test", Phone = "3010000020" },
+            new User { Id = 21, BranchId = 2, Role = UserRole.Deliveryman, Name = "Luis", Email = "luis@demo.test", Phone = "3010000021" });
+        db.WhatsAppBranchSettings.Add(new WhatsAppBranchSetting { Id = 4, BranchId = 1, PhoneNumberId = "other-demo-line",
+            IsActive = true, IsVerified = true, CoexistenceEnabled = true });
+        db.WhatsAppConversations.AddRange(
+            new WhatsAppConversation { Id = 12, BranchId = 1, ChannelSettingId = 1, PhoneNumber = "3010000050" },
+            new WhatsAppConversation { Id = 13, BranchId = 1, BranchLineId = 4, PhoneNumber = "573010000050" });
+        var workSession = Session(50, 20, now.AddHours(-2));
+        db.DeliveryWorkSessions.Add(workSession);
+        db.DeliveryWorkPhones.Add(new DeliveryWorkPhone { BranchId = 2, Phone = "573010000050", DeviceInstallationId = "equipo" });
+        db.DeliveryRoutes.Add(new DeliveryRoute { Id = 40, BranchId = 2, DeliverymanId = 20, WorkSessionId = 50,
+            LastAssignmentAtUtc = now.AddMinutes(-20) });
+        var order = new Order { Id = 25, BranchId = 2, OriginBranchId = 1, DeliveryManId = 20, DeliveryRouteId = 40,
+            TakenById = 20, Status = OrderStatus.OnTheWay, Type = OrderType.Delivery, WhatsAppConversationId = source.Id };
+        db.Orders.Add(order);
+        await db.SaveChangesAsync();
+        var controller = CreateController(db, clock: Mock.Of<IClock>(x => x.UtcNow == now),
+            cloud: new Mock<IWhatsAppCloudClient>(MockBehavior.Strict).Object);
+        var orders = OrderConversationOrders(db);
+
+        var work = await Read();
+        Assert.Equal(12, work.ConversationId);
+        Assert.Contains("https://wa.me/573010000050", work.ShareText);
+        Assert.IsType<NotFoundResult>((await controller.GetOrderDeliverymanContact(25, 12, orders, default)).Result);
+        await Assert.ThrowsAsync<BranchAccessDeniedException>(() =>
+            controller.GetOrderDeliverymanContact(25, source.Id, OrderConversationOrders(db, 3), default));
+
+        source.LastCustomerMessageAt = now.AddHours(-25);
+        await db.SaveChangesAsync();
+        Assert.Equal(12, (await Read()).ConversationId);
+        Assert.Null((await Read()).ShareText);
+
+        source.LastCustomerMessageAt = now;
+        workSession.Close(now.AddMinutes(-5), DeliveryWorkSessionEndReason.UserChange);
+        db.DeliveryWorkSessions.Add(Session(51, 21, now.AddMinutes(-5)));
+        await db.SaveChangesAsync();
+        var personal = await Read();
+        Assert.Null(personal.ConversationId);
+        Assert.NotNull(personal.ChatUnavailableReason);
+        Assert.Contains("https://wa.me/573010000020", personal.ShareText);
+        Assert.Empty(await db.WhatsAppMessages.ToListAsync());
+
+        order.Status = OrderStatus.Delivered;
+        await db.SaveChangesAsync();
+        var delivered = await Read();
+        Assert.Null(delivered.ConversationId);
+        Assert.Null(delivered.ShareText);
+
+        async Task<WhatsAppDeliverymanContactDto> Read() =>
+            Assert.IsType<ApiResponse<WhatsAppDeliverymanContactDto>>(Assert.IsType<OkObjectResult>(
+                (await controller.GetOrderDeliverymanContact(25, source.Id, orders, default)).Result).Value).Data!;
+        static DeliveryWorkSession Session(int id, int driverId, DateTime at) => new()
+        {
+            Id = id, BranchId = 2, DeliverymanId = driverId, DeviceInstallationId = "equipo", DevicePlatform = "android",
+            StartedAt = at, AutoCloseAt = at.AddHours(8), LastCommunicationAt = at,
+        };
+    }
+
     [Theory]
     [InlineData("(300) 123-4567", "573001234567")]
     [InlineData("+57 300 123 4567", "3001234567")]

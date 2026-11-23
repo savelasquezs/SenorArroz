@@ -1286,7 +1286,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
 
     public static string NormalizeWhatsAppPhone(string? value) => OnlyDigits(value);
 
-    private async Task<bool> IsServiceWindowOpenAsync(WhatsAppConversation conversation, CancellationToken ct)
+    internal async Task<bool> IsServiceWindowOpenAsync(WhatsAppConversation conversation, CancellationToken ct)
     {
         var last = conversation.LastCustomerMessageAt ?? await _db.WhatsAppMessages.AsNoTracking()
             .Where(x => x.ConversationId == conversation.Id && !x.IsHistorical && x.Direction == WhatsAppMessageDirection.Inbound)

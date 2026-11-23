@@ -30,17 +30,34 @@ public partial class WhatsAppController
         IQueryable<WhatsAppConversation> query = accessibleConversations;
         if (request.Status != "archived") query = query.Where(x => x.Status != WhatsAppConversationStatus.Archived);
 
-        var day = InboxDayStart();
+        var now = _clock.UtcNow;
+        var day = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(now);
         query = ScopedInbox(query, request.BranchId, request.UnroutedOnly == true);
 
+        if (request.DeliverymenAssignedToday && request.SuppliersOnly)
+            return BadRequest(ApiResponse<WhatsAppConversationPageDto>.ErrorResponse("Selecciona un filtro rápido a la vez."));
+
         var term = request.Search?.Trim().ToLowerInvariant();
+        var quickContactFilter = request.DeliverymenAssignedToday || request.SuppliersOnly;
+        string[] contactNameIds = [];
+        if (quickContactFilter)
+        {
+            var contacts = await InboxQuickContactsAsync(request.SuppliersOnly, now, day, cancellationToken);
+            query = WhatsAppOperationalContacts.WithPhones(query, contacts.Keys.ToArray());
+            if (!string.IsNullOrWhiteSpace(term))
+                contactNameIds = contacts.Where(pair => pair.Value.Name.Contains(term, StringComparison.OrdinalIgnoreCase))
+                    .Select(pair => pair.Key).ToArray();
+        }
         if (!string.IsNullOrWhiteSpace(term))
         {
             var usernameTerm = term.TrimStart('@');
             var phoneTerm = term.All(c => char.IsAsciiDigit(c) || char.IsWhiteSpace(c) || c is '+' or '-' or '(' or ')' or '.')
                 ? WhatsAppWebhookIdentityReader.NormalizePhone(term) : null;
             if (ColombianPhoneNormalizer.TryNormalize(phoneTerm, out var mobile)) phoneTerm = mobile;
+            var nameMatches = WhatsAppOperationalContacts.WithPhones(query, contactNameIds).Select(c => c.Id);
             query = query.Where(x =>
+                (contactNameIds.Length > 0 && nameMatches.Contains(x.Id))
+                ||
                 (phoneTerm != null && x.PhoneNumber != null && x.PhoneNumber.Contains(phoneTerm))
                 || (usernameTerm != "" && x.WhatsAppUsername != null && x.WhatsAppUsername.ToLower().Contains(usernameTerm))
                 || (x.ContactName != null && x.ContactName.ToLower().Contains(term))
@@ -96,7 +113,8 @@ public partial class WhatsAppController
         var scope = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
         {
             TenantId, Actor = _currentUser.Id, WorkContext = _branchContext.EffectiveBranchId, _currentUser.Role, WorkBranchId = _currentUser.BranchId,
-            Sort = "activity-v2", request.Inbox, request.UnroutedOnly, request.BranchId, Search = term, request.Status, request.UnreadOnly, request.Label, request.Limit
+            Sort = "activity-v2", request.Inbox, request.UnroutedOnly, request.BranchId, Search = term, request.Status, request.UnreadOnly, request.Label, request.Limit,
+            request.DeliverymenAssignedToday, request.SuppliersOnly, AssignmentDay = request.DeliverymenAssignedToday ? day : (DateTime?)null
         })));
         InboxCursor? cursor = null;
         if (request.Cursor is not null)
@@ -137,6 +155,7 @@ public partial class WhatsAppController
             var dto = details[row.Id];
             dto.CommercialStatus = row.CommercialStatus;
             dto.CommercialOrderId = row.OrderId;
+            if (quickContactFilter) dto.MatchesContactQuickFilter = true;
             dto.AttentionReason = WhatsAppAiDiagnosticsMapper.SanitizeTechnicalDetail(dto.AttentionReason);
             return dto;
         }).ToArray();

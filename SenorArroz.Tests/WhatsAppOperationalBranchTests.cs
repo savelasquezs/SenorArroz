@@ -501,6 +501,10 @@ public sealed partial class WhatsAppOperationalBranchTests
         int? assignedUserId,
         int unreadCount = 0)
     {
+        if (db.Database.IsRelational() && assignedUserId is int userId)
+            db.Users.Add(new User { Id = userId, BranchId = 1, Role = UserRole.Cashier,
+                Name = "Caja", Email = "cashier@demo.test", Phone = "3010000007" });
+
         db.AddRange(
             new Branch { Id = 1, Name = "Centro", IsActive = true },
             new Branch { Id = 2, Name = "Manrique", IsActive = true },
@@ -528,7 +532,7 @@ public sealed partial class WhatsAppOperationalBranchTests
         await db.SaveChangesAsync();
     }
 
-    private static WhatsAppController CreateController(ApplicationDbContext db, int userId = 7, int branchId = 1, string role = "Cashier", IWhatsAppCloudClient? cloud = null, IInventoryService? inventory = null, WhatsAppCloudOptions? cloudOptions = null, IFirebaseGcsStorage? storage = null)
+    private static WhatsAppController CreateController(ApplicationDbContext db, int userId = 7, int branchId = 1, string role = "Cashier", IWhatsAppCloudClient? cloud = null, IInventoryService? inventory = null, WhatsAppCloudOptions? cloudOptions = null, IFirebaseGcsStorage? storage = null, IClock? clock = null)
     {
         var currentUser = new Mock<ICurrentUser>();
         currentUser.SetupGet(x => x.Id).Returns(userId);
@@ -546,7 +550,7 @@ public sealed partial class WhatsAppOperationalBranchTests
             db,
             currentUser.Object,
             branchContext.Object,
-            Mock.Of<IClock>(x => x.UtcNow == DateTime.UtcNow),
+            clock ?? Mock.Of<IClock>(x => x.UtcNow == DateTime.UtcNow),
             cloud ?? Mock.Of<IWhatsAppCloudClient>(),
             notifications.Object,
             storage ?? Mock.Of<IFirebaseGcsStorage>(),
