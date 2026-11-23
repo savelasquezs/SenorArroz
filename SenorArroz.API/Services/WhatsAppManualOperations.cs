@@ -148,7 +148,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Debe seleccionar una plantilla."));
         if (string.IsNullOrWhiteSpace(normalizedLanguage))
             return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Debe indicar el idioma de la plantilla."));
-        if (IsStarterTemplate(templateName, normalizedLanguage))
+        if (IsStarterOnlyTemplate(templateName, normalizedLanguage))
             return BadRequest(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Envía esta plantilla desde Nueva conversación."));
 
         var template = await _db.WhatsAppTemplates

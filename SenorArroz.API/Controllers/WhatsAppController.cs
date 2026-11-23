@@ -263,7 +263,7 @@ public partial class WhatsAppController : ControllerBase
             .ToListAsync(cancellationToken);
 
         return Ok(ApiResponse<IReadOnlyList<WhatsAppTemplateDto>>.SuccessResponse(
-            templates.Where(template => !WhatsAppManualOperations.IsStarterTemplate(template.Name, template.Language))
+            templates.Where(template => !WhatsAppManualOperations.IsStarterOnlyTemplate(template.Name, template.Language))
                 .Select(ToTemplateDto).ToList(),
             "Plantillas obtenidas."));
     }

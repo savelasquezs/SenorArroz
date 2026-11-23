@@ -21,6 +21,7 @@ public sealed partial class WhatsAppManualOperations
     private const string StarterLanguage = "es_CO";
     private const string MenuDocumentTemplate = "carta_solicitada";
     private const string MenuImageTemplate = "carta_imagen_solicitada";
+    private const string DeliveryUpdateTemplate = "novedad_entrega_domiciliario";
     private const string MenuDocumentType = "application/pdf";
     private const int MaxMenuImageBytes = 10_000_000;
     private static readonly CultureInfo Colombia = CultureInfo.GetCultureInfo("es-CO");
@@ -28,11 +29,13 @@ public sealed partial class WhatsAppManualOperations
     [
         ("menu", MenuDocumentTemplate),
         ("catalog", "catalogo_solicitado"),
-        ("payment", "pago_pedido_bancolombia")
+        ("payment", "pago_pedido_bancolombia"),
+        ("delivery_update", DeliveryUpdateTemplate)
     ];
 
-    internal static bool IsStarterTemplate(string name, string language) =>
-        language == StarterLanguage && (name == MenuImageTemplate || StarterTemplates.Any(template => template.Name == name));
+    internal static bool IsStarterOnlyTemplate(string name, string language) =>
+        language == StarterLanguage && name != DeliveryUpdateTemplate
+        && (name == MenuImageTemplate || StarterTemplates.Any(template => template.Name == name));
 
     public async Task<ActionResult<ApiResponse<WhatsAppConversationStartOptions>>> GetConversationStartOptionsAsync(
         int branchId, CancellationToken ct)
@@ -67,7 +70,9 @@ public sealed partial class WhatsAppManualOperations
 
         _branchContext.EnsureAccess(request.BranchId);
         if (!request.RequestedByCustomer)
-            return Invalid("Confirma que el cliente solicitó recibir este mensaje por WhatsApp.");
+            return Invalid(request.Template == "delivery_update"
+                ? "Confirma que el cliente autorizó recibir avisos de su pedido por WhatsApp."
+                : "Confirma que el cliente solicitó recibir este mensaje por WhatsApp.");
         var phone = NormalizeStarterPhone(request.Phone);
         if (phone is null)
             return Invalid("Ingresa un celular colombiano de diez dígitos o un número con código de país.");
@@ -117,10 +122,21 @@ public sealed partial class WhatsAppManualOperations
             var amount = request.Amount.Value.ToString("N0", Colombia);
             parameters = [account!.Account.Trim(), account.Holder.Trim(), $"${amount} COP"];
         }
+        else if (choice.Key == "delivery_update")
+        {
+            var update = Regex.Replace(request.DeliveryUpdate?.Trim() ?? string.Empty, @"\s+", " ");
+            if (string.IsNullOrEmpty(update))
+                return Invalid("Escribe la novedad del domiciliario.");
+            parameters = [update];
+        }
         else
         {
             parameters = CountBodyTemplateParameters(template.ComponentsJson) == 1 ? [sender.Branch.Name] : [];
         }
+
+        var text = BuildTemplateMessagePreview(new WhatsAppTemplate { Name = templateName, Components = template.ComponentsJson }, parameters);
+        if (choice.Key == "delivery_update" && text.Length > 1024)
+            return Invalid("Acorta la novedad para que quepa en la plantilla de WhatsApp.");
 
         string? documentId = null, mediaUrl = null, documentName = null;
         if (templateName == MenuImageTemplate)
@@ -173,7 +189,6 @@ public sealed partial class WhatsAppManualOperations
         if (!sent.Success)
             return Invalid(sent.ErrorMessage ?? "Meta rechazó el envío de la plantilla.");
 
-        var text = BuildTemplateMessagePreview(new WhatsAppTemplate { Name = templateName, Components = template.ComponentsJson }, parameters);
         var message = new WhatsAppMessage
         {
             TenantId = TenantId, Conversation = conversation, WhatsAppMessageId = sent.WhatsAppMessageId,
@@ -252,7 +267,13 @@ public sealed partial class WhatsAppManualOperations
             return string.Equals(template.Status, "PENDING", StringComparison.OrdinalIgnoreCase)
                 ? "En revisión en Meta." : "Meta no habilita el envío de esta plantilla.";
         var parameters = CountBodyTemplateParameters(template.ComponentsJson);
-        if (key == "payment" ? parameters != 3 : parameters is not (0 or 1))
+        var validParameters = key switch
+        {
+            "payment" => parameters == 3,
+            "delivery_update" => parameters == 1,
+            _ => parameters is 0 or 1
+        };
+        if (!validParameters)
             return "Las variables aprobadas no coinciden con la configuración del POS.";
         if (!HasStarterComponents(template, key))
             return "Los componentes aprobados no coinciden con esta plantilla.";
