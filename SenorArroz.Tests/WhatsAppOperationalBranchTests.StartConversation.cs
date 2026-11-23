@@ -56,6 +56,47 @@ public sealed partial class WhatsAppOperationalBranchTests
     }
 
     [Theory]
+    [InlineData("APPROVED", "carta_imagen_solicitada")]
+    [InlineData("PENDING", "carta_solicitada")]
+    public async Task Start_conversation_prefers_the_approved_image_for_a_single_page_menu(
+        string imageStatus, string expectedTemplate)
+    {
+        await using var db = CreateDb();
+        await SeedStarterLine(db);
+        const string image = "https://storage.example.invalid/carta.jpeg";
+        (await db.Branches.SingleAsync()).MenuImageUrl1 = image;
+        await db.SaveChangesAsync();
+        var storage = new Mock<IFirebaseGcsStorage>(MockBehavior.Strict);
+        var cloud = StarterCloud(new("pdf", "carta_solicitada", "es_CO", "MARKETING", "APPROVED",
+            """[{"type":"HEADER","format":"DOCUMENT"},{"type":"BODY","text":"Carta de {{1}}."}]"""),
+            new WhatsAppCloudTemplate("image", "carta_imagen_solicitada", "es_CO", "MARKETING", imageStatus,
+                """[{"type":"HEADER","format":"IMAGE"},{"type":"BODY","text":"Te compartimos la carta solicitada."}]"""));
+        var controller = CreateController(db, cloud: cloud.Object, storage: storage.Object);
+        var options = await controller.GetConversationStartOptions(1, default);
+        var data = Assert.IsType<ApiResponse<WhatsAppConversationStartOptions>>(Assert.IsType<OkObjectResult>(options.Result).Value).Data!;
+        var menu = Assert.Single(data.Templates, option => option.Key == "menu");
+        Assert.Equal(expectedTemplate, menu.Name);
+        Assert.Null(menu.UnavailableReason);
+
+        if (imageStatus != "APPROVED") return;
+
+        var request = new WhatsAppConversationStartRequest(1, "3001234567", "menu", true, null, "santander-line", "carta_solicitada");
+        Assert.IsType<BadRequestObjectResult>((await controller.StartConversation(request, default)).Result);
+        var sent = await controller.StartConversation(request with { TemplateName = expectedTemplate }, default);
+        Assert.IsType<OkObjectResult>(sent.Result);
+        var message = await db.WhatsAppMessages.SingleAsync();
+        Assert.Equal(WhatsAppMessageType.Image, message.Type);
+        Assert.Equal(image, message.MediaUrl);
+        Assert.Equal("Te compartimos la carta solicitada.", message.TextBody);
+        cloud.Verify(x => x.SendSharedContentAsync("santander-line", "token", "573001234567", "template",
+            It.Is<JsonElement>(payload => payload.GetProperty("name").GetString() == "carta_imagen_solicitada"
+                && payload.GetProperty("components").GetArrayLength() == 1
+                && payload.GetProperty("components")[0].GetProperty("parameters")[0]
+                    .GetProperty("image").GetProperty("link").GetString() == image),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
     [InlineData("Catálogo de Señor Arroz.", "Catálogo de Señor Arroz.", 0)]
     [InlineData("Catálogo de {{1}}.", "Catálogo de Santander.", 1)]
     public async Task Start_conversation_sends_the_approved_catalog_template_to_the_normalized_number(
@@ -154,11 +195,11 @@ public sealed partial class WhatsAppOperationalBranchTests
         await db.SaveChangesAsync();
     }
 
-    private static Mock<IWhatsAppCloudClient> StarterCloud(WhatsAppCloudTemplate template)
+    private static Mock<IWhatsAppCloudClient> StarterCloud(WhatsAppCloudTemplate template, params WhatsAppCloudTemplate[] alternatives)
     {
         var cloud = new Mock<IWhatsAppCloudClient>();
         cloud.Setup(x => x.GetMessageTemplatesAsync("santander-waba", "token", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new WhatsAppCloudTemplateSyncResult(true, [template], null));
+            .ReturnsAsync(new WhatsAppCloudTemplateSyncResult(true, [template, .. alternatives], null));
         cloud.Setup(x => x.SendSharedContentAsync("santander-line", "token", It.IsAny<string>(), "template",
             It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.starter", null));
