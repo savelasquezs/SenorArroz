@@ -45,20 +45,20 @@ public static class WhatsAppOperationalContacts
         var storedVariants = phones.Concat(phones.Where(p => p.Length == 12 && p.StartsWith("573"))
             .Select(p => p[2..])).Distinct().ToArray();
 
-        var drivers = await db.Users.AsNoTracking()
+        var drivers = db.Users.AsNoTracking()
             .Where(u => u.TenantId == tenantId && u.Active && u.AccountType != EmployeeAccountType.Terminal
                 && (u.Role == UserRole.Deliveryman || (u.DeliveryAppEnabled
                     && (u.Role == UserRole.Admin || u.Role == UserRole.Superadmin || u.Role == UserRole.Cashier)))
                 && storedVariants.Contains(u.Phone.Replace("+", "").Replace(" ", "")
                     .Replace("(", "").Replace(")", "").Replace("-", "").Replace(".", "")))
-            .Select(u => new { u.Id, BranchId = (int?)u.BranchId, u.Name, u.Phone }).ToListAsync(ct);
-        var suppliers = await db.Suppliers.AsNoTracking()
+            .Select(u => new { u.Id, BranchId = (int?)u.BranchId, u.Name, u.Phone, Kind = Deliveryman });
+        var suppliers = db.Suppliers.AsNoTracking()
             .Where(s => s.TenantId == tenantId && storedVariants.Contains(s.Phone.Replace("+", "").Replace(" ", "")
                 .Replace("(", "").Replace(")", "").Replace("-", "").Replace(".", "")))
-            .Select(s => new { s.Id, s.BranchId, s.Name, s.Phone }).ToListAsync(ct);
+            .Select(s => new { s.Id, s.BranchId, s.Name, s.Phone, Kind = Supplier });
+        var contacts = await drivers.Concat(suppliers).ToListAsync(ct);
 
-        return drivers.Select(x => (Phone: Normalize(x.Phone), Contact: new Match(x.Id, x.BranchId, Deliveryman, x.Name)))
-            .Concat(suppliers.Select(x => (Phone: Normalize(x.Phone), Contact: new Match(x.Id, x.BranchId, Supplier, x.Name))))
+        return contacts.Select(x => (Phone: Normalize(x.Phone), Contact: new Match(x.Id, x.BranchId, x.Kind, x.Name)))
             .Where(x => x.Phone is not null && phoneSet.Contains(x.Phone))
             .GroupBy(x => x.Phone!, StringComparer.Ordinal)
             .Where(g => g.Count() == 1)
