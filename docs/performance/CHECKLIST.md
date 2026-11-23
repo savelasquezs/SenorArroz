@@ -195,7 +195,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M41-F05 | Índices, planes EXPLAIN y paginación | Pendiente | — | — | — | — |
 | M41-F06 | Pooling conexiones, RLS y concurrencia | Pendiente | — | — | — | — |
 | M41-F07 | Backups, mantenimiento y limpieza | Pendiente | — | — | — | — |
-| M42-F01 | Uso CPU/RAM por servicio | Pendiente | — | — | — | — |
+| M42-F01 | Uso CPU/RAM por servicio | Bloqueado | 2026-11-23 | [Informe](reviews/2026-11-23-M42-F01.md) | [API #172](https://github.com/savelasquezs/SenorArroz/pull/172), PR documental (este PR) | Se aísla la caché de imágenes base64 de WhatsApp Flow con límite de 8 MiB estimados de payload UTF-16; cinco escenarios de prueba preparados, CI y QA staging pendientes. Railway API (24 h) RAM media 0,536 GB y pico 0,901 GB, sin causalidad atribuida. Sin SQL, merge ni despliegue. |
 | M42-F02 | Network egress Railway | Pendiente | — | — | — | — |
 | M42-F03 | Despliegue y logs API | Pendiente | — | — | — | — |
 | M42-F04 | CI pipelines y pruebas | Pendiente | — | — | — | — |
