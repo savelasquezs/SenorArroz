@@ -124,8 +124,14 @@ public partial class WhatsAppController
         }
         var previousUser = conversation.AssignedUserId;
         var before = new { conversation.AttentionRevision, mode = conversation.AttentionMode.ToString(), conversation.AssignedUserId };
-        var aiActive = conversation.ChannelSettingId.HasValue
-            ? await _db.TenantAiSettings.AnyAsync(x => x.IsActive && x.IsVerified, ct) : await IsBranchAiActiveAsync(conversation.BranchId, ct);
+        var changesAutomation = action is "return-to-ai" or "reopen";
+        var manualContact = changesAutomation && await WhatsAppOperationalContacts.FindAsync(_db, conversation, ct) is not null;
+        if (action == "return-to-ai" && manualContact)
+            return BadRequest(ApiResponse<WhatsAppAttentionDto>.ErrorResponse("Este contacto se atiende de forma manual."));
+        var aiActive = changesAutomation && !manualContact
+            && (conversation.ChannelSettingId.HasValue
+                ? await _db.TenantAiSettings.AnyAsync(x => x.IsActive && x.IsVerified, ct)
+                : await IsBranchAiActiveAsync(conversation.BranchId, ct));
         var now = _clock.UtcNow;
         bool changed;
         try

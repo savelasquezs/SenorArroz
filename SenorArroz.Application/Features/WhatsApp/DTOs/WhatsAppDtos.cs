@@ -1,3 +1,5 @@
+using SenorArroz.Domain.Enums;
+
 namespace SenorArroz.Application.Features.WhatsApp.DTOs;
 
 public sealed record WhatsAppMessagePageDto(IReadOnlyList<WhatsAppMessageDto> Items, string? NextCursor, bool HasMore);
@@ -161,8 +163,16 @@ public sealed class WhatsAppOperationalBranchOptionDto
     public string Name { get; set; } = string.Empty;
 }
 
+public sealed record WhatsAppOperationalContactDto(string Kind, string Name);
+
+public sealed record WhatsAppDeliveryRouteOrderDto(int OrderId, int StopSequence, OrderStatus Status);
+
+public sealed record WhatsAppRecentDeliveryRouteDto(int Id, bool IsCurrent, DateTime At,
+    IReadOnlyList<WhatsAppDeliveryRouteOrderDto> Orders);
+
 public class WhatsAppConversationDto
 {
+    public WhatsAppOperationalContactDto? OperationalContact { get; set; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? Labels { get; set; }
     public string? CommercialStatus { get; set; }
@@ -383,6 +393,7 @@ public sealed class SendConversationWhatsAppTemplateDto
 public class SendWhatsAppQuickReplyDto
 {
     public int QuickReplyId { get; set; }
+    public int? ReplyToMessageId { get; set; }
 }
 
 public class LinkWhatsAppConversationCustomerDto

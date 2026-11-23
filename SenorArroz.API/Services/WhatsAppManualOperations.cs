@@ -706,8 +706,9 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         if (!WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id) || !await CanAccessConversationAsync(conversation, cancellationToken))
             return Forbid();
 
+        var replyBranchId = QuickReplyBranchId(conversation);
         var quickReply = await _db.WhatsAppQuickReplies
-            .FirstOrDefaultAsync(x => x.Id == dto.QuickReplyId && x.BranchId == conversation.BranchId && x.IsActive, cancellationToken);
+            .FirstOrDefaultAsync(x => x.Id == dto.QuickReplyId && x.BranchId == replyBranchId && x.IsActive, cancellationToken);
         if (quickReply is null)
             return NotFound(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Respuesta rápida no encontrada o inactiva para esta sucursal."));
         if (quickReply.ReplyMode != WhatsAppQuickReply.Send)
@@ -728,13 +729,14 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         if (recipient is null)
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación no tiene un destinatario de WhatsApp válido."));
 
+        var quoted = await ResolveQuotedMessageAsync(conversationId, dto.ReplyToMessageId, cancellationToken);
+        if (dto.ReplyToMessageId.HasValue && string.IsNullOrWhiteSpace(quoted))
+            return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Ya no puedes citar ese mensaje."));
+
         var timestamp = _clock.UtcNow;
-        var result = await _whatsAppCloudClient.SendTextMessageAsync(
-            setting.PhoneNumberId,
-            setting.AccessToken,
-            recipient,
-            text,
-            cancellationToken);
+        var result = quoted is null
+            ? await _whatsAppCloudClient.SendTextMessageAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, cancellationToken)
+            : await _whatsAppCloudClient.SendTextReplyAsync(setting.PhoneNumberId, setting.AccessToken, recipient, text, quoted, cancellationToken);
         RequireKnownOutcome(result);
         if (!result.Success && ClientRequestId is not null)
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(result.ErrorMessage ?? "No se pudo enviar la respuesta rápida."));
@@ -754,6 +756,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
                 to = recipient,
                 text,
                 quickReplyId = quickReply.Id,
+                context = quoted is null ? null : new { message_id = quoted },
                 _pos_client_request_id = ClientRequestId,
                 result.Success,
                 result.WhatsAppMessageId,
@@ -980,6 +983,9 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             .AsNoTracking()
             .AnyAsync(x => x.BranchId == branchId && x.IsActive && x.IsVerified, cancellationToken);
     }
+
+    internal int QuickReplyBranchId(WhatsAppConversation conversation) =>
+        conversation.ChannelSettingId.HasValue ? _branchContext.RequireBranch() : conversation.BranchId;
 
     public async Task<bool> CanAccessConversationAsync(WhatsAppConversation conversation, CancellationToken cancellationToken)
     {

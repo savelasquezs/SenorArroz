@@ -529,7 +529,7 @@ public partial class WhatsAppController : ControllerBase
         var previousOperationalBranchId = conversation.OperationalBranchId;
         var previousAssignedUserId = conversation.AssignedUserId;
         if (previousOperationalBranchId == request.OperationalBranchId)
-            return Ok(ApiResponse<WhatsAppConversationDto>.SuccessResponse(ToConversationDto(conversation), "La sucursal operativa no cambió."));
+            return await OperationalContactResponse(conversation, "La sucursal operativa no cambió.", cancellationToken);
 
         conversation.OperationalBranchId = request.OperationalBranchId;
         conversation.OperationalBranch = operationalBranch;
@@ -842,7 +842,7 @@ public partial class WhatsAppController : ControllerBase
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
 
         conversation.Customer = customer;
-        return Ok(ApiResponse<WhatsAppConversationDto>.SuccessResponse(ToConversationDto(conversation), "Cliente vinculado a la conversación."));
+        return await OperationalContactResponse(conversation, "Cliente vinculado a la conversación.", cancellationToken);
     }
 
     [HttpGet("conversations/{conversationId:int}/attention")]
@@ -909,9 +909,10 @@ public partial class WhatsAppController : ControllerBase
         _db.WhatsAppMessages.RemoveRange(messages);
 
         var now = _clock.UtcNow;
-        var aiActive = conversation.ChannelSettingId.HasValue
-            ? await _db.TenantAiSettings.AsNoTracking().AnyAsync(x => x.TenantId == conversation.TenantId && x.IsActive && x.IsVerified, cancellationToken)
-            : await IsBranchAiActiveAsync(conversation.BranchId, cancellationToken);
+        var aiActive = await WhatsAppOperationalContacts.FindAsync(_db, conversation, cancellationToken) is null
+            && (conversation.ChannelSettingId.HasValue
+                ? await _db.TenantAiSettings.AsNoTracking().AnyAsync(x => x.TenantId == conversation.TenantId && x.IsActive && x.IsVerified, cancellationToken)
+                : await IsBranchAiActiveAsync(conversation.BranchId, cancellationToken));
         conversation.Status = WhatsAppConversationStatus.Open;
         conversation.LastMessageAt = null;
         conversation.LastMessagePreview = null;

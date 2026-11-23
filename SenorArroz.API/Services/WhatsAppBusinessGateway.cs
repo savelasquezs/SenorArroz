@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Models;
 using SenorArroz.Application.Common.Services;
@@ -93,6 +94,7 @@ public sealed class WhatsAppBusinessGateway(HttpClient http, IAgentToolCatalog c
             .SingleAsync(x => x.Id == request.MessageId, ct);
         if (source.Conversation.AttentionMode != WhatsAppAttentionMode.Ai || !request.AttentionVersion.HasValue
             || source.Conversation.AttentionModeUpdatedAt != request.AttentionVersion.Value) return Results.Conflict();
+        if (await WhatsAppOperationalContacts.FindAsync(db, source.Conversation, ct) is not null) return Results.Conflict();
         var context = new AgentToolExecutionContext(source.ConversationId,
             source.Conversation.OperationalBranchId ?? source.Conversation.BranchId,
             source.Id, ExecutionId: request.ExecutionId, TechnicalActor: "whatsapp-worker");

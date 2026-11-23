@@ -58,6 +58,7 @@ public sealed class WhatsAppCommerceFlowService(
         var conversation = await db.WhatsAppConversations.Include(x => x.ChannelSetting).FirstOrDefaultAsync(
             x => x.Id == conversationId && x.TenantId == TenantId && x.ChannelSettingId != null, ct);
         if (conversation?.ChannelSetting is not { IsActive: true, IsVerified: true, FlowEnabled: true } channel) return false;
+        if (await WhatsAppOperationalContacts.FindAsync(db, conversation, ct) is not null) return false;
         var phone = ColombianMobilePhone.Normalize(conversation.PhoneNumber);
         if (!ColombianMobilePhone.IsValid(phone)
             || _options.RestrictToAllowlist && !_options.AllowedPhoneHashes.Contains(Sha256(phone), StringComparer.OrdinalIgnoreCase)) return false;
@@ -107,6 +108,7 @@ public sealed class WhatsAppCommerceFlowService(
         var conversation = await db.WhatsAppConversations.FirstOrDefaultAsync(
             x => x.Id == conversationId && x.TenantId == TenantId && x.ChannelSettingId == channel.Id, ct);
         if (conversation is null) return false;
+        if (await WhatsAppOperationalContacts.FindAsync(db, conversation, ct) is not null) return false;
         var phone = ColombianMobilePhone.Normalize(conversation.PhoneNumber);
         if (!ColombianMobilePhone.IsValid(phone)
             || _options.RestrictToAllowlist && !_options.AllowedPhoneHashes.Contains(Sha256(phone), StringComparer.OrdinalIgnoreCase)) return false;
@@ -276,6 +278,8 @@ public sealed class WhatsAppCommerceFlowService(
         if (session.Status != "active")
             return Complete(flowToken, "Este pedido ya fue procesado. Revisa los mensajes del chat.");
 
+        if (await WhatsAppOperationalContacts.FindAsync(db, session.Conversation, ct) is not null)
+            return Recovery(session.Version, "Continúa por el chat para que un asesor te atienda.", false);
         if (session.Conversation.AttentionMode == WhatsAppAttentionMode.Human || session.DraftSource == "advisor")
             return Recovery(session.Version, "Un asesor está gestionando este pedido. Continúa por el chat para conservar todos sus cambios.", false);
         var state = DeserializeState(session.StateJson);

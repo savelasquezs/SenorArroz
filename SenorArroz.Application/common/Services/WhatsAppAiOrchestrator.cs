@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Models;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
@@ -75,6 +76,8 @@ public class WhatsAppAiOrchestrator(
 
             if (conversation.AttentionMode != WhatsAppAttentionMode.Ai)
                 return await Ignore(message, $"Modo {conversation.AttentionMode}.", ct, conversation.BranchId);
+            if (await WhatsAppOperationalContacts.FindAsync(db, conversation, ct) is not null)
+                return await Ignore(message, WhatsAppOperationalContacts.ManualAttention, ct, conversation.BranchId);
             if (message.Type != WhatsAppMessageType.Text || string.IsNullOrWhiteSpace(message.TextBody))
                 return await Ignore(message, "Tipo no soportado.", ct, conversation.BranchId);
             if (message.AiResponseAttentionVersion != conversation.AttentionModeUpdatedAt
