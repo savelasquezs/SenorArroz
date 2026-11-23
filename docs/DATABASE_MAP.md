@@ -16,7 +16,7 @@ Las etiquetas personalizadas se definen por tenant en `whatsapp_inbox_label` y s
 
 `add_delivery_work_phones.sql` relaciona teléfonos compartidos de WhatsApp con instalaciones de la app de domicilios por tenant y sucursal. La identidad se calcula de las jornadas de GPS. El registro mantiene RLS forzado y permite una sola asociación por número e instalación dentro del tenant.
 
-- Inventario EF: 116 entidades; `Tenant` global y 115 tenant-owned, incluidos `WhatsAppRealtimeEvent` y `DeliveryWorkPhone`.
+- Inventario EF: 121 entidades; `Tenant` global y 120 tenant-owned, incluidos `WhatsAppRealtimeEvent` y `DeliveryWorkPhone`.
 - Contrato común: `ITenantOwned` y `TenantOwnedEntity`.
 - EF aplica centralmente `tenant_id` obligatorio, índice, concurrency token y query filter.
 - `SaveChanges` asigna el tenant actual en altas sin tenant y rechaza altas, cambios o borrados cross-tenant.

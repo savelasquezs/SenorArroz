@@ -24,8 +24,9 @@ public sealed class TenantIsolationV2Tests
             .ToList();
         var global = entityTypes.Except(tenantOwned).ToList();
 
-        Assert.Equal(120, entityTypes.Count);
-        Assert.Equal(119, tenantOwned.Count);
+        Assert.Equal(121, entityTypes.Count);
+        Assert.Equal(120, tenantOwned.Count);
+        Assert.Contains(tenantOwned, x => x.ClrType == typeof(DeliveryWorkPhone));
         Assert.Contains(tenantOwned, x => x.ClrType == typeof(WhatsAppRealtimeEvent));
         Assert.Contains(tenantOwned, x => x.ClrType == typeof(WhatsAppInboxTakenReset));
         Assert.Contains(tenantOwned, x => x.ClrType == typeof(WhatsAppInboxLabel));
