@@ -77,6 +77,13 @@ public sealed class WhatsAppCommerceOutboxWorker(
             await db.SaveChangesAsync(ct);
             return true;
         }
+        if (await WhatsAppOperationalContacts.FindAsync(db, message.Conversation, ct) is not null)
+        {
+            message.Status = "failed";
+            message.LastError = WhatsAppOperationalContacts.ManualAttention;
+            await db.SaveChangesAsync(ct);
+            return true;
+        }
         message.AttemptCount++;
         WhatsAppMessage? sentMessage = null;
         var retrySafe = false;

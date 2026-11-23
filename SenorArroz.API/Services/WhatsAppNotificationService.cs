@@ -6,6 +6,7 @@ using System.Text.Json;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
 using SenorArroz.API.Hubs;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
 
@@ -140,7 +141,7 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
             ProcessedAt = processing.ProcessedAt
         };
         var conversation = new WhatsAppConversationDto { Id = processing.ConversationId };
-        await ResolveCentralRoutingAsync(conversation, cancellationToken);
+        await ResolveCentralRoutingAsync(conversation, cancellationToken, includeOperationalContact: false);
         var payload = new { branchId = conversation.OperationalBranchId ?? branchId, processing = realtimeProcessing };
         await PublishAsync("WhatsAppAiProcessingChanged", conversation.Id, payload,
             WhatsAppRealtimeGroupResolver.Resolve(_tenant.TenantId, branchId, conversation), cancellationToken);
@@ -186,12 +187,13 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
         await WhatsAppDatabaseSignal.NotifyAsync(_db.Database, _logger, ct);
     }
 
-    private async Task ResolveCentralRoutingAsync(WhatsAppConversationDto conversation, CancellationToken cancellationToken)
+    private async Task ResolveCentralRoutingAsync(WhatsAppConversationDto conversation, CancellationToken cancellationToken,
+        bool includeOperationalContact = true)
     {
         var state = await _db.WhatsAppConversations.AsNoTracking().Where(x => x.Id == conversation.Id)
             .Select(x => new
             {
-                IsCentral = x.ChannelSettingId.HasValue, x.OperationalBranchId,
+                IsCentral = x.ChannelSettingId.HasValue, x.OperationalBranchId, x.PhoneNumber,
                 OperationalBranchName = x.OperationalBranch != null ? x.OperationalBranch.Name : null,
                 x.AssignedUserId, Advisor = x.AssignedUser != null ? x.AssignedUser.Name : null,
                 Line = x.ChannelSetting != null ? x.ChannelSetting.DisplayPhoneNumber
@@ -209,5 +211,8 @@ public class WhatsAppNotificationService : IWhatsAppNotificationService
         conversation.OperationalBranchId = state.OperationalBranchId;
         conversation.OperationalBranchName = state.OperationalBranchName;
         conversation.AssignedUserId = state.AssignedUserId;
+        conversation.PhoneNumber = state.PhoneNumber;
+        if (includeOperationalContact)
+            await WhatsAppOperationalContacts.EnrichAsync(_db, _tenant.TenantId, [conversation], cancellationToken);
     }
 }

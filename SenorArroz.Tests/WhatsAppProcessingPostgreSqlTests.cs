@@ -3,9 +3,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using SenorArroz.API.Services;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Options;
 using SenorArroz.Domain.Entities;
+using SenorArroz.Domain.Enums;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Infrastructure.Integrations;
 using SenorArroz.Infrastructure.Services;
@@ -365,6 +367,29 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests(Xunit.Abstractions
                 using var tenant = _tenant.BeginTenantScope(1);
                 await using var after = Db();
                 Assert.Single(await after.WhatsAppMessages.Where(x => x.WhatsAppMessageId == "wamid.process-1").ToListAsync());
+                after.Suppliers.Add(new Supplier { Name = "Proveedor de prueba", Phone = "3000000001" });
+                await after.SaveChangesAsync();
+                var supplierBody = WhatsAppProcessingTests.Payload("wamid.operational-supplier");
+                using var supplierRequest = new HttpRequestMessage(HttpMethod.Post, apiUrl + "/api/whatsapp/webhook")
+                { Content = new StringContent(supplierBody, Encoding.UTF8, "application/json") };
+                supplierRequest.Headers.Add("X-Hub-Signature-256", "sha256=" + Convert.ToHexString(HMACSHA256.HashData(
+                    Encoding.UTF8.GetBytes(new string('a', 32)), Encoding.UTF8.GetBytes(supplierBody))).ToLowerInvariant());
+                Assert.Equal(HttpStatusCode.OK, (await http.SendAsync(supplierRequest)).StatusCode);
+                await WaitUntil(async () =>
+                {
+                    await using var verify = Db();
+                    return await verify.WhatsAppMessages.AnyAsync(x => x.WhatsAppMessageId == "wamid.operational-supplier"
+                        && x.AiProcessingStatus == WhatsAppAiProcessingStatus.NotApplicable
+                        && x.AiProcessingError == WhatsAppOperationalContacts.ManualAttention
+                        && x.Conversation.AttentionMode == WhatsAppAttentionMode.WaitingForHuman);
+                });
+                Assert.False(await after.WhatsAppMessages.AnyAsync(x => x.Direction == WhatsAppMessageDirection.Outbound));
+                using (_tenant.BeginTenantScope(2))
+                {
+                    await using var foreign = Db();
+                    var foreignChat = await foreign.WhatsAppConversations.SingleAsync();
+                    Assert.Null(await WhatsAppOperationalContacts.FindAsync(foreign, foreignChat, default));
+                }
             }
             finally { Stop(restarted); }
         }
@@ -409,6 +434,15 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests(Xunit.Abstractions
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "SenorArroz.sln"))) directory = directory.Parent;
         return directory?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Operational_delivery_routes_query_works_on_postgresql()
+    {
+        using var scope = _tenant.BeginTenantScope(1);
+        await using var db = Db();
+        await WhatsAppOperationalBranchTests.VerifyOperationalRoutesAsync(db);
     }
 
     [PostgreSqlIntegrationFact]

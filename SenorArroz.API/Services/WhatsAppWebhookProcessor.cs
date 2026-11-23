@@ -115,7 +115,8 @@ public sealed partial class WhatsAppWebhookProcessor
                         ToConversationDto(message.Conversation), cancellationToken);
                     continue;
                 }
-                if (message.Direction != WhatsAppMessageDirection.Inbound || message.AiProcessingError is WhatsAppCatalogCart.ManualReview or "structured_message"
+                if (message.Direction != WhatsAppMessageDirection.Inbound || message.AiProcessingError is WhatsAppOperationalContacts.ManualAttention
+                    or WhatsAppCatalogCart.ManualReview or "structured_message"
                     || message.AiProcessingError is WhatsAppCommercialDraft.AddressApplied or WhatsAppCommercialDraft.ProductApplied
                         or "order_address_unavailable" or "order_product_unavailable") continue;
                 if (message.Conversation.ChannelSettingId.HasValue
@@ -506,6 +507,7 @@ public sealed partial class WhatsAppWebhookProcessor
             }
             conversation.WhatsAppUsername = identity.Username ?? conversation.WhatsAppUsername;
             conversation.ContactName = identity.ContactName ?? conversation.ContactName;
+            var manualContact = await WhatsAppOperationalContacts.FindAsync(_db, conversation, cancellationToken) is not null;
 
             if (hasIdentityConflict && customer is not null)
             {
@@ -540,7 +542,7 @@ public sealed partial class WhatsAppWebhookProcessor
             var beforeClosure = conversation.AttentionMode == WhatsAppAttentionMode.Closed && timestamp <= conversation.ClosedAt
                 && timestamp <= (conversation.LastMessageAt ?? conversation.LastCustomerMessageAt ?? conversation.ClosedAt);
             if (!beforeClosure && (conversation.AttentionMode == WhatsAppAttentionMode.Closed
-                || cart is not null && conversation.AttentionMode == WhatsAppAttentionMode.Ai))
+                || (manualContact || cart is not null) && conversation.AttentionMode == WhatsAppAttentionMode.Ai))
                 _attentionService.RequestHumanAfterNewMessage(conversation, _clock.UtcNow);
             if (!beforeClosure)
             {
@@ -586,7 +588,7 @@ public sealed partial class WhatsAppWebhookProcessor
                 aiProcessedAt = _clock.UtcNow;
                 aiProcessingError = WhatsAppCatalogCart.ManualReview;
             }
-            if (!beforeClosure && cart is null && !channelSettingId.HasValue && setting.AwayMessageEnabled)
+            if (!manualContact && !beforeClosure && cart is null && !channelSettingId.HasValue && setting.AwayMessageEnabled)
             {
                 var receivedAtUtc = _clock.UtcNow;
                 var evaluation = await _businessHoursService.Evaluate(setting.BranchId, receivedAtUtc, cancellationToken);
@@ -635,6 +637,12 @@ public sealed partial class WhatsAppWebhookProcessor
                 aiProcessingError = "structured_message";
                 aiProcessedAt = _clock.UtcNow;
                 awayClosedPeriodStartedAtUtc = null;
+            }
+            if (manualContact)
+            {
+                aiProcessingStatus = WhatsAppAiProcessingStatus.NotApplicable;
+                aiProcessingError = WhatsAppOperationalContacts.ManualAttention;
+                aiProcessedAt = _clock.UtcNow;
             }
 
             var message = new WhatsAppMessage
