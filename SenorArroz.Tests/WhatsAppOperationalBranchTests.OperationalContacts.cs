@@ -157,19 +157,19 @@ public sealed partial class WhatsAppOperationalBranchTests
         Assert.Equal(["573000000000", "573000000001", "573020000003"], local.Phones.Select(p => p.Phone));
 
         var known = await db.WhatsAppConversations.SingleAsync();
-        var unknownToday = new WhatsAppConversation { TenantId = 1, PhoneNumber = "3000000001" };
-        var manual = await WhatsAppOperationalContacts.FindAsync(db, unknownToday, default);
+        var olderSessionChat = new WhatsAppConversation { TenantId = 1, PhoneNumber = "3000000001" };
+        var manual = await WhatsAppOperationalContacts.FindAsync(db, olderSessionChat, default);
         Assert.Equal(WhatsAppOperationalContacts.Deliveryman, manual?.Kind);
-        Assert.Equal(0, (await WhatsAppOperationalContacts.FindForRoutesAsync(db, unknownToday, now, default))?.Id);
+        Assert.Equal(20, (await WhatsAppOperationalContacts.FindForRoutesAsync(db, olderSessionChat, now, default))?.Id);
         var dtos = new[]
         {
             new WhatsAppConversationDto { PhoneNumber = known.PhoneNumber },
-            new WhatsAppConversationDto { PhoneNumber = unknownToday.PhoneNumber },
+            new WhatsAppConversationDto { PhoneNumber = olderSessionChat.PhoneNumber },
             new WhatsAppConversationDto { PhoneNumber = "3020000003" },
         };
         await WhatsAppOperationalContacts.EnrichAsync(db, 1, dtos, default, now);
         Assert.Equal(new WhatsAppOperationalContactDto("deliveryman", "Luis", true, 21), dtos[0].OperationalContact);
-        Assert.Equal(new WhatsAppOperationalContactDto("deliveryman", "", true), dtos[1].OperationalContact);
+        Assert.Equal(new WhatsAppOperationalContactDto("deliveryman", "Ana", true, 20), dtos[1].OperationalContact);
         Assert.Equal(new WhatsAppOperationalContactDto("deliveryman", "Iván", true, 23), dtos[2].OperationalContact);
 
         var first = await db.DeliveryWorkSessions.SingleAsync(x => x.Id == 31);
@@ -178,10 +178,11 @@ public sealed partial class WhatsAppOperationalBranchTests
         Assert.Equal("Luis", (await WhatsAppOperationalContacts.FindForRoutesAsync(db, known, now, default))?.Name);
         db.DeliveryWorkSessions.Add(Session(34, 20, 1, "equipo-a", now.AddMinutes(5)));
         await db.SaveChangesAsync();
+        Assert.Equal("Luis", (await WhatsAppOperationalContacts.FindForRoutesAsync(db, known, now, default))?.Name);
         var next = await WhatsAppOperationalContacts.FindForRoutesAsync(db, known, now.AddMinutes(10), default);
         Assert.Equal(20, next?.Id);
         Assert.Equal("Ana", next?.Name);
-        Assert.Equal(0, (await WhatsAppOperationalContacts.FindForRoutesAsync(db, known, now.AddDays(1), default))?.Id);
+        Assert.Equal(20, (await WhatsAppOperationalContacts.FindForRoutesAsync(db, known, now.AddDays(1), default))?.Id);
         Assert.Null(await WhatsAppOperationalContacts.FindAsync(db, new() { TenantId = 2, PhoneNumber = known.PhoneNumber }, default));
 
         static DeliveryWorkSession Session(int id, int driverId, int branchId, string device, DateTime start, bool closed = false) => new()
@@ -237,6 +238,8 @@ public sealed partial class WhatsAppOperationalBranchTests
         Assert.True(routes[0].IsCurrent);
 
         db.DeliveryWorkPhones.Add(new DeliveryWorkPhone { BranchId = 2, Phone = "573000000000", DeviceInstallationId = "route-device" });
+        session.StartedAt = now.AddDays(-2);
+        session.EndedAt = now.AddDays(-1);
         await db.SaveChangesAsync();
         Assert.Empty(ReadRoutes(await controller.GetConversationDeliveryRoutes(11, default, expectedDeliverymanId: 21)));
         Assert.Equal(new[] { 34, 33 }, ReadRoutes(await controller.GetConversationDeliveryRoutes(11, default, expectedDeliverymanId: 20)).Select(r => r.Id));
