@@ -41,6 +41,13 @@ public class WhatsAppAttentionService
     { EnsureNotClosed(c); Apply(c, WhatsAppAttentionMode.Human, userId, now); return true; }
     public void RequestHumanAfterNewMessage(WhatsAppConversation c, DateTime now) => Apply(c, WhatsAppAttentionMode.WaitingForHuman, null, now);
     public static bool CanWrite(WhatsAppConversation c, int userId) => c.AttentionMode == WhatsAppAttentionMode.Human && c.AssignedUserId == userId;
+    public static bool CanSendTemplate(WhatsAppConversation c, int userId) =>
+        c.Status != WhatsAppConversationStatus.Archived && (c.AssignedUserId is null || c.AssignedUserId == userId);
+    public void AssignAfterTemplate(WhatsAppConversation c, int userId, DateTime now)
+    {
+        if (!CanSendTemplate(c, userId)) throw new BusinessException("La conversación no está disponible para asignarla.");
+        if (!CanWrite(c, userId)) Apply(c, WhatsAppAttentionMode.Human, userId, now);
+    }
     private static bool ChangeIdempotent(WhatsAppConversation c, WhatsAppAttentionMode target, int? userId, DateTime now)
     { EnsureNotClosed(c); if (c.AttentionMode == target) return false; Apply(c, target, userId, now); return true; }
     private static void EnsureNotClosed(WhatsAppConversation c) { if (c.AttentionMode == WhatsAppAttentionMode.Closed) throw new BusinessException("La conversación debe reabrirse antes de cambiar su atención."); }
