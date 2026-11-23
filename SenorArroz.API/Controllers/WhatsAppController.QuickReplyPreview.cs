@@ -25,8 +25,9 @@ public partial class WhatsAppController
         if (!WhatsAppAttentionService.CanWrite(chat, _currentUser.Id) || !await CanAccessConversationAsync(chat, ct))
             return Forbid();
 
+        var replyBranchId = _manualOperations.QuickReplyBranchId(chat);
         var reply = await _db.WhatsAppQuickReplies.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == replyId && x.BranchId == chat.BranchId && x.IsActive, ct);
+            .SingleOrDefaultAsync(x => x.Id == replyId && x.BranchId == replyBranchId && x.IsActive, ct);
         if (reply is null) return NotFound();
         if (reply.ReplyMode != WhatsAppQuickReply.ChicharronQuote)
         {

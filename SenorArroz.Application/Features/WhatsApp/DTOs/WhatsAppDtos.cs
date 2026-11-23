@@ -393,6 +393,7 @@ public sealed class SendConversationWhatsAppTemplateDto
 public class SendWhatsAppQuickReplyDto
 {
     public int QuickReplyId { get; set; }
+    public int? ReplyToMessageId { get; set; }
 }
 
 public class LinkWhatsAppConversationCustomerDto

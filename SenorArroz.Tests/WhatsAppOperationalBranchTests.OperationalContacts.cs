@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using SenorArroz.Application.Common.Helpers;
+using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.Suppliers.DTOs;
 using SenorArroz.Application.Features.Suppliers.Queries;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
@@ -15,6 +16,36 @@ namespace SenorArroz.Tests;
 
 public sealed partial class WhatsAppOperationalBranchTests
 {
+    [Fact]
+    public async Task Cashier_can_preview_and_send_a_quoted_quick_reply_from_their_work_branch()
+    {
+        await using var db = CreateDb();
+        await SeedCentralConversationAsync(db, 2, 7);
+        var now = DateTime.UtcNow;
+        var conversation = await db.WhatsAppConversations.SingleAsync();
+        conversation.LastCustomerMessageAt = now;
+        db.AddRange(
+            new WhatsAppQuickReply { Id = 20, BranchId = 2, Shortcut = "recibido", MessageTemplate = "Listo, recibido." },
+            new WhatsAppQuickReply { Id = 21, BranchId = 1, Shortcut = "recibido", MessageTemplate = "Respuesta de otra sucursal." },
+            new WhatsAppMessage { Id = 22, ConversationId = 11, WhatsAppMessageId = "wamid.question",
+                Direction = WhatsAppMessageDirection.Inbound, Status = WhatsAppMessageStatus.Received, Timestamp = now });
+        await db.SaveChangesAsync();
+        var cloud = new Mock<IWhatsAppCloudClient>(MockBehavior.Strict);
+        cloud.Setup(c => c.SendTextReplyAsync("phone", "token", It.IsAny<string>(), "Listo, recibido.", "wamid.question", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.answer", null));
+        var controller = CreateController(db, branchId: 2, cloud: cloud.Object);
+
+        Assert.IsType<OkObjectResult>(await controller.PreviewQuickReply(11, 20, new(null, null), default));
+        Assert.IsType<NotFoundResult>(await controller.PreviewQuickReply(11, 21, new(null, null), default));
+        var invalidQuote = await controller.SendQuickReply(11, new() { QuickReplyId = 20, ReplyToMessageId = 999 }, default);
+        Assert.IsType<BadRequestObjectResult>(invalidQuote.Result);
+        var sent = await controller.SendQuickReply(11, new() { QuickReplyId = 20, ReplyToMessageId = 22 }, default);
+        var message = Assert.IsType<ApiResponse<WhatsAppMessageDto>>(Assert.IsType<OkObjectResult>(sent.Result).Value).Data!;
+        Assert.Equal("wamid.question", message.ReplyToWhatsAppMessageId);
+        Assert.Equal(1, (await db.WhatsAppQuickReplies.FindAsync(20))!.UsageCount);
+        cloud.Verify(c => c.SendTextReplyAsync("phone", "token", It.IsAny<string>(), "Listo, recibido.", "wamid.question", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task Operational_contact_keeps_customer_and_manual_sales_after_number_match()
     {
