@@ -9,6 +9,7 @@ using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
 using SenorArroz.Domain.Entities;
 using SenorArroz.Domain.Enums;
+using SenorArroz.Domain.Services;
 using SenorArroz.Infrastructure.Data;
 using SenorArroz.Shared.Models;
 
@@ -21,6 +22,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     internal const string ForwardOperation = "forward-message";
+    internal const string ConversationTemplateOperation = "send-conversation-template";
     internal const string ClientRequestItem = "WhatsAppManualRequestId";
     public sealed record Command(int ActorId, int AssignedBranchId, int WorkBranchId, string Operation,
         int? ConversationId, JsonElement Body, string Scheme, string Host, string PathBase, DateTime? AttentionVersion,
@@ -30,7 +32,8 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
     public async Task<ActionResult<ApiResponse<T>>> EnqueueAsync<T>(string operation, int? conversationId,
         JsonElement body, HttpRequest request, CancellationToken ct)
     {
-        if (!await CanUseAsync(conversationId, ct, write: operation != ForwardOperation)) return new ForbidResult();
+        if (!await CanUseAsync(conversationId, ct, write: operation != ForwardOperation,
+            allowTemplateAssignment: operation == ConversationTemplateOperation)) return new ForbidResult();
         if (Encoding.UTF8.GetByteCount(body.GetRawText()) > 32768)
             return new ObjectResult(ApiResponse<T>.ErrorResponse("La operación supera el tamaño permitido.")) { StatusCode = 413 };
         var key = RequestKey(request);
@@ -150,7 +153,7 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
         return id.HasValue ? await GetResultAsync(id.Value, ct) : new NotFoundResult();
     }
 
-    private async Task<bool> CanUseAsync(int? conversationId, CancellationToken ct, bool write = false)
+    private async Task<bool> CanUseAsync(int? conversationId, CancellationToken ct, bool write = false, bool allowTemplateAssignment = false)
     {
         if (!tenant.HasTenant || user.Id <= 0 || !user.IsAuthenticated
             || !Roles.IsSuperadmin(user.Role) && !Roles.IsAdminOrCashier(user.Role)) return false;
@@ -160,7 +163,9 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
             || !string.Equals(actor.Role.Value.ToString(), user.Role, StringComparison.OrdinalIgnoreCase)) return false;
         if (!conversationId.HasValue) return true;
         var conversation = await db.WhatsAppConversations.AsNoTracking().FirstOrDefaultAsync(x => x.Id == conversationId, ct);
-        return conversation is not null && (!write || SenorArroz.Domain.Services.WhatsAppAttentionService.CanWrite(conversation, user.Id))
+        return conversation is not null && (!write || (allowTemplateAssignment
+                ? WhatsAppAttentionService.CanSendTemplate(conversation, user.Id)
+                : WhatsAppAttentionService.CanWrite(conversation, user.Id)))
             && await operations.CanAccessConversationAsync(conversation, ct);
     }
 
@@ -207,7 +212,8 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
                     "send-address-choices" => Capture(await operations.SendCommercialAddressChoicesAsync(command.ConversationId!.Value, command.Body.Deserialize<WhatsAppDraftWriteDto>(JsonOptions)!, ct)),
                     "send-product-choices" => Capture(await operations.SendCommercialProductChoicesAsync(command.ConversationId!.Value,
                         command.Body.GetProperty("groupId").GetInt32(), command.Body.GetProperty("draft").Deserialize<WhatsAppDraftWriteDto>(JsonOptions)!, ct)),
-                    "send-conversation-template" => Capture(await operations.SendConversationTemplate(command.ConversationId!.Value, command.Body.Deserialize<SendConversationWhatsAppTemplateDto>(JsonOptions)!, ct)),
+                    ConversationTemplateOperation => Capture(await operations.SendConversationTemplate(command.ConversationId!.Value,
+                        command.Body.Deserialize<SendConversationWhatsAppTemplateDto>(JsonOptions)!, ct, command.AttentionVersion)),
                     "start-conversation" => Capture(await operations.StartConversationAsync(command.Body.Deserialize<WhatsAppConversationStartRequest>(JsonOptions)!, ct)),
                     "send-product" => Capture(await operations.SendProductDetails(command.ConversationId!.Value, command.Body.GetProperty("productId").GetInt32(), ct)),
                     "send-menu" => Capture(await operations.SendMenu(command.ConversationId!.Value, ct)),
@@ -268,7 +274,8 @@ public sealed class WhatsAppManualWorkQueue(ApplicationDbContext db, ICurrentUse
         await WhatsAppCommercialDraft.LockAsync(db, tenant.TenantId, conversationId, ct);
         var version = await db.WhatsAppConversations.AsNoTracking().Where(x => x.Id == conversationId)
             .Select(x => (DateTime?)x.AttentionModeUpdatedAt).FirstOrDefaultAsync(ct);
-        return version == command.AttentionVersion && await CanUseAsync(conversationId, ct, write: true);
+        return version == command.AttentionVersion && await CanUseAsync(conversationId, ct, write: true,
+            allowTemplateAssignment: command.Operation == ConversationTemplateOperation);
     }
 
     private static string RequestKey(HttpRequest request)

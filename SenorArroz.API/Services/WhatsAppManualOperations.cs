@@ -184,12 +184,38 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
             var existingConversations = await _db.WhatsAppConversations.AsNoTracking()
                 .Where(x => x.ChannelSettingId == null && x.BranchLineId == null && x.BranchId == credentials.BranchId
                     && (targets.Contains(x.PhoneNumber!) || targets.Contains(x.WhatsAppUserId!))).ToListAsync(cancellationToken);
-            if (existingConversations.Any(x => !WhatsAppAttentionService.CanWrite(x, _currentUser.Id)))
-                return Conflict(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Toma las conversaciones antes de enviarles plantillas."));
+            if (existingConversations.Any(x => !WhatsAppAttentionService.CanSendTemplate(x, _currentUser.Id)))
+                return Conflict(ApiResponse<WhatsAppTemplateSendResultDto>.ErrorResponse("Hay conversaciones que no están disponibles para asignarlas."));
         }
         var response = new WhatsAppTemplateSendResultDto();
         foreach (var recipient in recipients.Recipients)
         {
+            await using var transaction = credentials.BranchId.HasValue && _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
+            WhatsAppConversation? conversation = null;
+            var userId = string.Equals(recipient.Customer?.WhatsAppUserId, recipient.Recipient, StringComparison.Ordinal)
+                ? recipient.Recipient : null;
+            var phone = userId is null ? recipient.Recipient : null;
+            if (credentials.BranchId is int targetBranch)
+            {
+                await LockTemplateRecipientAsync(credentials.PhoneNumberId!, recipient.Recipient, cancellationToken);
+                var id = await _db.WhatsAppConversations.AsNoTracking()
+                    .Where(x => x.BranchId == targetBranch && x.ChannelSettingId == null && x.BranchLineId == null
+                        && (userId != null ? x.WhatsAppUserId == userId : x.PhoneNumber == phone))
+                    .Select(x => (int?)x.Id).SingleOrDefaultAsync(cancellationToken);
+                if (id.HasValue)
+                {
+                    await WhatsAppCommercialDraft.LockAsync(_db, TenantId, id.Value, cancellationToken);
+                    conversation = await _db.WhatsAppConversations.SingleOrDefaultAsync(x => x.Id == id.Value, cancellationToken);
+                    if (conversation is not null && !WhatsAppAttentionService.CanSendTemplate(conversation, _currentUser.Id))
+                    {
+                        response.FailedCount++;
+                        response.Errors.Add($"{FormatRecipientForError(recipient.Recipient)}: La conversación no está disponible para asignarla.");
+                        continue;
+                    }
+                }
+            }
+
             var result = await _whatsAppCloudClient.SendTemplateMessageAsync(
                 credentials.PhoneNumberId!,
                 credentials.AccessToken,
@@ -206,8 +232,13 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
                 if (!string.IsNullOrWhiteSpace(result.WhatsAppMessageId))
                     response.MessageIds.Add(result.WhatsAppMessageId);
 
-                if (credentials.BranchId.HasValue)
-                    await PersistOutboundTemplateMessageAsync(credentials.BranchId.Value, recipient.Recipient, recipient.Customer, template, parameters, result.WhatsAppMessageId, cancellationToken);
+                if (credentials.BranchId is int assignedBranch)
+                {
+                    var messageId = await PersistOutboundTemplateMessageAsync(conversation, assignedBranch, phone, userId,
+                        recipient.Customer, template, parameters, result.WhatsAppMessageId, cancellationToken);
+                    if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+                    await NotifyWhatsAppMessageCreatedAsync(messageId, cancellationToken);
+                }
             }
             else
             {
@@ -1130,9 +1161,11 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         return new TemplateRecipientsResolution(false, null, unique);
     }
 
-    public async Task PersistOutboundTemplateMessageAsync(
+    private async Task<int> PersistOutboundTemplateMessageAsync(
+        WhatsAppConversation? conversation,
         int branchId,
-        string recipient,
+        string? phoneNumber,
+        string? userId,
         Customer? customer,
         WhatsAppTemplate template,
         IReadOnlyList<string> parameters,
@@ -1140,18 +1173,8 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         CancellationToken cancellationToken)
     {
         var timestamp = _clock.UtcNow;
-        var userId = string.Equals(customer?.WhatsAppUserId, recipient, StringComparison.Ordinal)
-            ? recipient
-            : null;
-        var phoneNumber = userId is null ? recipient : null;
-        var conversation = await _db.WhatsAppConversations
-            .FirstOrDefaultAsync(x => x.BranchId == branchId && x.ChannelSettingId == null && x.BranchLineId == null
-                && (userId != null ? x.WhatsAppUserId == userId : x.PhoneNumber == phoneNumber),
-                cancellationToken);
-
         if (conversation is null)
         {
-            var aiActive = await IsBranchAiActiveAsync(branchId, cancellationToken);
             conversation = new WhatsAppConversation
             {
                 BranchId = branchId,
@@ -1161,12 +1184,12 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
                 CustomerId = customer?.Id,
                 ContactName = customer?.Name,
                 Status = WhatsAppConversationStatus.Open,
-                AttentionMode = _attentionService.InitialMode(aiActive),
                 AttentionModeUpdatedAt = timestamp
             };
             _db.WhatsAppConversations.Add(conversation);
         }
 
+        _attentionService.AssignAfterTemplate(conversation, _currentUser.Id, timestamp);
         conversation.CustomerId = customer?.Id ?? conversation.CustomerId;
         conversation.ContactName = customer?.Name ?? conversation.ContactName;
         conversation.WhatsAppUsername = customer?.WhatsAppUsername ?? conversation.WhatsAppUsername;
@@ -1194,7 +1217,7 @@ public sealed partial class WhatsAppManualOperations : ControllerBase
         _db.WhatsAppMessages.Add(message);
 
         await _db.SaveChangesAsync(cancellationToken);
-        await NotifyWhatsAppMessageCreatedAsync(message.Id, cancellationToken);
+        return message.Id;
     }
 
     public static string BuildTemplateMessagePreview(WhatsAppTemplate template, IReadOnlyList<string> parameters)

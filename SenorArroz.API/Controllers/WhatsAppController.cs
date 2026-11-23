@@ -1198,15 +1198,6 @@ public partial class WhatsAppController : ControllerBase
         bool requiresPhone,
         CancellationToken cancellationToken) => _manualOperations.ResolveTemplateRecipientsAsync(dto, branchId, requiresPhone, cancellationToken);
 
-    private Task PersistOutboundTemplateMessageAsync(
-        int branchId,
-        string recipient,
-        Customer? customer,
-        WhatsAppTemplate template,
-        IReadOnlyList<string> parameters,
-        string? whatsAppMessageId,
-        CancellationToken cancellationToken) => _manualOperations.PersistOutboundTemplateMessageAsync(branchId, recipient, customer, template, parameters, whatsAppMessageId, cancellationToken);
-
     private static string BuildTemplateMessagePreview(WhatsAppTemplate template, IReadOnlyList<string> parameters) => WhatsAppManualOperations.BuildTemplateMessagePreview(template, parameters);
 
     private static int CountBodyTemplateParameters(string componentsJson) => WhatsAppManualOperations.CountBodyTemplateParameters(componentsJson);

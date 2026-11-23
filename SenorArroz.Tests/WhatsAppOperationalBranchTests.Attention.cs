@@ -45,11 +45,16 @@ public sealed partial class WhatsAppOperationalBranchTests
         clients.Verify(x => x.Groups(It.Is<IReadOnlyList<string>>(g => g.Contains("Tenant_1_Branch_1_WhatsApp"))), Times.Once);
     }
 
-    [Fact]
-    public async Task Approved_template_uses_conversation_line_after_window_expires_and_never_changes_routing()
+    [Theory]
+    [InlineData(WhatsAppAttentionMode.Human, 7)]
+    [InlineData(WhatsAppAttentionMode.WaitingForHuman, null)]
+    [InlineData(WhatsAppAttentionMode.Closed, null)]
+    public async Task Approved_template_uses_conversation_line_and_assigns_attention(WhatsAppAttentionMode mode, int? owner)
     {
-        await using var db = CreateDb(); await SeedCentralConversationAsync(db, 2, 7);
+        await using var db = CreateDb(); await SeedCentralConversationAsync(db, 2, owner);
         var conversation = await db.WhatsAppConversations.SingleAsync();
+        conversation.AttentionMode = mode;
+        conversation.Status = mode == WhatsAppAttentionMode.Closed ? WhatsAppConversationStatus.Closed : WhatsAppConversationStatus.Open;
         var lastCustomerMessage = DateTime.UtcNow.AddDays(-5);
         conversation.LastCustomerMessageAt = lastCustomerMessage; conversation.NeedsHumanResponse = true;
         (await db.WhatsAppChannelSettings.SingleAsync()).BusinessAccountId = "central-account";
@@ -60,20 +65,56 @@ public sealed partial class WhatsAppOperationalBranchTests
                 new("approved", "recontactar", "es", "UTILITY", "APPROVED", "[{\"type\":\"BODY\",\"text\":\"Hola\"}]"),
                 new("pending", "pendiente", "es", "UTILITY", "PENDING", "[]")], null));
         cloud.Setup(x => x.SendTemplateMessageAsync("phone", "token", It.IsAny<string>(), "recontactar", "es", It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new WhatsAppCloudSendResult(true, "template-message", null));
-        var controller = CreateController(db, cloud: cloud.Object);
-        Assert.IsType<BadRequestObjectResult>((await controller.SendMessage(11, new() { Text = "Fuera de ventana" }, default)).Result);
+            .ReturnsAsync(new WhatsAppCloudSendResult(false, null, "Rechazado"));
+        var controller = CreateController(db, branchId: 2, cloud: cloud.Object);
+        if (owner.HasValue)
+            Assert.IsType<BadRequestObjectResult>((await controller.SendMessage(11, new() { Text = "Fuera de ventana" }, default)).Result);
         var templates = await controller.GetConversationTemplates(11, default);
         var response = Assert.IsType<ApiResponse<IReadOnlyList<WhatsAppCloudTemplate>>>(Assert.IsType<OkObjectResult>(templates.Result).Value);
         Assert.Single(response.Data!);
-        Assert.IsType<OkObjectResult>((await controller.SendConversationTemplate(11, new() { TemplateName = "recontactar", Language = "es" }, default)).Result);
+        var request = new SendConversationWhatsAppTemplateDto { TemplateName = "recontactar", Language = "es" };
+        Assert.IsType<BadRequestObjectResult>((await controller.SendConversationTemplate(11, request, default)).Result);
+        Assert.Equal(owner, conversation.AssignedUserId);
+        Assert.Equal(mode, conversation.AttentionMode);
+        Assert.Empty(await db.WhatsAppMessages.ToListAsync());
+        cloud.Setup(x => x.SendTemplateMessageAsync("phone", "token", It.IsAny<string>(), "recontactar", "es", It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WhatsAppCloudSendResult(true, "template-message", null));
+        Assert.IsType<OkObjectResult>((await controller.SendConversationTemplate(11, request, default)).Result);
         var sent = await db.WhatsAppMessages.SingleAsync();
         Assert.Equal(11, sent.ConversationId); Assert.Equal(7, sent.SentByUserId); Assert.Equal("template-message", sent.WhatsAppMessageId);
         Assert.Equal(2, conversation.OperationalBranchId); Assert.Equal(7, conversation.AssignedUserId);
+        Assert.Equal(WhatsAppAttentionMode.Human, conversation.AttentionMode);
+        Assert.Equal(WhatsAppConversationStatus.Open, conversation.Status);
         Assert.Equal(lastCustomerMessage, conversation.LastCustomerMessageAt); Assert.False(conversation.NeedsHumanResponse);
-        Assert.IsType<ForbidResult>((await CreateController(db, 8, cloud: cloud.Object).SendConversationTemplate(11, new() { TemplateName = "recontactar", Language = "es" }, default)).Result);
+        Assert.IsType<ForbidResult>((await CreateController(db, 8, branchId: 2, cloud: cloud.Object)
+            .SendConversationTemplate(11, new() { TemplateName = "recontactar", Language = "es" }, default)).Result);
         Assert.IsType<BadRequestObjectResult>((await controller.SendConversationTemplate(11, new() { TemplateName = "pendiente", Language = "es" }, default)).Result);
-        cloud.Verify(x => x.SendTemplateMessageAsync("phone", "token", It.IsAny<string>(), "recontactar", "es", It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()), Times.Once);
+        cloud.Verify(x => x.SendTemplateMessageAsync("phone", "token", It.IsAny<string>(), "recontactar", "es", It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task Template_from_catalog_assigns_the_recipient_chat_on_send()
+    {
+        await using var db = CreateDb();
+        db.AddRange(new Branch { Id = 1, Name = "Centro", IsActive = true },
+            new WhatsAppBranchSetting { Id = 4, BranchId = 1, PhoneNumberId = "line", AccessToken = "token",
+                IsActive = true, IsVerified = true },
+            new WhatsAppTemplate { BranchId = 1, Name = "retomar", Language = "es", Status = "APPROVED",
+                Components = """[{"type":"BODY","text":"Hola"}]""" },
+            new WhatsAppConversation { Id = 21, BranchId = 1, PhoneNumber = "573001234567",
+                AttentionMode = WhatsAppAttentionMode.WaitingForHuman });
+        await db.SaveChangesAsync();
+
+        var cloud = new Mock<IWhatsAppCloudClient>();
+        cloud.Setup(x => x.SendTemplateMessageAsync("line", "token", "573001234567", "retomar", "es",
+            It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WhatsAppCloudSendResult(true, "wamid.catalog", null));
+        var result = await CreateController(db, role: "Admin", cloud: cloud.Object).SendTemplate(
+            new() { TemplateName = "retomar", Language = "es", To = "573001234567", BranchId = 1 }, default);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(7, (await db.WhatsAppConversations.SingleAsync()).AssignedUserId);
+        Assert.Equal(21, (await db.WhatsAppMessages.SingleAsync()).ConversationId);
     }
 
     [Fact]

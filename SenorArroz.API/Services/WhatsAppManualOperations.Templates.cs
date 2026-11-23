@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Common.Services;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
@@ -12,6 +13,15 @@ namespace SenorArroz.API.Services;
 
 public sealed partial class WhatsAppManualOperations
 {
+    private async Task LockTemplateRecipientAsync(string sender, string recipient, CancellationToken ct)
+    {
+        if (_db.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL")
+        {
+            var identity = $"whatsapp-start:{sender}:{recipient}";
+            await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({TenantId}, hashtext({identity}))", ct);
+        }
+    }
+
     public async Task<ActionResult<ApiResponse<IReadOnlyList<WhatsAppCloudTemplate>>>> ConversationTemplates(int id, CancellationToken ct)
     {
         var conversation = await _db.WhatsAppConversations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
@@ -28,11 +38,12 @@ public sealed partial class WhatsAppManualOperations
     }
 
     public async Task<ActionResult<ApiResponse<WhatsAppMessageDto>>> SendConversationTemplate(int id,
-        SendConversationWhatsAppTemplateDto request, CancellationToken ct)
+        SendConversationWhatsAppTemplateDto request, CancellationToken ct, DateTime? expectedAttentionVersion = null)
     {
-        var conversation = await _db.WhatsAppConversations.SingleOrDefaultAsync(x => x.Id == id, ct);
+        var conversation = await _db.WhatsAppConversations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
         if (conversation is null) return NotFound();
-        if (!WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id) || !await CanAccessConversationAsync(conversation, ct)) return Forbid();
+        if (!WhatsAppAttentionService.CanSendTemplate(conversation, _currentUser.Id)
+            || !await CanAccessConversationAsync(conversation, ct)) return Forbid();
         if (IsStarterOnlyTemplate(request.TemplateName, request.Language))
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("Envía esta plantilla desde Nueva conversación."));
         if (request.Parameters is null || request.Parameters.Count > 20 || request.Parameters.Any(x => string.IsNullOrWhiteSpace(x) || x.Length > 1024))
@@ -48,19 +59,30 @@ public sealed partial class WhatsAppManualOperations
         var recipient = WhatsAppRecipientResolver.Resolve(conversation);
         if (recipient is null || template.Category.Equals("AUTHENTICATION", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(conversation.PhoneNumber))
             return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La conversación no tiene un destinatario válido para esta plantilla."));
-        if (!await _db.WhatsAppConversations.AsNoTracking().AnyAsync(x => x.Id == id && x.AssignedUserId == _currentUser.Id
-            && x.AttentionMode == WhatsAppAttentionMode.Human && x.AttentionRevision == conversation.AttentionRevision, ct))
+        await using var transaction = _db.Database.IsRelational() ? await _db.Database.BeginTransactionAsync(ct) : null;
+        await WhatsAppCommercialDraft.LockAsync(_db, TenantId, id, ct);
+        var query = _db.WhatsAppConversations.Where(x => x.Id == id);
+        if (expectedAttentionVersion.HasValue)
+            query = query.Where(x => x.AttentionModeUpdatedAt == expectedAttentionVersion.Value);
+        var current = await query.SingleOrDefaultAsync(ct);
+        if (current is null || current.AttentionRevision != conversation.AttentionRevision
+            || current.ChannelSettingId != conversation.ChannelSettingId || current.BranchLineId != conversation.BranchLineId
+            || current.BranchId != conversation.BranchId || WhatsAppRecipientResolver.Resolve(current) != recipient
+            || !WhatsAppAttentionService.CanSendTemplate(current, _currentUser.Id)
+            || !await CanAccessConversationAsync(current, ct))
             return Conflict(ApiResponse<WhatsAppMessageDto>.ErrorResponse("La atención cambió antes de enviar la plantilla."));
         var sent = await _whatsAppCloudClient.SendTemplateMessageAsync(channel.PhoneNumberId, channel.AccessToken, recipient,
             template.Name, template.Language, request.Parameters, ct);
         RequireKnownOutcome(sent);
         if (!sent.Success) return BadRequest(ApiResponse<WhatsAppMessageDto>.ErrorResponse(sent.ErrorMessage ?? "Meta rechazó el envío."));
         var text = BuildTemplateMessagePreview(new WhatsAppTemplate { Name = template.Name, Components = template.ComponentsJson }, request.Parameters);
-        var message = new WhatsAppMessage { TenantId = conversation.TenantId, ConversationId = id,
+        var message = new WhatsAppMessage { TenantId = current.TenantId, ConversationId = id,
             WhatsAppMessageId = sent.WhatsAppMessageId, Direction = WhatsAppMessageDirection.Outbound, Type = WhatsAppMessageType.Text,
             TextBody = text[..Math.Min(4096, text.Length)], Timestamp = _clock.UtcNow, SentByUserId = _currentUser.Id, Status = WhatsAppMessageStatus.Sent };
-        _db.WhatsAppMessages.Add(message); conversation.LastMessageAt = message.Timestamp; conversation.LastMessagePreview = $"Plantilla: {template.Name}";
+        _attentionService.AssignAfterTemplate(current, _currentUser.Id, message.Timestamp);
+        _db.WhatsAppMessages.Add(message); current.LastMessageAt = message.Timestamp; current.LastMessagePreview = $"Plantilla: {template.Name}";
         await _db.SaveChangesAsync(ct);
+        if (transaction is not null) await transaction.CommitAsync(ct);
         await NotifyWhatsAppMessageCreatedAsync(message.Id, ct);
         return Ok(ApiResponse<WhatsAppMessageDto>.SuccessResponse(ToMessageDto(message), "Plantilla enviada desde la línea de la conversación."));
     }

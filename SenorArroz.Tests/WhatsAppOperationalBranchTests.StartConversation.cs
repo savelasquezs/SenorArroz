@@ -202,8 +202,15 @@ public sealed partial class WhatsAppOperationalBranchTests
         Assert.IsType<BadRequestObjectResult>((await controller.StartConversation(request with { DeliveryUpdate = new string('x', 1024) }, default)).Result);
         Assert.Empty(await db.WhatsAppConversations.ToListAsync());
 
+        var conversation = new WhatsAppConversation { Id = 21, TenantId = 1, BranchId = 1, BranchLineId = 4,
+            PhoneNumber = "573001234567", AttentionMode = WhatsAppAttentionMode.WaitingForHuman };
+        db.WhatsAppConversations.Add(conversation);
+        await db.SaveChangesAsync();
         var result = await controller.StartConversation(request with { DeliveryUpdate = "  ya llegó y está intentando contactarte  " }, default);
-        Assert.IsType<OkObjectResult>(result.Result);
+        var started = Assert.IsType<ApiResponse<WhatsAppConversationStartResult>>(Assert.IsType<OkObjectResult>(result.Result).Value).Data!;
+        Assert.Equal(new WhatsAppConversationStartResult(21, true), started);
+        Assert.Equal(7, conversation.AssignedUserId);
+        Assert.Equal(WhatsAppAttentionMode.Human, conversation.AttentionMode);
         Assert.Equal("El domiciliario nos informa que ya llegó y está intentando contactarte. Quedamos atentos.",
             (await db.WhatsAppMessages.SingleAsync()).TextBody);
         cloud.Verify(x => x.SendSharedContentAsync("santander-line", "token", "573001234567", "template",

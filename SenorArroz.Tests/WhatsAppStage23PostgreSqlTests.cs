@@ -51,12 +51,15 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
-    public async Task Stage23_Conversation_template_is_durable_and_preserves_the_sender_after_window_expiry()
+    public async Task Stage23_Conversation_template_is_durable_and_assigns_a_free_chat_after_window_expiry()
     {
         using var tenant = _tenant.BeginTenantScope(1);
         await using var db = Db(); await SeedManualAsync(db);
         (await db.WhatsAppChannelSettings.SingleAsync()).BusinessAccountId = "central-account";
-        (await db.WhatsAppConversations.SingleAsync()).LastCustomerMessageAt = _clock.UtcNow.AddDays(-3);
+        var conversation = await db.WhatsAppConversations.SingleAsync();
+        conversation.LastCustomerMessageAt = _clock.UtcNow.AddDays(-3);
+        conversation.AssignedUserId = null;
+        conversation.AttentionMode = WhatsAppAttentionMode.WaitingForHuman;
         await db.SaveChangesAsync();
         var (queue, cloud, _, http) = ManualQueue(db);
         cloud.Setup(x => x.GetMessageTemplatesAsync("central-account", "local-token", It.IsAny<CancellationToken>()))
@@ -69,7 +72,11 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests
         var job = (await Store(db).ClaimAsync(default))!;
         await ExecuteManualWorkerAsync(queue, job, db);
         Assert.True(await Store(db).FinishAsync(job, true, default));
-        Assert.Equal(200, Assert.IsType<ObjectResult>(await queue.GetResultAsync(job.Id, default)).StatusCode);
+        var response = Assert.IsType<ObjectResult>(await queue.GetResultAsync(job.Id, default));
+        Assert.True(response.StatusCode == 200, response.Value?.ToString());
+        await db.Entry(conversation).ReloadAsync();
+        Assert.Equal(7, conversation.AssignedUserId);
+        Assert.Equal(WhatsAppAttentionMode.Human, conversation.AttentionMode);
         var message = await db.WhatsAppMessages.AsNoTracking().SingleAsync();
         Assert.Equal(11, message.ConversationId); Assert.Equal("Hola Cliente", message.TextBody); Assert.Equal(7, message.SentByUserId);
         Assert.Equal(1, await db.Orders.CountAsync());

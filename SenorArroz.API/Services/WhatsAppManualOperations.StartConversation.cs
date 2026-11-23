@@ -84,11 +84,7 @@ public sealed partial class WhatsAppManualOperations
             return Invalid("La línea cambió. Vuelve a cargar las plantillas de la sucursal.");
 
         await using var transaction = _db.Database.IsRelational() ? await _db.Database.BeginTransactionAsync(ct) : null;
-        if (_db.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL")
-        {
-            var identity = $"whatsapp-start:{sender.PhoneNumberId}:{phone}";
-            await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({TenantId}, hashtext({identity}))", ct);
-        }
+        await LockTemplateRecipientAsync(sender.PhoneNumberId, phone, ct);
         var existingId = await StarterConversations(sender, phone)
             .Select(x => (int?)x.Id).SingleOrDefaultAsync(ct);
         if (existingId is int id) await WhatsAppCommercialDraft.LockAsync(_db, TenantId, id, ct);
@@ -98,7 +94,7 @@ public sealed partial class WhatsAppManualOperations
         if (conversation is not null)
         {
             if (!await CanAccessConversationAsync(conversation, ct)) return Forbid();
-            if (!WhatsAppAttentionService.CanWrite(conversation, _currentUser.Id))
+            if (!WhatsAppAttentionService.CanSendTemplate(conversation, _currentUser.Id))
                 return Ok(ApiResponse<WhatsAppConversationStartResult>.SuccessResponse(new(conversation.Id, false)));
             if (conversation.OperationalBranchId is int operational && operational != request.BranchId)
                 return Invalid("La conversación se atiende desde otra sucursal. Usa esa sede para preparar el mensaje.");
@@ -189,6 +185,7 @@ public sealed partial class WhatsAppManualOperations
         if (!sent.Success)
             return Invalid(sent.ErrorMessage ?? "Meta rechazó el envío de la plantilla.");
 
+        _attentionService.AssignAfterTemplate(conversation, _currentUser.Id, _clock.UtcNow);
         var message = new WhatsAppMessage
         {
             TenantId = TenantId, Conversation = conversation, WhatsAppMessageId = sent.WhatsAppMessageId,

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SenorArroz.API.Services;
 using SenorArroz.Application.Common.Helpers;
 using SenorArroz.Application.Common.Interfaces;
 using SenorArroz.Application.Features.WhatsApp.DTOs;
@@ -59,7 +60,7 @@ public partial class WhatsAppController
         [FromBody] SendConversationWhatsAppTemplateDto request, CancellationToken ct)
     {
         if (_manualQueue is not null)
-            return _manualQueue.EnqueueAsync<WhatsAppMessageDto>("send-conversation-template", conversationId,
+            return _manualQueue.EnqueueAsync<WhatsAppMessageDto>(WhatsAppManualWorkQueue.ConversationTemplateOperation, conversationId,
                 JsonSerializer.SerializeToElement(request), Request, ct);
         _manualOperations.ControllerContext = ControllerContext;
         return _manualOperations.SendConversationTemplate(conversationId, request, ct);
