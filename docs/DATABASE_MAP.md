@@ -14,7 +14,9 @@ Las etiquetas personalizadas se definen por tenant en `whatsapp_inbox_label` y s
 
 `add_whatsapp_quick_reply_mode.sql` agrega `reply_mode` a `whatsapp_quick_reply`. Los modos son `send`, `draft` y `chicharron_quote`. Las respuestas `conchi` existentes pasan a cotización al aplicar el script por primera vez. El cierre por inactividad usa los estados y la auditoría de atención existentes, con la entrega registrada en `order.status_times`.
 
-- Inventario EF: 115 entidades; `Tenant` global y 114 tenant-owned, incluido `WhatsAppRealtimeEvent`.
+`add_delivery_work_phones.sql` relaciona teléfonos compartidos de WhatsApp con instalaciones de la app de domicilios por tenant y sucursal. La identidad se calcula de las jornadas de GPS. El registro mantiene RLS forzado y permite una sola asociación por número e instalación dentro del tenant.
+
+- Inventario EF: 116 entidades; `Tenant` global y 115 tenant-owned, incluidos `WhatsAppRealtimeEvent` y `DeliveryWorkPhone`.
 - Contrato común: `ITenantOwned` y `TenantOwnedEntity`.
 - EF aplica centralmente `tenant_id` obligatorio, índice, concurrency token y query filter.
 - `SaveChanges` asigna el tenant actual en altas sin tenant y rechaza altas, cambios o borrados cross-tenant.

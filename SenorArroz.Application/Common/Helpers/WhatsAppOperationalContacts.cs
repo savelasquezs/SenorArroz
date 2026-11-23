@@ -13,7 +13,7 @@ public static class WhatsAppOperationalContacts
     public const string Supplier = "supplier";
     public const string ManualAttention = "operational_contact_manual_attention";
 
-    public sealed record Match(int Id, int? BranchId, string Kind, string Name);
+    public sealed record Match(int Id, int? BranchId, string Kind, string Name, string? DeviceInstallationId = null);
 
     public static async Task<Match?> FindAsync(IApplicationDbContext db, WhatsAppConversation conversation, CancellationToken ct)
     {
@@ -24,15 +24,54 @@ public static class WhatsAppOperationalContacts
     }
 
     public static async Task EnrichAsync(IApplicationDbContext db, int tenantId,
-        IReadOnlyList<WhatsAppConversationDto> chats, CancellationToken ct)
+        IReadOnlyList<WhatsAppConversationDto> chats, CancellationToken ct, DateTime? utcNow = null)
     {
         var phones = chats.Select(x => Normalize(x.PhoneNumber)).OfType<string>().Distinct().ToArray();
         var matches = await FindManyAsync(db, tenantId, phones, ct);
+        await ResolveSharedPhonesAsync(db, tenantId, matches, utcNow ?? DateTime.UtcNow, ct);
         foreach (var chat in chats)
         {
             var phone = Normalize(chat.PhoneNumber);
             var match = phone is null ? null : matches.GetValueOrDefault(phone);
-            chat.OperationalContact = match is null ? null : new(match.Kind, match.Name);
+            chat.OperationalContact = match is null ? null : new(match.Kind, match.Name,
+                match.DeviceInstallationId is not null, match is { Kind: Deliveryman, Id: > 0 } ? match.Id : null);
+        }
+    }
+
+    public static async Task<Match?> FindForRoutesAsync(IApplicationDbContext db, WhatsAppConversation conversation,
+        DateTime utcNow, CancellationToken ct)
+    {
+        var phone = Normalize(conversation.PhoneNumber);
+        if (phone is null) return null;
+        var matches = await FindManyAsync(db, conversation.TenantId, [phone], ct);
+        await ResolveSharedPhonesAsync(db, conversation.TenantId, matches, utcNow, ct);
+        return matches.GetValueOrDefault(phone);
+    }
+
+    private static async Task ResolveSharedPhonesAsync(IApplicationDbContext db, int tenantId,
+        Dictionary<string, Match> matches, DateTime utcNow, CancellationToken ct)
+    {
+        var shared = matches.Where(x => x.Value.DeviceInstallationId is not null).ToArray();
+        if (shared.Length == 0) return;
+
+        var devices = shared.Select(x => x.Value.DeviceInstallationId!).ToArray();
+        var branches = shared.Select(x => x.Value.BranchId!.Value).Distinct().ToArray();
+        var today = ColombiaTimeHelper.GetTodayStartInUtcFromUtc(utcNow);
+        var sessions = await db.DeliveryWorkSessions.AsNoTracking()
+            .Where(s => s.TenantId == tenantId && branches.Contains(s.BranchId)
+                && devices.Contains(s.DeviceInstallationId) && s.StartedAt <= utcNow
+                && (s.StartedAt >= today || s.EndedAt >= today
+                    || (s.Status == DeliveryWorkSessionStatus.Active && s.AutoCloseAt > utcNow)))
+            .OrderByDescending(s => s.StartedAt).ThenByDescending(s => s.Id)
+            .Select(s => new { s.BranchId, s.DeviceInstallationId, s.DeliverymanId, s.Deliveryman.Name, s.Deliveryman.Active })
+            .ToListAsync(ct);
+        var latest = sessions.ToLookup(s => (s.BranchId, s.DeviceInstallationId));
+
+        foreach (var (phone, contact) in shared)
+        {
+            var session = latest[(contact.BranchId!.Value, contact.DeviceInstallationId!)].FirstOrDefault();
+            if (session is { Active: true })
+                matches[phone] = contact with { Id = session.DeliverymanId, Name = session.Name };
         }
     }
 
@@ -51,21 +90,26 @@ public static class WhatsAppOperationalContacts
                     && (u.Role == UserRole.Admin || u.Role == UserRole.Superadmin || u.Role == UserRole.Cashier)))
                 && storedVariants.Contains(u.Phone.Replace("+", "").Replace(" ", "")
                     .Replace("(", "").Replace(")", "").Replace("-", "").Replace(".", "")))
-            .Select(u => new { u.Id, BranchId = (int?)u.BranchId, u.Name, u.Phone, Kind = Deliveryman });
+            .Select(u => new { u.Id, BranchId = (int?)u.BranchId, u.Name, u.Phone, Kind = Deliveryman, Device = (string?)null });
         var suppliers = db.Suppliers.AsNoTracking()
             .Where(s => s.TenantId == tenantId && storedVariants.Contains(s.Phone.Replace("+", "").Replace(" ", "")
                 .Replace("(", "").Replace(")", "").Replace("-", "").Replace(".", "")))
-            .Select(s => new { s.Id, s.BranchId, s.Name, s.Phone, Kind = Supplier });
-        var contacts = await drivers.Concat(suppliers).ToListAsync(ct);
+            .Select(s => new { s.Id, s.BranchId, s.Name, s.Phone, Kind = Supplier, Device = (string?)null });
+        var sharedPhones = db.DeliveryWorkPhones.AsNoTracking()
+            .Where(x => x.TenantId == tenantId && phones.Contains(x.Phone))
+            .Select(x => new { Id = 0, BranchId = (int?)x.BranchId, Name = "", x.Phone, Kind = Deliveryman, Device = (string?)x.DeviceInstallationId });
+        var contacts = await drivers.Concat(suppliers).Concat(sharedPhones).ToListAsync(ct);
 
-        return contacts.Select(x => (Phone: Normalize(x.Phone), Contact: new Match(x.Id, x.BranchId, x.Kind, x.Name)))
+        return contacts.Select(x => (Phone: Normalize(x.Phone), Contact: new Match(x.Id, x.BranchId, x.Kind, x.Name, x.Device)))
             .Where(x => x.Phone is not null && phoneSet.Contains(x.Phone))
             .GroupBy(x => x.Phone!, StringComparer.Ordinal)
-            .Where(g => g.Count() == 1)
-            .ToDictionary(g => g.Key, g => g.Single().Contact, StringComparer.Ordinal);
+            .Select(g => (Phone: g.Key, Contact: g.FirstOrDefault(x => x.Contact.DeviceInstallationId is not null).Contact
+                ?? (g.Count() == 1 ? g.Single().Contact : null)))
+            .Where(x => x.Contact is not null)
+            .ToDictionary(x => x.Phone, x => x.Contact!, StringComparer.Ordinal);
     }
 
-    private static string? Normalize(string? input)
+    public static string? Normalize(string? input)
     {
         var value = input?.Trim();
         if (string.IsNullOrEmpty(value) || value.Length > 40) return null;

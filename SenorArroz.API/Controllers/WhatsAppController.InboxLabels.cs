@@ -85,7 +85,7 @@ public partial class WhatsAppController
     private async Task EnrichInboxLabelsAsync(IReadOnlyList<WhatsAppConversationDto> conversations, DateTime day, CancellationToken ct)
     {
         if (conversations.Count == 0) return;
-        await WhatsAppOperationalContacts.EnrichAsync(_db, TenantId, conversations, ct);
+        await WhatsAppOperationalContacts.EnrichAsync(_db, TenantId, conversations, ct, _clock.UtcNow);
         var ids = conversations.Select(x => x.Id).ToArray();
         var labels = await InboxLabelStates(_db.WhatsAppConversations.AsNoTracking().Where(x => ids.Contains(x.Id)), day)
             .Select(x => new

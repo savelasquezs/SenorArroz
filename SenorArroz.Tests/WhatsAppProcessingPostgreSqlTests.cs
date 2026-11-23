@@ -447,6 +447,15 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests(Xunit.Abstractions
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Shared_delivery_phones_resolve_gps_sessions_on_postgresql()
+    {
+        using var scope = _tenant.BeginTenantScope(1);
+        await using var db = Db();
+        await WhatsAppOperationalBranchTests.VerifySharedDeliveryPhonesAsync(db);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
     public async Task Migration_is_idempotent_and_realtime_table_enforces_rls_for_runtime_role()
     {
         var runtimeRole = "queue_runtime_" + Guid.NewGuid().ToString("N");

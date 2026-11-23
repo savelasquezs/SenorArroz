@@ -44,6 +44,8 @@ public class DeliveryWorkSessionConfiguration : IEntityTypeConfiguration<Deliver
             .HasDatabaseName("uq_delivery_work_session_active_deliveryman");
         builder.HasIndex(x => new { x.BranchId, x.Status, x.AutoCloseAt })
             .HasDatabaseName("idx_delivery_work_session_branch_status_close");
+        builder.HasIndex(x => new { x.TenantId, x.BranchId, x.DeviceInstallationId, x.StartedAt })
+            .HasDatabaseName("idx_delivery_work_session_device_usage");
     }
 
     private static string ToSnakeCase(string input)
