@@ -408,22 +408,31 @@ public sealed partial class WhatsAppOperationalBranchTests
     }
 
     [Theory]
-    [InlineData(2, null)]
-    [InlineData(7, null)]
-    [InlineData(7, "coverage")]
-    [InlineData(7, "old_context")]
-    [InlineData(7, "newer_prompt")]
-    [InlineData(7, "manual_address")]
-    public async Task Address_choice_uses_current_order_coverage_and_only_the_linked_prompt(int count, string? stale)
+    [InlineData(2, null, null)]
+    [InlineData(7, null, null)]
+    [InlineData(7, "coverage", null)]
+    [InlineData(7, "old_context", null)]
+    [InlineData(7, "newer_prompt", null)]
+    [InlineData(7, "manual_address", null)]
+    [InlineData(2, null, "phone")]
+    [InlineData(2, null, "bsuid")]
+    [InlineData(2, null, "unrelated")]
+    [InlineData(2, null, "ambiguous")]
+    public async Task Address_choice_uses_current_order_coverage_and_only_the_linked_prompt(int count, string? stale,
+        string? unlinked)
     {
-        const string recipient = "573121234567";
+        var recipient = unlinked == "bsuid" ? "CO.address-test" : "573121234567";
         await using var db = CreateDb();
         await SeedCentralConversationAsync(db, 2, 7);
         var conversation = await db.WhatsAppConversations.SingleAsync();
-        conversation.PhoneNumber = recipient;
-        conversation.CustomerId = 20;
+        conversation.PhoneNumber = unlinked == "bsuid" ? null : recipient;
+        conversation.WhatsAppUserId = unlinked == "bsuid" ? recipient : null;
+        conversation.CustomerId = unlinked is null ? 20 : null;
         conversation.LastCustomerMessageAt = DateTime.UtcNow;
-        db.Customers.Add(new Customer { Id = 20, Name = "Cliente de pruebas", Phone1 = "3121234567", Active = true });
+        db.Customers.Add(new Customer { Id = 20, Name = "Cliente de pruebas",
+            Phone1 = unlinked == "unrelated" ? "3120000000" : "3121234567", WhatsAppUserId = conversation.WhatsAppUserId, Active = true });
+        if (unlinked == "ambiguous")
+            db.Customers.Add(new Customer { Id = 21, Name = "Número compartido", Phone1 = "3121234567", Active = true });
         for (var i = 1; i <= count + 1; i++)
         {
             db.Addresses.Add(new Address { Id = i, CustomerId = 20, AddressText = $"Calle {i} # 1-2", AdditionalInfo = "A3" });
@@ -461,7 +470,16 @@ public sealed partial class WhatsAppOperationalBranchTests
         }, default));
         var request = new WhatsAppDraftWriteDto { SessionId = saved.SessionId, ExpectedVersion = saved.Version };
         var sent = await controller.SendCommercialAddressChoices(11, request, default);
+        if (unlinked is "unrelated" or "ambiguous")
+        {
+            Assert.IsType<BadRequestObjectResult>(sent.Result);
+            Assert.Equal(0, sendCount);
+            Assert.Null(conversation.CustomerId);
+            return;
+        }
         Assert.IsType<OkObjectResult>(sent.Result);
+
+        Assert.Equal(20, conversation.CustomerId);
         Assert.Equal(1, sendCount);
         Assert.NotNull(optionId);
         var clickedOption = optionId;
@@ -488,7 +506,7 @@ public sealed partial class WhatsAppOperationalBranchTests
             {
                 metadata = new { phone_number_id = "phone" },
                 messages = new[] { new {
-                    from = recipient, id = "chosen-test", type = "interactive",
+                    from = conversation.PhoneNumber, from_user_id = conversation.WhatsAppUserId, id = "chosen-test", type = "interactive",
                     context = new { id = stale == "old_context" ? "another-prompt" : "prompt-1" },
                     interactive = new Dictionary<string, object> { ["type"] = replyType,
                         [replyType] = new { id = clickedOption, title = "Dirección 1" } }
@@ -497,6 +515,7 @@ public sealed partial class WhatsAppOperationalBranchTests
         });
         await processor.ProcessAsync(new WhatsAppWebhookEvent(), payload, default);
         await processor.ProcessAsync(new WhatsAppWebhookEvent(), payload, default);
+        Assert.Equal(20, conversation.CustomerId);
         var updated = WhatsAppCommercialDraft.Read(session);
         Assert.Equal(stale is null ? 1 : stale == "manual_address" ? 2 : (int?)null, updated.AddressId);
         Assert.Equal(stale is null ? 3500 : (int?)null, updated.DeliveryFee);

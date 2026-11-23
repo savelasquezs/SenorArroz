@@ -458,19 +458,16 @@ public sealed partial class WhatsAppWebhookProcessor
                     cancellationToken);
             }
             if (customer is null && identity.UserId is not null)
-            {
-                var matches = await _db.Customers.Where(x => x.TenantId == TenantId && x.Active && x.WhatsAppUserId == identity.UserId)
-                    .OrderBy(x => x.Id).Take(2).ToListAsync(cancellationToken);
-                customer = matches.Count == 1 ? matches[0] : null;
-            }
+                customer = await FindUniqueCustomerByWhatsAppUserIdAsync(identity.UserId, cancellationToken);
             customer ??= identity.PhoneNumber is null || phoneIdentityMismatch
                 ? null
                 : await FindUniqueCustomerByPhoneAsync(identity.PhoneNumber, cancellationToken);
 
             if (channelSettingId.HasValue)
             {
-                customer = identity.PhoneNumber is null || phoneIdentityMismatch || hasIdentityConflict
-                    ? null : await FindUniqueCustomerByPhoneAsync(identity.PhoneNumber, cancellationToken);
+                customer = phoneIdentityMismatch || hasIdentityConflict ? null
+                    : identity.PhoneNumber is not null ? await FindUniqueCustomerByPhoneAsync(identity.PhoneNumber, cancellationToken)
+                    : identity.UserId is not null && customer?.WhatsAppUserId == identity.UserId ? customer : null;
                 conversation.CustomerId = customer?.Id;
             }
 
@@ -997,6 +994,13 @@ public sealed partial class WhatsAppWebhookProcessor
         }
 
         return false;
+    }
+
+    internal async Task<Customer?> FindUniqueCustomerByWhatsAppUserIdAsync(string userId, CancellationToken ct)
+    {
+        var matches = await _db.Customers.Where(x => x.TenantId == TenantId && x.Active && x.WhatsAppUserId == userId)
+            .OrderBy(x => x.Id).Take(2).ToListAsync(ct);
+        return matches.Count == 1 ? matches[0] : null;
     }
 
     internal async Task<Customer?> FindUniqueCustomerByPhoneAsync(string whatsappPhone, CancellationToken cancellationToken)
