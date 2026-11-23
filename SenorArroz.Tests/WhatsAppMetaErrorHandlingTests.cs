@@ -112,6 +112,20 @@ public class WhatsAppMetaErrorHandlingTests
     }
 
     [Fact]
+    public async Task CloudClient_SendsAStaticTemplateWithoutComponents()
+    {
+        var handler = new CapturingHandler();
+        var client = CreateClient(handler);
+
+        Assert.True((await client.SendTemplateMessageAsync("phone-id", "token", "573001234567", "aviso_salida", "es", [])).Success);
+
+        using var json = JsonDocument.Parse(handler.Body);
+        var template = json.RootElement.GetProperty("template");
+        Assert.Equal("aviso_salida", template.GetProperty("name").GetString());
+        Assert.False(template.TryGetProperty("components", out _));
+    }
+
+    [Fact]
     public async Task CloudClient_AuthenticationTemplateSendsCodeInBodyAndCopyButton()
     {
         var handler = new CapturingHandler();
