@@ -19,18 +19,20 @@ namespace SenorArroz.API.Services;
 public sealed partial class WhatsAppManualOperations
 {
     private const string StarterLanguage = "es_CO";
+    private const string MenuDocumentTemplate = "carta_solicitada";
+    private const string MenuImageTemplate = "carta_imagen_solicitada";
     private const string MenuDocumentType = "application/pdf";
     private const int MaxMenuImageBytes = 10_000_000;
     private static readonly CultureInfo Colombia = CultureInfo.GetCultureInfo("es-CO");
     private static readonly (string Key, string Name)[] StarterTemplates =
     [
-        ("menu", "carta_solicitada"),
+        ("menu", MenuDocumentTemplate),
         ("catalog", "catalogo_solicitado"),
         ("payment", "pago_pedido_bancolombia")
     ];
 
     internal static bool IsStarterTemplate(string name, string language) =>
-        language == StarterLanguage && StarterTemplates.Any(template => template.Name == name);
+        language == StarterLanguage && (name == MenuImageTemplate || StarterTemplates.Any(template => template.Name == name));
 
     public async Task<ActionResult<ApiResponse<WhatsAppConversationStartOptions>>> GetConversationStartOptionsAsync(
         int branchId, CancellationToken ct)
@@ -47,8 +49,8 @@ public sealed partial class WhatsAppManualOperations
         var account = TransferAccount(branchId);
         var options = StarterTemplates.Select(choice =>
         {
-            var template = FindStarterTemplate(response, choice.Name);
-            return new WhatsAppConversationStartTemplate(choice.Key, choice.Name, template?.Status ?? "NOT_FOUND",
+            var template = FindStarterTemplate(response, choice.Name, sender.Branch);
+            return new WhatsAppConversationStartTemplate(choice.Key, template?.Name ?? choice.Name, template?.Status ?? "NOT_FOUND",
                 template is null ? null : ExtractBodyText(template.ComponentsJson),
                 StarterUnavailableReason(sender.Branch, choice.Key, account, template));
         }).ToArray();
@@ -99,10 +101,13 @@ public sealed partial class WhatsAppManualOperations
 
         var templates = await _whatsAppCloudClient.GetMessageTemplatesAsync(sender.BusinessAccountId, sender.AccessToken, ct);
         if (!templates.Success) return Invalid("No se pudieron consultar las plantillas de esta línea en Meta.");
-        var template = FindStarterTemplate(templates, choice.Name);
+        var template = FindStarterTemplate(templates, choice.Name, sender.Branch);
         var account = TransferAccount(request.BranchId);
         var unavailable = StarterUnavailableReason(sender.Branch, choice.Key, account, template);
         if (unavailable is not null) return Invalid(unavailable);
+        var templateName = template!.Name;
+        if (request.TemplateName is not null && request.TemplateName != templateName)
+            return Invalid("La plantilla cambió. Vuelve a abrir Nueva conversación para revisar el formato actual.");
 
         string[] parameters;
         if (choice.Key == "payment")
@@ -114,14 +119,18 @@ public sealed partial class WhatsAppManualOperations
         }
         else
         {
-            parameters = CountBodyTemplateParameters(template!.ComponentsJson) == 1 ? [sender.Branch.Name] : [];
+            parameters = CountBodyTemplateParameters(template.ComponentsJson) == 1 ? [sender.Branch.Name] : [];
         }
 
-        string? documentId = null, documentUrl = null, documentName = null;
-        if (choice.Key == "menu")
+        string? documentId = null, mediaUrl = null, documentName = null;
+        if (templateName == MenuImageTemplate)
+        {
+            mediaUrl = MenuImages(sender.Branch)[0];
+        }
+        else if (templateName == MenuDocumentTemplate)
         {
             documentName = $"Carta Señor Arroz - {sender.Branch.Name}.pdf";
-            (documentId, documentUrl) = await PrepareStarterMenuAsync(sender, documentName, ct);
+            (documentId, mediaUrl) = await PrepareStarterMenuAsync(sender, documentName, ct);
             if (documentId is null)
                 return Invalid("No se pudo preparar el PDF con las imágenes de la carta de esta sucursal.");
         }
@@ -131,6 +140,9 @@ public sealed partial class WhatsAppManualOperations
         if (documentId is not null)
             components.Add(new { type = "header", parameters = new[]
                 { new { type = "document", document = new { id = documentId, filename = documentName } } } });
+        if (templateName == MenuImageTemplate)
+            components.Add(new { type = "header", parameters = new[]
+                { new { type = "image", image = new { link = mediaUrl } } } });
         if (choice.Key == "catalog")
             components.Add(new { type = "button", sub_type = "catalog", index = 0, parameters = new[]
                 { new { type = "action", action = new Dictionary<string, string>() } } });
@@ -153,7 +165,7 @@ public sealed partial class WhatsAppManualOperations
             if (transaction is not null) await _db.SaveChangesAsync(ct);
         }
 
-        var payload = JsonSerializer.SerializeToElement(new { name = choice.Name, language = new { code = StarterLanguage }, components });
+        var payload = JsonSerializer.SerializeToElement(new { name = templateName, language = new { code = StarterLanguage }, components });
         var sent = await _whatsAppCloudClient.SendSharedContentAsync(sender.PhoneNumberId, sender.AccessToken, phone, "template", payload, ct);
         RequireKnownOutcome(sent);
         if (sent.OutcomeUncertain)
@@ -161,18 +173,20 @@ public sealed partial class WhatsAppManualOperations
         if (!sent.Success)
             return Invalid(sent.ErrorMessage ?? "Meta rechazó el envío de la plantilla.");
 
-        var text = BuildTemplateMessagePreview(new WhatsAppTemplate { Name = choice.Name, Components = template!.ComponentsJson }, parameters);
+        var text = BuildTemplateMessagePreview(new WhatsAppTemplate { Name = templateName, Components = template.ComponentsJson }, parameters);
         var message = new WhatsAppMessage
         {
             TenantId = TenantId, Conversation = conversation, WhatsAppMessageId = sent.WhatsAppMessageId,
-            Direction = WhatsAppMessageDirection.Outbound, Type = documentId is null ? WhatsAppMessageType.Text : WhatsAppMessageType.Document,
-            TextBody = text, MediaId = documentId, MediaUrl = documentUrl, MediaMimeType = documentId is null ? null : MenuDocumentType,
+            Direction = WhatsAppMessageDirection.Outbound,
+            Type = templateName == MenuImageTemplate ? WhatsAppMessageType.Image
+                : documentId is not null ? WhatsAppMessageType.Document : WhatsAppMessageType.Text,
+            TextBody = text, MediaId = documentId, MediaUrl = mediaUrl, MediaMimeType = documentId is null ? null : MenuDocumentType,
             MediaFileName = documentName,
             Status = WhatsAppMessageStatus.Sent, Timestamp = _clock.UtcNow, SentByUserId = _currentUser.Id,
-            RawPayload = JsonSerializer.Serialize(new { action = "start_conversation", template = choice.Name, language = StarterLanguage })
+            RawPayload = JsonSerializer.Serialize(new { action = "start_conversation", template = templateName, language = StarterLanguage })
         };
         conversation.LastMessageAt = message.Timestamp;
-        conversation.LastMessagePreview = $"Plantilla: {choice.Name}";
+        conversation.LastMessagePreview = $"Plantilla: {templateName}";
         _db.WhatsAppMessages.Add(message);
         await _db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
@@ -220,8 +234,15 @@ public sealed partial class WhatsAppManualOperations
         _whatsAppOptions.BancolombiaByBranch.TryGetValue(branchId, out var account)
         && !string.IsNullOrWhiteSpace(account.Account) && !string.IsNullOrWhiteSpace(account.Holder) ? account : null;
 
-    private static WhatsAppCloudTemplate? FindStarterTemplate(WhatsAppCloudTemplateSyncResult result, string name) =>
-        result.Templates.FirstOrDefault(x => x.Name == name && x.Language == StarterLanguage);
+    private static WhatsAppCloudTemplate? FindStarterTemplate(WhatsAppCloudTemplateSyncResult result, string name, Branch branch)
+    {
+        var standard = result.Templates.FirstOrDefault(x => x.Name == name && x.Language == StarterLanguage);
+        if (name != MenuDocumentTemplate || MenuImages(branch).Length != 1)
+            return standard;
+
+        var image = result.Templates.FirstOrDefault(x => x.Name == MenuImageTemplate && x.Language == StarterLanguage);
+        return string.Equals(image?.Status, "APPROVED", StringComparison.OrdinalIgnoreCase) ? image : standard ?? image;
+    }
 
     private string? StarterUnavailableReason(Branch branch, string key,
         WhatsAppBranchTransferAccount? account, WhatsAppCloudTemplate? template)
@@ -233,22 +254,23 @@ public sealed partial class WhatsAppManualOperations
         var parameters = CountBodyTemplateParameters(template.ComponentsJson);
         if (key == "payment" ? parameters != 3 : parameters is not (0 or 1))
             return "Las variables aprobadas no coinciden con la configuración del POS.";
-        if (!HasStarterComponents(template.ComponentsJson, key))
+        if (!HasStarterComponents(template, key))
             return "Los componentes aprobados no coinciden con esta plantilla.";
-        if (key == "menu" && (_menuStorage is null || MenuImages(branch).Length == 0))
+        if (key == "menu" && (MenuImages(branch).Length == 0
+            || (template.Name == MenuDocumentTemplate && _menuStorage is null)))
             return "Configura la carta en esta sucursal.";
         if (key == "payment" && account is null)
             return "Configura la cuenta Bancolombia de esta sucursal.";
         return null;
     }
 
-    private static bool HasStarterComponents(string componentsJson, string key)
+    private static bool HasStarterComponents(WhatsAppCloudTemplate template, string key)
     {
-        using var components = JsonDocument.Parse(componentsJson);
+        using var components = JsonDocument.Parse(template.ComponentsJson);
         var entries = components.RootElement.EnumerateArray().ToArray();
         if (key == "menu")
             return entries.Any(component => ComponentValue(component, "type") == "HEADER"
-                && ComponentValue(component, "format") == "DOCUMENT");
+                && ComponentValue(component, "format") == (template.Name == MenuImageTemplate ? "IMAGE" : "DOCUMENT"));
         if (key == "catalog")
             return entries.Any(component => ComponentValue(component, "type") == "BUTTONS"
                 && component.TryGetProperty("buttons", out var buttons) && buttons.ValueKind == JsonValueKind.Array
