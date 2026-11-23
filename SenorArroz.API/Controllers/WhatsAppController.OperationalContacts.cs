@@ -14,6 +14,58 @@ namespace SenorArroz.API.Controllers;
 
 public partial class WhatsAppController
 {
+    private async Task<Dictionary<string, WhatsAppOperationalContacts.Match>> InboxQuickContactsAsync(
+        bool suppliersOnly, DateTime now, DateTime day, CancellationToken ct)
+    {
+        var tenantId = TenantId;
+        int[] deliverymanIds = [];
+        List<string> candidates;
+        if (suppliersOnly)
+        {
+            candidates = await _db.Suppliers.AsNoTracking().Where(s => s.TenantId == tenantId)
+                .Select(s => s.Phone).ToListAsync(ct);
+        }
+        else
+        {
+            var branch = _branchContext.RequireBranch();
+            var end = ColombiaTimeHelper.GetColombiaStartOfTomorrowUtcFromUtc(now);
+            if (_db.Database.IsRelational())
+            {
+                deliverymanIds = await _db.Database.SqlQuery<int>($$"""
+                    SELECT DISTINCT o.delivery_man_id AS "Value"
+                    FROM public."order" o
+                    WHERE o.tenant_id = {{tenantId}} AND (o.branch_id = {{branch}} OR o.origin_branch_id = {{branch}})
+                      AND o.delivery_man_id IS NOT NULL AND o.type = 'delivery' AND o.status <> 'cancelled'
+                      AND CASE WHEN pg_input_is_valid(o.status_times ->> 'delivery_man_assigned', 'timestamp with time zone')
+                        AND (o.status_times ->> 'delivery_man_assigned') ~ '[Tt ].*([Zz]|[+-][0-9]{2}:[0-9]{2})$'
+                        THEN (o.status_times ->> 'delivery_man_assigned')::timestamptz <@ tstzrange({{day}}, {{end}}, '[)')
+                        ELSE false END
+                    """).ToArrayAsync(ct);
+            }
+            else
+            {
+                var orders = await _db.Orders.AsNoTracking().Where(o => o.TenantId == tenantId
+                    && (o.BranchId == branch || o.OriginBranchId == branch) && o.DeliveryManId != null
+                    && o.Type == OrderType.Delivery && o.Status != OrderStatus.Cancelled).ToListAsync(ct);
+                deliverymanIds = orders.Where(o => o.GetStatusTimes().TryGetValue(Order.DeliveryManAssignedStatusTimeKey, out var at)
+                        && at >= day && at < end)
+                    .Select(o => o.DeliveryManId!.Value).Distinct().ToArray();
+            }
+
+            if (deliverymanIds.Length == 0) return [];
+            candidates = await _db.Users.AsNoTracking().Where(u => u.TenantId == tenantId && deliverymanIds.Contains(u.Id))
+                .Select(u => u.Phone).ToListAsync(ct);
+            candidates.AddRange(await _db.DeliveryWorkPhones.AsNoTracking().Where(p => p.TenantId == tenantId)
+                .Select(p => p.Phone).ToListAsync(ct));
+        }
+
+        var numbers = candidates.Select(WhatsAppOperationalContacts.Normalize).OfType<string>().Distinct().ToArray();
+        var resolved = await WhatsAppOperationalContacts.ResolveAsync(_db, tenantId, numbers, now, ct);
+        return resolved.Where(x => suppliersOnly ? x.Value.Kind == WhatsAppOperationalContacts.Supplier
+                : x.Value.Kind == WhatsAppOperationalContacts.Deliveryman && deliverymanIds.Contains(x.Value.Id))
+            .ToDictionary(x => x.Key, x => x.Value);
+    }
+
     private async Task<OkObjectResult> OperationalContactResponse(WhatsAppConversation conversation, string message, CancellationToken ct)
     {
         var dto = ToConversationDto(conversation);

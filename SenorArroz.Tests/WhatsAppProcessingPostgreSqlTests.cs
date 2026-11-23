@@ -447,6 +447,24 @@ public sealed partial class WhatsAppProcessingPostgreSqlTests(Xunit.Abstractions
 
     [PostgreSqlIntegrationFact]
     [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Quick_operational_inbox_filters_before_pagination_on_postgresql()
+    {
+        using var scope = _tenant.BeginTenantScope(1);
+        await using var db = Db();
+        await WhatsAppOperationalBranchTests.VerifyQuickOperationalInboxAsync(db);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
+    public async Task Order_deliveryman_contact_prioritizes_work_phone_on_postgresql()
+    {
+        using var scope = _tenant.BeginTenantScope(1);
+        await using var db = Db();
+        await WhatsAppOperationalBranchTests.VerifyOrderDeliverymanContactAsync(db);
+    }
+
+    [PostgreSqlIntegrationFact]
+    [Trait("Category", "PostgreSqlIntegration")]
     public async Task Shared_delivery_phones_resolve_gps_sessions_on_postgresql()
     {
         using var scope = _tenant.BeginTenantScope(1);

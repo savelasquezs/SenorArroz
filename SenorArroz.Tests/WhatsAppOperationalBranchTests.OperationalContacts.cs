@@ -19,6 +19,83 @@ namespace SenorArroz.Tests;
 
 public sealed partial class WhatsAppOperationalBranchTests
 {
+    internal static async Task VerifyQuickOperationalInboxAsync(ApplicationDbContext db)
+    {
+        await SeedCentralConversationAsync(db, 1, 7);
+        var day = new DateTime(2026, 11, 23, 5, 0, 0, DateTimeKind.Utc);
+        var now = day.AddHours(4);
+        var clock = new Mock<IClock>();
+        clock.SetupGet(x => x.UtcNow).Returns(() => now);
+        db.Users.AddRange(Driver(20, 2), Driver(21, 1), Driver(22, 1), Driver(23, 2), Driver(24, 1));
+        db.Suppliers.AddRange(
+            new Supplier { Name = "Molino Alba", Phone = "3010000040" },
+            new Supplier { Name = "Ambiguo", Phone = "3010000020" });
+        db.AddRange(Chat(30, "573010000020"), Chat(31, "3010000021"), Chat(32, "+57 301 000 0022"),
+            Chat(33, "573010000023"), Chat(34, "+573010000040"),
+            Chat(35, "573010000050", WhatsAppAttentionMode.Closed), Chat(36, "573010000024"));
+        db.DeliveryWorkSessions.Add(new DeliveryWorkSession
+        {
+            Id = 50, BranchId = 2, DeliverymanId = 20, DeviceInstallationId = "compartido", DevicePlatform = "android",
+            StartedAt = day.AddHours(-9), AutoCloseAt = day.AddHours(-2), EndedAt = day.AddHours(-2),
+            Status = DeliveryWorkSessionStatus.Closed, LastCommunicationAt = day.AddHours(-2),
+        });
+        db.DeliveryWorkPhones.Add(new DeliveryWorkPhone { BranchId = 2, Phone = "573010000050", DeviceInstallationId = "compartido" });
+        db.AddRange(Assigned(60, 20, 2, 1, day, OrderStatus.Delivered), Assigned(61, 21, 1, null, day.AddSeconds(-1)),
+            Assigned(62, 22, 1, null, day, OrderStatus.Cancelled), Assigned(63, 23, 2, null, day),
+            Assigned(64, 22, 1, null, day.AddDays(1)), Assigned(65, null, 1, null, day), Assigned(66, 24, 1, null, now));
+        await db.SaveChangesAsync();
+        var controller = CreateController(db, clock: clock.Object);
+
+        var drivers = await Read(new() { DeliverymenAssignedToday = true, Search = "Reparto 20" });
+        var assigned = Assert.Single(drivers.Items);
+        Assert.Equal(35, assigned.Id);
+        Assert.Equal(true, assigned.MatchesContactQuickFilter);
+        Assert.Equal("Reparto 20", assigned.OperationalContact?.Name);
+        Assert.Empty((await Read(new() { DeliverymenAssignedToday = true, Inbox = "mine" })).Items);
+        var supplier = Assert.Single((await Read(new() { SuppliersOnly = true, Search = "Molino Alba" })).Items);
+        Assert.Equal(34, supplier.Id);
+        Assert.IsType<BadRequestObjectResult>((await controller.GetConversationPage(new()
+        { SuppliersOnly = true, DeliverymenAssignedToday = true }, default)).Result);
+        var first = await Read(new() { DeliverymenAssignedToday = true, Limit = 1 });
+        Assert.True(first.HasMore);
+        var second = await Read(new() { DeliverymenAssignedToday = true, Limit = 1, Cursor = first.NextCursor });
+        Assert.Equal(new[] { 35, 36 }, first.Items.Concat(second.Items).Select(x => x.Id).Order());
+        now = day.AddDays(1);
+        Assert.IsType<BadRequestObjectResult>((await controller.GetConversationPage(new()
+        { DeliverymenAssignedToday = true, Limit = 1, Cursor = first.NextCursor }, default)).Result);
+        now = day.AddHours(4);
+
+        var reassigned = await db.Orders.SingleAsync(x => x.Id == 60);
+        reassigned.BranchId = 1;
+        reassigned.DeliveryManId = 21;
+        reassigned.TouchDeliveryManAssignedAtUtc(now);
+        await db.SaveChangesAsync();
+        Assert.Equal(new[] { 31, 36 }, (await Read(new() { DeliverymenAssignedToday = true })).Items.Select(x => x.Id).Order());
+
+        async Task<WhatsAppConversationPageDto> Read(WhatsAppConversationSearchDto request) =>
+            Assert.IsType<ApiResponse<WhatsAppConversationPageDto>>(
+                Assert.IsType<OkObjectResult>((await controller.GetConversationPage(request, default)).Result).Value).Data!;
+
+        static User Driver(int id, int branch) => new()
+        { Id = id, BranchId = branch, Role = UserRole.Deliveryman, Name = $"Reparto {id}", Email = $"driver{id}@demo.test", Phone = $"30100000{id}" };
+        static WhatsAppConversation Chat(int id, string phone, WhatsAppAttentionMode attention = WhatsAppAttentionMode.WaitingForHuman) => new()
+        { Id = id, TenantId = 1, BranchId = 1, ChannelSettingId = 1, PhoneNumber = phone, AttentionMode = attention };
+        static Order Assigned(int id, int? driver, int branch, int? origin, DateTime at, OrderStatus status = OrderStatus.Ready)
+        {
+            var order = new Order { Id = id, BranchId = branch, OriginBranchId = origin, TakenById = 20,
+                Type = OrderType.Delivery, Status = status, DeliveryManId = driver };
+            order.TouchDeliveryManAssignedAtUtc(at);
+            return order;
+        }
+    }
+
+    [Fact]
+    public async Task Quick_operational_inbox_filters_by_today_assignment_and_supplier()
+    {
+        await using var db = CreateDb();
+        await VerifyQuickOperationalInboxAsync(db);
+    }
+
     [Fact]
     public async Task Cashier_can_preview_and_send_a_quoted_quick_reply_from_their_work_branch()
     {

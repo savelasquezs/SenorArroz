@@ -27,8 +27,7 @@ public static class WhatsAppOperationalContacts
         IReadOnlyList<WhatsAppConversationDto> chats, CancellationToken ct, DateTime? utcNow = null)
     {
         var phones = chats.Select(x => Normalize(x.PhoneNumber)).OfType<string>().Distinct().ToArray();
-        var matches = await FindManyAsync(db, tenantId, phones, ct);
-        await ResolveSharedPhonesAsync(db, tenantId, matches, utcNow ?? DateTime.UtcNow, ct);
+        var matches = await ResolveAsync(db, tenantId, phones, utcNow ?? DateTime.UtcNow, ct);
         foreach (var chat in chats)
         {
             var phone = Normalize(chat.PhoneNumber);
@@ -43,10 +42,31 @@ public static class WhatsAppOperationalContacts
     {
         var phone = Normalize(conversation.PhoneNumber);
         if (phone is null) return null;
-        var matches = await FindManyAsync(db, conversation.TenantId, [phone], ct);
-        await ResolveSharedPhonesAsync(db, conversation.TenantId, matches, utcNow, ct);
+        var matches = await ResolveAsync(db, conversation.TenantId, [phone], utcNow, ct);
         return matches.GetValueOrDefault(phone);
     }
+
+    public static async Task<Dictionary<string, Match>> ResolveAsync(IApplicationDbContext db, int tenantId,
+        string[] phones, DateTime utcNow, CancellationToken ct)
+    {
+        var matches = await FindManyAsync(db, tenantId, phones, ct);
+        await ResolveSharedPhonesAsync(db, tenantId, matches, utcNow, ct);
+        return matches;
+    }
+
+    public static IQueryable<WhatsAppConversation> WithPhones(IQueryable<WhatsAppConversation> conversations, string[] phones)
+    {
+        if (phones.Length == 0) return conversations.Where(_ => false);
+
+        var variants = PhoneVariants(phones).Concat(phones.Select(p => "+" + p)).ToArray();
+        return conversations.Where(c => c.PhoneNumber != null && (variants.Contains(c.PhoneNumber)
+            || variants.Contains(c.PhoneNumber.Trim().Replace(" ", "").Replace("(", "")
+                .Replace(")", "").Replace("-", "").Replace(".", ""))));
+    }
+
+    private static string[] PhoneVariants(string[] phones) => phones.Concat(phones
+        .Where(p => p.Length == 12 && p.StartsWith("573", StringComparison.Ordinal)).Select(p => p[2..]))
+        .Distinct(StringComparer.Ordinal).ToArray();
 
     private static async Task ResolveSharedPhonesAsync(IApplicationDbContext db, int tenantId,
         Dictionary<string, Match> matches, DateTime utcNow, CancellationToken ct)
@@ -80,8 +100,7 @@ public static class WhatsAppOperationalContacts
         if (tenantId <= 0 || phones.Length == 0) return [];
 
         var phoneSet = phones.ToHashSet(StringComparer.Ordinal);
-        var storedVariants = phones.Concat(phones.Where(p => p.Length == 12 && p.StartsWith("573"))
-            .Select(p => p[2..])).Distinct().ToArray();
+        var storedVariants = PhoneVariants(phones);
 
         var drivers = db.Users.AsNoTracking()
             .Where(u => u.TenantId == tenantId && u.Active && u.AccountType != EmployeeAccountType.Terminal
