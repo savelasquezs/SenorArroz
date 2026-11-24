@@ -82,6 +82,7 @@ public static class ApiHost
         });
 
         // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+        builder.Services.AddPublicCatalogCompression();
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen(c =>
         {
@@ -686,6 +687,7 @@ public static class ApiHost
 
         // Custom JWT middleware for additional user context
         app.UseMiddleware<JwtMiddleware>();
+        app.UsePublicCatalogCompression();
 
         app.Use(async (context, next) =>
         {
