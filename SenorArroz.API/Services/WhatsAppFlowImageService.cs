@@ -4,7 +4,16 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace SenorArroz.API.Services;
 
-public sealed class WhatsAppFlowImageService(HttpClient http, IMemoryCache cache)
+// Keep base64 product images separate from the shared application cache. All entries
+// use UTF-16 payload bytes as the same size unit, with a fixed 8 MiB budget.
+public sealed class WhatsAppFlowImageCache : IDisposable
+{
+    public const long MaxCachedBytes = 8L * 1024 * 1024;
+    public MemoryCache Entries { get; } = new(new MemoryCacheOptions { SizeLimit = MaxCachedBytes });
+    public void Dispose() => Entries.Dispose();
+}
+
+public sealed class WhatsAppFlowImageService(HttpClient http, WhatsAppFlowImageCache cache)
 {
     public async Task<string?> GetBase64Async(string? url, CancellationToken ct)
     {
@@ -12,7 +21,7 @@ public sealed class WhatsAppFlowImageService(HttpClient http, IMemoryCache cache
             || uri.Host != "firebasestorage.googleapis.com" || !uri.IsDefaultPort || !string.IsNullOrEmpty(uri.UserInfo))
             return null;
         var key = "flow-image:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(url!)));
-        if (cache.TryGetValue(key, out string? cached)) return cached;
+        if (cache.Entries.TryGetValue(key, out string? cached)) return cached;
         try
         {
             using var response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct);
@@ -30,12 +39,20 @@ public sealed class WhatsAppFlowImageService(HttpClient http, IMemoryCache cache
             }
             if (read == 0 || read > 100 * 1024) return null;
             var result = Convert.ToBase64String(bytes, 0, read);
-            cache.Set(key, result, TimeSpan.FromMinutes(10));
+            cache.Entries.Set(key, result, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
+                Size = result.Length * sizeof(char)
+            });
             return result;
         }
         catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException && !ct.IsCancellationRequested)
         {
-            cache.Set<string?>(key, null, TimeSpan.FromMinutes(1));
+            cache.Entries.Set<string?>(key, null, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1),
+                Size = 1
+            });
             return null;
         }
     }

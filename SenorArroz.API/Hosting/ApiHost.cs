@@ -133,6 +133,7 @@ public static class ApiHost
         builder.Services.AddApplication();
         builder.Services.AddInfrastructureServices(builder.Configuration);
         builder.Services.AddMemoryCache();
+        builder.Services.AddSingleton<SenorArroz.API.Services.WhatsAppFlowImageCache>();
         builder.Services.AddSingleton<StorefrontQuoteConcurrencyGate>();
         var storefrontKeyId = builder.Configuration["Storefront:KeyId"];
         var storefrontKeyHash = builder.Configuration["Storefront:KeyHash"];
