@@ -399,3 +399,7 @@ Mutaciones reutilizan endpoints existentes y reciben `X-Order-Id` + `X-Order-Ver
 ## Data Gateway
 
 `DataGatewayController` valida consultas estructuradas de vistas diagnostics; `DataGatewayMcpController` publica las tres herramientas. `DataGatewaySecurity` aísla JWT del POS y OAuth; `DataGatewayOAuth` configura OpenIddict/PKCE, y `DataGatewayOAuthController` gestiona registro y consentimiento. `DataGatewayOAuthDbContext` guarda únicamente autorizaciones técnicas en gateway_oauth. SDK, Code Mode y stdio: `tools/data-gateway/`. Operación y migraciones: `docs/DATA_GATEWAY.md`, `docs/DB_READER_PERMISSIONS.md`, `tasks/data-gateway-rollout.md`.
+
+### Integración laboral
+
+NominarteFeedController publica snapshots y cambios bajo /api/integrations/laboral/v1. La credencial es exclusiva de lectura y queda ligada al tenant por Nominarte__Connectors__0__TenantId y Nominarte__Connectors__0__KeySha256. Aplicar add_nominarte_feed.sql primero en la base de validación. Nominarte se conecta por HTTP y conserva los registros para revisión.

@@ -679,3 +679,7 @@ Auditoría de 129 tablas public: lector existente con 39 concesiones SELECT por 
 ## Recordatorios operativos del POS
 
 `operational_reminder` contiene configuración por tenant y sucursal. `operational_reminder_state` mantiene una única fila mutable por tarea con fecha local y revisión; no guarda historial ni identidad del trabajador. Ambas tablas tienen RLS. Script aditivo: `add_operational_checklist.sql`; aplicar antes del despliegue. Configuración y descripción son la fuente para el POS y el snippet de Mintlify. Ver `docs/OPERATIONAL_CHECKLIST.md`.
+
+### Journal laboral de Nominarte
+
+El script aditivo add_nominarte_feed.sql instala un contador y entradas por tenant con RLS forzado. Los triggers AFTER de employee_lunch y employee_leave_request guardan cambios en la misma transacción. Los triggers de pedidos y almuerzos conservan su comportamiento. El payload expone identificadores y campos necesarios del hecho laboral. Los soportes y la justificación quedan en el flujo de permisos.
