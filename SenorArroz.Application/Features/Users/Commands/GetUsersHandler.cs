@@ -45,13 +45,6 @@ namespace SenorArroz.Application.Features.Users.Queries
             // Obtener usuarios filtrados por sucursal
             var users = await _userRepository.GetAllAsync(branchFilter, cancellationToken);
 
-            _logger.LogInformation("=== DEBUG GetUsers ===");
-            _logger.LogInformation("Current User Role: {Role}, BranchId: {BranchId}", _currentUser.Role, _currentUser.BranchId);
-            _logger.LogInformation("BranchFilter aplicado: {BranchFilter}", branchFilter);
-            _logger.LogInformation("Total usuarios de repositorio: {Count}", users.Count());
-            _logger.LogInformation("Filtro Role solicitado: {Role}", request.Role ?? "ninguno");
-            _logger.LogInformation("Filtro Active solicitado: {Active}", request.Active?.ToString() ?? "ninguno");
-
             // Aplicar filtros adicionales
             var filteredUsers = users.AsEnumerable();
 
@@ -72,12 +65,7 @@ namespace SenorArroz.Application.Features.Users.Queries
             var filteredList = filteredUsers.ToList();
             var totalCount = filteredList.Count;
 
-            _logger.LogInformation("Total usuarios después de filtros: {Count}", totalCount);
-            if (totalCount > 0)
-            {
-                _logger.LogInformation("Usuarios encontrados: {Users}", 
-                    string.Join(", ", filteredList.Select(u => $"{u.Name} (Role: {u.Role}, Active: {u.Active})")));
-            }
+            _logger.LogDebug("Users list filtered. TotalCount={Count}", totalCount);
 
             // Aplicar paginación
             var paginatedUsers = filteredList
