@@ -90,6 +90,16 @@ s3_cp "$TMP" "s3://${BUCKET}/${FILE}"
 
 echo "Railway backup completed successfully: ${FILE}"
 
+# Keep the local dump, but fail visibly before retention if an external backup
+# was partially configured or explicitly requested and cannot be written.
+if ! r2_configured; then
+  if [ -n "${R2_BUCKET:-}${R2_ENDPOINT:-}${R2_ACCESS_KEY_ID:-}${R2_SECRET_ACCESS_KEY:-}" ] ||
+     [ "${R2_FORCE_BACKUP:-0}" = "1" ]; then
+    echo "R2 backup incomplete or requested without all four R2 settings; Railway copy kept, job failed." >&2
+    exit 1
+  fi
+fi
+
 if [ "$RETENTION_DAYS" -gt 0 ]; then
   CUTOFF="$(date -u -d "${RETENTION_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ)"
   echo "Removing Railway backup objects older than ${RETENTION_DAYS} days (before ${CUTOFF})..."
