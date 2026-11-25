@@ -197,7 +197,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M41-F07 | Backups, mantenimiento y limpieza | Pendiente | — | — | — | — |
 | M42-F01 | Uso CPU/RAM por servicio | Pendiente | — | — | — | — |
 | M42-F02 | Network egress Railway | Pendiente | — | — | — | — |
-| M42-F03 | Despliegue y logs API | Pendiente | — | — | — | — |
+| M42-F03 | Despliegue y logs API | Bloqueado | 2026-11-25 | [Informe](reviews/2026-11-25-M42-F03.md) | [API #178](https://github.com/savelasquezs/SenorArroz/pull/178) | Elimina 7–8 logs Information por GET de usuarios y la construcción de lista nominal; conserva un agregado Debug. Dos regresiones preparadas; CI y QA pendientes. Sin SQL ni mediciones de ahorro productivo. |
 | M42-F04 | CI pipelines y pruebas | Pendiente | — | — | — | — |
 | M42-F05 | Costos, alertas y límites | Pendiente | — | — | — | — |
 
