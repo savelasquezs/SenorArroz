@@ -6,6 +6,11 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  # PR merge refs identify individual PRs; main pushes retain independent run IDs.
+  group: backend-ci-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
