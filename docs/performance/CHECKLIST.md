@@ -198,7 +198,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M42-F01 | Uso CPU/RAM por servicio | Pendiente | — | — | — | — |
 | M42-F02 | Network egress Railway | Pendiente | — | — | — | — |
 | M42-F03 | Despliegue y logs API | Pendiente | — | — | — | — |
-| M42-F04 | CI pipelines y pruebas | Pendiente | — | — | — | — |
+| M42-F04 | CI pipelines y pruebas | Bloqueado | 2026-11-26 | [Informe](reviews/2026-11-26-M42-F04.md) | [API #180](https://github.com/savelasquezs/SenorArroz/pull/180) | Cancelación de Backend CI obsoleta por PR comprobada en [run](https://github.com/savelasquezs/SenorArroz/actions/runs/45825424764); conserva suites y pushes main independientes. [CI final](https://github.com/savelasquezs/SenorArroz/actions/runs/45825491819) pendiente; sin SQL ni métricas de ahorro. |
 | M42-F05 | Costos, alertas y límites | Pendiente | — | — | — | — |
 
 ## Cómo registrar cambios y resultados diarios
