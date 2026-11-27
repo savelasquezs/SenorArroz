@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -18,6 +19,11 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
+
+    private static readonly Meter RoutesMeter = new("SenorArroz.GoogleRoutes");
+    private static readonly Counter<long> HttpAttempts = RoutesMeter.CreateCounter<long>(
+        "senorarroz.google.routes.http.attempts", unit: "{attempt}",
+        description: "Application attempts to send Compute Routes HTTP requests; not billed requests.");
 
     private readonly HttpClient _http;
     private readonly GoogleMapsRouteOptions _opts;
@@ -134,6 +140,8 @@ public class GoogleRoutesDrivingMetricsService : IGoogleRoutesDrivingMetricsServ
         HttpResponseMessage response;
         try
         {
+            // Count physical segment sends, not logical route computations or cache hits.
+            HttpAttempts.Add(1, new KeyValuePair<string, object?>("routing.preference", body.RoutingPreference));
             response = await _http.SendAsync(request, cancellationToken);
         }
         catch (Exception ex)
