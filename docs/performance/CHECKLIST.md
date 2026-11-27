@@ -199,7 +199,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M42-F02 | Network egress Railway | Pendiente | — | — | — | — |
 | M42-F03 | Despliegue y logs API | Pendiente | — | — | — | — |
 | M42-F04 | CI pipelines y pruebas | Pendiente | — | — | — | — |
-| M42-F05 | Costos, alertas y límites | Pendiente | — | — | — | — |
+| M42-F05 | Costos, alertas y límites | Bloqueado | 2026-11-27 | [Informe](reviews/2026-11-27-M42-F05.md) | [PR API #182](https://github.com/savelasquezs/SenorArroz/pull/182) | Contador de intentos HTTP Google por modalidad; CI y recolección en staging pendientes; sin SQL ni cambios de alertas productivas. |
 
 ## Cómo registrar cambios y resultados diarios
 - Al iniciar: seleccionar una única funcionalidad `Pendiente`, priorizando impacto y consultando informes y PR anteriores.
