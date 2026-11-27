@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -85,8 +86,57 @@ public class GoogleRoutesDrivingMetricsServiceTests
         Assert.Empty(handler.RoutingPreferences);
     }
 
+    [Fact]
+    public async Task ComputeRoutes_RecordsEverySendAttemptWithOnlyRoutingPreference()
+    {
+        var observed = new List<(long Count, string Preference)>();
+        // MeterListener is process-wide; capture only this test's async execution context.
+        var capture = new AsyncLocal<bool>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Meter.Name == "SenorArroz.GoogleRoutes"
+                && instrument.Name == "senorarroz.google.routes.http.attempts")
+                meterListener.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((_, count, tags, _) =>
+        {
+            if (!capture.Value) return;
+            Assert.Equal(1, tags.Length);
+            Assert.Equal("routing.preference", tags[0].Key);
+            observed.Add((count, Assert.IsType<string>(tags[0].Value)));
+        });
+        listener.Start();
+        var handler = new RoutesHandler();
+        using var http = new HttpClient(handler);
+        var service = new GoogleRoutesDrivingMetricsService(http,
+            Options.Create(new GoogleMapsRouteOptions { RoutesApiKey = "test" }),
+            NullLogger<GoogleRoutesDrivingMetricsService>.Instance);
+        var withoutKey = new GoogleRoutesDrivingMetricsService(http,
+            Options.Create(new GoogleMapsRouteOptions { RoutesApiKey = "" }),
+            NullLogger<GoogleRoutesDrivingMetricsService>.Instance);
+        var points = Enumerable.Range(0, 13)
+            .Select(i => (Latitude: 6.30 + i * 0.001, Longitude: -75.57))
+            .ToArray();
+
+        capture.Value = true;
+        await service.ComputeRouteAsync(points);
+        await service.ComputeTrafficAwareRouteAsync(points.Take(2).ToArray());
+        await withoutKey.ComputeRouteAsync(points);
+        await service.ComputeRouteAsync(points.Take(1).ToArray());
+        handler.StatusCode = HttpStatusCode.TooManyRequests;
+        await service.ComputeRouteAsync(points.Take(2).ToArray());
+        capture.Value = false;
+
+        Assert.Equal(new[] { 12, 2, 2, 2 }, handler.WaypointsPerRequest);
+        Assert.Equal(handler.RoutingPreferences.ToArray(), observed.Select(x => x.Preference).ToArray());
+        Assert.Equal(4, observed.Count);
+        Assert.All(observed, x => Assert.Equal(1L, x.Count));
+    }
+
     private sealed class RoutesHandler : HttpMessageHandler
     {
+        public HttpStatusCode StatusCode { get; set; } = HttpStatusCode.OK;
         public string FieldMask { get; private set; } = string.Empty;
         public string RequestUri { get; private set; } = string.Empty;
         public List<string> RoutingPreferences { get; } = [];
@@ -110,7 +160,7 @@ public class GoogleRoutesDrivingMetricsServiceTests
                   }]
                 }
                 """;
-            return new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(StatusCode)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json"),
             };
