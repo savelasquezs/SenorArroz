@@ -44,15 +44,17 @@ public sealed class ApproximateRoutingCostMatrixProvider : IRoutingCostMatrixPro
 
         for (var from = 0; from < count; from++)
         {
-            for (var to = 0; to < count; to++)
+            // This approximate model is symmetric; reuse the already calculated branch
+            // distances and compute each remaining unordered pair only once.
+            for (var to = from + 1; to < count; to++)
             {
-                if (from == to)
-                    continue;
-
-                var straightMeters = Haversine(coordinates[from], coordinates[to]);
+                var straightMeters = from == 0
+                    ? straightDistances[to]
+                    : Haversine(coordinates[from], coordinates[to]);
                 var estimatedMeters = (long)Math.Ceiling(straightMeters * roadFactor);
-                distances[from, to] = estimatedMeters;
-                durations[from, to] = (long)Math.Ceiling(estimatedMeters / speedMetersPerSecond);
+                var estimatedSeconds = (long)Math.Ceiling(estimatedMeters / speedMetersPerSecond);
+                distances[from, to] = distances[to, from] = estimatedMeters;
+                durations[from, to] = durations[to, from] = estimatedSeconds;
             }
         }
 
