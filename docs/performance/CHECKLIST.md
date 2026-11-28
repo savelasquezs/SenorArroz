@@ -83,7 +83,7 @@ Versión inicial: 2026-10-12. [Inventario y normas](README.md) · [Plantilla de 
 | M16-F01 | Solicitar plan de rutas | Pendiente | — | — | — | — |
 | M16-F02 | Previsualizar propuestas | Pendiente | — | — | — | — |
 | M16-F03 | Recalcular y reclamar rutas | Pendiente | — | — | — | — |
-| M16-F04 | Google Routes y OR-Tools | Pendiente | — | — | — | — |
+| M16-F04 | Google Routes y OR-Tools | Bloqueado | 2026-11-28 | [Informe](reviews/2026-11-28-M16-F04.md) | [PR API #184](https://github.com/savelasquezs/SenorArroz/pull/184) | Matriz simétrica sin Haversine redundante; CI/paridad staging pendientes; sin SQL ni cambios de solicitudes Google. |
 | M17-F01 | Cargar disponibles Flutter | Pendiente | — | — | — | — |
 | M17-F02 | Cargar sugerencias y próximos | Pendiente | — | — | — | — |
 | M17-F03 | Autoasignación y bloqueo concurrente | Pendiente | — | — | — | — |
